@@ -22,12 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifac
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "beads-contract" / "scripts"))
 import beadgraph
 import beadwrite
-from task_deps_contract import (
-    TaskDepsError,
-    empty_task_deps,
-    narrowed_task_deps_schema,
-    parse_task_deps,
-)
+import strictschema
+from task_deps_contract import TaskDepsError, empty_task_deps, parse_task_deps
 from typeguard import CollectionCheckStrategy, check_type
 
 from orchestrator.core.agents import strict_json
@@ -46,23 +42,28 @@ from orchestrator.core.journal_steps import (
 )
 from orchestrator.flows.elaboration_files import (
     CLOSURE_EDGES,
+    CLOSURE_EDGES_SCHEMA,
     EDGE_CLOSURE,
     EDGE_LIST,
     EDGE_LISTING,
     EDGE_WRITE,
     EDGES_RESULT,
+    LISTING_SCHEMA,
     MAPPER,
-    MAPPER_SCHEMA,
+    SCHEMAS,
     TASK_DEPS,
+    TASK_DEPS_SCHEMA,
     TASKS_FILE,
-    objects,
     span_stories,
+    write_contract,
 )
 from orchestrator.flows.elaboration_support import TASK_EDGES_PHASE, enter_phase
 
 if TYPE_CHECKING:
     import hierarchy
     from step_journal_contract import StepPlan
+
+    from orchestrator.core.models import OutputValidator
 
 TASK_EDGES: Final = "task edges written"
 SEVERAL: Final = 2
@@ -85,8 +86,7 @@ def closure(run: StepRun) -> Completion:
     enter_phase(run.context, run.agents.emit, TASK_EDGES_PHASE, EDGE_CLOSURE)
     span: hierarchy.SpanStories = span_stories(run, None)
     found: dict[str, JsonValue] = json_object(run.tools.portfolio(EDGE_CLOSURE, beadwrite.closure_task_edges, span))
-    path: Path = run.context.work / "closure-edges.json"
-    write_json(path, found)
+    path: Path = write_contract(run.context.work / "closure-edges.json", found, CLOSURE_EDGES_SCHEMA)
     if found.get("ok") is False or found.get("warnings") or json_object(found.get("summary", {})).get("warnings"):
         raise run.tools.failure(EDGE_CLOSURE, OTHER_CAUSE, found)
     handed: list[str] = list(run.step.get("inputs", []))
@@ -120,34 +120,65 @@ def closure(run: StepRun) -> Completion:
 
 @script_step(EDGE_LISTING)
 def listing(run: StepRun) -> Completion:
-    """List every Story's Tasks with their edges, and narrow the mapper's schema to their names.
+    """Name each Story's Tasks file for the dependency mapper, in span order.
+
+    The listing points to the Tasks files and the closure edges file and copies none of them
+    (``task-dependency-listing.schema.json``).
 
     Returns:
-        The listing file; for a span of more than one repository, the mapper's schema too.
+        The listing file.
 
     """
     enter_phase(run.context, run.agents.emit, TASK_EDGES_PHASE, EDGE_LISTING)
     span: hierarchy.SpanStories = span_stories(run, None)
-    rows: list[JsonValue] = []
-    for index, files in enumerate(span.stories, 1):
-        saved: dict[str, JsonValue] = strict_json(files.tasks_file)
-        tasks: list[JsonValue] = [
-            {name: task.get(name) for name in ("key", "title", "dependsOn")} for task in objects(saved.get("tasks", []))
-        ]
-        rows.append({"story": f"S{index}", "tasks": tasks, "edges": saved.get("edges", [])})
-    path: Path = run.context.work / "task-deps-inputs.json"
-    write_json(path, {"stories": rows, "closureEdgesPath": str(run.inputs.file(CLOSURE_EDGES))})
-    artifacts = [file_artifact(EDGE_LIST, path)]
-    if len(span.stories) >= SEVERAL:
-        names: dict[str, str] = check_type(
-            run.tools.portfolio(EDGE_LISTING, beadwrite.span_tasks, span),
+    rows: list[JsonValue] = [
+        {"story": f"S{index}", "repoPath": files.repo, "tasksFile": str(files.tasks_file)}
+        for index, files in enumerate(span.stories, 1)
+    ]
+    path: Path = write_contract(
+        run.context.work / "task-deps-inputs.json",
+        {"stories": rows, "closureEdgesPath": str(run.inputs.file(CLOSURE_EDGES))},
+        LISTING_SCHEMA,
+    )
+    return Completion(artifacts=(file_artifact(EDGE_LIST, path),))
+
+
+def task_deps_check(span: hierarchy.SpanStories) -> OutputValidator:
+    """Build the check of the mapper's dependency file: its contract, then the Task keys it names.
+
+    Args:
+        span: The Stories of the span with their Tasks files.
+
+    Returns:
+        A check that validates the file against ``task-deps.schema.json``
+        (``jsonschema.ValidationError``) and raises ``ValueError`` naming every ``from`` or
+        ``to`` that is no Task key of the span; both send the session to its one correction.
+
+    """
+    contract: Path = SCHEMAS / TASK_DEPS_SCHEMA
+    keys: frozenset[str] = frozenset(
+        check_type(
+            beadwrite.span_tasks(span),
             tuple[dict[str, str], list[tuple[str, str]], dict[str, str]],
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        )[0]
-        schema: Path = run.context.work / "task-deps.schema.json"
-        write_json(schema, narrowed_task_deps_schema(list(names)))
-        artifacts.append(file_artifact(MAPPER_SCHEMA, schema))
-    return Completion(artifacts=tuple(artifacts))
+        )[0],
+    )
+
+    def check(path: Path) -> dict[str, JsonValue]:
+        document: dict[str, JsonValue] = strict_json(path)
+        strictschema.validate(document, strict_json(contract), location=contract)
+        named: list[str] = [
+            str(end)
+            for edge in check_type(document["edges"], list[dict[str, JsonValue]])
+            for end in (edge["from"], edge["to"])
+            if end not in keys
+        ]
+        if named:
+            message: str = f"not a Task key of the span: {', '.join(dict.fromkeys(named))}"
+            raise ValueError(message)
+        return document
+
+    return check
 
 
 @agent_step(MAPPER)
@@ -158,8 +189,8 @@ def mapper(run: StepRun) -> AgentLaunch:
     edge write, and the beads edge alone carries build order.
 
     Returns:
-        The launch: the dependency file as output, checked against the schema narrowed to the
-        span's Task names.
+        The launch: the dependency file as output, checked against ``task-deps.schema.json`` and
+        the span's Task keys.
 
     """
     enter_phase(run.context, run.agents.emit, TASK_EDGES_PHASE, MAPPER)
@@ -174,7 +205,7 @@ def mapper(run: StepRun) -> AgentLaunch:
 
     return AgentLaunch(
         output=run.context.work / "task-deps.json",
-        validate=run.inputs.file(MAPPER_SCHEMA),
+        validate=run.tools.portfolio(MAPPER, task_deps_check, span),
         outcome="Cross-Story Task dependencies for the supplied Stories.",
         accept=accept,
         add_dirs=(run.context.work,),

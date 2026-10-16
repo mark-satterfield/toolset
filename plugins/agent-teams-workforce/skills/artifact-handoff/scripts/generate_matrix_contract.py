@@ -69,6 +69,7 @@ ROLES_KEY: Final[str] = "roles"
 OPERATOR_KEY: Final[str] = "operatorRole"
 HOME_KEY: Final[str] = "homeRelationship"
 STACK_KEY: Final[str] = "stackKind"
+REQUIRED_ONE_KEY: Final[str] = "requiredOne"
 # The $defs entry of the schema that lists the sides, and the root key that names the side that is the authority.
 SIDE_ENTRY: Final[str] = "side"
 AUTHORITY_KEY: Final[str] = "x-authoritySide"
@@ -458,6 +459,8 @@ def _check_entry_kinds(registry: Mapping[str, JsonValue], known: Sequence[str], 
         attributes: list[str] = _attributes(rule, members, known, where)
         required: list[str] = _strings(rule.get("required"), where + "/required")
         _subset(required, [*attributes, PURPOSE_MEMBER], where + "/required", "attributes of the kind")
+        one: list[str] = _strings(rule.get(REQUIRED_ONE_KEY, []), where + "/" + REQUIRED_ONE_KEY)
+        _subset(one, attributes, where + "/" + REQUIRED_ONE_KEY, "attributes of the kind")
     if not table:
         message = f"matrix contract: {ENTRY_KINDS_KEY} declares no kind"
         raise SchemaShapeError(message)
@@ -1249,15 +1252,17 @@ def _attribute_validator(table: str, kind: str, required: Sequence[str]) -> Draf
 
     """
     rule: dict[str, JsonValue] = _object(_object(load_registry().get(table), table).get(kind), f"{table}/{kind}")
-    return Draft202012Validator(
-        {
-            "type": "object",
-            "additionalProperties": False,
-            "required": list(required),
-            "properties": _object(rule.get("attributes"), f"{table}/{kind}/attributes"),
-            "$defs": _definitions(),
-        },
-    )
+    schema: dict[str, JsonValue] = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": list(required),
+        "properties": _object(rule.get("attributes"), f"{table}/{kind}/attributes"),
+        "$defs": _definitions(),
+    }
+    one: list[str] = _names(rule.get("requiredOne", []), f"{table}/{kind}/requiredOne")
+    if one:
+        schema["oneOf"] = [{"required": [name]} for name in one]
+    return Draft202012Validator(schema)
 
 
 @cache

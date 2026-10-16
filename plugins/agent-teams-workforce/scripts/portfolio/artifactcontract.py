@@ -43,7 +43,15 @@ from checkpoint_contract import (
     load_checkpoint_schema,
 )
 from contracts import JsonObject, JsonValue, json_object
-from jsonartifact import binding_matches, canonical, checkpoint_report, decode, read_checkpoint, write_atomic
+from jsonartifact import (
+    binding_matches,
+    canonical,
+    checkpoint_report,
+    decode,
+    read_checkpoint,
+    schema_from_option,
+    write_atomic,
+)
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError, ValidationError
 from typeguard import CollectionCheckStrategy, TypeCheckError, check_type
@@ -261,10 +269,15 @@ def _options(args: argparse.Namespace) -> _Options:
     """
     schema_file: Path | None = args.schema_file
     schema_json: str | None = args.schema_json
-    schema: JsonObject = json_object(
-        load_json(schema_file) if schema_file is not None else decode(str(schema_json)),
-    )
-    Draft202012Validator.check_schema(schema)
+    contract: str | None = args.schema
+    if schema_file is not None:
+        if contract is not None or schema_json is not None:
+            message_one: str = "--schema-file excludes --schema and --schema-json"
+            raise ValueError(message_one)
+        schema: JsonObject = json_object(load_json(schema_file))
+        Draft202012Validator.check_schema(schema)
+    else:
+        schema = schema_from_option(contract, schema_json)
     files_root: Path | None = args.files_root
     files_field: str | None = args.files_field
     if (files_root is None) != (files_field is None):
@@ -299,9 +312,9 @@ def main() -> int:
     parser: argparse.ArgumentParser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=OPERATIONS)
     parser.add_argument("--candidate", type=Path, required=True)
-    schemas: argparse._MutuallyExclusiveGroup = parser.add_mutually_exclusive_group(required=True)
-    schemas.add_argument("--schema-file", type=Path)
-    schemas.add_argument("--schema-json")
+    parser.add_argument("--schema", help="the contract file the candidate must satisfy: <path>[#<JSON pointer>]")
+    parser.add_argument("--schema-json", help="the schema itself, as one JSON object (the form older workflows pass)")
+    parser.add_argument("--schema-file", type=Path, help="a file holding the schema itself")
     parser.add_argument("--revision", required=True)
     parser.add_argument("--progress-file", type=Path)
     parser.add_argument("--status", choices=AUTHORED_STATUSES)

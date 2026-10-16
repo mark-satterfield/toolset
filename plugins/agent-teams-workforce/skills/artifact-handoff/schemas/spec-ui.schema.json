@@ -1,4 +1,5 @@
 {
+  "description": "The UI design source of each UI item a frontend repository's Story builds. api-specification-author writes the candidate <work>/candidates/spec-<slug>.ui.json from the ui bundles (ui-bundles.schema.json); the step `spec_authoring.normalize_ui` (orchestrator/flows/spec_authoring.py) normalizes it into <work>/spec-<slug>.ui.json and the step `specui.spec_ui_append` appends its section to the contracts document. item is the id of an item of the repository context; a bundle source must match the newest supplied bundle of its kind and slug and that bundle's buildSpec and sections; cds designs the item with the configured design system; none changes no design. The normalizing step corrects invalid sources and bundles, supplies a missing artifact identity and drops an unknown item id, each with a warning, so no enum here blocks those corrections. Complete means every UI item the Story builds is represented and its citations agree.",
   "type": "object",
   "additionalProperties": false,
   "required": [

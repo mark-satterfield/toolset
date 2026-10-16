@@ -129,7 +129,7 @@ async function settleWorkflow(name, input) {
 }
 // END bounded dispatch policy
 
-// ===== SHARED BLOCK relay — BEGIN (canonical: scripts/shared-blocks/relay.js; filled from skills/artifact-handoff/schemas/checkpoint.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
+// ===== SHARED BLOCK relay — BEGIN (canonical: scripts/shared-blocks/relay.js; filled from skills/artifact-handoff/schemas/{checkpoint,relay-command-result,relay-registered-result,artifact-reference}.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
 // ── CHECKED RELAY: deterministic work reaches this script unaltered, or not at all ──
 //
 // A workflow script cannot run a command or read a file. A command reaches the shell only as
@@ -255,13 +255,12 @@ const relayKit = (() => {
     if (word !== null) words.push(word)
     return words
   }
-  /** A runner's return: the exit status and stdout, verbatim, as one string. Nothing is rebuilt. */
-  const SCHEMA = {
-    type: 'object',
-    additionalProperties: false,
-    required: ['exitCode', 'stdout'],
-    properties: { exitCode: { type: 'integer' }, stdout: { type: 'string', description: 'Copy the complete RELAY64v1: line verbatim. Treat its base64 payload as opaque text; never decode or reconstruct it.' } },
-  }
+  // The runner's results and the producer's artifact reference, inlined by scripts/shared-blocks.mjs
+  // from their contract files in skills/artifact-handoff/schemas/ (relay-command-result,
+  // relay-registered-result, artifact-reference). Never restate any part of them here.
+  const SCHEMA = {"$schema":"https://json-schema.org/draft/2020-12/schema","description":"What the workflow-command-runner returns for an assignment that names its command itself (no WORKFORCE_RELAY_BINDING_V1 line): the command's exit status and its stdout, verbatim. Nothing in it is rebuilt: the workflow script (the relay shared block, scripts/shared-blocks/relay.js) checks the copy against the checksum it carries and, when the copy fails, reads the relay file the command saved instead.","type":"object","additionalProperties":false,"required":["exitCode","stdout"],"properties":{"exitCode":{"description":"The exit status of the one command the assignment named.","type":"integer"},"stdout":{"description":"The complete RELAY64v1: line the command printed, copied verbatim: every character as printed, in order, including the prefix and any trailing = characters, with nothing added, removed, reordered or re-typed. Treat its base64 payload as opaque text; never decode or reconstruct it. When the command printed more than one line, all of stdout verbatim.","type":"string"}}}
+  const REGISTERED_SCHEMA = {"$schema":"https://json-schema.org/draft/2020-12/schema","description":"What the workflow-command-runner returns for a registered assignment (one carrying the WORKFORCE_RELAY_BINDING_V1 and WORKFORCE_RELAY_REQUEST_V1 lines). The runner returns the small object the registered helper printed; the plugin's PreToolUse hook supplies the exact saved output. When the runner's Bash call fails, it returns the unknown result: state unknown, exitCode 0, stdout empty, receipt null, bridge false, error empty, so the hook reports the real saved state. The workflow script (the relay shared block, scripts/shared-blocks/relay.js) accepts a completed result only when its receipt matches the request, the command checksum, the exit status, the byte count and the SHA-256 of stdout.","type":"object","additionalProperties":false,"required":["state","exitCode","stdout","receipt","bridge","error"],"properties":{"state":{"description":"completed: the command ran and its saved output is handed back. not-started: the request provably never ran; the workflow, not the runner, decides whether it is attempted again. unknown: the runner could not tell (its Bash call failed); every other field then holds its empty value (exitCode 0, stdout empty, receipt null, bridge false, error empty).","type":"string","enum":["completed","not-started","unknown"]},"exitCode":{"description":"The exit status of the registered command.","type":"integer"},"stdout":{"description":"The command's saved stdout, verbatim. Never interpret, reconstruct or copy the payload by hand.","type":"string"},"receipt":{"description":"The integrity receipt of the saved output, or null when there is none.","anyOf":[{"description":"Binds a saved output to the request that produced it.","type":"object","additionalProperties":false,"required":["request","commandSha256","sha256","bytes","exitCode"],"properties":{"request":{"description":"The request id the workflow script computed for this command.","type":"string"},"commandSha256":{"description":"The SHA-256 of the canonical JSON of the command's argument list.","type":"string"},"sha256":{"description":"The SHA-256 of stdout.","type":"string"},"bytes":{"description":"The length of stdout.","type":"integer"},"exitCode":{"description":"The exit status the saved output records.","type":"integer"}}},{"type":"null"}]},"bridge":{"description":"true only on the result the hook itself supplies; the runner's own result always carries false, and the workflow reads any other value as the runner's copy.","type":"boolean"},"error":{"description":"Why the outcome is not completed, or empty.","type":"string"}}}
+  const ARTIFACT_SCHEMA = {"$schema":"https://json-schema.org/draft/2020-12/schema","description":"What a producer session returns after it authored a JSON artifact under the artifact checkpoint contract (checkpoint.schema.json): only the path of the candidate it wrote, never a copy of its content. The workflow script then validates the candidate against its contract file and publishes it (scripts/portfolio/jsonartifact.py).","type":"object","additionalProperties":false,"required":["artifactPath"],"properties":{"artifactPath":{"description":"The candidate path the brief named, as the submit command printed it.","type":"string"}}}
   const HEX = /^[0-9a-f]{64}$/
   /** The relay's own keys in a printed envelope; every other key is a leaf of the flat view. */
   const RELAY_KEYS = ['~file', '~sha256', '~bytes', '~exit', '~checksum']
@@ -351,10 +350,8 @@ const relayKit = (() => {
 
 ${command}
 
-It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy that entire line as opaque text, including the prefix and any trailing = characters. Do not decode the base64, interpret its contents, or rebuild the JSON. Return the process exit code as \`exitCode\` and that line, verbatim, as the string \`stdout\`: every character as printed, in order, with nothing added, removed, reordered, reformatted or re-typed. Do not parse it, do not summarize it. If it printed more than one line, return all of stdout verbatim. Do not retry, do not repair, do not run any other command.`
+It prints exactly one line beginning RELAY64v1: followed by base64 text. Return its exit status and that line as your output schema describes (contract: skills/artifact-handoff/schemas/relay-command-result.schema.json). Do not retry, do not repair, do not run any other command.`
   let captureOrdinal = 0
-  const RECEIPT_SCHEMA = { type: 'object', additionalProperties: false, required: ['request', 'commandSha256', 'sha256', 'bytes', 'exitCode'], properties: { request: { type: 'string' }, commandSha256: { type: 'string' }, sha256: { type: 'string' }, bytes: { type: 'integer' }, exitCode: { type: 'integer' } } }
-  const REGISTERED_SCHEMA = { type: 'object', additionalProperties: false, required: ['state', 'exitCode', 'stdout', 'receipt', 'bridge', 'error'], properties: { state: { type: 'string', enum: ['completed', 'not-started', 'unknown'] }, exitCode: { type: 'integer' }, stdout: { type: 'string' }, receipt: { anyOf: [RECEIPT_SCHEMA, { type: 'null' }] }, bridge: { type: 'boolean' }, error: { type: 'string' } } }
   async function registeredCommand(dispatch, { label, phase, command }, ordinal) {
     const argv = shellWords(command)
     const commandSha256 = sha256Json(argv)
@@ -575,26 +572,60 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
     if (r.exit !== 0) return { ok: false, error: String(r.view.error || `exited ${r.exit}`) }
     return { ok: true, view: r.view }
   }
-  const ARTIFACT_SCHEMA = { type: 'object', additionalProperties: false, required: ['artifactPath'], properties: { artifactPath: { type: 'string' } } }
   // The artifact checkpoint contract, inlined by scripts/shared-blocks.mjs from its one place,
   // skills/artifact-handoff/schemas/checkpoint.schema.json. Never restate any part of it here.
   const CHECKPOINT_SCHEMA = {"$schema":"https://json-schema.org/draft/2020-12/schema","title":"Artifact checkpoint","description":"The sidecar <candidate><x-sidecarSuffix> that artifactcontract.py checkpoint|complete|submit writes and artifactcontract.py status and jsonartifact.py read. It is built from the agent-authored progress file <candidate><x-progressSuffix> ($defs/Progress) plus the binding keys. The Python types are generated from this file by scripts/generate_checkpoint_contract.py.","x-sidecarSuffix":".checkpoint","x-progressSuffix":".progress.json","x-bindingKeys":["artifactPath","schemaSha256","revision"],"x-authoredStatuses":["in-progress","blocked"],"x-operations":["validate","checkpoint","complete","submit","status"],"type":"object","additionalProperties":false,"required":["status","artifactPath","schemaSha256","revision","task","completed","remaining","artifacts"],"properties":{"status":{"enum":["in-progress","blocked","complete"]},"artifactPath":{"$ref":"#/$defs/ArtifactPath"},"schemaSha256":{"$ref":"#/$defs/Sha256"},"candidateSha256":{"$ref":"#/$defs/Sha256"},"revision":{"$ref":"#/$defs/Revision"},"task":{"$ref":"#/$defs/Progress/properties/task"},"completed":{"$ref":"#/$defs/Progress/properties/completed"},"remaining":{"$ref":"#/$defs/Progress/properties/remaining"},"artifacts":{"$ref":"#/$defs/Progress/properties/artifacts"},"reason":{"$ref":"#/$defs/Progress/properties/reason"}},"allOf":[{"if":{"properties":{"status":{"const":"complete"}}},"then":{"required":["candidateSha256"],"properties":{"remaining":{"maxItems":0}}}},{"if":{"properties":{"status":{"const":"blocked"}}},"then":{"required":["reason"],"properties":{"remaining":{"minItems":1}}}}],"$defs":{"ArtifactPath":{"description":"The absolute candidate path; a binding key.","type":"string","minLength":1},"Revision":{"description":"The input revision; a binding key.","type":"string","minLength":1},"Sha256":{"description":"Lowercase hex SHA-256 of a canonical JSON value.","type":"string","pattern":"^[a-f0-9]{64}$"},"Progress":{"description":"The agent-authored progress file <candidate><x-progressSuffix>; its keys are copied into the checkpoint.","type":"object","additionalProperties":false,"required":["task","completed","remaining","artifacts"],"properties":{"task":{"type":"string","minLength":1},"completed":{"type":"array","items":{"type":"string","minLength":1}},"remaining":{"type":"array","items":{"type":"string","minLength":1}},"artifacts":{"type":"array","items":{"type":"string","minLength":1}},"reason":{"type":"string","minLength":1}}},"StatusReport":{"description":"What the status operation reports for a candidate.","type":"object","additionalProperties":false,"required":["status"],"properties":{"status":{"enum":["incomplete","in-progress","blocked","complete-unaccepted"]},"reason":{"type":"string"},"remaining":{"$ref":"#/$defs/Progress/properties/remaining"},"artifactPath":{"$ref":"#/$defs/ArtifactPath"},"schemaSha256":{"$ref":"#/$defs/Sha256"},"revision":{"$ref":"#/$defs/Revision"},"candidateSha256":{"$ref":"#/$defs/Sha256"}}},"CommandResult":{"description":"What the validate, checkpoint, complete and submit operations print; status is absent only for submit.","type":"object","additionalProperties":false,"required":[],"properties":{"status":{"enum":["schema-valid","complete-unaccepted","in-progress","blocked","invalid"]},"artifactPath":{"$ref":"#/$defs/ArtifactPath"},"error":{"type":"string","minLength":1}}}}}
-  function artifactBrief(candidate, schema, revision = '', helper) {
+  /**
+   * The absolute path of a contract file. `contract` is the file's path relative to the plugin
+   * root, optionally followed by #<JSON pointer> naming the schema inside it (for example
+   * 'skills/artifact-handoff/schemas/x.schema.json#/$defs/Proposal'); `script` is the absolute path
+   * of any script in the plugin's scripts/portfolio/ folder, from which the plugin root is known.
+   */
+  function contractPath(script, contract) {
+    const at = /^(.*\/)scripts\/portfolio\/[^/]+$/.exec(String(script || ''))
+    if (!at) throw new Error(`contractPath: ${JSON.stringify(script)} is not a script in the plugin's scripts/portfolio/ folder`)
+    if (typeof contract !== 'string' || !/^[A-Za-z0-9_-][A-Za-z0-9._/-]*\.json(#\/[^\s']*)?$/.test(contract) || contract.split('#')[0].split('/').includes('..')) {
+      throw new Error(`contractPath: ${JSON.stringify(contract)} is not a contract file path relative to the plugin root`)
+    }
+    return `${at[1]}${contract}`
+  }
+  /**
+   * The helper's schema option for `contract`: a contract file path (see contractPath) becomes
+   * `--schema <absolute path>`; a schema object, the form older callers pass, becomes
+   * `--schema-json <canonical JSON>`.
+   */
+  function schemaOption(script, contract) {
+    if (contract && typeof contract === 'object' && !Array.isArray(contract)) return ['--schema-json', canonicalJson(contract)]
+    return ['--schema', contractPath(script, contract)]
+  }
+  /**
+   * The brief text that binds a producer session to its candidate: the candidate, the progress
+   * file, the input revision, the contract file the candidate must satisfy (named, never pasted)
+   * and the artifactcontract.py command of each checkpoint operation.
+   */
+  function artifactBrief(candidate, contract, revision = '', helper) {
     if (typeof helper !== 'string' || !helper) throw new Error('artifactBrief requires the artifactcontract.py helper path')
     const suffix = CHECKPOINT_SCHEMA['x-progressSuffix']
     const operations = CHECKPOINT_SCHEMA['x-operations']
     if (typeof suffix !== 'string' || !suffix || !Array.isArray(operations) || !operations.length) throw new Error('artifactBrief: the checkpoint contract was not inlined from checkpoint.schema.json')
+    const schema = schemaOption(helper, contract)
     const progress = `${candidate}${suffix}`
-    const binding = ['--candidate', candidate, '--schema-json', canonicalJson(schema), '--revision', revision, '--progress-file', progress]
+    const binding = ['--candidate', candidate, ...schema, '--revision', revision, '--progress-file', progress]
     const command = operation => ['python3', helper, operation, ...binding].map(quote).join(' ')
     return `\n\nARTIFACT CONTRACT DATA:
 Candidate: ${candidate}
-Progress: ${progress}
+${schema[0] === '--schema' ? `Contract: ${schema[1]}\n` : ''}Progress: ${progress}
 Input revision: ${revision}
 ${operations.map(operation => `Command ${operation}: ${command(operation)}`).join('\n')}`
   }
-  async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, schema, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false, recordArgv = [], researchAgent = '', researchRepo = '' }) {
-    const args = ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), '--candidate', candidate, '--final', file, '--schema-json', canonicalJson(schema), ...(revision ? ['--revision', revision] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(counts.length ? ['--counts', counts.join(',')] : []), ...(projection ? ['--projection', projection] : []), ...(probe ? ['--probe'] : []), ...(probe && researchAgent && researchRepo ? ['--research-agent', researchAgent, '--research-repo', researchRepo] : []), ...(!returned ? ['--recover'] : [])]
+  async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, contract = null, schema: schemaObject = null, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false, recordArgv = [], researchAgent = '', researchRepo = '' }) {
+    let schema
+    try {
+      schema = schemaOption(runner, contract || schemaObject)
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) }
+    }
+    const args = ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), '--candidate', candidate, '--final', file, ...schema, ...(revision ? ['--revision', revision] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(counts.length ? ['--counts', counts.join(',')] : []), ...(projection ? ['--projection', projection] : []), ...(probe ? ['--probe'] : []), ...(probe && researchAgent && researchRepo ? ['--research-agent', researchAgent, '--research-repo', researchRepo] : []), ...(!returned ? ['--recover'] : [])]
     if (!Array.isArray(recordArgv) || recordArgv.some(word => typeof word !== 'string' || !word)) return { ok: false, error: 'invalid artifact recorder argv' }
     const argv = recordArgv.length ? ['python3', runner.replace(/[^/]+$/, 'artifactpublish.py'), '--record-argv-json', canonicalJson(recordArgv), '--', ...args.slice(2)] : args
     const result = await run(dispatch, { label, phase, runner, argv, file: relayFile })
@@ -646,7 +677,7 @@ ${operations.map(operation => `Command ${operation}: ${command(operation)}`).joi
     if (receipts.length !== files.length || receipts.some((r, i) => r.artifactPath !== files[i] || !/^[a-f0-9]{64}$/.test(r.sha256 || '') || !Number.isSafeInteger(r.bytes) || r.bytes < 1 || r.format !== 'text')) return { ok: false, error: 'invalid document receipt' }
     return { ok: true, receipts }
   }
-  return { ARTIFACT_SCHEMA, artifactBrief, acceptArtifact, authorArtifact, artifactRevision, documentReceipt, canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, unflatten, parse, SCHEMA }
+  return { ARTIFACT_SCHEMA, contractPath, schemaOption, artifactBrief, acceptArtifact, authorArtifact, artifactRevision, documentReceipt, canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, unflatten, parse, SCHEMA }
 })()
 // ===== SHARED BLOCK relay — END =====
 
@@ -705,8 +736,6 @@ async function settleAgent(prompt, opts) {
 //   pluginRoot:   string,   // absolute path of this plugin's root
 //   workDir:      string,   // absolute path of a directory for this run's files
 //   task:         string,   // the one Task assessed
-//   projectRoot?: string,
-//   archPath?:    string,
 //   score?:       boolean,  // false: do not trigger scoring. Default true.
 //   apply?:       boolean,  // false: apply-edges runs as a dry run and nothing else is written. Default true.
 // }
@@ -723,8 +752,7 @@ const PATH_ARGS = ['repoPath', 'pluginRoot', 'workDir']
 // RESOLVE_PY loads the names from that schema. pluginRoot has none of its own: it is the
 // agent-teams-workforce install that $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records.
 // workDir has none either: a run without one gets a new directory from mkdtemp.
-const ENV_CONSTANT_OF = { repoPath: 'CONTROL_REPO_ENV', archPath: 'ARCH_PATH_ENV', projectRoot: 'PROJECT_ROOT_ENV' }
-const OPTIONAL_PATH_ARGS = ['archPath', 'projectRoot']
+const ENV_CONSTANT_OF = { repoPath: 'CONTROL_REPO_ENV' }
 const isAbsolute = (v) => typeof v === 'string' && v.trim().startsWith('/')
 const RESOLVE_PY = `import json, os, tempfile, time
 from pathlib import Path
@@ -796,17 +824,16 @@ if "workDir" in wanted:
 out["since"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 out["problems"] = problems
 emit(out)`
-// Fills each path arg the caller left out, and only from the environment: repoPath, archPath and
-// projectRoot from the variables ENV_CONSTANT_OF names (their names loaded from the driver surface
-// schema), pluginRoot from the agent-teams-workforce install that
+// Fills each path arg the caller left out, and only from the environment: repoPath from the variable
+// ENV_CONSTANT_OF names (its name loaded from the driver surface schema), pluginRoot from the agent-teams-workforce install that
 // $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records (the install for the CONTROL_REPO_ENV
 // repository first, else the user-scope one), and workDir from mkdtemp. One runner session reads them,
 // dispatched only when an arg is missing. Returns { args, missing, problems, envOf }:
 // `missing` names every required arg still without a value, and the caller refuses before dispatching
-// any other agent. An optional path arg the environment does not supply stays absent.
+// any other agent.
 async function resolveArgs(given, name, required) {
   const out = { ...given }
-  const lacking = [...PATH_ARGS, ...OPTIONAL_PATH_ARGS].filter((k) => !isAbsolute(out[k]))
+  const lacking = PATH_ARGS.filter((k) => !isAbsolute(out[k]))
   const problems = {}
   let envOf = {}
   if (lacking.length) {
@@ -865,7 +892,6 @@ const file = (name) => `${work}/${name}`
 const cmd = (sub, extra) => `python3 ${shq(DS)} ${sub} -C ${shq(repo)}${extra ? ` ${extra}` : ''}`
 const scope = `--task ${shq(target)}`
 const applies = a.apply !== false
-const project = { repoPath: repo, pluginRoot: a.pluginRoot, archPath: a.archPath, projectRoot: a.projectRoot }
 
 const planFile = file('assess-plan.json')
 const contextFile = file('context.json')
@@ -901,45 +927,10 @@ const context = planned.error ? null : await depscore('assess-context', `assess-
 const contextFailure = planned.error ? { step: 'assess-plan', ...planned } : context.error ? { step: 'assess-context', ...context } : null
 const contextError = contextFailure ? `${contextFailure.step}: ${contextFailure.error}` : ''
 
-const EDGE_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['from', 'to', 'reason', 'confidence'],
-  properties: {
-    from: { type: 'string' },
-    to: { type: 'string' },
-    reason: { type: 'string' },
-    confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
-    answers: { type: 'string' },
-  },
-}
-const WITHDRAWAL_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['from', 'to', 'reason'],
-  properties: { from: { type: 'string' }, to: { type: 'string' }, reason: { type: 'string' } },
-}
-const ASSESS_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['proposal', 'valid', 'relatedRead'],
-  properties: {
-    proposal: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['edges', 'withdrawn', 'elements'],
-      properties: {
-        edges: { type: 'array', items: EDGE_SCHEMA },
-        withdrawn: { type: 'array', items: WITHDRAWAL_SCHEMA },
-        elements: { type: 'array', items: { type: 'string', minLength: 1 } },
-      },
-    },
-    valid: { type: 'boolean' },
-    findings: { type: 'object' },
-    relatedRead: { type: 'array', items: { type: 'string' } },
-    unsure: { type: 'array', items: { type: 'string' } },
-  },
-}
+// The edge file the session writes, by its contract file: the prompt names the file, and
+// jsonartifact.py validates the candidate against it.
+const EDGE_CONTRACT = 'skills/artifact-handoff/schemas/task-edge-proposal.schema.json'
+const CONTEXT_CONTRACT = 'skills/artifact-handoff/schemas/dependency-assessment.schema.json#/$defs/TaskContext'
 const THE_TEST = `THE TEST. An edge from A to B says B cannot be built until A is built, because B consumes something A provides — an API, a table, an IAM grant, a deployed resource. A producer of an event never depends on a routing rule or its target, and a routing rule or its target never depends on a producer: both depend only on the central event API and the bus. Sharing a domain, a vocabulary, a repository or an Epic is not an edge. Both ends are Tasks: no end is a Story or an Epic. When in doubt an edge is left out, because a false edge serializes work that could run in parallel.`
 const priorBlock = typeof a.priorFailure === 'string' && a.priorFailure.trim()
   ? `THE PREVIOUS ASSESSMENT OF THIS ITEM FAILED, on this same content: ${a.priorFailure.trim().slice(0, 2000)}\nWork out why before you start, and do not repeat it.\n\n`
@@ -951,7 +942,7 @@ const assessPrompt = `${priorBlock}Assess the build dependencies of ONE Task, ${
 
 ${THE_TEST}
 
-The workflow has already written ${contextFile}, the material you start from. Its \`task\` holds ${target}'s title, its Epic, \`elements\` (the matrix ids its \`${ELEMENTS_KEY}\` key states: its stack, the entries it builds and the shared capabilities it uses), \`stacks\` (the stacks those ids name, and the stacks that hold the entries they name) and \`unmatched\` (stated ids that are the id of no matrix entry). \`stacks\` lists, for each of those stacks: \`work\`, the open Tasks that name the stack or an entry it holds (\`atw-matrix work --id\`), each as {task, title, status, story, epic, names}; \`dependsOn\`, what the stack depends on (\`atw-matrix deps --of\`); and \`dependents\`, what depends on it (\`atw-matrix deps --on\`), each dependency with its relationship kind and the stack that holds the far end. \`standing\` lists every edge between ${target} and another open Task, in either direction, as {from, to, type, owned, reason, confidence, setBy, setAt} — \`from\` is the Task built first, \`reason\` the one recorded when the edge was set, or null. \`withdrawn\` lists every edge touching ${target} that an earlier assessment WITHDREW, as {from, to, reason, withdrawnBy, withdrawnAt}: that edge was judged not to exist, for the reason recorded. Setting it again is admitted only when you answer that reason.
+The workflow has already written ${contextFile}, the material you start from. Its contract is \`${CONTEXT_CONTRACT}\` (path from the plugin root \`${PLUGIN}\`); the descriptions there say what each member holds.
 
 Read a Task with \`${BEADS} contract <id>\`, which prints its title, its description, the build contract it carries and the matrix ids it states. Read the matrix with \`${MATRIX} <command>\`: a read needs no role, and every command prints one JSON object.
 
@@ -961,25 +952,25 @@ Work in this order:
 3. Find the related Tasks from the matrix, not by searching: the open Tasks in each stack's \`work\`, and the open Tasks that name a stack ${target}'s stack depends on or that depends on it — \`${MATRIX} work --id <that stack's id>\` for each stack in \`dependsOn\` and \`dependents\`. Among them, the related Tasks are those that provide what ${target} consumes or consume what it provides. Read no Task these lookups did not return.
 4. Read in full every related Task, and the Task at the other end of every standing edge.
 5. Apply the test in both directions: an edge from another Task to ${target} where ${target} consumes what that Task provides, and an edge from ${target} to another Task where that Task consumes what ${target} provides.
-6. Write ${candidateFile} as {"edges": [{"from", "to", "reason", "confidence", "answers"}], "withdrawn": [{"from", "to", "reason"}], "elements": [<matrix id>]}. \`elements\` is [] when the context's \`task.elements\` is not empty; otherwise it holds the matrix ids you named in step 2, the stack first, each the id of an entry the matrix holds, and [] only when the matrix holds no stack for what ${target} builds, which you state in ${reasoningFile}. The workflow writes \`elements\` to ${target}; nothing you return is written into the matrix, and you run no \`put\`, no \`link\` and no write to a bead. \`answers\` is required only on an edge the context's \`withdrawn\` list covers: state why the recorded withdrawal reason is wrong. An edge you cannot answer that way is not set — the earlier judgment stands. \`edges\` holds EVERY edge to or from ${target} that passes the test — a standing one it keeps included — and no edge that does not touch ${target}. \`withdrawn\` holds every standing edge with \`owned: true\` that is not in \`edges\`, with a reason that answers the reason recorded for it. Every reason names the artifact and which Task provides it; \`confidence\` is \`high\`, \`medium\` or \`low\`. A standing edge with \`owned: false\` was made by hand: leave it out of both lists. No edge is a valid result. Write the reasoning, per edge and per withdrawal, to ${reasoningFile}.
+6. Write ${candidateFile} to its contract, named below (\`${EDGE_CONTRACT}\`); the descriptions there define every member, which edges and withdrawals it holds and when \`elements\` names ids. An edge the context's \`withdrawn\` list covers that you cannot answer is not set: the earlier judgment stands. The workflow writes \`elements\` to ${target}; nothing you return is written into the matrix, and you run no \`put\`, no \`link\` and no write to a bead. Write the reasoning, per edge and per withdrawal, to ${reasoningFile}.
 7. Validate: \`set -o pipefail; ${cmd('validate', `--edges ${shq(candidateFile)} ${scope}`)} | tee ${shq(selfCheckFile)}\` — revise the file until \`ok\` is true, keeping to THE TEST: an edge that fails the test is dropped, never kept to satisfy the validator; an owned standing edge you drop goes in \`withdrawn\` with a reason. It refuses an edge that does not touch ${target}, an edge whose ends are not both open Tasks, a missing reason, an edge an earlier assessment withdrew that carries no \`answers\`, an owned standing edge left unaccounted, a withdrawal of an edge that is not an owned standing edge, and a cycle against every other Task edge. A cycle you cannot remove by dropping one of your own edges that fails the test — one through an edge with \`owned: false\` — is reported, not forced: record the failed validation, its findings and the cycle in the reasoning document.
 
 Do not run apply-edges or any other command that writes to the tracker or the matrix: the workflow validates the proposal you return, applies it and writes \`elements\` itself.
 
-Record your validation findings, every related item read and any uncertainty in ${reasoningFile}. Return only the authored candidate reference.${relayKit.artifactBrief(candidateFile, ASSESS_SCHEMA.properties.proposal, inputRevision, RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`
+Record your validation findings, every related item read and any uncertainty in ${reasoningFile}. Return only the authored candidate reference.${relayKit.artifactBrief(candidateFile, EDGE_CONTRACT, inputRevision, RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`
 
 const assess = () => settleAgent(assessPrompt, {
       label: `task-dependency-mapper:${target}`,
       phase: 'Assess',
       effort: 'medium',
-      agentType: 'task-dependency-mapper',
+      agentType: 'task-dependency-mapper', // model: its definition's front matter sets it (fable, with the fable block's fallback)
       schema: relayKit.ARTIFACT_SCHEMA,
     })
 
 // The authoritative candidate is validated and published before any tracker mutation.
 const saved = !contextError && !dispatchInterruption ? await relayKit.authorArtifact(settleAgent, {
   label: 'save-edges', phase: 'Assess', runner: RUNNER, candidate: candidateFile, file: edgesFile,
-  schema: ASSESS_SCHEMA.properties.proposal, revision: inputRevision, relayFile: file('relay/accepted-edges.json'), counts: ['edges', 'withdrawn'], keys: ['elements'],
+  contract: EDGE_CONTRACT, revision: inputRevision, relayFile: file('relay/accepted-edges.json'), counts: ['edges', 'withdrawn'], keys: ['elements'],
 }, assess, () => !!dispatchInterruption) : null
 const accepted = !!(saved && saved.ok)
 const validation = saved && saved.ok ? await depscore('validate', `validate --edges ${shq(edgesFile)} ${scope}`) : null
@@ -1083,7 +1074,7 @@ const scores = applies && settled && a.score !== false
 if (scores) {
   phase('Score')
   try {
-    scoring = await settleWorkflow('agent-teams-workforce:wsjf-scoring', { ...project, workDir: file('scoring') })
+    scoring = await settleWorkflow('agent-teams-workforce:wsjf-scoring', { repoPath: repo, pluginRoot: a.pluginRoot, workDir: file('scoring') })
   } catch (err) {
     scoring = { ok: false, error: String((err && err.message) || err).slice(0, 500) }
   }

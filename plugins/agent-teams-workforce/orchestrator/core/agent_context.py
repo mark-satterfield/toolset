@@ -8,6 +8,7 @@ launcher passes no agent or skill text and computes no flag from them.
 
 from __future__ import annotations
 
+import functools
 import json
 import shlex
 import sys
@@ -18,6 +19,11 @@ from types import MappingProxyType
 from typing import Final
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
+
+from . import portfolio_bootstrap  # ruff: ignore[unused-import] - Imported for its sys.path setup.
+
+# isort: split
+import strictschema
 
 from .frontmatter import split_front_matter
 from .io import JsonValue, json_object, write_json
@@ -37,6 +43,10 @@ SESSION_ENV: Final[Mapping[str, str]] = MappingProxyType({SPAWN_DEPTH_ENV: "1", 
 BASH_OUTPUT_KEY: Final = "bashOutputMaxChars"
 BASH_OUTPUT_LIMIT: Final = 128_000
 """Claude Code's largest inline command output, so a command's output is not cut to a preview."""
+BRIEF_SCHEMA: Final[Path] = (
+    Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "schemas" / "agent-brief.schema.json"
+)
+"""The contract of the brief every session is sent, which :func:`brief` checks before a session starts."""
 
 
 class PipelineStoppedError(RuntimeError):
@@ -256,6 +266,17 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
     return command
 
 
+@functools.cache
+def _brief_contract() -> dict[str, JsonValue]:
+    """Read the brief's contract file once per process.
+
+    Returns:
+        The schema of :data:`BRIEF_SCHEMA`.
+
+    """
+    return json_object(json.loads(BRIEF_SCHEMA.read_text(encoding="utf-8")))
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def brief(
     bead: str,
@@ -266,6 +287,7 @@ def brief(
 ) -> str:
     """Serialize the one-line outcome and selected inputs for an agent.
 
+    The brief is ``agent-brief.schema.json`` (:data:`BRIEF_SCHEMA`), and is checked against it.
     A step that states what is asked sends it as ``request``, and a step of the bead's step
     journal sends its id as ``step``.
 
@@ -290,4 +312,5 @@ def brief(
         facts["request"] = step.request
     if step.journal_step is not None:
         facts["step"] = step.journal_step
+    strictschema.validate(facts, _brief_contract(), location=BRIEF_SCHEMA)
     return json.dumps(facts, ensure_ascii=False)

@@ -6,8 +6,9 @@ user-invocable: false
 
 # Direct specialist session
 
-Perform the role in your definition. The brief gives a bead, the journal step id, the request,
-input paths and an output path. It names only the inputs this step needs. The skills your
+Perform the role in your definition. The brief is the artifact-handoff skill's
+`schemas/agent-brief.schema.json`, which states each member and the input labels; it names only
+the inputs this step needs. The skills your
 definition lists are in your context; read the applicable contract before writing. The artifact-handoff skill is the shared producer/reviewer authority.
 Write the result file; Python validates it, records it in the step journal and keeps pipeline state.
 Start another agent only when your definition has a `startsRoles` list, and only agents with
@@ -42,35 +43,13 @@ and never a finding.
 
 ## Helpers and the journal
 
-An agent that starts other agents inside its own session and then continues follows one pattern,
-with `atw-step-journal` and the journal file its brief names:
-
-1. Write your own output first: the file your definition names as your first output.
-2. When you start your first agent, add it as a child step of your own step
-   (`atw-step-journal add --parent <your step> --agent <agent> --description "<what it does>"
-   --purpose "<why>"`, where `<agent>` is the agent's own name, the `name` its definition states,
-   such as `trd-author`; the command refuses a name no agent definition has), and add one last child step whose description is "Finish", with yourself
-   as the agent and your own step in its `inputs`. `--steps-json` adds several child steps in one
-   write.
-3. Add each further agent as a child before "Finish" (`--after <sibling id>`). Mark each child
-   running when you start it (`atw-step-journal start --step <id>`), and record the request file
-   you wrote for it at once (`atw-step-journal artifact --step <id> --name request --kind file
-   --path <path>`). When the agent returns, record the file it returned as the artifact `answer`
-   and mark the child done (`atw-step-journal done --step <id>`).
-4. When your work is complete, record your result as the artifact of "Finish", under the name
-   your definition gives it, and mark "Finish" done. Your own step is then done.
-5. After an interruption the script launches the first child that is not done: an agent left
-   running is launched from the `request` file its step holds, and "Finish" is launched as you.
-   Launched for "Finish", read your own output, the `answer` files and your partial result, and
-   continue.
-
-The names are fixed, because the script reads them: `request` (or `question`, for a question file
-to `architecture-question.schema.json`) for what an agent is asked, `answer` for what a specialist
-returned, `ruling` for a decider's ruling, `review` for a review. A step is handed the artifacts
-of the steps its `inputs` name, and of the steps below them.
-
-An agent that adds steps for the script to run, and starts no agent itself, records the file a
-step needs on its own step under the same names and names its own step in that step's `inputs`.
+An agent that starts other agents inside its own session, or adds steps for the script to run,
+follows the helper protocol: the pipeline-contracts skill's `schemas/helper-steps.schema.json`
+states the order of the child steps, the fixed artifact names the script reads, the closing
+`Finish` step and what happens after an interruption. It works through `atw-step-journal` on
+the journal file its brief names; `atw-step-journal --help` gives each command's arguments. A
+helper whose answer file is on disk and valid is recorded done by the script when it reaches
+that step, so an interruption never redoes it.
 
 An agent that starts no other agent adds no step.
 

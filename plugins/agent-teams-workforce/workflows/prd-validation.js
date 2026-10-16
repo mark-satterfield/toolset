@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-validation',
   description:
-    'Leaf mini — PRD Validation. One read-only analyst session inspects a PRD through seven lenses (requirement class, ambiguity, completeness, conflict, constraints, domain boundaries, clarifications), plus an informational BRD traceability mapping when args.brd is supplied; the script consolidates the findings and fails the PRD only on a blocker finding. The requirement-class lens classifies every requirement as business or technical and asks the matrix whether the architecture already states each technical rule (atw-matrix find --kinds constraint,document, then node); a technical requirement is a major finding, since a PRD keeps business requirements only. The script records in the matrix each technical rule no document states, as a constraint that applies to the Epic and is stated in no document (atw-matrix put constraint, then link appliesTo), and the validation fails when a rule is not recorded.',
+    'Leaf mini — PRD Validation. One read-only analyst session inspects a PRD through seven lenses (requirement class, ambiguity, completeness, conflict, constraints, domain boundaries, clarifications), plus an informational BRD traceability mapping when args.brdPath names a BRD file; the PRD (args.prd.path), the BRD and the boundary notes (args.contextPath) are handed by path and the analysis is written to its contract file (skills/artifact-handoff/schemas/prd-validation-analysis.schema.json); the script consolidates the findings and fails the PRD only on a blocker finding. The requirement-class lens classifies every requirement as business or technical and asks the matrix whether the architecture already states each technical rule (atw-matrix find --kinds constraint,document, then node); a technical requirement is a major finding, since a PRD keeps business requirements only. The script records in the matrix each technical rule no document states, as a constraint that applies to the Epic and is stated in no document (atw-matrix put constraint, then link appliesTo), and the validation fails when a rule is not recorded.',
   phases: [{ title: 'Validate', detail: 'one analyst session inspects the PRD through every lens' }],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -93,7 +93,7 @@ function captureDispatchInterruption(err, name) {
 }
 // END interruption propagation
 
-// ===== SHARED BLOCK relay — BEGIN (canonical: scripts/shared-blocks/relay.js; filled from skills/artifact-handoff/schemas/checkpoint.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
+// ===== SHARED BLOCK relay — BEGIN (canonical: scripts/shared-blocks/relay.js; filled from skills/artifact-handoff/schemas/{checkpoint,relay-command-result,relay-registered-result,artifact-reference}.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
 // ── CHECKED RELAY: deterministic work reaches this script unaltered, or not at all ──
 //
 // A workflow script cannot run a command or read a file. A command reaches the shell only as
@@ -219,13 +219,12 @@ const relayKit = (() => {
     if (word !== null) words.push(word)
     return words
   }
-  /** A runner's return: the exit status and stdout, verbatim, as one string. Nothing is rebuilt. */
-  const SCHEMA = {
-    type: 'object',
-    additionalProperties: false,
-    required: ['exitCode', 'stdout'],
-    properties: { exitCode: { type: 'integer' }, stdout: { type: 'string', description: 'Copy the complete RELAY64v1: line verbatim. Treat its base64 payload as opaque text; never decode or reconstruct it.' } },
-  }
+  // The runner's results and the producer's artifact reference, inlined by scripts/shared-blocks.mjs
+  // from their contract files in skills/artifact-handoff/schemas/ (relay-command-result,
+  // relay-registered-result, artifact-reference). Never restate any part of them here.
+  const SCHEMA = {"$schema":"https://json-schema.org/draft/2020-12/schema","description":"What the workflow-command-runner returns for an assignment that names its command itself (no WORKFORCE_RELAY_BINDING_V1 line): the command's exit status and its stdout, verbatim. Nothing in it is rebuilt: the workflow script (the relay shared block, scripts/shared-blocks/relay.js) checks the copy against the checksum it carries and, when the copy fails, reads the relay file the command saved instead.","type":"object","additionalProperties":false,"required":["exitCode","stdout"],"properties":{"exitCode":{"description":"The exit status of the one command the assignment named.","type":"integer"},"stdout":{"description":"The complete RELAY64v1: line the command printed, copied verbatim: every character as printed, in order, including the prefix and any trailing = characters, with nothing added, removed, reordered or re-typed. Treat its base64 payload as opaque text; never decode or reconstruct it. When the command printed more than one line, all of stdout verbatim.","type":"string"}}}
+  const REGISTERED_SCHEMA = {"$schema":"https://json-schema.org/draft/2020-12/schema","description":"What the workflow-command-runner returns for a registered assignment (one carrying the WORKFORCE_RELAY_BINDING_V1 and WORKFORCE_RELAY_REQUEST_V1 lines). The runner returns the small object the registered helper printed; the plugin's PreToolUse hook supplies the exact saved output. When the runner's Bash call fails, it returns the unknown result: state unknown, exitCode 0, stdout empty, receipt null, bridge false, error empty, so the hook reports the real saved state. The workflow script (the relay shared block, scripts/shared-blocks/relay.js) accepts a completed result only when its receipt matches the request, the command checksum, the exit status, the byte count and the SHA-256 of stdout.","type":"object","additionalProperties":false,"required":["state","exitCode","stdout","receipt","bridge","error"],"properties":{"state":{"description":"completed: the command ran and its saved output is handed back. not-started: the request provably never ran; the workflow, not the runner, decides whether it is attempted again. unknown: the runner could not tell (its Bash call failed); every other field then holds its empty value (exitCode 0, stdout empty, receipt null, bridge false, error empty).","type":"string","enum":["completed","not-started","unknown"]},"exitCode":{"description":"The exit status of the registered command.","type":"integer"},"stdout":{"description":"The command's saved stdout, verbatim. Never interpret, reconstruct or copy the payload by hand.","type":"string"},"receipt":{"description":"The integrity receipt of the saved output, or null when there is none.","anyOf":[{"description":"Binds a saved output to the request that produced it.","type":"object","additionalProperties":false,"required":["request","commandSha256","sha256","bytes","exitCode"],"properties":{"request":{"description":"The request id the workflow script computed for this command.","type":"string"},"commandSha256":{"description":"The SHA-256 of the canonical JSON of the command's argument list.","type":"string"},"sha256":{"description":"The SHA-256 of stdout.","type":"string"},"bytes":{"description":"The length of stdout.","type":"integer"},"exitCode":{"description":"The exit status the saved output records.","type":"integer"}}},{"type":"null"}]},"bridge":{"description":"true only on the result the hook itself supplies; the runner's own result always carries false, and the workflow reads any other value as the runner's copy.","type":"boolean"},"error":{"description":"Why the outcome is not completed, or empty.","type":"string"}}}
+  const ARTIFACT_SCHEMA = {"$schema":"https://json-schema.org/draft/2020-12/schema","description":"What a producer session returns after it authored a JSON artifact under the artifact checkpoint contract (checkpoint.schema.json): only the path of the candidate it wrote, never a copy of its content. The workflow script then validates the candidate against its contract file and publishes it (scripts/portfolio/jsonartifact.py).","type":"object","additionalProperties":false,"required":["artifactPath"],"properties":{"artifactPath":{"description":"The candidate path the brief named, as the submit command printed it.","type":"string"}}}
   const HEX = /^[0-9a-f]{64}$/
   /** The relay's own keys in a printed envelope; every other key is a leaf of the flat view. */
   const RELAY_KEYS = ['~file', '~sha256', '~bytes', '~exit', '~checksum']
@@ -315,10 +314,8 @@ const relayKit = (() => {
 
 ${command}
 
-It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy that entire line as opaque text, including the prefix and any trailing = characters. Do not decode the base64, interpret its contents, or rebuild the JSON. Return the process exit code as \`exitCode\` and that line, verbatim, as the string \`stdout\`: every character as printed, in order, with nothing added, removed, reordered, reformatted or re-typed. Do not parse it, do not summarize it. If it printed more than one line, return all of stdout verbatim. Do not retry, do not repair, do not run any other command.`
+It prints exactly one line beginning RELAY64v1: followed by base64 text. Return its exit status and that line as your output schema describes (contract: skills/artifact-handoff/schemas/relay-command-result.schema.json). Do not retry, do not repair, do not run any other command.`
   let captureOrdinal = 0
-  const RECEIPT_SCHEMA = { type: 'object', additionalProperties: false, required: ['request', 'commandSha256', 'sha256', 'bytes', 'exitCode'], properties: { request: { type: 'string' }, commandSha256: { type: 'string' }, sha256: { type: 'string' }, bytes: { type: 'integer' }, exitCode: { type: 'integer' } } }
-  const REGISTERED_SCHEMA = { type: 'object', additionalProperties: false, required: ['state', 'exitCode', 'stdout', 'receipt', 'bridge', 'error'], properties: { state: { type: 'string', enum: ['completed', 'not-started', 'unknown'] }, exitCode: { type: 'integer' }, stdout: { type: 'string' }, receipt: { anyOf: [RECEIPT_SCHEMA, { type: 'null' }] }, bridge: { type: 'boolean' }, error: { type: 'string' } } }
   async function registeredCommand(dispatch, { label, phase, command }, ordinal) {
     const argv = shellWords(command)
     const commandSha256 = sha256Json(argv)
@@ -539,26 +536,60 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
     if (r.exit !== 0) return { ok: false, error: String(r.view.error || `exited ${r.exit}`) }
     return { ok: true, view: r.view }
   }
-  const ARTIFACT_SCHEMA = { type: 'object', additionalProperties: false, required: ['artifactPath'], properties: { artifactPath: { type: 'string' } } }
   // The artifact checkpoint contract, inlined by scripts/shared-blocks.mjs from its one place,
   // skills/artifact-handoff/schemas/checkpoint.schema.json. Never restate any part of it here.
   const CHECKPOINT_SCHEMA = {"$schema":"https://json-schema.org/draft/2020-12/schema","title":"Artifact checkpoint","description":"The sidecar <candidate><x-sidecarSuffix> that artifactcontract.py checkpoint|complete|submit writes and artifactcontract.py status and jsonartifact.py read. It is built from the agent-authored progress file <candidate><x-progressSuffix> ($defs/Progress) plus the binding keys. The Python types are generated from this file by scripts/generate_checkpoint_contract.py.","x-sidecarSuffix":".checkpoint","x-progressSuffix":".progress.json","x-bindingKeys":["artifactPath","schemaSha256","revision"],"x-authoredStatuses":["in-progress","blocked"],"x-operations":["validate","checkpoint","complete","submit","status"],"type":"object","additionalProperties":false,"required":["status","artifactPath","schemaSha256","revision","task","completed","remaining","artifacts"],"properties":{"status":{"enum":["in-progress","blocked","complete"]},"artifactPath":{"$ref":"#/$defs/ArtifactPath"},"schemaSha256":{"$ref":"#/$defs/Sha256"},"candidateSha256":{"$ref":"#/$defs/Sha256"},"revision":{"$ref":"#/$defs/Revision"},"task":{"$ref":"#/$defs/Progress/properties/task"},"completed":{"$ref":"#/$defs/Progress/properties/completed"},"remaining":{"$ref":"#/$defs/Progress/properties/remaining"},"artifacts":{"$ref":"#/$defs/Progress/properties/artifacts"},"reason":{"$ref":"#/$defs/Progress/properties/reason"}},"allOf":[{"if":{"properties":{"status":{"const":"complete"}}},"then":{"required":["candidateSha256"],"properties":{"remaining":{"maxItems":0}}}},{"if":{"properties":{"status":{"const":"blocked"}}},"then":{"required":["reason"],"properties":{"remaining":{"minItems":1}}}}],"$defs":{"ArtifactPath":{"description":"The absolute candidate path; a binding key.","type":"string","minLength":1},"Revision":{"description":"The input revision; a binding key.","type":"string","minLength":1},"Sha256":{"description":"Lowercase hex SHA-256 of a canonical JSON value.","type":"string","pattern":"^[a-f0-9]{64}$"},"Progress":{"description":"The agent-authored progress file <candidate><x-progressSuffix>; its keys are copied into the checkpoint.","type":"object","additionalProperties":false,"required":["task","completed","remaining","artifacts"],"properties":{"task":{"type":"string","minLength":1},"completed":{"type":"array","items":{"type":"string","minLength":1}},"remaining":{"type":"array","items":{"type":"string","minLength":1}},"artifacts":{"type":"array","items":{"type":"string","minLength":1}},"reason":{"type":"string","minLength":1}}},"StatusReport":{"description":"What the status operation reports for a candidate.","type":"object","additionalProperties":false,"required":["status"],"properties":{"status":{"enum":["incomplete","in-progress","blocked","complete-unaccepted"]},"reason":{"type":"string"},"remaining":{"$ref":"#/$defs/Progress/properties/remaining"},"artifactPath":{"$ref":"#/$defs/ArtifactPath"},"schemaSha256":{"$ref":"#/$defs/Sha256"},"revision":{"$ref":"#/$defs/Revision"},"candidateSha256":{"$ref":"#/$defs/Sha256"}}},"CommandResult":{"description":"What the validate, checkpoint, complete and submit operations print; status is absent only for submit.","type":"object","additionalProperties":false,"required":[],"properties":{"status":{"enum":["schema-valid","complete-unaccepted","in-progress","blocked","invalid"]},"artifactPath":{"$ref":"#/$defs/ArtifactPath"},"error":{"type":"string","minLength":1}}}}}
-  function artifactBrief(candidate, schema, revision = '', helper) {
+  /**
+   * The absolute path of a contract file. `contract` is the file's path relative to the plugin
+   * root, optionally followed by #<JSON pointer> naming the schema inside it (for example
+   * 'skills/artifact-handoff/schemas/x.schema.json#/$defs/Proposal'); `script` is the absolute path
+   * of any script in the plugin's scripts/portfolio/ folder, from which the plugin root is known.
+   */
+  function contractPath(script, contract) {
+    const at = /^(.*\/)scripts\/portfolio\/[^/]+$/.exec(String(script || ''))
+    if (!at) throw new Error(`contractPath: ${JSON.stringify(script)} is not a script in the plugin's scripts/portfolio/ folder`)
+    if (typeof contract !== 'string' || !/^[A-Za-z0-9_-][A-Za-z0-9._/-]*\.json(#\/[^\s']*)?$/.test(contract) || contract.split('#')[0].split('/').includes('..')) {
+      throw new Error(`contractPath: ${JSON.stringify(contract)} is not a contract file path relative to the plugin root`)
+    }
+    return `${at[1]}${contract}`
+  }
+  /**
+   * The helper's schema option for `contract`: a contract file path (see contractPath) becomes
+   * `--schema <absolute path>`; a schema object, the form older callers pass, becomes
+   * `--schema-json <canonical JSON>`.
+   */
+  function schemaOption(script, contract) {
+    if (contract && typeof contract === 'object' && !Array.isArray(contract)) return ['--schema-json', canonicalJson(contract)]
+    return ['--schema', contractPath(script, contract)]
+  }
+  /**
+   * The brief text that binds a producer session to its candidate: the candidate, the progress
+   * file, the input revision, the contract file the candidate must satisfy (named, never pasted)
+   * and the artifactcontract.py command of each checkpoint operation.
+   */
+  function artifactBrief(candidate, contract, revision = '', helper) {
     if (typeof helper !== 'string' || !helper) throw new Error('artifactBrief requires the artifactcontract.py helper path')
     const suffix = CHECKPOINT_SCHEMA['x-progressSuffix']
     const operations = CHECKPOINT_SCHEMA['x-operations']
     if (typeof suffix !== 'string' || !suffix || !Array.isArray(operations) || !operations.length) throw new Error('artifactBrief: the checkpoint contract was not inlined from checkpoint.schema.json')
+    const schema = schemaOption(helper, contract)
     const progress = `${candidate}${suffix}`
-    const binding = ['--candidate', candidate, '--schema-json', canonicalJson(schema), '--revision', revision, '--progress-file', progress]
+    const binding = ['--candidate', candidate, ...schema, '--revision', revision, '--progress-file', progress]
     const command = operation => ['python3', helper, operation, ...binding].map(quote).join(' ')
     return `\n\nARTIFACT CONTRACT DATA:
 Candidate: ${candidate}
-Progress: ${progress}
+${schema[0] === '--schema' ? `Contract: ${schema[1]}\n` : ''}Progress: ${progress}
 Input revision: ${revision}
 ${operations.map(operation => `Command ${operation}: ${command(operation)}`).join('\n')}`
   }
-  async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, schema, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false, recordArgv = [], researchAgent = '', researchRepo = '' }) {
-    const args = ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), '--candidate', candidate, '--final', file, '--schema-json', canonicalJson(schema), ...(revision ? ['--revision', revision] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(counts.length ? ['--counts', counts.join(',')] : []), ...(projection ? ['--projection', projection] : []), ...(probe ? ['--probe'] : []), ...(probe && researchAgent && researchRepo ? ['--research-agent', researchAgent, '--research-repo', researchRepo] : []), ...(!returned ? ['--recover'] : [])]
+  async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, contract = null, schema: schemaObject = null, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false, recordArgv = [], researchAgent = '', researchRepo = '' }) {
+    let schema
+    try {
+      schema = schemaOption(runner, contract || schemaObject)
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) }
+    }
+    const args = ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), '--candidate', candidate, '--final', file, ...schema, ...(revision ? ['--revision', revision] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(counts.length ? ['--counts', counts.join(',')] : []), ...(projection ? ['--projection', projection] : []), ...(probe ? ['--probe'] : []), ...(probe && researchAgent && researchRepo ? ['--research-agent', researchAgent, '--research-repo', researchRepo] : []), ...(!returned ? ['--recover'] : [])]
     if (!Array.isArray(recordArgv) || recordArgv.some(word => typeof word !== 'string' || !word)) return { ok: false, error: 'invalid artifact recorder argv' }
     const argv = recordArgv.length ? ['python3', runner.replace(/[^/]+$/, 'artifactpublish.py'), '--record-argv-json', canonicalJson(recordArgv), '--', ...args.slice(2)] : args
     const result = await run(dispatch, { label, phase, runner, argv, file: relayFile })
@@ -610,7 +641,7 @@ ${operations.map(operation => `Command ${operation}: ${command(operation)}`).joi
     if (receipts.length !== files.length || receipts.some((r, i) => r.artifactPath !== files[i] || !/^[a-f0-9]{64}$/.test(r.sha256 || '') || !Number.isSafeInteger(r.bytes) || r.bytes < 1 || r.format !== 'text')) return { ok: false, error: 'invalid document receipt' }
     return { ok: true, receipts }
   }
-  return { ARTIFACT_SCHEMA, artifactBrief, acceptArtifact, authorArtifact, artifactRevision, documentReceipt, canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, unflatten, parse, SCHEMA }
+  return { ARTIFACT_SCHEMA, contractPath, schemaOption, artifactBrief, acceptArtifact, authorArtifact, artifactRevision, documentReceipt, canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, unflatten, parse, SCHEMA }
 })()
 // ===== SHARED BLOCK relay — END =====
 
@@ -639,13 +670,15 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
-// args: { prd: { id?, title?, body?, path?, repoPath?, brd? } | string, context?, brd?,
+// args: { prd: { id?, title?, path (the PRD file, absolute), repoPath? },
+//         brdPath? (a BRD file: its objectives turn on the informational traceability lens),
+//         contextPath? (a file of bounded-context / service-boundary notes),
 //         archPath? (the architecture root a document's id is a path under),
-//         artifacts?: { dir, relDir?, epicId (the Epic's beads id: the matrix entry epic:<epicId> is what a
+//         artifacts: { dir, relDir?, epicId (the Epic's beads id: the matrix entry epic:<epicId> is what a
 //           recorded constraint applies to), script, phase, inputs?, beadId? },
-//         pluginRoot? | relay?: { runner, dir? } (the checked relay: relayrun.py, given directly or as
-//           <pluginRoot>/scripts/portfolio/relayrun.py; the script then checks and records
-//           prd-validation.json itself; without it the analyst session records it, as before) }
+//         pluginRoot | relay: { runner, dir? } (the checked relay: relayrun.py, given directly or as
+//           <pluginRoot>/scripts/portfolio/relayrun.py; the script checks and records prd-validation.json) }
+// The PRD, the BRD and the notes are handed to the analyst by path and read there; none is pasted.
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 
 function artifactsFrom(x) {
@@ -659,17 +692,17 @@ const RELAY_RUNNER = typeof relayArg.runner === 'string' && relayArg.runner.trim
   ? relayArg.runner.trim()
   : pluginRootArg ? `${pluginRootArg}/scripts/portfolio/relayrun.py` : ''
 const ART = artifactsFrom(a.artifacts)
-const prdInput = a.prd || {}
-const prdBody = typeof prdInput === 'string' ? prdInput : prdInput.body || ''
-const prdId = typeof prdInput === 'string' ? '' : prdInput.id || ''
-const prdTitle = typeof prdInput === 'string' ? '' : prdInput.title || ''
-const repo = (typeof prdInput === 'string' ? '' : prdInput.repoPath) || '(repo path not provided)'
-const context = a.context || '(no bounded-context / service-boundary notes supplied)'
-const brd = a.brd || (typeof prdInput === 'string' ? '' : prdInput.brd) || ''
-
-
-const prdPath = typeof prdInput === 'string' ? '' : String(prdInput.path || '')
+const prdInput = a.prd && typeof a.prd === 'object' ? a.prd : {}
+const prdId = prdInput.id || ''
+const prdTitle = prdInput.title || ''
+const repo = prdInput.repoPath || '(repo path not provided)'
+const absolutePath = (v) => (typeof v === 'string' && v.trim().startsWith('/') ? v.trim() : '')
+const prdPath = absolutePath(prdInput.path)
+const brdPath = absolutePath(a.brdPath)
+const contextPath = absolutePath(a.contextPath)
 const archPath = typeof a.archPath === 'string' ? a.archPath.trim() : ''
+// The analysis contract: TracedAnalysis adds the required BRD traceability when a BRD is named.
+const ANALYSIS_CONTRACT = `skills/artifact-handoff/schemas/prd-validation-analysis.schema.json#/$defs/${brdPath ? 'TracedAnalysis' : 'Analysis'}`
 // The matrix command, beside the relay runner in the same install. The session's environment names the
 // control repository whose matrix file it reads; a read needs no role.
 const MATRIX_BIN = `${RELAY_RUNNER.replace(/\/scripts\/portfolio\/[^/]+$/, '')}/bin/atw-matrix`
@@ -678,53 +711,12 @@ const MATRIX = shq(MATRIX_BIN)
 const MATRIX_RECORD_ROLE = 'script'
 
 const prdHeader = `PRD ${prdId} ${prdTitle}`.trim()
-const prdBlock = prdPath
-  ? `${prdHeader ? prdHeader + '\n\n' : ''}The authoritative PRD is the document at ${prdPath}. Read it in full before applying any lens; supplied summaries are navigation only.`
-  : `${prdHeader ? prdHeader + '\n\n' : ''}${prdBody}`
-
-const findingItems = {
-  type: 'array',
-  items: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['requirement', 'issue', 'severity'],
-    properties: {
-      requirement: { type: 'string' },
-      issue: { type: 'string' },
-      severity: { type: 'string', enum: ['blocker', 'major', 'minor', 'info'] },
-      suggestion: { type: 'string' },
-    },
-  },
-}
+const prdBlock = `${prdHeader ? prdHeader + '\n\n' : ''}The authoritative PRD is the document at ${prdPath}. Read it in full before applying any lens.`
 
 phase('Validate')
 
-const requirementClassItems = {
-  type: 'array',
-  items: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['id', 'requirement', 'class', 'reason', 'governs', 'rule', 'archCoverage', 'archRefs'],
-    properties: {
-      id: { type: 'string' },
-      requirement: { type: 'string' },
-      class: { type: 'string', enum: ['business', 'technical'] },
-      reason: { type: 'string' },
-      governs: { type: 'string' },
-      rule: { type: 'string' },
-      archCoverage: { type: 'string', enum: ['covered', 'absent', 'unchecked', 'n/a'] },
-      archRefs: { type: 'array', items: { type: 'string' } },
-    },
-  },
-}
-
-const classLens = `REQUIREMENT CLASS (return in \`requirementClasses\`): classify EVERY requirement the PRD states, once each, as \`business\` or \`technical\`, with a one-line \`reason\`.
-- business: what a user, the business or a regulation needs, stated as an outcome that holds however the system is built ("a job seeker's data is stored only in the EU" is business).
-- technical: a rule about HOW the system is built — a named technology, resource, configuration, construct, network path or engineering standard ("every S3 bucket is versioned and SSE-S3 encrypted", "PII traffic uses VPC endpoints"). A technical requirement belongs in the architecture — a view of the element it governs, or a crosscutting concept in section 8 — not in a PRD.
-A requirement that states both is recorded as two entries with the same \`id\`: the business outcome and the technical rule.
-For a technical requirement, name in \`governs\` the kind of thing the rule governs ("S3 bucket", "Lambda function", "VPC endpoint"), and state it in \`rule\` as a condition on that thing: "where the design has an S3 bucket, the bucket is versioned and SSE-S3 encrypted". Then ask the matrix whether the architecture states the rule: \`${MATRIX} find --kinds constraint,document --text "<the rule, and the kind of thing it governs, in words>"\`, then \`${MATRIX} node <id>\` for each match that bears on it. A read needs no role, and every command prints one JSON object. A constraint entry carries its \`statement\` and the document and heading it is \`statedIn\`; a document entry carries its \`lifecycle\` and its headings. Read the heading the matrix names, in that document and no other, when the entry alone does not say whether it states the rule${archPath ? ` (a document's id is \`document:\` and the document's path under ${archPath})` : ''}. Set \`archCoverage\` to "covered" when a constraint stated in an \`effective\` document, or a heading of an \`effective\` document, states the rule, with the id of each such entry in \`archRefs\`, a document as \`<id>#<heading>\`; "absent" when the lookups return no entry that states it; and "unchecked" only when the matrix command fails, with what it printed in \`reason\`. Search no arc42 folder, front matter or section 2 for what the matrix returns.
-For a business requirement set \`governs\` and \`rule\` to "", \`archCoverage\` to "n/a" and \`archRefs\` to [].
-Use each requirement's id as the PRD writes it; where the PRD gives none, number them R1, R2, … in document order.`
+const classLens = `REQUIREMENT CLASS (\`requirementClasses\`): classify EVERY requirement the PRD states, once each, as \`business\` or \`technical\` as the contract's \`class\` description defines them, with a one-line \`reason\`. A requirement that states both is two entries with the same \`id\`.
+For a technical requirement, state \`governs\` and \`rule\` as their descriptions say. Then ask the matrix whether the architecture states the rule: \`${MATRIX} find --kinds constraint,document --text "<the rule, and the kind of thing it governs, in words>"\`, then \`${MATRIX} node <id>\` for each match that bears on it. A read needs no role, and every command prints one JSON object. A constraint entry carries its \`statement\` and the document and heading it is \`statedIn\`; a document entry carries its \`lifecycle\` and its headings. Read the heading the matrix names, in that document and no other, when the entry alone does not say whether it states the rule${archPath ? ` (a document's id is \`document:\` and the document's path under ${archPath})` : ''}. Set \`archCoverage\` and \`archRefs\` as their descriptions define. Search no arc42 folder, front matter or section 2 for what the matrix returns.`
 
 /** Returns the classification entries of a structured result, each with its fields normalized. */
 function classesOf(result) {
@@ -744,100 +736,10 @@ function classesOf(result) {
     })
 }
 
-const traceabilitySchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['traceable', 'matrix', 'orphanRequirements', 'unimplementedObjectives'],
-  properties: {
-    traceable: { type: 'boolean' },
-    matrix: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['requirement', 'objectives'],
-        properties: {
-          requirement: { type: 'string' },
-          objectives: { type: 'array', items: { type: 'string' } },
-        },
-      },
-    },
-    orphanRequirements: { type: 'array', items: { type: 'string' } },
-    unimplementedObjectives: { type: 'array', items: { type: 'string' } },
-  },
-}
-
-const analysisSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['requirementClasses', 'ambiguities', 'completenessGaps', 'conflicts', 'constraints', 'boundaryFindings', 'clarifications', 'summary'],
-  properties: {
-    requirementClasses: requirementClassItems,
-    ambiguities: findingItems,
-    completenessGaps: findingItems,
-    conflicts: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['requirements', 'contradiction', 'severity'],
-        properties: {
-          requirements: { type: 'array', items: { type: 'string' } },
-          contradiction: { type: 'string' },
-          severity: { type: 'string', enum: ['blocker', 'major', 'minor', 'info'] },
-        },
-      },
-    },
-    constraints: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['constraint', 'kind', 'explicit'],
-        properties: {
-          constraint: { type: 'string' },
-          kind: { type: 'string' },
-          explicit: { type: 'boolean' },
-          source: { type: 'string' },
-        },
-      },
-    },
-    boundaryFindings: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['requirement', 'boundaryCrossed', 'severity'],
-        properties: {
-          requirement: { type: 'string' },
-          boundaryCrossed: { type: 'string' },
-          severity: { type: 'string', enum: ['blocker', 'major', 'minor', 'info'] },
-          detail: { type: 'string' },
-        },
-      },
-    },
-    clarifications: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['requirement', 'question'],
-        properties: {
-          requirement: { type: 'string' },
-          question: { type: 'string' },
-          reason: { type: 'string' },
-        },
-      },
-    },
-    ...(brd ? { traceability: traceabilitySchema } : {}),
-    summary: { type: 'string' },
-  },
-  ...(brd ? { required: ['requirementClasses', 'ambiguities', 'completenessGaps', 'conflicts', 'constraints', 'boundaryFindings', 'clarifications', 'traceability', 'summary'] } : {}),
-}
-
 if (!ART || !RELAY_RUNNER) return dispatchOutcome({ ok: false, stage: 'input', reason: 'Validation requires an artifact directory and relay runner for its authoritative findings.' })
+if (!prdPath) return dispatchOutcome({ ok: false, stage: 'input', reason: 'Validation requires prd.path, the absolute path of the PRD file: the analyst reads the PRD there.' })
 const candidateFile = `${ART.dir}/candidates/prd-validation.json`
-const inputBinding = await relayKit.artifactRevision(settleAgent, { label: 'validation:inputs', phase: 'Validate', runner: RELAY_RUNNER, files: [...new Set([...(ART.inputs || []), prdPath, archPath].filter(p => typeof p === 'string' && p.trim()))], relayFile: `${ART.dir}/relay/validation-inputs.json`, context: { prd: prdInput, brd, context } })
+const inputBinding = await relayKit.artifactRevision(settleAgent, { label: 'validation:inputs', phase: 'Validate', runner: RELAY_RUNNER, files: [...new Set([...(ART.inputs || []), prdPath, brdPath, contextPath, archPath].filter(p => typeof p === 'string' && p.trim()))], relayFile: `${ART.dir}/relay/validation-inputs.json`, context: { prd: { id: prdId, title: prdTitle, path: prdPath }, brdPath, contextPath } })
 if (!inputBinding.ok) return dispatchOutcome({ ok: false, stage: 'Validate', reason: inputBinding.error })
 const inputRevision = inputBinding.revision
 const analyze = () => settleAgent(
@@ -845,35 +747,29 @@ const analyze = () => settleAgent(
 - This is a WHAT-level PRD. A requirement that names a desired outcome without naming its implementation mechanism is NOT defective — never flag absent mechanism, thresholds, schemas, or quantified NFRs.
 - This PRD is one slice of a decomposed set and names no other PRD: ordering between features is carried by Epic dependency edges, not by the PRD. Behavior another feature provides is not a gap in this one.
 - The product is built ITERATIVELY: an absence that may legitimately arrive as its own later PRD is scheduling, not a defect — report it at INFO severity only.
-- Keep every issue/question/detail field under 40 words. Report findings, not essays, and do not restate one finding as several.
+- Report findings, not essays, and do not restate one finding as several.
+
+Write the analysis to its contract, named below; the descriptions there define every member and its length limit.
 
 Lens 0 — ${classLens}
-Lens 1 — AMBIGUITY (return in \`ambiguities\`): requirements whose intended user-observable behavior is genuinely unclear, internally contradictory, or open to two incompatible readings, each with a concrete clarification.
-Lens 2 — COMPLETENESS (return in \`completenessGaps\`): each requirement should name an actor, a trigger, and an observable user outcome, with acceptance criteria as observable behavior; flag missing user-observable paths (cancel, error, empty/limit states) described as behavior.
-Lens 3 — CONFLICT (return in \`conflicts\`): pairs (or sets) of requirements whose WHAT cannot both hold, citing the requirements in tension.
-Lens 4 — CONSTRAINTS (return in \`constraints\`): the explicit AND implied constraints the PRD imposes (regulatory, business, platform, policy), each with its source, kind, and explicit/implied.
-Lens 5 — DOMAIN BOUNDARIES (return in \`boundaryFindings\`): requirements that make this feature own behavior another feature or service owns, or that sit in more than one bounded context.
-Lens 6 — CLARIFICATION REQUESTS (return in \`clarifications\`): the open BUSINESS questions the author must answer before this PRD can be specified — do not resolve them. A technical gap is never a clarification request: the architecture team decides it.
-${brd ? `Lens 7 — BRD TRACEABILITY (return in \`traceability\`) — INFORMATIONAL ONLY, NOT A JUDGMENT OF THE PRD: map each PRD requirement to the BRD objective(s) it serves. List in orphanRequirements those that map to no objective, and in unimplementedObjectives those objectives no requirement serves (only where this single PRD could plausibly have served them). Set \`traceable\` to say whether a mapping could be built at all — it is NOT a verdict on the PRD. A requirement mapping to a stated objective or guiding principle is traced; the BRD states objectives, not features.
-
-THIS LENS NEVER PRODUCES A DEFECT. A requirement that traces to no BRD objective must NOT be reported as a problem, a gap, an ambiguity, or a conflict through this or any other lens.
-
-BRD objectives:
-${brd}
+Lens 1 — AMBIGUITY (\`ambiguities\`).
+Lens 2 — COMPLETENESS (\`completenessGaps\`).
+Lens 3 — CONFLICT (\`conflicts\`), citing the requirements in tension.
+Lens 4 — CONSTRAINTS (\`constraints\`).
+Lens 5 — DOMAIN BOUNDARIES (\`boundaryFindings\`).
+Lens 6 — CLARIFICATION REQUESTS (\`clarifications\`): do not resolve them; the architecture team decides every technical gap.
+${brdPath ? `Lens 7 — BRD TRACEABILITY (\`traceability\`), INFORMATIONAL ONLY: map each PRD requirement to the objectives of the BRD at ${brdPath}. A requirement mapping to a stated objective or guiding principle is traced; the BRD states objectives, not features. THIS LENS NEVER PRODUCES A DEFECT: a requirement that traces to no BRD objective is never reported as a problem, a gap, an ambiguity or a conflict through this or any other lens.
 ` : ''}
-Also return \`summary\`: a plain-language readout (under 120 words) of the PRD's readiness for downstream specification.
-
-Bounded-context / service-boundary notes:
-${context}
+${contextPath ? `Bounded-context / service-boundary notes for lens 5: ${contextPath}.` : 'No bounded-context / service-boundary notes are supplied.'}
 
 Repository under consideration: ${repo}
 
 PRD under validation:
 ${prdBlock}
 
-READING BUDGET: the PRD is the entire object of every lens. Read nothing else but what Lens 0 asks the matrix, and then only a heading the matrix names. Do not survey the repository, the architecture folders or the polyrepo.${relayKit.artifactBrief(candidateFile, analysisSchema, inputRevision, RELAY_RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`,
+READING BUDGET: the PRD is the entire object of every lens. Read nothing else but ${[brdPath, contextPath].filter(Boolean).length ? 'the files named above, ' : ''}what Lens 0 asks the matrix, and then only a heading the matrix names. Do not survey the repository, the architecture folders or the polyrepo.${relayKit.artifactBrief(candidateFile, ANALYSIS_CONTRACT, inputRevision, RELAY_RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`,
   {
-    agentType: 'prd-validation-analyst',
+    agentType: 'prd-validation-analyst', // model: its definition's front matter sets it (sonnet)
     label: 'validate:all-lenses',
     effort: 'low',
     phase: 'Validate',
@@ -882,33 +778,26 @@ READING BUDGET: the PRD is the entire object of every lens. Read nothing else bu
 )
 
 if (dispatchInterruption) return dispatchOutcome({ ok: false, stage: 'Validate', reason: 'Validation interrupted.' })
-let analysis
-if (ART && RELAY_RUNNER) {
-  const relayDir = typeof relayArg.dir === 'string' && relayArg.dir.trim().startsWith('/') ? relayArg.dir.trim().replace(/\/+$/, '') : `${ART.dir}/relay/prd-validation`
-  const file = `${ART.dir}/prd-validation.json`
-  const saved = await relayKit.authorArtifact(settleAgent, { label: 'save:prd-validation', phase: 'Validate', runner: RELAY_RUNNER, candidate: candidateFile, file, schema: analysisSchema, revision: inputRevision, relayFile: `${relayDir}/accepted-prd-validation.json`, keys: ['requirementClasses.id', 'requirementClasses.class', 'requirementClasses.governs', 'requirementClasses.rule', 'requirementClasses.archCoverage', 'requirementClasses.archRefs', 'ambiguities.requirement', 'ambiguities.severity', 'completenessGaps.requirement', 'completenessGaps.severity', 'conflicts.requirements', 'conflicts.severity', 'boundaryFindings.requirement', 'boundaryFindings.severity', 'clarifications.requirement'] }, analyze, () => !!dispatchInterruption)
-  analysis = saved.facts
-  if (!saved.ok) {
-    return dispatchOutcome({ ok: false, stage: 'Validate', reason: `The authoritative validation was not accepted: ${saved.error || 'not saved'}` })
-  } else {
-    const inputs = (Array.isArray(ART.inputs) ? ART.inputs : []).filter((p) => typeof p === 'string' && p.trim())
-    const recorded = await relayKit.run(settleAgent, {
-      label: 'record:prd-validation',
-      phase: 'Validate',
-      runner: RELAY_RUNNER,
-      argv: ['python3', ART.script, 'record', file, '--epic', ART.epicId, '--phase', ART.phase, ...(inputs.length ? ['--inputs', ...inputs] : [])],
-      file: `${relayDir}/001-record-prd-validation.json`,
-      keys: ['sha256', 'bytes'],
-      tail: 20,
-    })
-    if (!recorded.ok || recorded.exitCode !== 0) {
-      return dispatchOutcome({ ok: false, stage: 'Validate', reason: `prd-validation.json was not recorded: ${!recorded.ok ? recorded.error : `the record command exited ${recorded.exitCode}: ${String(recorded.stderrTail || recorded.stdoutTail || '').trim().slice(0, 600)}`}` })
-    }
-  }
-} else if (ART) {
-  log('prd-validation: no relay runner (pluginRoot or relay.runner) was passed, so the analyst session recorded prd-validation.json itself')
+const relayDir = typeof relayArg.dir === 'string' && relayArg.dir.trim().startsWith('/') ? relayArg.dir.trim().replace(/\/+$/, '') : `${ART.dir}/relay/prd-validation`
+const analysisFile = `${ART.dir}/prd-validation.json`
+const saved = await relayKit.authorArtifact(settleAgent, { label: 'save:prd-validation', phase: 'Validate', runner: RELAY_RUNNER, candidate: candidateFile, file: analysisFile, contract: ANALYSIS_CONTRACT, revision: inputRevision, relayFile: `${relayDir}/accepted-prd-validation.json`, keys: ['requirementClasses.id', 'requirementClasses.class', 'requirementClasses.governs', 'requirementClasses.rule', 'requirementClasses.archCoverage', 'requirementClasses.archRefs', 'ambiguities.requirement', 'ambiguities.severity', 'completenessGaps.requirement', 'completenessGaps.severity', 'conflicts.requirements', 'conflicts.severity', 'boundaryFindings.requirement', 'boundaryFindings.severity', 'clarifications.requirement'] }, analyze, () => !!dispatchInterruption)
+if (!saved.ok) {
+  return dispatchOutcome({ ok: false, stage: 'Validate', reason: `The authoritative validation was not accepted: ${saved.error || 'not saved'}` })
 }
-
+const analysis = saved.facts
+const recordInputs = (Array.isArray(ART.inputs) ? ART.inputs : []).filter((p) => typeof p === 'string' && p.trim())
+const recorded = await relayKit.run(settleAgent, {
+  label: 'record:prd-validation',
+  phase: 'Validate',
+  runner: RELAY_RUNNER,
+  argv: ['python3', ART.script, 'record', analysisFile, '--epic', ART.epicId, '--phase', ART.phase, ...(recordInputs.length ? ['--inputs', ...recordInputs] : [])],
+  file: `${relayDir}/001-record-prd-validation.json`,
+  keys: ['sha256', 'bytes'],
+  tail: 20,
+})
+if (!recorded.ok || recorded.exitCode !== 0) {
+  return dispatchOutcome({ ok: false, stage: 'Validate', reason: `prd-validation.json was not recorded: ${!recorded.ok ? recorded.error : `the record command exited ${recorded.exitCode}: ${String(recorded.stderrTail || recorded.stdoutTail || '').trim().slice(0, 600)}`}` })
+}
 const ambiguities = analysis.ambiguities || []
 const completenessGaps = analysis.completenessGaps || []
 const conflicts = analysis.conflicts || []
@@ -993,7 +882,7 @@ return dispatchOutcome({
   validatedPrd: {
     id: prdId || null,
     title: prdTitle || null,
-    path: typeof prdInput === 'object' ? prdInput.path || null : null,
+    path: prdPath,
     verdict: validationVerdict,
   },
   findings,
@@ -1012,7 +901,7 @@ return dispatchOutcome({
     phase: 'prd-validation',
     beadId: null,
     subject: prdId || null,
-    chosen: ['validation-analyst-combined' + (brd ? '+brd-traceability' : '')],
+    chosen: ['validation-analyst-combined' + (brdPath ? '+brd-traceability' : '')],
     mode: 'combined',
     ok: validationVerdict === 'pass',
   },

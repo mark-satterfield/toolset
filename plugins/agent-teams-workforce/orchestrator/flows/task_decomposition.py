@@ -21,7 +21,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "beads-c
 import beadgraph
 import beadwrite
 import hierarchy
-import matrixtasks
 import strictschema
 from bead_metadata import ARG_REQUIREMENT_IDS, KEY_ELAB_KEY, KEY_REQUIREMENT_IDS
 from matrixstore import Matrix, matrix_path, read_matrix
@@ -46,17 +45,18 @@ from orchestrator.core.models import OutputValidator, StepError
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_ELEMENTS,
     ARTIFACT_SPAN,
+    CONTEXT,
     CRITERIA,
     DATA_MODEL,
     DECOMPOSER,
     REPOSITORY,
     SPEC,
     STORY,
-    STORY_BUILDS,
     STORY_DOCUMENT,
     TASK,
     TASK_CONTEXT,
     TASK_CONTEXT_FILE,
+    TASK_CONTEXT_SCHEMA,
     TASK_CORRECTION,
     TASK_EDGE_COUNTS,
     TASK_GAPS,
@@ -81,9 +81,10 @@ from orchestrator.flows.elaboration_files import (
     span_files,
     story_files,
     strings,
+    write_contract,
 )
 from orchestrator.flows.elaboration_support import TASK_DECOMPOSITION_PHASE, enter_phase
-from orchestrator.flows.repo_scoping import BuildContext, build_context, item_stacks, shared_capabilities
+from orchestrator.flows.repo_scoping import BuildContext, build_context, item_stacks
 from orchestrator.flows.spec_authoring import design_system, items_by_story
 
 # isort: split
@@ -103,6 +104,8 @@ RETIRED: Final = "tasks retired"
 TASK_WARNINGS: Final = "task warnings"
 TASKS_WRITTEN: Final = "tasks written"
 SCHEMAS: Final = "skills/artifact-handoff/schemas"
+TASK_GAPS_SCHEMA: Final = "task-gaps.schema.json"
+"""The contract of the gaps file the plan step hands the decomposer's correction."""
 UNCITED_STAGE: Final = "uncited-items"
 
 
@@ -120,8 +123,8 @@ def task_facts(bead: beadgraph.Bead) -> dict[str, JsonValue]:
     """Describe a Task bead that exists to the decomposer.
 
     Returns:
-        Its id, title, elaboration key, the start of its description, its status and the items
-        it cites.
+        Its id, title, elaboration key, status and the items it cites; ``bd show <id>`` prints
+        its description.
 
     """
     raw: str | list[str] = bead.metadata.get(KEY_REQUIREMENT_IDS, [])
@@ -133,79 +136,43 @@ def task_facts(bead: beadgraph.Bead) -> dict[str, JsonValue]:
         "id": bead.id,
         "title": bead.title,
         "elabKey": bead.metadata.get(KEY_ELAB_KEY),
-        "description": bead.description[:2000],
         "status": bead.status,
         ARG_REQUIREMENT_IDS: cited,
     }
 
 
-def _other_epic_work(
-    run: StepRun,
-    control: Path,
-    built: list[JsonValue],
-) -> tuple[list[EntryId], list[matrixtasks.TasksRead]]:
-    """Read the stacks a Story builds in and the open work of other Epics that touches each.
+def _write_context(run: StepRun, held: Repository, existing: list[JsonValue]) -> Path:
+    """Write the task context file of one repository's Story (``task-context.schema.json``).
 
-    Args:
-        run: The step that asks.
-        control: The control repository, whose beads database holds the Tasks.
-        built: The items of what the Story builds.
+    The file holds pointers, never a copy of what the matrix or the bead tracker holds: the
+    Tasks that exist, by id and without their descriptions; each stack the Story builds in with
+    the entries it builds there, for the decomposer's own ``atw-matrix work`` and ``atw-matrix
+    uses``; and ``dependsOn`` (``repo_scoping.build_context``): what the Tasks depend on, never
+    work.
 
     Returns:
-        The ids of the stacks that hold the items' entries; and, for each stack, what
-        ``atw-matrix work --id <stack> --not-epic <epic>`` returns: the open Tasks of other Epics
-        that name the stack or an entry it holds, each with its Story and its Epic.
-
-    """
-    matrix: Matrix = run.tools.portfolio(TASK_CONTEXT, read_matrix, matrix_path(None, os.environ))
-    stacks: dict[EntryId, list[EntryId]] = run.tools.portfolio(TASK_CONTEXT, item_stacks, matrix, built)
-
-    def read() -> list[matrixtasks.TaskBead]:
-        return run.tools.portfolio(TASK_CONTEXT, matrixtasks.read_tasks, control)
-
-    tasks: list[matrixtasks.TaskBead] = run.tools.operation(TASK_CONTEXT, read)
-    return list(stacks), [
-        run.tools.portfolio(TASK_CONTEXT, matrixtasks.work, matrix, tasks, stack, run.bead) for stack in stacks
-    ]
-
-
-def _write_context(
-    run: StepRun,
-    held: Repository,
-    control: Path,
-    existing: list[JsonValue],
-) -> tuple[Path, list[JsonValue]]:
-    """Write the task context file of one repository's Story.
-
-    Returns:
-        The file, and the items of what the Story builds, unchanged from the span's items (an
-        event's item keeps its ``trigger`` and ``publishedBy``). The file holds the Tasks that exist,
-        the stacks the Story builds in with the open work of other Epics on each, the shared
-        capabilities, and ``dependsOn`` (``repo_scoping.build_context``): what the Tasks depend
-        on, never work.
+        The file.
 
     """
     every: dict[str, JsonValue] = json_object(
         run.tools.portfolio(TASK_CONTEXT, hierarchy.story_builds, span_files(run.inputs)),
     )
     built: list[JsonValue] = [item for item in every.values() if json_object(item)["slug"] == held.slug]
-    stacks, others = _other_epic_work(run, control, built)
     matrix: Matrix = run.tools.portfolio(TASK_CONTEXT, read_matrix, matrix_path(None, os.environ))
+    stacks: dict[EntryId, list[EntryId]] = run.tools.portfolio(TASK_CONTEXT, item_stacks, matrix, built)
     depended: BuildContext = run.tools.portfolio(TASK_CONTEXT, build_context, matrix, built, items_by_story(every))
-    facts: Path = run.context.work / f"tasks-{held.slug}.context.json"
-    write_json(
-        facts,
+    return write_contract(
+        run.context.work / f"tasks-{held.slug}.context.json",
         {
-            "existingTasks": existing,
-            "stackWork": others,
+            "epic": str(run.bead),
             "repoPath": held.path,
             "slug": held.slug,
-            "stacks": stacks,
-            "sharedCapabilities": shared_capabilities(run, TASK_CONTEXT, built),
-            "dependsOn": depended["dependsOn"],
+            "stacks": [{"stack": stack, "entries": list(entries)} for stack, entries in stacks.items()],
+            "existingTasks": existing,
+            "dependsOn": [json_object(dependency) for dependency in depended["dependsOn"]],
         },
+        TASK_CONTEXT_SCHEMA,
     )
-    return facts, built
 
 
 @script_step(TASK_CONTEXT)
@@ -213,15 +180,16 @@ def context(run: StepRun) -> Completion:
     """Gather what one repository's Tasks are decomposed from, and plan the decomposition.
 
     The Tasks that exist under the Story and that are started, or that elaboration did not
-    write, are handed to the decomposer so it reuses them. The matrix gives the rest: the stacks
-    the Story builds in; for each, the open Tasks of other Epics that name the stack or an entry
-    it holds (``atw-matrix work --id <stack> --not-epic <epic>``); and the shared capabilities the
-    entries the Tasks build must use (``atw-matrix uses --ids``). The decomposer writes those
+    write, are handed to the decomposer so it reuses them. The decomposer asks the matrix for the
+    rest itself: for each stack the Story builds in, the open Tasks of other Epics that name the
+    stack or an entry it holds (``atw-matrix work --id <stack> --not-epic <epic>``), and the
+    shared capabilities the entries the Tasks build must use (``atw-matrix uses --ids``). What
+    the Story builds is the ``items`` of the repository context. The decomposer writes those
     matrix ids into each Task. Nothing is recorded in the matrix.
 
     Returns:
-        The repository, the task context file and the what-the-story-builds file as artifacts, with the
-        decomposer's step and the plan step planned after this one.
+        The repository and the task context file as artifacts, with the decomposer's step and
+        the plan step planned after this one.
 
     """
     held: Repository = repository_of(dict(run.params()), TASK_CONTEXT)
@@ -240,11 +208,7 @@ def context(run: StepRun) -> Completion:
         and bead.kind == "task"
         and (beadwrite.task_started(bead) or not str(bead.metadata.get(KEY_ELAB_KEY, "")).startswith("task:"))
     ]
-    facts: Path
-    built: list[JsonValue]
-    facts, built = _write_context(run, held, control, existing)
-    items: Path = run.context.work / f"tasks-{held.slug}.items.json"
-    write_json(items, {"items": built})
+    facts: Path = _write_context(run, held, existing)
     name: str = Path(held.path).name
     upstream: list[str] = list(run.step.get("inputs", []))
     decompose: StepPlan = {
@@ -264,17 +228,17 @@ def context(run: StepRun) -> Completion:
         artifacts=(
             value_artifact(REPOSITORY, held.facts()),
             file_artifact(TASK_CONTEXT_FILE, facts),
-            file_artifact(STORY_BUILDS, items),
         ),
         add=(StepGroup((NewStep(decompose, {WORK: WORK_DECOMPOSE}), NewStep(planning, {}))),),
     )
 
 
-def task_grouping_check(items_file: Path, schema_file: Path) -> OutputValidator:
+def task_grouping_check(context_file: Path, schema_file: Path) -> OutputValidator:
     """Build the check of the decomposer's Tasks file: its schema, then how its Tasks group what the Story builds.
 
     Args:
-        items_file: The file of what the Story builds (``tasks-<slug>.items.json``).
+        context_file: The repository context (``spec-context.schema.json``), whose ``items`` are
+            what the Story builds.
         schema_file: The Tasks file's schema.
 
     Returns:
@@ -288,7 +252,7 @@ def task_grouping_check(items_file: Path, schema_file: Path) -> OutputValidator:
     def check(path: Path) -> dict[str, JsonValue]:
         document: dict[str, JsonValue] = strict_json(path)
         strictschema.validate(document, strict_json(schema_file), location=schema_file)
-        items: list[JsonValue] = check_type(json_object(strict_json(items_file))["items"], list[JsonValue])
+        items: list[JsonValue] = check_type(json_object(strict_json(context_file))["items"], list[JsonValue])
         tasks: list[JsonValue] = check_type(document["tasks"], list[JsonValue])
         problems: list[str] = hierarchy.task_grouping_problems(items, tasks)
         if problems:
@@ -322,7 +286,7 @@ def decomposer(run: StepRun) -> AgentLaunch:
     sources: Path | None = run.inputs.optional_file(UI_SOURCES)
     if sources is not None:
         files.append((UI_SOURCES, sources))
-    files.extend((label, run.inputs.file(label)) for label in (TASK_CONTEXT_FILE, STORY_BUILDS))
+    files.extend((label, run.inputs.file(label)) for label in (CONTEXT, TASK_CONTEXT_FILE))
     if correcting:
         files.extend((label, run.inputs.file(label)) for label in (TASKS_FILE, TASK_GAPS))
     earlier: Step | None = run.earlier_sibling(DECOMPOSER) if correcting else None
@@ -336,7 +300,7 @@ def decomposer(run: StepRun) -> AgentLaunch:
         validate=(
             run.tools.plugin / SCHEMAS / "tasks-correction.schema.json"
             if correcting
-            else task_grouping_check(run.inputs.file(STORY_BUILDS), run.tools.plugin / SCHEMAS / "tasks.schema.json")
+            else task_grouping_check(run.inputs.file(CONTEXT), run.tools.plugin / SCHEMAS / "tasks.schema.json")
         ),
         outcome=(
             "Task and size corrections for the recorded coverage gaps."
@@ -419,7 +383,8 @@ def plan(run: StepRun) -> Completion:
     A correction the step is handed is merged into the Tasks file first.
 
     Returns:
-        For a plan with an uncited item, an unsized Task or no Task: the gaps file, with the
+        For a plan with an uncited item, an unsized Task or no Task: the gaps file
+        (``task-gaps.schema.json``), with the
         correction and a second plan step planned. Otherwise the plan's record, with one step
         per Task bead write, the retiring step and the written record planned.
 
@@ -450,8 +415,11 @@ def plan(run: StepRun) -> Completion:
         if correction is not None:
             stage: str = UNCITED_STAGE if planned["tasks"] else WORK_DECOMPOSE
             raise StepError(stage, OTHER_CAUSE, (str(files.tasks_file), str(correction), str(merged)))
-        gaps: Path = run.context.work / f"tasks-{held.slug}.gaps.json"
-        write_json(gaps, {"uncitedItems": planned["uncitedItems"], "unsized": unsized, "empty": not planned["tasks"]})
+        gaps: Path = write_contract(
+            run.context.work / f"tasks-{held.slug}.gaps.json",
+            {"uncited": uncited, "unsized": unsized, "empty": not planned["tasks"]},
+            TASK_GAPS_SCHEMA,
+        )
         return Completion(
             artifacts=(
                 file_artifact(TASK_GAPS, gaps),

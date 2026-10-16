@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/prd-validation-analysis.schema.json",
+  "title": "PRD validation analysis",
+  "description": "The analysis the prd-validation-analyst writes in the prd-validation workflow: the candidate <artifacts.dir>/candidates/prd-validation.json, which jsonartifact.py validates against Analysis here (TracedAnalysis when the run names a BRD) and publishes as <artifacts.dir>/prd-validation.json. The workflow then records each technical rule no document states in the matrix and fails the PRD only on a blocker finding. Every issue, question and detail field stays under 40 words.",
+  "$ref": "#/$defs/Analysis",
+  "$defs": {
+    "Severity": {"description": "`blocker` fails the PRD; `info` is for an absence that may legitimately arrive as its own later PRD.", "type": "string", "enum": ["blocker", "major", "minor", "info"]},
+    "Finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement", "issue", "severity"],
+      "properties": {
+        "requirement": {"description": "The requirement's id as the PRD writes it (R1, R2, … in document order where it gives none).", "type": "string"},
+        "issue": {"type": "string"},
+        "severity": {"$ref": "#/$defs/Severity"},
+        "suggestion": {"type": "string"}
+      }
+    },
+    "RequirementClass": {
+      "description": "One requirement the PRD states, classified. A requirement that states both a business outcome and a technical rule is two entries with the same `id`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "requirement", "class", "reason", "governs", "rule", "archCoverage", "archRefs"],
+      "properties": {
+        "id": {"description": "The requirement's id as the PRD writes it; R1, R2, … in document order where it gives none.", "type": "string"},
+        "requirement": {"type": "string"},
+        "class": {"description": "`business`: what a user, the business or a regulation needs, stated as an outcome that holds however the system is built. `technical`: a rule about HOW the system is built (a named technology, resource, configuration, construct, network path or engineering standard), which belongs in the architecture, not in a PRD.", "type": "string", "enum": ["business", "technical"]},
+        "reason": {"description": "One line on the classification; for `archCoverage: unchecked`, what the matrix command printed.", "type": "string"},
+        "governs": {"description": "Technical: the kind of thing the rule governs (for example \"S3 bucket\"). Business: \"\".", "type": "string"},
+        "rule": {"description": "Technical: the rule as a condition on that thing (\"where the design has an S3 bucket, the bucket is versioned\"). The workflow records it in the matrix as a constraint when `archCoverage` is `absent`. Business: \"\".", "type": "string"},
+        "archCoverage": {"description": "Technical: `covered` when a constraint stated in an `effective` document, or a heading of an `effective` document, states the rule (as `atw-matrix find --kinds constraint,document` and `atw-matrix node` return it); `absent` when the lookups return no entry that states it; `unchecked` only when the matrix command fails. Business: `n/a`.", "type": "string", "enum": ["covered", "absent", "unchecked", "n/a"]},
+        "archRefs": {"description": "Technical and covered: the id of each entry that states the rule, a document as `<id>#<heading>`. Otherwise [].", "type": "array", "items": {"type": "string"}}
+      }
+    },
+    "Traceability": {
+      "description": "Informational only, never a judgment of the PRD: the mapping of each PRD requirement to the BRD objective(s) it serves. A requirement that traces to no objective is never a defect.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["traceable", "matrix", "orphanRequirements", "unimplementedObjectives"],
+      "properties": {
+        "traceable": {"description": "Whether a mapping could be built at all; not a verdict on the PRD.", "type": "boolean"},
+        "matrix": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["requirement", "objectives"],
+            "properties": {"requirement": {"type": "string"}, "objectives": {"type": "array", "items": {"type": "string"}}}
+          }
+        },
+        "orphanRequirements": {"description": "Requirements that map to no objective.", "type": "array", "items": {"type": "string"}},
+        "unimplementedObjectives": {"description": "Objectives no requirement serves, only where this single PRD could plausibly have served them.", "type": "array", "items": {"type": "string"}}
+      }
+    },
+    "Analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirementClasses", "ambiguities", "completenessGaps", "conflicts", "constraints", "boundaryFindings", "clarifications", "summary"],
+      "properties": {
+        "requirementClasses": {"description": "Every requirement the PRD states, once each (lens 0).", "type": "array", "items": {"$ref": "#/$defs/RequirementClass"}},
+        "ambiguities": {"description": "Requirements whose user-observable behavior is genuinely unclear, contradictory or open to two incompatible readings, each with a concrete clarification (lens 1).", "type": "array", "items": {"$ref": "#/$defs/Finding"}},
+        "completenessGaps": {"description": "Requirements missing an actor, a trigger, an observable user outcome or behavioral acceptance criteria, and missing user-observable paths (lens 2).", "type": "array", "items": {"$ref": "#/$defs/Finding"}},
+        "conflicts": {
+          "description": "Sets of requirements whose WHAT cannot all hold (lens 3).",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["requirements", "contradiction", "severity"],
+            "properties": {
+              "requirements": {"type": "array", "items": {"type": "string"}},
+              "contradiction": {"type": "string"},
+              "severity": {"$ref": "#/$defs/Severity"}
+            }
+          }
+        },
+        "constraints": {
+          "description": "The explicit and implied constraints the PRD imposes: regulatory, business, platform, policy (lens 4).",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["constraint", "kind", "explicit"],
+            "properties": {
+              "constraint": {"type": "string"},
+              "kind": {"type": "string"},
+              "explicit": {"type": "boolean"},
+              "source": {"description": "Where the PRD states or implies it.", "type": "string"}
+            }
+          }
+        },
+        "boundaryFindings": {
+          "description": "Requirements that make this feature own behavior another feature or service owns, or that sit in more than one bounded context (lens 5).",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["requirement", "boundaryCrossed", "severity"],
+            "properties": {
+              "requirement": {"type": "string"},
+              "boundaryCrossed": {"type": "string"},
+              "severity": {"$ref": "#/$defs/Severity"},
+              "detail": {"type": "string"}
+            }
+          }
+        },
+        "clarifications": {
+          "description": "Open BUSINESS questions the author must answer before the PRD can be specified, unresolved (lens 6). A technical gap is never one.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["requirement", "question"],
+            "properties": {"requirement": {"type": "string"}, "question": {"type": "string"}, "reason": {"type": "string"}}
+          }
+        },
+        "traceability": {"$ref": "#/$defs/Traceability"},
+        "summary": {"description": "A plain-language readout, under 120 words, of the PRD's readiness for downstream specification.", "type": "string"}
+      }
+    },
+    "TracedAnalysis": {
+      "description": "The analysis of a run that names a BRD: `traceability` is required.",
+      "allOf": [
+        {"$ref": "#/$defs/Analysis"},
+        {"required": ["traceability"]}
+      ]
+    }
+  }
+}

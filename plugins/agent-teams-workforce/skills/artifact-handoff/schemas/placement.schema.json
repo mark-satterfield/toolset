@@ -1,4 +1,5 @@
 {
+  "description": "The repository span (<work>/repo-scoping.json): the step `atw-matrix epic --closure` (orchestrator/flows/repo_scoping.py) writes it from the solutions architect's result, and no agent writes it. What the Stories build is the result's addedOrChangedElements with each event's architecture-side publishers, each placed in the repository of the stack the architecture side places it in (an event in the repository of each of its publishers' stacks). A stack that names no repository is given the name the project's naming rules give it; a repository the inventory lacks is created by the `polyrepo` tool before the file is written, and missingRepos names one it could not create. Complete means every thing the Stories build is in exactly one placement and every placement has a repository path. The spec steps, the Task steps and the spec authors read it as `span`.",
   "type": "object",
   "additionalProperties": false,
   "required": [

@@ -32,7 +32,7 @@ from checkpoint_contract import (
 )
 from contracts import JsonObject, JsonValue, json_object
 from jsonschema import Draft202012Validator
-from jsonschema.exceptions import ValidationError
+from jsonschema.exceptions import SchemaError, ValidationError
 from researchrecovery import recover
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
@@ -146,6 +146,123 @@ def decode(text: str) -> JsonValue:
 
 def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _pointer(document: JsonValue, pointer: str, where: str) -> JsonValue:
+    """Follow a JSON pointer (`/a/b`, RFC 6901 escapes) into `document`.
+
+    Returns:
+        The value the pointer names.
+
+    Raises:
+        ValueError: The pointer does not resolve.
+
+    """
+    node: JsonValue = document
+    part: str
+    for part in pointer.split("/")[1:] if pointer else []:
+        key: str = part.replace("~1", "/").replace("~0", "~")
+        if isinstance(node, dict) and key in node:
+            node = node[key]
+        elif isinstance(node, list) and key.isdigit() and int(key) < len(node):
+            node = node[int(key)]
+        else:
+            message: str = f"{where}#{pointer} does not resolve"
+            raise ValueError(message)
+    return node
+
+
+def _inline(node: JsonValue, base: Path, documents: dict[Path, JsonValue], stack: tuple[str, ...]) -> JsonValue:
+    """Replace every `$ref` in `node` by the schema it names and drop `$defs`.
+
+    A reference is local (`#/...`, against the file `base`) or names a sibling file relative to
+    `base`'s folder (`other.schema.json#/...`). Values of `const`, `default`, `enum` and
+    `examples` are instance data and are copied unchanged.
+
+    Returns:
+        The node with no reference left in it.
+
+    Raises:
+        ValueError: A reference is circular or does not resolve.
+
+    """
+    if isinstance(node, list):
+        return [_inline(item, base, documents, stack) for item in node]
+    if not isinstance(node, dict):
+        return node
+    reference: JsonValue = node.get("$ref")
+    if isinstance(reference, str):
+        target, _, pointer = reference.partition("#")
+        path: Path = (base.parent / target).resolve() if target else base
+        key: str = f"{path}#{pointer}"
+        if key in stack:
+            message: str = f"circular schema reference: {' -> '.join((*stack, key))}"
+            raise ValueError(message)
+        if path not in documents:
+            documents[path] = decode(path.read_text(encoding="utf-8"))
+        return _inline(_pointer(documents[path], pointer, str(path)), path, documents, (*stack, key))
+    data_keywords: frozenset[str] = frozenset({"const", "default", "enum", "examples"})
+    return {
+        name: value if name in data_keywords else _inline(value, base, documents, stack)
+        for name, value in node.items()
+        if name != "$defs"
+    }
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def load_contract(spec: str) -> JsonObject:
+    """Load the schema a contract file holds, self-contained.
+
+    `spec` is the contract file's path, optionally followed by `#<JSON pointer>` naming the schema
+    inside it. Every reference is inlined (as scripts/shared-blocks.mjs resolvedSchema does for a
+    workflow's generated copy), so the schema and its digest do not depend on where it is read.
+
+    Returns:
+        The schema as one JSON object.
+
+    Raises:
+        ValueError: The file, the pointer or a reference does not resolve, or the schema is not
+            a valid Draft 2020-12 schema object.
+
+    """
+    target, _, pointer = spec.partition("#")
+    if not target:
+        message: str = "a contract path is required before any #<JSON pointer>"
+        raise ValueError(message)
+    path: Path = Path(target).resolve()
+    document: JsonValue = decode(path.read_text(encoding="utf-8"))
+    schema: JsonObject = json_object(_inline(_pointer(document, pointer, str(path)), path, {path: document}, ()))
+    try:
+        Draft202012Validator.check_schema(schema)
+    except SchemaError as exc:
+        message = f"{spec} is not a valid schema: {exc.message}"
+        raise ValueError(message) from exc
+    return schema
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def schema_from_option(schema: str | None, schema_json: str | None) -> JsonObject:
+    """Read the schema a command line names: a contract file (`--schema`) or the schema itself (`--schema-json`).
+
+    Returns:
+        The schema as one JSON object.
+
+    Raises:
+        ValueError: Neither or both options are given, or the schema is not a valid Draft 2020-12 schema.
+
+    """
+    if (schema is None) == (schema_json is None):
+        message: str = "exactly one of --schema and --schema-json is required"
+        raise ValueError(message)
+    if schema is not None:
+        return load_contract(schema)
+    literal: JsonObject = json_object(decode(str(schema_json)))
+    try:
+        Draft202012Validator.check_schema(literal)
+    except SchemaError as exc:
+        message = f"--schema-json is not a valid schema: {exc.message}"
+        raise ValueError(message) from exc
+    return literal
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -610,6 +727,7 @@ class _CliOptions:
     source: tuple[Path, ...]
     candidate: Path | None
     final: Path | None
+    schema: str | None
     schema_json: str | None
     revision: str
     projection: Literal["coordinator"] | None
@@ -632,6 +750,7 @@ def _cli_options(args: argparse.Namespace) -> _CliOptions:
         tuple(check_type(args.source, list[Path], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)),
         check_type(args.candidate, Path | None),
         check_type(args.final, Path | None),
+        check_type(args.schema, str | None),
         check_type(args.schema_json, str | None),
         check_type(args.revision, str),
         check_type(args.projection, Literal["coordinator"] | None),
@@ -674,12 +793,12 @@ def _execute_cli(args: _CliOptions, parser: argparse.ArgumentParser) -> JsonObje
             source_receipt(path, skipped=skipped) for path in sources
         ]
         return json_object({"receipts": receipts, **({"skipped": skipped} if skipped else {})})
-    if not args.candidate or not args.final or args.schema_json is None:
-        parser.error("JSON acceptance requires --candidate, --final and --schema-json")
+    if not args.candidate or not args.final or (args.schema is None) == (args.schema_json is None):
+        parser.error("JSON acceptance requires --candidate, --final and exactly one of --schema and --schema-json")
     options: _Acceptance = _Acceptance(
         check_type(args.candidate, Path),
         check_type(args.final, Path),
-        json_object(decode(check_type(args.schema_json, str))),
+        schema_from_option(args.schema, args.schema_json),
         check_type(args.revision, str),
         check_type(args.probe, bool),
         check_type(args.research_agent, str),
@@ -706,7 +825,8 @@ def main() -> int:
     parser: argparse.ArgumentParser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidate", type=Path)
     parser.add_argument("--final", type=Path)
-    parser.add_argument("--schema-json")
+    parser.add_argument("--schema", help="the contract file the candidate must satisfy: <path>[#<JSON pointer>]")
+    parser.add_argument("--schema-json", help="the schema itself, as one JSON object (the form older workflows pass)")
     parser.add_argument("--document", type=Path, action="append", default=[])
     parser.add_argument("--source", type=Path, action="append", default=[])
     parser.add_argument("--revision", default="")

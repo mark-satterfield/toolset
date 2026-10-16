@@ -326,8 +326,9 @@ class AgentRunner:
         Args:
             step: The request.
             inputs: The files the brief names, each with its label, in order.
-            session: The session id, a UUID. The session's working directory is named for it, so
-                a later dispatch that resumes the id runs in the same directory.
+            session: The session id, a UUID. The session's working directory is named for it and
+                kept after the session ends, so a later dispatch that resumes the id runs in the
+                same directory with what the earlier run wrote there.
             resume: True continues the conversation ``session`` names; False starts it.
             fresh_output: True removes a file already at ``step.output`` before a session that
                 starts; False keeps it for a session that updates the file in place. A resumed
@@ -368,6 +369,9 @@ class AgentRunner:
     ) -> Path:
         """Hold a session slot and the session's own directory for one journal step.
 
+        The directory is kept when the session ends: a later dispatch that resumes the session
+        runs in it and finds what the earlier run wrote there.
+
         Returns:
             The validated output path.
 
@@ -385,11 +389,7 @@ class AgentRunner:
                 directory.mkdir(mode=0o700, parents=True, exist_ok=True)
             except OSError as exc:
                 raise SessionSetupError(str(exc)) from exc
-            try:
-                return self._journal_session(step, inputs, directory, resume=resume, fresh_output=fresh_output)
-            finally:
-                with _finalization("remove temporary session directory"):
-                    shutil.rmtree(directory)
+            return self._journal_session(step, inputs, directory, resume=resume, fresh_output=fresh_output)
 
     def _journal_setup(
         self,

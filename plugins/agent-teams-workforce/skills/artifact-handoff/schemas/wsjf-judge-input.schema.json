@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/wsjf-judge-input.schema.json",
+  "title": "WSJF judge input",
+  "description": "The file each wsjf-scorer session of the wsjf-scoring workflow reads: <workDir>/judge-input-<level>.json, written by `depscore.py judge-input` (scoring.judge_input) before any session starts. It holds the items to judge at one level and the reference jobs, and no computed value: RR-OE, reachability and WSJF are arithmetic over the dependency graph and are not a session's to see or set.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["level", "items", "referenceJobs", "summary"],
+  "properties": {
+    "command": {"description": "The depscore.py command that wrote the file.", "type": "string", "const": "judge-input"},
+    "source": {"description": "The tracker read the command worked from.", "type": "string"},
+    "warnings": {"description": "What the tracker read warned of.", "type": "array"},
+    "level": {"description": "The level judged.", "type": "string", "enum": ["epic", "task"]},
+    "items": {
+      "description": "The items the plan names for judging at this level, and no other.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/Item"}
+    },
+    "referenceJobs": {
+      "description": "The elaborated Epics: each one's original estimate beside its refined size, the sum of its Tasks' sizes. The size comparison at both levels.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/ReferenceJob"}
+    },
+    "summary": {
+      "description": "The counts, and the sessions the workflow starts: `ids` (Epic level, one Epic per session) or `groups` (Task level, one session per group).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items", "toJudge", "referenceJobs"],
+      "properties": {
+        "items": {"type": "integer"},
+        "toJudge": {"type": "integer"},
+        "referenceJobs": {"type": "integer"},
+        "ids": {"type": "array", "items": {"type": "string"}},
+        "groups": {
+          "description": "An Epic's Tasks keyed by the Epic, or one Task with no Epic keyed by itself with `epic` null.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "epic", "tasks"],
+            "properties": {
+              "key": {"type": "string"},
+              "epic": {"type": ["string", "null"]},
+              "tasks": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "Item": {
+      "description": "One item to judge.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "reason"],
+      "properties": {
+        "id": {"description": "The bead id.", "type": "string"},
+        "title": {"type": "string"},
+        "reason": {"description": "Why the plan judges it: its content changed, or it has no value.", "type": "string"},
+        "prdPath": {"description": "Epic level: the Epic's PRD file, as the matrix names it; null when the matrix names none, and the Epic is then returned unscored.", "type": ["string", "null"]},
+        "sizedFromTasks": {"description": "Epic level: true when the Epic's elaboration is done and its size is the sum of its Tasks' sizes, so no size is judged for it.", "type": "boolean"},
+        "epic": {
+          "description": "Task level: the Task's Epic, or null.",
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["id", "title"],
+          "properties": {"id": {"type": "string"}, "title": {"type": "string"}}
+        }
+      }
+    },
+    "ReferenceJob": {
+      "description": "One elaborated Epic whose Tasks are all sized.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "estimate", "low", "high", "refinedSize", "tasks"],
+      "properties": {
+        "id": {"type": "string"},
+        "title": {"type": "string"},
+        "estimate": {"description": "The size estimated before elaboration, or null.", "type": ["integer", "null"]},
+        "low": {"type": ["integer", "null"]},
+        "high": {"type": ["integer", "null"]},
+        "refinedSize": {"description": "The sum of its Tasks' sizes.", "type": "integer"},
+        "tasks": {"description": "How many Tasks it has.", "type": "integer"}
+      }
+    }
+  }
+}

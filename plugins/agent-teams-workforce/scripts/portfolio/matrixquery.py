@@ -4,8 +4,10 @@ Every function here reads a matrix that is already loaded and changes nothing. E
 ``atw-matrix`` read and returns the one JSON object the command prints:
 
 - :func:`epic_view` (``epic``): an Epic's PRD, its requirements with the features that serve them
-  and the documents that cover them, and on request its constraints, its closure and its links
-  with nothing recorded at the other end.
+  and the documents that cover them, and on request the constraints that bind the Epic, its
+  features and their realizers, its closure and its links with nothing recorded at the other end.
+- :func:`realizers_view` (``epic --realizers``): what realizes each feature of an Epic, and the
+  stack and repository of each realizer.
 - :func:`find` (``find``): the entries that share words with some text, ranked.
 - :func:`node_view` (``node``): one entry with its relationships from both ends.
 - :func:`deps_view` (``deps``): what an entry depends on, or what depends on it, to any depth.
@@ -74,6 +76,7 @@ from matrixtraverse import (
     ATTR_PROVIDES,
     ATTR_REPOSITORY,
     ATTR_RESOURCE_TYPE,
+    ATTR_SELECTOR,
     CapabilityReach,
     ConstraintReach,
     Dependency,
@@ -95,9 +98,12 @@ from matrixtraverse import (
     words,
 )
 
-DEFAULT_LIMIT: Final = 50
+DEFAULT_LIMIT: Final = 10
 """The most entries :func:`find` returns unless the caller asks for another number; 0 asks for all."""
 ATTR_LIFECYCLE: Final = "lifecycle"
+ATTR_STATEMENT: Final = "statement"
+RULE_ATTRIBUTES: Final[tuple[str, ...]] = (ATTR_STATEMENT, "trd", ATTR_SELECTOR)
+"""The attributes a constraint keeps when a read returns it as binding some entries."""
 ATTR_PRD: Final = "prd"
 ATTR_PRD_PATH: Final = "path"
 ATTR_VIA: Final = "via"
@@ -109,7 +115,7 @@ BRIEF_ATTRIBUTES: Final[tuple[str, ...]] = (
     ATTR_RESOURCE_TYPE,
 )
 """The attributes an entry keeps when it is returned as the end of a relationship."""
-SEARCHED_ATTRIBUTES: Final[tuple[str, ...]] = ("statement", "subject", "group", "headings")
+SEARCHED_ATTRIBUTES: Final[tuple[str, ...]] = (ATTR_STATEMENT, "subject", "group", "headings")
 """The attributes whose text :func:`find` matches beside the name, the aliases and the purpose."""
 PROVIDES_SEARCHED: Final = "behaviour"
 """The member of each ``provides`` item whose text :func:`find` matches."""
@@ -180,20 +186,29 @@ class Applied(TypedDict):
     """The side that states the constraint applies."""
 
 
-class BriefConstraint(TypedDict):
-    """One constraint that binds some entries, without the entries its selector names."""
+class BoundConstraint(TypedDict):
+    """One constraint that binds some entries, with the entries it names by a relationship."""
 
     constraint: View
+    """The constraint's id, kind, name, side, statement or TRD pointer (``trd``), and selector where set."""
     statedIn: list[Described]
     appliesTo: list[Applied]
     """The entries asked about that the constraint names with a relationship."""
 
 
-class ConstraintView(BriefConstraint):
+class ConstraintView(BoundConstraint):
     """One constraint that binds some entries."""
 
     selected: list[EntryId]
     """The entries asked about that the constraint's selector names."""
+
+
+class Selection(TypedDict):
+    """The entries one selector names among those asked about, and the constraints that state it."""
+
+    selector: dict[str, JsonValue]
+    selected: list[EntryId]
+    constraints: list[EntryId]
 
 
 class DependencyView(TypedDict):
@@ -274,7 +289,11 @@ class EpicView(TypedDict):
     noFeature: list[EntryId]
     """The requirements no feature serves."""
     noDocument: list[Uncovered]
-    constraints: NotRequired[list[ConstraintView]]
+    constraints: NotRequired[list[BoundConstraint]]
+    """Each constraint that binds the Epic, its features or the entries that realize them."""
+    selections: NotRequired[list[Selection]]
+    """Each selector those constraints state, once, with the entries it selects: a selector such
+    as ``{"stackType": "service"}`` names the same entries for every constraint that states it."""
     noSource: NotRequired[list[EntryId]]
     """The constraints that name no document they are stated in."""
     closure: NotRequired[ClosureView]
@@ -289,31 +308,34 @@ class EpicView(TypedDict):
 class RealizerView(TypedDict):
     """One entry that realizes a feature of an Epic, with where the architecture side places it."""
 
-    entry: View
+    id: EntryId
     stack: EntryId | None
     """The stack the architecture side places it in (for an event, its publisher's stack)."""
     repository: str | None
     """The repository of that stack; None while the stack names none."""
+    resourceType: NotRequired[str]
+    """The entry's AWS resource type, as the matrix holds it; absent when the entry has none."""
     publishers: NotRequired[list[EntryId]]
     """For an event: the services and components the architecture side says publish it."""
 
 
-class FeatureBrief(TypedDict):
-    """One feature of an Epic as the architect is handed it."""
+class FeatureRealizers(TypedDict):
+    """One feature of an Epic with the ids of what realizes it."""
 
-    feature: View
+    feature: EntryId
     supporting: bool
-    describedBy: list[Described]
-    realizedBy: list[RealizerView]
+    """True when the feature is reached only because another feature is supported by it."""
+    realizedBy: list[EntryId]
+    """The ends of its ``realizedBy`` relationships, then each realizing entry an arc42 heading
+    describes that covers one of the Epic's requirements by way of the feature."""
 
 
-class EpicBrief(TypedDict):
-    """What the architect is handed for one Epic: its own requirements, features, realizers and constraints."""
+class RealizersView(TypedDict):
+    """What ``epic --realizers`` adds: what realizes each feature, and where each realizer is placed."""
 
-    epic: EpicView
-    features: list[FeatureBrief]
-    constraints: list[BriefConstraint]
-    """Each constraint without its ``selected`` list: every realizer already carries its stack."""
+    features: list[FeatureRealizers]
+    entries: list[RealizerView]
+    """Each realizer once, with its stack and repository."""
     noStack: list[EntryId]
     """The realizers the architecture side places in no stack."""
 
@@ -650,16 +672,24 @@ def _dependency(matrix: Matrix, dependency: Dependency) -> DependencyView:
     }
 
 
-def _brief_constraint(matrix: Matrix, reach: ConstraintReach) -> BriefConstraint:
+def _bound_constraint(matrix: Matrix, reach: ConstraintReach) -> BoundConstraint:
     """Render one constraint that binds some entries, without the entries its selector names.
 
+    The constraint carries what a reader applies: its rule (its ``statement``, or for a TRD
+    requirement ``trd``, the Epic and requirement id whose heading in the Epic's TRD states it)
+    and what selects it. Its purpose and aliases are left out; ``atw-matrix node <constraint id>``
+    returns them.
+
     Returns:
-        The constraint, the documents and headings it is stated in, and the entries it names
-        with a relationship.
+        The constraint's id, kind, name, side, statement or trd, and selector, the documents and headings
+        it is stated in, and the entries it names with a relationship.
 
     """
+    entry: Entry = matrix.entry(reach.constraint)
+    view: View = {"id": entry.id, "kind": entry.kind, "name": entry.name, "side": entry.side}
+    view.update({name: entry.attributes[name] for name in RULE_ATTRIBUTES if name in entry.attributes})
     return {
-        "constraint": _entry_view(matrix.entry(reach.constraint)),
+        "constraint": view,
         "statedIn": [_described(matrix, source) for source in reach.sources],
         "appliesTo": [{"entry": applying.end, "side": applying.side} for applying in reach.applied],
     }
@@ -669,16 +699,36 @@ def _constraint(matrix: Matrix, reach: ConstraintReach) -> ConstraintView:
     """Render one constraint that binds some entries.
 
     Returns:
-        The constraint, the documents and headings it is stated in, and the entries it reached.
+        :func:`_bound_constraint`, and the entries its selector names.
 
     """
-    brief: BriefConstraint = _brief_constraint(matrix, reach)
+    bound: BoundConstraint = _bound_constraint(matrix, reach)
     return {
-        "constraint": brief["constraint"],
-        "statedIn": brief["statedIn"],
-        "appliesTo": brief["appliesTo"],
+        "constraint": bound["constraint"],
+        "statedIn": bound["statedIn"],
+        "appliesTo": bound["appliesTo"],
         "selected": list(reach.selected),
     }
+
+
+def _selections(matrix: Matrix, binding: Sequence[ConstraintReach]) -> list[Selection]:
+    """Group the entries the constraints' selectors name by selector.
+
+    Returns:
+        Each distinct selector that names at least one entry asked about, in the order first
+        stated, with those entries and the constraints that state it.
+
+    """
+    grouped: dict[str, Selection] = {}
+    reach: ConstraintReach
+    for reach in binding:
+        selector: JsonValue = matrix.entry(reach.constraint).attributes.get(ATTR_SELECTOR)
+        if not reach.selected or not isinstance(selector, dict):
+            continue
+        key: str = repr(sorted(selector.items()))
+        grouped.setdefault(key, {"selector": selector, "selected": list(reach.selected), "constraints": []})
+        grouped[key]["constraints"].append(reach.constraint)
+    return list(grouped.values())
 
 
 def _capability(matrix: Matrix, reach: CapabilityReach) -> Capability:
@@ -807,7 +857,12 @@ def epic_view(
             that describe each, the entries reached from them with what is in a repository for
             each, the stacks grouped by repository and their dependencies.
         constraints: Whether to include the constraints that bind the Epic, its features and
-            everything it reaches; and ``noSource``.
+            the entries that realize those features (``epic --realizers`` names them), each
+            with its statement; ``selections``, each selector they state once with the entries
+            it selects; and ``noSource``.
+            The entries the closure reaches only through a dependency are not asked about:
+            ``atw-matrix impact --id <id>`` names the constraints of one of them
+            (``constrainedBy``).
         unlinked: Whether to include every list of links of the Epic with nothing recorded at the
             other end: ``noSource``, ``noStack``, ``noRepository`` and ``noCounterpart`` beside
             ``noFeature`` and ``noDocument``, which are always returned.
@@ -835,9 +890,12 @@ def epic_view(
         ],
     }
     if constraints or unlinked:
-        binding: list[ConstraintReach] = constraints_for(matrix, [epic, *reach.entries()])
+        realizing: dict[EntryId, list[EntryId]] = _realizing(matrix, reach)
+        asked: list[EntryId] = [epic, *reach.features, *(entry for found in realizing.values() for entry in found)]
+        binding: list[ConstraintReach] = constraints_for(matrix, asked)
         if constraints:
-            view["constraints"] = [_constraint(matrix, found) for found in binding]
+            view["constraints"] = [_bound_constraint(matrix, found) for found in binding]
+            view["selections"] = _selections(matrix, binding)
         view["noSource"] = [found.constraint for found in binding if not found.sources]
     if closure:
         view["closure"] = _closure(matrix, reach)
@@ -846,6 +904,28 @@ def epic_view(
         view["noRepository"] = list(reach.no_repository)
         view["noCounterpart"] = list(reach.no_counterpart)
     return view
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def realizers_view(matrix: Matrix, bead: str) -> RealizersView:
+    """Return what realizes each feature of an Epic: what ``epic --realizers`` adds.
+
+    An Epic the matrix does not hold raises ``MatrixError`` from ``Matrix.entry``.
+
+    Args:
+        matrix: The matrix.
+        bead: The Epic's beads id.
+
+    Returns:
+        Each feature the Epic reaches with the ids of the entries that realize it: the ends of
+        its ``realizedBy`` relationships, then each realizing entry an arc42 heading describes
+        that covers one of the Epic's requirements by way of the feature; each of those entries
+        once with its stack and repository; and those the architecture side places in no stack.
+        ``atw-matrix node <id>`` returns an entry's purpose and the documents that describe it.
+
+    """
+    reach: EpicReach = epic_reach(matrix, epic_id(bead))
+    return _realizers_view(matrix, reach, _realizing(matrix, reach))
 
 
 def _heading_index(matrix: Matrix) -> dict[tuple[EntryId, str], list[EntryId]]:
@@ -896,63 +976,52 @@ def _realizer(matrix: Matrix, entry_id: EntryId) -> RealizerView:
     """Render one entry that realizes a feature, with the stack and repository that hold it.
 
     Returns:
-        The entry's brief, its architecture-side stack, that stack's repository (None when it
-        names none) and, for an event, the services and components that publish it.
+        The entry's id, its architecture-side stack, that stack's repository (None when it
+        names none), its AWS resource type when it has one and, for an event, the services and
+        components that publish it.
 
     """
     stack: EntryId | None = authority_holder(matrix, entry_id)
     repository: JsonValue = None if stack is None else matrix.entry(stack).attributes.get(ATTR_REPOSITORY)
     view: RealizerView = {
-        "entry": _brief(matrix, entry_id),
+        "id": entry_id,
         "stack": stack,
         "repository": repository if isinstance(repository, str) and repository else None,
     }
+    resource_type: JsonValue = matrix.entry(entry_id).attributes.get(ATTR_RESOURCE_TYPE)
+    if isinstance(resource_type, str) and resource_type:
+        view["resourceType"] = resource_type
     if matrix.entry(entry_id).kind == KIND_EVENT:
         view["publishers"] = list(matrix.publishers(entry_id))
     return view
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def epic_brief(matrix: Matrix, bead: str) -> EpicBrief:
-    """Return what the architect is handed for one Epic.
-
-    The brief holds the Epic's own requirements, its features with the arc42 headings that
-    describe them, the entries that realize each feature with their stacks and repositories,
-    and the constraints that apply to those. It holds no closure, no dependencies and no
-    impact: the architect asks ``atw-matrix impact --id <id>`` itself for an entry it means to
-    change. An Epic the matrix does not hold raises ``MatrixError`` from ``Matrix.entry``.
-
-    Args:
-        matrix: The matrix.
-        bead: The Epic's beads id.
+def _realizing(matrix: Matrix, reach: EpicReach) -> dict[EntryId, list[EntryId]]:
+    """Find what realizes each feature an Epic reaches.
 
     Returns:
-        The plain Epic view, the features with their realizers, the constraints that apply to
-        the Epic, its features and their realizers, and the realizers the architecture side
-        places in no stack.
+        Each feature, in the order reached, with :func:`_feature_realizers` for it.
 
     """
-    epic: EntryId = epic_id(bead)
-    reach: EpicReach = epic_reach(matrix, epic)
     by_heading: dict[tuple[EntryId, str], list[EntryId]] = _heading_index(matrix)
-    realizing: dict[EntryId, list[EntryId]] = {
-        feature: _feature_realizers(matrix, reach, feature, by_heading) for feature in reach.features
-    }
+    return {feature: _feature_realizers(matrix, reach, feature, by_heading) for feature in reach.features}
+
+
+def _realizers_view(matrix: Matrix, reach: EpicReach, realizing: dict[EntryId, list[EntryId]]) -> RealizersView:
+    """Render what realizes each feature of an Epic, each realizer once.
+
+    Returns:
+        Each feature with the ids of its realizers, each realizer with its stack and repository,
+        and the realizers the architecture side places in no stack.
+
+    """
     realizers: list[EntryId] = list(dict.fromkeys(entry_id for found in realizing.values() for entry_id in found))
     return {
-        "epic": epic_view(matrix, bead),
         "features": [
-            {
-                "feature": _brief(matrix, feature),
-                "supporting": feature in reach.supporting,
-                "describedBy": [_described(matrix, describing) for describing in reach.documents[feature]],
-                "realizedBy": [_realizer(matrix, entry_id) for entry_id in realizing[feature]],
-            }
-            for feature in reach.features
+            {"feature": feature, "supporting": feature in reach.supporting, "realizedBy": found}
+            for feature, found in realizing.items()
         ],
-        "constraints": [
-            _brief_constraint(matrix, found) for found in constraints_for(matrix, [epic, *reach.features, *realizers])
-        ],
+        "entries": [_realizer(matrix, entry_id) for entry_id in realizers],
         "noStack": [entry_id for entry_id in realizers if authority_holder(matrix, entry_id) is None],
     }
 

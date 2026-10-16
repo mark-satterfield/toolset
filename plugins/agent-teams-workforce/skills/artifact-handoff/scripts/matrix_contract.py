@@ -688,15 +688,17 @@ def _attribute_validator(table: str, kind: str, required: Sequence[str]) -> Draf
 
     """
     rule: dict[str, JsonValue] = _object(_object(load_registry().get(table), table).get(kind), f"{table}/{kind}")
-    return Draft202012Validator(
-        {
-            "type": "object",
-            "additionalProperties": False,
-            "required": list(required),
-            "properties": _object(rule.get("attributes"), f"{table}/{kind}/attributes"),
-            "$defs": _definitions(),
-        },
-    )
+    schema: dict[str, JsonValue] = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": list(required),
+        "properties": _object(rule.get("attributes"), f"{table}/{kind}/attributes"),
+        "$defs": _definitions(),
+    }
+    one: list[str] = _names(rule.get("requiredOne", []), f"{table}/{kind}/requiredOne")
+    if one:
+        schema["oneOf"] = [{"required": [name]} for name in one]
+    return Draft202012Validator(schema)
 
 
 @cache

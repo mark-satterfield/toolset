@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/dependency-assessment.schema.json",
+  "title": "Dependency assessment context",
+  "description": "The context file (<workDir>/context.json) an item's dependency assessment starts from. `depscore.py assess-context` (scripts/portfolio/assesscontext.py) writes it before the session starts: EpicContext for the dependency-assessment workflow (handed to the epic-sequencer), TaskContext for the task-dependency-assessment workflow (handed to the task-dependency-mapper). It names files and matrix ids and copies no document. The $defs here are also the shared parts of the two edge proposals, epic-edge-proposal.schema.json and task-edge-proposal.schema.json.",
+  "oneOf": [
+    {"$ref": "#/$defs/EpicContext"},
+    {"$ref": "#/$defs/TaskContext"}
+  ],
+  "$defs": {
+    "Command": {"description": "The depscore.py command that wrote the file.", "type": "string", "const": "assess-context"},
+    "Source": {"description": "The tracker read the command worked from.", "type": "string"},
+    "Warnings": {"description": "What the tracker read warned of.", "type": "array"},
+    "Confidence": {
+      "description": "How sure the assessing session is that the edge passes the test. `low` is drawn and argued about, never left out.",
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    },
+    "Withdrawal": {
+      "description": "One owned standing edge the proposal withdraws.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "reason"],
+      "properties": {
+        "from": {"description": "The standing edge's `from`, exactly as the context's `standing` gives it.", "type": "string", "minLength": 1},
+        "to": {"description": "The standing edge's `to`, exactly as the context's `standing` gives it.", "type": "string", "minLength": 1},
+        "reason": {"description": "Why the edge does not pass the test, answering the reason recorded for it.", "type": "string", "minLength": 1}
+      }
+    },
+    "StandingEdge": {
+      "description": "One edge already standing between the assessed item and another open bead of its level, in either direction (`edgeset.standing_edges`). `from` is the bead elaborated (Epic) or built (Task) first. An edge with `owned: false` was drawn by hand: the proposal leaves it out of both its lists. Every owned one is kept in `edges` or withdrawn in `withdrawn`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "type", "owned", "reason", "confidence", "setBy", "setAt"],
+      "properties": {
+        "from": {"type": "string"},
+        "to": {"type": "string"},
+        "type": {"description": "The beads dependency type of the edge.", "type": "string"},
+        "owned": {"description": "True when an assessment set the edge; false when it was drawn by hand.", "type": "boolean"},
+        "reason": {"description": "The reason recorded when the edge was set; null when none is recorded."},
+        "confidence": {"description": "The confidence recorded with it; null when none is recorded."},
+        "setBy": {"description": "Who set it; null when not recorded."},
+        "setAt": {"description": "When it was set; null when not recorded."}
+      }
+    },
+    "WithdrawalRecord": {
+      "description": "One edge touching the assessed item that an earlier assessment withdrew (`edgeset.withdrawal_history`). It was judged not to exist for `reason`: a proposal sets it again only with `answers` on the edge, saying why that reason is wrong.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "reason", "withdrawnBy", "withdrawnAt"],
+      "properties": {
+        "from": {"type": "string"},
+        "to": {"type": "string"},
+        "reason": {"description": "The recorded withdrawal reason; null when none is recorded."},
+        "withdrawnBy": {"description": "Who withdrew it; null when not recorded."},
+        "withdrawnAt": {"description": "When it was withdrawn; null when not recorded."}
+      }
+    },
+    "EpicContext": {
+      "description": "The context of one Epic's architecture-dependency assessment (`assesscontext.assess_context`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["epic", "related", "similar", "standing", "withdrawn", "summary"],
+      "properties": {
+        "command": {"$ref": "#/$defs/Command"},
+        "source": {"$ref": "#/$defs/Source"},
+        "warnings": {"$ref": "#/$defs/Warnings"},
+        "epic": {
+          "description": "The Epic assessed.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "title", "fingerprint", "elaborationState", "prdPath"],
+          "properties": {
+            "id": {"description": "The Epic's beads id.", "type": "string"},
+            "title": {"type": "string"},
+            "fingerprint": {"description": "The Epic's judging fingerprint.", "type": "string"},
+            "elaborationState": {"description": "The Epic's elaboration state, or null.", "type": ["string", "null"]},
+            "prdPath": {"description": "The Epic's PRD file, absolute, as the matrix names it; null when the matrix names none.", "type": ["string", "null"]}
+          }
+        },
+        "related": {
+          "description": "Each other Epic the matrix relates to this one (`atw-matrix related --epic`), in the order the matrix returned them.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["epic", "title", "prdPath", "shared"],
+            "properties": {
+              "epic": {"description": "The related Epic's beads id.", "type": "string"},
+              "title": {"type": "string"},
+              "prdPath": {"description": "Its PRD file, absolute; null when the matrix names none.", "type": ["string", "null"]},
+              "shared": {
+                "description": "Each entry both Epics reach and the relationship each reaches it through (`drives` and `restsOn` included), as `atw-matrix related --epic` prints its `shared` list. Each names the matrix entry; `atw-matrix epic <id>` names the related Epic's requirements and the PRD heading of each.",
+                "type": "array",
+                "items": {"type": "object"}
+              }
+            }
+          }
+        },
+        "similar": {
+          "description": "Only for an Epic no feature serves yet: other Epics' requirements and features that share words with its requirements, as `atw-matrix find --kinds requirement,feature` prints its `matches`. A requirement's id names its Epic; a feature carries the Epics it serves.",
+          "type": "array",
+          "items": {"type": "object"}
+        },
+        "standing": {"type": "array", "items": {"$ref": "#/$defs/StandingEdge"}},
+        "withdrawn": {"type": "array", "items": {"$ref": "#/$defs/WithdrawalRecord"}},
+        "summary": {
+          "description": "The counts of the lists above.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["epic", "related", "similar", "standing", "withdrawn", "owned", "handMade"],
+          "properties": {
+            "epic": {"type": "string"},
+            "related": {"type": "integer"},
+            "similar": {"type": "integer"},
+            "standing": {"type": "integer"},
+            "withdrawn": {"type": "integer"},
+            "owned": {"type": "integer"},
+            "handMade": {"type": "integer"}
+          }
+        }
+      }
+    },
+    "TaskContext": {
+      "description": "The context of one Task's build-dependency assessment (`assesscontext.task_context`), for a Task created outside elaboration.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task", "stacks", "standing", "withdrawn", "summary"],
+      "properties": {
+        "command": {"$ref": "#/$defs/Command"},
+        "source": {"$ref": "#/$defs/Source"},
+        "warnings": {"$ref": "#/$defs/Warnings"},
+        "task": {
+          "description": "The Task assessed. `beads-contract.py contract <id>` prints its title, description, build contract and stated ids.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "title", "fingerprint", "epic", "elements", "stacks", "unmatched"],
+          "properties": {
+            "id": {"description": "The Task's beads id.", "type": "string"},
+            "title": {"type": "string"},
+            "fingerprint": {"description": "The Task's judging fingerprint.", "type": "string"},
+            "epic": {"description": "Its Epic's beads id, or null.", "type": ["string", "null"]},
+            "elements": {"description": "The matrix ids its `matrix_elements` metadata key states: its stack, the entries it builds and the shared capabilities it uses. Empty when it states none.", "type": "array", "items": {"type": "string"}},
+            "stacks": {"description": "The stacks those ids name, and the stacks that hold the entries they name, in id order.", "type": "array", "items": {"type": "string"}},
+            "unmatched": {"description": "Stated ids that are the id of no matrix entry.", "type": "array", "items": {"type": "string"}}
+          }
+        },
+        "stacks": {
+          "description": "For each stack in `task.stacks`: what the matrix and the open Tasks say about it.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["stack", "work", "dependsOn", "dependents"],
+            "properties": {
+              "stack": {"description": "The stack's matrix id.", "type": "string"},
+              "work": {"description": "The open Tasks that name the stack or an entry it holds, as `atw-matrix work --id <stack id>` prints them.", "type": "object"},
+              "dependsOn": {"description": "What the stack depends on, as `atw-matrix deps --of <stack id>` prints it.", "type": "object"},
+              "dependents": {"description": "What depends on the stack, as `atw-matrix deps --on <stack id>` prints it.", "type": "object"}
+            }
+          }
+        },
+        "standing": {"type": "array", "items": {"$ref": "#/$defs/StandingEdge"}},
+        "withdrawn": {"type": "array", "items": {"$ref": "#/$defs/WithdrawalRecord"}},
+        "summary": {
+          "description": "The counts of the lists above.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["task", "stacks", "openTasks", "standing", "owned", "handMade", "withdrawn"],
+          "properties": {
+            "task": {"type": "string"},
+            "stacks": {"type": "integer"},
+            "openTasks": {"type": "integer"},
+            "standing": {"type": "integer"},
+            "owned": {"type": "integer"},
+            "handMade": {"type": "integer"},
+            "withdrawn": {"type": "integer"}
+          }
+        }
+      }
+    }
+  }
+}

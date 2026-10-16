@@ -13,30 +13,27 @@ document and the Story; the span step hands over the span and the elements.
 
 | # | Description | Performed by | Reads (artifact) | Writes | Records (artifact) |
 |---|---|---|---|---|---|
-| 1 | Gather what the Tasks are decomposed from | script `task_decomposition.context` | `story`, `span`, `elements`; the bead tracker | `tasks-<slug>.context.json`, `tasks-<slug>.items.json` | value `repository`, file `task context`, file `what the story builds`; plans steps 2 and 3 |
-| 2 | Decompose the Story into Tasks | agent `task-decomposer` | `spec`, `data model`, `criteria`, `story document`, `span`, `elements`, `ui sources` when there are any, `task context`, `what the story builds` | `tasks-<slug>.json`, checked by `task_decomposition.task_grouping_check` | file `tasks` |
-| 3 | Plan the Task beads | script `beadwrite.plan_story_tasks` | `tasks`, `story document`, the spec documents, `span`, `elements` | `tasks-<slug>.gaps.json` when the plan has a gap | a plan with a gap: file `task gaps`, value `gaps before the correction`, and steps 4 and 5 planned; otherwise value `task plan` and steps 6 to 8 planned |
+| 1 | Gather what the Tasks are decomposed from | script `task_decomposition.context` | `story`, `span`, `elements`; the bead tracker | `tasks-<slug>.context.json` | value `repository`, file `task context`; plans steps 2 and 3 |
+| 2 | Decompose the Story into Tasks | agent `task-decomposer` | `spec`, `data model`, `criteria`, `story document`, `span`, `elements`, `ui sources` when there are any, `repository context`, `task context` | `tasks-<slug>.json`, checked by `task_decomposition.task_grouping_check` | file `tasks` |
+| 3 | Plan the Task beads | script `beadwrite.plan_story_tasks` | `tasks`, `story document`, the spec documents, `span`, `elements` | `tasks-<slug>.gaps.json` (`task-gaps.schema.json`) when the plan has a gap | a plan with a gap: file `task gaps`, value `gaps before the correction`, and steps 4 and 5 planned; otherwise value `task plan` and steps 6 to 8 planned |
 | 4 | Correct what the repository builds that no Task cites, and the unsized Tasks | agent `task-decomposer`, continuing the session of step 2 | the inputs of step 2, `tasks`, `task gaps` | `tasks-<slug>.correction.json` | file `task correction` |
 | 5 | Plan the Task beads with the correction | script `beadwrite.plan_story_tasks` | as step 3, and `task correction` | the correction merged into `tasks-<slug>.json` | value `task plan`, and steps 6 to 8 planned; a plan that still has a gap fails the step |
 | 6 | Write one Task bead | script `beadwrite.write_task`, one step per Task, in build order | `tasks`, `story document`, the spec documents, `span`, `elements` | the Task bead; the Task's journal | value `task`, value `task edge counts`, value `task warnings` |
 | 7 | Retire the Task beads the plan no longer names | script `beadwrite.retire_superseded_tasks` | as step 6; the bead tracker | bead edges and deletions | value `tasks retired`, value `task warnings` |
 | 8 | Record the Tasks written | script `task_decomposition.record` | `story`, `task plan`, every `task`, `task edge counts` and `task warnings` | `tasks-<slug>.written.json` | file `tasks written`, value `tasks result` |
 
-`what the story builds` (`tasks-<slug>.items.json`) is the items of what the Story builds: the
-elements the Epic's architecture adds or changes in this repository (`repo-scoping.md`).
+What the Story builds is the `items` of the repository context (`spec-<slug>.context.json`,
+`spec-context.schema.json`): the elements the Epic's architecture adds or changes in this
+repository (`repo-scoping.md`).
 
-The task context lists the Tasks that already exist under the Story and that are started, or that
-elaboration did not write, so the decomposer reuses them; and the open Tasks of other Epics in the
-same repository (`stackWork`), so a Task that needs one of them is blocked by it instead of
-duplicating it. It also holds `sharedCapabilities`, and `dependsOn`
-(`repo_scoping.build_context`): for each thing the Story builds, each relationship of
-`BUILD_DEPENDENCY_KINDS` that starts at it and ends at something the Story does not build, as
-`{from, kind, to, toKind, side, stack, repository, builtBy}`, where `side` is the relationship's
-side, `stack` is the far end's architecture-side stack for an architecture-side entry and the
-stack the repositories hold it in for a repository-side one, and `builtBy` is the `storyKey` of
-another Story of this Epic that builds the far end, or null. These are what the Tasks depend on,
-never work. A repository-side element is a hint read from code: it may tell a Task where
-existing code sits, never what to build.
+The task context (`task-context.schema.json`, which says what each member holds) names the Tasks
+that already exist under the Story and that are started, or that elaboration did not write, so
+the decomposer reuses them. It names the stacks the Story builds in with the entries it builds
+there; the decomposer itself asks the matrix for the open Tasks of other Epics in those stacks
+(`atw-matrix work`), so a Task that needs one of them is blocked by it instead of duplicating it,
+and for the shared capabilities the Tasks must use (`atw-matrix uses`). Its `dependsOn`
+(`repo_scoping.build_context`) is what the Tasks depend on, never work. A repository-side element
+is a hint read from code: it may tell a Task where existing code sits, never what to build.
 
 ## The grouping check
 

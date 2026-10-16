@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/task-context.schema.json",
+  "title": "Task context",
+  "description": "One repository's task context file (<work>/tasks-<slug>.context.json), handed to its task decomposer as `task context` beside the repository's spec context (`repository context`, spec-context.schema.json), whose `items` are what the Story builds. The step `task_decomposition.context` (orchestrator/flows/task_decomposition.py) writes it and validates it against this file. It holds facts and pointers only; the commands named below print what the matrix and the bead tracker hold.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["epic", "repoPath", "slug", "stacks", "existingTasks", "dependsOn"],
+  "properties": {
+    "epic": {"description": "The Epic's bead id.", "type": "string", "minLength": 1},
+    "repoPath": {"description": "The repository's absolute path.", "type": "string", "minLength": 1},
+    "slug": {"description": "The repository's slug.", "type": "string", "minLength": 1},
+    "stacks": {
+      "description": "Each stack the Story builds in, with the matrix ids of the entries it builds there. For each stack, `atw-matrix work --id <stack> --not-epic <epic>` prints the open Tasks of other Epics that touch it, the only source of an overlap with another Epic; `atw-matrix uses --ids <entries>` prints the shared capabilities the entries must use.",
+      "type": "array",
+      "items": {"$ref": "spec-context.schema.json#/$defs/StackEntries"}
+    },
+    "existingTasks": {
+      "description": "The Task beads under the Story that are started, or that elaboration did not write: each is reused, not rewritten. `bd show <id>` prints a Task's description.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "elabKey", "status", "requirementIds"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "title": {"type": "string"},
+          "elabKey": {"description": "The Task's elaboration key, or null when elaboration did not write it.", "type": ["string", "null"]},
+          "status": {"type": "string"},
+          "requirementIds": {"description": "The ids of the items and requirements the Task cites.", "type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "dependsOn": {
+      "description": "What the Tasks depend on outside what the Story builds: context, never work.",
+      "type": "array",
+      "items": {"$ref": "spec-context.schema.json#/$defs/DependsOn"}
+    }
+  }
+}

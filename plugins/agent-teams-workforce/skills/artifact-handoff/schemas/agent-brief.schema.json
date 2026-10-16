@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/agent-brief.schema.json",
+  "title": "Agent brief",
+  "description": "The brief the orchestrator sends as the prompt of every agent session it starts: one JSON object on one line, built by orchestrator/core/agent_context.py (brief) and validated against this file before the session starts. It carries facts and paths only, never the content of a file: the receiver reads each named file itself. A definition or skill that describes the brief points to this file and restates none of its members.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["bead", "inputs", "output", "outcome"],
+  "properties": {
+    "bead": {
+      "description": "The id of the bead the session works for (an Epic, a Story or a Task).",
+      "type": "string",
+      "minLength": 1
+    },
+    "inputs": {
+      "description": "The files the session reads, in the order the step names them. Only the files this step needs are named.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/Input"}
+    },
+    "output": {
+      "description": "The absolute path the session writes its result to. Python validates that file against the output's contract and records it in the step journal; the session writes it there and nowhere else.",
+      "type": "string",
+      "minLength": 1
+    },
+    "outcome": {
+      "description": "One line naming the result the session produces. On a corrective pass it is the instruction to correct the output named in the `validation errors` input.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\n]*$"
+    },
+    "request": {
+      "description": "What this step asks of the agent, when it asks more than the outcome says: the step's request, or else its description in the step journal.",
+      "type": "string"
+    },
+    "step": {
+      "description": "The id of the step of the bead's step journal this session performs. A session that adds or records steps (the helper-steps.schema.json protocol) names this id as its own step.",
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "$defs": {
+    "Input": {
+      "description": "One file the session is handed: what it is, by label, and its absolute path.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "path"],
+      "properties": {
+        "label": {"$ref": "#/$defs/Label"},
+        "path": {"description": "The file's absolute path.", "type": "string", "minLength": 1}
+      }
+    },
+    "Label": {
+      "description": "What an input file is. A file recorded in the step journal is handed under the name of its artifact; the labels below are the ones the agent definitions name, with what each file is.",
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "x-labels": {
+    "step journal": "The bead's step journal file (step-journal.schema.json). Every brief names it last. A session reads and records artifacts in it only through `atw-step-journal`.",
+    "validation errors": "The errors Python found in the output, on a corrective pass; correct exactly those.",
+    "prd": "The PRD of the Epic. Read only the headings a pointer names (a requirement's heading, a TRD requirement's source); a definition says when the whole PRD is read.",
+    "criteria": "One repository's acceptance-criteria document. The review criteria are never handed as an input: every agent that works to them reads effective-architecture/review-standard.md through its effective-architecture skill.",
+    "context": "The architecture context file of the Epic (architecture-context.schema.json).",
+    "state": "The solutions architect's judgment of the state of the architecture (architecture-state.schema.json).",
+    "architecture result": "The solutions architect's result (architecture-result.schema.json).",
+    "review scope": "One reviewer's review scope (reviewer-scope.schema.json).",
+    "findings": "One review that raised something for the reader to act on (scope-review.schema.json).",
+    "trd": "The Epic's TRD document.",
+    "TRD": "The Epic's TRD document, as the step that confirmed it recorded it.",
+    "request": "What a helper or a design specialist is asked (specialist-request.schema.json, trd-request.schema.json or write-request.schema.json, as the receiver's definition names).",
+    "question": "A question to the architecture decider (architecture-question.schema.json).",
+    "answer": "What a helper or a design specialist returned (specialist-answer.schema.json or trd-answer.schema.json).",
+    "ruling": "A decider's ruling (architecture-ruling.schema.json).",
+    "review": "One reviewer's result (scope-review.schema.json).",
+    "write request": "What the architecture maintainer is asked to write (write-request.schema.json).",
+    "what was written": "The architecture maintainer's result (write-result.schema.json).",
+    "repository context": "One repository's spec context file (spec-context.schema.json).",
+    "span": "The span file: the repositories the Epic's Stories build in (placement.schema.json).",
+    "elements": "What the Epic's Stories build, as the span step saved it (target-report.schema.json, DeltaResult).",
+    "ui bundles": "The UI bundles the owner supplied (ui-bundles.schema.json).",
+    "ui sources": "The design source of each UI item, normalized (spec-ui.schema.json).",
+    "spec": "One repository's contracts document.",
+    "data model": "One repository's data-model document.",
+    "story document": "One repository's Story document (story-document.schema.json).",
+    "task context": "One repository's task context file (task-context.schema.json).",
+    "tasks": "One repository's Tasks file (tasks.schema.json).",
+    "task gaps": "What the plan of the Tasks found uncited or unsized.",
+    "closure edges": "The edges the matrix's dependency relationships make between Tasks of different Stories (closure-edges.schema.json).",
+    "task dependency listing": "Which Tasks file belongs to which Story (task-dependency-listing.schema.json).",
+    "spec review": "The review of one repository's specification documents (spec-review.schema.json).",
+    "spec correction": "An author's correction after the spec review (spec-correction.schema.json).",
+    "spec ruling": "The spec decider's ruling (spec-ruling.schema.json)."
+  }
+}

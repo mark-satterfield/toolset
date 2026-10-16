@@ -1,5 +1,0 @@
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "The list of design specialists is defined once, as architecture-result.schema.json#/$defs/SpecialistList.",
-  "$ref": "architecture-result.schema.json#/$defs/SpecialistList"
-}

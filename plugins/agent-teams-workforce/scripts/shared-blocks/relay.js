@@ -123,13 +123,12 @@ const relayKit = (() => {
     if (word !== null) words.push(word)
     return words
   }
-  /** A runner's return: the exit status and stdout, verbatim, as one string. Nothing is rebuilt. */
-  const SCHEMA = {
-    type: 'object',
-    additionalProperties: false,
-    required: ['exitCode', 'stdout'],
-    properties: { exitCode: { type: 'integer' }, stdout: { type: 'string', description: 'Copy the complete RELAY64v1: line verbatim. Treat its base64 payload as opaque text; never decode or reconstruct it.' } },
-  }
+  // The runner's results and the producer's artifact reference, inlined by scripts/shared-blocks.mjs
+  // from their contract files in skills/artifact-handoff/schemas/ (relay-command-result,
+  // relay-registered-result, artifact-reference). Never restate any part of them here.
+  const SCHEMA = /* RELAY_COMMAND_RESULT_SCHEMA */ {}
+  const REGISTERED_SCHEMA = /* RELAY_REGISTERED_RESULT_SCHEMA */ {}
+  const ARTIFACT_SCHEMA = /* ARTIFACT_REFERENCE_SCHEMA */ {}
   const HEX = /^[0-9a-f]{64}$/
   /** The relay's own keys in a printed envelope; every other key is a leaf of the flat view. */
   const RELAY_KEYS = ['~file', '~sha256', '~bytes', '~exit', '~checksum']
@@ -219,10 +218,8 @@ const relayKit = (() => {
 
 ${command}
 
-It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy that entire line as opaque text, including the prefix and any trailing = characters. Do not decode the base64, interpret its contents, or rebuild the JSON. Return the process exit code as \`exitCode\` and that line, verbatim, as the string \`stdout\`: every character as printed, in order, with nothing added, removed, reordered, reformatted or re-typed. Do not parse it, do not summarize it. If it printed more than one line, return all of stdout verbatim. Do not retry, do not repair, do not run any other command.`
+It prints exactly one line beginning RELAY64v1: followed by base64 text. Return its exit status and that line as your output schema describes (contract: skills/artifact-handoff/schemas/relay-command-result.schema.json). Do not retry, do not repair, do not run any other command.`
   let captureOrdinal = 0
-  const RECEIPT_SCHEMA = { type: 'object', additionalProperties: false, required: ['request', 'commandSha256', 'sha256', 'bytes', 'exitCode'], properties: { request: { type: 'string' }, commandSha256: { type: 'string' }, sha256: { type: 'string' }, bytes: { type: 'integer' }, exitCode: { type: 'integer' } } }
-  const REGISTERED_SCHEMA = { type: 'object', additionalProperties: false, required: ['state', 'exitCode', 'stdout', 'receipt', 'bridge', 'error'], properties: { state: { type: 'string', enum: ['completed', 'not-started', 'unknown'] }, exitCode: { type: 'integer' }, stdout: { type: 'string' }, receipt: { anyOf: [RECEIPT_SCHEMA, { type: 'null' }] }, bridge: { type: 'boolean' }, error: { type: 'string' } } }
   async function registeredCommand(dispatch, { label, phase, command }, ordinal) {
     const argv = shellWords(command)
     const commandSha256 = sha256Json(argv)
@@ -443,26 +440,60 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
     if (r.exit !== 0) return { ok: false, error: String(r.view.error || `exited ${r.exit}`) }
     return { ok: true, view: r.view }
   }
-  const ARTIFACT_SCHEMA = { type: 'object', additionalProperties: false, required: ['artifactPath'], properties: { artifactPath: { type: 'string' } } }
   // The artifact checkpoint contract, inlined by scripts/shared-blocks.mjs from its one place,
   // skills/artifact-handoff/schemas/checkpoint.schema.json. Never restate any part of it here.
   const CHECKPOINT_SCHEMA = /* CHECKPOINT_SCHEMA */ {}
-  function artifactBrief(candidate, schema, revision = '', helper) {
+  /**
+   * The absolute path of a contract file. `contract` is the file's path relative to the plugin
+   * root, optionally followed by #<JSON pointer> naming the schema inside it (for example
+   * 'skills/artifact-handoff/schemas/x.schema.json#/$defs/Proposal'); `script` is the absolute path
+   * of any script in the plugin's scripts/portfolio/ folder, from which the plugin root is known.
+   */
+  function contractPath(script, contract) {
+    const at = /^(.*\/)scripts\/portfolio\/[^/]+$/.exec(String(script || ''))
+    if (!at) throw new Error(`contractPath: ${JSON.stringify(script)} is not a script in the plugin's scripts/portfolio/ folder`)
+    if (typeof contract !== 'string' || !/^[A-Za-z0-9_-][A-Za-z0-9._/-]*\.json(#\/[^\s']*)?$/.test(contract) || contract.split('#')[0].split('/').includes('..')) {
+      throw new Error(`contractPath: ${JSON.stringify(contract)} is not a contract file path relative to the plugin root`)
+    }
+    return `${at[1]}${contract}`
+  }
+  /**
+   * The helper's schema option for `contract`: a contract file path (see contractPath) becomes
+   * `--schema <absolute path>`; a schema object, the form older callers pass, becomes
+   * `--schema-json <canonical JSON>`.
+   */
+  function schemaOption(script, contract) {
+    if (contract && typeof contract === 'object' && !Array.isArray(contract)) return ['--schema-json', canonicalJson(contract)]
+    return ['--schema', contractPath(script, contract)]
+  }
+  /**
+   * The brief text that binds a producer session to its candidate: the candidate, the progress
+   * file, the input revision, the contract file the candidate must satisfy (named, never pasted)
+   * and the artifactcontract.py command of each checkpoint operation.
+   */
+  function artifactBrief(candidate, contract, revision = '', helper) {
     if (typeof helper !== 'string' || !helper) throw new Error('artifactBrief requires the artifactcontract.py helper path')
     const suffix = CHECKPOINT_SCHEMA['x-progressSuffix']
     const operations = CHECKPOINT_SCHEMA['x-operations']
     if (typeof suffix !== 'string' || !suffix || !Array.isArray(operations) || !operations.length) throw new Error('artifactBrief: the checkpoint contract was not inlined from checkpoint.schema.json')
+    const schema = schemaOption(helper, contract)
     const progress = `${candidate}${suffix}`
-    const binding = ['--candidate', candidate, '--schema-json', canonicalJson(schema), '--revision', revision, '--progress-file', progress]
+    const binding = ['--candidate', candidate, ...schema, '--revision', revision, '--progress-file', progress]
     const command = operation => ['python3', helper, operation, ...binding].map(quote).join(' ')
     return `\n\nARTIFACT CONTRACT DATA:
 Candidate: ${candidate}
-Progress: ${progress}
+${schema[0] === '--schema' ? `Contract: ${schema[1]}\n` : ''}Progress: ${progress}
 Input revision: ${revision}
 ${operations.map(operation => `Command ${operation}: ${command(operation)}`).join('\n')}`
   }
-  async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, schema, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false, recordArgv = [], researchAgent = '', researchRepo = '' }) {
-    const args = ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), '--candidate', candidate, '--final', file, '--schema-json', canonicalJson(schema), ...(revision ? ['--revision', revision] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(counts.length ? ['--counts', counts.join(',')] : []), ...(projection ? ['--projection', projection] : []), ...(probe ? ['--probe'] : []), ...(probe && researchAgent && researchRepo ? ['--research-agent', researchAgent, '--research-repo', researchRepo] : []), ...(!returned ? ['--recover'] : [])]
+  async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, contract = null, schema: schemaObject = null, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false, recordArgv = [], researchAgent = '', researchRepo = '' }) {
+    let schema
+    try {
+      schema = schemaOption(runner, contract || schemaObject)
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) }
+    }
+    const args = ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), '--candidate', candidate, '--final', file, ...schema, ...(revision ? ['--revision', revision] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(counts.length ? ['--counts', counts.join(',')] : []), ...(projection ? ['--projection', projection] : []), ...(probe ? ['--probe'] : []), ...(probe && researchAgent && researchRepo ? ['--research-agent', researchAgent, '--research-repo', researchRepo] : []), ...(!returned ? ['--recover'] : [])]
     if (!Array.isArray(recordArgv) || recordArgv.some(word => typeof word !== 'string' || !word)) return { ok: false, error: 'invalid artifact recorder argv' }
     const argv = recordArgv.length ? ['python3', runner.replace(/[^/]+$/, 'artifactpublish.py'), '--record-argv-json', canonicalJson(recordArgv), '--', ...args.slice(2)] : args
     const result = await run(dispatch, { label, phase, runner, argv, file: relayFile })
@@ -514,5 +545,5 @@ ${operations.map(operation => `Command ${operation}: ${command(operation)}`).joi
     if (receipts.length !== files.length || receipts.some((r, i) => r.artifactPath !== files[i] || !/^[a-f0-9]{64}$/.test(r.sha256 || '') || !Number.isSafeInteger(r.bytes) || r.bytes < 1 || r.format !== 'text')) return { ok: false, error: 'invalid document receipt' }
     return { ok: true, receipts }
   }
-  return { ARTIFACT_SCHEMA, artifactBrief, acceptArtifact, authorArtifact, artifactRevision, documentReceipt, canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, unflatten, parse, SCHEMA }
+  return { ARTIFACT_SCHEMA, contractPath, schemaOption, artifactBrief, acceptArtifact, authorArtifact, artifactRevision, documentReceipt, canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, unflatten, parse, SCHEMA }
 })()

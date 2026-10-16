@@ -5,12 +5,15 @@ description: Shared file contracts for direct specialist sessions; producers and
 
 # Direct artifact handoff
 
-Read [Epic contracts](epic-contracts.md) for the artifact assigned to this session, including its
-fields, interpretation and completion criteria. JSON schemas are in [schemas/](schemas/).
+Find the artifact assigned to this session in [Epic contracts](epic-contracts.md) and read the
+contract file it names in [schemas/](schemas/); that file's descriptions state the artifact's
+fields, their meaning and when it is complete.
 Producers and reviewers use this same contract; a reviewer cannot add unstated requirements.
 
-The brief contains only a bead id, labeled absolute input paths, an absolute output path, and a
-one-line outcome. Read the named files yourself. Write the complete result to the exact output
+The brief is [schemas/agent-brief.schema.json](schemas/agent-brief.schema.json): facts and
+paths only, never a file's content, with the meaning of each input label. Read the named files
+yourself. A file a step writes for an agent is checked against its contract file in
+[schemas/](schemas/) before it is handed on. Write the complete result to the exact output
 path. Write only assigned outputs.
 For a JSON output write one strict JSON value with unique keys; for a document write nonempty
 UTF-8 Markdown. Do not paste file contents into a response. A final reply may name the result path.

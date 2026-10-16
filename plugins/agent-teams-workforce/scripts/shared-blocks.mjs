@@ -13,10 +13,43 @@
 // then fills it. check-workflow-syntax.mjs (the pre-commit gate) fails when any copy
 // differs from its canonical text, or a workflow listed for a block lacks it.
 //
+// CONTRACT SCHEMAS. A schema a workflow hands to agent(...) as `schema:` is a contract, and a
+// contract lives in one file (skills/artifact-handoff/schemas/ for agent hand-offs,
+// skills/pipeline-contracts/schemas/ for pipeline and journal contracts). A workflow cannot read
+// that file, so it carries a GENERATED constant, declared by two marker lines in the workflow
+// itself; nothing here lists them:
+//
+//     // ===== CONTRACT SCHEMA <CONSTANT> = <path from the plugin root>[#<JSON pointer>] — BEGIN =====
+//     // ===== CONTRACT SCHEMA <CONSTANT> — END =====
+//
+// for example
+//
+//     // ===== CONTRACT SCHEMA EDGES_SCHEMA = skills/artifact-handoff/schemas/epic-edges.schema.json — BEGIN =====
+//     // ===== CONTRACT SCHEMA EDGES_SCHEMA — END =====
+//
+// <CONSTANT> is a JavaScript identifier, unique in the workflow; the path names a .json file in
+// the plugin; the optional #<JSON pointer> (RFC 6901, e.g. #/$defs/Proposal) names a schema inside
+// it. Anything may follow BEGIN on the begin line (--write rewrites it to its canonical form) and
+// anything may sit between the two lines. `--write --only <workflow>.js` fills the block with
+//
+//     const <CONSTANT> = <the schema, as one line of JSON>
+//
+// with every $ref (local, or to a file relative to the referring file) inlined and $defs dropped,
+// exactly as scripts/portfolio/jsonartifact.py load_contract reads the same file. The check mode
+// and check-workflow-syntax.mjs fail when a constant differs from its file, its file or pointer
+// does not resolve, its end marker is missing, or one constant is declared twice. A prompt names
+// the contract file's path; it never pastes the schema.
+//
+// An artifact a producer session authors under the checkpoint contract is bound to its contract
+// FILE the same way: relayKit.artifactBrief(candidate, contract, revision, helper) and
+// relayKit.acceptArtifact({ ..., contract }) take `contract` as that same path from the plugin
+// root (with an optional #<JSON pointer>) and hand it to artifactcontract.py and jsonartifact.py
+// as `--schema <absolute path>`.
+//
 // The import ban applies to WORKFLOW SCRIPTS; this file is an ordinary ES module.
 
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { artifactCapabilityProblems } from './artifact-capabilities.mjs'
 
@@ -24,6 +57,14 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const WORKFLOWS = join(HERE, '..', 'workflows')
 
 const WRITE_COMMAND = 'node scripts/shared-blocks.mjs --write'
+
+/**
+ * The build and deploy lane's workflows, being rewritten on their own schedule. Their committed
+ * copy of the relay block keeps working unchanged because jsonartifact.py and artifactcontract.py
+ * still accept --schema-json, so a differing relay block in these files is not drift: the check
+ * does not flag it and --write does not touch it. Every other block in them is still checked.
+ */
+const RELAY_FROZEN = Object.freeze(['built-version.js', 'deploy.js', 'settle.js', 'story-deploy-fix.js', 'suite-run.js', 'task-to-deploy.js', 'tdd-refactor.js', 'workspace.js'])
 
 /**
  * Every shared block: its name, the workflows that must carry it, and where its text is defined.
@@ -92,7 +133,7 @@ export const SHARED_BLOCKS = Object.freeze([
   {
     name: 'relay',
     canonical: 'scripts/shared-blocks/relay.js',
-    filledFrom: 'skills/artifact-handoff/schemas/checkpoint.schema.json',
+    filledFrom: 'skills/artifact-handoff/schemas/{checkpoint,relay-command-result,relay-registered-result,artifact-reference}.schema.json',
     requiredIn: [
       'built-version.js',
       'dependency-assessment.js',
@@ -137,47 +178,65 @@ const pluginText = (relative) => readFileSync(join(PLUGIN_ROOT, relative), 'utf8
 /** One plugin JSON file, compacted to the single line a block embeds. */
 const pluginJson = (relative) => JSON.stringify(JSON.parse(pluginText(relative)))
 
-/** The artifact-handoff schemas directory: the architecture writer, review and conformance schemas live here. */
-const SCHEMAS_DIR = join(PLUGIN_ROOT, 'skills', 'artifact-handoff', 'schemas')
-
 /** Replaces each placeholder of `text` with its value; a missing placeholder means the block file drifted. */
 const fillPlaceholders = (name, text, fills) => fills.reduce((block, [placeholder, value]) => {
   if (!block.includes(placeholder)) throw new Error(`scripts/shared-blocks/${name}.js lacks ${placeholder}`)
   return block.replace(placeholder, () => value)
 }, text)
 
+/** Keywords whose values are instance data, never subschemas: a $ref or $defs inside them is copied as is. */
+const DATA_KEYWORDS = new Set(['const', 'default', 'enum', 'examples'])
+
 /**
- * One schema of SCHEMAS_DIR at a JSON pointer, with every $ref (local or to a sibling schema file)
- * replaced by the schema it names and $defs dropped, so a workflow validator needs no second file.
+ * The schema a plugin file holds at a JSON pointer (RFC 6901), with every $ref (local, or to a file
+ * relative to the referring file's folder) replaced by the schema it names and $defs dropped, so a
+ * workflow validator needs no second file. `relative` is the file's path from the plugin root.
+ * scripts/portfolio/jsonartifact.py load_contract resolves a contract file the same way.
  */
-export function resolvedSchema(file, pointer = '#') {
+export function resolvedContract(relative, pointer = '') {
   const documents = new Map()
-  const load = (name) => {
-    if (!documents.has(name)) documents.set(name, JSON.parse(readFileSync(join(SCHEMAS_DIR, name), 'utf8')))
-    return documents.get(name)
+  const load = (file) => {
+    if (!documents.has(file)) {
+      if (!resolve(file).startsWith(`${resolve(PLUGIN_ROOT)}/`)) throw new Error(`${file} is outside the plugin`)
+      documents.set(file, JSON.parse(readFileSync(file, 'utf8')))
+    }
+    return documents.get(file)
   }
-  const at = (name, ptr) => ptr.split('/').slice(1).reduce((node, part) => {
-    if (!node || typeof node !== 'object' || !(part in node)) throw new Error(`${name}${ptr} does not resolve`)
+  const at = (file, ptr) => (ptr ? ptr.split('/').slice(1) : []).reduce((node, raw) => {
+    const part = raw.replace(/~1/g, '/').replace(/~0/g, '~')
+    if (!node || typeof node !== 'object' || !Object.hasOwn(node, part)) throw new Error(`${file}#${ptr} does not resolve`)
     return node[part]
-  }, load(name))
-  const inline = (value, name) => {
-    if (Array.isArray(value)) return value.map(item => inline(item, name))
+  }, load(file))
+  const inline = (value, file, seen) => {
+    if (Array.isArray(value)) return value.map(item => inline(item, file, seen))
     if (!value || typeof value !== 'object') return value
     if (typeof value.$ref === 'string') {
-      const [target, ptr] = value.$ref.split('#')
-      const targetName = target || name
-      return inline(at(targetName, `#${ptr}`), targetName)
+      const [target, ptr = ''] = value.$ref.split('#')
+      const targetFile = target ? resolve(dirname(file), target) : file
+      const key = `${targetFile}#${ptr}`
+      if (seen.includes(key)) throw new Error(`circular schema reference: ${[...seen, key].join(' -> ')}`)
+      return inline(at(targetFile, ptr), targetFile, [...seen, key])
     }
-    return Object.fromEntries(Object.entries(value).filter(([key]) => key !== '$defs').map(([key, item]) => [key, inline(item, name)]))
+    return Object.fromEntries(Object.entries(value).filter(([key]) => key !== '$defs').map(([key, item]) => [key, DATA_KEYWORDS.has(key) ? item : inline(item, file, seen)]))
   }
-  return inline(at(file, pointer), file)
+  const file = resolve(PLUGIN_ROOT, relative)
+  return inline(at(file, pointer), file, [])
 }
+
+/** One schema of the artifact-handoff schemas folder at a JSON pointer, resolved as resolvedContract does. */
+const resolvedSchema = (file, pointer = '') => resolvedContract(join('skills', 'artifact-handoff', 'schemas', file), pointer)
 
 /** The canonical text of one block. */
 export const canonicalBlock = (name) => {
   const text = readFileSync(join(HERE, 'shared-blocks', `${name}.js`), 'utf8').replace(/\n+$/, '')
   if (name === 'relay') {
-    return fillPlaceholders(name, text, [['/* CHECKPOINT_SCHEMA */ {}', pluginJson(blockOf(name).filledFrom)]])
+    const handoff = (file) => join('skills', 'artifact-handoff', 'schemas', file)
+    return fillPlaceholders(name, text, [
+      ['/* CHECKPOINT_SCHEMA */ {}', pluginJson(handoff('checkpoint.schema.json'))],
+      ['/* RELAY_COMMAND_RESULT_SCHEMA */ {}', JSON.stringify(resolvedSchema('relay-command-result.schema.json'))],
+      ['/* RELAY_REGISTERED_RESULT_SCHEMA */ {}', JSON.stringify(resolvedSchema('relay-registered-result.schema.json'))],
+      ['/* ARTIFACT_REFERENCE_SCHEMA */ {}', JSON.stringify(resolvedSchema('artifact-reference.schema.json'))],
+    ])
   }
   if (name === 'story-deploy-args') {
     return fillPlaceholders(name, text, [['/* STORY_DEPLOY_ARGS_SCHEMA */ {}', pluginJson(blockOf(name).filledFrom)]])
@@ -198,7 +257,7 @@ export const canonicalBlock = (name) => {
   }
   if (name === 'architecture-artifacts') {
     const common = 'architecture-common.schema.json'
-    const def = (defs, file) => resolvedSchema(file, `#/$defs/${defs}`)
+    const def = (defs, file) => resolvedSchema(file, `/$defs/${defs}`)
     const arrayOf = (defs) => JSON.stringify({ type: 'array', items: def(defs, common) })
     const values = (defs, file = common) => JSON.stringify(def(defs, file).enum)
     const fills = [
@@ -242,13 +301,65 @@ export function extractBlock(source, name) {
   return at === null ? null : source.slice(at.body, at.end).replace(/\n+$/, '')
 }
 
+/** A contract-schema begin marker line: the constant name, the contract file and the optional JSON pointer. */
+const CONTRACT_BEGIN = /^\/\/ ===== CONTRACT SCHEMA ([A-Za-z_$][\w$]*) = ([A-Za-z0-9_-][A-Za-z0-9._/-]*\.json)(?:#(\/\S*))? — BEGIN\b.*$/gm
+const contractEnd = (constant) => `// ===== CONTRACT SCHEMA ${constant} — END =====`
+export const contractBeginMarker = (constant, source, file) =>
+  `// ===== CONTRACT SCHEMA ${constant} = ${source} — BEGIN (generated from that contract file; edit it, then: ${WRITE_COMMAND} --only ${file}) =====`
+
+/**
+ * Checks (or, with write, rewrites) every contract-schema block of one workflow's `source`.
+ * Returns { source, problems }: the source with every block filled, and what is wrong.
+ */
+export function syncContractSchemas(file, source, write) {
+  const problems = []
+  const seen = new Set()
+  const blocks = [...source.matchAll(CONTRACT_BEGIN)].map((match) => {
+    const [line, constant, contract, pointer = ''] = match
+    const end = source.indexOf(contractEnd(constant), match.index)
+    const nextBegin = source.indexOf('// ===== CONTRACT SCHEMA ', match.index + line.length)
+    return { constant, contract, pointer, begin: match.index, body: match.index + line.length + 1, end, nextBegin, line }
+  })
+  let out = source
+  for (const block of [...blocks].reverse()) {
+    const where = `${file}: contract schema ${block.constant}`
+    if (seen.has(block.constant)) problems.push(`${where} is declared twice`)
+    seen.add(block.constant)
+    if (block.end < 0 || (block.nextBegin >= 0 && block.nextBegin < block.end)) {
+      problems.push(`${where} has no end marker (${contractEnd(block.constant)}) before the next block`)
+      continue
+    }
+    const named = `${block.contract}${block.pointer ? `#${block.pointer}` : ''}`
+    let text
+    try {
+      text = `const ${block.constant} = ${JSON.stringify(resolvedContract(block.contract, block.pointer))}`
+    } catch (err) {
+      problems.push(`${where}: ${named} does not resolve: ${String((err && err.message) || err)}`)
+      continue
+    }
+    const marker = contractBeginMarker(block.constant, named, file)
+    if (block.line === marker && out.slice(block.body, block.end).replace(/\n+$/, '') === text) continue
+    if (write) out = `${out.slice(0, block.begin)}${marker}\n${text}\n${out.slice(block.end)}`
+    else problems.push(`${where} differs from ${named} (run ${WRITE_COMMAND} --only ${file})`)
+  }
+  return { source: out, problems }
+}
+
 /**
  * Checks (or, with write, rewrites) every copy of every block. Returns the problems found:
- * a listed workflow without the block, a copy that differs from the canonical text.
+ * a listed workflow without the block, a copy that differs from the canonical text, a
+ * contract-schema block whose constant differs from its contract file or lacks its end marker.
  */
 export function syncSharedBlocks({ write = false, only = [] } = {}) {
   const problems = artifactCapabilityProblems(join(HERE, '..'))
   const files = readdirSync(WORKFLOWS).filter((f) => f.endsWith('.js') && (!only.length || only.includes(f)))
+  for (const file of files) {
+    const path = join(WORKFLOWS, file)
+    const source = readFileSync(path, 'utf8')
+    const synced = syncContractSchemas(file, source, write)
+    problems.push(...synced.problems)
+    if (write && synced.source !== source) writeFileSync(path, synced.source)
+  }
   for (const block of SHARED_BLOCKS) {
     const text = canonicalBlock(block.name)
     for (const file of files) {
@@ -259,6 +370,7 @@ export function syncSharedBlocks({ write = false, only = [] } = {}) {
         if (block.requiredIn.includes(file)) problems.push(`${file}: lacks the shared block ${block.name}`)
         continue
       }
+      if (block.name === 'relay' && RELAY_FROZEN.includes(file)) continue
       const marker = beginMarker(block.name)
       if (at.marker === marker && source.slice(at.body, at.end).replace(/\n+$/, '') === text) continue
       if (write) {

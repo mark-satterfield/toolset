@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -17,12 +18,14 @@ from typing import Final
 # The driver surface is defined once, in the pipeline-contracts skill.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
 import hierarchy
+import strictschema
 from driver_surface_types import CONTROL_REPO_ENV
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core import step_journal
+from orchestrator.core.agents import strict_json
 from orchestrator.core.handback_contract import OTHER_CAUSE
-from orchestrator.core.io import JsonValue
+from orchestrator.core.io import JsonValue, write_json
 from orchestrator.core.journal_steps import StepInputs, StepRun, file_artifact, stage_of
 from orchestrator.core.models import StepError
 from orchestrator.core.tools import env_path
@@ -72,7 +75,6 @@ ARTIFACT_REPOSITORIES: Final = "repositories"
 ARTIFACT_CREATION: Final = "repository creation"
 REPOSITORY: Final = "repository"
 CONTEXT: Final = "repository context"
-PRD: Final = "prd"
 UI_BUNDLE_LIST: Final = "ui bundles"
 UI_CANDIDATE: Final = "ui sources as authored"
 UI_SOURCES: Final = "ui sources"
@@ -82,7 +84,6 @@ CRITERIA: Final = "criteria"
 STORY_DOCUMENT: Final = "story document"
 STORY: Final = "story"
 TASK_CONTEXT_FILE: Final = "task context"
-STORY_BUILDS: Final = "what the story builds"
 TASKS_FILE: Final = "tasks"
 TASK_GAPS: Final = "task gaps"
 TASK_CORRECTION: Final = "task correction"
@@ -93,7 +94,6 @@ TASK_EDGE_COUNTS: Final = "task edge counts"
 TASKS_RESULT: Final = "tasks result"
 CLOSURE_EDGES: Final = "closure edges"
 EDGE_LIST: Final = "task dependency listing"
-MAPPER_SCHEMA: Final = "task dependency schema"
 TASK_DEPS: Final = "task dependencies"
 EDGES_RESULT: Final = "edges result"
 UNSCORED: Final = "unscored tasks"
@@ -108,6 +108,40 @@ SPEC_FILES: Final[tuple[str, ...]] = (SPEC, DATA_MODEL, CRITERIA)
 WORK: Final = "work"
 """The parameter that says which of an agent's kinds of step a planned step is."""
 _SLUG: Final = re.compile(r"[A-Za-z0-9._-]+")
+
+SCHEMAS: Final[Path] = Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "schemas"
+"""The artifact-handoff skill's schema folder: the one home of every file contract a step writes for an agent."""
+SPEC_CONTEXT_SCHEMA: Final = "spec-context.schema.json"
+TASK_CONTEXT_SCHEMA: Final = "task-context.schema.json"
+TASK_DEPS_SCHEMA: Final = "task-deps.schema.json"
+STORY_DOCUMENT_SCHEMA: Final = "story-document.schema.json"
+UI_BUNDLES_SCHEMA: Final = "ui-bundles.schema.json"
+CLOSURE_EDGES_SCHEMA: Final = "closure-edges.schema.json"
+LISTING_SCHEMA: Final = "task-dependency-listing.schema.json"
+REVIEWER_SCOPE_SCHEMA: Final = "reviewer-scope.schema.json"
+"""The contract files of the files the steps write for agents, by file name under :data:`SCHEMAS`."""
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def write_contract(path: Path, value: Mapping[str, JsonValue], schema: str) -> Path:
+    """Write a file a step hands an agent, after checking it against its contract file.
+
+    A value that fails its contract is a defect of the step that built it, so it raises
+    ``jsonschema.ValidationError`` and nothing is written.
+
+    Args:
+        path: Where the file is written.
+        value: The file's content.
+        schema: The contract's file name under :data:`SCHEMAS`.
+
+    Returns:
+        ``path``.
+
+    """
+    contract: Path = SCHEMAS / schema
+    strictschema.validate(dict(value), strict_json(contract), location=contract)
+    write_json(path, value)
+    return path
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

@@ -162,14 +162,17 @@ ends; the next dispatch starts at that step. A stop request leaves the step runn
 
 An agent that starts other agents in its own session (`aws-solutions-architect`) or plans steps for
 the script (`architecture-team-lead`) adds child steps and a last child step "Finish" under its own
-step with `atw-step-journal`, as the `subagent-contract` skill describes. After such a session the
+step with `atw-step-journal`, by the protocol in `helper-steps.schema.json` that the
+`subagent-contract` skill applies. After such a session the
 runner reads the journal again: a step whose child steps are all done is closed by the runner; a
 child left not done is the next step. An agent left running is launched as its own session from
 the request file its step holds; "Finish" is launched as the same agent, continuing its session.
 
 A step that already holds a session id, a "Finish" step, and a later step of an agent that holds a
 session earlier in the journal continue that session (`claude --resume`); when the conversation is
-gone a new session starts.
+gone a new session starts. The solutions architect writes its result as the work goes, and every
+step of it keeps a result already at the result path, so a new session continues from the partial
+result and the design work done before the stop is not done again.
 
 When a spec step creates a Story bead and a Task step creates Task beads, the same step creates
 that bead's journal in the same directory (pipeline `deploy` for a Story, `build` for a Task), with
@@ -245,7 +248,7 @@ file by `skills/artifact-handoff/scripts/review_criteria.py`.
 answers each architecture and technical-requirement criterion in its result. The reviewers apply
 exactly these and no others, each to the items its group covers. A criterion is satisfied by the
 document that is its home; nobody asks a document for detail below its level. No brief carries any
-part of the criteria: the brief names the criteria file as the input `criteria`.
+part of the criteria: agents read them in `effective-architecture/review-standard.md`.
 
 ### 2.5 Where the contracts and schemas live
 
@@ -878,7 +881,7 @@ correction by the architect and a new check, or the lead and a new check, or the
 promotion step, with the lead's step between them when a review raised something.
 
 - **The check step** (`flows/architecture_check.py`) judges nothing; every branch is a rule over
-  the matrix, the criteria file and the architect's result. It writes `check-<n>.json`. A problem
+  the matrix, the criteria file and the architect's result. It writes `architecture/checks/<step id>/check.json`. A problem
   plans one correction by the architect and a new check, at most 3 times; after that the step
   fails. With no problem it reads what is in review, writes `review-scope.json` and `unlinked.json`,
   records nothing in the matrix, and, when the
@@ -945,7 +948,13 @@ result carries only error text, section 6.1).
 ### 11.4 The TRD
 
 `trd-author` writes the TRD at the path the architecture context names, at the architect's
-request: drafted as soon as the architect's state file exists, then updated in place. The step
+request: drafted as soon as the architect's state file exists, then updated in place. It reads the
+Epic's constraints from `atw-matrix epic <id> --constraints`, the set the architect reads, and the
+PRD requirement headings `atw-matrix epic <id>` names. Its answer lists every requirement each
+write added or changed, and the step that accepts the answer records one constraint for each as
+a pointer (`trd`: the Epic and the requirement id, a heading of the TRD), so the requirement's
+text lives in the TRD alone. `trd.confirm` also fails on a constraint whose pointer names a
+requirement the TRD has no heading for. The step
 `trd.confirm` (`flows/trd_authoring.py`) runs after the Architecture container: it checks that the
 TRD has YAML front matter and that every `decisionIds` entry resolves under the architecture root,
 and records the TRD's path and digest on the Epic bead. The driver files the TRD in the vault after

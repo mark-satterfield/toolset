@@ -1,6 +1,6 @@
 {
   "title": "TaskDeps",
-  "description": "Cross-Story Task dependencies for a multi-repository span: the task-dependency-mapper writes <work>/candidates/task-deps.json and Python accepts it as <work>/task-deps.json. A single-repository span gets the empty document written by Python. At runtime the from and to strings are narrowed to an enum of the span's Task keys.",
+  "description": "Cross-Story Task dependencies for a multi-repository span: the task-dependency-mapper writes <work>/task-deps.json, which Python validates against this file and then checks that every from and to names a Task key of the span (the Stories and Tasks files the task dependency listing, task-dependency-listing.schema.json, names). A single-repository span gets the empty document written by Python.",
   "type": "object",
   "additionalProperties": false,
   "required": [

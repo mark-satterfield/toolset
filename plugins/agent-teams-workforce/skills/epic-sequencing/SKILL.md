@@ -4,7 +4,7 @@ description: >-
   The edge test for Epic-to-Epic dependency edges, and how to apply it to ONE Epic: read its
   full PRD, answer the foundation-layer checklist (drives, rests on or not touched for each
   of nine layers) and name the other architecture decisions it drives and rests on, check
-  the effective architecture, find the related Epics through the matrix, read their PRDs in full, and apply the
+  the effective architecture, find the related Epics through the matrix, read the requirements of theirs that bear on each decision, and apply the
   test in both directions. An Epic is a PRD, a business requirement, and an edge is an ARCHITECTURE
   dependency, a judgment about the order in which architecture is established: it exists
   exactly where an architecture decision one Epic rests on should be designed from another
@@ -169,8 +169,10 @@ another Epic set.
    the Epic rests on, the related Epics are those whose requirements drive that layer; for
    each layer it drives, every Epic that rests on it. The matrix names the candidates; it
    does not say which way an edge runs.
-5. Read in full every related PRD, and the PRD at the other end of every edge standing on
-   the Epic, each at the path `atw-matrix epic <its id>` returns. No other PRD is opened.
+5. For every related Epic, and the Epic at the other end of every edge standing on the Epic,
+   read the requirements that bear on the layer or decision in question: `atw-matrix epic
+   <its id>` names its requirements by their PRD headings and returns its PRD path; read
+   those headings and no other part. No other PRD is opened.
 6. Apply the test in both directions: an edge from another Epic to this one where an
    architecture decision this Epic rests on should be designed from that Epic's
    requirements first, and an edge from this Epic to another where an architecture decision
@@ -201,32 +203,17 @@ effective architecture settles the identity architecture, no identity Epic needs
 
 ## The edge file
 
-```json
-{"edges": [
-  {"from": "<blocker epic id>", "to": "<blocked epic id>",
-   "reason": "the identity architecture should be designed from sign-up/sign-in requirements, not password reset's",
-   "confidence": "high",
-   "archCheck": "<the document id and heading consulted, the lifecycle the matrix returned for it, and why it leaves the decision open; or that the lookup returned nothing>"}
-],
- "withdrawn": [
-  {"from": "<blocker epic id>", "to": "<blocked epic id>",
-   "reason": "the notification delivery decision is designed from this Epic's own requirements; the recorded reason names a runtime call, which is a Task dependency"}
-]}
-```
-
-`edges` holds every edge to or from the assessed Epic that passes the test — each standing
-edge it keeps included — and no edge that does not touch it. `from` must be elaborated
-before `to`. `confidence` is `high`, `medium` or `low` and is for the person reading the
-proposal. A `low` edge is one to argue about; it is not a reason to leave it out.
-
-`withdrawn` holds every owned edge standing on the assessed Epic that `edges` does not keep,
-each with a reason that answers the reason recorded for it. An edge drawn by hand is never
-in either list and is never withdrawn. Both ends of every edge are Epics; validation refuses
-any other edge.
+The edge file's one definition is artifact-handoff's `schemas/epic-edge-proposal.schema.json`:
+its descriptions say what `edges`, `withdrawn` and `decisions` hold and what every member
+means. A reason in it reads like this one: "the identity architecture should be designed from
+sign-up/sign-in requirements, not password reset's". A withdrawal's reason answers the one
+recorded: "the notification delivery decision is designed from this Epic's own requirements;
+the recorded reason names a runtime call, which is a Task dependency".
 
 Alongside the file, write the reasoning in prose: the foundation checklist with an answer
-for every layer, the other decisions named, the architecture check on each, the PRDs found related,
-and the test applied to each edge and each withdrawal. The
+for every layer, the other decisions named, the architecture check on each, the Epics found
+related and the requirement headings read, and the test applied to each edge and each
+withdrawal. The
 edges are the residue of that reasoning, and the reasoning is what the next assessment
 revises.
 

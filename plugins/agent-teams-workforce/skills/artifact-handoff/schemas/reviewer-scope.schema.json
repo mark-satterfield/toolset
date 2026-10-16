@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/reviewer-scope.schema.json",
+  "title": "Reviewer scope",
+  "description": "What one architecture reviewer is handed as its `review scope`: the Epic's review scope (what `atw-matrix review-scope` prints) narrowed to the criteria the reviewer's groups cover. The check step (orchestrator/flows/architecture_check.py) writes it, one file per reviewer, and validates it against this file. Nothing outside it is the reviewer's to review.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["bead", "epic", "reviewer", "groups", "criteria", "requirements", "documents", "trd", "prd", "signals"],
+  "properties": {
+    "bead": {"description": "The Epic's bead id.", "type": "string", "minLength": 1},
+    "epic": {"description": "The id of the Epic's entry in the matrix.", "type": "string", "minLength": 1},
+    "reviewer": {"description": "The reviewer's agent name.", "type": "string", "minLength": 1},
+    "groups": {
+      "description": "The reviewer groups of effective-architecture/review-criteria.json that selected the reviewer.",
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "criteria": {
+      "description": "The ids of the criteria the reviewer reviews against; their text and level are in effective-architecture/review-standard.md.",
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "requirements": {
+      "description": "The Epic's requirements: each requirement entry's id and its name, which is the PRD heading that states it. When `prd` is set, read only these headings of the PRD, and only those a check needs.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "heading"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "heading": {"type": "string"}
+        }
+      }
+    },
+    "documents": {
+      "description": "The arc42 documents the Epic reaches that are not effective, each with the headings reached; for a `no-change-needed` conclusion also the effective documents and headings the architect cites as meeting the Epic (lifecycle `effective`). Empty when no group of the reviewer covers documents.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/ScopeDocument"}
+    },
+    "trd": {
+      "description": "The TRD's path when a group of the reviewer covers its requirements; null otherwise.",
+      "type": ["string", "null"]
+    },
+    "prd": {
+      "description": "The PRD's path when the review checks content against the Epic's requirements: the TRD's coverage, or a `no-change-needed` conclusion. Null otherwise; the brief then hands no PRD.",
+      "type": ["string", "null"]
+    },
+    "signals": {
+      "description": "The lists of the architect's result (architecture-result.schema.json, reviewSignals) that selected the reviewer, by name.",
+      "type": "object",
+      "additionalProperties": {"type": "array"}
+    }
+  },
+  "$defs": {
+    "ScopeDocument": {
+      "description": "One document in review.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "name", "side", "lifecycle", "headings", "reachedBy"],
+      "properties": {
+        "id": {"description": "The document's matrix id, `document:<path under the architecture root>`.", "type": "string", "minLength": 1},
+        "kind": {"type": "string"},
+        "name": {"type": "string"},
+        "side": {"type": "string"},
+        "lifecycle": {"description": "The document's lifecycle state from its front matter.", "type": "string"},
+        "headings": {"description": "The headings reached, sorted and without repeats; review these.", "type": "array", "items": {"type": "string"}},
+        "reachedBy": {
+          "description": "The relationships through which the Epic reaches the document.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["relationship", "entry", "heading", "side"],
+            "properties": {
+              "relationship": {"type": "string"},
+              "entry": {"description": "The requirement the document covers, or the feature or added or changed element it describes.", "type": "string"},
+              "heading": {"description": "The heading the relationship names; empty when it names none.", "type": "string"},
+              "side": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

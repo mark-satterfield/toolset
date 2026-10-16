@@ -1,4 +1,5 @@
 {
+  "description": "task-decomposer's one correction of its Tasks file (<work>/tasks-<slug>.correction.json), written when the step `beadwrite.plan_story_tasks` finds a gap; the second plan step merges it into tasks-<slug>.json, renumbers its keys and checks coverage and sizes again. Tasks have the members of tasks.schema.json with new keys N1, N2 and so on; edges reach only new Tasks; scores size every new Task and every saved Task the gaps name as unsized, by its saved key. Complete means the uncited things and the unsized Tasks the gaps name are repaired without rewriting a retained Task; there is no noWork.",
   "type": "object",
   "required": [
     "tasks",

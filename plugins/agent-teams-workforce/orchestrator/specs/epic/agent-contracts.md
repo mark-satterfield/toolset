@@ -9,15 +9,15 @@ contract's one place and restates none of its fields. An agent of a contract loa
 skill: artifact-handoff, or effective-architecture, which holds the criteria of every level and
 points the architecture team to the same schemas folder. `polyrepo-steward` loads neither: its
 definition names the schemas folder for the one request it answers. An artifact Python produces
-has no agent reviewer. The rows of the owner-run portfolio workflows carry the contract
-`out-of-scope`: no Epic session produces or reads them.
+has no agent reviewer. The rows of the owner-run portfolio and PRD workflows name their
+contracts too; no Epic session produces or reads them.
 
 ## Agents
 
 | Agent | Definition | Skills | Produces | Reads |
 |---|---|---|---|---|
 | aws-solutions-architect | agents/aws-solutions-architect.md | agent-teams-workforce:effective-architecture, agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect, agent-teams-workforce:aws-solution-architect, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:senior-security, agent-teams-workforce:graphrag-lookup | architecture-state,architecture-result,specialist-request,trd-request,write-request | architecture-context,check-result,scope-review,specialist-answer,trd-answer,write-result,architecture-ruling,architecture-views |
-| architecture-team-lead | agents/architecture-team-lead.md | agent-teams-workforce:effective-architecture, agent-teams-workforce:subagent-contract | lead-routing,specialist-request,architecture-question | scope-review,architecture-result,specialists,specialist-answer,architecture-ruling |
+| architecture-team-lead | agents/architecture-team-lead.md | agent-teams-workforce:effective-architecture, agent-teams-workforce:subagent-contract | lead-routing,specialist-request,architecture-question | scope-review,architecture-result,specialist-answer,architecture-ruling |
 | integration-pattern-architect | agents/integration-pattern-architect.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:effective-architecture | specialist-answer | specialist-request,architecture-views |
 | persistence-architecture-specialist | agents/persistence-architecture-specialist.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:dynamodb, agent-teams-workforce:database-schema-designer, agent-teams-workforce:effective-architecture | specialist-answer | specialist-request,architecture-views |
 | security-architecture-designer | agents/security-architecture-designer.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-security, agent-teams-workforce:iam, agent-teams-workforce:secrets-manager, agent-teams-workforce:effective-architecture | specialist-answer | specialist-request,architecture-views |
@@ -30,31 +30,32 @@ has no agent reviewer. The rows of the owner-run portfolio workflows carry the c
 | architecture-diagram-author | agents/architecture-diagram-author.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:architecture-diagramming, agent-teams-workforce:c4-diagramming, agent-teams-workforce:uml-diagramming, agent-teams-workforce:effective-architecture | specialist-answer | specialist-request,architecture-views |
 | c4-diagram-author | agents/c4-diagram-author.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:architecture-diagramming, agent-teams-workforce:c4-diagramming, agent-teams-workforce:effective-architecture | specialist-answer | specialist-request,architecture-views |
 | uml-diagram-author | agents/uml-diagram-author.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:architecture-diagramming, agent-teams-workforce:uml-diagramming, agent-teams-workforce:effective-architecture | specialist-answer | specialist-request,architecture-views |
-| architecture-pattern-challenger | agents/architecture-pattern-challenger.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect, agent-teams-workforce:aws-solution-architect, agent-teams-workforce:effective-architecture | scope-review | review-scope,architecture-result,architecture-views,trd-document |
-| architecture-tradeoff-skeptic | agents/architecture-tradeoff-skeptic.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect, agent-teams-workforce:effective-architecture | scope-review | review-scope,architecture-result,architecture-views,trd-document |
-| architecture-boundary-guardian | agents/architecture-boundary-guardian.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect, agent-teams-workforce:effective-architecture | scope-review | review-scope,architecture-result,architecture-views,trd-document |
-| operational-readiness-reviewer | agents/operational-readiness-reviewer.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:observability-designer, agent-teams-workforce:effective-architecture | scope-review | review-scope,architecture-result,architecture-views,trd-document |
-| failure-mode-analyst | agents/failure-mode-analyst.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect, agent-teams-workforce:observability-designer, agent-teams-workforce:effective-architecture | scope-review | review-scope,architecture-result,architecture-views,trd-document |
-| cost-architecture-reviewer | agents/cost-architecture-reviewer.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:aws-cost-operations, agent-teams-workforce:effective-architecture | scope-review | review-scope,architecture-result,architecture-views,trd-document |
-| cost-impact-reviewer | agents/cost-impact-reviewer.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:aws-cost-operations, agent-teams-workforce:effective-architecture | scope-review | review-scope,architecture-result,architecture-views,trd-document |
-| trd-validator | agents/trd-validator.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:effective-architecture | scope-review | review-scope,architecture-result,trd-document |
+| architecture-pattern-challenger | agents/architecture-pattern-challenger.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect, agent-teams-workforce:aws-solution-architect, agent-teams-workforce:effective-architecture | scope-review | reviewer-scope,architecture-result,architecture-views,trd-document |
+| architecture-tradeoff-skeptic | agents/architecture-tradeoff-skeptic.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect, agent-teams-workforce:effective-architecture | scope-review | reviewer-scope,architecture-result,architecture-views,trd-document |
+| architecture-boundary-guardian | agents/architecture-boundary-guardian.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect, agent-teams-workforce:effective-architecture | scope-review | reviewer-scope,architecture-result,architecture-views,trd-document |
+| operational-readiness-reviewer | agents/operational-readiness-reviewer.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:observability-designer, agent-teams-workforce:effective-architecture | scope-review | reviewer-scope,architecture-result,architecture-views,trd-document |
+| failure-mode-analyst | agents/failure-mode-analyst.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect, agent-teams-workforce:observability-designer, agent-teams-workforce:effective-architecture | scope-review | reviewer-scope,architecture-result,architecture-views,trd-document |
+| cost-architecture-reviewer | agents/cost-architecture-reviewer.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:aws-cost-operations, agent-teams-workforce:effective-architecture | scope-review | reviewer-scope,architecture-result,architecture-views,trd-document |
+| cost-impact-reviewer | agents/cost-impact-reviewer.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:aws-cost-operations, agent-teams-workforce:effective-architecture | scope-review | reviewer-scope,architecture-result,architecture-views,trd-document |
+| trd-validator | agents/trd-validator.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:effective-architecture | scope-review | reviewer-scope,architecture-result,trd-document |
 | architecture-decider | agents/architecture-decider.md | agent-teams-workforce:effective-architecture, agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect, agent-teams-workforce:aws-solution-architect | architecture-ruling | architecture-question |
 | architecture-maintainer | agents/architecture-maintainer.md | agent-teams-workforce:effective-architecture, agent-teams-workforce:subagent-contract, agent-teams-workforce:arc42-maintain, agent-teams-workforce:c4-diagramming, agent-teams-workforce:uml-diagramming | write-result,architecture-views | write-request,architecture-views |
 | trd-author | agents/trd-author.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:effective-architecture | trd-document,trd-answer | trd-request,architecture-state,architecture-views |
 | polyrepo-steward | agents/polyrepo-steward.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:graphrag-lookup, polyrepo-repo, polyrepo-info, polyrepo-governance, polyrepo-beads | specialist-answer | specialist-request,matrix |
-| api-specification-author | agents/api-specification-author.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:artifact-handoff, agent-teams-workforce:skillspoke-events, agent-teams-workforce:effective-architecture | spec-document,spec-ui,spec-correction | trd-document,placement,architecture-views,span-elements,spec-review,spec-ruling |
-| data-model-specification-author | agents/data-model-specification-author.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:dynamodb, agent-teams-workforce:database-schema-designer, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture | data-model-document,spec-correction | trd-document,placement,architecture-views,span-elements,spec-review,spec-ruling |
-| acceptance-criteria-writer | agents/acceptance-criteria-writer.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa, agent-teams-workforce:artifact-handoff | criteria-document,spec-correction | trd-document,spec-document,data-model-document,spec-review,spec-ruling |
-| openapi-contract-reviewer | agents/openapi-contract-reviewer.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:skillspoke-events, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture | spec-review | spec-document,data-model-document,criteria-document,trd-document |
-| spec-decider | agents/spec-decider.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect, agent-teams-workforce:cove-prompt-design, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture | spec-ruling | spec-review,spec-correction,spec-document,data-model-document,criteria-document,trd-document |
-| task-decomposer | agents/task-decomposer.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:beads-contract, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:artifact-handoff, agent-teams-workforce:wsjf | tasks,tasks-correction | story,placement,span-elements,spec-document,data-model-document,criteria-document,spec-ui |
-| task-dependency-mapper | agents/task-dependency-mapper.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:beads-contract, agent-teams-workforce:artifact-handoff | task-deps | tasks,closure-edges |
+| api-specification-author | agents/api-specification-author.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:artifact-handoff, agent-teams-workforce:skillspoke-events, agent-teams-workforce:effective-architecture | spec-document,spec-ui,spec-correction | trd-document,spec-context,bundles,placement,architecture-views,span-elements,spec-review,spec-ruling |
+| data-model-specification-author | agents/data-model-specification-author.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:dynamodb, agent-teams-workforce:database-schema-designer, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture | data-model-document,spec-correction | trd-document,spec-context,placement,architecture-views,span-elements,spec-review,spec-ruling |
+| acceptance-criteria-writer | agents/acceptance-criteria-writer.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa, agent-teams-workforce:artifact-handoff | criteria-document,spec-correction | trd-document,spec-context,spec-document,data-model-document,spec-review,spec-ruling |
+| openapi-contract-reviewer | agents/openapi-contract-reviewer.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:skillspoke-events, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture | spec-review | spec-document,data-model-document,criteria-document,trd-document,spec-context |
+| spec-decider | agents/spec-decider.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect, agent-teams-workforce:cove-prompt-design, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture | spec-ruling,prd-deadlock-ruling | spec-review,spec-correction,spec-document,data-model-document,criteria-document,trd-document,prd-creation |
+| task-decomposer | agents/task-decomposer.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:beads-contract, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:artifact-handoff, agent-teams-workforce:wsjf | tasks,tasks-correction | story,spec-context,task-context,placement,span-elements,spec-document,data-model-document,criteria-document,spec-ui |
+| task-dependency-mapper | agents/task-dependency-mapper.md | agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:beads-contract, agent-teams-workforce:artifact-handoff | task-deps,task-edge-proposal | tasks,closure-edges,task-dependency-listing,assessment-context |
 
 ## Agents no Epic step starts
 
 A script step writes the Story document, so no step starts user-story-writer (DESIGN 11.5).
-prd-validation-analyst, filing-clerk, advantage-evaluator, phase-gate-enforcer, wsjf-scorer and
-epic-sequencer are started by their own workflows or by a person. No Epic step starts
+prd-validation-analyst, filing-clerk, advantage-evaluator, phase-gate-enforcer, wsjf-scorer,
+epic-sequencer, stakeholder-request-intake-writer, persona-profile-writer, okr-writer, prd-writer
+and prd-alignment-verifier are started by their own workflows or by a person. No Epic step starts
 architecture-fitness-function-author or ubiquitous-language-writer. built-architecture-comparer and
 architecture-conformance-reviewer are started by the built-version workflow.
 workflow-command-runner is never an Epic session.
@@ -62,7 +63,7 @@ workflow-command-runner is never an Epic session.
 ## Artifacts
 
 Paths reproduce INDEX.md exactly. Python means no agent producer or reviewer at that edge.
-An `out-of-scope` row is listed for coverage and is no Epic contract.
+A `<workDir>` or `<artifacts.dir>` row belongs to an owner-run workflow and is no Epic contract.
 
 | Artifact | Contract | Producers | Reviewers or consumers | Skill | Rules |
 |---|---|---|---|---|---|
@@ -78,53 +79,56 @@ An `out-of-scope` row is listed for coverage and is no Epic contract.
 | a write request file (under `<arch-work>/helpers/`) | write-request | aws-solutions-architect | architecture-maintainer | effective-architecture `schemas/write-request.schema.json` | write-request (`architecture_work_contract.WriteRequest`) |
 | the result file a write request names | write-result | architecture-maintainer | aws-solutions-architect | effective-architecture `schemas/write-result.schema.json` | write-result (`architecture_work_contract.WriteResult`) |
 | `<arch>/arc42/**` except section 2 (edits; `lifecycle_state: effective`, commit and push after review) | architecture-views | architecture-maintainer | aws-solutions-architect,integration-pattern-architect,persistence-architecture-specialist,security-architecture-designer,cdk-infrastructure-designer,event-schema-designer,api-contract-designer,graphql-schema-designer,domain-event-modeler,bounded-context-mapper,architecture-diagram-author,c4-diagram-author,uml-diagram-author,architecture-pattern-challenger,architecture-tradeoff-skeptic,architecture-boundary-guardian,operational-readiness-reviewer,failure-mode-analyst,cost-architecture-reviewer,cost-impact-reviewer,trd-author,api-specification-author,data-model-specification-author | artifact-handoff | architecture-views |
-| `<arch-work>/check-<n>.json` | check-result | python | aws-solutions-architect | effective-architecture `schemas/check-result.schema.json` | check-result (`architecture_work_contract.CheckResult`) |
-| `<arch-work>/review-scope.json` | review-scope | python | python | none | review-scope (`<plugin>/scripts/portfolio/matrixreview.py` `ReviewScope`) |
-| `<arch-work>/review-scope.<reviewer>.json` | review-scope | python | architecture-pattern-challenger,architecture-tradeoff-skeptic,architecture-boundary-guardian,operational-readiness-reviewer,failure-mode-analyst,cost-architecture-reviewer,cost-impact-reviewer,trd-validator | none | review-scope (`orchestrator/flows/architecture_check.py` `ReviewerScope`: `bead`, `epic`, `reviewer`, `groups`, `criteria`, `documents`, `trd`, `signals`) |
+| `<arch-work>/checks/<step id>/check.json` | check-result | python | aws-solutions-architect | effective-architecture `schemas/check-result.schema.json` | check-result (`architecture_work_contract.CheckResult`) |
+| `<arch-work>/checks/<step id>/review-scope.json` | review-scope | python | python | none | review-scope (`<plugin>/scripts/portfolio/matrixreview.py` `ReviewScope`) |
+| `<arch-work>/checks/<step id>/unlinked.json` | unlinked | python | python | none | `<plugin>/scripts/portfolio/matrixquery.py` `EpicView` |
+| `<arch-work>/checks/<step id>/review-scope.<reviewer>.json` | reviewer-scope | python | architecture-pattern-challenger,architecture-tradeoff-skeptic,architecture-boundary-guardian,operational-readiness-reviewer,failure-mode-analyst,cost-architecture-reviewer,cost-impact-reviewer,trd-validator | effective-architecture `schemas/reviewer-scope.schema.json` | reviewer-scope (`orchestrator/flows/architecture_check.py` `ReviewerScope`) |
 | `<arch-work>/reviews/<reviewer>.json` (a re-check: `<reviewer>.<step>.json`; as returned: `.as-returned.json`) | scope-review | architecture-pattern-challenger,architecture-tradeoff-skeptic,architecture-boundary-guardian,operational-readiness-reviewer,failure-mode-analyst,cost-architecture-reviewer,cost-impact-reviewer,trd-validator | architecture-team-lead,aws-solutions-architect | effective-architecture `schemas/scope-review.schema.json` | scope-review (`architecture_work_contract.ScopeReview`) |
-| `<arch-work>/specialists.json` | specialists | python | architecture-team-lead | effective-architecture `schemas/specialists.schema.json` | specialists (`architecture_work_contract.SpecialistList`) |
 | `<arch-work>/routing-<step>.json` | lead-routing | architecture-team-lead | python | effective-architecture `schemas/lead-routing.schema.json` | lead-routing (`architecture_work_contract.LeadRouting`) |
 | a question file for the decider (under `<arch-work>/`) | architecture-question | architecture-team-lead | architecture-decider | effective-architecture `schemas/architecture-question.schema.json` | architecture-question (`architecture_work_contract.UnsettledMatter`) |
 | `<arch-work>/ruling-<step>.json` | architecture-ruling | architecture-decider | architecture-team-lead,aws-solutions-architect | effective-architecture `schemas/architecture-ruling.schema.json` | architecture-ruling (`architecture_work_contract.ArchitectureRuling`) |
 | `<arch-work>/promoted.json` | promoted-documents | python | python | none | `<plugin>/orchestrator/flows/architecture_promotion.py` |
-| `<work>/trd.md` | trd-document | trd-author | trd-validator,api-specification-author,data-model-specification-author,acceptance-criteria-writer,openapi-contract-reviewer,spec-decider | artifact-handoff | trd-document |
+| `<work>/trd.md` | trd-document | trd-author | trd-validator,api-specification-author,data-model-specification-author,acceptance-criteria-writer,openapi-contract-reviewer,spec-decider | artifact-handoff `schemas/document-front-matter.schema.json` | trd-document (`#/$defs/TrdDocument`) |
 | `<work>/span-elements.json` | span-elements | python | api-specification-author,data-model-specification-author,task-decomposer | artifact-handoff `schemas/target-report.schema.json` | span-elements (`target_contract.DeltaResult`) |
 | `<work>/repo-scoping.json` | placement | python | api-specification-author,data-model-specification-author,task-decomposer | artifact-handoff `schemas/placement.schema.json` | placement (`placement_contract.PlacementRuling`) |
-| `<work>/closure-edges.json` | closure-edges | python | task-dependency-mapper | artifact-handoff | closure-edges |
-| `<work>/task-deps.json` | task-deps | task-dependency-mapper | python | artifact-handoff | task-deps |
-| `<work>/task-edges/all.json` | task-edges | python | python | artifact-handoff | task-edges |
+| `<work>/closure-edges.json` | closure-edges | python | task-dependency-mapper | artifact-handoff `schemas/closure-edges.schema.json` | closure-edges |
+| `<work>/task-deps-inputs.json` | task-dependency-listing | python | task-dependency-mapper | artifact-handoff `schemas/task-dependency-listing.schema.json` | task-dependency-listing |
+| `<work>/task-deps.json` | task-deps | task-dependency-mapper | python | artifact-handoff `schemas/task-deps.schema.json` | task-deps (`task_deps_contract.TaskDeps`) |
+| `<work>/task-edges/all.json` | task-edges | python | python | none | `<plugin>/scripts/portfolio/beadwrite.py` `AllEdgeWrite` |
 | the handback (`run.py --handback`, and handbacks the driver builds) | handback | python | python | none | `<plugin>/orchestrator/core/handback_contract.py` `HandbackDocument` |
 | `<work>/run.json` | run-manifest | python | python | none | `<plugin>/orchestrator/core/manifest.py` `RunManifest` |
 | `<control>/ops/sdlc-automation/state/ledger.jsonl` (events appended) | events | python | python | none | `<control>/ops/sdlc-automation/ledgerevents.py` |
-| `<work>/repo-creation.json` | repo-creation | python | python | artifact-handoff | repo-creation |
-| a new repository (local checkout and GitHub; the steward's manifest, changelog and beads fleet list) | repo-creation | python | python | artifact-handoff | repo-creation |
-| `<prd dir>/../trds/<stem>-trd.md` in the vault | trd-document | python | api-specification-author,data-model-specification-author,acceptance-criteria-writer | artifact-handoff | trd-document |
-| `<work>/spec-<slug>.bundles.json` | bundles | python | python | artifact-handoff | bundles |
-| `<work>/candidates/spec-<slug>.ui.json` | spec-ui | api-specification-author | task-decomposer | artifact-handoff | spec-ui |
-| `<work>/spec-<slug>.ui.json` | spec-ui | python | task-decomposer | artifact-handoff | spec-ui |
-| `<work>/spec-<slug>.md` | spec-document | api-specification-author | acceptance-criteria-writer,task-decomposer,openapi-contract-reviewer,spec-decider | artifact-handoff | spec-document |
-| `<work>/spec-<slug>.data-model.md` | data-model-document | data-model-specification-author | acceptance-criteria-writer,task-decomposer,openapi-contract-reviewer,spec-decider | artifact-handoff | data-model-document |
-| `<work>/spec-<slug>.criteria.md` | criteria-document | acceptance-criteria-writer | task-decomposer,openapi-contract-reviewer,spec-decider | artifact-handoff | criteria-document |
+| `<work>/repo-creation.json` | repo-creation | python | python | none | `<plugin>/orchestrator/flows/repo_scoping.py` `create_repositories` |
+| a new repository (local checkout and GitHub; the steward's manifest, changelog and beads fleet list) | repo-creation | python | python | none | `<plugin>/orchestrator/flows/repo_scoping.py` `create_repositories` |
+| `<prd dir>/../trds/<stem>-trd.md` in the vault | trd-document | python | api-specification-author,data-model-specification-author,acceptance-criteria-writer | artifact-handoff `schemas/document-front-matter.schema.json` | trd-document (`#/$defs/TrdDocument`) |
+| `<work>/spec-<slug>.context.json` | spec-context | python | api-specification-author,data-model-specification-author,acceptance-criteria-writer,openapi-contract-reviewer,task-decomposer | artifact-handoff `schemas/spec-context.schema.json` | spec-context |
+| `<work>/spec-<slug>.bundles.json` | bundles | python | api-specification-author | artifact-handoff `schemas/ui-bundles.schema.json` | bundles |
+| `<work>/candidates/spec-<slug>.ui.json` | spec-ui | api-specification-author | python | artifact-handoff `schemas/spec-ui.schema.json` | spec-ui |
+| `<work>/spec-<slug>.ui.json` | spec-ui | python | api-specification-author,task-decomposer | artifact-handoff `schemas/spec-ui.schema.json` | spec-ui |
+| `<work>/spec-<slug>.md` | spec-document | api-specification-author | acceptance-criteria-writer,task-decomposer,openapi-contract-reviewer,spec-decider | artifact-handoff `schemas/document-front-matter.schema.json` | spec-document (`#/$defs/SpecDocument`) |
+| `<work>/spec-<slug>.data-model.md` | data-model-document | data-model-specification-author | acceptance-criteria-writer,task-decomposer,openapi-contract-reviewer,spec-decider | artifact-handoff `schemas/document-front-matter.schema.json` | data-model-document (`#/$defs/SpecDocument`) |
+| `<work>/spec-<slug>.criteria.md` | criteria-document | acceptance-criteria-writer | task-decomposer,openapi-contract-reviewer,spec-decider | effective-architecture | criteria-document (the implementation-level criteria of `review-standard.md`) |
 | `<work>/spec-<slug>.review.json` | spec-review | openapi-contract-reviewer | api-specification-author,data-model-specification-author,acceptance-criteria-writer,spec-decider | artifact-handoff `schemas/spec-review.schema.json` | spec-review (`spec_review_contract.SpecReview`) |
 | `<work>/spec-<slug>.<document>.correction.json`, `spec-<slug>.<document>.revision.json` | spec-correction | api-specification-author,data-model-specification-author,acceptance-criteria-writer | spec-decider | artifact-handoff `schemas/spec-correction.schema.json` | spec-correction (`spec_review_contract.SpecCorrection`) |
 | `<work>/spec-<slug>.ruling.json` | spec-ruling | spec-decider | api-specification-author,data-model-specification-author,acceptance-criteria-writer | artifact-handoff `schemas/spec-ruling.schema.json` | spec-ruling (`spec_review_contract.SpecRuling`) |
-| `<work>/story-<slug>.json` | story | python | task-decomposer | artifact-handoff | story |
-| the filed Spec documents in the vault | filed-documents | python | python | artifact-handoff | filed-documents |
-| `<work>/tasks-<slug>.items.json` | task-items | python | python | artifact-handoff | task-items |
-| `<work>/tasks-<slug>.context.json` | task-context | python | python | artifact-handoff | task-context |
-| `<work>/tasks-<slug>.json` | tasks | task-decomposer | task-dependency-mapper | artifact-handoff | tasks |
-| `<work>/tasks-<slug>.correction.json` | tasks-correction | task-decomposer | python | artifact-handoff | tasks-correction |
-| `<workDir>/score-plan.json` | out-of-scope | python | python | none | out-of-scope |
-| `<workDir>/judge-input-epic.json`, `judge-input-task.json` | out-of-scope | python | python | none | out-of-scope |
-| `<workDir>/prd/<epic-id>.md` | out-of-scope | python | python | none | out-of-scope |
-| `<workDir>/judgments/epic/<id>.json`, `judgments/task/<key>.json` | out-of-scope | python | python | none | out-of-scope |
-| `<workDir>/record.json` | out-of-scope | python | python | none | out-of-scope |
-| `<workDir>/score.json` | out-of-scope | python | python | none | out-of-scope |
-| `<workDir>/assess-plan.json` | out-of-scope | python | python | none | out-of-scope |
-| `<workDir>/context/prd/<id>.md`, `context/task/<id>.md`, `context/index.md` | out-of-scope | python | python | none | out-of-scope |
-| `<workDir>/context.json` | out-of-scope | python | python | none | out-of-scope |
-| `<workDir>/edges.json` | out-of-scope | python | python | none | out-of-scope |
-| `<workDir>/reasoning.md` | out-of-scope | python | python | none | out-of-scope |
-| `<workDir>/validation.json` | out-of-scope | python | python | none | out-of-scope |
-| `<workDir>/apply-edges.json` (or `apply-edges-dry-run.json`) | out-of-scope | python | python | none | out-of-scope |
-| `<workDir>/scoring/` | out-of-scope | python | python | none | out-of-scope |
+| `<work>/story-<slug>.json` | story | python | task-decomposer | artifact-handoff `schemas/story-document.schema.json` | story |
+| the filed Spec documents in the vault | filed-documents | python | python | none | `<control>/ops/sdlc-automation/artifactio.py` `file_in_vault` |
+| `<work>/tasks-<slug>.context.json` | task-context | python | task-decomposer | artifact-handoff `schemas/task-context.schema.json` | task-context |
+| `<work>/tasks-<slug>.json` | tasks | task-decomposer | task-dependency-mapper | artifact-handoff `schemas/tasks.schema.json` | tasks |
+| `<work>/tasks-<slug>.correction.json` | tasks-correction | task-decomposer | python | artifact-handoff `schemas/tasks-correction.schema.json` | tasks-correction |
+| `<workDir>/score-plan.json` | score-plan | python | python | none | `<plugin>/scripts/portfolio/scoring.py` `Plan` |
+| `<workDir>/judge-input-epic.json`, `judge-input-task.json` | wsjf-judge-input | python | wsjf-scorer | artifact-handoff `schemas/wsjf-judge-input.schema.json` | wsjf-judge-input |
+| `<workDir>/prd/<epic-id>.md` | wsjf-prd | python | wsjf-scorer | none | `wsjf-scoring.md` |
+| `<workDir>/judgments/epic/<id>.json`, `judgments/task/<key>.json` | wsjf-judgment | wsjf-scorer | python | artifact-handoff `schemas/wsjf-judgment.schema.json` | wsjf-judgment (`#/$defs/EpicJudgment`, `#/$defs/TaskJudgment`) |
+| `<workDir>/record.json` | wsjf-record | python | python | none | `<plugin>/scripts/portfolio/scoring.py` `Recorded` |
+| `<workDir>/score.json` | wsjf-score | python | python | none | `<plugin>/scripts/portfolio/scoring.py` `ScoreResult` |
+| `<workDir>/assess-plan.json` | assess-plan | python | python | none | `<plugin>/scripts/portfolio/depscore.py` `assess_plan` |
+| `<workDir>/context/prd/<id>.md`, `context/task/<id>.md`, `context/index.md` | assessment-context | python | epic-sequencer,task-dependency-mapper | none | `dependency-assessment.md` |
+| `<workDir>/context.json` | assessment-context | python | epic-sequencer,task-dependency-mapper | artifact-handoff `schemas/dependency-assessment.schema.json` | assessment-context (`#/$defs/EpicContext`, `#/$defs/TaskContext`) |
+| `<workDir>/edges.json` | epic-edge-proposal, task-edge-proposal | epic-sequencer,task-dependency-mapper | python | artifact-handoff `schemas/epic-edge-proposal.schema.json`, `schemas/task-edge-proposal.schema.json` | epic-edge-proposal (dependency-assessment), task-edge-proposal (task-dependency-assessment) |
+| `<workDir>/reasoning.md` | edge-reasoning | epic-sequencer,task-dependency-mapper | python | none | Markdown, read by the owner |
+| `<workDir>/validation.json` | edge-validation | epic-sequencer,task-dependency-mapper (`depscore.py validate`) | python | none | `<plugin>/scripts/portfolio/edgeset.py` `ValidationReport` |
+| `<workDir>/apply-edges.json` (or `apply-edges-dry-run.json`) | apply-edges | python | python | none | `<plugin>/scripts/portfolio/edgeset.py` `ApplyResult` |
+| `<workDir>/scoring/` | as the wsjf-scoring rows | python | as the wsjf-scoring rows | none | as the wsjf-scoring rows |
+| `<workDir>/request.json`, `intake.json`, `persona.json`, `okrs.json`, `drafts/pass-<n>.md` (the PRD) and `drafts/pass-<n>.json`, `alignment/pass-<n>.json`, `ruling.json` | prd-creation | python (the request),stakeholder-request-intake-writer,persona-profile-writer,okr-writer,prd-writer,prd-alignment-verifier,spec-decider | the next agent of the chain,python | artifact-handoff `schemas/prd-creation.schema.json` | prd-creation (one `$defs` entry each; `ruling.json` is `#/$defs/DeadlockRuling`, the prd-deadlock-ruling) |
+| `<artifacts.dir>/prd-validation.json` | prd-validation-analysis | prd-validation-analyst | python | artifact-handoff `schemas/prd-validation-analysis.schema.json` | prd-validation-analysis (`#/$defs/Analysis`, `#/$defs/TracedAnalysis`) |

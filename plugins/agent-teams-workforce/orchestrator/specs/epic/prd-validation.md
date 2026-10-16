@@ -7,7 +7,9 @@ Failure handling: bounded transient retries and quota pauses remain. An ordinary
 `workflows/prd-validation.js` is a leaf workflow in which one read-only analyst session (agent
 `prd-validation-analyst`) inspects a PRD through seven lenses (requirement class, ambiguity,
 completeness, conflict, constraints, domain boundaries, clarifications), with an informational
-BRD traceability mapping when `args.brd` is supplied. The script fails the PRD only on a blocker
+BRD traceability mapping when `args.brdPath` names a BRD file. The PRD (`args.prd.path`), the BRD
+and the boundary notes (`args.contextPath`) are handed by path, and the analysis is written to
+`skills/artifact-handoff/schemas/prd-validation-analysis.schema.json`. The script fails the PRD only on a blocker
 finding, and treats a technical requirement as a major finding. It runs on its own, when a person
 dispatches it.
 

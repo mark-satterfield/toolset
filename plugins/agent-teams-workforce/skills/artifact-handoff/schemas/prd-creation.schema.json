@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/prd-creation.schema.json",
+  "title": "PRD creation hand-offs",
+  "description": "The files the agents of the prd-creation workflow write and read, all in the run's workDir. The workflow writes the request (Request); stakeholder-request-intake-writer writes the intake (Intake); persona-profile-writer and okr-writer write the persona (Persona) and the objective (Okrs) from it; prd-writer writes the PRD as Markdown and its draft record (Draft); prd-alignment-verifier writes its verdict on each draft (Alignment); spec-decider rules on a maker-checker deadlock (DeadlockRuling). Each agent writes a candidate under <workDir>/candidates/, which jsonartifact.py validates against its $defs entry here and publishes; a restarted run with the same workDir reuses every accepted file whose inputs are unchanged. Each later agent is handed the earlier files by path and reads them there.",
+  "$defs": {
+    "Request": {
+      "description": "The raw stakeholder request, as the caller passed it (<workDir>/request.json).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string"},
+        "title": {"type": "string"},
+        "description": {"type": "string"},
+        "repoPath": {"type": "string"},
+        "requestedBy": {"type": "string"}
+      }
+    },
+    "Intake": {
+      "description": "The scope framing and the intake brief of one request, in one file (<workDir>/intake.json): WHAT the job seeker needs, never HOW to build it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scopeSummary", "inScope", "outOfScope", "problem", "audience", "desiredOutcome", "constraints", "openQuestions"],
+      "properties": {
+        "scopeSummary": {"description": "A one-paragraph framing of what the PRD must cover.", "type": "string"},
+        "inScope": {"description": "The concerns the PRD owns.", "type": "array", "items": {"type": "string"}},
+        "outOfScope": {"description": "The concerns explicitly excluded.", "type": "array", "items": {"type": "string"}},
+        "problem": {"description": "The job-seeker problem this addresses.", "type": "string"},
+        "audience": {"description": "Who is affected: the job-seeker segment.", "type": "string"},
+        "desiredOutcome": {"description": "The outcome the feature must produce for that audience.", "type": "string"},
+        "constraints": {"description": "Known constraints or non-negotiables the request states.", "type": "array", "items": {"type": "string"}},
+        "openQuestions": {"description": "Unresolved ambiguities to carry forward; the prd-writer resolves or flags each.", "type": "array", "items": {"type": "string"}}
+      }
+    },
+    "Persona": {
+      "description": "The target persona the PRD serves (<workDir>/persona.json), grounded in the intake's audience.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "summary", "goals", "frustrations", "context"],
+      "properties": {
+        "name": {"description": "A short persona label.", "type": "string"},
+        "summary": {"description": "A one-paragraph portrait of this job seeker.", "type": "string"},
+        "goals": {"description": "What they are trying to achieve.", "type": "array", "items": {"type": "string"}},
+        "frustrations": {"description": "The pain points the feature must relieve.", "type": "array", "items": {"type": "string"}},
+        "context": {"description": "Their situation or environment relevant to this feature.", "type": "string"}
+      }
+    },
+    "Okrs": {
+      "description": "The objective and key results the feature must move (<workDir>/okrs.json), grounded in the intake.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objective", "keyResults"],
+      "properties": {
+        "objective": {"description": "The single qualitative, job-seeker-centered objective.", "type": "string"},
+        "keyResults": {
+          "description": "Measurable signals that prove the objective was met.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["metric", "target"],
+            "properties": {"metric": {"type": "string"}, "target": {"type": "string"}}
+          }
+        }
+      }
+    },
+    "Draft": {
+      "description": "One draft of the PRD (<workDir>/drafts/pass-<n>.json). The PRD itself is the Markdown file the brief names (<workDir>/drafts/pass-<n>.md), template-conformant (agent-teams-workforce:prd-writer skill), WHAT-not-HOW, with no `**Epic:**` line: the matrix is the one record of which Epic a PRD belongs to. This record does not repeat the PRD's content.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "epicScope"],
+      "properties": {
+        "title": {"description": "The PRD's title.", "type": "string", "minLength": 1},
+        "epicScope": {"description": "A one-paragraph scope statement for the Epic that pairs with this PRD: a container-level summary of the scope the PRD owns, with no acceptance criteria and no repository specifics (one Epic may span repositories). The caller writes it as the Epic bead's description.", "type": "string", "minLength": 1}
+      }
+    },
+    "Alignment": {
+      "description": "The independent verdict on one draft (<workDir>/alignment/pass-<n>.json): whether the PRD aligns with the intake, the persona and the objective, and is template-conformant and WHAT-not-HOW. A verdict of `aligned` beside a dimension marked unsatisfied is read as misaligned.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict", "dimensions", "feedback"],
+      "properties": {
+        "verdict": {"description": "`aligned`: the PRD covers the intake problem and outcome, serves the persona, and its acceptance criteria trace to the key results. `misaligned`: one or more of those is false.", "type": "string", "enum": ["aligned", "misaligned"]},
+        "dimensions": {
+          "description": "Exactly one entry per dimension, and no others.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["dimension", "satisfied", "evidence"],
+            "properties": {
+              "dimension": {"type": "string", "enum": ["intake", "persona", "okr", "template"]},
+              "satisfied": {"type": "boolean"},
+              "evidence": {"description": "Where the PRD satisfies or misses the dimension, citing its headings.", "type": "string"}
+            }
+          }
+        },
+        "feedback": {"description": "For `misaligned`: what the prd-writer must change, specific enough to apply without interpretation. \"\" for `aligned`.", "type": "string"}
+      }
+    },
+    "DeadlockRuling": {
+      "description": "The binding ruling on a draft the prd-writer and the prd-alignment-verifier could not converge on (<workDir>/ruling.json), judged against the same intake, persona and objective the verifier used.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict", "rationale"],
+      "properties": {
+        "verdict": {"description": "`accept`: the PRD is acceptable as it stands despite the verifier's objection. `reject`: the PRD must not proceed.", "type": "string", "enum": ["accept", "reject"]},
+        "rationale": {"description": "For `accept`, why the objection does not block; for `reject`, the blocking gap the author must close.", "type": "string", "minLength": 1}
+      }
+    }
+  }
+}

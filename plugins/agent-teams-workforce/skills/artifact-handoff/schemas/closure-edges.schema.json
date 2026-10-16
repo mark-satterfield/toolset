@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/closure-edges.schema.json",
+  "title": "Closure edges",
+  "description": "The edges the matrix's dependency relationships between what the Tasks build make between Tasks of different Stories (<work>/closure-edges.json): the step `beadwrite.closure_task_edges` (orchestrator/flows/task_edges.py) writes beadwrite.closure_task_edges' result and validates it against this file. The task-dependency-mapper is handed it as `closure edges`: these edges stand, and the mapper adds only edges they do not hold.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ok", "edges", "warnings", "summary"],
+  "properties": {
+    "ok": {"type": "boolean"},
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from", "to"],
+        "properties": {
+          "from": {"description": "The prerequisite Task key, S<i>-<local key>.", "type": "string"},
+          "to": {"description": "The dependent Task key, S<i>-<local key>.", "type": "string"},
+          "kind": {"description": "What the dependent Task needs from the prerequisite (task-deps.schema.json, TaskDepsEdgeKind).", "type": ["string", "null"]},
+          "reason": {"description": "Which item requires which, and through which matrix relationship.", "type": ["string", "null"]}
+        }
+      }
+    },
+    "warnings": {"description": "Each requirement no Task of the span builds; a warning fails the step.", "type": "array", "items": {"type": "string"}},
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "edges", "warnings"],
+      "properties": {
+        "ok": {"type": "boolean"},
+        "edges": {"type": "integer", "minimum": 0},
+        "warnings": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

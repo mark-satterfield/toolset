@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/task-dependency-listing.schema.json",
+  "title": "Task dependency listing",
+  "description": "Which Tasks file belongs to which Story of the span (<work>/task-deps-inputs.json), handed to the task-dependency-mapper as `task dependency listing`. The step `task_edges.listing` (orchestrator/flows/task_edges.py) writes it and validates it against this file. It points to the files; it copies none of them: each Tasks file (tasks.schema.json) holds its Story's Tasks with their same-Story edges, and the closure edges file (closure-edges.schema.json) holds the edges the matrix already makes between Stories.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["stories", "closureEdgesPath"],
+  "properties": {
+    "stories": {
+      "description": "The Stories of the span in span order. A Task's key across the span is `<story>-<local key>`, the form task-deps.schema.json names.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["story", "repoPath", "tasksFile"],
+        "properties": {
+          "story": {"description": "The Story's key, S<i>.", "type": "string", "pattern": "^S[0-9]+$"},
+          "repoPath": {"description": "The repository the Story builds in.", "type": "string", "minLength": 1},
+          "tasksFile": {"description": "The Story's Tasks file.", "type": "string", "minLength": 1}
+        }
+      }
+    },
+    "closureEdgesPath": {"description": "The closure edges file.", "type": "string", "minLength": 1}
+  }
+}

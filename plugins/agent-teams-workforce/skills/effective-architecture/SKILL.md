@@ -8,11 +8,13 @@ description: The one set of criteria that the solutions architect works to and t
 Read [the review standard](review-standard.md) before designing, writing, reviewing or
 ruling on architecture, a TRD or a spec. It is the common basis: the solutions architect
 develops the architecture and the TRD to exactly these criteria, the spec authors develop the
-specs to them, and reviewers apply exactly these and no others. `review-criteria.json` beside
-it holds the same criteria as data: each criterion's id, level, home document and text, the
-agents responsible for each level with its review point, and for each reviewer group its
-reviewer, the criteria it covers and the rule that selects it. The standard is written from
-that file by `artifact-handoff/scripts/review_criteria.py`, so a criterion is changed in
+specs to them, and reviewers apply exactly these and no others. It is the one text of the
+criteria an agent reads; no brief hands the criteria as an input. `review-criteria.json` beside
+it is the pipeline's data, read by the scripts only: each criterion's id, level, home document
+and text, the agents responsible for each level, and for each reviewer group its reviewer, the
+criteria it covers and the rule that selects it. A reviewer's review scope names the criterion
+ids it reviews against. The standard is written from that file by
+`artifact-handoff/scripts/review_criteria.py`, so a criterion is changed in
 `review-criteria.json` and nowhere else.
 
 Every criterion has a level: architecture (arc42), technical requirement (the TRD) or

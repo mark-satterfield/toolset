@@ -301,50 +301,17 @@ Pass both; the script records each under its own key and lowers neither.
 
 ## Output — the numbers are the deliverable
 
-Emit a fenced `json` block first. This is what a program reads; nothing else in the output
-is.
+The judged values are the deliverable, and they go in the judgment file, whose one definition
+is artifact-handoff's `schemas/wsjf-judgment.schema.json` (`#/$defs/EpicJudgment` or
+`#/$defs/TaskJudgment` for the level scored). Its descriptions define every member: the
+rubric name, one score per judged item with the rationale for each judged dimension and the
+assumptions that could move it, and `unscored` with the concrete missing input. Every item
+appears exactly once, in `scores` or in `unscored`.
 
-```json
-{
-  "rubric": "epic-wsjf",
-  "scores": [
-    {
-      "id": "<item id>",
-      "userBusinessValue": 13,
-      "timeCriticality": 3,
-      "riskReductionOpportunityEnablement": 13,
-      "reaches": 12,
-      "valueFrom": null,
-      "costOfDelay": 29,
-      "jobSize": 8,
-      "sizeLow": 5,
-      "sizeHigh": 13,
-      "sizeConfidence": 75,
-      "sizeSource": "supplied",
-      "wsjf": 3.63,
-      "confidence": 75,
-      "rationale": {
-        "userBusinessValue": "<1-3 sentences>",
-        "timeCriticality": "<1-3 sentences>",
-        "jobSize": "<1-3 sentences: the reference jobs it was compared with, and the factors that placed it>"
-      },
-      "assumptions": ["<one entry per assumption that could move a score>"]
-    }
-  ],
-  "graphDefects": [
-    { "id": "<item id>", "reaches": 0, "computed": 1,
-      "missingEdge": "<blocker> -> <blocked>", "why": "<one line>" }
-  ],
-  "unscored": [
-    { "id": "<item id>", "reason": "<why it could not be scored>" }
-  ]
-}
-```
-
-`rubric` is `epic-wsjf` or `task-wsjf` for the level scored. Every item appears exactly
-once, in `scores` or in `unscored`. RR-OE carries no rationale — the count is the
-reasoning. `graphDefects` never changes a score. At Task level the only rationale worth
-writing is one line on Job Size, since the rest is arithmetic over it.
+The judgment holds judged inputs only. RR-OE, reaches, cost of delay, size source and WSJF are
+what `scripts/wsjf.py score` prints from them (section 4); RR-OE carries no rationale — the
+count is the reasoning. At Task level the only rationale worth writing is one line on Job
+Size, since the rest is arithmetic over it.
 
 Then, for a person, a short prose section per judged dimension. Keep it under a page.
 

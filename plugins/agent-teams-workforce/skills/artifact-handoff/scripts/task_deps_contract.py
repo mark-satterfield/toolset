@@ -5,18 +5,13 @@ file: change the schema and run ``python3 scripts/generate_contract_types.py``;
 ``scripts/check_contract_types.py`` fails when this module is stale.
 """
 
-import copy
-import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, Literal, TypedDict, TypeIs
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
+from typing import Final, Literal, TypedDict, TypeIs
 
 type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
 
 TASK_DEPS_SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parents[1] / "schemas" / "task-deps.schema.json"
-SCHEMA_SHA256: Final[str] = "47c2ece7e6ed4e478c07f90fd02013fe3ffd0e7ea9cc884d1668eeffef295635"
+SCHEMA_SHA256: Final[str] = "6a4a9b6fab1e8ef4942a6ff8f6f4a49d9cd8f143c0881d9be91ad3f763aa7c13"
 
 type TaskDepsEdgeKind = Literal["data", "contract", "infrastructure", "event-flow"]
 
@@ -69,63 +64,6 @@ def _is_object(value: object) -> TypeIs[dict[str, object]]:
 
 def _is_kind(value: object) -> TypeIs[TaskDepsEdgeKind]:
     return isinstance(value, str) and value in TASK_DEPS_EDGE_KINDS
-
-
-def _member(value: JsonValue, key: str) -> dict[str, JsonValue]:
-    if not isinstance(value, dict):
-        message: str = f"task-deps schema: expected an object holding {key!r}"
-        raise TypeError(message)
-    child: JsonValue = value.get(key)
-    if not isinstance(child, dict):
-        message = f"task-deps schema: {key!r} is not an object"
-        raise TypeError(message)
-    return child
-
-
-def load_task_deps_schema() -> dict[str, JsonValue]:
-    """Read the task-deps schema.
-
-    Returns:
-        The decoded schema.
-
-    Raises:
-        TypeError: The file is not a JSON object.
-
-    """
-    value: JsonValue = json.loads(TASK_DEPS_SCHEMA_PATH.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        message: str = f"{TASK_DEPS_SCHEMA_PATH}: expected a JSON object"
-        raise TypeError(message)
-    return value
-
-
-def narrowed_task_deps_schema(task_keys: Sequence[str]) -> dict[str, JsonValue]:
-    """Return the schema with each edge's from and to narrowed to the span's Task keys.
-
-    Args:
-        task_keys: The span's Task keys (S<i>-<local key>).
-
-    Returns:
-        A new schema; the schema file is not changed.
-
-    Raises:
-        TypeError: task_keys is a str or holds a non-string.
-        ValueError: task_keys is empty.
-
-    """
-    if isinstance(task_keys, str) or not all(isinstance(key, str) for key in task_keys):
-        message: str = "task_keys must be a sequence of str"
-        raise TypeError(message)
-    if not task_keys:
-        message = "task_keys must name at least one Task"
-        raise ValueError(message)
-    schema: dict[str, JsonValue] = copy.deepcopy(load_task_deps_schema())
-    edge: dict[str, JsonValue] = _member(_member(_member(schema, "properties"), FIELD_EDGES), "items")
-    properties: dict[str, JsonValue] = _member(edge, "properties")
-    allowed: list[JsonValue] = list(task_keys)
-    for field in (FIELD_FROM, FIELD_TO):
-        _member(properties, field)["enum"] = list(allowed)
-    return schema
 
 
 def task_deps_edge(frm: str, to: str, kind: TaskDepsEdgeKind, reason: str) -> TaskDepsEdge:

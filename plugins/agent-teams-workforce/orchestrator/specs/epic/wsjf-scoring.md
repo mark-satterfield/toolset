@@ -86,11 +86,11 @@ After a successful run:
 
 ## 3. Inputs
 
-- Arguments: `repoPath` (beads repository; default `$<CONTROL_REPO_ENV>`), `pluginRoot`, `workDir`, `archPath`
-  (`$<ARCH_PATH_ENV>`, required by the command), `projectRoot` (`$<PROJECT_ROOT_ENV>`, optional),
+- Arguments: `repoPath` (beads repository; default `$<CONTROL_REPO_ENV>`), `pluginRoot`, `workDir`,
   `all`, `rejudge`, `only` (list of ids; no current caller passes it), `dryRun`, `priorFailure`
   (optional text from a failed earlier run; no current caller passes it).
-- beads, read once per run with descriptions (`beadgraph.load(..., with_description=True)`): every
+- beads, read by each `depscore.py` command, with descriptions only for `score-plan`, whose judging
+  fingerprints hash them (`beadgraph.load(..., with_description=True)`): every
   open Epic and Task, their `parent` lineage, `tracks` edges between Epics and `blocks` edges
   between Tasks (`Bead.depends_on`), and metadata `KEY_ELABORATION_STATE` and the `WSJF_KEYS`
   members (judged, computed and `KEY_WSJF_CONTENT_HASH`).
@@ -98,8 +98,12 @@ After a successful run:
   `JUDGING_HASH_FIELDS` with only `JUDGING_HASH_PRESENT` hashed by value.
 - The rubric: `<plugin>/skills/wsjf/scripts/wsjf.py` (bands, Fibonacci size scale, snapping,
   roll-up), loaded by `scoring._load_wsjf`.
-- Agent context: the architecture under `archPath` and code under `projectRoot`, read by the
-  judging sessions as evidence of what is already decided or built.
+- Agent context: the matrix, read by the judging sessions with `atw-matrix` as evidence of what
+  is already decided or built (`epic <id> --closure` with each document's `lifecycle`,
+  `approval --epic <id>`, `node <id>` with its `verified` mark); a document heading or code file
+  only where an entry the matrix returns names it.
+- A Task's content: its bead, which the judging session reads by id with `beads-contract.py
+  fingerprint-batch <ids> --scope judging --explain`, the content its judging fingerprint hashes.
 - An Epic's PRD is the file the matrix names for it (`atw-matrix epic <id>`, read by
   `assesscontext.prd_paths`); `judge-input` needs the matrix (`ATW_MATRIX` or the control
   repository variable) and the PRD folder variable (`PRD_DIR_ENV`) at the epic level, and gives
@@ -108,29 +112,24 @@ After a successful run:
 ## 4. Outputs
 
 Files (under `<workDir>`; JSON unless stated):
-- `score-plan.json`: `scoring.plan` result: `judge: {epics: [{id, reason}], tasks: [{id, reason,
+- `score-plan.json`: depscore's command head (`depscore.COMMAND_HEAD`), which `judge-input` and
+  `record` drop before reading the plan, and the `scoring.plan` result: `judge: {epics: [{id, reason}], tasks: [{id, reason,
   epic}]}`, `adopt: [ids]`, `fingerprints: {id: sha}` for every open Epic and Task, `summary:
   {includeAll, rejudge, openEpics, openTasks, states: {missing, changed, unfingerprinted,
   current}, epicsToJudge, tasksToJudge, toAdopt, only?}`.
-- `judge-input-epic.json`, `judge-input-task.json`: `scoring.judge_input` result: `level`,
-  `items` (Epic: `{id, title, reason, prdPath, sizedFromTasks}`; Task: `{id, title, reason,
-  description, epic: {id, title} | null}`), `referenceJobs` (`{id, title, estimate, low, high,
-  refinedSize, tasks}` per Epic whose elaboration is done and whose Tasks are all sized),
-  `summary: {items, toJudge, referenceJobs, ids (epic) | groups: [{key, epic, tasks}] (task)}`.
-- `judgments/<level>/candidates/<key>.json` (written by the agent): the judgment, in the shape of
-  the next two entries. Beside it the agent writes its progress file
+- `judge-input-epic.json`, `judge-input-task.json`: `scoring.judge_input` result, to
+  `skills/artifact-handoff/schemas/wsjf-judge-input.schema.json`.
+- `judgments/<level>/candidates/<key>.json` (written by the agent): the judgment, to
+  `skills/artifact-handoff/schemas/wsjf-judgment.schema.json` (`#/$defs/EpicJudgment` or
+  `#/$defs/TaskJudgment`). Beside it the agent writes its progress file
   `candidates/<key>.json.progress.json`, and `artifactcontract.py` writes the checkpoint
   `candidates/<key>.json.checkpoint` from it. Both are defined by
   `skills/artifact-handoff/schemas/checkpoint.schema.json`; the checkpoint is bound to the
-  candidate path, the digest of the judgment schema and the session's input revision (step 3).
-- `judgments/epic/<epic-id>.json`: the accepted Epic judgment, `{rubric: "epic-wsjf", scores:
-  [{id, userBusinessValue, timeCriticality, confidence, jobSize?, sizeLow?, sizeHigh?,
-  sizeConfidence?, rationale: {userBusinessValue, timeCriticality, jobSize}}], unscored: [{id,
-  reason}]}`. `jsonartifact.py` checks the candidate against the judgment schema and publishes
-  it in canonical JSON; nothing is stamped into it.
-- `judgments/task/<group-key>.json`: the accepted Task judgment, `{rubric: "task-wsjf", scores:
-  [{id, jobSize, sizeLow, sizeHigh, sizeConfidence, rationale: {jobSize}}], unscored: [{id,
-  reason}]}`; group key = the Epic id, or the Task id for a Task with no Epic.
+  candidate path, the digest of the judgment contract and the session's input revision (step 3).
+- `judgments/epic/<epic-id>.json`, `judgments/task/<group-key>.json`: the accepted judgment.
+  `jsonartifact.py` checks the candidate against its contract and publishes it in canonical
+  JSON; nothing is stamped into it. Group key = the Epic id, or the Task id for a Task with no
+  Epic.
 - `judgments/<level>/<key>.json.receipt`: `{artifactPath, sha256, bytes, schemaSha256, revision}`
   for the published judgment. `<key>.json.prev` holds the judgment it replaced when the two
   differ, and `<key>.json.publish` exists only while a publish is under way.
@@ -187,11 +186,11 @@ another's input.
    ids the session covers. When the fingerprint command fails, the revision is made from the
    paths alone.
 4. `deterministic` **Reuse**: `jsonartifact.py --candidate judgments/<level>/candidates/<key>.json
-   --final judgments/<level>/<key>.json --schema-json <judgment schema> --revision <input
-   revision> --probe --recover`.
+   --final judgments/<level>/<key>.json --schema <plugin>/skills/artifact-handoff/schemas/wsjf-judgment.schema.json#/$defs/<EpicJudgment|TaskJudgment>
+   --revision <input revision> --probe --recover`.
    - The accepted judgment is reused, and no session starts, when its bytes match
      `<key>.json.receipt` and the receipt's `schemaSha256` and `revision` equal the current
-     judgment schema digest and input revision.
+     judgment contract digest and input revision.
    - Otherwise, when the candidate's checkpoint is bound to the same candidate path, schema
      digest and revision and its status is `complete`, the candidate is accepted as in step 6 and
      no session starts.
@@ -199,11 +198,12 @@ another's input.
      count as failed.
    - In every other case step 5 runs.
 5. `agent` **Judge**: `wsjf-scorer`, effort `medium` (the JS sets it), model `sonnet` (agent
-   frontmatter). The brief ends with the artifact contract data: the candidate path, the
-   progress file path, the input revision and the `artifactcontract.py` commands bound to them.
+   frontmatter). The brief names the judge-input file and its contract, and ends with the
+   artifact contract data: the candidate path, the contract file path, the progress file path,
+   the input revision and the `artifactcontract.py` commands bound to them.
    - **Epic** (one session per Epic id): reads the PRD file its entry names as `prdPath`, its entry and the
-     `referenceJobs` in `judge-input-epic.json`, with `archPath` and `projectRoot` as evidence of
-     what is decided or built. It judges user-business value, time criticality and their
+     `referenceJobs` in `judge-input-epic.json`, with the `atw-matrix` reads of section 3 as
+     evidence of what is decided or built. It judges user-business value, time criticality and their
      confidence, and the size only when `sizedFromTasks` is false; it reads no other Epic's PRD
      or values, sizes by comparison with the reference jobs and never invents a solution in
      order to size; missing design widens the range and does not enlarge the size; RR-OE and
@@ -213,7 +213,7 @@ another's input.
      recorded as judged, with the split noted in its rationale. It writes
      `judgments/task/candidates/<key>.json`.
 6. `deterministic` **Accept**: the step 4 command without `--probe`. `jsonartifact.py` checks
-   the candidate against the judgment schema and publishes it as `judgments/<level>/<key>.json`
+   the candidate against the judgment contract and publishes it as `judgments/<level>/<key>.json`
    with its receipt (section 4), and reports the counts of `scores` and `unscored`. A session
    whose judgment is not accepted is counted in `judging.<level>.failedSessions` and its ids in
    `judgingFailed`.
@@ -252,9 +252,9 @@ Agents the workflow dispatches:
   rewrites every scored bead.
 
 **In `jsonartifact.py`** (steps 4 and 6)
-- The candidate is valid against the judgment schema before it becomes the accepted judgment.
+- The candidate is valid against the judgment contract before it becomes the accepted judgment.
 - An accepted judgment is read as accepted only when its bytes match its receipt.
-- An accepted judgment is reused only for the same judgment schema digest and the same input
+- An accepted judgment is reused only for the same judgment contract digest and the same input
   revision. The revision covers the whole of `score-plan.json`, which holds the fingerprint of
   every open Epic and Task, so a change to any one of them gives every session a new revision.
 
@@ -262,7 +262,7 @@ Agents the workflow dispatches:
 - `record` is skipped when the plan names nothing to judge or adopt (it would write nothing).
 - A dispatch interruption stops further sessions; the run ends as `paused` and `resumable`.
 - The workflow itself guards no write to arc42 section 2: its own steps write nothing in the
-  vault, and each `wsjf-scorer` session holds Write and Edit and reads `archPath`.
+  vault, and each `wsjf-scorer` session holds Write and Edit and reads what the matrix names.
 
 ## 7. Failure causes
 

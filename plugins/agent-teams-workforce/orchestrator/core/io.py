@@ -65,14 +65,18 @@ def json_object(value: object) -> dict[str, JsonValue]:
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def write_json(path: Path, payload: object) -> None:
-    """Atomically write a JSON value after validating its entire value tree."""
+    """Atomically write a JSON value after validating its entire value tree.
+
+    The file is compact JSON with sorted keys: the files written here are read by agents and
+    scripts, and indentation adds bytes every reader pays for and nothing it uses.
+    """
     checked = check_type(payload, JsonValue, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as handle:
             temporary = Path(handle.name)
-            json.dump(checked, handle, sort_keys=True, indent=2, ensure_ascii=False)
+            json.dump(checked, handle, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())

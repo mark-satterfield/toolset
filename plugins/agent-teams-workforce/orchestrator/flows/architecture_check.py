@@ -46,6 +46,7 @@ from orchestrator.flows.architecture_files import (
     ARCHITECTURE_FOLDER,
     ARTIFACT_CHECK,
     CHECK,
+    LABEL_PRD,
     LABEL_SCOPE,
     PROMOTE,
     ROLE_ARCHITECT,
@@ -54,11 +55,13 @@ from orchestrator.flows.architecture_files import (
     ArchitectureStepError,
     agents_with_role,
     cited_document,
+    journal_file,
     lead_resolved,
     matrix_file,
     read_context,
     read_result,
 )
+from orchestrator.flows.elaboration_files import REVIEWER_SCOPE_SCHEMA, write_contract
 from orchestrator.flows.spec_review import CRITERIA_FILE
 
 if TYPE_CHECKING:
@@ -95,22 +98,26 @@ RUNTIME_VIEW_SECTION: Final = 6
 """The arc42 section that holds scenarios: a document of it in review is scenario content."""
 
 
+class ScopeRequirement(TypedDict):
+    """One requirement of the Epic, by its matrix id and the PRD heading that states it."""
+
+    id: str
+    heading: str
+
+
 class ReviewerScope(TypedDict):
-    """What one reviewer is handed as its review scope: the Epic's review scope, narrowed to its criteria."""
+    """What one reviewer is handed as its review scope; ``reviewer-scope.schema.json`` is its contract."""
 
     bead: str
     epic: str
-    """The id of the Epic's entry in the matrix."""
     reviewer: str
     groups: list[str]
-    """The reviewer groups of the criteria file that selected the reviewer."""
     criteria: list[str]
+    requirements: list[ScopeRequirement]
     documents: list[ScopeDocument]
-    """The documents in review with the headings reached; empty when no group of the reviewer covers documents."""
     trd: str | None
-    """The TRD's path when a group of the reviewer covers its requirements."""
+    prd: str | None
     signals: dict[str, list[JsonValue]]
-    """The lists of the architect's result that selected the reviewer, by name."""
 
 
 def validate_review_scope(value: object, where: str = "ReviewScope") -> ReviewScope:
@@ -315,22 +322,46 @@ def _under_review(
     return reviewed, {*_scope_kinds(matrix, reviewed), *present, SCOPE_HEADING}
 
 
+def _requirements(scope: ReviewScope) -> list[ScopeRequirement]:
+    """Name the Epic's requirements with the PRD heading each one's entry carries as its name.
+
+    Returns:
+        One row per requirement of the review scope, in its order.
+
+    """
+    matrix: Matrix = read_matrix(matrix_file())
+    return [{"id": requirement, "heading": matrix.entry(requirement).name} for requirement in scope["requirements"]]
+
+
 def _narrowed(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] - What one reviewer's scope is made from.
     bead: str,
     scope: ReviewScope,
     reviewer: str,
     groups: list[ReviewerGroup],
     result: ArchitectureResult,
-    trd: str,
+    files: tuple[str, str, list[ScopeRequirement]],
 ) -> ReviewerScope:
     """Narrow the review scope to what one reviewer's criteria apply to.
 
+    Args:
+        bead: The Epic.
+        scope: The review scope of the Epic.
+        reviewer: The reviewer.
+        groups: The reviewer groups that selected the reviewer.
+        result: The architect's result.
+        files: The TRD's path, the PRD's path and the Epic's requirements.
+
     Returns:
         The documents in review when a group of the reviewer is selected by them or by a signal
-        of the architect's result, the TRD when a group covers its requirements, and the signal
-        lists that selected the reviewer.
+        of the architect's result, the TRD when a group covers its requirements, the PRD when
+        the review checks content against the requirements (the TRD's coverage, or a
+        ``no-change-needed`` conclusion), and the signal lists that selected the reviewer.
 
     """
+    trd: str
+    prd: str
+    requirements: list[ScopeRequirement]
+    trd, prd, requirements = files
     kinds: set[ScopeKind] = {kind for group in groups for kind in group.applies_when.scope}
     signals: dict[str, list[JsonValue]] = {}
     stated: dict[str, object] = dict(result["reviewSignals"])
@@ -344,26 +375,35 @@ def _narrowed(  # ruff: ignore[too-many-arguments, too-many-positional-arguments
                 collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
             )
     documents: bool = bool(signals) or bool(kinds & {SCOPE_HEADING, SCOPE_SCENARIO})
+    against_requirements: bool = SCOPE_TRD in kinds or (
+        documents and result["conclusion"] == CONCLUSION_NO_CHANGE_NEEDED
+    )
     return {
         "bead": bead,
         "epic": scope["epic"],
         "reviewer": reviewer,
         "groups": [group.id for group in groups],
         "criteria": list(dict.fromkeys(name for group in groups for name in group.criteria)),
+        "requirements": requirements,
         "documents": scope["documents"] if documents else [],
         "trd": trd if SCOPE_TRD in kinds else None,
+        "prd": prd if against_requirements else None,
         "signals": signals,
     }
 
 
-def _review_steps(
+def _review_steps(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] - What the reviews are planned from.
     run: StepRun,
+    folder: Path,
     scope: ReviewScope,
     present: set[ScopeKind],
     result: ArchitectureResult,
     criteria: Criteria,
 ) -> Completion:
     """Plan one step per reviewer the criteria file selects, and the promotion after them.
+
+    Each reviewer's scope is written to ``folder``, the folder of this check step, and checked
+    against ``reviewer-scope.schema.json``.
 
     Returns:
         The completion: the reviewers selected and the planned steps.
@@ -373,7 +413,6 @@ def _review_steps(
 
     """
     context: ArchitectureContext = read_context(run)
-    folder: Path = run.context.work / ARCHITECTURE_FOLDER
     signals: list[str] = [name for name, listed in dict(result["reviewSignals"]).items() if listed]
     selected: dict[str, list[ReviewerGroup]] = {}
     group: ReviewerGroup
@@ -383,12 +422,20 @@ def _review_steps(
     if not selected:
         raise ArchitectureStepError(run, "the criteria file selects no reviewer for the content in review")
     steps: list[NewStep] = []
+    files: tuple[str, str, list[ScopeRequirement]] = (
+        context["trdPath"],
+        str(journal_file(run, LABEL_PRD)),
+        run.tools.portfolio(CHECK, _requirements, scope),
+    )
     reviewer: str
     groups: list[ReviewerGroup]
     for reviewer, groups in selected.items():
-        narrowed: ReviewerScope = _narrowed(str(run.bead), scope, reviewer, groups, result, context["trdPath"])
-        path: Path = folder / f"review-scope.{reviewer}.json"
-        write_json(path, narrowed)
+        narrowed: ReviewerScope = _narrowed(str(run.bead), scope, reviewer, groups, result, files)
+        path: Path = write_contract(
+            folder / f"review-scope.{reviewer}.json",
+            json_object(narrowed),
+            REVIEWER_SCOPE_SCHEMA,
+        )
         covered: str = ", ".join(narrowed["groups"])
         plan: StepPlan = {
             "ref": reviewer,
@@ -460,7 +507,9 @@ def check(run: StepRun) -> Completion:
     """Check what code can check, list what is in review, and plan what follows by rule.
 
     A result file that cannot be read, a matrix that refuses, and a defect that three
-    corrections did not clear end the step as a failure.
+    corrections did not clear end the step as a failure. Every file the step writes is in its
+    own folder, named for the step, so a later check never overwrites what an earlier one
+    recorded.
 
     Returns:
         The check result always; the review scope, the Epic's links with nothing recorded at the
@@ -470,9 +519,9 @@ def check(run: StepRun) -> Completion:
     context: ArchitectureContext = read_context(run)
     result: ArchitectureResult = read_result(run, context)
     criteria: Criteria = load_criteria(run.tools.plugin / CRITERIA_FILE)
-    folder: Path = run.context.work / ARCHITECTURE_FOLDER
+    folder: Path = run.context.work / ARCHITECTURE_FOLDER / "checks" / run.step["id"]
     checked: CheckResult = run.tools.portfolio(CHECK, _mechanical, run, result, criteria)
-    check_path: Path = folder / f"check-{checked['corrections']}.json"
+    check_path: Path = folder / "check.json"
     write_json(check_path, checked)
     recorded: list[Artifact] = [file_artifact(ARTIFACT_CHECK, check_path)]
     if not checked["valid"]:
@@ -500,6 +549,7 @@ def check(run: StepRun) -> Completion:
         return Completion(artifacts=tuple(recorded), add=(StepGroup((NewStep(routing), again)),))
     reviews: Completion = _review_steps(
         run,
+        folder,
         *run.tools.portfolio(CHECK, _under_review, scope, present, result, Path(context["architectureRoot"])),
         result,
         criteria,

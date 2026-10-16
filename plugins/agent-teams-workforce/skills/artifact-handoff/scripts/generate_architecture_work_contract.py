@@ -51,7 +51,6 @@ DOCUMENTS: Final[tuple[tuple[str, str, str, str], ...]] = (
     ("architecture_result", "ArchitectureResult", SCHEMA_NAME, "The solutions architect's result"),
     ("architecture_context", "ArchitectureContext", "architecture-context.schema.json", "The architecture context"),
     ("check_result", "CheckResult", "check-result.schema.json", "The check step's result"),
-    ("specialist_list", "SpecialistList", "specialists.schema.json", "The list of design specialists"),
     ("architecture_state", "ArchitectureState", "architecture-state.schema.json", "The solutions architect's state"),
     ("specialist_request", "SpecialistRequest", "specialist-request.schema.json", "A request to a specialist"),
     ("specialist_answer", "SpecialistAnswer", "specialist-answer.schema.json", "A specialist's answer"),
@@ -205,21 +204,24 @@ def _field_type(node: Mapping[str, object], where: str, known: Sequence[str]) ->
 
 
 def _record(name: str, node: Mapping[str, object], known: Sequence[str]) -> list[str]:
-    """Render one closed schema object, every property of which is required, as a TypedDict.
+    """Render one closed schema object as a TypedDict.
+
+    A property the object does not require is typed NotRequired; a conditional the object
+    states (for example ``if``/``then``) is left to the validating readers.
 
     Returns:
         The class source lines.
 
     Raises:
-        SchemaShapeError: The object is open, leaves a declared property optional, or names a
-            property that cannot be a Python attribute.
+        SchemaShapeError: The object is open, requires a property it does not declare, or names
+            a property that cannot be a Python attribute.
 
     """
     pointer: str = REF_PREFIX + name
     properties: dict[str, object] = _node(node.get("properties"), pointer + "/properties")
     required: list[str] = _strings(node.get("required"), pointer + "/required")
-    if node.get("additionalProperties") is not False or sorted(required) != sorted(properties):
-        message: str = f"architecture work schema: {pointer} must be a closed object whose every property is required"
+    if node.get("additionalProperties") is not False or not set(required) <= set(properties):
+        message: str = f"architecture work schema: {pointer} must be closed and require only declared properties"
         raise SchemaShapeError(message)
     lines: list[str] = [f"class {name}(TypedDict):", f'    """Typed form of {pointer} in {SCHEMA_NAME}."""', ""]
     key: str
@@ -229,7 +231,8 @@ def _record(name: str, node: Mapping[str, object], known: Sequence[str]) -> list
         if not key.isidentifier() or key in {"from", "class", "import", "global", "pass", "in", "is"}:
             message = f"architecture work schema: {where} cannot name a TypedDict field"
             raise SchemaShapeError(message)
-        lines.append(f"    {key}: {_field_type(_node(spec, where), where, known)}")
+        field: str = _field_type(_node(spec, where), where, known)
+        lines.append(f"    {key}: {field if key in required else f'NotRequired[{field}]'}")
     return lines
 
 
@@ -341,7 +344,7 @@ def render(schema: Mapping[str, object]) -> str:
         "",
         "import json",
         "from pathlib import Path",
-        "from typing import Final, Literal, TypedDict, TypeIs",
+        "from typing import Final, Literal, NotRequired, TypedDict, TypeIs",
         "",
         "from jsonschema import Draft202012Validator",
         "from jsonschema.exceptions import best_match",

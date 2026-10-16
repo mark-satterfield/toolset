@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "What the workflow-command-runner returns for an assignment that names its command itself (no WORKFORCE_RELAY_BINDING_V1 line): the command's exit status and its stdout, verbatim. Nothing in it is rebuilt: the workflow script (the relay shared block, scripts/shared-blocks/relay.js) checks the copy against the checksum it carries and, when the copy fails, reads the relay file the command saved instead.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["exitCode", "stdout"],
+  "properties": {
+    "exitCode": {
+      "description": "The exit status of the one command the assignment named.",
+      "type": "integer"
+    },
+    "stdout": {
+      "description": "The complete RELAY64v1: line the command printed, copied verbatim: every character as printed, in order, including the prefix and any trailing = characters, with nothing added, removed, reordered or re-typed. Treat its base64 payload as opaque text; never decode or reconstruct it. When the command printed more than one line, all of stdout verbatim.",
+      "type": "string"
+    }
+  }
+}

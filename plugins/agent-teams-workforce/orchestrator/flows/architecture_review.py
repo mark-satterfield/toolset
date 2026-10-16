@@ -28,7 +28,7 @@ from step_journal_contract import STATUS_DONE
 
 from orchestrator.core import step_journal
 from orchestrator.core.handback_contract import OTHER_CAUSE
-from orchestrator.core.io import JsonValue, json_object, write_json
+from orchestrator.core.io import JsonValue, write_json
 from orchestrator.core.journal_registry import agent_step
 from orchestrator.core.journal_steps import (
     AgentLaunch,
@@ -50,36 +50,30 @@ from orchestrator.flows.architecture_files import (
     ARTIFACT_RESOLVED,
     ARTIFACT_REVIEW,
     HUMAN_ACTION_STAGE,
-    LABEL_CRITERIA,
     LABEL_FINDINGS,
     LABEL_PRD,
     LABEL_QUESTION,
     LABEL_RESULT,
     LABEL_RULING,
     LABEL_SCOPE,
-    LABEL_SPECIALISTS,
     LABEL_TRD,
     PLUGIN,
     PROMOTE,
     ROLE_DECIDER,
     ROLE_LEAD,
     ROLE_REVIEWER,
-    ROLE_SPECIALIST,
     ArchitectureContext,
     ArchitectureStepError,
     agents_with_role,
     checked_file,
     cited_document,
-    descriptions_with_role,
     document_path,
     is_finish,
-    journal_file,
     matrix_file,
     output_check,
     planned_params,
     read_context,
 )
-from orchestrator.flows.spec_review import CRITERIA_FILE
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -89,7 +83,6 @@ if TYPE_CHECKING:
         LeadRouting,
         ScopeFinding,
         ScopeReview,
-        SpecialistList,
         UnsettledMatter,
     )
     from matrixstore import Matrix
@@ -98,6 +91,10 @@ if TYPE_CHECKING:
     from orchestrator.flows.architecture_check import ReviewerScope
 
 FINDINGS: Final = "findings"
+"""The value a review records: how many of its findings are inside the reviewer's scope.
+
+The findings themselves are in the review file, the artifact ``review``.
+"""
 OUTSIDE_SCOPE: Final = "findings outside the scope"
 ALTERNATIVES: Final = "alternatives requested"
 ROUTING: Final = "routing"
@@ -185,7 +182,8 @@ def _holds_raised(step: Step) -> bool:
     """Tell whether a done review holds something for the lead to route.
 
     Returns:
-        True when the step is done and holds a finding or a request for alternatives.
+        True when the step is done and holds a count of findings above zero or a request for
+        alternatives.
 
     """
     return step["status"] == STATUS_DONE and any(
@@ -212,7 +210,7 @@ def _lead_group(reviews: list[Step], follows: StepId, lead: str) -> StepGroup:
 
 
 def _accept_review(run: StepRun, output: Path, scope_path: Path, *, original: bool) -> Completion:
-    """Record a review: its file, the findings inside the reviewer's scope, and the lead when needed.
+    """Record a review: its file, how many findings are inside the reviewer's scope, and the lead when needed.
 
     The lead is planned by an original review when it, or a done review of its group, holds a
     finding or a request for alternatives, so the lead's step is planned again by whichever
@@ -235,8 +233,7 @@ def _accept_review(run: StepRun, output: Path, scope_path: Path, *, original: bo
         review["findings"] = kept
         write_json(output, review)
         artifacts.append(value_artifact(OUTSIDE_SCOPE, dropped))
-    held: list[JsonValue] = [json_object(finding) for finding in kept]
-    artifacts.append(value_artifact(FINDINGS, held))
+    artifacts.append(value_artifact(FINDINGS, len(kept)))
     if review["alternativesRequested"]:
         artifacts.append(value_artifact(ALTERNATIVES, len(review["alternativesRequested"])))
     if not original:
@@ -256,6 +253,10 @@ def reviewer(run: StepRun) -> AgentLaunch:
     A re-check is a step of the same agent that the check step did not plan. It is handed the
     same narrowed scope and continues the reviewer's own session.
 
+    The reviewer is handed its scope, the architect's result and, when its scope names them,
+    the TRD and the PRD: a reviewer reads the arc42 headings its scope names under the
+    architecture root, and the PRD only when it checks content against the Epic's requirements.
+
     Returns:
         The launch, with exactly the input labels the reviewers' definitions name.
 
@@ -264,7 +265,6 @@ def reviewer(run: StepRun) -> AgentLaunch:
 
     """
     context: ArchitectureContext = read_context(run)
-    prd: Path = journal_file(run, LABEL_PRD)
     params: Mapping[str, JsonValue] = run.params()
     original: bool = SCOPE_PARAM in params
     holder: Step | None = None
@@ -276,6 +276,7 @@ def reviewer(run: StepRun) -> AgentLaunch:
         params = planned_params(run.journal(), first["id"])
     scope_path: Path = Path(str(params[SCOPE_PARAM]))
     trd: JsonValue = params.get(TRD_PARAM)
+    prd: str | None = checked_file(run, scope_path, validate_reviewer_scope)["prd"]
     name: str = run.step.get("agent", "")
     suffix: str = "" if original else f".{run.step['id'][:ID_LENGTH]}"
 
@@ -287,13 +288,16 @@ def reviewer(run: StepRun) -> AgentLaunch:
         validate=output_check(validate_scope_review),
         outcome="The review of every item in the review scope.",
         accept=accept,
-        add_dirs=(run.context.work, Path(context["architectureRoot"]), prd.parent),
+        add_dirs=(
+            run.context.work,
+            Path(context["architectureRoot"]),
+            *((Path(prd).parent,) if prd is not None else ()),
+        ),
         files=(
-            (LABEL_PRD, prd),
             (LABEL_SCOPE, scope_path),
             (LABEL_RESULT, Path(context["resultPath"])),
-            (LABEL_CRITERIA, run.tools.plugin / CRITERIA_FILE),
             *(((LABEL_TRD, Path(trd)),) if isinstance(trd, str) else ()),
+            *(((LABEL_PRD, Path(prd)),) if prd is not None else ()),
         ),
         resume_from=None if holder is None else holder["id"],
         hand_inputs=False,
@@ -318,7 +322,9 @@ def lead(run: StepRun) -> AgentLaunch:
     The lead adds the steps its routing calls for under its own step, so its session normally
     ends with child steps and nothing is accepted here. A routing that rejects every item needs
     no step. Launched for "Finish", the lead either records that every item is resolved or adds
-    the steps that remain.
+    the steps that remain. The design specialists it may ask are the agents whose definitions
+    state the design-specialist role; it reads them from the definitions, so nothing is listed
+    for it.
 
     Returns:
         The launch, with exactly the input labels the lead's definition names.
@@ -329,9 +335,6 @@ def lead(run: StepRun) -> AgentLaunch:
     finishing: bool = is_finish(run)
     owner: Step | None = step_journal.parent_step(run.journal(), run.step["id"]) if finishing else run.step
     owner_id: str = run.step["id"] if owner is None else owner["id"]
-    specialists: Path = folder / "specialists.json"
-    listed: SpecialistList = {"specialists": descriptions_with_role(run.tools.plugin, ROLE_SPECIALIST)}
-    write_json(specialists, listed)
     reviews: list[Path] = [path for path in dict.fromkeys(run.inputs.files(ARTIFACT_REVIEW)) if _raised(run, path)]
 
     def accept(accepted: StepRun, output: Path) -> Completion:
@@ -355,8 +358,6 @@ def lead(run: StepRun) -> AgentLaunch:
         files=(
             *((LABEL_FINDINGS, path) for path in reviews),
             (LABEL_RESULT, Path(context["resultPath"])),
-            (LABEL_CRITERIA, run.tools.plugin / CRITERIA_FILE),
-            (LABEL_SPECIALISTS, specialists),
         ),
         fresh_output=not finishing,
         hand_inputs=False,

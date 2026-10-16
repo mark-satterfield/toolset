@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/task-gaps.schema.json",
+  "title": "Task gaps",
+  "description": "One repository's task gaps file (<work>/tasks-<slug>.gaps.json), handed to its task decomposer as `task gaps` with its Tasks file when the decomposer's Tasks leave something the Story builds uncited, a Task unsized, or no Task at all; the decomposer corrects each gap. The step `task_decomposition.plan` (orchestrator/flows/task_decomposition.py) writes it and validates it against this file. It names items and Tasks by id and copies neither: each item is in the `items` of the repository context the decomposer already holds (`repository context`, spec-context.schema.json), and each Task is in its Tasks file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["uncited", "unsized", "empty"],
+  "properties": {
+    "uncited": {"description": "The `id` of each item of the repository context's `items` that no Task cites in its `requirementIds`, in the order of `items`.", "type": "array", "items": {"type": "string", "minLength": 1}},
+    "unsized": {"description": "The `key` of each Task in the Tasks file that carries no size.", "type": "array", "items": {"type": "string", "minLength": 1}},
+    "empty": {"description": "True when the Tasks file holds no Task.", "type": "boolean"}
+  }
+}

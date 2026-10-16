@@ -446,6 +446,12 @@ class AgentLaunch:
     ``fresh_output`` False keeps a file already at ``output`` for a session that starts, for a
     document the agent updates in place. ``keep`` is recorded on the step in the journal change
     that starts it, so what the step is launched from is on the step at every later start.
+
+    ``reuse_output`` True lets the runner record the step from a valid file already at
+    ``output`` that was written since the step started, instead of starting its agent again: a
+    helper the lead agent ran in its own session, or a session that wrote its output and stopped
+    before the step was recorded (``helper-steps.schema.json``). It is False for an agent that
+    writes its output progressively, whose file is valid before its work is complete.
     """
 
     output: Path
@@ -460,6 +466,7 @@ class AgentLaunch:
     fresh_output: bool = True
     hand_inputs: bool = True
     keep: tuple[Artifact, ...] = ()
+    reuse_output: bool = True
 
 
 type AgentBuilder = Callable[[StepRun], AgentLaunch]

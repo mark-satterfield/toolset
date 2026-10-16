@@ -1,8 +1,9 @@
 """The solutions architect's steps, and the sessions of the agents it left running.
 
 One agent, the solutions architect, decides what the architecture should be for a PRD. The script
-writes what the matrix holds for the Epic to one file, starts the agent's session, hands it the
-files its definition names and records what it returns; what the architect reads, whom it asks
+starts the agent's session, hands it the files its definition names and records what it returns;
+the architect reads what the matrix holds for the Epic itself, live, with ``atw-matrix``, so
+nothing it is handed drifts from the matrix it writes to. What the architect reads, whom it asks
 and in what order are its own decisions. The same launch builder serves every step that agent
 performs: the first, its "Finish" after an interruption, a correction after findings or after the
 mechanical check, and a competing design the lead orders.
@@ -23,7 +24,6 @@ from typing import TYPE_CHECKING, Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 from architecture_work_contract import (
-    TRD_CHANGE_REMOVE,
     ArchitectureWorkError,
     validate_architecture_result,
     validate_specialist_answer,
@@ -46,14 +46,13 @@ from matrix_contract import (
     SIDE_ARCHITECTURE,
     MatrixError,
 )
-from matrixquery import epic_brief, epic_view
+from matrixquery import epic_view
 from matrixstore import as_entry_id, make_id, name_key, read_matrix, slug, update_matrix
 from matrixsync import LIFECYCLE_IN_REVIEW, relative_path, set_lifecycle, sync_documents, vault_root
 from matrixtraverse import epic_id
 from matrixwrite import link, put
 
 from orchestrator.core.agents import strict_json
-from orchestrator.core.io import json_object, write_json
 from orchestrator.core.journal_registry import agent_step, plan_under
 from orchestrator.core.journal_steps import (
     UNDER_CONTAINER,
@@ -74,8 +73,6 @@ from orchestrator.flows.architecture_files import (
     ARTIFACT_TRD,
     LABEL_ANSWER,
     LABEL_CONTEXT,
-    LABEL_CRITERIA,
-    LABEL_EPIC_BRIEF,
     LABEL_FINDINGS,
     LABEL_PRD,
     LABEL_QUESTION,
@@ -98,8 +95,6 @@ from orchestrator.flows.architecture_files import (
     checked_file,
     cited_document,
     document_path,
-    earlier_files,
-    epic_brief_path,
     is_finish,
     journal_file,
     matrix_file,
@@ -107,7 +102,6 @@ from orchestrator.flows.architecture_files import (
     read_context,
 )
 from orchestrator.flows.repo_scoping import story_build_problems
-from orchestrator.flows.spec_review import CRITERIA_FILE
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -117,7 +111,6 @@ if TYPE_CHECKING:
         Citation,
         SpecialistRequest,
         TrdAnswer,
-        TrdChange,
         TrdRequest,
         TrdRequirement,
         WriteRequest,
@@ -142,6 +135,9 @@ CONSTRAINTS: Final = "constraints recorded"
 ATTR_HEADING: Final = "heading"
 ATTR_VIA: Final = "via"
 ATTR_STATEMENT: Final = "statement"
+ATTR_TRD: Final = "trd"
+ATTR_EPIC: Final = "epic"
+ATTR_REQUIREMENT: Final = "requirement"
 REQUIREMENT_KEY_SEPARATOR: Final = "/"
 HEADING_MARK: Final = "#"
 
@@ -178,7 +174,7 @@ def _architect_plan(architect: str, inputs: list[str]) -> StepPlan:
     }
 
 
-def first_steps(opened: StepId, container: StepId, architect: str, earlier: Sequence[StepId] = ()) -> StepGroup:
+def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
     """Plan the architect's step and the check after it, under the Architecture container.
 
     The same two plans are registered as what this lane plans under the container
@@ -191,8 +187,6 @@ def first_steps(opened: StepId, container: StepId, architect: str, earlier: Sequ
         opened: The open-run step, whose artifacts the planned steps are handed.
         container: The Architecture container.
         architect: The agent that plays the solutions architect.
-        earlier: Steps that hold files an earlier form of the pipeline produced for this PRD,
-            which the architect's step is handed too.
 
     Returns:
         The architect's step and the check that follows it, as the container's last child steps.
@@ -201,7 +195,7 @@ def first_steps(opened: StepId, container: StepId, architect: str, earlier: Sequ
 
     """
     return StepGroup(
-        (NewStep(_architect_plan(architect, [opened, *earlier])), check_step([ARCHITECT_REF], corrections=0)),
+        (NewStep(_architect_plan(architect, [opened])), check_step([ARCHITECT_REF], corrections=0)),
         UNDER_CONTAINER,
         container,
         unless_agent=architect,
@@ -215,44 +209,23 @@ plan_under(
 )
 
 
-def _epic_brief(bead: str) -> dict[str, JsonValue]:
-    """Read from the matrix what the architect is handed for an Epic.
-
-    An Epic the matrix does not hold raises ``MatrixError``.
-
-    Returns:
-        ``matrixquery.epic_brief``: the Epic's own requirements, its features with the arc42
-        headings that describe them, the entries that realize them with their stacks and
-        repositories, and the constraints that apply to those. The architect runs
-        ``atw-matrix impact --id <id>`` itself for an entry it means to change.
-
-    """
-    return json_object(epic_brief(read_matrix(matrix_file()), bead))
-
-
 def _handed_files(run: StepRun, context: ArchitectureContext, prd: Path) -> tuple[tuple[str, Path], ...]:
     """Name the files of the architect's brief: exactly the labels its definition states.
 
-    The Epic's brief is written here, from the matrix as it is when the session starts, so the
-    architect is handed the Epic's requirements, features, realizers and constraints.
+    No file is written from the matrix for the architect: it runs the ``atw-matrix`` reads its
+    definition names for the Epic, so what it reads is the matrix as it is at that moment.
 
     Returns:
-        The PRD, the criteria file, the context file, the state path and the epic brief; then
-        each file an earlier form of the pipeline produced for this PRD; then each review and
+        The PRD, the context file and the state path; then each review and
         each mechanical check result the step is handed, as findings; then each specialist's
         answer and each ruling the step is handed.
 
     """
-    current: Path = epic_brief_path(run.context.work)
-    write_json(current, run.tools.portfolio(run.inputs.stage, _epic_brief, str(run.bead)))
     findings: list[Path] = [*run.inputs.files(ARTIFACT_REVIEW), *run.inputs.files(ARTIFACT_CHECK)]
     return (
         (LABEL_PRD, prd),
-        (LABEL_CRITERIA, run.tools.plugin / CRITERIA_FILE),
         (LABEL_CONTEXT, journal_file(run, LABEL_CONTEXT)),
         (LABEL_STATE, Path(context["statePath"])),
-        (LABEL_EPIC_BRIEF, current),
-        *earlier_files(run.inputs),
         *((LABEL_FINDINGS, path) for path in dict.fromkeys(findings)),
         *((LABEL_ANSWER, path) for path in dict.fromkeys(run.inputs.files(LABEL_ANSWER))),
         *((LABEL_RULING, path) for path in dict.fromkeys(run.inputs.files(LABEL_RULING))),
@@ -473,8 +446,12 @@ def architect(run: StepRun) -> AgentLaunch:
     after one of the architect's continues the nearest earlier session the agent holds. The
     output is always the architecture result, which every step after the first updates in place.
 
-    The session is handed files and no folder of the architecture or of the PRDs: the file of the
-    current architecture names the documents and headings the Epic reaches.
+    The session is handed files and no folder of the architecture or of the PRDs: the matrix
+    names the documents and headings the Epic reaches. A result already at the result path is
+    kept for every step: the architect writes its result as the work goes, so a session that
+    starts again, for the first step as for any other, continues from the partial result. A
+    valid file at the result path is therefore never taken as the step's finished output
+    without the session (``reuse_output`` False).
 
     Returns:
         The launch: the result file as output, the files the definition names, and what the
@@ -483,9 +460,7 @@ def architect(run: StepRun) -> AgentLaunch:
     """
     context: ArchitectureContext = read_context(run)
     prd: Path = journal_file(run, LABEL_PRD)
-    finishing: bool = is_finish(run)
-    holder: Step | None = None if finishing else run.session_holder()
-    continues: bool = finishing or holder is not None
+    holder: Step | None = None if is_finish(run) else run.session_holder()
 
     def accept(accepted: StepRun, output: Path) -> Completion:
         result: ArchitectureResult = checked_file(accepted, output, validate_architecture_result)
@@ -513,8 +488,9 @@ def architect(run: StepRun) -> AgentLaunch:
         add_dirs=(run.context.work,),
         files=_handed_files(run, context, prd),
         resume_from=None if holder is None else holder["id"],
-        fresh_output=not continues,
+        fresh_output=False,
         hand_inputs=False,
+        reuse_output=False,
     )
 
 
@@ -590,12 +566,15 @@ def specialist(run: StepRun) -> AgentLaunch:
 def _constraint(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] - The parts of one constraint.
     matrix: Matrix,
     name: str,
-    statement: str,
+    rule: Mapping[str, JsonValue],
     applies_to: EntryId,
     problems: list[str],
     stated_in: tuple[EntryId, str] | None = None,
 ) -> EntryId | None:
-    """Record one constraint with what it applies to and, when a document states it, where.
+    """Record one constraint with its rule, what it applies to and, when a document states it, where.
+
+    ``rule`` is the constraint's ``statement``, or for a TRD requirement its ``trd`` pointer with
+    ``statement`` null, which removes a statement the entry held.
 
     Returns:
         The constraint's id; None, with one sentence added to ``problems``, when the matrix
@@ -608,7 +587,7 @@ def _constraint(  # ruff: ignore[too-many-arguments, too-many-positional-argumen
             KIND_CONSTRAINT,
             SIDE_ARCHITECTURE,
             name=name,
-            attributes={ATTR_STATEMENT: statement},
+            attributes=rule,
         )["id"]
     except MatrixError as error:
         problems.append(f"constraint {name!r}: {error}")
@@ -633,15 +612,15 @@ def _stated_in(matrix: Matrix, arch: Path, source: Citation) -> tuple[EntryId, s
     return document, source["heading"].strip()
 
 
-def _record_constraints(matrix: Matrix, bead: str, arch: Path, request: TrdRequest, answer: TrdAnswer) -> Recorded:
-    """Record the technical requirements a TRD request and its answer state, as constraints.
+def _record_constraints(matrix: Matrix, bead: str, arch: Path, answer: TrdAnswer) -> Recorded:
+    """Record the technical requirements a TRD answer states, as constraints.
 
-    Each requirement the request adds or changes, and each requirement the answer states for a
-    drafted TRD, is one constraint with ``statedIn`` to the
-    document heading that is its source and ``appliesTo`` to the entry it names, or to the Epic
-    when it names none; a requirement the request removes loses its constraint. Each obligation
-    the answer lists with no source is one constraint with no ``statedIn`` that applies to the
-    Epic.
+    The answer lists each requirement the TRD write added or changed. Each is one constraint that
+    points at the requirement (``trd``: the Epic and the requirement id, its heading in the TRD)
+    and copies none of its text, with ``statedIn`` to the document heading that is its source and ``appliesTo`` to
+    the entry it names, or to the Epic when it names none; each requirement the answer lists as
+    removed loses its constraint. Each obligation the answer lists with no source is one
+    constraint with no ``statedIn`` that applies to the Epic.
 
     Returns:
         The constraints recorded, and what could not be recorded.
@@ -650,31 +629,39 @@ def _record_constraints(matrix: Matrix, bead: str, arch: Path, request: TrdReque
     epic: EntryId = epic_id(bead)
     problems: list[str] = []
     entries: list[EntryId | None] = []
-    stated_requirements: list[TrdChange | TrdRequirement] = [*request["changes"], *answer["requirements"]]
-    for change in stated_requirements:
-        named: str = f"{bead} {change['id'].strip()}" if change["id"].strip() else change["statement"].strip()
-        if change.get("change") == TRD_CHANGE_REMOVE:
-            gone: EntryId = make_id(KIND_CONSTRAINT, slug(named))
-            if matrix.find(gone) is not None:
-                matrix.remove(gone)
-            continue
+    removed: str
+    for removed in answer["removed"]:
+        gone: EntryId = make_id(KIND_CONSTRAINT, slug(f"{bead} {removed.strip()}"))
+        if matrix.find(gone) is not None:
+            matrix.remove(gone)
+    requirement: TrdRequirement
+    for requirement in answer["requirements"]:
+        named: str = f"{bead} {requirement['id'].strip()}"
         target: EntryId | None = (
-            _held(matrix, change["appliesTo"], f"constraint {named!r} applies to", problems)
-            if change["appliesTo"].strip()
+            _held(matrix, requirement["appliesTo"], f"constraint {named!r} applies to", problems)
+            if requirement["appliesTo"].strip()
             else epic
         )
         if target is not None:
-            stated: tuple[EntryId, str] | None = _stated_in(matrix, arch, change["source"])
-            entries.append(_constraint(matrix, named, change["statement"].strip(), target, problems, stated))
+            stated: tuple[EntryId, str] | None = _stated_in(matrix, arch, requirement["source"])
+            pointer: dict[str, JsonValue] = {ATTR_EPIC: bead, ATTR_REQUIREMENT: requirement["id"].strip()}
+            rule: dict[str, JsonValue] = {ATTR_TRD: pointer, ATTR_STATEMENT: None}
+            entries.append(_constraint(matrix, named, rule, target, problems, stated))
     entries.extend(
-        _constraint(matrix, unsourced["obligation"].strip(), unsourced["obligation"].strip(), epic, problems)
+        _constraint(
+            matrix,
+            unsourced["obligation"].strip(),
+            {ATTR_STATEMENT: unsourced["obligation"].strip()},
+            epic,
+            problems,
+        )
         for unsourced in answer["noSource"]
     )
     return Recorded(entries=tuple(entry for entry in entries if entry is not None), problems=tuple(problems))
 
 
-def _record_trd(bead: str, arch: Path, request: TrdRequest, answer: TrdAnswer) -> Recorded:
-    """Record a TRD request and its answer in the matrix as one change.
+def _record_trd(bead: str, arch: Path, answer: TrdAnswer) -> Recorded:
+    """Record a TRD answer in the matrix as one change.
 
     Returns:
         What :func:`_record_constraints` returns.
@@ -682,7 +669,7 @@ def _record_trd(bead: str, arch: Path, request: TrdRequest, answer: TrdAnswer) -
     """
 
     def change(matrix: Matrix) -> Recorded:
-        return _record_constraints(matrix, bead, arch, request, answer)
+        return _record_constraints(matrix, bead, arch, answer)
 
     return update_matrix(matrix_file(), change)
 
@@ -692,7 +679,7 @@ def trd_author(run: StepRun) -> AgentLaunch:
     """Build the session of the TRD author the architect left running.
 
     The accepted answer is recorded in the matrix: one constraint for each technical requirement
-    the request states or a drafted TRD's answer states, and for each obligation the answer lists
+    the answer states, none for each it lists as removed, and one for each obligation it lists
     with no source.
 
     Returns:
@@ -712,7 +699,6 @@ def trd_author(run: StepRun) -> AgentLaunch:
             _record_trd,
             str(accepted.bead),
             arch,
-            request,
             answer,
         )
         if recorded.problems:

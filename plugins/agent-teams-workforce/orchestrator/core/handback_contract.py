@@ -8,6 +8,9 @@ plugin and validates every document with :func:`validate`. Driver-made failures 
 This module imports only the standard library, so the driver loads it without the orchestrator
 package. Every field, allowed value and rule of the contract is defined here and nowhere else.
 
+The one line a headless Workflow session prints for the driver when the workflow it ran ends is a
+different contract, with its own file: :data:`HANDBACK_LINE_SCHEMA`.
+
 Rules beyond the field types:
 
 - ``failure.classification`` is always present. ``interrupted`` is used exactly when the item
@@ -48,6 +51,13 @@ type FailureClass = Literal["setup", "transient", "item", "pipeline-code-defect"
 type StopStage = Literal["interrupted", "shutdown"]
 
 VERSION: Final = 1
+
+HANDBACK_LINE_SCHEMA: Final = "skills/pipeline-contracts/schemas/handback-line.schema.json"
+"""The contract of the handback line a headless Workflow session prints, relative to the plugin root.
+
+It defines every field of that line and the rule for each; a prompt that asks for the line names
+this file and restates none of its fields.
+"""
 
 SETUP_CLASS: Final[FailureClass] = "setup"
 """The run could not be configured or launched; new dispatch stops."""

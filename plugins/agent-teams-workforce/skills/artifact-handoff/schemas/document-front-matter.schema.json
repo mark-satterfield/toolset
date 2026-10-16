@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/document-front-matter.schema.json",
+  "title": "Elaboration Markdown documents",
+  "description": "The fixed part of the Markdown documents elaboration hands from agent to agent: the YAML front matter a script reads, and the headings a script resolves. What a document must say is judged by the criteria of effective-architecture/review-standard.md (the TRD by the technical-requirement level, the specs by the implementation level), which this file does not restate. The arc42 documents of the effective architecture are not covered here: their catalog front matter is the arc42 skill's documentation model (skills/arc42/references/arc42-section-model.md).",
+  "$defs": {
+    "Citation": {
+      "description": "One architecture citation: the path of an arc42 document relative to the architecture root, optionally followed by #<heading> as `atw-matrix node document:<path>` lists the heading. Every citation must resolve to a document, and a heading to a heading of it, that the matrix holds.",
+      "type": "string",
+      "minLength": 1
+    },
+    "TrdDocument": {
+      "description": "The front matter of the Epic's TRD (<work>/trd.md), written by trd-author. Each requirement is a heading whose text is exactly its id (for example `#### TR-01`), and under it the members of architecture-result.schema.json#/$defs/TrdRequirement. A matrix constraint that records the requirement points at that heading by the Epic and the id (matrix-kinds.json, `$defs/trdRequirement`); the step `trd.confirm` (orchestrator/flows/trd_authoring.py) fails when a citation does not resolve or a pointer names an id the TRD has no heading for.",
+      "type": "object",
+      "required": ["decisionIds"],
+      "properties": {
+        "decisionIds": {
+          "description": "The arc42 documents and headings the TRD's requirements cite.",
+          "type": "array",
+          "items": {"$ref": "#/$defs/Citation"}
+        }
+      }
+    },
+    "SpecDocument": {
+      "description": "The front matter of one repository's contracts document (<work>/spec-<slug>.md, written by api-specification-author) and data-model document (<work>/spec-<slug>.data-model.md, written by data-model-specification-author). The step `spec_authoring.story_document` (orchestrator/flows/spec_authoring.py) carries the citations of both onto the Story document and the Story bead.",
+      "type": "object",
+      "required": ["decisionIds"],
+      "properties": {
+        "decisionIds": {
+          "description": "The arc42 documents and headings the document cites.",
+          "type": "array",
+          "items": {"$ref": "#/$defs/Citation"}
+        }
+      }
+    }
+  }
+}

@@ -129,7 +129,7 @@ async function settleWorkflow(name, input) {
 }
 // END bounded dispatch policy
 
-// ===== SHARED BLOCK relay — BEGIN (canonical: scripts/shared-blocks/relay.js; filled from skills/artifact-handoff/schemas/checkpoint.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
+// ===== SHARED BLOCK relay — BEGIN (canonical: scripts/shared-blocks/relay.js; filled from skills/artifact-handoff/schemas/{checkpoint,relay-command-result,relay-registered-result,artifact-reference}.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
 // ── CHECKED RELAY: deterministic work reaches this script unaltered, or not at all ──
 //
 // A workflow script cannot run a command or read a file. A command reaches the shell only as
@@ -255,13 +255,12 @@ const relayKit = (() => {
     if (word !== null) words.push(word)
     return words
   }
-  /** A runner's return: the exit status and stdout, verbatim, as one string. Nothing is rebuilt. */
-  const SCHEMA = {
-    type: 'object',
-    additionalProperties: false,
-    required: ['exitCode', 'stdout'],
-    properties: { exitCode: { type: 'integer' }, stdout: { type: 'string', description: 'Copy the complete RELAY64v1: line verbatim. Treat its base64 payload as opaque text; never decode or reconstruct it.' } },
-  }
+  // The runner's results and the producer's artifact reference, inlined by scripts/shared-blocks.mjs
+  // from their contract files in skills/artifact-handoff/schemas/ (relay-command-result,
+  // relay-registered-result, artifact-reference). Never restate any part of them here.
+  const SCHEMA = {"$schema":"https://json-schema.org/draft/2020-12/schema","description":"What the workflow-command-runner returns for an assignment that names its command itself (no WORKFORCE_RELAY_BINDING_V1 line): the command's exit status and its stdout, verbatim. Nothing in it is rebuilt: the workflow script (the relay shared block, scripts/shared-blocks/relay.js) checks the copy against the checksum it carries and, when the copy fails, reads the relay file the command saved instead.","type":"object","additionalProperties":false,"required":["exitCode","stdout"],"properties":{"exitCode":{"description":"The exit status of the one command the assignment named.","type":"integer"},"stdout":{"description":"The complete RELAY64v1: line the command printed, copied verbatim: every character as printed, in order, including the prefix and any trailing = characters, with nothing added, removed, reordered or re-typed. Treat its base64 payload as opaque text; never decode or reconstruct it. When the command printed more than one line, all of stdout verbatim.","type":"string"}}}
+  const REGISTERED_SCHEMA = {"$schema":"https://json-schema.org/draft/2020-12/schema","description":"What the workflow-command-runner returns for a registered assignment (one carrying the WORKFORCE_RELAY_BINDING_V1 and WORKFORCE_RELAY_REQUEST_V1 lines). The runner returns the small object the registered helper printed; the plugin's PreToolUse hook supplies the exact saved output. When the runner's Bash call fails, it returns the unknown result: state unknown, exitCode 0, stdout empty, receipt null, bridge false, error empty, so the hook reports the real saved state. The workflow script (the relay shared block, scripts/shared-blocks/relay.js) accepts a completed result only when its receipt matches the request, the command checksum, the exit status, the byte count and the SHA-256 of stdout.","type":"object","additionalProperties":false,"required":["state","exitCode","stdout","receipt","bridge","error"],"properties":{"state":{"description":"completed: the command ran and its saved output is handed back. not-started: the request provably never ran; the workflow, not the runner, decides whether it is attempted again. unknown: the runner could not tell (its Bash call failed); every other field then holds its empty value (exitCode 0, stdout empty, receipt null, bridge false, error empty).","type":"string","enum":["completed","not-started","unknown"]},"exitCode":{"description":"The exit status of the registered command.","type":"integer"},"stdout":{"description":"The command's saved stdout, verbatim. Never interpret, reconstruct or copy the payload by hand.","type":"string"},"receipt":{"description":"The integrity receipt of the saved output, or null when there is none.","anyOf":[{"description":"Binds a saved output to the request that produced it.","type":"object","additionalProperties":false,"required":["request","commandSha256","sha256","bytes","exitCode"],"properties":{"request":{"description":"The request id the workflow script computed for this command.","type":"string"},"commandSha256":{"description":"The SHA-256 of the canonical JSON of the command's argument list.","type":"string"},"sha256":{"description":"The SHA-256 of stdout.","type":"string"},"bytes":{"description":"The length of stdout.","type":"integer"},"exitCode":{"description":"The exit status the saved output records.","type":"integer"}}},{"type":"null"}]},"bridge":{"description":"true only on the result the hook itself supplies; the runner's own result always carries false, and the workflow reads any other value as the runner's copy.","type":"boolean"},"error":{"description":"Why the outcome is not completed, or empty.","type":"string"}}}
+  const ARTIFACT_SCHEMA = {"$schema":"https://json-schema.org/draft/2020-12/schema","description":"What a producer session returns after it authored a JSON artifact under the artifact checkpoint contract (checkpoint.schema.json): only the path of the candidate it wrote, never a copy of its content. The workflow script then validates the candidate against its contract file and publishes it (scripts/portfolio/jsonartifact.py).","type":"object","additionalProperties":false,"required":["artifactPath"],"properties":{"artifactPath":{"description":"The candidate path the brief named, as the submit command printed it.","type":"string"}}}
   const HEX = /^[0-9a-f]{64}$/
   /** The relay's own keys in a printed envelope; every other key is a leaf of the flat view. */
   const RELAY_KEYS = ['~file', '~sha256', '~bytes', '~exit', '~checksum']
@@ -351,10 +350,8 @@ const relayKit = (() => {
 
 ${command}
 
-It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy that entire line as opaque text, including the prefix and any trailing = characters. Do not decode the base64, interpret its contents, or rebuild the JSON. Return the process exit code as \`exitCode\` and that line, verbatim, as the string \`stdout\`: every character as printed, in order, with nothing added, removed, reordered, reformatted or re-typed. Do not parse it, do not summarize it. If it printed more than one line, return all of stdout verbatim. Do not retry, do not repair, do not run any other command.`
+It prints exactly one line beginning RELAY64v1: followed by base64 text. Return its exit status and that line as your output schema describes (contract: skills/artifact-handoff/schemas/relay-command-result.schema.json). Do not retry, do not repair, do not run any other command.`
   let captureOrdinal = 0
-  const RECEIPT_SCHEMA = { type: 'object', additionalProperties: false, required: ['request', 'commandSha256', 'sha256', 'bytes', 'exitCode'], properties: { request: { type: 'string' }, commandSha256: { type: 'string' }, sha256: { type: 'string' }, bytes: { type: 'integer' }, exitCode: { type: 'integer' } } }
-  const REGISTERED_SCHEMA = { type: 'object', additionalProperties: false, required: ['state', 'exitCode', 'stdout', 'receipt', 'bridge', 'error'], properties: { state: { type: 'string', enum: ['completed', 'not-started', 'unknown'] }, exitCode: { type: 'integer' }, stdout: { type: 'string' }, receipt: { anyOf: [RECEIPT_SCHEMA, { type: 'null' }] }, bridge: { type: 'boolean' }, error: { type: 'string' } } }
   async function registeredCommand(dispatch, { label, phase, command }, ordinal) {
     const argv = shellWords(command)
     const commandSha256 = sha256Json(argv)
@@ -575,26 +572,60 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
     if (r.exit !== 0) return { ok: false, error: String(r.view.error || `exited ${r.exit}`) }
     return { ok: true, view: r.view }
   }
-  const ARTIFACT_SCHEMA = { type: 'object', additionalProperties: false, required: ['artifactPath'], properties: { artifactPath: { type: 'string' } } }
   // The artifact checkpoint contract, inlined by scripts/shared-blocks.mjs from its one place,
   // skills/artifact-handoff/schemas/checkpoint.schema.json. Never restate any part of it here.
   const CHECKPOINT_SCHEMA = {"$schema":"https://json-schema.org/draft/2020-12/schema","title":"Artifact checkpoint","description":"The sidecar <candidate><x-sidecarSuffix> that artifactcontract.py checkpoint|complete|submit writes and artifactcontract.py status and jsonartifact.py read. It is built from the agent-authored progress file <candidate><x-progressSuffix> ($defs/Progress) plus the binding keys. The Python types are generated from this file by scripts/generate_checkpoint_contract.py.","x-sidecarSuffix":".checkpoint","x-progressSuffix":".progress.json","x-bindingKeys":["artifactPath","schemaSha256","revision"],"x-authoredStatuses":["in-progress","blocked"],"x-operations":["validate","checkpoint","complete","submit","status"],"type":"object","additionalProperties":false,"required":["status","artifactPath","schemaSha256","revision","task","completed","remaining","artifacts"],"properties":{"status":{"enum":["in-progress","blocked","complete"]},"artifactPath":{"$ref":"#/$defs/ArtifactPath"},"schemaSha256":{"$ref":"#/$defs/Sha256"},"candidateSha256":{"$ref":"#/$defs/Sha256"},"revision":{"$ref":"#/$defs/Revision"},"task":{"$ref":"#/$defs/Progress/properties/task"},"completed":{"$ref":"#/$defs/Progress/properties/completed"},"remaining":{"$ref":"#/$defs/Progress/properties/remaining"},"artifacts":{"$ref":"#/$defs/Progress/properties/artifacts"},"reason":{"$ref":"#/$defs/Progress/properties/reason"}},"allOf":[{"if":{"properties":{"status":{"const":"complete"}}},"then":{"required":["candidateSha256"],"properties":{"remaining":{"maxItems":0}}}},{"if":{"properties":{"status":{"const":"blocked"}}},"then":{"required":["reason"],"properties":{"remaining":{"minItems":1}}}}],"$defs":{"ArtifactPath":{"description":"The absolute candidate path; a binding key.","type":"string","minLength":1},"Revision":{"description":"The input revision; a binding key.","type":"string","minLength":1},"Sha256":{"description":"Lowercase hex SHA-256 of a canonical JSON value.","type":"string","pattern":"^[a-f0-9]{64}$"},"Progress":{"description":"The agent-authored progress file <candidate><x-progressSuffix>; its keys are copied into the checkpoint.","type":"object","additionalProperties":false,"required":["task","completed","remaining","artifacts"],"properties":{"task":{"type":"string","minLength":1},"completed":{"type":"array","items":{"type":"string","minLength":1}},"remaining":{"type":"array","items":{"type":"string","minLength":1}},"artifacts":{"type":"array","items":{"type":"string","minLength":1}},"reason":{"type":"string","minLength":1}}},"StatusReport":{"description":"What the status operation reports for a candidate.","type":"object","additionalProperties":false,"required":["status"],"properties":{"status":{"enum":["incomplete","in-progress","blocked","complete-unaccepted"]},"reason":{"type":"string"},"remaining":{"$ref":"#/$defs/Progress/properties/remaining"},"artifactPath":{"$ref":"#/$defs/ArtifactPath"},"schemaSha256":{"$ref":"#/$defs/Sha256"},"revision":{"$ref":"#/$defs/Revision"},"candidateSha256":{"$ref":"#/$defs/Sha256"}}},"CommandResult":{"description":"What the validate, checkpoint, complete and submit operations print; status is absent only for submit.","type":"object","additionalProperties":false,"required":[],"properties":{"status":{"enum":["schema-valid","complete-unaccepted","in-progress","blocked","invalid"]},"artifactPath":{"$ref":"#/$defs/ArtifactPath"},"error":{"type":"string","minLength":1}}}}}
-  function artifactBrief(candidate, schema, revision = '', helper) {
+  /**
+   * The absolute path of a contract file. `contract` is the file's path relative to the plugin
+   * root, optionally followed by #<JSON pointer> naming the schema inside it (for example
+   * 'skills/artifact-handoff/schemas/x.schema.json#/$defs/Proposal'); `script` is the absolute path
+   * of any script in the plugin's scripts/portfolio/ folder, from which the plugin root is known.
+   */
+  function contractPath(script, contract) {
+    const at = /^(.*\/)scripts\/portfolio\/[^/]+$/.exec(String(script || ''))
+    if (!at) throw new Error(`contractPath: ${JSON.stringify(script)} is not a script in the plugin's scripts/portfolio/ folder`)
+    if (typeof contract !== 'string' || !/^[A-Za-z0-9_-][A-Za-z0-9._/-]*\.json(#\/[^\s']*)?$/.test(contract) || contract.split('#')[0].split('/').includes('..')) {
+      throw new Error(`contractPath: ${JSON.stringify(contract)} is not a contract file path relative to the plugin root`)
+    }
+    return `${at[1]}${contract}`
+  }
+  /**
+   * The helper's schema option for `contract`: a contract file path (see contractPath) becomes
+   * `--schema <absolute path>`; a schema object, the form older callers pass, becomes
+   * `--schema-json <canonical JSON>`.
+   */
+  function schemaOption(script, contract) {
+    if (contract && typeof contract === 'object' && !Array.isArray(contract)) return ['--schema-json', canonicalJson(contract)]
+    return ['--schema', contractPath(script, contract)]
+  }
+  /**
+   * The brief text that binds a producer session to its candidate: the candidate, the progress
+   * file, the input revision, the contract file the candidate must satisfy (named, never pasted)
+   * and the artifactcontract.py command of each checkpoint operation.
+   */
+  function artifactBrief(candidate, contract, revision = '', helper) {
     if (typeof helper !== 'string' || !helper) throw new Error('artifactBrief requires the artifactcontract.py helper path')
     const suffix = CHECKPOINT_SCHEMA['x-progressSuffix']
     const operations = CHECKPOINT_SCHEMA['x-operations']
     if (typeof suffix !== 'string' || !suffix || !Array.isArray(operations) || !operations.length) throw new Error('artifactBrief: the checkpoint contract was not inlined from checkpoint.schema.json')
+    const schema = schemaOption(helper, contract)
     const progress = `${candidate}${suffix}`
-    const binding = ['--candidate', candidate, '--schema-json', canonicalJson(schema), '--revision', revision, '--progress-file', progress]
+    const binding = ['--candidate', candidate, ...schema, '--revision', revision, '--progress-file', progress]
     const command = operation => ['python3', helper, operation, ...binding].map(quote).join(' ')
     return `\n\nARTIFACT CONTRACT DATA:
 Candidate: ${candidate}
-Progress: ${progress}
+${schema[0] === '--schema' ? `Contract: ${schema[1]}\n` : ''}Progress: ${progress}
 Input revision: ${revision}
 ${operations.map(operation => `Command ${operation}: ${command(operation)}`).join('\n')}`
   }
-  async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, schema, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false, recordArgv = [], researchAgent = '', researchRepo = '' }) {
-    const args = ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), '--candidate', candidate, '--final', file, '--schema-json', canonicalJson(schema), ...(revision ? ['--revision', revision] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(counts.length ? ['--counts', counts.join(',')] : []), ...(projection ? ['--projection', projection] : []), ...(probe ? ['--probe'] : []), ...(probe && researchAgent && researchRepo ? ['--research-agent', researchAgent, '--research-repo', researchRepo] : []), ...(!returned ? ['--recover'] : [])]
+  async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, contract = null, schema: schemaObject = null, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false, recordArgv = [], researchAgent = '', researchRepo = '' }) {
+    let schema
+    try {
+      schema = schemaOption(runner, contract || schemaObject)
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) }
+    }
+    const args = ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), '--candidate', candidate, '--final', file, ...schema, ...(revision ? ['--revision', revision] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(counts.length ? ['--counts', counts.join(',')] : []), ...(projection ? ['--projection', projection] : []), ...(probe ? ['--probe'] : []), ...(probe && researchAgent && researchRepo ? ['--research-agent', researchAgent, '--research-repo', researchRepo] : []), ...(!returned ? ['--recover'] : [])]
     if (!Array.isArray(recordArgv) || recordArgv.some(word => typeof word !== 'string' || !word)) return { ok: false, error: 'invalid artifact recorder argv' }
     const argv = recordArgv.length ? ['python3', runner.replace(/[^/]+$/, 'artifactpublish.py'), '--record-argv-json', canonicalJson(recordArgv), '--', ...args.slice(2)] : args
     const result = await run(dispatch, { label, phase, runner, argv, file: relayFile })
@@ -646,7 +677,7 @@ ${operations.map(operation => `Command ${operation}: ${command(operation)}`).joi
     if (receipts.length !== files.length || receipts.some((r, i) => r.artifactPath !== files[i] || !/^[a-f0-9]{64}$/.test(r.sha256 || '') || !Number.isSafeInteger(r.bytes) || r.bytes < 1 || r.format !== 'text')) return { ok: false, error: 'invalid document receipt' }
     return { ok: true, receipts }
   }
-  return { ARTIFACT_SCHEMA, artifactBrief, acceptArtifact, authorArtifact, artifactRevision, documentReceipt, canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, unflatten, parse, SCHEMA }
+  return { ARTIFACT_SCHEMA, contractPath, schemaOption, artifactBrief, acceptArtifact, authorArtifact, artifactRevision, documentReceipt, canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, unflatten, parse, SCHEMA }
 })()
 // ===== SHARED BLOCK relay — END =====
 
@@ -705,8 +736,7 @@ async function settleAgent(prompt, opts) {
 //   pluginRoot:   string,   // absolute path of this plugin's root
 //   workDir:      string,   // absolute path of a directory for this run's files
 //   epic:         string,   // the one Epic assessed
-//   archPath?:    string,   // the architecture root a document's id is a path under; passed on to wsjf-scoring
-//   projectRoot?: string,
+//   archPath?:    string,   // the architecture root a document's id is a path under
 //   score?:       boolean,  // false: do not trigger scoring. Default true.
 //   apply?:       boolean,  // false: apply-edges runs as a dry run and nothing is recorded in the matrix. Default true.
 // }
@@ -719,8 +749,8 @@ const PATH_ARGS = ['repoPath', 'pluginRoot', 'workDir']
 // The environment variable that supplies each path arg the caller leaves out. pluginRoot has none of
 // its own: it is the agent-teams-workforce install that $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json
 // records. workDir has none either: a run without one gets a new directory from mkdtemp.
-const ENV_OF = { repoPath: DRIVER_SURFACE.CONTROL_REPO_ENV, archPath: DRIVER_SURFACE.ARCH_PATH_ENV, projectRoot: DRIVER_SURFACE.PROJECT_ROOT_ENV }
-const OPTIONAL_PATH_ARGS = ['archPath', 'projectRoot']
+const ENV_OF = { repoPath: DRIVER_SURFACE.CONTROL_REPO_ENV, archPath: DRIVER_SURFACE.ARCH_PATH_ENV }
+const OPTIONAL_PATH_ARGS = ['archPath']
 const isAbsolute = (v) => typeof v === 'string' && v.trim().startsWith('/')
 const RESOLVE_PY = `import json, os, tempfile, time
 from pathlib import Path
@@ -774,8 +804,8 @@ if "workDir" in wanted:
 out["since"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 out["problems"] = problems
 emit(out)`
-// Fills each path arg the caller left out, and only from the environment: repoPath, archPath and
-// projectRoot from the variables ENV_OF names (driver-surface.schema.json), pluginRoot from the
+// Fills each path arg the caller left out, and only from the environment: repoPath and archPath
+// from the variables ENV_OF names (driver-surface.schema.json), pluginRoot from the
 // agent-teams-workforce install that $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records (the
 // install for the control repository first, else the user-scope one), and workDir from mkdtemp. One runner
 // session reads them, dispatched only when an arg is missing. Returns { args, missing, problems }:
@@ -839,12 +869,12 @@ const file = (name) => `${work}/${name}`
 const cmd = (sub, extra) => `python3 ${shq(DS)} ${sub} -C ${shq(repo)}${extra ? ` ${extra}` : ''}`
 const scope = `--epic ${shq(target)}`
 const applies = a.apply !== false
-const project = { repoPath: repo, pluginRoot: a.pluginRoot, archPath: a.archPath, projectRoot: a.projectRoot }
 
 const planFile = file('assess-plan.json')
 const contextFile = file('context.json')
 // The matrix command. The control repository names where the matrix file is; a read needs no role.
-const MATRIX_BIN = `${String(a.pluginRoot || '').replace(/\/+$/, '')}/bin/atw-matrix`
+const PLUGIN = String(a.pluginRoot || '').replace(/\/+$/, '')
+const MATRIX_BIN = `${PLUGIN}/bin/atw-matrix`
 const MATRIX_ENV = { [DRIVER_SURFACE.CONTROL_REPO_ENV]: repo }
 const MATRIX = `${DRIVER_SURFACE.CONTROL_REPO_ENV}=${shq(repo)} ${shq(MATRIX_BIN)}`
 // The role the workflow records under (matrix-kinds.json roles): link runs for it.
@@ -874,57 +904,15 @@ const context = planned.error
 const contextFailure = planned.error ? { step: 'assess-plan', ...planned } : context.error ? { step: 'assess-context', ...context } : null
 const contextError = contextFailure ? `${contextFailure.step}: ${contextFailure.error}` : ''
 
-const EDGE_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['from', 'to', 'reason', 'confidence', 'archCheck'],
-  properties: {
-    from: { type: 'string' },
-    to: { type: 'string' },
-    reason: { type: 'string' },
-    confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
-    archCheck: { type: 'string' },
-    answers: { type: 'string' },
-  },
-}
-const WITHDRAWAL_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['from', 'to', 'reason'],
-  properties: { from: { type: 'string' }, to: { type: 'string' }, reason: { type: 'string' } },
-}
-// One decision the session judged that a matrix entry states: the relationship the workflow records from
-// the Epic's entry to that entry. The relationship kinds and the kinds of entry each ends at are the
-// registry's (skills/artifact-handoff/schemas/matrix-kinds.json); atw-matrix link refuses any other.
-const DECISION_RELATIONSHIPS = ['drives', 'restsOn']
-const DECISION_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['decision', 'relationship', 'entry', 'heading'],
-  properties: {
-    decision: { type: 'string' },
-    relationship: { type: 'string', enum: DECISION_RELATIONSHIPS },
-    entry: { type: 'string', minLength: 1 },
-    heading: { type: 'string' },
-  },
-}
-const ASSESS_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['proposal', 'valid', 'relatedRead'],
-  properties: {
-    proposal: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['edges', 'withdrawn', 'decisions'],
-      properties: { edges: { type: 'array', items: EDGE_SCHEMA }, withdrawn: { type: 'array', items: WITHDRAWAL_SCHEMA }, decisions: { type: 'array', items: DECISION_SCHEMA } },
-    },
-    valid: { type: 'boolean' },
-    findings: { type: 'object' },
-    relatedRead: { type: 'array', items: { type: 'string' } },
-    unsure: { type: 'array', items: { type: 'string' } },
-  },
-}
+// The edge file the session writes, by its contract file: the prompt names the file, and
+// jsonartifact.py validates the candidate against it. The relationships a decision row may record
+// are generated from the same file.
+const EDGE_CONTRACT = 'skills/artifact-handoff/schemas/epic-edge-proposal.schema.json'
+const CONTEXT_CONTRACT = 'skills/artifact-handoff/schemas/dependency-assessment.schema.json#/$defs/EpicContext'
+// ===== CONTRACT SCHEMA DECISION_RELATIONSHIP_SCHEMA = skills/artifact-handoff/schemas/epic-edge-proposal.schema.json#/$defs/Decision/properties/relationship — BEGIN (generated from that contract file; edit it, then: node scripts/shared-blocks.mjs --write --only dependency-assessment.js) =====
+const DECISION_RELATIONSHIP_SCHEMA = {"description":"`drives` when the Epic's requirements shape what the entry states; `restsOn` when the Epic relies on what the entry states as settled architecture. The matrix registry (matrix-kinds.json) defines both relationships and the entry kinds each may end at, and `atw-matrix link` refuses any other.","type":"string","enum":["drives","restsOn"]}
+// ===== CONTRACT SCHEMA DECISION_RELATIONSHIP_SCHEMA — END =====
+const DECISION_RELATIONSHIPS = DECISION_RELATIONSHIP_SCHEMA.enum
 const THE_TEST = `THE TEST. An Epic is a PRD, a WHAT; its architecture does not exist yet. An edge from A to B says: an architecture decision B rests on should be designed from A's requirements first, because A's requirements are the fuller statement of what that decision must serve — sign-up and sign-in requirements drive the identity architecture, so password reset waits, or identity gets designed from a recovery flow's requirements alone. A reason that says something must exist, be built, be deployed or be testable first, that B presumes a user or a record exists, or that B reads data from or calls a capability of A, is a build dependency between Tasks and is never an Epic edge. A decision the effective architecture already settles needs no edge; ask the matrix before drawing one. An architecture document settles a decision ONLY when the matrix returns its entry with \`lifecycle: effective\` — read that value from the matrix, never infer it from the wording. A dated ruling, a MUST and a table of values are properties of the prose, and an unreviewed document has more of them than a reviewed one. A document in any other state settles NOTHING and the test proceeds as though it were absent. A foundation Epic — one whose requirements drive a foundation layer on the checklist below — is upstream of every Epic that rests on that layer and that no \`effective\` document settles. When you are unsure whether an edge passes, draw it at \`low\` confidence: a missing edge costs more than an extra one.`
 const FOUNDATION_LAYERS = ['network and egress', 'identity and authorization', 'data stores and data residency', 'event platform', 'API shape', 'chassis and runtime', 'configuration and secrets', 'observability', 'environments']
 const priorBlock = typeof a.priorFailure === 'string' && a.priorFailure.trim()
@@ -937,7 +925,7 @@ const assessPrompt = `${priorBlock}Assess the architecture dependencies of ONE E
 
 ${THE_TEST}
 
-The workflow has already written ${contextFile}, the material you start from. Its \`epic\` holds ${target}'s title and \`prdPath\`, its PRD file as the matrix names it. \`related\` lists each other Epic the matrix relates to ${target} (\`atw-matrix related --epic\`) as {epic, title, prdPath, shared}: \`shared\` names each entry both Epics reach and the relationship each reaches it through, \`drives\` and \`restsOn\` included. \`similar\` lists, when no feature serves ${target} yet, the requirements and features of other Epics that share words with its requirements (\`atw-matrix find --kinds requirement,feature\`); a requirement's id names its Epic. \`standing\` lists every edge between ${target} and another open Epic, in either direction, as {from, to, type, owned, reason, confidence, setBy, setAt} — \`from\` is the Epic designed first, \`reason\` the one recorded when the edge was set, or null. \`withdrawn\` lists every edge touching ${target} that an earlier assessment WITHDREW, as {from, to, reason, withdrawnBy, withdrawnAt}: that edge was judged not to exist, for the reason recorded. Setting it again is admitted only when you answer that reason.
+The workflow has already written ${contextFile}, the material you start from. Its contract is \`${CONTEXT_CONTRACT}\` (path from the plugin root \`${PLUGIN}\`); the descriptions there say what each member holds.
 
 Read the matrix with \`${MATRIX} <command>\`: a read needs no role, and every command prints one JSON object.${a.archPath ? ` A document's id is \`document:\` and the document's path under ${a.archPath}.` : ''}
 
@@ -946,27 +934,27 @@ Work in this order:
 2. Answer the foundation checklist for ${target}: for each of these layers — ${FOUNDATION_LAYERS.join('; ')} — answer "drives", "rests on" or "not touched", with the requirement that decides it. No layer is skipped, and every answer goes in ${reasoningFile}. Then name every other architecture decision its requirements should drive or that it rests on.
 3. Check each layer and decision against the effective architecture, and drop every one it already settles. Ask the matrix what states the decision: \`${MATRIX} find --kinds document,constraint,feature --text "<the decision in words>"\`, then \`${MATRIX} node <id>\` for each match that bears on it. A document entry carries its \`lifecycle\` and its headings; a constraint carries the document and heading it is \`statedIn\`; a feature carries the documents and headings it is \`describedBy\`. Only a document whose entry reads \`lifecycle: effective\` settles anything, however normatively another is worded and whatever date it carries, and an empty result means nothing states the decision. Read the heading the matrix names, in that document and no other, when the entry alone does not say whether the decision is settled. Record, for each decision you keep, the document id and heading you consulted, the \`lifecycle\` the matrix returned for it and why it leaves the decision open, or that the lookup returned nothing — that record goes on every edge as \`archCheck\`, and an edge without one is refused. Search no arc42 folder, front matter or section 2 for what the matrix returns.
 4. Find the related Epics by the checklist, starting from the context's \`related\` and \`similar\`. For each layer or decision they do not reach, run \`${MATRIX} find --kinds requirement,feature --text "<the layer or decision in words>"\`: a requirement's id names its Epic, and a feature is returned with the Epics it serves. For each layer ${target} rests on, the related Epics are those whose requirements drive that layer; for each layer it drives, every Epic that rests on it. The matrix names the candidates; the direction comes from their PRDs and the test.
-5. Read in full every related PRD, and the PRD at the other end of every standing edge: at the \`prdPath\` the context gives, or, for an Epic the context does not list, at the \`prd\` path that \`${MATRIX} epic <its id>\` returns, which is relative to the vault root the context's \`prdPath\` values lie under. Open no other PRD and search no folder of PRDs.
+5. For every related Epic, and the Epic at the other end of every standing edge, read only the requirements that bear on the layer or decision in question. \`${MATRIX} epic <its id>\` returns its requirements, each named by its PRD heading, with the features that serve each, and its \`prd\` path. Read those headings, and no other part of its PRD, in the file at the \`prdPath\` the context gives, or, for an Epic the context does not list, at that \`prd\` path, which is relative to the vault root the context's \`prdPath\` values lie under. Open no other PRD and search no folder of PRDs.
 6. Apply the test in both directions: an edge from another Epic to ${target} where the architecture ${target} rests on should be designed from that Epic's requirements first, and an edge from ${target} to another Epic where that Epic's architecture should be designed from ${target}'s requirements first.
-7. Write ${candidateFile} as {"edges": [{"from", "to", "reason", "confidence", "archCheck", "answers"}], "withdrawn": [{"from", "to", "reason"}], "decisions": [{"decision", "relationship", "entry", "heading"}]}. \`decisions\` holds one row for each layer and decision you judged for ${target}, kept or dropped, that a matrix entry states: \`decision\` names it in words; \`relationship\` is \`drives\` when ${target}'s requirements shape what the entry states, and \`restsOn\` when ${target} relies on what the entry states as settled architecture; \`entry\` is the id of that matrix entry — a feature or a document for \`drives\`; a feature, document, stack, service, component or infrastructure for \`restsOn\`; \`heading\` is the document heading that holds the decision, and "" for an entry that is not a document. A decision no matrix entry states gets no row: name it in ${reasoningFile}. The workflow records the rows in the matrix; you run no \`put\` and no \`link\`. \`archCheck\` is required on every edge: the document id and heading the matrix returned for the decision it orders, with its \`lifecycle\`, and why that leaves the decision open, or that the lookup returned nothing. \`answers\` is required only on an edge the context's \`withdrawn\` list covers: state why the recorded withdrawal reason is wrong, on the architecture. An edge you cannot answer that way is not set — the earlier judgment stands. \`edges\` holds EVERY edge to or from ${target} that passes the test — a standing one it keeps included — and no edge that does not touch ${target}. \`withdrawn\` holds every standing edge with \`owned: true\` that is not in \`edges\`, with a reason that answers the reason recorded for it. Every reason names the architecture decision and whose requirements should drive it; \`confidence\` is \`high\`, \`medium\` or \`low\`, and an edge you are unsure of is drawn at \`low\`. A standing edge with \`owned: false\` was made by hand: leave it out of both lists. Write the reasoning, per edge and per withdrawal, to ${reasoningFile}.
+7. Write ${candidateFile} to its contract, named below (\`${EDGE_CONTRACT}\`); the descriptions there define every member, which edges and withdrawals it holds and which decisions get a row. An edge the context's \`withdrawn\` list covers that you cannot answer is not set: the earlier judgment stands. A decision no matrix entry states gets no row: name it in ${reasoningFile}. The workflow records the rows in the matrix; you run no \`put\` and no \`link\`. Write the reasoning, per edge, per withdrawal and per decision, to ${reasoningFile}.
 8. Check the foundation checklist: every layer has an answer, and every layer ${target} rests on has an edge from the Epic that drives it, or cites a document the matrix returns as \`effective\` that settles it. Then validate: \`set -o pipefail; ${cmd('validate', `--edges ${shq(candidateFile)} ${scope}`)} | tee ${shq(selfCheckFile)}\` — revise the file until \`ok\` is true, keeping to THE TEST: an edge that fails the test is dropped, never kept to satisfy the validator. It refuses an edge that does not touch ${target}, a missing reason, an edge with no \`archCheck\`, an edge an earlier assessment withdrew that carries no \`answers\`, an owned standing edge left unaccounted, a withdrawal of an edge that is not an owned standing edge, and a cycle against every other Epic edge. A cycle you cannot remove by dropping one of your own edges that fails the test — one through an edge with \`owned: false\` — is reported, not forced: record the failed validation, its findings and the cycle in the reasoning document.
 
 Do not run apply-edges or any other command that writes to the tracker or the matrix: the workflow validates the proposal you return, applies it and records the decisions itself.
 
-Record your validation findings, every related item read and any uncertainty in ${reasoningFile}. Return only the authored candidate reference.${relayKit.artifactBrief(candidateFile, ASSESS_SCHEMA.properties.proposal, inputRevision, RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`
+Record your validation findings, every related item read and any uncertainty in ${reasoningFile}. Return only the authored candidate reference.${relayKit.artifactBrief(candidateFile, EDGE_CONTRACT, inputRevision, RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`
 
 const assess = () => settleAgent(assessPrompt, {
       label: `epic-sequencer:${target}`,
       phase: 'Assess',
       effort: 'medium',
-      agentType: 'epic-sequencer',
+      agentType: 'epic-sequencer', // model: its definition's front matter sets it (architecture judgment)
       schema: relayKit.ARTIFACT_SCHEMA,
     })
 
 // The authoritative candidate is validated and published before any tracker mutation.
 const saved = !contextError && !dispatchInterruption ? await relayKit.authorArtifact(settleAgent, {
   label: 'save-edges', phase: 'Assess', runner: RUNNER, candidate: candidateFile, file: edgesFile,
-  schema: ASSESS_SCHEMA.properties.proposal, revision: inputRevision, relayFile: file('relay/accepted-edges.json'), counts: ['edges', 'withdrawn'], keys: ['decisions'],
+  contract: EDGE_CONTRACT, revision: inputRevision, relayFile: file('relay/accepted-edges.json'), counts: ['edges', 'withdrawn'], keys: ['decisions'],
 }, assess, () => !!dispatchInterruption) : null
 const accepted = !!(saved && saved.ok)
 const validation = saved && saved.ok ? await depscore('validate', `validate --edges ${shq(edgesFile)} ${scope}`) : null
@@ -1065,7 +1053,7 @@ const scores = applies && settled && a.score !== false
 if (scores) {
   phase('Score')
   try {
-    scoring = await settleWorkflow('agent-teams-workforce:wsjf-scoring', { ...project, workDir: file('scoring') })
+    scoring = await settleWorkflow('agent-teams-workforce:wsjf-scoring', { repoPath: repo, pluginRoot: a.pluginRoot, workDir: file('scoring') })
   } catch (err) {
     scoring = { ok: false, error: String((err && err.message) || err).slice(0, 500) }
   }

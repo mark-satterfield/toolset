@@ -65,7 +65,6 @@ class JudgeItem(TypedDict):
     reason: str
     prdPath: NotRequired[str | None]
     sizedFromTasks: NotRequired[bool]
-    description: NotRequired[str]
     epic: NotRequired[dict[str, str] | None]
 
 

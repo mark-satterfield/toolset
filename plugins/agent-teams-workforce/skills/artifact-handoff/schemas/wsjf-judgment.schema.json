@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/wsjf-judgment.schema.json",
+  "title": "WSJF judgment",
+  "description": "The judgment one wsjf-scorer session writes in the wsjf-scoring workflow: the candidate <workDir>/judgments/<level>/candidates/<key>.json, which jsonartifact.py validates against EpicJudgment or TaskJudgment here and publishes as judgments/<level>/<key>.json. `depscore.py record` (scoring.record) then writes the judged values to the beads; a value off the rubric's scale is rejected there. Only judged inputs belong here: RR-OE, reaches, cost of delay and WSJF are computed afterwards by `skills/wsjf/scripts/wsjf.py`, and a judgment never states them. Every item the session was given appears exactly once, in `scores` or in `unscored`.",
+  "oneOf": [
+    {"$ref": "#/$defs/EpicJudgment"},
+    {"$ref": "#/$defs/TaskJudgment"}
+  ],
+  "$defs": {
+    "EpicJudgment": {
+      "description": "One Epic's judgment, under the agent-teams-workforce:wsjf rubric at Epic level.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rubric", "scores", "unscored"],
+      "properties": {
+        "rubric": {"type": "string", "const": "epic-wsjf"},
+        "scores": {"type": "array", "items": {"$ref": "#/$defs/EpicScore"}},
+        "unscored": {"type": "array", "items": {"$ref": "#/$defs/Unscored"}}
+      }
+    },
+    "TaskJudgment": {
+      "description": "The sizes of one Epic's Tasks (or of one Task with no Epic), under the agent-teams-workforce:wsjf rubric at Task level. Value, time criticality and their confidence are inherited from the Epic by arithmetic and are not judged here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rubric", "scores", "unscored"],
+      "properties": {
+        "rubric": {"type": "string", "const": "task-wsjf"},
+        "scores": {"type": "array", "items": {"$ref": "#/$defs/TaskScore"}},
+        "unscored": {"type": "array", "items": {"$ref": "#/$defs/Unscored"}}
+      }
+    },
+    "EpicScore": {
+      "description": "The judged inputs of one Epic. The four size fields are given only when the judge input's `sizedFromTasks` is false; an Epic whose elaboration is done takes its size from its Tasks.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "userBusinessValue", "timeCriticality", "confidence", "rationale"],
+      "properties": {
+        "id": {"description": "The Epic's beads id.", "type": "string"},
+        "userBusinessValue": {"description": "A rung of the rubric's User-Business Value scale, judged from the Epic's PRD.", "type": "integer"},
+        "timeCriticality": {"description": "A rung of the rubric's Time Criticality scale, judged from the Epic's PRD.", "type": "integer"},
+        "confidence": {"description": "The value confidence, an integer percent covering UBV and TC only.", "type": "integer"},
+        "jobSize": {"$ref": "#/$defs/JobSize"},
+        "sizeLow": {"$ref": "#/$defs/SizeLow"},
+        "sizeHigh": {"$ref": "#/$defs/SizeHigh"},
+        "sizeConfidence": {"$ref": "#/$defs/SizeConfidence"},
+        "rationale": {
+          "description": "One to three sentences per judged dimension, citing the PRD; `jobSize` names the reference jobs it was compared with and the factors that placed it, and is given only when the size was judged.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["userBusinessValue", "timeCriticality"],
+          "properties": {
+            "userBusinessValue": {"type": "string"},
+            "timeCriticality": {"type": "string"},
+            "jobSize": {"type": "string"}
+          }
+        },
+        "assumptions": {"description": "One entry per assumption that could move a judged value.", "type": "array", "items": {"type": "string"}}
+      }
+    },
+    "TaskScore": {
+      "description": "The judged size of one Task. A Task above 13 should have been split: its rationale says so, and the size judged is recorded, never reduced to 13.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence", "rationale"],
+      "properties": {
+        "id": {"description": "The Task's beads id.", "type": "string"},
+        "jobSize": {"$ref": "#/$defs/JobSize"},
+        "sizeLow": {"$ref": "#/$defs/SizeLow"},
+        "sizeHigh": {"$ref": "#/$defs/SizeHigh"},
+        "sizeConfidence": {"$ref": "#/$defs/SizeConfidence"},
+        "rationale": {
+          "description": "One line on the size: the reference jobs it was compared with.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["jobSize"],
+          "properties": {"jobSize": {"type": "string"}}
+        },
+        "assumptions": {"description": "One entry per assumption that could move the size.", "type": "array", "items": {"type": "string"}}
+      }
+    },
+    "JobSize": {"description": "The size estimate on the rubric's Fibonacci scale (`wsjf.py scales --level epic|task`): the relative amount of work to deliver the outcome.", "type": "integer"},
+    "SizeLow": {"description": "The low end of the plausible range; the estimate lies inside the range.", "type": "integer"},
+    "SizeHigh": {"description": "The high end of the plausible range.", "type": "integer"},
+    "SizeConfidence": {"description": "The size confidence, an integer percent covering the size estimate alone.", "type": "integer"},
+    "Unscored": {
+      "description": "An item the session could not judge.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "reason"],
+      "properties": {
+        "id": {"type": "string"},
+        "reason": {"description": "The concrete missing input, for example that the matrix names no PRD for the Epic.", "type": "string"}
+      }
+    }
+  }
+}

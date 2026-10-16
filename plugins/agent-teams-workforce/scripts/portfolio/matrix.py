@@ -38,12 +38,14 @@ from matrixcli import COMMANDS as CHANGE_COMMANDS
 from matrixcli import add_parsers
 from matrixquery import (
     DEFAULT_LIMIT,
+    EpicView,
     deps_view,
     epic_view,
     find,
     impact_view,
     layers_view,
     node_view,
+    realizers_view,
     related_view,
     stacks_view,
     story_scope,
@@ -78,19 +80,22 @@ def _run_epic(call: Call) -> Outcome:
 
     Returns:
         The Epic with its PRD, its requirements with their features and covering documents, and
-        what each flag adds: the constraints, everything the Epic reaches, and the links with
-        nothing recorded at the other end.
+        what each flag adds: the constraints, everything the Epic reaches, the links with
+        nothing recorded at the other end, and what realizes each feature.
 
     """
-    return Outcome(
-        epic_view(
-            read_matrix(call.matrix()),
-            call.required("epic"),
-            closure=call.flag("closure"),
-            constraints=call.flag("constraints"),
-            unlinked=call.flag("unlinked"),
-        ),
+    matrix: Matrix = read_matrix(call.matrix())
+    bead: str = call.required("epic")
+    view: EpicView = epic_view(
+        matrix,
+        bead,
+        closure=call.flag("closure"),
+        constraints=call.flag("constraints"),
+        unlinked=call.flag("unlinked"),
     )
+    if not call.flag("realizers"):
+        return Outcome(view)
+    return Outcome({**view, "realizers": realizers_view(matrix, bead)})
 
 
 def _kinds(call: Call) -> tuple[EntryKind, ...]:
@@ -285,8 +290,17 @@ def _read_parsers(
     epic: argparse.ArgumentParser = commands.add_parser("epic", parents=[where], help="what an Epic reaches")
     epic.add_argument("epic", help="the Epic's beads id")
     epic.add_argument("--closure", action="store_true", help="include everything the Epic reaches, by repository")
-    epic.add_argument("--constraints", action="store_true", help="include the constraints that bind what it reaches")
+    epic.add_argument(
+        "--constraints",
+        action="store_true",
+        help="include the constraints that bind the Epic, its features and what realizes them",
+    )
     epic.add_argument("--unlinked", action="store_true", help="include the links with nothing at the other end")
+    epic.add_argument(
+        "--realizers",
+        action="store_true",
+        help="include what realizes each feature, with each realizer's stack and repository",
+    )
     found: argparse.ArgumentParser = commands.add_parser("find", parents=[where], help="entries that match some words")
     found.add_argument("--text", help="the words to look for")
     found.add_argument("--kinds", help="the kinds of entry to search, separated by commas")

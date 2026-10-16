@@ -80,10 +80,10 @@ After a successful run (with `apply` true):
 ## 3. Inputs
 
 - Arguments: `epic` (required), `repoPath` (default: the control repository), `pluginRoot`,
-  `workDir`, `archPath` (the architecture root; required by the command), `projectRoot`, `apply`
-  (default true); the control repository, architecture root and project root come from the
-  `CONTROL_REPO_ENV`, `ARCH_PATH_ENV` and `PROJECT_ROOT_ENV` variables of the `pipeline-contracts`
-  skill. Optional, passed by no current caller: `priorFailure` (text put at the head of the
+  `workDir`, `archPath` (the architecture root; required by the command), `apply` (default
+  true); the control repository and architecture root come from the `CONTROL_REPO_ENV` and
+  `ARCH_PATH_ENV` variables of the `pipeline-contracts` skill. Scoring is passed `repoPath`,
+  `pluginRoot` and its own `workDir`. Optional, passed by no current caller: `priorFailure` (text put at the head of the
   brief), `score` (false skips the scoring step). `assess-context` reads the matrix the
   environment names and needs the PRD folder variable (`PRD_DIR_ENV`).
 - beads, read with descriptions: every open Epic (title, description = PRD,
@@ -93,7 +93,9 @@ After a successful run (with `apply` true):
 - The matrix, through `atw-matrix`: the Epic's PRD path (`epic <id>`), the other Epics that reach
   what it reaches (`related --epic`), and, for what settles a decision, `find --kinds
   document,constraint,feature` then `node`. Only a document whose `lifecycle` is `effective`
-  settles a decision. The related PRDs the matrix names are then read in full.
+  settles a decision. Of each related Epic, only the requirements that bear on a decision are
+  read: `atw-matrix epic <its id>` names them by their PRD headings, and the session reads those
+  headings in its PRD.
 
 ## 4. Outputs
 
@@ -101,25 +103,23 @@ Files (under `<workDir>`):
 - `assess-plan.json`: `depscore.assess_plan` result: `{level: "epic", scope, since, unassessed:
   [ids], fingerprints: {id: sha} for every open Epic, summary: {level, scope, openEpics,
   unassessed, unassessedIds}}`.
-- `context.json`: `assesscontext.assess_context` result: `epic` (with `prdPath`, the Epic's PRD
-  file as the matrix names it, absolute, or null), `related` (the Epics `atw-matrix related
-  --epic` returns, each with what is shared), `similar` (for an Epic no feature serves yet, other
-  Epics' requirements and features that share its words), `standing: [{from, to, type, owned,
-  reason, confidence, setBy, setAt}]`, `withdrawn: [{from, to, reason, withdrawnBy,
-  withdrawnAt}]` and `summary`. No copy of a PRD and no index is written.
-- `candidates/edges.json` (written by the agent): the proposal, `{edges: [{from, to, reason,
-  confidence: high|medium|low, archCheck, answers?}], withdrawn: [{from, to, reason}]}`. Beside
+- `context.json`: `assesscontext.assess_context` result, to
+  `skills/artifact-handoff/schemas/dependency-assessment.schema.json#/$defs/EpicContext`. No copy
+  of a PRD and no index is written.
+- `candidates/edges.json` (written by the agent): the proposal, to
+  `skills/artifact-handoff/schemas/epic-edge-proposal.schema.json`. Beside
   it the agent writes its progress file `candidates/edges.json.progress.json`, and
   `artifactcontract.py` writes the checkpoint `candidates/edges.json.checkpoint` from it. Both
   are defined by `skills/artifact-handoff/schemas/checkpoint.schema.json`; the checkpoint is
-  bound to the candidate path, the digest of the proposal schema and the input revision (step 3).
+  bound to the candidate path, the digest of the proposal contract and the input revision (step 3).
 - `edges.json`: the accepted proposal. `jsonartifact.py` checks the candidate against the
-  proposal schema and publishes it in canonical JSON; nothing is stamped into it.
+  proposal contract and publishes it in canonical JSON; nothing is stamped into it.
   `edges.json.receipt` holds `{artifactPath, sha256, bytes, schemaSha256, revision}` for the
   published bytes, `edges.json.prev` the proposal it replaced when the two differ, and
   `edges.json.publish` exists only while a publish is under way.
 - `reasoning.md` (written by the agent): the foundation checklist answers, per-edge and
-  per-withdrawal reasoning, related PRDs read, validation findings, uncertainty.
+  per-withdrawal reasoning, related Epics and requirement headings read, validation findings,
+  uncertainty.
 - `validation.json` (written by the agent's own check of its candidate, `depscore.py validate
   ... | tee validation.json`): the `edgeset.validate` result: `{ok, level, edgeCount,
   withdrawnCount, scope, badScope, outsideScope, missingReason, missingArchCheck,
@@ -169,32 +169,33 @@ command printed.
    that receipt together with the Epic id and scope. When the fingerprint command fails, the
    revision is made from the path alone.
 4. `deterministic` **Reuse**: `jsonartifact.py --candidate candidates/edges.json --final
-   edges.json --schema-json <proposal schema> --revision <input revision> --probe --recover`.
+   edges.json --schema <plugin>/skills/artifact-handoff/schemas/epic-edge-proposal.schema.json
+   --revision <input revision> --probe --recover`.
    - `edges.json` is reused, and no session starts, when its bytes match `edges.json.receipt`
-     and the receipt's `schemaSha256` and `revision` equal the current proposal schema digest and
-     input revision.
+     and the receipt's `schemaSha256` and `revision` equal the current proposal contract digest
+     and input revision.
    - Otherwise, when `candidates/edges.json.checkpoint` is bound to the same candidate path,
      schema digest and revision and its status is `complete`, the candidate is accepted as in
      step 6 and no session starts.
    - When that checkpoint's status is `blocked`, the run stops with the checkpoint's reason and
      its remaining items (`ARTIFACT_BLOCKED`).
    - In every other case step 5 runs.
-5. `agent` **Assess**: `epic-sequencer`. The brief names `context.json` (the Epic's `prdPath`, the
-   `related` and `similar` Epics, the standing and withdrawn edges) and the `atw-matrix` reads the
-   session makes, carries the `priorFailure` text when given,
+5. `agent` **Assess**: `epic-sequencer`. The brief names `context.json` and its contract, and the
+   `atw-matrix` reads the session makes, carries the `priorFailure` text when given,
    and states THE TEST and the nine foundation layers (network and egress; identity and
    authorization; data stores and data residency; event platform; API shape; chassis and
-   runtime; configuration and secrets; observability; environments), the eight-step order, the
-   proposal format and that the session runs no command that writes to beads. It ends with the
-   artifact contract data: the candidate path, the progress file path, the input revision and
-   the `artifactcontract.py` commands (`validate`, `checkpoint`, `complete`, `submit`, `status`)
-   bound to them. The session writes `candidates/edges.json` and `reasoning.md`, checks the
+   runtime; configuration and secrets; observability; environments), the eight-step order, that
+   a related Epic is read only at the requirement headings that bear on a decision, and that
+   the session runs no command that writes to beads or the matrix. It ends with the artifact
+   contract data: the candidate path, the contract file path, the progress file path, the input
+   revision and the `artifactcontract.py` commands (`validate`, `checkpoint`, `complete`,
+   `submit`, `status`) bound to them. The session writes `candidates/edges.json` and `reasoning.md`, checks the
    candidate with `depscore.py validate --edges candidates/edges.json --epic <id> | tee
    validation.json` and revises it until `ok` is true or it records why it cannot be. Model
    `opus` (agent frontmatter), effort `medium` (frontmatter and JS), `maxTurns` 240. One session;
    nothing runs in parallel.
 6. `deterministic` **Accept**: the step 4 command without `--probe`. `jsonartifact.py` checks
-   the candidate against the proposal schema and publishes it as `edges.json` with
+   the candidate against the proposal contract and publishes it as `edges.json` with
    `edges.json.receipt` (section 4), and reports the counts of `edges` and `withdrawn`. A
    candidate that fails the schema is not published and the run ends at stage `Assess` with
    nothing written to beads.
@@ -205,13 +206,13 @@ command printed.
 8. `deterministic` **Apply**: when step 7 is ok, `depscore.py apply-edges --edges edges.json
    --plan assess-plan.json --epic <id> [--dry-run] --out apply-edges.json`
    (`edgeset.apply_edges`). It validates again against the graph as read now and writes nothing
-   if that fails. The proposal's `decisions` (`{decision, relationship, entry, heading}`) are then
+   if that fails. The proposal's `decisions` rows are then
    recorded in the matrix, one `atw-matrix link drives|restsOn` from the Epic to the feature or
    document heading for each, as role `script`; the result's `matrix` holds `{decisions, recorded,
    failures}`. The Epic-to-Epic edge stays a beads `tracks` edge.
 9. `deterministic` **Score**: when the edges were applied, the run is not a dry run and `score`
    is not false, the workflow calls the `wsjf-scoring` workflow with `workDir =
-   <workDir>/scoring` and the same `repoPath`, `pluginRoot`, `archPath` and `projectRoot`.
+   <workDir>/scoring` and the same `repoPath` and `pluginRoot`.
 10. `deterministic` **Result**: assemble the result (section 4).
 
 Agents the workflow dispatches:
@@ -238,9 +239,9 @@ Agents the workflow dispatches:
   no later assessment may withdraw.
 
 **In `jsonartifact.py`** (steps 4 and 6)
-- The candidate is valid against the proposal schema before it becomes `edges.json`.
+- The candidate is valid against the proposal contract before it becomes `edges.json`.
 - `edges.json` is read as accepted only when its bytes match `edges.json.receipt`.
-- An accepted `edges.json` is reused only for the same proposal schema digest and the same input
+- An accepted `edges.json` is reused only for the same proposal contract digest and the same input
   revision, so a change to `context.json` starts a
   new session.
 

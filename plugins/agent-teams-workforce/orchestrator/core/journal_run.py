@@ -11,6 +11,11 @@ to the caller unchanged. A stop request (the stop file, an interrupt) leaves the
 
 Steps run in walk order. Consecutive sibling steps that each have an agent, have no child steps
 and whose inputs are all done run as concurrent sessions under the dispatch's session slots.
+
+Work that already succeeded is never redone: an agent step whose output file is valid and was
+written since the step started is recorded from that file, and its agent is not started again
+(``helper-steps.schema.json``). That covers a helper a lead agent ran in its own session and left
+unrecorded, and a session that wrote its output and stopped before the step was recorded.
 """
 
 from __future__ import annotations
@@ -20,8 +25,10 @@ import json
 import sys
 from collections.abc import Sequence
 from dataclasses import replace
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
+from typing import Final
 from uuid import uuid4
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
@@ -29,7 +36,7 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 from orchestrator.flows.elaboration_support import parallel
 
 from . import step_journal
-from .agents import AgentRunner, SessionNotResumedError
+from .agents import CONTENT_FAILURES, AgentRunner, SessionNotResumedError, validate_output
 from .handback import failure_for, stop_stage
 from .handback_contract import OTHER_CAUSE, Failure
 from .journal_changes import apply_completion
@@ -137,6 +144,56 @@ def _open_leaf(step: Step) -> Step | None:
         if found is not None:
             return found
     return None
+
+
+JSON_SUFFIX: Final = ".json"
+"""The suffix of an output the runner may reuse."""
+
+
+def _written_since_start(step: Step, output: Path) -> bool:
+    """Tell whether a step's output file was written after the step last started.
+
+    Returns:
+        True when the step has a start time and the file exists with a modification time at or
+        after it; the journal records whole seconds, so a file of the same second counts.
+
+    """
+    started: str | None = step.get("started")
+    if started is None or not output.is_file():
+        return False
+    began: float = datetime.strptime(started, step_journal.TIMESTAMP_FORMAT).replace(tzinfo=UTC).timestamp()
+    return output.stat().st_mtime >= began
+
+
+def _finished_output(step: Step, launch: AgentLaunch) -> bool:
+    """Tell whether an agent step's output is already its finished work.
+
+    Only a JSON output is reused: an agent writes it whole, while a document may be part
+    written when its session stops.
+
+    Returns:
+        True when the launch allows reuse and the JSON file at ``launch.output`` was written
+        since the step started and passes the launch's check; an invalid file is the session's
+        to redo. A contract that cannot be loaded raises ``PipelineDefectError`` from
+        ``validate_output``.
+
+    """
+    if not launch.reuse_output or launch.output.suffix != JSON_SUFFIX or not _written_since_start(step, launch.output):
+        return False
+    request: AgentStep = AgentStep(
+        stage=stage_of(step),
+        agent=step.get("agent", ""),
+        inputs=(),
+        output=launch.output,
+        outcome=launch.outcome,
+        validate=launch.validate,
+        journal_step=step["id"],
+    )
+    try:
+        validate_output(request)
+    except CONTENT_FAILURES:
+        return False
+    return True
 
 
 def _held_session(journal: Journal, step: Step, launch: AgentLaunch) -> str | None:
@@ -503,15 +560,21 @@ class JournalRunner:
     def _run_agent(self, journal: Journal, step: Step) -> None:
         """Run an agent step: build its launch, start it with its session, run the session, record.
 
-        After the session the journal is read again. A step the session marked done, or left
-        child steps under, is not completed here; an ordinary step is completed with what the
-        launch's accept function returns.
+        A step that holds no session of its own conversation and whose output is already its
+        finished work (:func:`_finished_output`) is recorded from that file with what the
+        launch's accept function returns, and no session starts. After a session the journal is
+        read again. A step the session marked done, or left child steps under, is not completed
+        here; an ordinary step is completed with what the launch's accept function returns.
         """
         builder: AgentBuilder = self.registry.agent(step)
         inputs: StepInputs = _inputs(journal, step)
         saved: tuple[Artifact, ...] = tuple(step["artifacts"])
         launch: AgentLaunch = check_type(builder(self._step_run(step, inputs, saved)), AgentLaunch)
         held: str | None = _held_session(journal, step, launch)
+        if held is None and _finished_output(step, launch):
+            reused: StepRun = self._step_run(self._start(step["id"], None, launch.keep), inputs, saved)
+            self._complete(step["id"], launch.accept(reused, launch.output))
+            return
         session: str = held or str(uuid4())
         run: StepRun = self._step_run(self._start(step["id"], session, launch.keep), inputs, saved)
         handed: list[tuple[str, Path]] = inputs.labelled_files() if launch.hand_inputs else []
@@ -528,12 +591,12 @@ class JournalRunner:
             request=launch.request or step["description"],
             journal_step=step["id"],
         )
-        output: Path = self._session(request, labelled, session, launch, resume=held is not None)
+        output: Path = self._session(request, labelled, session, launch, resume=held is not None, before=step)
         after: Step = step_journal.find_step(step_journal.read_journal(self.path), step["id"])
         if after["status"] != STATUS_DONE and not after["steps"]:
             self._complete(step["id"], launch.accept(replace(run, step=after), output))
 
-    def _session(
+    def _session(  # ruff: ignore[too-many-arguments] - The session, its launch and the step before it restarted.
         self,
         request: AgentStep,
         labelled: list[tuple[str, Path]],
@@ -541,8 +604,13 @@ class JournalRunner:
         launch: AgentLaunch,
         *,
         resume: bool,
+        before: Step,
     ) -> Path:
         """Run the session of an agent step, starting a new one when its conversation is gone.
+
+        When the conversation is gone and the session it held had already written its finished
+        output (:func:`_finished_output`, judged against ``before``, the step as it stood before
+        this run started it again), that output is the step's result and no new session starts.
 
         Returns:
             The validated output path.
@@ -557,8 +625,10 @@ class JournalRunner:
                 fresh_output=launch.fresh_output,
             )
         except SessionNotResumedError:
-            fresh: str = str(uuid4())
+            if _finished_output(before, launch):
+                return launch.output
             step_id: StepId = check_type(request.journal_step, StepId)
+            fresh: str = str(uuid4())
             step_journal.update_journal(
                 self.path,
                 lambda journal: step_journal.set_session(journal, step_id, fresh),

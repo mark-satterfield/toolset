@@ -47,7 +47,6 @@ from matrix_contract import (
     RelationshipKind,
     family_kinds,
 )
-from matrixquery import Capability, UsesResult, uses_view
 from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix, update_matrix
 from matrixtraverse import (
     ATTR_APP,
@@ -803,31 +802,6 @@ def item_stacks(matrix: Matrix, items: Sequence[JsonValue]) -> dict[EntryId, lis
         if entry_id not in grouped[stack]:
             grouped[stack].append(entry_id)
     return {stack: grouped[stack] for stack in sorted(grouped)}
-
-
-def shared_capabilities(run: StepRun, step: str, items: Sequence[JsonValue]) -> list[Capability]:
-    """List the shared capabilities the entries one repository builds must use.
-
-    The entries are the ones the items name; the answer is what ``atw-matrix uses --ids`` prints
-    for them. A matrix that cannot be read, or an item that names an entry the matrix lacks,
-    fails the step.
-
-    Args:
-        run: The step that asks.
-        step: The step's name, for a failure.
-        items: What the Story of the repository builds.
-
-    Returns:
-        Each supporting feature that applies to the entries, with what it provides, the
-        ``provides`` items relied on, and the entries that provide it, each with its stack.
-
-    """
-    matrix: Matrix = run.tools.portfolio(step, read_matrix, matrix_path(None, os.environ))
-    entries: list[EntryId] = run.tools.portfolio(step, item_ids, items)
-    if not entries:
-        return []
-    used: UsesResult = run.tools.portfolio(step, uses_view, matrix, entries)
-    return used["capabilities"]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

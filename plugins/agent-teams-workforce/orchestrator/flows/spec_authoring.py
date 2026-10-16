@@ -7,9 +7,11 @@ data-model session, which run together; the UI section; the acceptance-criteria 
 review; the Story document; and the Story bead write. Each step takes the files it reads from the
 artifacts of the steps its inputs name, and records what it writes right after writing it.
 
-What a repository's Story is handed about the architecture is read from the matrix: the context
-step writes what ``atw-matrix story-scope`` returns for each stack the Story builds in, and an
-author is handed the documents and headings it names and no directory of the architecture.
+What a repository's Story is handed about the architecture is a set of pointers into the matrix:
+the context file (``spec-context.schema.json``) names each stack the Story builds in with the
+entries it builds there, the commands that print what the matrix holds for them, and the
+documents and headings ``atw-matrix story-scope`` names; an author reads those headings and no
+directory of the architecture.
 """
 
 from __future__ import annotations
@@ -50,7 +52,7 @@ from orchestrator.core.journal_steps import (
     value_artifact,
 )
 from orchestrator.core.models import StepError
-from orchestrator.flows.architecture_files import ARTIFACT_TRD, read_context, read_result
+from orchestrator.flows.architecture_files import ARTIFACT_TRD, read_context
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_ELEMENTS,
     ARTIFACT_SPAN,
@@ -60,13 +62,14 @@ from orchestrator.flows.elaboration_files import (
     CONTEXT,
     CRITERIA,
     DATA_MODEL,
-    PRD,
     REPOSITORY,
     REVIEWER,
     SPEC,
     SPEC_CONTEXT,
+    SPEC_CONTEXT_SCHEMA,
     STORY,
     STORY_DOCUMENT,
+    STORY_DOCUMENT_SCHEMA,
     STORY_DOCUMENT_STEP,
     STORY_WRITE,
     TASK_CONTEXT,
@@ -74,6 +77,7 @@ from orchestrator.flows.elaboration_files import (
     UI_APPEND,
     UI_BUNDLE_LIST,
     UI_BUNDLES,
+    UI_BUNDLES_SCHEMA,
     UI_CANDIDATE,
     UI_NORMALIZE,
     UI_SOURCES,
@@ -90,16 +94,12 @@ from orchestrator.flows.elaboration_files import (
     span_files,
     story_files,
     strings,
+    write_contract,
 )
 from orchestrator.flows.elaboration_support import SPEC_AUTHORING_PHASE, enter_phase
-from orchestrator.flows.repo_scoping import (
-    BuildContext,
-    build_context,
-    item_stacks,
-    shared_capabilities,
-)
+from orchestrator.flows.repo_scoping import BuildContext, build_context, item_stacks
 from orchestrator.flows.spec_authoring_ui import normalize_ui
-from orchestrator.flows.trd_authoring import document
+from orchestrator.flows.trd_authoring import SPEC_FRONT_MATTER, document
 
 # isort: split
 # The journal modules put the pipeline-contracts scripts directory on sys.path.
@@ -119,7 +119,7 @@ WORK_DOCUMENT: Final = "document"
 """What a step of an author agent, planned by the repository context step, does."""
 DECISION_IDS: Final = "decision ids"
 KEY_STACKS: Final = "stacks"
-"""The member of the repository context that lists the ids of the stacks the Story builds in."""
+"""The member of the repository context that lists the stacks the Story builds in, with their entries."""
 STORY_SUMMARY: Final = "story write"
 DOCUMENT_OF: Final[dict[str, str]] = {
     AUTHOR_CONTRACTS: SPEC,
@@ -191,20 +191,22 @@ def document_check(run: StepRun, name: str) -> OutputValidator:
     if name == CRITERIA:
         return nonempty
     matrix: Matrix = run.tools.portfolio(name, read_matrix, matrix_path(None, os.environ))
-    return lambda path: document(path, matrix)
+    return lambda path: document(path, matrix, SPEC_FRONT_MATTER)
 
 
 def author_files(run: StepRun, name: str) -> tuple[tuple[str, Path], ...]:
     """Name the files the author of one spec document reads.
 
     Returns:
-        The TRD, the span, the elements and the PRD; the UI sources for the contracts of a
-        frontend repository; the contracts and the data model for the criteria; then the
-        repository context, which names the architecture documents and headings to read.
+        The TRD, the span and the elements; the UI sources for the contracts of a frontend
+        repository; the contracts and the data model for the criteria; then the repository
+        context, which names the architecture documents and headings to read and the PRD, whose
+        headings the TRD cites.
 
     """
-    files: list[tuple[str, Path]] = [(label, run.inputs.file(label)) for label in (ARTIFACT_TRD, ARTIFACT_SPAN)]
-    files.extend((label, run.inputs.file(label)) for label in (ARTIFACT_ELEMENTS, PRD))
+    files: list[tuple[str, Path]] = [
+        (label, run.inputs.file(label)) for label in (ARTIFACT_TRD, ARTIFACT_SPAN, ARTIFACT_ELEMENTS)
+    ]
     sources: Path | None = run.inputs.optional_file(UI_SOURCES)
     if name == SPEC and sources is not None:
         files.append((UI_SOURCES, sources))
@@ -218,7 +220,7 @@ def author_dirs(run: StepRun, held: Repository) -> tuple[Path, ...]:
 
     Returns:
         The Epic's work directory, where the session writes, and the repository the Story builds
-        in. The architecture documents and the PRD are handed as named files.
+        in. The architecture documents and headings are named in the repository context.
 
     """
     return (run.context.work, Path(held.path))
@@ -419,15 +421,17 @@ def story_context(matrix: Matrix, built: Sequence[JsonValue], every_build: Mappi
 def context(run: StepRun) -> Completion:
     """Gather what one repository builds, and plan the steps that specify it.
 
-    What the Story is handed about the architecture comes from the matrix: for each stack the
-    Story builds in, what ``atw-matrix story-scope`` returns (the documents and headings that
-    describe the stack and each entry, the constraints that bind them and the shared
-    capabilities they must use); and from ``repo_scoping.build_context``, what the Story depends
-    on outside what it builds, each with its stack and repository.
+    The context file (``spec-context.schema.json``) holds pointers, never a copy of what the
+    matrix or the architect's result holds: each stack the Story builds in with the entries it
+    builds there, for the author's own ``atw-matrix story-scope`` and ``atw-matrix uses``; the
+    documents and headings those story scopes name; what the Story depends on outside what it
+    builds (``repo_scoping.build_context``), as ids with their stack and repository; and the
+    paths of the PRD and of the architect's result, whose ``notesForSpecs`` the authors start
+    from.
 
     Returns:
-        The repository, its context file and the PRD as artifacts, with the repository's other
-        steps planned after this one.
+        The repository and its context file as artifacts, with the repository's other steps
+        planned after this one.
 
     Raises:
         StepError: The span places no item in the repository, the matrix cannot answer for its
@@ -450,25 +454,27 @@ def context(run: StepRun) -> Completion:
     ]
     depended: BuildContext = run.tools.portfolio(SPEC_CONTEXT, story_context, matrix, items, every_build)
     prd: Path = Path(check_type(json_object(run.context.args[dispatch.KEY_PRD])[dispatch.PRD_PATH], str)).resolve()
-    path: Path = run.context.work / f"spec-{held.slug}.context.json"
-    write_json(
-        path,
+    stacked: list[JsonValue] = [{"stack": stack, "entries": list(built)} for stack, built in stacks.items()]
+    dependencies: list[JsonValue] = [json_object(dependency) for dependency in depended["dependsOn"]]
+    path: Path = write_contract(
+        run.context.work / f"spec-{held.slug}.context.json",
         {
+            "epic": str(run.bead),
             "repoPath": held.path,
             "slug": held.slug,
             "frontend": held.frontend,
             "items": items,
-            KEY_STACKS: list(stacks),
-            "scopes": scopes,
+            KEY_STACKS: stacked,
             "documents": _scope_documents(architecture_root(run), scopes),
-            "dependsOn": depended["dependsOn"],
-            "sharedCapabilities": shared_capabilities(run, SPEC_CONTEXT, items),
-            "notesForSpecs": read_result(run, read_context(run))["notesForSpecs"],
+            "dependsOn": dependencies,
+            "prd": str(prd),
+            "architectureResult": str(Path(read_context(run)["resultPath"]).resolve()),
             dispatch.KEY_DESIGN_SYSTEM: design_system(run),
         },
+        SPEC_CONTEXT_SCHEMA,
     )
     return Completion(
-        artifacts=(value_artifact(REPOSITORY, held.facts()), file_artifact(CONTEXT, path), file_artifact(PRD, prd)),
+        artifacts=(value_artifact(REPOSITORY, held.facts()), file_artifact(CONTEXT, path)),
         add=(_repository_steps(run, held),),
     )
 
@@ -485,8 +491,7 @@ def bundles(run: StepRun) -> Completion:
     dispatch: DispatchArguments = dispatch_arguments()
     packages: str | None = check_type(design_system(run).get(dispatch.DS_PACKAGES_DIR), str | None)
     listed: dict[str, JsonValue] = json_object(run.tools.portfolio(UI_BUNDLES, cdsbundles.list_bundles, packages))
-    path: Path = run.context.work / f"spec-{held.slug}.bundles.json"
-    write_json(path, listed)
+    path: Path = write_contract(run.context.work / f"spec-{held.slug}.bundles.json", listed, UI_BUNDLES_SCHEMA)
     return Completion(artifacts=(file_artifact(UI_BUNDLE_LIST, path),))
 
 
@@ -510,7 +515,7 @@ def ui_sources(run: StepRun) -> AgentLaunch:
         accept=accept,
         add_dirs=author_dirs(run, held),
         files=(
-            *((label, run.inputs.file(label)) for label in (ARTIFACT_TRD, ARTIFACT_SPAN, ARTIFACT_ELEMENTS, PRD)),
+            *((label, run.inputs.file(label)) for label in (ARTIFACT_TRD, ARTIFACT_SPAN, ARTIFACT_ELEMENTS)),
             (UI_BUNDLE_LIST, run.inputs.file(UI_BUNDLE_LIST)),
             (CONTEXT, run.inputs.file(CONTEXT)),
         ),
@@ -625,7 +630,12 @@ def story_document(run: StepRun) -> Completion:
     matrix: Matrix = run.tools.portfolio(STORY_DOCUMENT_STEP, read_matrix, matrix_path(None, os.environ))
     documents: list[Path] = [run.inputs.file(name) for name in (SPEC, DATA_MODEL, CRITERIA)]
     citations: list[str] = list(
-        dict.fromkeys(value.strip() for path in documents[:2] for value in document(path, matrix)[0] if value.strip()),
+        dict.fromkeys(
+            value.strip()
+            for path in documents[:2]
+            for value in document(path, matrix, SPEC_FRONT_MATTER)[0]
+            if value.strip()
+        ),
     )
     prd: dict[str, JsonValue] = json_object(run.context.args[dispatch.KEY_PRD])
     items: list[dict[str, JsonValue]] = objects(strict_json(run.inputs.file(CONTEXT))["items"])
@@ -640,14 +650,14 @@ def story_document(run: StepRun) -> Completion:
         *(f"- {path}" for path in documents),
     ]
     decisions: list[JsonValue] = list(citations)
-    path: Path = run.context.work / f"story-{held.slug}.json"
-    write_json(
-        path,
+    path: Path = write_contract(
+        run.context.work / f"story-{held.slug}.json",
         {
             "title": f"{Path(held.path).name}: {prd.get(dispatch.PRD_TITLE) or run.bead}",
             "description": "\n".join(lines),
             "decisionIds": decisions,
         },
+        STORY_DOCUMENT_SCHEMA,
     )
     return Completion(artifacts=(file_artifact(STORY_DOCUMENT, path), value_artifact(DECISION_IDS, decisions)))
 

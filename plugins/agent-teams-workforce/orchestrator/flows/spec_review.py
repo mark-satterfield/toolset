@@ -46,7 +46,7 @@ from orchestrator.core.journal_steps import (
     value_artifact,
 )
 from orchestrator.core.models import StepError
-from orchestrator.flows.architecture_files import ARTIFACT_TRD, LABEL_CRITERIA
+from orchestrator.flows.architecture_files import ARTIFACT_TRD
 from orchestrator.flows.elaboration_files import (
     AUTHOR_CONTRACTS,
     AUTHOR_CRITERIA,
@@ -278,12 +278,11 @@ def reviewer(run: StepRun) -> AgentLaunch:
         validate=SPEC_REVIEW_SCHEMA_PATH,
         outcome=REVIEW_RESULT,
         accept=accept,
-        add_dirs=(run.context.work, criteria.parent),
+        add_dirs=(run.context.work,),
         files=(
             *_documents(run),
             (ARTIFACT_TRD, run.inputs.file(ARTIFACT_TRD)),
             (CONTEXT, run.inputs.file(CONTEXT)),
-            (LABEL_CRITERIA, criteria),
         ),
         hand_inputs=False,
     )
@@ -376,7 +375,7 @@ def correction(run: StepRun) -> AgentLaunch:
         validate=SPEC_CORRECTION_SCHEMA_PATH,
         outcome=CORRECTION_RESULT if phase == WORK_CORRECTION else REVISION_RESULT,
         accept=accept,
-        add_dirs=(*author_dirs(run, held), (run.tools.plugin / CRITERIA_FILE).parent),
+        add_dirs=author_dirs(run, held),
         files=tuple(dict.fromkeys((*author_files(run, name), (name, path), *basis))),
         resume_from=None if writing is None or "session" not in writing else writing["id"],
         hand_inputs=False,
@@ -394,7 +393,6 @@ def decider(run: StepRun) -> AgentLaunch:
     """
     held: Repository = repository(run.inputs)
     enter_phase(run.context, run.agents.emit, SPEC_AUTHORING_PHASE, DECIDER, held.path)
-    criteria: Path = run.tools.plugin / CRITERIA_FILE
     disputed: set[str] = {
         identifier for record in _records(run, None, WORK_CORRECTION) for identifier in strings(record["disputed"])
     }
@@ -424,13 +422,12 @@ def decider(run: StepRun) -> AgentLaunch:
         validate=SPEC_RULING_SCHEMA_PATH,
         outcome=RULING_RESULT,
         accept=accept,
-        add_dirs=(*author_dirs(run, held), criteria.parent),
+        add_dirs=author_dirs(run, held),
         files=(
             (REVIEW, run.inputs.file(REVIEW)),
             *((CORRECTION, path) for path in dict.fromkeys(run.inputs.files(CORRECTION))),
             *_documents(run),
             (ARTIFACT_TRD, run.inputs.file(ARTIFACT_TRD)),
-            (LABEL_CRITERIA, criteria),
         ),
         hand_inputs=False,
     )

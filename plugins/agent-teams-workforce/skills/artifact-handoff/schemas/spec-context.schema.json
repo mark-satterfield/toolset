@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/spec-context.schema.json",
+  "title": "Spec context",
+  "description": "One repository's spec context file (<work>/spec-<slug>.context.json), handed to its spec authors, its spec reviewer and its task decomposer as `repository context`. The step `spec_authoring.context` (orchestrator/flows/spec_authoring.py) writes it and validates it against this file. It holds facts and pointers only: what the architecture says about the Story's stacks is read from the matrix by the commands each member names, and from the arc42 headings `documents` names, never copied here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["epic", "repoPath", "slug", "frontend", "items", "stacks", "documents", "dependsOn", "prd", "architectureResult", "designSystem"],
+  "properties": {
+    "epic": {"description": "The Epic's bead id.", "type": "string", "minLength": 1},
+    "repoPath": {"description": "The repository's absolute path.", "type": "string", "minLength": 1},
+    "slug": {"description": "The repository's slug, as the work files name it.", "type": "string", "minLength": 1},
+    "frontend": {"description": "Whether the repository is a frontend repository, whose UI items get design sources.", "type": "boolean"},
+    "items": {
+      "description": "What this repository's Story builds: the span's items placed in this repository (target-report.schema.json, DeltaItem, with the repository's slug). An event item carries the event's description, its trigger and its producers (`publishedBy`).",
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "object"}
+    },
+    "stacks": {
+      "description": "Each stack the Story builds in, with the matrix ids of the entries the Story builds in it. `atw-matrix story-scope --stack <stack> --ids <entries>` prints the documents and headings that describe the stack and each entry, the constraints that bind them and the shared capabilities they must use; `atw-matrix uses --ids <entries>` prints the shared capabilities alone, each with what it provides and what its consumers must do.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/StackEntries"}
+    },
+    "documents": {
+      "description": "The arc42 documents the story scopes of `stacks` name, each with its id, its file and the headings to read (none when a scope names the document as a whole). Read these headings and only these; cite a document by the path and heading given here.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["document", "path", "headings"],
+        "properties": {
+          "document": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1},
+          "headings": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "dependsOn": {
+      "description": "Each dependency relationship from something the Story builds to something it does not build: context, never work.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/DependsOn"}
+    },
+    "prd": {
+      "description": "The PRD's path. The TRD states every obligation with its PRD heading as its source; open the PRD only to read a heading a TRD requirement cites, when the requirement's text does not settle a detail.",
+      "type": "string",
+      "minLength": 1
+    },
+    "architectureResult": {
+      "description": "The solutions architect's result (architecture-result.schema.json). Its `notesForSpecs` holds the details the architect already knew for the specs; start from those.",
+      "type": "string",
+      "minLength": 1
+    },
+    "designSystem": {
+      "description": "The dispatch's design system facts (the driver surface's `designSystem` argument); empty when the dispatch gives none.",
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "StackEntries": {
+      "description": "One stack and the matrix ids of the entries a Story builds in it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stack", "entries"],
+      "properties": {
+        "stack": {"description": "The stack's matrix id.", "type": "string", "minLength": 1},
+        "entries": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "DependsOn": {
+      "description": "One dependency of something a Story builds on something it does not build. `side` is the side that states the relationship: one with `side: repository` is a hint read from code, never an architecture fact. `stack` and `repository` are the far end's; `builtBy` is the storyKey of another Story of this Epic whose items include `to`, or null.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "kind", "to", "toKind", "side", "stack", "repository", "builtBy"],
+      "properties": {
+        "from": {"type": "string"},
+        "kind": {"type": "string"},
+        "to": {"type": "string"},
+        "toKind": {"type": "string"},
+        "side": {"type": "string"},
+        "stack": {"type": ["string", "null"]},
+        "repository": {"type": ["string", "null"]},
+        "builtBy": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

@@ -16,29 +16,29 @@ whose name matches the frontend template.
 
 | # | Description | Performed by | Reads (artifact) | Writes | Records (artifact) |
 |---|---|---|---|---|---|
-| 1 | Gather what the repository builds | script `spec_authoring.context` | `span`, `elements`; the dispatch arguments (PRD, design system) | `spec-<slug>.context.json` | value `repository`, file `repository context`, file `prd`; plans steps 2 to 11 |
+| 1 | Gather what the repository builds | script `spec_authoring.context` | `span`, `elements`; the dispatch arguments (PRD, design system) | `spec-<slug>.context.json` | value `repository`, file `repository context`; plans steps 2 to 11 |
 | 2 | List the UI bundles (frontend) | script `cdsbundles.list_bundles` | the design system's packages directory | `spec-<slug>.bundles.json` | file `ui bundles` |
-| 3 | Choose the UI design source of each UI item (frontend) | agent `api-specification-author` | `TRD`, `span`, `elements`, `prd`, `ui bundles`, `repository context` | `candidates/spec-<slug>.ui.json` | file `ui sources as authored` |
+| 3 | Choose the UI design source of each UI item (frontend) | agent `api-specification-author` | `TRD`, `span`, `elements`, `ui bundles`, `repository context` | `candidates/spec-<slug>.ui.json` | file `ui sources as authored` |
 | 4 | Check the UI design sources against the bundles (frontend) | script `spec_authoring.normalize_ui` | `ui sources as authored`, `ui bundles`, `repository context` | `spec-<slug>.ui.json` | file `ui sources`, value `warnings` |
-| 5 | Write the API, event and error contracts | agent `api-specification-author` | `TRD`, `span`, `elements`, `prd`, `ui sources` when there are any, `repository context` | `spec-<slug>.md` | file `spec` |
-| 6 | Write the data model | agent `data-model-specification-author` | `TRD`, `span`, `elements`, `prd`, `repository context` | `spec-<slug>.data-model.md` | file `data model` |
+| 5 | Write the API, event and error contracts | agent `api-specification-author` | `TRD`, `span`, `elements`, `ui sources` when there are any, `repository context` | `spec-<slug>.md` | file `spec` |
+| 6 | Write the data model | agent `data-model-specification-author` | `TRD`, `span`, `elements`, `repository context` | `spec-<slug>.data-model.md` | file `data model` |
 | 7 | Add the UI design sources to the contracts (frontend) | script `specui.spec_ui_append` | `spec`, `ui sources` | the section `## UI design sources` of `spec-<slug>.md` | file `spec` |
-| 8 | Write the acceptance criteria | agent `acceptance-criteria-writer` | `TRD`, `span`, `elements`, `prd`, `spec`, `data model`, `repository context` | `spec-<slug>.criteria.md` | file `criteria` |
-| 9 | Review the specification documents | agent `openapi-contract-reviewer` | `spec`, `data model`, `criteria`, `TRD`, `repository context`, the criteria file | `spec-<slug>.review.json` | see "The review" |
+| 8 | Write the acceptance criteria | agent `acceptance-criteria-writer` | `TRD`, `span`, `elements`, `spec`, `data model`, `repository context` | `spec-<slug>.criteria.md` | file `criteria` |
+| 9 | Review the specification documents | agent `openapi-contract-reviewer` | `spec`, `data model`, `criteria`, `TRD`, `repository context` | `spec-<slug>.review.json` | see "The review" |
 | 10 | Write the Story document | script `spec_authoring.story_document` | `spec`, `data model`, `criteria`, `repository context` | `story-<slug>.json` | file `story document`, value `decision ids` |
 | 11 | Write the Story bead | script `beadwrite.write_story` | `story document`, the three spec documents, `span`, `elements` | the Story bead; the Story's journal | value `story`, value `story write`, value `decision ids`; plans the repository's container under Tasks |
 
 Steps 5 and 6 are consecutive agent steps whose inputs are done, so their sessions run together.
 
-The repository context (`spec-<slug>.context.json`) holds the repository, the items of what the
-Story builds (each event item with its `trigger` and `publishedBy`), the stacks the Story builds
-in, what `atw-matrix story-scope` returns for each, the documents and headings to read, the shared
-capabilities, the architect's `notesForSpecs`, and `dependsOn` from
-`repo_scoping.build_context` (grouped by `storyKey`), as `task-decomposition.md` describes it.
-`dependsOn` is context, never work.
+The repository context (`spec-<slug>.context.json`) is written to `spec-context.schema.json`,
+which says what each member holds. It holds facts and pointers: the items of what the Story
+builds, and for the rest the paths and `atw-matrix` commands the authors read themselves (the PRD
+and the architect's result by path, the stacks the Story builds in for `atw-matrix story-scope`
+and `atw-matrix uses`). `dependsOn` is context, never work.
 
-The contracts and the data model must have YAML front matter whose `decisionIds` each resolve to a
-file under the architecture root; the criteria must be non-empty. A document that fails its check
+The contracts and the data model must have the front matter of
+`document-front-matter.schema.json#/$defs/SpecDocument`, whose `decisionIds` each resolve to a file
+under the architecture root; the criteria must be non-empty. A document that fails its check
 goes back to its session once, with the errors as an input. Accepting a document records the
 document and nothing else: its citations stay in its `decisionIds` and reach the Story through
 step 10, and nothing is written to the matrix, whose architecture side only arc42 (through
@@ -51,7 +51,9 @@ The Story document lists what the Story builds, one line per item: an event as
 ## The review
 
 One reviewer session per repository checks the three documents against the implementation-level
-criteria of `skills/effective-architecture/review-criteria.json`. What follows is planned by the
+criteria of `skills/effective-architecture/review-standard.md`; no criteria file is handed. The step
+keeps a finding only when its criterion id is an implementation-level id of
+`skills/effective-architecture/review-criteria.json`. What follows is planned by the
 step whose result calls for it, one step at a time, after that step:
 
 | Step | Planned when | Performed by | Records |

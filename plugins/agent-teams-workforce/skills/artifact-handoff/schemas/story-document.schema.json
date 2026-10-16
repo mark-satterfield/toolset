@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/story-document.schema.json",
+  "title": "Story document",
+  "description": "One repository's Story document (<work>/story-<slug>.json): the Story bead's title, description and architecture citations, written by the step `spec_authoring.story_document` (orchestrator/flows/spec_authoring.py) from the reviewed spec documents and validated against this file. The Story bead write takes the bead from it, and the task decomposer is handed it as `story document`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "description", "decisionIds"],
+  "properties": {
+    "title": {"description": "The Story bead's title: the repository's name and the PRD's title.", "type": "string", "minLength": 1},
+    "description": {"description": "The Story bead's description: the repository, each thing the Story builds, and the paths of its three spec documents.", "type": "string", "minLength": 1},
+    "decisionIds": {"description": "The architecture citations of the contracts and the data-model documents (their decisionIds front matter), without repeats.", "type": "array", "items": {"type": "string", "minLength": 1}}
+  }
+}

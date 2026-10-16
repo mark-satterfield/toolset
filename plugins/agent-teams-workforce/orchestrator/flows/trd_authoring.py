@@ -3,7 +3,9 @@
 The solutions architect has the TRD drafted and updated in place, and it is reviewed with the
 architecture. This step starts no session. It reads the TRD at the path the open-run step chose
 and recorded in the context file, checks that the matrix holds every document and heading it
-cites, and records its path and digest on the Epic bead. Nothing is recorded in the matrix.
+cites, checks that every constraint the matrix holds as a requirement of this TRD (its ``trd``
+pointer) names a requirement heading the TRD has, and records its path and digest on the Epic
+bead. Nothing is recorded in the matrix.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -20,13 +23,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipelin
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 import beadgraph
 import beads_contract
+import strictschema
 import yaml
 from bead_metadata import KEY_ARTIFACT_TRD_PATH, KEY_ARTIFACT_TRD_SHA256
 from driver_surface_types import CONTROL_REPO_ENV
-from matrix_contract import KIND_DOCUMENT, Entry, EntryId, MatrixError
+from jsonschema import ValidationError
+from matrix_contract import KIND_CONSTRAINT, KIND_DOCUMENT, Entry, EntryId, MatrixError
 from matrixstore import Matrix, make_id, matrix_path, name_key, read_matrix, slug
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
+from orchestrator.core.agents import strict_json
 from orchestrator.core.handback_contract import TRD_PHASE
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_registry import script_step
@@ -53,6 +59,16 @@ HEADING_SEPARATOR: Final = "#"
 """What separates a cited document's path from the heading cited in it."""
 ATTR_HEADINGS: Final = "headings"
 """The attribute of a document entry that holds its heading texts."""
+ATTR_TRD: Final = "trd"
+"""The attribute of a constraint that points at a requirement of an Epic's TRD."""
+MARKDOWN_HEADING: Final = re.compile(r"^#{1,6}[ \t]+(.+?)[ \t#]*$", re.MULTILINE)
+SCHEMAS: Final[Path] = Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "schemas"
+FRONT_MATTER_CONTRACT: Final[Path] = SCHEMAS / "document-front-matter.schema.json"
+"""The contract of the front matter of the Markdown documents elaboration hands on."""
+TRD_FRONT_MATTER: Final = "TrdDocument"
+"""The TRD's definition in :data:`FRONT_MATTER_CONTRACT`."""
+SPEC_FRONT_MATTER: Final = "SpecDocument"
+"""The contracts and data-model documents' definition in :data:`FRONT_MATTER_CONTRACT`."""
 
 
 class DocumentValidationError(ValueError):
@@ -121,24 +137,49 @@ def cited(matrix: Matrix, citation: str) -> tuple[EntryId, str] | None:
     return None
 
 
+def _front_matter_problem(front: dict[str, JsonValue], definition: str) -> str | None:
+    """Check a document's front matter against its definition in the front matter contract.
+
+    Args:
+        front: The decoded front matter.
+        definition: The ``$defs`` entry of :data:`FRONT_MATTER_CONTRACT` the document satisfies.
+
+    Returns:
+        The most relevant problem as one sentence; None when the front matter satisfies it.
+
+    """
+    contract: dict[str, JsonValue] = strict_json(FRONT_MATTER_CONTRACT)
+    target: dict[str, JsonValue] = {"$defs": contract["$defs"], "$ref": f"#/$defs/{definition}"}
+    if "$schema" in contract:
+        target["$schema"] = contract["$schema"]
+    try:
+        strictschema.validate(front, target, location=FRONT_MATTER_CONTRACT)
+    except ValidationError as exc:
+        where: str = "/".join(str(part) for part in exc.absolute_path) or "<root>"
+        return f"front matter does not satisfy {FRONT_MATTER_CONTRACT.name}#/$defs/{definition}: {where}: {exc.message}"
+    return None
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def document(path: Path, matrix: Matrix) -> tuple[list[str], list[str]]:
+def document(path: Path, matrix: Matrix, definition: str) -> tuple[list[str], list[str]]:
     """Validate document frontmatter and check each architecture citation against the matrix.
 
     Args:
         path: The authored document.
         matrix: The matrix, whose document entries hold every arc42 document and its headings.
+        definition: The document's ``$defs`` entry in :data:`FRONT_MATTER_CONTRACT`
+            (:data:`TRD_FRONT_MATTER` or :data:`SPEC_FRONT_MATTER`).
 
     Returns:
         The citations of the document's ``decisionIds``, and the warnings the check raised.
 
     Raises:
         TypeError: An argument violates the declared input contract.
-        DocumentValidationError: Frontmatter is invalid, or a citation names a document or a
-            heading the matrix does not hold.
+        DocumentValidationError: Frontmatter is missing or does not satisfy its contract, or a
+            citation names a document or a heading the matrix does not hold.
 
     """
-    if not (isinstance(path, Path)) or not (isinstance(matrix, Matrix)):
+    if not (isinstance(path, Path)) or not (isinstance(matrix, Matrix)) or not isinstance(definition, str):
         raise TypeError(_ARGUMENT_ERROR)
     text: str = path.read_text(encoding="utf-8")
     if not text.strip():
@@ -156,17 +197,48 @@ def document(path: Path, matrix: Matrix) -> tuple[list[str], list[str]]:
         message = f"{path}: frontmatter must be an object"
         raise DocumentValidationError(message)
     front: dict[str, JsonValue] = json_object(raw_front)
-    raw_ids: JsonValue = front.get("decisionIds", [])
-    if not isinstance(raw_ids, list) or any(not isinstance(item, str) for item in raw_ids):
-        message = f"{path}: decisionIds must be a list of strings"
+    problem: str | None = _front_matter_problem(front, definition)
+    if problem is not None:
+        message = f"{path}: {problem}"
         raise DocumentValidationError(message)
-    ids: list[str] = check_type(raw_ids, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    ids: list[str] = check_type(
+        front["decisionIds"],
+        list[str],
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+    )
     unresolved: list[str] = [citation for citation in ids if cited(matrix, citation) is None]
     if unresolved:
         message = f"decisionIds the matrix holds no document and heading for: {unresolved}"
         raise DocumentValidationError(message)
-    warnings: list[str] = [] if ids else ["decisionIds is absent or empty"]
+    warnings: list[str] = [] if ids else ["decisionIds is empty"]
     return ids, warnings
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def unresolved_requirements(matrix: Matrix, bead: str, text: str) -> list[str]:
+    """Find the TRD pointers of an Epic's constraints that name no requirement heading of its TRD.
+
+    Args:
+        matrix: The matrix.
+        bead: The Epic's beads id.
+        text: The TRD's text.
+
+    Returns:
+        One sentence per constraint whose ``trd`` names this Epic and a requirement id that is no
+        heading of the TRD; empty when every pointer resolves.
+
+    """
+    headings: set[str] = {found.strip() for found in MARKDOWN_HEADING.findall(text)}
+    problems: list[str] = []
+    entry: Entry
+    for entry in matrix.entries((KIND_CONSTRAINT,)):
+        pointer: JsonValue = entry.attributes.get(ATTR_TRD)
+        if not isinstance(pointer, dict) or pointer.get("epic") != bead:
+            continue
+        requirement: JsonValue = pointer.get("requirement")
+        if requirement not in headings:
+            problems.append(f"{entry.id} points at TRD requirement {requirement!r}, which the TRD has no heading for")
+    return problems
 
 
 def _mark_trd(context: RunContext, tools: Tools, output: Path) -> str:
@@ -204,7 +276,8 @@ def confirm(run: StepRun) -> Completion:
         The TRD file and the digest recorded on the Epic bead.
 
     Raises:
-        ArchitectureStepError: The TRD is missing, or its front matter or a citation is invalid.
+        ArchitectureStepError: The TRD is missing, its front matter or a citation is invalid, or
+            a constraint of the matrix points at a requirement the TRD has no heading for.
 
     """
     enter_phase(run.context, run.agents.emit, TRD_AUTHORING_PHASE, CONFIRM_TRD)
@@ -212,9 +285,12 @@ def confirm(run: StepRun) -> Completion:
     trd: Path = Path(context["trdPath"])
     matrix: Matrix = run.tools.portfolio(CONFIRM_TRD, read_matrix, matrix_path(None, os.environ))
     try:
-        warnings: list[str] = document(trd, matrix)[1]
+        warnings: list[str] = document(trd, matrix, TRD_FRONT_MATTER)[1]
+        dangling: list[str] = unresolved_requirements(matrix, str(run.bead), trd.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, DocumentValidationError) as exc:
         raise ArchitectureStepError(run, f"{trd}: {exc}") from None
+    if dangling:
+        raise ArchitectureStepError(run, *dangling)
     digest: str = _mark_trd(run.context, run.tools, trd)
     warned: list[JsonValue] = list(warnings)
     return Completion(

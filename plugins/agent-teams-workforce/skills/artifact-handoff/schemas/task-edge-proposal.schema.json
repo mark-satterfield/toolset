@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/task-edge-proposal.schema.json",
+  "title": "Task edge proposal",
+  "description": "The edge file the task-dependency-mapper writes for ONE Task created outside elaboration, in the task-dependency-assessment workflow: the candidate <workDir>/candidates/edges.json, which jsonartifact.py validates against this file and publishes as <workDir>/edges.json. `depscore.py validate` then checks it against the tracker and `depscore.py apply-edges` applies it as beads `blocks` edges; the workflow writes `elements` into the Task's `matrix_elements` metadata key when the Task states no id. Nothing in it is written into the matrix. The same agent's elaboration hand-off is a different contract, task-deps.schema.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["edges", "withdrawn", "elements"],
+  "properties": {
+    "edges": {
+      "description": "EVERY edge to or from the assessed Task that passes the test (one Task consumes what the other provides: an API, a table, an IAM grant, a deployed resource), each owned standing edge it keeps included, and no edge that does not touch it. No edge is a valid result.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/Edge"}
+    },
+    "withdrawn": {
+      "description": "Every owned standing edge (the context's `standing` with `owned: true`) that `edges` does not keep. An edge with `owned: false` is in neither list.",
+      "type": "array",
+      "items": {"$ref": "dependency-assessment.schema.json#/$defs/Withdrawal"}
+    },
+    "elements": {
+      "description": "[] when the context's `task.elements` is not empty. Otherwise the matrix ids the session named for the Task: its stack first, then the entries it builds and the shared capabilities it uses, each the id of an entry the matrix holds; [] only when the matrix holds no stack for what the Task builds, which the reasoning states.",
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    }
+  },
+  "$defs": {
+    "Edge": {
+      "description": "One build dependency: `to` cannot be built until `from` is built, because `to` consumes something `from` provides. Both ends are open Tasks.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "reason", "confidence"],
+      "properties": {
+        "from": {"description": "The beads id of the Task built first.", "type": "string"},
+        "to": {"description": "The beads id of the Task that consumes what `from` provides.", "type": "string"},
+        "reason": {"description": "The artifact consumed and which Task provides it.", "type": "string"},
+        "confidence": {"$ref": "dependency-assessment.schema.json#/$defs/Confidence"},
+        "answers": {"description": "Required only on an edge the context's `withdrawn` list covers: why the recorded withdrawal reason is wrong. Without it that edge is refused.", "type": "string"}
+      }
+    }
+  }
+}

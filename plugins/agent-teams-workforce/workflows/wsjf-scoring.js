@@ -130,7 +130,7 @@ async function settleWorkflow(name, input) {
 }
 // END bounded dispatch policy
 
-// ===== SHARED BLOCK relay — BEGIN (canonical: scripts/shared-blocks/relay.js; filled from skills/artifact-handoff/schemas/checkpoint.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
+// ===== SHARED BLOCK relay — BEGIN (canonical: scripts/shared-blocks/relay.js; filled from skills/artifact-handoff/schemas/{checkpoint,relay-command-result,relay-registered-result,artifact-reference}.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
 // ── CHECKED RELAY: deterministic work reaches this script unaltered, or not at all ──
 //
 // A workflow script cannot run a command or read a file. A command reaches the shell only as
@@ -256,13 +256,12 @@ const relayKit = (() => {
     if (word !== null) words.push(word)
     return words
   }
-  /** A runner's return: the exit status and stdout, verbatim, as one string. Nothing is rebuilt. */
-  const SCHEMA = {
-    type: 'object',
-    additionalProperties: false,
-    required: ['exitCode', 'stdout'],
-    properties: { exitCode: { type: 'integer' }, stdout: { type: 'string', description: 'Copy the complete RELAY64v1: line verbatim. Treat its base64 payload as opaque text; never decode or reconstruct it.' } },
-  }
+  // The runner's results and the producer's artifact reference, inlined by scripts/shared-blocks.mjs
+  // from their contract files in skills/artifact-handoff/schemas/ (relay-command-result,
+  // relay-registered-result, artifact-reference). Never restate any part of them here.
+  const SCHEMA = {"$schema":"https://json-schema.org/draft/2020-12/schema","description":"What the workflow-command-runner returns for an assignment that names its command itself (no WORKFORCE_RELAY_BINDING_V1 line): the command's exit status and its stdout, verbatim. Nothing in it is rebuilt: the workflow script (the relay shared block, scripts/shared-blocks/relay.js) checks the copy against the checksum it carries and, when the copy fails, reads the relay file the command saved instead.","type":"object","additionalProperties":false,"required":["exitCode","stdout"],"properties":{"exitCode":{"description":"The exit status of the one command the assignment named.","type":"integer"},"stdout":{"description":"The complete RELAY64v1: line the command printed, copied verbatim: every character as printed, in order, including the prefix and any trailing = characters, with nothing added, removed, reordered or re-typed. Treat its base64 payload as opaque text; never decode or reconstruct it. When the command printed more than one line, all of stdout verbatim.","type":"string"}}}
+  const REGISTERED_SCHEMA = {"$schema":"https://json-schema.org/draft/2020-12/schema","description":"What the workflow-command-runner returns for a registered assignment (one carrying the WORKFORCE_RELAY_BINDING_V1 and WORKFORCE_RELAY_REQUEST_V1 lines). The runner returns the small object the registered helper printed; the plugin's PreToolUse hook supplies the exact saved output. When the runner's Bash call fails, it returns the unknown result: state unknown, exitCode 0, stdout empty, receipt null, bridge false, error empty, so the hook reports the real saved state. The workflow script (the relay shared block, scripts/shared-blocks/relay.js) accepts a completed result only when its receipt matches the request, the command checksum, the exit status, the byte count and the SHA-256 of stdout.","type":"object","additionalProperties":false,"required":["state","exitCode","stdout","receipt","bridge","error"],"properties":{"state":{"description":"completed: the command ran and its saved output is handed back. not-started: the request provably never ran; the workflow, not the runner, decides whether it is attempted again. unknown: the runner could not tell (its Bash call failed); every other field then holds its empty value (exitCode 0, stdout empty, receipt null, bridge false, error empty).","type":"string","enum":["completed","not-started","unknown"]},"exitCode":{"description":"The exit status of the registered command.","type":"integer"},"stdout":{"description":"The command's saved stdout, verbatim. Never interpret, reconstruct or copy the payload by hand.","type":"string"},"receipt":{"description":"The integrity receipt of the saved output, or null when there is none.","anyOf":[{"description":"Binds a saved output to the request that produced it.","type":"object","additionalProperties":false,"required":["request","commandSha256","sha256","bytes","exitCode"],"properties":{"request":{"description":"The request id the workflow script computed for this command.","type":"string"},"commandSha256":{"description":"The SHA-256 of the canonical JSON of the command's argument list.","type":"string"},"sha256":{"description":"The SHA-256 of stdout.","type":"string"},"bytes":{"description":"The length of stdout.","type":"integer"},"exitCode":{"description":"The exit status the saved output records.","type":"integer"}}},{"type":"null"}]},"bridge":{"description":"true only on the result the hook itself supplies; the runner's own result always carries false, and the workflow reads any other value as the runner's copy.","type":"boolean"},"error":{"description":"Why the outcome is not completed, or empty.","type":"string"}}}
+  const ARTIFACT_SCHEMA = {"$schema":"https://json-schema.org/draft/2020-12/schema","description":"What a producer session returns after it authored a JSON artifact under the artifact checkpoint contract (checkpoint.schema.json): only the path of the candidate it wrote, never a copy of its content. The workflow script then validates the candidate against its contract file and publishes it (scripts/portfolio/jsonartifact.py).","type":"object","additionalProperties":false,"required":["artifactPath"],"properties":{"artifactPath":{"description":"The candidate path the brief named, as the submit command printed it.","type":"string"}}}
   const HEX = /^[0-9a-f]{64}$/
   /** The relay's own keys in a printed envelope; every other key is a leaf of the flat view. */
   const RELAY_KEYS = ['~file', '~sha256', '~bytes', '~exit', '~checksum']
@@ -352,10 +351,8 @@ const relayKit = (() => {
 
 ${command}
 
-It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy that entire line as opaque text, including the prefix and any trailing = characters. Do not decode the base64, interpret its contents, or rebuild the JSON. Return the process exit code as \`exitCode\` and that line, verbatim, as the string \`stdout\`: every character as printed, in order, with nothing added, removed, reordered, reformatted or re-typed. Do not parse it, do not summarize it. If it printed more than one line, return all of stdout verbatim. Do not retry, do not repair, do not run any other command.`
+It prints exactly one line beginning RELAY64v1: followed by base64 text. Return its exit status and that line as your output schema describes (contract: skills/artifact-handoff/schemas/relay-command-result.schema.json). Do not retry, do not repair, do not run any other command.`
   let captureOrdinal = 0
-  const RECEIPT_SCHEMA = { type: 'object', additionalProperties: false, required: ['request', 'commandSha256', 'sha256', 'bytes', 'exitCode'], properties: { request: { type: 'string' }, commandSha256: { type: 'string' }, sha256: { type: 'string' }, bytes: { type: 'integer' }, exitCode: { type: 'integer' } } }
-  const REGISTERED_SCHEMA = { type: 'object', additionalProperties: false, required: ['state', 'exitCode', 'stdout', 'receipt', 'bridge', 'error'], properties: { state: { type: 'string', enum: ['completed', 'not-started', 'unknown'] }, exitCode: { type: 'integer' }, stdout: { type: 'string' }, receipt: { anyOf: [RECEIPT_SCHEMA, { type: 'null' }] }, bridge: { type: 'boolean' }, error: { type: 'string' } } }
   async function registeredCommand(dispatch, { label, phase, command }, ordinal) {
     const argv = shellWords(command)
     const commandSha256 = sha256Json(argv)
@@ -576,26 +573,60 @@ It prints exactly one line beginning RELAY64v1: followed by base64 text. Copy th
     if (r.exit !== 0) return { ok: false, error: String(r.view.error || `exited ${r.exit}`) }
     return { ok: true, view: r.view }
   }
-  const ARTIFACT_SCHEMA = { type: 'object', additionalProperties: false, required: ['artifactPath'], properties: { artifactPath: { type: 'string' } } }
   // The artifact checkpoint contract, inlined by scripts/shared-blocks.mjs from its one place,
   // skills/artifact-handoff/schemas/checkpoint.schema.json. Never restate any part of it here.
   const CHECKPOINT_SCHEMA = {"$schema":"https://json-schema.org/draft/2020-12/schema","title":"Artifact checkpoint","description":"The sidecar <candidate><x-sidecarSuffix> that artifactcontract.py checkpoint|complete|submit writes and artifactcontract.py status and jsonartifact.py read. It is built from the agent-authored progress file <candidate><x-progressSuffix> ($defs/Progress) plus the binding keys. The Python types are generated from this file by scripts/generate_checkpoint_contract.py.","x-sidecarSuffix":".checkpoint","x-progressSuffix":".progress.json","x-bindingKeys":["artifactPath","schemaSha256","revision"],"x-authoredStatuses":["in-progress","blocked"],"x-operations":["validate","checkpoint","complete","submit","status"],"type":"object","additionalProperties":false,"required":["status","artifactPath","schemaSha256","revision","task","completed","remaining","artifacts"],"properties":{"status":{"enum":["in-progress","blocked","complete"]},"artifactPath":{"$ref":"#/$defs/ArtifactPath"},"schemaSha256":{"$ref":"#/$defs/Sha256"},"candidateSha256":{"$ref":"#/$defs/Sha256"},"revision":{"$ref":"#/$defs/Revision"},"task":{"$ref":"#/$defs/Progress/properties/task"},"completed":{"$ref":"#/$defs/Progress/properties/completed"},"remaining":{"$ref":"#/$defs/Progress/properties/remaining"},"artifacts":{"$ref":"#/$defs/Progress/properties/artifacts"},"reason":{"$ref":"#/$defs/Progress/properties/reason"}},"allOf":[{"if":{"properties":{"status":{"const":"complete"}}},"then":{"required":["candidateSha256"],"properties":{"remaining":{"maxItems":0}}}},{"if":{"properties":{"status":{"const":"blocked"}}},"then":{"required":["reason"],"properties":{"remaining":{"minItems":1}}}}],"$defs":{"ArtifactPath":{"description":"The absolute candidate path; a binding key.","type":"string","minLength":1},"Revision":{"description":"The input revision; a binding key.","type":"string","minLength":1},"Sha256":{"description":"Lowercase hex SHA-256 of a canonical JSON value.","type":"string","pattern":"^[a-f0-9]{64}$"},"Progress":{"description":"The agent-authored progress file <candidate><x-progressSuffix>; its keys are copied into the checkpoint.","type":"object","additionalProperties":false,"required":["task","completed","remaining","artifacts"],"properties":{"task":{"type":"string","minLength":1},"completed":{"type":"array","items":{"type":"string","minLength":1}},"remaining":{"type":"array","items":{"type":"string","minLength":1}},"artifacts":{"type":"array","items":{"type":"string","minLength":1}},"reason":{"type":"string","minLength":1}}},"StatusReport":{"description":"What the status operation reports for a candidate.","type":"object","additionalProperties":false,"required":["status"],"properties":{"status":{"enum":["incomplete","in-progress","blocked","complete-unaccepted"]},"reason":{"type":"string"},"remaining":{"$ref":"#/$defs/Progress/properties/remaining"},"artifactPath":{"$ref":"#/$defs/ArtifactPath"},"schemaSha256":{"$ref":"#/$defs/Sha256"},"revision":{"$ref":"#/$defs/Revision"},"candidateSha256":{"$ref":"#/$defs/Sha256"}}},"CommandResult":{"description":"What the validate, checkpoint, complete and submit operations print; status is absent only for submit.","type":"object","additionalProperties":false,"required":[],"properties":{"status":{"enum":["schema-valid","complete-unaccepted","in-progress","blocked","invalid"]},"artifactPath":{"$ref":"#/$defs/ArtifactPath"},"error":{"type":"string","minLength":1}}}}}
-  function artifactBrief(candidate, schema, revision = '', helper) {
+  /**
+   * The absolute path of a contract file. `contract` is the file's path relative to the plugin
+   * root, optionally followed by #<JSON pointer> naming the schema inside it (for example
+   * 'skills/artifact-handoff/schemas/x.schema.json#/$defs/Proposal'); `script` is the absolute path
+   * of any script in the plugin's scripts/portfolio/ folder, from which the plugin root is known.
+   */
+  function contractPath(script, contract) {
+    const at = /^(.*\/)scripts\/portfolio\/[^/]+$/.exec(String(script || ''))
+    if (!at) throw new Error(`contractPath: ${JSON.stringify(script)} is not a script in the plugin's scripts/portfolio/ folder`)
+    if (typeof contract !== 'string' || !/^[A-Za-z0-9_-][A-Za-z0-9._/-]*\.json(#\/[^\s']*)?$/.test(contract) || contract.split('#')[0].split('/').includes('..')) {
+      throw new Error(`contractPath: ${JSON.stringify(contract)} is not a contract file path relative to the plugin root`)
+    }
+    return `${at[1]}${contract}`
+  }
+  /**
+   * The helper's schema option for `contract`: a contract file path (see contractPath) becomes
+   * `--schema <absolute path>`; a schema object, the form older callers pass, becomes
+   * `--schema-json <canonical JSON>`.
+   */
+  function schemaOption(script, contract) {
+    if (contract && typeof contract === 'object' && !Array.isArray(contract)) return ['--schema-json', canonicalJson(contract)]
+    return ['--schema', contractPath(script, contract)]
+  }
+  /**
+   * The brief text that binds a producer session to its candidate: the candidate, the progress
+   * file, the input revision, the contract file the candidate must satisfy (named, never pasted)
+   * and the artifactcontract.py command of each checkpoint operation.
+   */
+  function artifactBrief(candidate, contract, revision = '', helper) {
     if (typeof helper !== 'string' || !helper) throw new Error('artifactBrief requires the artifactcontract.py helper path')
     const suffix = CHECKPOINT_SCHEMA['x-progressSuffix']
     const operations = CHECKPOINT_SCHEMA['x-operations']
     if (typeof suffix !== 'string' || !suffix || !Array.isArray(operations) || !operations.length) throw new Error('artifactBrief: the checkpoint contract was not inlined from checkpoint.schema.json')
+    const schema = schemaOption(helper, contract)
     const progress = `${candidate}${suffix}`
-    const binding = ['--candidate', candidate, '--schema-json', canonicalJson(schema), '--revision', revision, '--progress-file', progress]
+    const binding = ['--candidate', candidate, ...schema, '--revision', revision, '--progress-file', progress]
     const command = operation => ['python3', helper, operation, ...binding].map(quote).join(' ')
     return `\n\nARTIFACT CONTRACT DATA:
 Candidate: ${candidate}
-Progress: ${progress}
+${schema[0] === '--schema' ? `Contract: ${schema[1]}\n` : ''}Progress: ${progress}
 Input revision: ${revision}
 ${operations.map(operation => `Command ${operation}: ${command(operation)}`).join('\n')}`
   }
-  async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, schema, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false, recordArgv = [], researchAgent = '', researchRepo = '' }) {
-    const args = ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), '--candidate', candidate, '--final', file, '--schema-json', canonicalJson(schema), ...(revision ? ['--revision', revision] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(counts.length ? ['--counts', counts.join(',')] : []), ...(projection ? ['--projection', projection] : []), ...(probe ? ['--probe'] : []), ...(probe && researchAgent && researchRepo ? ['--research-agent', researchAgent, '--research-repo', researchRepo] : []), ...(!returned ? ['--recover'] : [])]
+  async function acceptArtifact(dispatch, { label, phase, runner, candidate, file, contract = null, schema: schemaObject = null, relayFile, returned = null, revision = '', keys = [], counts = [], projection = '', probe = false, recordArgv = [], researchAgent = '', researchRepo = '' }) {
+    let schema
+    try {
+      schema = schemaOption(runner, contract || schemaObject)
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) }
+    }
+    const args = ['python3', runner.replace(/[^/]+$/, 'jsonartifact.py'), '--candidate', candidate, '--final', file, ...schema, ...(revision ? ['--revision', revision] : []), ...(keys.length ? ['--keys', keys.join(',')] : []), ...(counts.length ? ['--counts', counts.join(',')] : []), ...(projection ? ['--projection', projection] : []), ...(probe ? ['--probe'] : []), ...(probe && researchAgent && researchRepo ? ['--research-agent', researchAgent, '--research-repo', researchRepo] : []), ...(!returned ? ['--recover'] : [])]
     if (!Array.isArray(recordArgv) || recordArgv.some(word => typeof word !== 'string' || !word)) return { ok: false, error: 'invalid artifact recorder argv' }
     const argv = recordArgv.length ? ['python3', runner.replace(/[^/]+$/, 'artifactpublish.py'), '--record-argv-json', canonicalJson(recordArgv), '--', ...args.slice(2)] : args
     const result = await run(dispatch, { label, phase, runner, argv, file: relayFile })
@@ -647,7 +678,7 @@ ${operations.map(operation => `Command ${operation}: ${command(operation)}`).joi
     if (receipts.length !== files.length || receipts.some((r, i) => r.artifactPath !== files[i] || !/^[a-f0-9]{64}$/.test(r.sha256 || '') || !Number.isSafeInteger(r.bytes) || r.bytes < 1 || r.format !== 'text')) return { ok: false, error: 'invalid document receipt' }
     return { ok: true, receipts }
   }
-  return { ARTIFACT_SCHEMA, artifactBrief, acceptArtifact, authorArtifact, artifactRevision, documentReceipt, canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, unflatten, parse, SCHEMA }
+  return { ARTIFACT_SCHEMA, contractPath, schemaOption, artifactBrief, acceptArtifact, authorArtifact, artifactRevision, documentReceipt, canonicalJson, sha256Ascii, sha256Json, quote, shellWords, exec, depscore, run, checkFile, ensureJson, inline, exceptionOf, unflatten, parse, SCHEMA }
 })()
 // ===== SHARED BLOCK relay — END =====
 
@@ -712,9 +743,7 @@ function enter(title) {
 //   repoPath:     string,    // absolute path of the repository whose `bd` tracker is scored
 //   pluginRoot:   string,    // absolute path of this plugin's root
 //   workDir:      string,    // absolute path of a directory for this run's files
-//   archPath?:    string,
-//   projectRoot?: string,
-//   all?:         boolean,   // include items that already have a value
+//   all?:        boolean,   // include items that already have a value
 //   rejudge?:     boolean,   // judge again the existing values of the items included
 //   only?:        string[],  // judge only these open Epics and Tasks
 //   dryRun?:      boolean,   // write nothing to the tracker
@@ -729,8 +758,8 @@ const PATH_ARGS = ['repoPath', 'pluginRoot', 'workDir']
 // RESOLVE_PY loads the names from that schema. pluginRoot has none of its own: it is the
 // agent-teams-workforce install that $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records.
 // workDir has none either: a run without one gets a new directory from mkdtemp.
-const ENV_CONSTANT_OF = { repoPath: 'CONTROL_REPO_ENV', archPath: 'ARCH_PATH_ENV', projectRoot: 'PROJECT_ROOT_ENV' }
-const OPTIONAL_PATH_ARGS = ['archPath', 'projectRoot']
+const ENV_CONSTANT_OF = { repoPath: 'CONTROL_REPO_ENV' }
+const OPTIONAL_PATH_ARGS = []
 const isAbsolute = (v) => typeof v === 'string' && v.trim().startsWith('/')
 const RESOLVE_PY = `import json, os, tempfile, time
 from pathlib import Path
@@ -802,14 +831,13 @@ if "workDir" in wanted:
 out["since"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 out["problems"] = problems
 emit(out)`
-// Fills each path arg the caller left out, and only from the environment: repoPath, archPath and
-// projectRoot from the variables ENV_CONSTANT_OF names (their names loaded from the driver surface
-// schema), pluginRoot from the agent-teams-workforce install that
+// Fills each path arg the caller left out, and only from the environment: repoPath from the
+// variable ENV_CONSTANT_OF names (its name loaded from the driver surface schema), pluginRoot from the agent-teams-workforce install that
 // $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records (the install for the CONTROL_REPO_ENV
 // repository first, else the user-scope one), and workDir from mkdtemp. One runner session reads them,
 // dispatched only when an arg is missing. Returns { args, missing, problems, envOf }:
 // `missing` names every required arg still without a value, and the caller refuses before dispatching
-// any other agent. An optional path arg the environment does not supply stays absent.
+// any other agent.
 async function resolveArgs(given, name, required) {
   const out = { ...given }
   // The relay capture script the host passes sits in the plugin: its root is the plugin root.
@@ -919,77 +947,37 @@ const taskGroups = inputs.task && Array.isArray(inputs.task.summary.groups)
   : []
 
 enter('Judge')
-const UNSCORED_SCHEMA = {
-  type: 'object',
-  required: ['id'],
-  properties: { id: { type: 'string' }, reason: { type: 'string' } },
+// A judgment is the JSON file `record` reads; the session writes it to its contract file and the
+// script validates and publishes it. The judge input the session reads has its own contract file.
+const JUDGMENT_CONTRACT = {
+  epic: 'skills/artifact-handoff/schemas/wsjf-judgment.schema.json#/$defs/EpicJudgment',
+  task: 'skills/artifact-handoff/schemas/wsjf-judgment.schema.json#/$defs/TaskJudgment',
 }
-const SIZE_PROPERTIES = {
-  jobSize: { type: 'integer' },
-  sizeLow: { type: 'integer' },
-  sizeHigh: { type: 'integer' },
-  sizeConfidence: { type: 'integer' },
-}
-// A judgment is the JSON file `record` reads; the session returns it and the script saves it.
-const EPIC_JUDGMENT_SCHEMA = {
-  type: 'object',
-  required: ['scores'],
-  properties: {
-    rubric: { type: 'string' },
-    scores: {
-      type: 'array',
-      items: {
-        type: 'object',
-        required: ['id', 'userBusinessValue', 'timeCriticality', 'confidence'],
-        properties: {
-          id: { type: 'string' },
-          userBusinessValue: { type: 'integer' },
-          timeCriticality: { type: 'integer' },
-          confidence: { type: 'integer' },
-          ...SIZE_PROPERTIES,
-        },
-      },
-    },
-    unscored: { type: 'array', items: UNSCORED_SCHEMA },
-  },
-}
-const TASK_JUDGMENT_SCHEMA = {
-  type: 'object',
-  required: ['scores'],
-  properties: {
-    rubric: { type: 'string' },
-    scores: {
-      type: 'array',
-      items: {
-        type: 'object',
-        required: ['id', 'jobSize', 'sizeLow', 'sizeHigh', 'sizeConfidence'],
-        properties: { id: { type: 'string' }, ...SIZE_PROPERTIES },
-      },
-    },
-    unscored: { type: 'array', items: UNSCORED_SCHEMA },
-  },
-}
+const JUDGE_INPUT_CONTRACT = 'skills/artifact-handoff/schemas/wsjf-judge-input.schema.json'
+const PLUGIN = String(a.pluginRoot || '').replace(/\/+$/, '')
+const MATRIX = `${DRIVER_SURFACE.CONTROL_REPO_ENV}=${shq(repo)} ${shq(`${PLUGIN}/bin/atw-matrix`)}`
+const BEADS_CONTRACT = `python3 ${shq(`${PLUGIN}/skills/beads-contract/scripts/beads-contract.py`)} -C ${shq(repo)}`
 const epicDir = file('judgments/epic')
 const taskDir = file('judgments/task')
 
 const PRIOR = typeof a.priorFailure === 'string' && a.priorFailure.trim()
   ? `THE PREVIOUS SCORING RUN FAILED on this same input: ${a.priorFailure.trim().slice(0, 2000)}. Do not repeat it.\n\n`
   : ''
-const JUDGE_RULES = `${PRIOR}JOB SIZE follows the rubric's "Job Size" section, which is the same at both levels: the relative amount of work to deliver the outcome, judged against the agent pipeline as the reference capability — not calendar time, not human effort, not a count of repositories. Weigh volume, complexity, knowledge and uncertainty, as the rubric defines them, together to place the item; never score them separately or add them up. The numbers express approximate relative magnitude, not measured ratios or time commitments, and an item's tracking type does not decide its size: an Epic and a Task can both be 5. The scale is Fibonacci (1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, and upward). Place each size by comparison with the \`referenceJobs\` in the judge-input file — elaborated Epics, each with its original estimate and its refined size, the sum of its Tasks — and name the comparison in the rationale. When \`referenceJobs\` is empty, judge knowledge and uncertainty from what already exists: the architecture${a.archPath ? ` (${a.archPath})` : ''}, the existing code${a.projectRoot ? ` (under ${a.projectRoot})` : ''}, and the other artifacts that show what is already decided or built and what must be decided or built from scratch. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the estimate inside it, and \`sizeConfidence\`, an integer percent. What remains unknown widens the range and lowers the size confidence.
+const JUDGE_RULES = `${PRIOR}JOB SIZE follows the rubric's "Job Size" section, which is the same at both levels: the relative amount of work to deliver the outcome, judged against the agent pipeline as the reference capability — not calendar time, not human effort, not a count of repositories. Weigh volume, complexity, knowledge and uncertainty, as the rubric defines them, together to place the item; never score them separately or add them up. The numbers express approximate relative magnitude, not measured ratios or time commitments, and an item's tracking type does not decide its size: an Epic and a Task can both be 5. The scale is Fibonacci (1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, and upward). Place each size by comparison with the \`referenceJobs\` in the judge-input file — elaborated Epics, each with its original estimate and its refined size, the sum of its Tasks — and name the comparison in the rationale. When \`referenceJobs\` is empty, judge knowledge and uncertainty from what the matrix says already exists, read with \`${MATRIX} <command>\` (a read needs no role, and every command prints one JSON object): \`epic <epic id> --closure\` returns everything the Epic reaches, by repository, each document with its \`lifecycle\` (\`effective\` is decided); \`approval --epic <epic id>\` returns its approved requirements and features; \`node <id>\` returns one entry with its relationships and, for what is built, its \`verified\` mark. Read a document heading or a code file only where an entry the matrix returns names it and the entry alone does not say whether it is decided or built. Survey no architecture folder and no project tree. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the estimate inside it, and \`sizeConfidence\`, an integer percent. What remains unknown widens the range and lowers the size confidence.
 
 THE RUBRIC OWNS ITS BANDS. The rungs in \`agent-teams-workforce:wsjf\` are the whole scale. RR-OE, reachability and WSJF are arithmetic computed after you return; they are not in your input and are not yours to state, estimate or reason about.`
 
 const judgeEpic = (id, revision) => settleAgent(
   `You judge ONE Epic, ${id}, under \`agent-teams-workforce:wsjf\` at Epic level. Load that skill with the Skill tool and follow it.
 
-An Epic is a PRD: a business requirement. Its entry in ${inputs.epic && inputs.epic.path} (the item whose \`id\` is ${id}) names its full requirements document as \`prdPath\`, the PRD file as the matrix names it: read that file to the end. When \`prdPath\` is null the matrix names no PRD for the Epic: return it under \`unscored\` with that reason. The entry also says whether the Epic is \`sizedFromTasks\`; the same file holds the \`referenceJobs\`. Judge it from its own document against the rubric's rungs and the reference jobs, using the architecture and the project root for what is already decided or built. Read no other Epic's PRD and no other Epic's values: each Epic is judged on its own, so adding an Epic never moves another Epic's judged values.
+An Epic is a PRD: a business requirement. Read your item in ${inputs.epic && inputs.epic.path} (the item whose \`id\` is ${id}); that file's contract is \`${JUDGE_INPUT_CONTRACT}\` (path from the plugin root \`${PLUGIN}\`). Its \`prdPath\` is the Epic's full requirements document: read that file to the end. When \`prdPath\` is null the matrix names no PRD for the Epic: return it under \`unscored\` with that reason. Judge it from its own document against the rubric's rungs and the file's \`referenceJobs\`, using the matrix reads below for what is already decided or built. Read no other Epic's PRD and no other Epic's values: each Epic is judged on its own, so adding an Epic never moves another Epic's judged values.
 
 ${JUDGE_RULES}
 
-Judge \`userBusinessValue\`, \`timeCriticality\` and their \`confidence\` (integer percent — the value confidence, covering UBV and TC only), and — only when \`sizedFromTasks\` is false — the size estimate \`jobSize\` with \`sizeLow\`, \`sizeHigh\` and \`sizeConfidence\`. Only an Epic whose elaboration is done takes its size from its Tasks; until then it is sized by this estimate, never by the Tasks written so far. An Epic is sized before its design exists: judge the work to deliver the requirement from the requirement itself and from institutional knowledge — the architecture and what is already decided — and never invent a solution in order to size it. Missing implementation design is normal at this stage and is not itself evidence of exceptional difficulty, so it does not enlarge the size; let it show in the range and the size confidence. Uncertainty enlarges an Epic only where the PRD leaves an unresolved fact that could materially change the work — ambiguous scope, unknown feasibility, or assumptions with substantially different consequences. Each rationale cites the PRD.
+Judge \`userBusinessValue\`, \`timeCriticality\` and their \`confidence\`, and — only when \`sizedFromTasks\` is false — the size estimate \`jobSize\` with \`sizeLow\`, \`sizeHigh\` and \`sizeConfidence\`. Only an Epic whose elaboration is done takes its size from its Tasks; until then it is sized by this estimate, never by the Tasks written so far. An Epic is sized before its design exists: judge the work to deliver the requirement from the requirement itself and from institutional knowledge — the architecture and what is already decided — and never invent a solution in order to size it. Missing implementation design is normal at this stage and is not itself evidence of exceptional difficulty, so it does not enlarge the size; let it show in the range and the size confidence. Uncertainty enlarges an Epic only where the PRD leaves an unresolved fact that could materially change the work — ambiguous scope, unknown feasibility, or assumptions with substantially different consequences. Each rationale cites the PRD.
 
-Your judgment is ONE JSON object: {"rubric": "epic-wsjf", "scores": [{"id": "${id}", "userBusinessValue", "timeCriticality", "confidence", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence" (the four size fields only when sizedFromTasks is false), "rationale": {"userBusinessValue", "timeCriticality", "jobSize"}}], "unscored": []}, or, when you cannot judge it, {"rubric": "epic-wsjf", "scores": [], "unscored": [{"id": "${id}", "reason"}]}. ${relayKit.artifactBrief(`${epicDir}/candidates/${id}.json`, EPIC_JUDGMENT_SCHEMA, revision, RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`,
-  { agentType: 'wsjf-scorer', label: `judge:epic:${id}`, phase: 'Judge', effort: 'medium', schema: relayKit.ARTIFACT_SCHEMA }
+Write your judgment of ${id}, scored or unscored, to its contract, named below; the descriptions there define every member. ${relayKit.artifactBrief(`${epicDir}/candidates/${id}.json`, JUDGMENT_CONTRACT.epic, revision, RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`,
+  { agentType: 'wsjf-scorer', label: `judge:epic:${id}`, phase: 'Judge', effort: 'medium', schema: relayKit.ARTIFACT_SCHEMA } // model: its definition's front matter sets it (sonnet)
 )
 
 const judgeTasks = (group, revision) => {
@@ -997,14 +985,14 @@ const judgeTasks = (group, revision) => {
   return settleAgent(
     `You size ${whose}, under \`agent-teams-workforce:wsjf\` at Task level. Load that skill with the Skill tool and follow it. You judge Job Size and nothing else; value, time criticality and their confidence are inherited from each Task's Epic by arithmetic. A Task is sized from the established architecture, design and implementation instructions it carries.
 
-Read ${inputs.task && inputs.task.path}. Size exactly these items in it, each an open Task with its own \`description\` and the Epic it sits under: ${group.tasks.join(', ')}. The same file holds the \`referenceJobs\`.
+Read ${inputs.task && inputs.task.path}; that file's contract is \`${JUDGE_INPUT_CONTRACT}\` (path from the plugin root \`${PLUGIN}\`). Size exactly these items in it: ${group.tasks.join(', ')}. The same file holds the \`referenceJobs\`. Each Task's content is its bead, read by its id with \`${BEADS_CONTRACT} fingerprint-batch ${group.tasks.map(shq).join(' ')} --scope judging --explain\`: \`results.<id>.hashed\` is exactly the content a size is recorded against, so a change to it is what re-judges the Task.
 
 ${JUDGE_RULES}
 
 For each of those Tasks, judge the size estimate \`jobSize\` with \`sizeLow\`, \`sizeHigh\` and \`sizeConfidence\`. A Task above 13 should have been split: say so in its rationale, and record the size you judged. Do not reduce it to 13.
 
-Your judgment is ONE JSON object: {"rubric": "task-wsjf", "scores": [{"id", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence", "rationale": {"jobSize"}}], "unscored": [{"id", "reason"}]}, with exactly one entry per Task listed above, in \`scores\` or in \`unscored\`, and none for any other item. ${relayKit.artifactBrief(`${taskDir}/candidates/${group.key}.json`, TASK_JUDGMENT_SCHEMA, revision, RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`,
-    { agentType: 'wsjf-scorer', label: `judge:task:${group.key}`, phase: 'Judge', effort: 'medium', schema: relayKit.ARTIFACT_SCHEMA }
+Write your judgment to its contract, named below, with exactly one entry per Task listed above, in \`scores\` or in \`unscored\`, and none for any other item. ${relayKit.artifactBrief(`${taskDir}/candidates/${group.key}.json`, JUDGMENT_CONTRACT.task, revision, RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`,
+    { agentType: 'wsjf-scorer', label: `judge:task:${group.key}`, phase: 'Judge', effort: 'medium', schema: relayKit.ARTIFACT_SCHEMA } // model: its definition's front matter sets it (sonnet)
   )
 }
 
@@ -1016,7 +1004,7 @@ async function judgeAndSave(job) {
   const saved = await relayKit.authorArtifact(settleAgent, {
     label: `save:${job.level}:${job.key}`, phase: 'Judge', runner: RUNNER, revision: binding.revision,
     candidate: `${job.file.slice(0, job.file.lastIndexOf('/'))}/candidates/${job.key}.json`, file: job.file,
-    schema: job.level === 'epic' ? EPIC_JUDGMENT_SCHEMA : TASK_JUDGMENT_SCHEMA,
+    contract: JUDGMENT_CONTRACT[job.level],
     relayFile: file(`relay/accepted-${job.level}-${job.key}.json`), counts: ['scores', 'unscored'],
   }, () => job.judge(binding.revision), () => !!dispatchInterruption)
   if (saved.ok) return saved.receipt

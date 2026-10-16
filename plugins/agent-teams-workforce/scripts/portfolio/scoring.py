@@ -508,7 +508,6 @@ def judge_input(
             entry["prdPath"] = paths.get(bead.id)
             entry["sizedFromTasks"] = _sized_from_tasks(graph, bead)
         else:
-            entry["description"] = bead.description
             epic: beadgraph.Bead | None = graph.epic_of(bead.id)
             entry["epic"] = {"id": epic.id, "title": epic.title} if epic else None
             key: str = epic.id if epic else bead.id

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "What a producer session returns after it authored a JSON artifact under the artifact checkpoint contract (checkpoint.schema.json): only the path of the candidate it wrote, never a copy of its content. The workflow script then validates the candidate against its contract file and publishes it (scripts/portfolio/jsonartifact.py).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactPath"],
+  "properties": {
+    "artifactPath": {
+      "description": "The candidate path the brief named, as the submit command printed it.",
+      "type": "string"
+    }
+  }
+}

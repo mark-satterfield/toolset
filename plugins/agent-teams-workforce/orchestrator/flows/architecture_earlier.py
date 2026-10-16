@@ -1,10 +1,12 @@
-"""Files an earlier form of the pipeline produced for a PRD's architecture, handed to the solutions architect.
+"""Files an earlier form of the pipeline produced for a PRD's architecture, recorded in its journal.
 
 An Epic whose architecture work was under way when the pipeline took its present form has files
 that earlier form wrote: a survey, round plans, specialists' results, draft documents.
-:func:`carry` records each as an artifact of a done step under the Architecture container, and
-plans the architect's step after them with those steps among its inputs, so the architect's brief
-names every file. The architect's own step stays planned.
+:func:`carry` records each as an artifact of a done step under the Architecture container, so the
+journal holds what was done, and plans the architect's step after them. The architect is not
+handed those files: they are unapproved copies and summaries of the architecture from a pipeline
+that no longer runs, and the matrix and the arc42 documents are the architect's sources. The
+architect's own step stays planned.
 
 A step that records such files has a script key, so the runner has code for it. That code runs
 only when the owner asks for a start at or before the step, which resets it: it then records
@@ -95,8 +97,8 @@ def carry(journal: Journal, work: Sequence[EarlierWork], architect: str, moment:
     """Record earlier work in a new Epic journal and plan the architect's step after it.
 
     The steps go under the Architecture container: one step that contains a done step per piece
-    of earlier work, each holding its files, then the architect's step, handed the open-run step
-    and those steps, and the check after it. The open-run step stays planned and runs first.
+    of earlier work, each holding its files, then the architect's step, handed the open-run step,
+    and the check after it. The open-run step stays planned and runs first.
 
     Args:
         journal: An Epic's elaboration journal as it is created, every step planned; changed in place.
@@ -141,9 +143,7 @@ def carry(journal: Journal, work: Sequence[EarlierWork], architect: str, moment:
         for artifact in piece.artifacts():
             step_journal.record_artifact(journal, step["id"], artifact)
         step_journal.finish_step(journal, step["id"], moment)
-    planned: list[StepPlan] = [
-        new.plan for new in first_steps(opened[0]["id"], container["id"], architect, (holder["id"],)).steps
-    ]
+    planned: list[StepPlan] = [new.plan for new in first_steps(opened[0]["id"], container["id"], architect).steps]
     step_journal.add_steps(journal, planned, moment, parent=container["id"])
     step_journal.checked_journal(journal, f"the journal of {journal['bead']} with its earlier work")
     return list(holder["steps"])

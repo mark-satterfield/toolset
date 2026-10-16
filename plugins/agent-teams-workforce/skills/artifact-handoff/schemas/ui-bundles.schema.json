@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/ui-bundles.schema.json",
+  "title": "UI bundles",
+  "description": "The UI bundles the owner supplied in the design packages directory (<work>/spec-<slug>.bundles.json): cdsbundles.list_bundles' result, written by the step `cdsbundles.list_bundles` (orchestrator/flows/spec_authoring.py) and validated against this file. The api-specification-author choosing UI design sources is handed it as `ui bundles`; an empty `bundles` means every UI item is designed with CDS.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["packagesDir", "bundles", "superseded", "ignored"],
+  "properties": {
+    "packagesDir": {"description": "The design packages directory, or null when the dispatch names none.", "type": ["string", "null"]},
+    "bundles": {
+      "description": "The current single-artifact cds bundles.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "kind", "slug", "shell", "createdAt", "buildSpec", "buildSpecExists", "design", "styles"],
+        "properties": {
+          "path": {"description": "The bundle's path.", "type": "string"},
+          "kind": {"description": "The bundle's artifact kind (recon.schema.json, $defs/ArtifactKind).", "type": "string"},
+          "slug": {"type": "string"},
+          "shell": {"description": "The shell the bundle names, or null.", "type": ["object", "null"]},
+          "createdAt": {"type": "string"},
+          "buildSpec": {"description": "The bundle's build spec path.", "type": "string"},
+          "buildSpecExists": {"type": "boolean"},
+          "design": {"description": "The bundle's design file path.", "type": "string"},
+          "styles": {"description": "The bundle's stylesheet path.", "type": "string"}
+        }
+      }
+    },
+    "superseded": {"description": "Bundles a newer bundle of the same artifact replaces.", "type": "array", "items": {"type": "string"}},
+    "ignored": {"description": "Entries of the directory that are not bundles.", "type": "array", "items": {"type": "string"}}
+  }
+}

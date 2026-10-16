@@ -116,13 +116,12 @@ producer -> chassis event helper -> shared-apiClient-lib -> POST /v1/events (cen
    poison record otherwise blocks every later change on its shard unseen.
 4. **Fill in the API request with the chassis event helper.** The helper provides static helpers
    and data structures that the sending code fills in, including its OAuth2 client id and secret.
-   They build the body of the API request, which is not the event: `eventType`, `category`,
-   `domain`, `timestamps.occurredAt`, the `visibility` block, and any `eventSchemaVersion`,
-   `lifecycle`, `identifiers`, `businessContext` and `tags`; the `trace` identifiers of the
-   current work (the correlation id and, when one exists, the causation id, available from
-   `RequestContext`); the payload when the event has one; and the `dedupKey` and subject account
-   id. Code that runs outside the chassis calls `shared-apiClient-lib` itself with the same
-   request body. The request names no rule and no target.
+   They build the body of the API request, which is not the event. Its one definition is the
+   request schema of `POST /v1/events`, `PublishEventRequest`, which the `shared-events-service`
+   repository owns and loads at run time from `request_schema.json` in its events package; the
+   `trace` identifiers of the current work come from
+   `RequestContext`. Code that runs outside the chassis calls `shared-apiClient-lib` itself with
+   the same request body. The request names no rule and no target.
 5. **Pass a dedup key.** Because delivery is at-least-once and `eventId` differs on every
    publication, the producer derives a dedup key from the fact itself (the entity, the transition
    and the entity's version or sequence) and passes the identical key on every republication.

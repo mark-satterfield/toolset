@@ -1,6 +1,6 @@
 {
   "title": "SkillSpoke matrix kinds registry",
-  "description": "What kinds of entry and relationship the matrix holds. A new kind is one declaration here. matrix.schema.json validates the generic shape of the matrix file; every entry and relationship is validated against the kind declared here. Each attribute is a JSON Schema fragment; a fragment may reference #/$defs/<name> of this file, #/$defs/entryId (the id of an entry, which rename and remove follow) or #/$defs/resourceType (a member of resourceTypes). In an entry kind's required list, purpose means the common purpose member must not be empty. Every entry and relationship carries side (matrix.schema.json $defs/side); a kind that declares side is always recorded with that side. An entry kind that declares repositoryIdPattern has two id forms: an entry on the side that is the authority matches idPattern, and an entry on the other side matches repositoryIdPattern, whose rest is the name of the stack that holds it, a slash and the slug of its name. matrix_contract.py is generated from this file and matrix.schema.json.",
+  "description": "What kinds of entry and relationship the matrix holds. A new kind is one declaration here. matrix.schema.json validates the generic shape of the matrix file; every entry and relationship is validated against the kind declared here. Each attribute is a JSON Schema fragment; a fragment may reference #/$defs/<name> of this file, #/$defs/entryId (the id of an entry, which rename and remove follow) or #/$defs/resourceType (a member of resourceTypes). In an entry kind's required list, purpose means the common purpose member must not be empty; an entry kind's requiredOne lists attributes of which an entry carries exactly one. Every entry and relationship carries side (matrix.schema.json $defs/side); a kind that declares side is always recorded with that side. An entry kind that declares repositoryIdPattern has two id forms: an entry on the side that is the authority matches idPattern, and an entry on the other side matches repositoryIdPattern, whose rest is the name of the stack that holds it, a slash and the slug of its name. matrix_contract.py is generated from this file and matrix.schema.json.",
   "operatorRole": "operator",
   "roles": ["operator", "script", "solutions-architect", "repository-steward", "decider", "build-driver", "build-workflow"],
   "homeRelationship": "homeIn",
@@ -49,6 +49,16 @@
       "required": ["epic"],
       "properties": {
         "epic": {"description": "The beads id of the Epic whose architecture reviews passed.", "type": "string", "minLength": 1}
+      }
+    },
+    "trdRequirement": {
+      "description": "One requirement of an Epic's TRD, by pointer: the Epic whose TRD states it and the requirement's id, which is its heading in that TRD. The TRD file is the one the Epic bead names (its TRD artifact path) and, during the Epic's elaboration, the architecture context's trdPath; the requirement's text is read there and is not copied into the matrix.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["epic", "requirement"],
+      "properties": {
+        "epic": {"description": "The Epic's beads id.", "type": "string", "minLength": 1},
+        "requirement": {"description": "The requirement id, as the TRD gives it (for example TR-01).", "type": "string", "minLength": 1}
       }
     },
     "selector": {
@@ -105,10 +115,13 @@
     },
     "constraint": {
       "idPattern": "^constraint:[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "A rule that binds entries. A rule an arc42 heading or a PRD states carries its statement; a technical requirement of an Epic's TRD carries trd, a pointer to the requirement, and no statement.",
       "verifiable": false,
-      "required": ["statement"],
+      "required": [],
+      "requiredOne": ["statement", "trd"],
       "attributes": {
         "statement": {"type": "string", "minLength": 1},
+        "trd": {"$ref": "#/$defs/trdRequirement"},
         "selector": {"$ref": "#/$defs/selector"}
       }
     },
@@ -466,8 +479,7 @@
       "from": ["disagreement"],
       "to": ["document"],
       "attributes": {
-        "heading": {"type": "string", "minLength": 1},
-        "text": {"description": "The disagreeing statement.", "type": "string"}
+        "heading": {"type": "string", "minLength": 1}
       },
       "required": ["heading"],
       "key": ["heading"],

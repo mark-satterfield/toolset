@@ -8,7 +8,7 @@ validate documents with the readers below. Regenerate with
 
 import json
 from pathlib import Path
-from typing import Final, Literal, TypedDict, TypeIs
+from typing import Final, Literal, NotRequired, TypedDict, TypeIs
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import best_match
@@ -111,7 +111,6 @@ SCHEMA_DIR: Final[Path] = Path(__file__).resolve().parent.parent / "schemas"
 ARCHITECTURE_RESULT_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "architecture-result.schema.json"
 ARCHITECTURE_CONTEXT_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "architecture-context.schema.json"
 CHECK_RESULT_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "check-result.schema.json"
-SPECIALIST_LIST_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "specialists.schema.json"
 ARCHITECTURE_STATE_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "architecture-state.schema.json"
 SPECIALIST_REQUEST_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "specialist-request.schema.json"
 SPECIALIST_ANSWER_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "specialist-answer.schema.json"
@@ -167,19 +166,6 @@ class CheckResult(TypedDict):
     corrections: int
 
 
-class SpecialistEntry(TypedDict):
-    """Typed form of #/$defs/SpecialistEntry in architecture-result.schema.json."""
-
-    agent: str
-    description: str
-
-
-class SpecialistList(TypedDict):
-    """Typed form of #/$defs/SpecialistList in architecture-result.schema.json."""
-
-    specialists: list[SpecialistEntry]
-
-
 class ArchitectureState(TypedDict):
     """Typed form of #/$defs/ArchitectureState in architecture-result.schema.json."""
 
@@ -211,7 +197,7 @@ class SharedUse(TypedDict):
 
     element: str
     capability: str
-    behaviour: str
+    relies: list[str]
 
 
 class FactEntry(TypedDict):
@@ -287,6 +273,14 @@ class ReviewSignals(TypedDict):
     newPatterns: list[str]
 
 
+class SpecialistGap(TypedDict):
+    """Typed form of #/$defs/SpecialistGap in architecture-result.schema.json."""
+
+    agent: str
+    lacked: str
+    request: str
+
+
 class ArchitectureResult(TypedDict):
     """Typed form of #/$defs/ArchitectureResult in architecture-result.schema.json."""
 
@@ -303,7 +297,7 @@ class ArchitectureResult(TypedDict):
     unsettled: list[UnsettledMatter]
     reviewSignals: ReviewSignals
     costEvidence: list[CostEvidence]
-    summary: str
+    specialistGaps: list[SpecialistGap]
 
 
 class SpecialistRequest(TypedDict):
@@ -352,15 +346,15 @@ class Diagram(TypedDict):
 class SpecialistAnswer(TypedDict):
     """Typed form of #/$defs/SpecialistAnswer in architecture-result.schema.json."""
 
+    kind: RequestKind
     answer: str
     reasons: list[Reason]
     assumptions: list[str]
     alternatives: list[str]
     needs: list[NeededSpecialty]
-    decisions: list[DesignFact]
-    diagrams: list[Diagram]
+    decisions: NotRequired[list[DesignFact]]
+    diagrams: NotRequired[list[Diagram]]
     notesForSpecs: list[SpecNote]
-    summary: str
 
 
 class TrdChange(TypedDict):
@@ -374,14 +368,22 @@ class TrdChange(TypedDict):
     appliesTo: str
 
 
+class HeadingCitation(TypedDict):
+    """Typed form of #/$defs/HeadingCitation in architecture-result.schema.json."""
+
+    source: str
+    heading: str
+
+
 class TrdRequest(TypedDict):
     """Typed form of #/$defs/TrdRequest in architecture-result.schema.json."""
 
     mode: TrdMode
+    epic: str
     prdPath: str
     trdPath: str
     statePath: str
-    approvedHeadings: list[Citation]
+    approvedHeadings: list[HeadingCitation]
     sharedCapabilities: list[SharedUse]
     changes: list[TrdChange]
     answerPath: str
@@ -410,6 +412,7 @@ class TrdAnswer(TypedDict):
 
     mode: TrdMode
     requirementIds: list[str]
+    removed: list[str]
     requirements: list[TrdRequirement]
     noSource: list[NoSource]
     summary: str
@@ -709,33 +712,6 @@ def validate_check_result(value: object, where: str = "CheckResult") -> CheckRes
         return value
     problems: str = "; ".join(schema_problems(value, "CheckResult"))
     message: str = f"{where} does not satisfy CheckResult: {problems}"
-    raise ArchitectureWorkError(message)
-
-
-def is_specialist_list(value: object) -> TypeIs[SpecialistList]:
-    """Tell whether a value satisfies the SpecialistList definition.
-
-    Returns:
-        True when the schema accepts the value.
-
-    """
-    return not schema_problems(value, "SpecialistList")
-
-
-def validate_specialist_list(value: object, where: str = "SpecialistList") -> SpecialistList:
-    """Validate a decoded SpecialistList document.
-
-    Returns:
-        The value, typed.
-
-    Raises:
-        ArchitectureWorkError: The value does not satisfy the SpecialistList definition.
-
-    """
-    if is_specialist_list(value):
-        return value
-    problems: str = "; ".join(schema_problems(value, "SpecialistList"))
-    message: str = f"{where} does not satisfy SpecialistList: {problems}"
     raise ArchitectureWorkError(message)
 
 

@@ -97,6 +97,7 @@ import portfolio_path  # ruff: ignore[unused-import] - puts the beads-contract a
 import beadgraph
 import edgeset
 import relay
+import strictschema
 import wsjf as rubric
 from architecture_artifacts import parse_conformance_result
 from archstate import promote as approve_arch
@@ -143,6 +144,7 @@ from edgeset import (
 )
 from elaboration import LifecycleError, finish, release, start
 from hierarchy import HierarchyError, SpanFiles, SpanStories, StoryFiles, repo_slugs
+from jsonschema import ValidationError
 from matrixstore import Matrix, matrix_path, read_matrix, update_matrix
 from matrixsync import DocumentsSynced, sync_documents, vault_root
 from matrixtasks import read_tasks
@@ -163,6 +165,15 @@ from driver_surface_types import PRD_DIR_ENV
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+SCHEMAS: Final[Path] = Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "schemas"
+"""The artifact-handoff contract files."""
+ASSESSMENT_SCHEMA: Final[str] = "dependency-assessment.schema.json"
+"""The contract of the context file `assess-context` builds."""
+JUDGE_INPUT_SCHEMA: Final[str] = "wsjf-judge-input.schema.json"
+"""The contract of the file `judge-input` builds."""
+COMMAND_HEAD: Final[frozenset[str]] = frozenset({"command", "source", "warnings"})
+"""The keys `run` puts before every graph command's result, in the output and its `--out` file."""
+
 
 def _matrix() -> Matrix:
     """Read the matrix the environment names.
@@ -175,6 +186,39 @@ def _matrix() -> Matrix:
 
     """
     return read_matrix(matrix_path(None, os.environ))
+
+
+def _contract_checked(value: JsonObject, schema: str, definition: str | None = None) -> JsonObject:
+    """Check a file a command writes for a session against its contract file before it is used.
+
+    Args:
+        value: The file's content.
+        schema: The contract's file name under :data:`SCHEMAS`.
+        definition: The contract's ``$defs`` entry the file satisfies; None for the file's root.
+
+    Returns:
+        ``value``, unchanged.
+
+    Raises:
+        ValueError: The value does not satisfy the contract, which is a defect of the command
+            that built it, so nothing is written.
+
+    """
+    contract: Path = SCHEMAS / schema
+    document: JsonObject = json_object(json.loads(contract.read_text(encoding="utf-8")))
+    target: JsonObject = document
+    if definition is not None:
+        target = {"$defs": document["$defs"], "$ref": f"#/$defs/{definition}"}
+        if "$schema" in document:
+            target["$schema"] = document["$schema"]
+    try:
+        strictschema.validate(value, target, location=contract)
+    except ValidationError as exc:
+        where: str = "/".join(str(part) for part in exc.absolute_path) or "<root>"
+        pointer: str = "" if definition is None else f"#/$defs/{definition}"
+        message: str = f"{value.get('command')} built a file that fails {schema}{pointer}: {where}: {exc.message}"
+        raise ValueError(message) from exc
+    return value
 
 
 def _vault() -> Path:
@@ -400,6 +444,24 @@ def _read_json(path: Path) -> JsonObject:
 
     """
     return json_object(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _read_plan(path: Path) -> Plan:
+    """Read the plan a `score-plan --out` file records, without the command head.
+
+    Args:
+        path: The file `score-plan --out` wrote.
+
+    Returns:
+        The `scoring.plan` result it holds.
+
+    """
+    saved: JsonObject = _read_json(path)
+    return check_type(
+        {key: value for key, value in saved.items() if key not in COMMAND_HEAD},
+        Plan,
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+    )
 
 
 def _plan_fingerprints(path: Path) -> dict[str, str]:
@@ -2020,8 +2082,10 @@ def _dispatch_assess_context(context: _GraphCommand) -> JsonObject:
     graph = context.graph
     matrix: Matrix = _matrix()
     if args.task is not None:
-        return json_object({**head, **task_context(graph, matrix, read_tasks(args.directory), args.task)})
-    return json_object({**head, **assess_context(graph, matrix, _required_text(args.epic), _vault())})
+        task: JsonObject = json_object({**head, **task_context(graph, matrix, read_tasks(args.directory), args.task)})
+        return _contract_checked(task, ASSESSMENT_SCHEMA, "TaskContext")
+    epic: JsonObject = json_object({**head, **assess_context(graph, matrix, _required_text(args.epic), _vault())})
+    return _contract_checked(epic, ASSESSMENT_SCHEMA, "EpicContext")
 
 
 def _dispatch_score_plan(context: _GraphCommand) -> JsonObject:
@@ -2056,15 +2120,11 @@ def _dispatch_judge_input(context: _GraphCommand) -> JsonObject:
     head = context.head
     graph = context.graph
     level: str = _required_text(args.level)
-    the_plan: Plan = check_type(
-        _read_json(_required_path(args.plan)),
-        Plan,
-        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-    )
+    the_plan: Plan = _read_plan(_required_path(args.plan))
     paths: dict[str, str] | None = (
         prd_paths(_matrix(), _vault(), [item["id"] for item in the_plan["judge"]["epics"]]) if level == "epic" else None
     )
-    return json_object({**head, **judge_input(graph, the_plan, level, paths)})
+    return _contract_checked(json_object({**head, **judge_input(graph, the_plan, level, paths)}), JUDGE_INPUT_SCHEMA)
 
 
 def _dispatch_snapshot(context: _GraphCommand) -> JsonObject:
@@ -2226,11 +2286,7 @@ def _dispatch_record(context: _GraphCommand) -> JsonObject:
     result: JsonObject = json_object(
         record(
             graph,
-            check_type(
-                _read_json(_required_path(args.plan)),
-                Plan,
-                collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-            ),
+            _read_plan(_required_path(args.plan)),
             judgments,
             writer,
         ),
@@ -2383,7 +2439,6 @@ def run(args: _CommandOptions) -> JsonObject:
             "assess-plan",
             "assess-context",
             "score-plan",
-            "judge-input",
             "elaboration-finish",
         }
         or args.with_description

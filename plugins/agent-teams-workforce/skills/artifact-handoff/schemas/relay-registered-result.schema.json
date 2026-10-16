@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "What the workflow-command-runner returns for a registered assignment (one carrying the WORKFORCE_RELAY_BINDING_V1 and WORKFORCE_RELAY_REQUEST_V1 lines). The runner returns the small object the registered helper printed; the plugin's PreToolUse hook supplies the exact saved output. When the runner's Bash call fails, it returns the unknown result: state unknown, exitCode 0, stdout empty, receipt null, bridge false, error empty, so the hook reports the real saved state. The workflow script (the relay shared block, scripts/shared-blocks/relay.js) accepts a completed result only when its receipt matches the request, the command checksum, the exit status, the byte count and the SHA-256 of stdout.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["state", "exitCode", "stdout", "receipt", "bridge", "error"],
+  "properties": {
+    "state": {
+      "description": "completed: the command ran and its saved output is handed back. not-started: the request provably never ran; the workflow, not the runner, decides whether it is attempted again. unknown: the runner could not tell (its Bash call failed); every other field then holds its empty value (exitCode 0, stdout empty, receipt null, bridge false, error empty).",
+      "type": "string",
+      "enum": ["completed", "not-started", "unknown"]
+    },
+    "exitCode": {
+      "description": "The exit status of the registered command.",
+      "type": "integer"
+    },
+    "stdout": {
+      "description": "The command's saved stdout, verbatim. Never interpret, reconstruct or copy the payload by hand.",
+      "type": "string"
+    },
+    "receipt": {
+      "description": "The integrity receipt of the saved output, or null when there is none.",
+      "anyOf": [{"$ref": "#/$defs/Receipt"}, {"type": "null"}]
+    },
+    "bridge": {
+      "description": "true only on the result the hook itself supplies; the runner's own result always carries false, and the workflow reads any other value as the runner's copy.",
+      "type": "boolean"
+    },
+    "error": {
+      "description": "Why the outcome is not completed, or empty.",
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "Receipt": {
+      "description": "Binds a saved output to the request that produced it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request", "commandSha256", "sha256", "bytes", "exitCode"],
+      "properties": {
+        "request": {"description": "The request id the workflow script computed for this command.", "type": "string"},
+        "commandSha256": {"description": "The SHA-256 of the canonical JSON of the command's argument list.", "type": "string"},
+        "sha256": {"description": "The SHA-256 of stdout.", "type": "string"},
+        "bytes": {"description": "The length of stdout.", "type": "integer"},
+        "exitCode": {"description": "The exit status the saved output records.", "type": "integer"}
+      }
+    }
+  }
+}

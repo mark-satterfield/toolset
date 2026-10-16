@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/pipeline-contracts/schemas/handback-line.schema.json",
+  "title": "Handback line",
+  "description": "The one final line a headless dispatcher session prints after the workflow it ran ends: the handback sentinel, a space, then this object as JSON on one line, and nothing after it. The driver reads the line as the dispatch's result. Every field is a fact the composite's return value reports, copied, never a conclusion the session draws: a field the composite did not report is null, never false or true. The orchestrator's own result document (elaboration) is a different contract, orchestrator/core/handback_contract.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ok", "stage", "beadId", "headline", "detailPath", "deployedToDev", "smokePassed", "settled", "landingStage", "prUrl", "settleFailed", "deployIteration", "beadsEmitted", "requiredHumanActions"],
+  "properties": {
+    "ok": {"description": "False when the workflow failed. A success is never invented.", "type": "boolean"},
+    "stage": {"description": "The phase the workflow ended in; the failing stage when it failed.", "type": "string", "minLength": 1},
+    "beadId": {"description": "The bead the workflow worked.", "type": "string", "minLength": 1},
+    "headline": {"description": "One line, with no newline.", "type": "string", "pattern": "^[^\\n]*$"},
+    "detailPath": {"description": "The run journal path the workflow reported, or null.", "type": ["string", "null"]},
+    "deployedToDev": {"description": "Copied from the composite's return value (it may sit under its deploy readiness result); null when not reported. A guessed true claims something reached AWS when it may never have.", "type": ["boolean", "null"]},
+    "smokePassed": {"description": "Copied from the composite's return value (it may sit under its deploy readiness result); null when not reported.", "type": ["boolean", "null"]},
+    "settled": {"description": "The settle composite's status, copied; null when not reported.", "enum": ["reported", "blocked", "not-applicable", null]},
+    "landingStage": {"description": "Copied from the composite's return value; null when not reported.", "enum": ["landed", "unlanded", "not-applicable", null]},
+    "prUrl": {"description": "The pull request the composite opened, copied; null when not reported.", "type": ["string", "null"]},
+    "settleFailed": {"description": "The composite reports a failed settle as an object carrying the error: true when its `settleFailed` is present at all, null when it is absent.", "type": ["boolean", "null"]},
+    "deployIteration": {"description": "Copied from the composite's return value; null when not reported.", "type": ["integer", "null"]},
+    "beadsEmitted": {"description": "Copied only when the composite reports it; never inferred or counted. Null otherwise.", "type": ["integer", "null"], "minimum": 0},
+    "requiredHumanActions": {
+      "description": "Each action the composite returned in `requiredHumanActions`, named by its name as a short string: never summarised, counted or merged into the headline, never invented, never attempted by the session. Null when the composite reported none.",
+      "type": ["array", "null"],
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

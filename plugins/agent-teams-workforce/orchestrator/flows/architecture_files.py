@@ -5,8 +5,9 @@ script chose for the architecture work of the Epic: the architect's state and re
 the TRD. Every later step is handed that file through the journal, so no step derives a path of
 its own.
 
-What a session reads of the architecture comes from the matrix: a script step writes the result
-of a matrix read to a file, and the brief names that file.
+What a session reads of the architecture comes from the matrix: the session runs the
+``atw-matrix`` reads its definition names, or a script step writes the result of a matrix read to
+a file and the brief names that file.
 """
 
 from __future__ import annotations
@@ -23,13 +24,11 @@ from architecture_work_contract import (
     ArchitectureContext,
     ArchitectureResult,
     ArchitectureWorkError,
-    SpecialistEntry,
     validate_architecture_context,
     validate_architecture_result,
 )
 from matrix_contract import KIND_DOCUMENT, EntryId, MatrixError
 from matrixstore import ID_SEPARATOR, make_id, matrix_path
-from review_criteria import CRITERIA_PATH
 
 from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
@@ -43,7 +42,7 @@ if TYPE_CHECKING:
     from step_journal_contract import Artifact, Journal, Step, StepId
 
     from orchestrator.core.io import JsonValue
-    from orchestrator.core.journal_steps import StepInputs, StepRun
+    from orchestrator.core.journal_steps import StepRun
 
 OPEN_RUN: Final = "prd_to_spec.open_run"
 CHECK: Final = "atw-matrix check; atw-matrix review-scope"
@@ -63,29 +62,24 @@ MARKDOWN_SUFFIX: Final = ".md"
 URL_MARK: Final = "://"
 """What a citation's source holds when it is a URL and no path."""
 FINISH: Final = "Finish"
-"""What the description of the last child step of an agent that started helpers begins with."""
+"""What the description of the last child step of an agent that started helpers begins with
+(``helper-steps.schema.json``)."""
 
 LABEL_PRD: Final = "prd"
-LABEL_CRITERIA: Final = "criteria"
 LABEL_CONTEXT: Final = "context"
 LABEL_STATE: Final = "state"
 LABEL_FINDINGS: Final = "findings"
 LABEL_RESULT: Final = "architecture result"
 LABEL_SCOPE: Final = "review scope"
 LABEL_TRD: Final = "trd"
-LABEL_SPECIALISTS: Final = "specialists"
 LABEL_QUESTION: Final = "question"
 LABEL_REQUEST: Final = "request"
 LABEL_ANSWER: Final = "answer"
 LABEL_RULING: Final = "ruling"
-LABEL_EPIC_BRIEF: Final = "epic brief"
 """The input labels the definitions of the architecture team name.
 
 ``request``, ``question``, ``answer`` and ``ruling`` are also the names of the artifacts that
-record those files in the journal. ``epic brief`` is the file that holds what the matrix states
-for the Epic itself (``matrixquery.epic_brief``): its requirements, its features with the arc42
-headings that describe them, the entries that realize them with their stacks and repositories,
-and the constraints that apply to those.
+record those files in the journal, as ``helper-steps.schema.json`` fixes them.
 """
 
 WRITE_REQUEST: Final = "write request"
@@ -144,17 +138,6 @@ def context_path(work: Path) -> Path:
 
     """
     return work / ARCHITECTURE_FOLDER / "context.json"
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def epic_brief_path(work: Path) -> Path:
-    """Name the file that holds the Epic's brief from the matrix.
-
-    Returns:
-        The file inside the Epic's architecture work folder.
-
-    """
-    return work / ARCHITECTURE_FOLDER / "epic-brief.json"
 
 
 def matrix_file() -> Path:
@@ -265,17 +248,6 @@ def journal_file(run: StepRun, name: str) -> Path:
     raise ArchitectureStepError(run, f"neither its inputs nor the open-run step hold a file artifact named {name!r}")
 
 
-def earlier_files(inputs: StepInputs) -> list[tuple[str, Path]]:
-    """List the files an earlier form of the pipeline produced, among the artifacts a step is handed.
-
-    Returns:
-        Each file or directory artifact whose name begins with ``EARLIER_PREFIX``, with that name
-        as its label, in the order handed.
-
-    """
-    return [(name, path) for name, path in inputs.labelled_files() if name.startswith(EARLIER_PREFIX)]
-
-
 def read_context(run: StepRun) -> ArchitectureContext:
     """Read the context file a step is handed through the journal.
 
@@ -342,23 +314,6 @@ def agents_with_role(plugin: Path, role: str) -> tuple[str, ...]:
     return tuple(found)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def descriptions_with_role(plugin: Path, role: str) -> list[SpecialistEntry]:
-    """List the agents that play one role with what each definition says the agent does.
-
-    Returns:
-        One entry per agent: its name and its description.
-
-    """
-    listed: list[SpecialistEntry] = []
-    name: str
-    for name in agents_with_role(plugin, role):
-        fields: dict[str, object]
-        fields, _ = split_front_matter((plugin / "agents" / f"{name}.md").read_text(encoding="utf-8"), f"agent {name}")
-        listed.append({"agent": name, "description": str(fields.get("description") or "")})
-    return listed
-
-
 def is_finish(run: StepRun) -> bool:
     """Tell whether a step is the "Finish" step of the agent whose step contains it.
 
@@ -417,7 +372,6 @@ def planned_params(journal: Journal, step_id: StepId) -> Mapping[str, JsonValue]
 
 
 __all__ = [
-    "CRITERIA_PATH",
     "ArchitectureContext",
     "ArchitectureResult",
     "ArchitectureWorkError",
