@@ -5,8 +5,8 @@ description: >-
   disk, GitHub and the manifest; check that every repo carries the current shared
   `AGENTS.md` blocks; audit every repo's beads and the beads fleet list; check that no
   deprecated repo has an open pull request and none is overdue for archiving; check that every governance entry and
-  knowledge-store pointer still resolves; check the naming patterns, the steward's derived
-  copy, against the vault's naming standard; check the matrix's stacks against the repositories; check that every
+  knowledge-store pointer still resolves; check that the vault's repository naming note is readable and states every rule the tool needs;
+  check the matrix's stacks against the repositories; check that every
   repository records a tier and that the tier export is current. Reports findings, and with `--fix` repairs every finding it can. Use for
   a health check before a release, after significant changes, on a schedule, or on request.
 ---
@@ -34,7 +34,7 @@ tool: start from `doctor --json`, or `doctor --fix --json` to repair first.
 | `archive-due` | `archive-due --dry-run`: every deprecated repo whose `deprecated_on` is `deprecation.archive_after_days` (45) or more days ago, and every archived repo with a local clone | nothing is due and nothing is kept. Kinds: `archive-planned` (due; `doctor --fix` archives it), `archive-kept` (an open pull request or a matrix stack in it), `archive-undated` (no valid `deprecated_on`), `archive-failed`, `archived-clone-kept` (the clone holds work that exists only on this machine) |
 | `governance` | each manifest `governance` entry: its `location` exists, and a script or tool's `invoke` (up to its first `<placeholder>`) runs with `--help` | every entry resolves and runs |
 | `knowledge` | each `location` or `pointer` entry in the knowledge store: every path in its `resolves` exists | every pointer resolves |
-| `naming-doc` | `naming.patterns`, the steward's derived copy, against the config's `naming.document` under `naming.document_root`: the vault's canonical repository naming note, `docs/tech/architecture/arc42/08-crosscutting-concepts/repository-naming.md` | the note read as it is written: each project in the table whose header has a `Project…` column and a `Prefix` column has an application pattern of that space that classifies `{prefix}example-{type}`, and every application pattern's space is a listed project (`prefix-mismatch`, `pattern-not-in-standard`, `prefixes-unreadable` when no such table exists); each non-application and deprecated pattern classifies at least one repository name the standard writes as code (`pattern-not-in-standard`); every "`A` becomes `B`" agrees with the tool's deprecation rule and every "N days after deprecation" with `deprecation.archive_after_days` |
+| `naming-doc` | the config's `naming.document` under `naming.document_root`: the vault's canonical repository naming note, `docs/tech/architecture/arc42/08-crosscutting-concepts/repository-naming.md`, read the way every command reads it | the note is found, and states every rule the tool needs: each project's prefix (the table with a `Project…` column and a `Prefix` column), the repository types, a pattern for each project and for the non-application and deprecated repositories, the names that belong to the project, and where repositories are placed. Kind `unreadable` carries the sentence naming the rule the note does not state. The report also carries `naming_note`: what was read from the note. There is no copy of the rules to compare |
 | `matrix` | the matrix's stacks (`atw-matrix stacks`) and `atw-matrix check` against the repositories: every active code repository (a name ending in a stack type) is the `repository` of a stack, every stack's `repository` is an active repository, and the matrix is valid | no finding. Kinds: `stack-missing`, `stack-repository-renamed`, `stack-repository-inactive`, `stack-repository-missing`, `matrix-invalid`, and `error` when the matrix cannot be read |
 
 The output is one findings list: each finding with its `check`, `subject` (repo or entry),
@@ -76,13 +76,12 @@ are AI tooling, which is tier 2); a repo whose `main` cannot be brought up to `o
 - A governance entry or knowledge pointer that no longer resolves: find where the thing now
   lives and update the entry (**polyrepo-governance** or **polyrepo-info**), or retire it
   with the reason when the thing is gone.
-- A naming-document finding: the config's patterns disagree with the vault's naming standard.
-  The standard is canonical and the patterns are your derived copy of it, so refresh the
-  patterns from the standard. You never edit the standard: when the finding shows the standard
-  itself is incomplete or wrong (for example, a `pattern-not-in-standard` for a rule the tool needs that the standard does not state),
-  hand that to the `filing-clerk`, which files the change or brings the conflict to the owner.
-  A `missing` or `not-configured` finding means `naming.document` and `naming.document_root` do not name the vault
-  note; set them to the note's path, never to a copy of your own.
+- A naming-document finding (`unreadable`): the note is missing, or does not state a rule the
+  tool needs. The note is canonical and you hold no copy of its rules. You never edit the
+  note: hand the missing or wrong rule to the `filing-clerk`, which files the change or brings
+  the conflict to the owner. When the note is not found, `naming.document` and
+  `naming.document_root` do not name it; set them to the note's path, never to a copy of
+  your own.
 
 Report exactly what changed and what is still open.
 

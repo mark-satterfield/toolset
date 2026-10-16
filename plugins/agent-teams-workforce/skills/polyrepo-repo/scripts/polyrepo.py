@@ -34,6 +34,7 @@ Usage:
   polyrepo.py deprecate <repo> [--dry-run]
   polyrepo.py agents-sync [--check] [--dry-run] [--repo R ...] [--space S] [--trailer TEXT]
   polyrepo.py gitnexus-sync [--check] [--dry-run] [--repo R ...] [--space S]
+  polyrepo.py naming <name>
   polyrepo.py tier <path>
   polyrepo.py tiers [--write]
   polyrepo.py set-tier <repo> product|tooling
@@ -92,7 +93,7 @@ from collections.abc import (
     Callable,  # ruff: ignore[typing-only-standard-library-import] - typing.get_type_hints resolves Finding.action at runtime
 )
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
+from typing import TYPE_CHECKING, Literal, TypedDict
 
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
@@ -117,6 +118,7 @@ from name_sweep import (
     stack_module,
     sweep_repo,
 )
+from naming_rules import NamingPattern, NamingRules, NamingRulesError, read_rules, type_of
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -143,15 +145,6 @@ COMMIT_TRAILER_ENV = "POLYREPO_COMMIT_TRAILER"
 
 class PolyrepoError(Exception):
     """An environment or usage error the tool cannot work around."""
-
-
-class NamingPattern(TypedDict):
-    """One naming pattern from the config's `naming.patterns` list."""
-
-    name: str
-    kind: str
-    regex: str
-    space: NotRequired[str]
 
 
 class GhRepo(TypedDict):
@@ -369,33 +362,6 @@ def parse_pull_request(value: object, repo: str, what: str) -> PullRequest:
     )
 
 
-def parse_naming_pattern(value: object) -> NamingPattern:
-    """Validate one entry of the config's `naming.patterns` list.
-
-    Returns:
-        The naming pattern.
-
-    Raises:
-        PolyrepoError: when a required key is missing or not a string.
-
-    """
-    if not isinstance(value, dict):
-        msg = f"naming pattern {value!r} is not a mapping"
-        raise PolyrepoError(msg)
-    fields: dict[str, str] = {}
-    for key in ("name", "kind", "regex"):
-        v: object = value.get(key)
-        if not isinstance(v, str):
-            msg = f"naming pattern {value!r} has no string {key!r}"
-            raise PolyrepoError(msg)
-        fields[key] = v
-    pat = NamingPattern(name=fields["name"], kind=fields["kind"], regex=fields["regex"])
-    space = _opt_str(value.get("space"), "naming pattern space")
-    if space is not None:
-        pat["space"] = space
-    return pat
-
-
 def parse_gh_repo(value: object) -> GhRepo:
     """Validate one cached GitHub repo record.
 
@@ -572,11 +538,65 @@ class Config:
     exclude_dirs: set[str]
     exclude_names: set[str]
     ttl: int
-    owned: list[re.Pattern[str]]
-    patterns: list[NamingPattern]
     raw: dict[str, object] = dataclasses.field(default_factory=dict)
     changes: list[str] = dataclasses.field(default_factory=list)
     types_cache: tuple[str, ...] | None = None
+    rules_cache: NamingRules | None = None
+
+    @property
+    def rules(self) -> NamingRules:
+        """The repository naming rules, read once per run from the vault's naming note.
+
+        The note is `naming.document` under `naming.document_root` in the config. The tool keeps
+        no copy of its rules.
+
+        Returns:
+            The rules the note states.
+
+        Raises:
+            PolyrepoError: when the config does not point at the note, or the note cannot be read
+                or does not state a rule the tool needs.
+
+        """
+        if self.rules_cache is None:
+            try:
+                self.rules_cache = read_rules(self.naming_note())
+            except NamingRulesError as exc:
+                raise PolyrepoError(str(exc)) from exc
+        return self.rules_cache
+
+    def naming_note(self) -> Path:
+        """Resolve the path of the repository naming note from the config.
+
+        Returns:
+            The path `naming.document` names under `naming.document_root`.
+
+        Raises:
+            PolyrepoError: when the config names no document.
+
+        """
+        section = _map(self.raw.get("naming") or {}, "config naming")
+        document, root = section.get("document"), section.get("document_root")
+        if not document:
+            msg = "config naming.document does not point at the repository naming note"
+            raise PolyrepoError(msg)
+        base = Path(expand_env(str(root))).expanduser() if root else self.file.parent
+        return base / str(document)
+
+    def placement_folder(self, space: str, name: str) -> str:
+        """Return the folder inside an app space where a repository of this name is placed.
+
+        Returns:
+            The folder, empty when the note places the space's repositories directly in it.
+
+        Raises:
+            PolyrepoError: when the note states no placement for this space and type.
+
+        """
+        try:
+            return self.rules.folder_for(space, name)
+        except NamingRulesError as exc:
+            raise PolyrepoError(str(exc)) from exc
 
     def stack_type_names(self) -> tuple[str, ...]:
         """Return the stack types a repository name's last token may be, read once per run.
@@ -610,45 +630,43 @@ class Config:
         return (self.file.parent / str(rel)).resolve()
 
     def classify(self, name: str) -> NamingPattern | None:
-        """Return the first naming pattern the name matches.
+        """Return the first pattern of the naming note that the name matches.
 
-        An application name must also end in a stack type the project's naming rules list
-        (`service`, `infra`, `lib`, ...): `SkillSpoke-auth-utils` matches the personal-agent
-        regex and is still refused. A name with no hyphen (`SkillSpoke`, the control
-        repository) is exempt, and so are non-application and deprecated names.
+        An application name must also end in a repository type the note lists (`service`,
+        `infra`, `lib`, ...): `SkillSpoke-auth-utils` is refused.
 
         Returns:
-            The pattern mapping, or None when no pattern matches or the last token is no stack type.
+            The pattern, or None when no pattern matches or the last token is no listed type.
 
         """
-        for p in self.patterns:
-            if re.fullmatch(p["regex"], name):
-                exempt = p["kind"] != "application" or STACK_NAME_SEPARATOR not in name
-                return p if exempt or holds_stack(name, self.stack_type_names()) else None
-        return None
+        return self.rules.classify(name)
 
     def naming_problem(self, name: str) -> str:
-        """Say why a name is refused: no pattern matches, or its last token is no stack type.
+        """Say why a name is refused: no pattern of the naming note matches, or its last token is no listed type.
 
         Returns:
             One sentence naming the rule the name breaks.
 
         """
-        if self.classify(name) is not None:
-            return "it matches a naming pattern, but not an application one"
-        if any(re.fullmatch(p["regex"], name) for p in self.patterns):
-            last = name.rpartition(STACK_NAME_SEPARATOR)[2]
-            return f"its last token {last!r} is not a stack type ({', '.join(self.stack_type_names())})"
-        return "it matches no naming pattern"
+        return self.rules.problem(name)
 
     def is_owned(self, name: str) -> bool:
-        """Tell whether a GitHub repo name belongs to the project.
+        """Tell whether a GitHub repo name belongs to the project, by the names the naming note lists.
 
         Returns:
             True when the name is the project's and not excluded.
 
         """
-        return name not in self.exclude_names and any(r.search(name) for r in self.owned)
+        return name not in self.exclude_names and self.rules.is_owned(name)
+
+    def is_deprecated_name(self, name: str) -> bool:
+        """Tell whether a repo name carries the deprecated prefix the naming note gives.
+
+        Returns:
+            True when the name starts with the prefix.
+
+        """
+        return self.rules.is_deprecated(name)
 
     def expected_space(self, name: str) -> str | None:
         """Return the app space a repo of this name lives in; deprecated repos keep their space.
@@ -657,19 +675,7 @@ class Config:
             The space name, or None when the name implies none.
 
         """
-        p = self.classify(name)
-        if p is None:
-            return None
-        if p["kind"] == "application":
-            return p.get("space")
-        if p["kind"] == "deprecated":
-            base = name[len("deprecated-") :]
-            if base.startswith("skillspoke"):
-                base = "SkillSpoke" + base[len("skillspoke") :]
-            q = self.classify(base)
-            if q and q["kind"] == "application":
-                return q.get("space")
-        return None
+        return self.rules.expected_space(name)
 
     def github_url(self, name: str) -> str:
         """Return the canonical clone URL for a repo name.
@@ -730,7 +736,6 @@ def load_config(explicit: str | None) -> Config:
     if not root.is_dir():
         msg = f"${env_name} = {root} is not a folder"
         raise PolyrepoError(msg)
-    naming = raw.get("naming") or {}
     return Config(
         file=f,
         root=root,
@@ -743,8 +748,6 @@ def load_config(explicit: str | None) -> Config:
         exclude_dirs=set((raw.get("exclude") or {}).get("dirs") or []),
         exclude_names=set((raw.get("exclude") or {}).get("names") or []),
         ttl=int(raw.get("cache_ttl_seconds", 300)),
-        owned=[re.compile(r) for r in naming.get("owned") or []],
-        patterns=[parse_naming_pattern(p) for p in naming.get("patterns") or []],
         raw=raw,
     )
 
@@ -1388,7 +1391,7 @@ class State:
         g = self.gh.get(name)
         if g and g["archived"]:
             return "archived"
-        if name.startswith("deprecated-"):
+        if self.cfg.is_deprecated_name(name):
             return "deprecated"
         e = self.manifest.entries().get(name)
         man = str(e.get("lifecycle")) if e and e.get("lifecycle") else "active"
@@ -1735,7 +1738,7 @@ def _check_entries_off_disk(
                     manifest_change=True,
                 ),
             )
-        elif lifecycle not in LIFECYCLES_INACTIVE and not name.startswith("deprecated-") and not rec["archived"]:
+        elif lifecycle not in LIFECYCLES_INACTIVE and not cfg.is_deprecated_name(name) and not rec["archived"]:
             out.append(
                 Finding(
                     "not-cloned",
@@ -1931,7 +1934,7 @@ def _check_local(
     e = entries.get(name)
 
     if e is None and name not in renamed_to:
-        lc = "deprecated" if name.startswith("deprecated-") else "active"
+        lc = "deprecated" if cfg.is_deprecated_name(name) else "active"
         out.append(
             Finding(
                 "untracked-repo",
@@ -2577,6 +2580,55 @@ def tier_of_path(repos: list[TierRepo], paths: tuple[Path, ...]) -> TierAnswer:
     main = Path(common).parent.resolve() if common and Path(common).name == ".git" else None
     owner = next((r for r in repos if main in r.paths()), None)
     return TierAnswer(paths[0], owner, owner is not None, Path(top).resolve() if top else None)
+
+
+def cmd_naming(args: argparse.Namespace, cfg: Config) -> int:
+    """Check one repository name against the vault's repository naming note, and show the rule it matched.
+
+    Read-only. The rules are read from the note on every call; the report names the note, the
+    section and the pattern line of the rule the name matched, and the folder the note places it in.
+
+    Returns:
+        0 when the name matches a pattern of the note, else 1.
+
+    """
+    rules = cfg.rules
+    name: str = args.name
+    pat = rules.classify(name)
+    space = rules.expected_space(name)
+    folder: str | None = None
+    folder_note: str | None = None
+    if space is not None:
+        try:
+            folder = cfg.placement_folder(space, rules.deprecated_base(name))
+        except PolyrepoError as exc:
+            folder_note = str(exc)
+    data: dict[str, object] = {
+        "name": name,
+        "valid": pat is not None,
+        "pattern": pat["name"] if pat else None,
+        "kind": pat["kind"] if pat else None,
+        "section": pat["section"] if pat else None,
+        "rule": pat["rule"] if pat else None,
+        "document": str(rules.document),
+        "type": type_of(rules.deprecated_base(name)) if pat else None,
+        "types": list(rules.types),
+        "space": space,
+        "folder": folder,
+        "folder_note": folder_note,
+        "owned": cfg.is_owned(name),
+        "problem": None if pat else rules.problem(name),
+    }
+    emit(
+        args,
+        data,
+        lambda: (
+            f"{name}: matches {pat['name']} ({pat['kind']}), {pat['rule']}  [{rules.document.name}, {pat['section']}]"
+            if pat
+            else f"{name}: refused, {data['problem']}  [{rules.document.name}]"
+        ),
+    )
+    return 0 if pat else 1
 
 
 def cmd_tier(args: argparse.Namespace, cfg: Config) -> int:
@@ -3610,10 +3662,7 @@ def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path]:
         raise PolyrepoError(msg)
     sub = args.dir
     if sub is None:
-        sub = _map(_map(tset.get("placement") or {}, "templates placement").get(space) or {}, "placement").get(
-            template,
-            "",
-        )
+        sub = cfg.placement_folder(space, name)
     space_dir = cfg.root / space
     if not space_dir.is_dir():
         msg = f"no app space folder {space_dir}"
@@ -4665,7 +4714,7 @@ def _clone_dest(cfg: Config, name: str) -> Path:
     """Return the one folder a clone of this repo belongs in, from the naming standard.
 
     Returns:
-        The destination path: the app space, then the template placement folder for its kind.
+        The destination path: the app space, then the folder the naming note places its type in.
 
     Raises:
         PolyrepoError: when the name matches no application or deprecated pattern, or its
@@ -4680,23 +4729,7 @@ def _clone_dest(cfg: Config, name: str) -> Path:
     if not space_dir.is_dir():
         msg = f"no app space folder {space_dir}"
         raise PolyrepoError(msg)
-    base = name
-    if name.startswith("deprecated-"):
-        base = name[len("deprecated-") :]
-    tset = _map(cfg.raw.get("templates") or {}, "config templates")
-    kinds = _map(tset.get("kinds") or {}, "templates kinds")
-    placement = _map(_map(tset.get("placement") or {}, "templates placement").get(space) or {}, "placement")
-    sub = next(
-        (
-            str(placement[k])
-            for k, v in kinds.items()
-            if k in placement
-            and isinstance(rx := _map(v or {}, "template kind").get("name_regex"), str)
-            and rx
-            and re.search(rx, base, re.IGNORECASE)
-        ),
-        "",
-    )
+    sub = cfg.placement_folder(space, cfg.rules.deprecated_base(name))
     return space_dir / sub / name if sub else space_dir / name
 
 
@@ -4762,16 +4795,6 @@ def cmd_clone(args: argparse.Namespace, cfg: Config) -> int:
 
 
 # rename ----------------------------------------------------------------------------------------
-
-
-def deprecated_name(name: str) -> str:
-    """Return the deprecated name of a repo: the deprecated- prefix, all lowercase.
-
-    Returns:
-        The new name.
-
-    """
-    return "deprecated-" + name.lower()
 
 
 def rename(
@@ -4854,7 +4877,7 @@ def _rename_plan(
     if taken is not None and (rec is None or taken["name"] != rec["name"]):
         msg = f"{cfg.owner}/{new} already exists on GitHub"
         raise PolyrepoError(msg)
-    deprecating = new.startswith("deprecated-")
+    deprecating = cfg.is_deprecated_name(new)
     if deprecating:
         require_no_stacks(cfg, old)
     url = cfg.github_url(new)
@@ -4893,7 +4916,7 @@ def _renamed_path(cfg: Config, path: Path, new: str) -> Path:
         The clone's path after the rename.
 
     """
-    if new.startswith("deprecated-") or cfg.expected_space(new) is None:
+    if cfg.is_deprecated_name(new) or cfg.expected_space(new) is None:
         return path.with_name(new)
     return _clone_dest(cfg, new)
 
@@ -4938,7 +4961,7 @@ def _rename_fields(
 
     """
     lc = str(entry.get("lifecycle") or "active")
-    if new.startswith("deprecated-"):
+    if cfg.is_deprecated_name(new):
         lc = "deprecated"
     elif lc in LIFECYCLES_INACTIVE:
         lc = "active"
@@ -4986,7 +5009,7 @@ def _rename_record(st: State, old: str, new: str, plan: _RenamePlan, done: list[
         man.set_field(new, k, v)
     man.set_field(new, "local_path", None)
     man.save()
-    if not new.startswith("deprecated-"):
+    if not cfg.is_deprecated_name(new):
         try:
             moved = _seq(matrix_run(cfg, ["move-repository", "--from", old, "--to", new]).get("stacks"), "moved stacks")
             if moved:
@@ -6009,7 +6032,7 @@ def delete_clone(
 
     `clone` is where the clone is now and `final` where it is after the rename (the same
     path once the rename is done). `final` must be under the repository root and its name
-    must start with `deprecated-`. Records the outcome in res["clone"]; the caller writes the
+    must carry the deprecated prefix the naming note gives. Records the outcome in res["clone"]; the caller writes the
     changelog, from the steps of a deletion.
 
     Returns:
@@ -6020,8 +6043,8 @@ def delete_clone(
     bad = (
         f"{final} is not under {cfg.root}"
         if not final.is_relative_to(cfg.root) or final == cfg.root
-        else f"{final.name} does not start with deprecated-"
-        if not final.name.startswith("deprecated-")
+        else f"{final.name} does not start with {cfg.rules.deprecated_prefix}"
+        if not cfg.is_deprecated_name(final.name)
         else None
     )
     steps: list[str] = []
@@ -6093,10 +6116,10 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
     """
     st = gather(cfg, fetch=True, use_cache=not args.no_cache)
     (name,) = st.resolve([args.repo])
-    if name.startswith("deprecated-"):
+    if cfg.is_deprecated_name(name):
         msg = f"{name} is already deprecated"
         raise PolyrepoError(msg)
-    new = deprecated_name(name)
+    new = cfg.rules.deprecated_name(name)
     r = st.local.get(name) or st.local.get(new)
 
     def after(res: dict[str, object], steps: list[str]) -> bool:
@@ -6499,7 +6522,7 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
     repos = [
         (r, own)
         for r in _local_repos(cfg, args.repo, args.space)
-        if not r.name.startswith("deprecated-") and (own := _blocks_for(blocks, r.name, r.space))
+        if not cfg.is_deprecated_name(r.name) and (own := _blocks_for(blocks, r.name, r.space))
     ]
     write = not args.check and not args.dry_run
     with concurrent.futures.ThreadPoolExecutor(max_workers=APPLY_WORKERS if write else WORKERS) as ex:
@@ -6671,7 +6694,7 @@ def cmd_gitnexus_sync(args: argparse.Namespace, cfg: Config) -> int:
 
     """
     src = _gitnexus_sources(cfg)
-    repos = [r for r in _local_repos(cfg, args.repo, args.space) if not r.name.startswith("deprecated-")]
+    repos = [r for r in _local_repos(cfg, args.repo, args.space) if not cfg.is_deprecated_name(r.name)]
     write = not args.check and not args.dry_run
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
         results = list(ex.map(lambda r: _gitnexus_sync_one(cfg, src, r, write), repos))
@@ -6854,7 +6877,7 @@ def cmd_templates_check(args: argparse.Namespace, cfg: Config) -> int:
     by_template: dict[str, list[tuple[LocalRepo, str, dict[str, object]]]] = {t: [] for t in kinds}
     untemplated: dict[str, list[str]] = {}
     for r in _local_repos(cfg):
-        if r.name.startswith("deprecated-"):
+        if cfg.is_deprecated_name(r.name):
             continue
         t, how, answers = _template_for(r, kinds)
         if t is None:
@@ -7046,7 +7069,7 @@ def deprecated_open_prs(cfg: Config) -> list[PullRequest]:
             _map(_map(item, "gh search prs entry").get("repository"), "gh search prs repository").get("name"),
             "repository name",
         )
-        if repo.startswith("deprecated-"):
+        if cfg.is_deprecated_name(repo):
             prs.append(parse_pull_request(item, repo, "gh search prs"))
     return prs
 
@@ -7609,192 +7632,22 @@ def _knowledge_findings(cfg: Config) -> list[DoctorFinding]:
     return out
 
 
-NAMING_STALE = "the steward's derived copy is stale; refresh it from the standard"
-NAMING_SAMPLE_DOMAIN = "example"
-
-
-def _markdown_tables(text: str) -> list[tuple[list[str], list[list[str]]]]:
-    """Read every Markdown table in a note: its header cells and its body rows.
-
-    Returns:
-        (header cells, body rows) per table, cells stripped, the separator row left out.
-
-    """
-    tables: list[list[list[str]]] = []
-    run_open = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("|"):
-            run_open = False
-            continue
-        cells = [c.strip() for c in stripped.strip("|").split("|")]
-        if not run_open:
-            tables.append([])
-            run_open = True
-        if not all(re.fullmatch(r":?-+:?", c) for c in cells):
-            tables[-1].append(cells)
-    return [(t[0], t[1:]) for t in tables if t]
-
-
-def _first_code(cell: str) -> str | None:
-    """Return the first `code` span of a table cell.
-
-    Returns:
-        The span's text, or None when the cell has none.
-
-    """
-    m = re.search(r"`([^`]+)`", cell)
-    return m.group(1) if m else None
-
-
-def _standard_repository_prefixes(text: str) -> dict[str, str] | None:
-    """Read each project's repository prefix from the naming note's table that lists them.
-
-    The table is the one whose header has a column that begins with "Project" and a column
-    that begins with "Prefix", wherever it sits in the note. A row's project is the first code
-    span of its project cell (the whole cell when it has none), and its prefix the first code span
-    of its prefix cell.
-
-    Returns:
-        Each project's repository prefix, or None when the note has no such table.
-
-    """
-    for header, rows in _markdown_tables(text):
-        cols = [h.lower() for h in header]
-        project = next((i for i, h in enumerate(cols) if h.startswith("project")), None)
-        prefix = next((i for i, h in enumerate(cols) if h.startswith("prefix")), None)
-        if project is None or prefix is None:
-            continue
-        out: dict[str, str] = {}
-        for row in rows:
-            if len(row) <= max(project, prefix):
-                continue
-            p, x = _first_code(row[project]) or row[project].strip(), _first_code(row[prefix])
-            if p and x:
-                out[p] = x
-        return out
-    return None
-
-
 def _naming_doc_findings(cfg: Config) -> list[DoctorFinding]:
-    """Check the config's naming patterns, the steward's derived copy, against the vault's repository naming note.
+    """Check that the vault's repository naming note is readable and states every rule the tool needs.
 
-    `naming.document` is the path of that note under `naming.document_root`, the vault. The check
-    reads the note as it is structured: the table that lists each project's repository prefix,
-    the repository names the note writes as code spans, every "`A` becomes `B`" deprecation
-    example and every "N days after deprecation". A disagreement is a stale derived copy (or,
-    for a deprecation example, a tool rule that disagrees); the standard is never changed here.
+    The tool keeps no copy of the note's rules: every command reads them from the note
+    (`naming.document` under `naming.document_root`), so there is nothing to compare. This check
+    reads the note the way every command does.
 
     Returns:
-        One finding per disagreement.
+        One finding when the note is missing, unreadable, or does not state a rule; else none.
 
     """
-    loc = _map(cfg.raw.get("naming") or {}, "config naming").get("document") or ""
-    if not loc:
-        return [_finding("naming-doc", "-", "not-configured", "config naming.document does not point at the standard")]
-    root = _map(cfg.raw.get("naming") or {}, "config naming").get("document_root") or ""
-    path = _resolve_location(cfg, str(loc)) if not root else Path(expand_env(str(root))).expanduser() / str(loc)
-    if not path.is_file():
-        return [_finding("naming-doc", "-", "missing", f"{loc} ({path}) not found")]
-    text = path.read_text(encoding="utf-8")
-    out = _naming_prefix_findings(cfg, text, path.name)
-    out.extend(_naming_kind_findings(cfg, text, path.name))
-    for a, b in re.findall(r"`([^`]+)` becomes `([^`]+)`", text):
-        if b.startswith("deprecated-") and deprecated_name(a) != b:
-            out.append(
-                _finding(
-                    "naming-doc",
-                    a,
-                    "deprecation-mismatch",
-                    f"{path.name} says {a} becomes {b}; the tool's deprecation rule makes it {deprecated_name(a)}",
-                ),
-            )
-    days = cfg.archive_after_days()
-    out.extend(
-        _finding(
-            "naming-doc",
-            "-",
-            "archive-delay-mismatch",
-            f"{path.name} says {n} days; the config's deprecation.archive_after_days is {days}: {NAMING_STALE}",
-        )
-        for n in re.findall(r"(\d+) days after (?:its )?deprecation", text)
-        if int(n) != days
-    )
-    return out
-
-
-def _naming_prefix_findings(cfg: Config, text: str, doc_name: str) -> list[DoctorFinding]:
-    """Check every application pattern against the standard's table of repository prefixes.
-
-    Each project the table lists must have an application pattern whose space is that project
-    and that classifies a name with the project's prefix (`{prefix}example-{type}`) into it;
-    each application pattern's space must be a project the table lists.
-
-    Returns:
-        One finding per disagreement, or one when the note has no such table.
-
-    """
-    prefixes = _standard_repository_prefixes(text)
-    if prefixes is None:
-        return [
-            _finding(
-                "naming-doc",
-                "-",
-                "prefixes-unreadable",
-                f"{doc_name} has no table with a Project column and a Repository prefix column, "
-                "so the application patterns cannot be compared with it",
-            ),
-        ]
-    stack_type = next(iter(cfg.stack_type_names()), "")
-    out: list[DoctorFinding] = []
-    for project, prefix in prefixes.items():
-        sample = f"{prefix}{NAMING_SAMPLE_DOMAIN}-{stack_type}"
-        got = cfg.classify(sample)
-        if got is None or got["kind"] != "application" or got.get("space") != project:
-            out.append(
-                _finding(
-                    "naming-doc",
-                    project,
-                    "prefix-mismatch",
-                    f"{doc_name} gives project {project} the repository prefix {prefix}; the config's "
-                    f"patterns classify {sample} as {got['name'] if got else 'no pattern'}: {NAMING_STALE}",
-                ),
-            )
-    out.extend(
-        _finding(
-            "naming-doc",
-            p["name"],
-            "pattern-not-in-standard",
-            f"application pattern {p['name']} (space {p.get('space')}) is a project {doc_name} does not list: "
-            f"{NAMING_STALE}",
-        )
-        for p in cfg.patterns
-        if p["kind"] == "application" and p.get("space") not in prefixes
-    )
-    return out
-
-
-def _naming_kind_findings(cfg: Config, text: str, doc_name: str) -> list[DoctorFinding]:
-    """Check that the standard names a repository of each non-application and deprecated pattern.
-
-    The standard states these rules in prose, so the check keys on the repository names it
-    writes as code spans: at least one must classify as each such pattern.
-
-    Returns:
-        One finding per pattern the standard names no repository of.
-
-    """
-    named = {got["name"] for span in set(re.findall(r"`([^`]+)`", text)) if (got := cfg.classify(span))}
-    return [
-        _finding(
-            "naming-doc",
-            p["name"],
-            "pattern-not-in-standard",
-            f"{doc_name} names no repository that {p['kind']} pattern {p['name']} classifies: {NAMING_STALE}",
-        )
-        for p in cfg.patterns
-        if p["kind"] != "application" and p["name"] not in named
-    ]
+    try:
+        _ = cfg.rules
+    except PolyrepoError as exc:
+        return [_finding("naming-doc", "-", "unreadable", str(exc))]
+    return []
 
 
 def _matrix_findings(st: State) -> list[Finding]:
@@ -7981,6 +7834,7 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     for f in findings:
         counts[f["check"]] = counts.get(f["check"], 0) + 1
     report: dict[str, object] = {
+        "naming_note": cfg.rules.summary() if not any(f["check"] == "naming-doc" for f in findings) else None,
         "repairs": repairs,
         "findings": findings,
         "counts": counts,
@@ -7990,7 +7844,7 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     }
 
     def text() -> str:
-        lines = [f"{len(findings)} findings in {report['elapsed_s']}s"]
+        lines = [f"{len(findings)} findings in {report['elapsed_s']}s", f"  naming rules read from {cfg.naming_note()}"]
         lines.extend(
             f"  repair {n}: exit {r['exit']}"
             + (f", {r['fixed']} fixed" if r.get("fixed") is not None else "")
@@ -8157,7 +8011,7 @@ def _add_repo_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
     )
     s.add_argument(
         "--dir",
-        help="folder inside the space (default: the config's placement)",
+        help="folder inside the space (default: the folder the naming note places the type in)",
     )
     s.add_argument("--dry-run", action="store_true", help="check and render only")
     s.set_defaults(func=cmd_create)
@@ -8218,6 +8072,13 @@ def _add_repo_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
 
 def _add_tier_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> None:
     """Add the tier commands: tier, tiers and set-tier."""
+    s = add(
+        "naming",
+        "check one repository name against the vault's repository naming note and show the rule it matched",
+    )
+    s.add_argument("name", help="a repository name")
+    s.set_defaults(func=cmd_naming)
+
     s = add(
         "tier",
         "say which tier (product or tooling) the repository containing a path is in",

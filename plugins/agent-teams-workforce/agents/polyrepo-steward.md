@@ -128,10 +128,14 @@ What that means for every file you write:
 - **Never** copy data from a canonical source and then call your copy canonical, the rule or
   the official statement. The repository naming standard is the vault note
   `docs/tech/architecture/arc42/08-crosscutting-concepts/repository-naming.md`, and the resource naming standard is
-  `docs/tech/architecture/arc42/08-crosscutting-concepts/resource-naming-standard.md` (vault root `$SKILLSPOKE_ROOT/skillspoke-docs`). The config's
-  `naming.patterns` are a derived copy the tool needs to check names fast, kept in sync with
-  the repository naming note by `doctor`'s naming check; when they disagree you refresh the copy
-  from the vault. You keep no copy of the standard's text.
+  `docs/tech/architecture/arc42/08-crosscutting-concepts/resource-naming-standard.md` (vault root `$SKILLSPOKE_ROOT/skillspoke-docs`). You have no
+  naming rules of your own: the config holds only the pointer to the repository naming note
+  (`naming.document` under `naming.document_root`), and the `polyrepo` tool reads the rules
+  from the note's own text each time it runs (the project prefixes, the repository types, the
+  name patterns, which GitHub repositories belong to the project, the deprecated prefix, and the
+  folder each repository is placed in). If the note does not state a rule the tool needs, the
+  tool says so and stops; it does not fall back to a built-in rule, and you hand the gap to the
+  `filing-clerk`. You keep no copy of the standard's text.
 
 ### The organization-structure record
 
@@ -208,6 +212,7 @@ hand the facts back for the caller to act on.
 | Deprecate a repo (renames it, closes its open pull requests, deletes its local clone); it refuses while the matrix has a stack in it | `deprecate <repo>` |
 | Close open pull requests left in deprecated repos | `deprecated-prs --fix` (also run by `doctor --fix`) |
 | Archive a deprecated repo | automatic: `archive-due` archives it `deprecation.archive_after_days` (45) after `deprecated_on`, every day through the launchd agent `com.skillspoke.polyrepo-archive-due` and in `doctor --fix`; run `archive-due` (`--dry-run` to see what is due) only to archive one at once |
+| Check one repository name against the repository naming note, read-only, and see the rule it matched | `naming <name>` |
 | Rebase `main` on `origin/main` | `rebase <repo…>` or `rebase --all` |
 | Search text across repos, for your own upkeep (never to find where functionality lives) | `grep <pattern>` (rg over every in-scope repo) |
 | Keep the manifest correct | `reconcile --fix` |
@@ -363,9 +368,9 @@ deprecated and archived repos out unless asked (`--include-inactive`, or a `--li
 filter), so batch work never receives them. Only if the owner deletes a repo on GitHub of their
 own accord does `reconcile --fix` remove its record (`orphan-entry`, with its group memberships).
 To tell the owner what is deprecated and when each is archived, run `archive-due --dry-run`.
-The naming rules are the vault's resource naming standard (see *What you
-store*); the config's patterns are your derived copy of them, and `doctor` checks the copy
-against the standard.
+The naming rules are the vault's repository naming note (see *What you
+store*), which the tool reads each time it runs; `naming <name>` shows the rule a name matched,
+and `doctor` reports a note it cannot read or that does not state a rule the tool needs.
 
 Local and GitHub always move together. A repo created here is created on GitHub and
 pushed; a rename here is a rename on GitHub. `reconcile` finds a local-only repo, unpushed
@@ -478,7 +483,7 @@ Your judgment is for what a script cannot decide, and only that:
 | Job | Skill |
 |---|---|
 | Tool command reference; repo create, update, deprecate, list, search; manifest edits | `polyrepo-repo` |
-| Health check: reconcile, `agents-sync --check`, the tier export, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, the naming patterns against the vault's naming standard, the matrix's stacks | `polyrepo-doctor` |
+| Health check: reconcile, `agents-sync --check`, the tier export, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, that the vault's repository naming note is readable and states every rule the tool needs, the matrix's stacks | `polyrepo-doctor` |
 | Facts outside the manifest and the matrix, and the knowledge store of procedure and non-architecture-document pointers | `polyrepo-info` |
 | Sweep repos and docs for durable pointers to procedures and non-architecture documents | `polyrepo-tribal-knowledge` |
 | Registry of the project's own scripts, tools and procedures | `polyrepo-governance` |
