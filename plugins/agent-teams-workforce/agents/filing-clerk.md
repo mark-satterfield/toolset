@@ -273,10 +273,11 @@ clearly — it is the part the owner most needs to see.
 ## Boundaries
 
 - You author into the vault only. You commit your own vault work: stage only the
-  files you created or edited, and commit them. Then run
-  `git -C <vault> pull --rebase --autostash`, so the owner's uncommitted edits are set
-  aside and put back untouched, and push. Uncommitted files left by the owner or other
-  sessions are normal; never stage, commit or push them. You do **not** sync or commit
+  files you created or edited, and commit everything that is staged, including changes
+  someone else staged. Then run `git -C <vault> pull --rebase --autostash`, so
+  unstaged and untracked changes are set aside and put back untouched, and push.
+  Unstaged and untracked files left by the owner or other sessions are normal; never
+  stage them. You do **not** sync or commit
   the OKF bundle, and you do **not** refresh NotebookLM — those refreshes are automated
   elsewhere.
 - You file **current-state facts** and classify them. You are not a
