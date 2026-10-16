@@ -610,14 +610,13 @@ class Config:
         return self.types_cache
 
     def archive_after_days(self) -> int:
-        """Return the configured days from deprecating to archiving a repo; a bad or missing value raises PolyrepoError.
+        """Return the days from deprecating to archiving a repo, as the naming note states them.
 
         Returns:
-            The number of days, `deprecation.archive_after_days` in the config.
+            The number of days in the vault's repository naming note.
 
         """
-        section = _map(self.raw.get("deprecation") or {}, "config deprecation")
-        return _int(section.get("archive_after_days"), "deprecation.archive_after_days")
+        return self.rules.archive_after_days
 
     def setting_path(self, section: str, key: str, default: str) -> Path:
         """Resolve a path setting, relative to the config file's folder.
@@ -7228,7 +7227,7 @@ def _archive_row(st: State, name: str, e: CommentedMap, days: int) -> tuple[dict
 
 
 def archive_due(st: State, dry_run: bool) -> tuple[list[dict[str, object]], list[str]]:
-    """Archive every deprecated repo whose deprecation is `deprecation.archive_after_days` or more days old.
+    """Archive every deprecated repo deprecated at least as many days ago as the naming note states.
 
     An entry the manifest already records archived only has its local clone retired, so a run
     after a clone that was kept is cleaned retries it, and a second run changes nothing.
@@ -8192,7 +8191,7 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
 
     s = add(
         "archive-due",
-        "archive on GitHub every deprecated repo deprecation.archive_after_days after deprecated_on, "
+        "archive on GitHub every deprecated repo as many days after deprecated_on as the naming note states, "
         "keeping its record, and delete its local clone when no work exists only there",
     )
     s.add_argument("--dry-run", action="store_true", help="report what is due and what would be kept")

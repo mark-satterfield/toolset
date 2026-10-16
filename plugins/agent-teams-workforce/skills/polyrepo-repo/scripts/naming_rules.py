@@ -35,6 +35,7 @@ ANY_CASE = "(any case)"
 CATEGORY_MARKER = "by category:"
 DIRECT_MARKER = "sit directly in their project folder"
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
+ARCHIVE_SENTENCE = re.compile(r"archived on GitHub (\d+) days after")
 TYPES_SENTENCE = re.compile(r"`\{type\}` is one of (.+?)\.(?:\s|$)", re.DOTALL)
 CODE_SPAN = re.compile(r"`([^`]+)`")
 OWNED_SPAN = re.compile(r"`([^`]+)`(\s*\(any case\))?")
@@ -85,6 +86,7 @@ class NamingRules:
     deprecated_prefix: str
     direct_spaces: frozenset[str]
     category_folders: dict[str, dict[str, str]]
+    archive_after_days: int
 
     def is_deprecated(self, name: str) -> bool:
         """Tell whether a name carries the deprecated prefix.
@@ -229,6 +231,7 @@ class NamingRules:
             "patterns": [{k: v for k, v in p.items() if k != "regex"} for p in self.patterns],
             "owned": [r.pattern for r in self.owned],
             "deprecated_prefix": self.deprecated_prefix,
+            "archive_after_days": self.archive_after_days,
             "placement": {
                 **dict.fromkeys(sorted(self.direct_spaces), ""),
                 **self.category_folders,
@@ -499,6 +502,23 @@ def _read_patterns(
     return tuple(patterns), frozenset(bare), deprecated.get("prefix", "")
 
 
+def _read_archive_days(doc: Path, text: str) -> int:
+    """Read how many days after its deprecation a repository is archived.
+
+    Returns:
+        The number in the sentence "... archived on GitHub N days after its deprecation date".
+
+    Raises:
+        NamingRulesError: when the note has no such sentence.
+
+    """
+    m = ARCHIVE_SENTENCE.search(text)
+    if m is None:
+        msg = _missing(doc, "how many days after its deprecation a repository is archived")
+        raise NamingRulesError(msg)
+    return int(m.group(1))
+
+
 def _read_owned(doc: Path, sections: list[Section]) -> tuple[re.Pattern[str], ...]:
     """Read which GitHub repositories belong to the project: the names and prefixes the note lists.
 
@@ -599,4 +619,5 @@ def read_rules(path: Path) -> NamingRules:
         deprecated_prefix=deprecated_prefix,
         direct_spaces=direct,
         category_folders=folders,
+        archive_after_days=_read_archive_days(path, text),
     )

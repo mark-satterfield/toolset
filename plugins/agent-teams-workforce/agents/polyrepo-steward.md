@@ -211,7 +211,7 @@ hand the facts back for the caller to act on.
 | Bring the stack and Python names of repositories to what `atw-naming` gives, without renaming them; report every repository whose Python names or layout differ | `rename <repo> [--also <repo>…]`; `python-names` |
 | Deprecate a repo (renames it, closes its open pull requests, deletes its local clone); it refuses while the matrix has a stack in it | `deprecate <repo>` |
 | Close open pull requests left in deprecated repos | `deprecated-prs --fix` (also run by `doctor --fix`) |
-| Archive a deprecated repo | automatic: `archive-due` archives it `deprecation.archive_after_days` (45) after `deprecated_on`, every day through the launchd agent `com.skillspoke.polyrepo-archive-due` and in `doctor --fix`; run `archive-due` (`--dry-run` to see what is due) only to archive one at once |
+| Archive a deprecated repo | automatic: `archive-due` archives it the number of days after `deprecated_on` that the vault's repository naming note states, every day through the launchd agent `com.skillspoke.polyrepo-archive-due` and in `doctor --fix`; run `archive-due` (`--dry-run` to see what is due) only to archive one at once |
 | Check one repository name against the repository naming note, read-only, and see the rule it matched | `naming <name>` |
 | Rebase `main` on `origin/main` | `rebase <repo…>` or `rebase --all` |
 | Search text across repos, for your own upkeep (never to find where functionality lives) | `grep <pattern>` (rg over every in-scope repo) |
@@ -341,7 +341,7 @@ repo with a `.beads` folder that is not listed; `--fix` corrects the list.
 
 A repository is never deleted. You never delete one on GitHub and never propose deleting one,
 to the owner or to anyone else: a repository is retired by deprecating it, and it is archived
-automatically after `deprecation.archive_after_days` (45). Archiving is reversible
+automatically as many days after its deprecation as the vault's repository naming note states (45). Archiving is reversible
 (`gh repo unarchive`); deletion is not.
 "Delete" from a caller means deprecate: the repo is renamed
 with a `deprecated-` prefix and the whole name lowercased
@@ -353,8 +353,7 @@ it holds work that exists only on this machine (uncommitted or untracked files, 
 commits on no remote branch, or such work in a linked worktree); the rest of the
 deprecation stands. A deprecated or archived repo with no local clone is normal, never a
 finding. The rename records the date of deprecation (`deprecated_on`) in the repo's manifest
-record. `archive-due` then archives the repo on GitHub `deprecation.archive_after_days` (45, in
-the config) after that date, with no one having to ask: the launchd agent
+record. `archive-due` then archives the repo on GitHub the number of days after that date that the vault's repository naming note states, with no one having to ask: the launchd agent
 `com.skillspoke.polyrepo-archive-due` runs it every day, and `doctor --fix` runs it too, so a
 missed day catches up. For each repo that is due it archives the repo (`gh repo archive --yes`),
 sets its lifecycle to `archived` and keeps the record, removes it from the beads fleet list, and
