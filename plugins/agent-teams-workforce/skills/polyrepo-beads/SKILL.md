@@ -36,7 +36,7 @@ mechanic who keeps the tracking machine running across the whole fleet.
   then `scripts/converge-repo.sh` to remediate.
 - **Onboard / register a repo** — a new child repo that must join the fleet and the root
   repo's multi-repo hydration list. The list itself (`repos.additional`) is kept by the
-  `polyrepo` tool: `create`, `rename`, `deprecate` and the archive repair update it, and
+  `polyrepo` tool: `create`, `rename`, `deprecate` and `archive-due` update it, and
   `beads-fleet --fix` (a `doctor` check) repairs drift. Do not edit it by hand.
 - **Clean up** — orphaned per-repo Dolt data and stale lock files left behind by earlier
   per-repo-server setups.

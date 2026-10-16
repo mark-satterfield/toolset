@@ -43,6 +43,7 @@ Usage:
   polyrepo.py environment [repo ...] [--space S] [--fix]
   polyrepo.py python-names [repo ...] [--space S]
   polyrepo.py deprecated-prs [--fix]
+  polyrepo.py archive-due [--dry-run]
   polyrepo.py doctor [--fix]
   polyrepo.py commit --message TEXT
 
@@ -589,14 +590,14 @@ class Config:
         return self.types_cache
 
     def archive_after_days(self) -> int:
-        """Return the configured delay between deprecating and archiving a repo; malformed config raises PolyrepoError.
+        """Return the configured days from deprecating to archiving a repo; a bad or missing value raises PolyrepoError.
 
         Returns:
-            The number of days (default 60).
+            The number of days, `deprecation.archive_after_days` in the config.
 
         """
         section = _map(self.raw.get("deprecation") or {}, "config deprecation")
-        return _int(section.get("archive_after_days", 60), "deprecation.archive_after_days")
+        return _int(section.get("archive_after_days"), "deprecation.archive_after_days")
 
     def setting_path(self, section: str, key: str, default: str) -> Path:
         """Resolve a path setting, relative to the config file's folder.
@@ -1589,8 +1590,9 @@ def entry_fields(
 ) -> dict[str, object]:
     """Return the fields of a new manifest entry.
 
-    The fields are the lifecycle, the tier (see `default_tier`), GitHub URL, default branch, and
-    the deprecation date when it is deprecated.
+    The fields are the lifecycle, the tier (see `default_tier`), GitHub URL, default branch, and,
+    for a deprecated repo, the deprecation date the changelog records (none when it records
+    none: `reconcile` then reports the entry undated, never dated today).
 
     Returns:
         The fields, with extra merged over them.
@@ -1602,9 +1604,35 @@ def entry_fields(
         "remote_url": cfg.github_url(name),
         "default_branch": cfg.default_branch,
     }
-    if lifecycle == "deprecated":
-        fields["deprecated_on"] = today()
+    if lifecycle == "deprecated" and (since := recorded_deprecation_date(cfg, name)):
+        fields["deprecated_on"] = since
     return {**fields, **(extra or {})}
+
+
+CHANGELOG_HEADING = re.compile(r"^## (\d{4}-\d{2}-\d{2}) — (.*)$")
+
+
+def recorded_deprecation_date(cfg: Config, name: str) -> str | None:
+    """Find the date the changelog records a repo's deprecation on.
+
+    The deprecation is the changelog section `polyrepo rename <old> to <name>` or `polyrepo
+    deprecate <name>`, which the tool writes on the day it renames a repo to its deprecated- name.
+
+    Returns:
+        The earliest such section's date (YYYY-MM-DD), or None when the changelog has none.
+
+    """
+    if not cfg.changelog.is_file():
+        return None
+    for line in cfg.changelog.read_text(encoding="utf-8").splitlines():
+        m = CHANGELOG_HEADING.match(line)
+        if m is None:
+            continue
+        title = m.group(2)
+        renamed = title.startswith("polyrepo rename ") and title.endswith(f" to {name}")
+        if renamed or title == f"polyrepo deprecate {name}":
+            return m.group(1)
+    return None
 
 
 def default_tier(cfg: Config, name: str) -> str:
@@ -2199,7 +2227,11 @@ def _check_tier(st: State, name: str, e: CommentedMap) -> list[Finding]:
 
 
 def _check_deprecation_age(st: State, name: str, e: CommentedMap) -> list[Finding]:
-    """Date an undated deprecation, and archive a deprecated repo once its time is up.
+    """Check that a deprecated repo's entry carries its real deprecation date.
+
+    An undated entry takes the date the changelog records the deprecation on; with none recorded
+    it stays an open finding, because today's date would restart the clock to archiving.
+    Archiving itself is `archive-due`'s.
 
     Returns:
         The findings.
@@ -2207,54 +2239,46 @@ def _check_deprecation_age(st: State, name: str, e: CommentedMap) -> list[Findin
     """
     cfg, man = st.cfg, st.manifest
     since = e.get("deprecated_on")
-    if not since:
-        return [
-            Finding(
-                "deprecated-undated",
-                name,
-                "deprecated repo with no deprecated_on date",
-                fix=f"record deprecated_on {today()}, the first day the tool saw it deprecated",
-                action=lambda: man.set_field(name, "deprecated_on", today()),
-                manifest_change=True,
-            ),
-        ]
-    try:
-        start = dt.date.fromisoformat(str(since)[:10])
-    except ValueError:
-        return [
-            Finding(
-                "deprecated-undated",
-                name,
-                f"deprecated_on {since!r} is not a date",
-            ),
-        ]
-    days = cfg.archive_after_days()
-    age = (dt.date.fromisoformat(today()) - start).days
-    if age < days:
+    if since and _deprecation_start(e) is None:
+        return [Finding("deprecated-undated", name, f"deprecated_on {since!r} is not a date")]
+    if since:
         return []
-
-    def act() -> None:
-        require_no_stacks(cfg, name)
-        must(
-            run(["gh", "repo", "archive", f"{cfg.owner}/{name}", "--yes"], timeout=120),
-        )
-        man.set_field(name, "lifecycle", "archived")
-        r = st.local.get(name)
-        if r:
-            fleet_edit(cfg, remove=[r.path])
-
+    recorded = recorded_deprecation_date(cfg, name)
+    if recorded is None:
+        return [
+            Finding(
+                "deprecated-undated",
+                name,
+                "deprecated repo with no deprecated_on date, and the changelog records no deprecation of it: "
+                "find the date it was deprecated in the git history of the manifest and record it",
+            ),
+        ]
     return [
         Finding(
-            "archive-due",
+            "deprecated-undated",
             name,
-            f"deprecated {age} days ago ({start}); repos are archived {days} days after deprecation",
-            fix=(
-                f"archive {cfg.owner}/{name} on GitHub, set lifecycle archived, and drop it from the beads fleet list"
-                " (once no matrix stack names it)"
-            ),
-            action=act,
+            "deprecated repo with no deprecated_on date",
+            fix=f"record deprecated_on {recorded}, the date the changelog records its deprecation on",
+            action=lambda: man.set_field(name, "deprecated_on", recorded),
+            manifest_change=True,
         ),
     ]
+
+
+def _deprecation_start(e: Mapping[str, object]) -> dt.date | None:
+    """Read an entry's deprecation date.
+
+    Returns:
+        The date, or None when the entry has none or it is not a date.
+
+    """
+    since = e.get("deprecated_on")
+    if not since:
+        return None
+    try:
+        return dt.date.fromisoformat(str(since)[:10])
+    except ValueError:
+        return None
 
 
 def _local_only(st: State, name: str, r: LocalRepo) -> Finding:
@@ -4919,8 +4943,8 @@ def _rename_fields(
     elif lc in LIFECYCLES_INACTIVE:
         lc = "active"
     fields = entry_fields(cfg, new, lc, extra_fields)
-    if entry.get("deprecated_on") and lc == "deprecated":
-        fields["deprecated_on"] = entry["deprecated_on"]
+    if lc == "deprecated":
+        fields["deprecated_on"] = entry.get("deprecated_on") or today()
     return fields, lc
 
 
@@ -5985,7 +6009,8 @@ def delete_clone(
 
     `clone` is where the clone is now and `final` where it is after the rename (the same
     path once the rename is done). `final` must be under the repository root and its name
-    must start with `deprecated-`. Records the outcome in res["clone"].
+    must start with `deprecated-`. Records the outcome in res["clone"]; the caller writes the
+    changelog, from the steps of a deletion.
 
     Returns:
         False when the clone was left in place or could not be deleted, and the steps taken or planned.
@@ -6041,7 +6066,6 @@ def delete_clone(
         "worktrees": [str(w) for w in worktrees],
     }
     steps.extend(done)
-    append_changelog(cfg, f"polyrepo deprecate {path.name}: local clone", done)
     return True, steps
 
 
@@ -6084,6 +6108,8 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
         clone = r.path if args.dry_run else final
         deleted, clone_steps = delete_clone(cfg, clone, final, args.dry_run, res)
         steps.extend(clone_steps)
+        if deleted and not args.dry_run:
+            append_changelog(cfg, f"polyrepo deprecate {final.name}: local clone", clone_steps)
         return deleted and ok
 
     return _run_rename(args, st, name, new, after=after)
@@ -7065,6 +7091,226 @@ def cmd_deprecated_prs(args: argparse.Namespace, cfg: Config) -> int:
     return 1 if data["open"] else 0
 
 
+# archive-due ----------------------------------------------------------------------------------
+
+ARCHIVE_FINDING_STATUS = {"kept": "open", "undated": "open", "failed": "failed", "planned": "planned"}
+
+
+def _archive_blockers(st: State, name: str) -> list[str]:
+    """Find what keeps a deprecated repo from being archived: a matrix stack in it, or an open pull request.
+
+    Archiving makes a repo read-only, so an open pull request could no longer be closed or merged.
+
+    Returns:
+        The reasons, empty when the repo may be archived.
+
+    """
+    reasons: list[str] = []
+    held = [s.id for s in st.matrix_stacks() if s.repository == name]
+    if held:
+        reasons.append(
+            f"the matrix still has stacks in it: {', '.join(held)}; move each (put stack --repository) "
+            "or remove it (remove stack:<id> --held)",
+        )
+    try:
+        prs = open_prs(st.cfg, name)
+    except (GitFailedError, PolyrepoError, json.JSONDecodeError) as exc:
+        reasons.append(f"could not list open pull requests: {exc}")
+    else:
+        reasons.extend(f"open pull request #{pr.number} {pr.title} ({pr.url})" for pr in prs)
+    return reasons
+
+
+def _retire_clone(st: State, name: str, dry_run: bool, row: dict[str, object]) -> list[str]:
+    """Drop an archived repo's clone from the beads fleet list, and delete it when no work exists only there.
+
+    Records the clone's outcome in row["clone"] (absent when there is no clone).
+
+    Returns:
+        The changelog lines for what was changed.
+
+    """
+    r = st.local.get(name)
+    if r is None:
+        return []
+    lines: list[str] = []
+    if not dry_run:
+        lines.extend(fleet_edit(st.cfg, remove=[r.path]))
+    deleted, steps = delete_clone(st.cfg, r.path, r.path, dry_run, row)
+    if deleted and not dry_run:
+        lines.extend(steps)
+    return lines
+
+
+def _archive_one(st: State, name: str, dry_run: bool, row: dict[str, object]) -> list[str]:
+    """Archive one deprecated repo that is due: on GitHub, then its manifest lifecycle, then its local clone.
+
+    A repo GitHub already shows archived is not archived again. A repo with a blocker
+    (`_archive_blockers`) is kept and left deprecated.
+
+    Returns:
+        The changelog lines for what was changed.
+
+    """
+    cfg = st.cfg
+    g = st.gh.get(name)
+    on_github = g is not None and g["archived"]
+    if not on_github and (reasons := _archive_blockers(st, name)):
+        row.update(status="kept", detail="; ".join(reasons))
+        return []
+    if dry_run:
+        row["status"] = "planned"
+        _retire_clone(st, name, dry_run, row)
+        return []
+    if not on_github:
+        try:
+            must(run(["gh", "repo", "archive", f"{cfg.owner}/{name}", "--yes"], timeout=120))
+        except GitFailedError as exc:
+            row.update(status="failed", detail=f"gh repo archive failed: {exc}")
+            return []
+    st.manifest.set_field(name, "lifecycle", "archived")
+    row["status"] = "archived"
+    lines = [
+        f"{name}: "
+        + ("GitHub already shows it archived" if on_github else f"archived {cfg.owner}/{name} on GitHub")
+        + f" ({row['detail']}); lifecycle archived",
+    ]
+    return lines + _retire_clone(st, name, dry_run, row)
+
+
+def _archive_row(st: State, name: str, e: CommentedMap, days: int) -> tuple[dict[str, object], bool]:
+    """Classify one deprecated manifest entry for archive-due.
+
+    Returns:
+        The repo's row (status `missing`, `undated`, `not-due` or `due`, with detail) and
+        whether it is due for archiving.
+
+    """
+    row: dict[str, object] = {"repo": name, "deprecated_on": None}
+    if st.gh.get(name) is None:
+        row.update(status="missing", detail="not on GitHub; reconcile removes the record of a deleted repo")
+        return row, False
+    start = _deprecation_start(e)
+    if start is None:
+        row.update(status="undated", detail="no valid deprecated_on date; reconcile records it from the changelog")
+        return row, False
+    due = start + dt.timedelta(days=days)
+    age = (dt.date.fromisoformat(today()) - start).days
+    row.update(deprecated_on=start.isoformat(), due_on=due.isoformat())
+    if age < days:
+        row.update(status="not-due", detail=f"deprecated {age} days ago; due {due}")
+        return row, False
+    row.update(status="due", detail=f"deprecated {start}, {age} days ago")
+    return row, True
+
+
+def archive_due(st: State, dry_run: bool) -> tuple[list[dict[str, object]], list[str]]:
+    """Archive every deprecated repo whose deprecation is `deprecation.archive_after_days` or more days old.
+
+    An entry the manifest already records archived only has its local clone retired, so a run
+    after a clone that was kept is cleaned retries it, and a second run changes nothing.
+
+    Returns:
+        One row per deprecated or archived entry, and the changelog lines for what was changed.
+
+    """
+    days = st.cfg.archive_after_days()
+    rows: list[dict[str, object]] = []
+    lines: list[str] = []
+    for name, e in sorted(st.manifest.entries().items(), key=lambda kv: kv[0].lower()):
+        lc = e.get("lifecycle")
+        if lc == "archived":
+            if name in st.local:
+                row: dict[str, object] = {"repo": name, "status": "archived", "detail": "already archived"}
+                lines.extend(_retire_clone(st, name, dry_run, row))
+                rows.append(row)
+            continue
+        if lc != "deprecated":
+            continue
+        row, due = _archive_row(st, name, e, days)
+        if due:
+            lines.extend(_archive_one(st, name, dry_run, row))
+        rows.append(row)
+    return rows, lines
+
+
+def _archive_findings(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Turn archive-due rows into findings: a repo kept, undated, failed or planned, and a clone kept.
+
+    Returns:
+        The findings, in the shape `Finding.as_dict` gives.
+
+    """
+    out: list[dict[str, object]] = []
+    for row in rows:
+        status = str(row["status"])
+        if status in ARCHIVE_FINDING_STATUS:
+            out.append(
+                {"kind": f"archive-{status}", "repo": row["repo"], "detail": row["detail"],
+                 "mechanical": status == "planned", "fix": None, "status": ARCHIVE_FINDING_STATUS[status],
+                 "error": None},
+            )  # fmt: skip
+        clone = row.get("clone")
+        if isinstance(clone, dict) and clone.get("status") in {"refused", "failed"}:
+            why = clone.get("reasons") or [clone.get("error")]
+            out.append(
+                {"kind": "archived-clone-kept", "repo": row["repo"],
+                 "detail": f"local clone {clone.get('path')} kept: " + "; ".join(str(x) for x in _seq(why, "reasons")),
+                 "mechanical": False, "fix": None, "status": "open", "error": None},
+            )  # fmt: skip
+    return out
+
+
+def cmd_archive_due(args: argparse.Namespace, cfg: Config) -> int:
+    """Archive every deprecated repo whose deprecation is old enough, keeping its manifest record.
+
+    For each due repo: refuse while a matrix stack is in it or a pull request is open (reported,
+    left deprecated), `gh repo archive --yes`, set its lifecycle to archived, drop it from the
+    beads fleet list, and delete its local clone unless work exists only there (uncommitted or
+    untracked files, a stash, commits on no remote branch, or such work in a linked worktree),
+    in which case the clone is kept and reported. Idempotent. Never deletes a repo on GitHub.
+
+    Returns:
+        0 when nothing is left kept, undated or failed, else 1.
+
+    """
+    st = gather(cfg, fetch=False, use_cache=not args.no_cache)
+    rows, lines = archive_due(st, args.dry_run)
+    if not args.dry_run:
+        st.manifest.save()
+        if lines:
+            st.gh.invalidate()
+            append_changelog(cfg, "polyrepo archive-due", lines)
+    findings = _archive_findings(rows)
+    data: dict[str, object] = {
+        "archive_after_days": cfg.archive_after_days(),
+        "dry_run": args.dry_run,
+        "repos": rows,
+        "findings": findings,
+        "fixed": sum(r["status"] == "archived" for r in rows),
+        "open": sum(f["status"] in {"open", "failed"} for f in findings),
+    }
+    if not args.dry_run:
+        finish_records(cfg, data)
+
+    def text() -> str:
+        out = [
+            f"archive-due ({data['archive_after_days']} days after deprecation)"
+            + (" — dry run" if args.dry_run else ""),
+        ]
+        for r in rows:
+            clone = r.get("clone")
+            tail = f"; clone {clone.get('status')}" if isinstance(clone, dict) else ""
+            out.append(f"  [{r['status']}] {r['repo']}: {r['detail']}{tail}")
+        records = data.get("records")
+        if isinstance(records, dict):
+            out.append(f"records {records.get('status')}" + (f": {records['error']}" if records.get("error") else ""))
+        return "\n".join(out)
+
+    emit(args, data, text)
+    return 1 if data["open"] else 0
+
+
 PYTHON_NAMES_DETAIL = 300
 PYTHON_NAMES_TEXT = 110
 
@@ -7166,6 +7412,7 @@ DOCTOR_CHECKS: dict[str, list[str]] = {
     "python-names": [sys.executable, str(SELF), "python-names", "--json"],
     "tiers": [sys.executable, str(SELF), "tiers", "--json"],
     "deprecated-prs": [sys.executable, str(SELF), "deprecated-prs", "--json"],
+    "archive-due": [sys.executable, str(SELF), "archive-due", "--dry-run", "--json"],
 }
 DOCTOR_REPAIRS: dict[str, list[str]] = {
     "reconcile --fix": [sys.executable, str(SELF), "reconcile", "--fix", "--json"],
@@ -7177,6 +7424,7 @@ DOCTOR_REPAIRS: dict[str, list[str]] = {
     "deprecated-prs --fix": [
         sys.executable, str(SELF), "deprecated-prs", "--fix", "--json",
     ],
+    "archive-due": [sys.executable, str(SELF), "archive-due", "--json"],
 }  # fmt: skip
 
 
@@ -7220,6 +7468,7 @@ def _doctor_findings(check: str, data: dict[str, object]) -> list[DoctorFinding]
         return [_finding(check, "-", "error", str(data["error"]))]
     if check in {
         "reconcile",
+        "archive-due",
         "beads-fleet",
         "beads-setup",
         "deprecated-prs",
@@ -7683,9 +7932,10 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     """Run every deterministic health check and report one findings list.
 
     With --fix, first run the repairs (`reconcile --fix`, `agents-sync`, `beads-fleet
-    --fix`, then `deprecated-prs --fix`), each of which commits and pushes its own changes
-    or closes the pull requests it finds. The checks are reconcile, agents-sync --check, the
-    beads fleet audit, the beads fleet list and open pull requests in deprecated repos (in
+    --fix`, `deprecated-prs --fix`, then `archive-due`), each of which commits and pushes its
+    own changes, closes the pull requests it finds or archives the deprecated repos that are
+    due. The checks are reconcile, agents-sync --check, the beads fleet audit, the beads fleet
+    list, open pull requests in deprecated repos and `archive-due --dry-run` (in
     parallel, each its own process), the governance
     entries, the knowledge-store pointers, the repository-naming document and the matrix's
     stacks against the repositories (repaired under --fix, and the matrix committed).
@@ -8078,13 +8328,21 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
     s.set_defaults(func=cmd_deprecated_prs)
 
     s = add(
+        "archive-due",
+        "archive on GitHub every deprecated repo deprecation.archive_after_days after deprecated_on, "
+        "keeping its record, and delete its local clone when no work exists only there",
+    )
+    s.add_argument("--dry-run", action="store_true", help="report what is due and what would be kept")
+    s.set_defaults(func=cmd_archive_due)
+
+    s = add(
         "doctor",
         "every health check as one report; --fix runs the repairs first",
     )
     s.add_argument(
         "--fix",
         action="store_true",
-        help="run every repair (reconcile, agents-sync, beads-fleet, deprecated-prs, matrix stacks)",
+        help="run every repair (reconcile, agents-sync, beads-fleet, deprecated-prs, archive-due, matrix stacks)",
     )
     s.set_defaults(func=cmd_doctor)
 

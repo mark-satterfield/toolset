@@ -159,8 +159,9 @@ else:
 
 1. Run `reconcile --fix --json` first, before anything else. It compares disk, GitHub and
    the manifest and repairs every mechanical finding itself: it updates the manifest,
-   pushes unpushed `main`, renames on GitHub so local and GitHub match, archives
-   deprecated repos that are due, drops group members whose repo is gone, removes any stored
+   pushes unpushed `main`, renames on GitHub so local and GitHub match, records the
+   deprecation date the changelog holds for an undated deprecated repo, drops group members
+   whose repo is gone, removes any stored
    repo-to-repo dependency, appends `.polyrepo/changelog.md`, and commits and pushes its files.
 2. Read what is left open. Findings with `mechanical: false` are yours to judge (see
    *Judgment*). Findings with `status: failed` carry an `error`: fix the cause and run
@@ -206,13 +207,13 @@ hand the facts back for the caller to act on.
 | Bring the stack and Python names of repositories to what `atw-naming` gives, without renaming them; report every repository whose Python names or layout differ | `rename <repo> [--also <repo>…]`; `python-names` |
 | Deprecate a repo (renames it, closes its open pull requests, deletes its local clone); it refuses while the matrix has a stack in it | `deprecate <repo>` |
 | Close open pull requests left in deprecated repos | `deprecated-prs --fix` (also run by `doctor --fix`) |
-| Archive a deprecated repo | automatic: `reconcile --fix` archives it `deprecation.archive_after_days` after `deprecated_on` |
+| Archive a deprecated repo | automatic: `archive-due` archives it `deprecation.archive_after_days` (45) after `deprecated_on`, every day through the launchd agent `com.skillspoke.polyrepo-archive-due` and in `doctor --fix`; run `archive-due` (`--dry-run` to see what is due) only to archive one at once |
 | Rebase `main` on `origin/main` | `rebase <repo…>` or `rebase --all` |
 | Search text across repos, for your own upkeep (never to find where functionality lives) | `grep <pattern>` (rg over every in-scope repo) |
 | Keep the manifest correct | `reconcile --fix` |
 | Propagate the shared `AGENTS.md` blocks (the SkillSpoke shared block, the GitNexus block, the Agent Teams Workforce block): AI tooling is tier 2 wherever it sits, so every repository, whatever its recorded tier, is committed on `main` in its primary working tree and pushed, with no worktree, branch or pull request; a repository whose push the remote rejects keeps its commit local and is reported with the rejection | `agents-sync` (`--check` to report only; `--trailer` ends each commit message with a line; `--repo R` limits the run) |
 | Give every repo its GitNexus files (`.gitnexusrc`, the `.gitnexus` ignore rule, `.claude/skills/gitnexus/`) | `gitnexus-sync` (`--check` to report only) |
-| Keep the beads fleet list (`repos.additional`) correct | automatic in `create`, `rename`, `deprecate` and the archive repair; `beads-fleet --fix` repairs any drift |
+| Keep the beads fleet list (`repos.additional`) correct | automatic in `create`, `rename`, `deprecate` and `archive-due`; `beads-fleet --fix` repairs any drift |
 | Set up or repair a repo's beads (config files, database, fleet list entry, `.gitignore`) | `beads-setup <repo…>` or `beads-setup --all` (`--check` reports the gaps) |
 | Check or repair a repo's development environment | `environment <repo>` (`--fix` repairs it) |
 | Health check and every safe repair, the matrix's stacks and the Python names included | `doctor --fix` |
@@ -323,7 +324,7 @@ launchd agent `com.skillspoke.beads-fleet-watch` watches the `.beads` folder of 
 in it and runs `bd repo sync`, so a stale path silently stops that repo's beads syncing.
 The tool keeps it true whenever a repository changes: `create` adds the new repo when it
 has a `.beads` folder, `rename` replaces the old path with the new one, and `deprecate` and
-the archive repair remove the entry. Every write re-reads the file first and touches only
+`archive-due` remove the entry. Every write re-reads the file first and touches only
 the one entry, so a concurrent edit to another entry is kept. `beads-setup` with several
 repos (or `--all`) collects every repo to add and writes the list once at the end of the
 run, in a single edit: the watcher restarts after each change to the list, so one write
@@ -333,7 +334,10 @@ repo with a `.beads` folder that is not listed; `--fix` corrects the list.
 
 ### Deprecation and archiving
 
-You never delete a repository on GitHub: that is the owner's call, because it cannot be undone.
+A repository is never deleted. You never delete one on GitHub and never propose deleting one,
+to the owner or to anyone else: a repository is retired by deprecating it, and it is archived
+automatically after `deprecation.archive_after_days` (45). Archiving is reversible
+(`gh repo unarchive`); deletion is not.
 "Delete" from a caller means deprecate: the repo is renamed
 with a `deprecated-` prefix and the whole name lowercased
 (`SkillSpoke-eventsPublisher-service` → `deprecated-skillspoke-eventspublisher-service`),
@@ -343,15 +347,23 @@ worktrees are deleted. The clone is kept, and the path to delete by hand is repo
 it holds work that exists only on this machine (uncommitted or untracked files, a stash,
 commits on no remote branch, or such work in a linked worktree); the rest of the
 deprecation stands. A deprecated or archived repo with no local clone is normal, never a
-finding. While the deprecated repo still exists on GitHub you keep a minimal record of it
-(name, `deprecated_on`) so it is archived 60 days after deprecation; deprecated and archived are
-separate states. `list`, `search` and `inventory` leave deprecated and archived repos out unless
-asked (`--include-inactive`, or a `--lifecycle` filter), so batch work never receives them.
-When the owner deletes the repo on GitHub, `reconcile --fix` removes its record entirely
-(`orphan-entry`, with its group memberships): no deprecated or archived entry remains for a
-repository that is gone, and you never keep one for posterity. To tell the owner what is left to
-delete, run `list --lifecycle deprecated` and say what each holds and whether anything
-references it. The naming rules are the vault's resource naming standard (see *What you
+finding. The rename records the date of deprecation (`deprecated_on`) in the repo's manifest
+record. `archive-due` then archives the repo on GitHub `deprecation.archive_after_days` (45, in
+the config) after that date, with no one having to ask: the launchd agent
+`com.skillspoke.polyrepo-archive-due` runs it every day, and `doctor --fix` runs it too, so a
+missed day catches up. For each repo that is due it archives the repo (`gh repo archive --yes`),
+sets its lifecycle to `archived` and keeps the record, removes it from the beads fleet list, and
+deletes its local clone only when the clone holds no work that exists only on this machine; a
+clone that does is kept and reported. A repo with an open pull request or a matrix stack in it
+is not archived and is reported. A run changes nothing that is already done. An undated
+deprecated record takes the date the changelog records the deprecation on; when the changelog
+records none, find the real date in the git history and record it; never record today's date as
+a stand-in. Deprecated and archived are separate states. `list`, `search` and `inventory` leave
+deprecated and archived repos out unless asked (`--include-inactive`, or a `--lifecycle`
+filter), so batch work never receives them. Only if the owner deletes a repo on GitHub of their
+own accord does `reconcile --fix` remove its record (`orphan-entry`, with its group memberships).
+To tell the owner what is deprecated and when each is archived, run `archive-due --dry-run`.
+The naming rules are the vault's resource naming standard (see *What you
 store*); the config's patterns are your derived copy of them, and `doctor` checks the copy
 against the standard.
 
@@ -402,7 +414,7 @@ and never a finding.
 Creating, renaming, deprecating or archiving a repository updates the matrix in the same piece
 of work, and the tool makes the call: `create` records the stack the new repository holds (a
 name that ends in a stack type) unless a stack already names it, `rename` runs
-`move-repository`, and `deprecate` and the archive repair refuse, naming the stack ids, while
+`move-repository`, and `deprecate` and `archive-due` refuse, naming the stack ids, while
 any stack names the repository. In that case you first move each stack (`put stack --id
 stack:<name> --repository <other repo>`) or remove it (`remove stack:<name> --held`), then run
 `commit` and deprecate again. After any write of your own, run `commit`, then `check`; it must

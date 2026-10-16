@@ -4,7 +4,7 @@ description: >-
   Health check for the project's repositories and the steward's records of them: reconcile
   disk, GitHub and the manifest; check that every repo carries the current shared
   `AGENTS.md` blocks; audit every repo's beads and the beads fleet list; check that no
-  deprecated repo has an open pull request; check that every governance entry and
+  deprecated repo has an open pull request and none is overdue for archiving; check that every governance entry and
   knowledge-store pointer still resolves; check the naming patterns, the steward's derived
   copy, against the vault's naming standard; check the matrix's stacks against the repositories; check that every
   repository records a tier and that the tier export is current. Reports findings, and with `--fix` repairs every finding it can. Use for
@@ -31,6 +31,7 @@ tool: start from `doctor --json`, or `doctor --fix --json` to repair first.
 | `environment` | `environment`: every non-deprecated, non-archived Python repo (a `pyproject.toml` and an `install` task in its Taskfile) | `.venv/bin/python` exists and runs, every declared dependency is installed and importable, and `aws_cdk` imports wherever the code uses it. A gap is repaired with `environment <repo> --fix` (runs the repo's `task install`; it is not part of `doctor --fix`); a failure that needs a change to the repo's code or `pyproject.toml` is reported to the owner |
 | `python-names` | `python-names`: every non-deprecated, non-archived repo with a `pyproject.toml` (the control repo excluded) | The three `atw-naming check` commands (`python-distribution`, `python-package`, `python-package-path`) against the repo's `pyproject.toml` name and its source folder; `src` present for a `lib` and a `service`; `tests` present; no `__init__.py` in an app or team folder. A failure is repaired by `rename <repo> [--also R …]`, which opens a pull request; a missing `tests` folder is the repo's own work and is reported |
 | `deprecated-prs` | `deprecated-prs`: every open pull request on GitHub in a repo of the owner whose name starts with `deprecated-` | no deprecated repo has an open pull request |
+| `archive-due` | `archive-due --dry-run`: every deprecated repo whose `deprecated_on` is `deprecation.archive_after_days` (45) or more days ago, and every archived repo with a local clone | nothing is due and nothing is kept. Kinds: `archive-planned` (due; `doctor --fix` archives it), `archive-kept` (an open pull request or a matrix stack in it), `archive-undated` (no valid `deprecated_on`), `archive-failed`, `archived-clone-kept` (the clone holds work that exists only on this machine) |
 | `governance` | each manifest `governance` entry: its `location` exists, and a script or tool's `invoke` (up to its first `<placeholder>`) runs with `--help` | every entry resolves and runs |
 | `knowledge` | each `location` or `pointer` entry in the knowledge store: every path in its `resolves` exists | every pointer resolves |
 | `naming-doc` | `naming.patterns`, the steward's derived copy, against the config's `naming.document`: the vault's canonical resource naming standard, `docs/tech/architecture/arc42/08-crosscutting-concepts/resource-naming-standard.md` | the standard read as it is written: each project in the table whose header has a `Project…` column and a `Repository prefix` column has an application pattern of that space that classifies `{prefix}example-{type}`, and every application pattern's space is a listed project (`prefix-mismatch`, `pattern-not-in-standard`, `prefixes-unreadable` when no such table exists); each non-application and deprecated pattern classifies at least one repository name the standard writes as code (`pattern-not-in-standard`); every "`A` becomes `B`" agrees with the tool's deprecation rule and every "N days after deprecation" with `deprecation.archive_after_days` |
@@ -43,8 +44,11 @@ are under `$SKILLSPOKE_LOGS/polyrepo/`.
 
 ## `--fix`
 
-`doctor --fix` runs `reconcile --fix`, `tiers --write`, `agents-sync`, `gitnexus-sync`, `beads-setup --all`, `beads-fleet --fix` and then
-`deprecated-prs --fix` before the checks; each commits and pushes what it changed. It then
+`doctor --fix` runs `reconcile --fix`, `tiers --write`, `agents-sync`, `gitnexus-sync`, `beads-setup --all`, `beads-fleet --fix`,
+`deprecated-prs --fix` and then `archive-due` before the checks; each commits and pushes what it changed.
+`archive-due` archives every deprecated repo that is due (the launchd agent
+`com.skillspoke.polyrepo-archive-due` runs it daily too, so `doctor --fix` catches up a missed day).
+It then
 repairs the matrix's stacks and commits the matrix: `stack-missing` records the stack
 (repository side, purpose not stated), `stack-repository-renamed` names the new repository,
 and `stack-repository-inactive` removes a hint stack that holds nothing or else unsets its
@@ -58,6 +62,10 @@ are AI tooling, which is tier 2); a repo whose `main` cannot be brought up to `o
 
 - Reconcile judgment findings: settle them as the `polyrepo-repo` skill's finding table
   says, then run `reconcile` again.
+- `archive-kept`: an open pull request (close it with `deprecated-prs --fix`, or report it when
+  it must be kept) or a matrix stack (move or remove it) holds the repo deprecated; the next run
+  archives it. `archived-clone-kept`: report the clone and the work that exists only there to
+  the owner; never delete it. A repository is never deleted, and you never propose deleting one.
 - A `stack-repository-missing` finding: the stack names a repository that exists on neither disk
   nor GitHub. If elaboration has yet to create it, leave it; otherwise correct the stack's
   `repository` (`put stack --id stack:<name> --repository <repo>`) or unset it. A
