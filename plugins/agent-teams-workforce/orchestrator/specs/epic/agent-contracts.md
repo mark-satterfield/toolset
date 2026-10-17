@@ -99,7 +99,7 @@ A `<workDir>` or `<artifacts.dir>` row belongs to an owner-run workflow and is n
 | `<work>/run.json` | run-manifest | python | python | none | `<plugin>/orchestrator/core/manifest.py` `RunManifest` |
 | `<control>/ops/sdlc-automation/state/ledger.jsonl` (events appended) | events | python | python | none | `<control>/ops/sdlc-automation/ledgerevents.py` |
 | `<work>/repo-creation.json` | repo-creation | python | python | none | `<plugin>/orchestrator/flows/repo_scoping.py` `create_repositories` |
-| a new repository (local checkout and GitHub; the steward's manifest, changelog and beads fleet list) | repo-creation | python | python | none | `<plugin>/orchestrator/flows/repo_scoping.py` `create_repositories` |
+| a new repository (local checkout and GitHub, and the beads fleet list) | repo-creation | python | python | none | `<plugin>/orchestrator/flows/repo_scoping.py` `create_repositories` |
 | `<prd dir>/../trds/<stem>-trd.md` in the vault | trd-document | python | api-specification-author,data-model-specification-author,acceptance-criteria-writer | artifact-handoff `schemas/document-front-matter.schema.json` | trd-document (`#/$defs/TrdDocument`) |
 | `<work>/spec-<slug>.context.json` | spec-context | python | api-specification-author,data-model-specification-author,acceptance-criteria-writer,openapi-contract-reviewer,task-decomposer | artifact-handoff `schemas/spec-context.schema.json` | spec-context |
 | `<work>/spec-<slug>.bundles.json` | bundles | python | api-specification-author | artifact-handoff `schemas/ui-bundles.schema.json` | bundles |

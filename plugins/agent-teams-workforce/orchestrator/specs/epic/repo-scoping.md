@@ -22,8 +22,8 @@ first step of the outermost step "Specs and Stories"; its script key is still
   `stackName`), for the repository of a stack that names none.
 - The repository inventory (`polyrepo inventory`; `polyrepo inventory --name <name>` for the one
   repository a creation looks up).
-- The polyrepo-steward's configuration `<control>/.polyrepo/config.yaml`: `github_owner`, for
-  the GitHub membership check before a repository is created.
+- The GitHub owner of the repositories the inventory lists (`polyrepo inventory`, the `url` of
+  each record's `github` listing), for the GitHub membership check before a repository is created.
 
 ## What the Story builds
 
@@ -70,8 +70,8 @@ The order is fixed, and only the stacks of what the Stories build are reached:
    (`repository_name`: `atw-naming name repository --stack-name <stack name>` in the stack's
    app, imported, not run through a shell; for `stack:skillSpoke-sms-service` it is
    `SkillSpoke-sms-service`, never the raw stack name), written on the stack as its `repository`
-   on the architecture side in one matrix change, so the stack, the steward's manifest and the
-   created repository carry one name.
+   on the architecture side in one matrix change, so the stack and the created repository carry
+   one name.
 3. The items are grouped by repository (`repository_stacks`), and `_ruling` looks each name up in
    the inventory. A repository is a frontend repository when the type of its stacks is `web`.
 4. Each name the inventory lacks becomes a missing repository (`_missing`): its stacks must have

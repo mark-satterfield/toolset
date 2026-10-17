@@ -54,15 +54,14 @@ Facts about Claude Code were taken from tools on 2026-10-09, not from memory:
   `fablerecovery.py`, `fablewall.py`, `handbackio.py`, `artifactio.py`, `workitems.py`,
   `beadsio.py`; in the plugin `scripts/portfolio/beadgraph.py`, `beadwrite.py`, `archstate.py`, and
   `skills/polyrepo-repo/scripts/polyrepo.py`; `<control>/ops/lib/central-beads-lock.sh`;
-  `<config>/settings.json`; `<control>/.claude/settings.json`; `<control>/.polyrepo/config.yaml`
-  and `manifest.yaml`.
+  `<config>/settings.json`; `<control>/.claude/settings.json`.
 - Read-only checks run for this design:
   - `bd show ssbd-zzzzzz-nonexistent --json`: exit 1; the JSON error object carries only `error`,
     `hint`, `schema_version`, no error code.
   - `bd show ssbd-mb689 ssbd-hdqid ssbd-guuuz --json`: all three carry the elaboration state
     `bead_metadata.ELABORATION_IN_PROGRESS` (beads-contract schema).
-  - `<control>/.polyrepo/config.yaml` `repositories.patterns`: each application name pattern names
-    its app space (`personal-agent`, `shared`, `marketing`, `employer`).
+  - `ls $SKILLSPOKE_APPS`: the application repositories fall in the app spaces
+    `personal-agent`, `shared`, `marketing` and `employer`.
 
 ## 1. Where it lives (S02 item 1)
 
@@ -937,8 +936,8 @@ The tool records the stack the new repository holds in the matrix.
 results are exit statuses and command output:
 1. `gh auth status` exits non-zero → owner fact: the GitHub CLI is not signed in on this machine;
    run `gh auth login`.
-2. `gh api user/memberships/orgs/<github_owner> --jq .state` (`github_owner` from
-   `<control>/.polyrepo/config.yaml`) exits non-zero or prints a value other than `active` → owner
+2. `gh api user/memberships/orgs/<github_owner> --jq .state` (`<github_owner>` is the owner
+   of the repositories `polyrepo inventory` lists on GitHub) exits non-zero or prints a value other than `active` → owner
    fact: the signed-in GitHub account is not an active member of `<github_owner>`.
 Either is written to `repo-creation.json` and fails the span step at stage
 `requires-human-action`, with the owner fact as its evidence (section 8). A `polyrepo.py create`

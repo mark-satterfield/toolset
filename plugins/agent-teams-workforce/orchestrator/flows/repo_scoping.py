@@ -23,6 +23,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, NamedTuple, TypedDict
+from urllib.parse import urlparse
 
 # The driver surface and the placement contract are defined once, in their skills.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
@@ -76,7 +77,6 @@ from target_contract import (
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.driver_contracts import dispatch_arguments
-from orchestrator.core.frontmatter import yaml_safe_load
 from orchestrator.core.handback import failure_for
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
@@ -110,9 +110,9 @@ CONTEXT_PURPOSE: Final = "The items this repository builds and the steps that sp
 CREATION_STAGE: Final = "repo-creation"
 WEB_TYPE: Final = "web"
 """The stack type of a web front-end build, as the project's naming standard lists it."""
-OWNER_KEY: Final = "github_owner"
-POLYREPO_CONFIG: Final = Path(".polyrepo/config.yaml")
-"""The polyrepo-steward's configuration, relative to the control repository."""
+KEY_GITHUB: Final = "github"
+KEY_URL: Final = "url"
+"""An inventory record's GitHub listing, and the repository's URL in it."""
 EVIDENCE_RESULT: Final = "architecture result"
 """The evidence of every item: the architect's result lists it under addedOrChangedElements."""
 NO_BUILD_NEED: Final[frozenset[str]] = frozenset({REL_PUBLISHES, REL_MATCHES, "consumes", "routes"})
@@ -651,9 +651,9 @@ def _item_stacks(matrix: Matrix, entry_id: EntryId, repository: str | None) -> l
 def _record_repository_names(items: Sequence[DeltaItem]) -> list[EntryId]:
     """Record on each stack that names no repository the name its Story's repository is given.
 
-    The name comes from the naming rules (:func:`repository_name`), so the stack, the
-    steward's manifest and the repository created for it carry one name. It is written on the
-    architecture side, in one matrix change.
+    The name comes from the naming rules (:func:`repository_name`), so the stack and the
+    repository created for it carry one name. It is written on the architecture side, in one
+    matrix change.
 
     Returns:
         The stacks that took a name.
@@ -948,24 +948,29 @@ def _spec_steps(run: StepRun, ruling: PlacementRuling, repos: list[str]) -> tupl
     return (StepGroup(tuple(steps)),) if steps else ()
 
 
-def _polyrepo_config(control: Path) -> dict[str, JsonValue]:
-    """Read the polyrepo-steward's configuration.
-
-    Returns:
-        The configuration object.
-
-    """
-    return json_object(yaml_safe_load((control / POLYREPO_CONFIG).read_text(encoding="utf-8")))
-
-
-def _owner(control: Path) -> str:
-    """Read the GitHub organisation repositories are created in, from the polyrepo-steward's configuration.
+def _owner(tools: Tools) -> str:
+    """Read the GitHub organisation repositories are created in: the owner of the inventory's repositories on GitHub.
 
     Returns:
         The organisation's name.
 
+    Raises:
+        StepError: The inventory's repositories on GitHub name no owner, or more than one.
+
     """
-    return check_type(_polyrepo_config(control)[OWNER_KEY], str)
+    owners: set[str] = set()
+    for repo in _objects(inventory(tools)["repos"]):
+        github: JsonValue = repo.get(KEY_GITHUB)
+        if isinstance(github, dict) and isinstance(github.get(KEY_URL), str):
+            owners.add(urlparse(check_type(github[KEY_URL], str)).path.strip("/").split("/")[0])
+    owners.discard("")
+    if len(owners) != 1:
+        message: str = (
+            f"the repository inventory names {len(owners)} GitHub owners ({', '.join(sorted(owners)) or 'none'}), "
+            "so the organisation a repository is created in is not known"
+        )
+        raise StepError(HUMAN_ACTION_STAGE, OTHER_CAUSE, (message,))
+    return owners.pop()
 
 
 def _read_story_builds(run: StepRun) -> tuple[Matrix, list[DeltaItem]]:
@@ -1023,7 +1028,7 @@ def span(run: StepRun) -> Completion:
     write_json(elements_path, elements)
     artifacts = [file_artifact(ARTIFACT_ELEMENTS, elements_path)]
     if ruling[KEY_MISSING_REPOS]:
-        owner: str = _owner(env_path(CONTROL_REPO_ENV))
+        owner: str = _owner(run.tools)
         creation: dict[str, JsonValue] = create_repositories(ruling, run.tools, homes, owner, work)
         artifacts.append(file_artifact(ARTIFACT_CREATION, work / "repo-creation.json"))
         failures: list[dict[str, JsonValue]] = _objects(creation["failures"])
