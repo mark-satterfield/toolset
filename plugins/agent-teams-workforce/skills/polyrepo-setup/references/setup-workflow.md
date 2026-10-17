@@ -72,7 +72,7 @@ is the full set of things you must end up knowing — order is flexible.
     deprecated, archived, planned)
   - Does it hold product code? (`product`: part of what ships; its product
     files are built in worktrees and change through pull requests, its
-    AI-tooling files are committed on `main`; `tooling`: the machinery
+    `AGENTS.md`, `CLAUDE.md` and `.claude/` are tier 2; `tooling`: the machinery
     that builds the product, all of it committed on `main` in the primary
     working tree). Record the answer in `tier`; a repository outside the
     repository root goes in the config's `tiers.external` instead.

@@ -308,7 +308,7 @@ read `schema_version` and know exactly what changed between versions.
   moved to its real canonical home or to `knowledge.yaml`) to become valid v4.
 - **v5 addition (no version bump, backward-compatible)** - `repos[].tier`, `product` or `tooling`:
   whether a repository holds product code (`product`) or is the machinery that builds the product (`tooling`);
-  the tier of a change is decided by what the file is, not by the repository (AI-tooling files are tier 2 in every repository). Every entry records one; `reconcile --fix`
+  the tier of a change is decided by what the file is, not by the repository (`AGENTS.md`, `CLAUDE.md` and `.claude/` are tier 2 in every repository). Every entry records one; `reconcile --fix`
   records the default (`tooling` for the control repo, `product` otherwise) on an entry that has none, and
   `set-tier` changes it. The repositories outside the repository root (the toolset repo and the
   `skillspoke-docs` vault) have no entry: the config's `tiers.external` records their tier. The

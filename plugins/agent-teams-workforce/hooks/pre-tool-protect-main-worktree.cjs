@@ -5,22 +5,22 @@
  * PreToolUse hook: no product file is edited in the primary working tree of a product repository.
  *
  * Tier is decided by what a file is, not by the repository it sits in. Tier 1 is the
- * SkillSpoke product: the code, infrastructure, scripts and CI/CD that would exist if AI
- * did not. Everything that exists because of AI is tier 2 wherever it sits: AGENTS.md,
- * CLAUDE.md, anything under .claude/, the agents, skills, plugins and pipeline.
+ * SkillSpoke product, including every shared library and component it depends on, and any
+ * other application built or managed from the SkillSpoke repository. Tier 2 is everything
+ * used to build tier 1. AGENTS.md, CLAUDE.md and .claude/ are tier 2 wherever they sit,
+ * because they are tooling for building tier 1.
  *
  * Product files in a product repository (services, libraries, infrastructure, web) take
- * all work in worktrees. Tier 2 repositories (the control repository, the toolset
- * repository, the documentation vault) commit in their primary working tree, and so do
- * the AI-tooling files of a product repository (AGENTS.md or CLAUDE.md at any depth, and
+ * all work in worktrees. Tier 2 repositories commit in their primary working tree, and so
+ * do the tier 2 files of a product repository (AGENTS.md or CLAUDE.md at any depth, and
  * anything under the repository's .claude/), so this guard must never block them.
  *
- * Which repository is which comes from the tier record the polyrepo-steward exports:
- * $SKILLSPOKE_CC/.polyrepo/repository-tiers.json, a JSON object mapping each
- * repository's absolute path to "product" or "tooling". The guard blocks only a write
- * inside a repository the record lists as "product". When the record is absent or
- * unreadable, the guard allows the write and prints one warning line, so a missing
- * record never blocks tier 2 work.
+ * Which repository is which comes from the tier record the file named by
+ * $ATW_REPOSITORY_TIERS holds: a JSON object mapping each repository's absolute path to
+ * "product" or "tooling". The guard blocks only a write inside a repository the record
+ * lists as "product". When the variable is unset or the record is absent or unreadable,
+ * the guard allows the write and prints one warning line, so a missing record never
+ * blocks tier 2 work.
  *
  * The guard binds subagents as well as the session the owner talks to: an implementer
  * writing to a product repository's primary tree is the failure it exists to stop.
@@ -28,11 +28,11 @@
  * Decision order:
  *   1. unparseable hook input                           -> exit 2 (fail closed)
  *   2. non-edit tool, or no target path                 -> exit 0
- *   3. tier record absent or unreadable                 -> exit 0, one warning line
+ *   3. tier record unnamed, absent or unreadable        -> exit 0, one warning line
  *   4. target outside every "product" repository        -> exit 0
  *   5. target under the repository's .worktrees/        -> exit 0
  *   6. target in a linked worktree                      -> exit 0
- *   7. target is an AI-tooling file (tier 2 by content) -> exit 0
+ *   7. target is a tier 2 file                          -> exit 0
  *   8. otherwise (a product file in the primary tree)   -> exit 2
  */
 
@@ -41,13 +41,12 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
-const CONTROL_REPO_ENV = 'SKILLSPOKE_CC';
-const TIER_RECORD = path.join('.polyrepo', 'repository-tiers.json');
+const TIER_RECORD_ENV = 'ATW_REPOSITORY_TIERS';
 const PRODUCT_TIER = 'product';
 const KNOWN_TIERS = new Set([PRODUCT_TIER, 'tooling']);
 const WORKTREE_DIR = '.worktrees';
-const AI_TOOLING_FILES = new Set(['AGENTS.md', 'CLAUDE.md']);
-const AI_TOOLING_DIR = '.claude';
+const TIER2_FILES = new Set(['AGENTS.md', 'CLAUDE.md']);
+const TIER2_DIR = '.claude';
 const MAX_ASCENT = 40;
 
 /** Reads all of stdin synchronously; returns '' when unreadable. */
@@ -117,9 +116,8 @@ function deny(lines) {
  * Exits 0 with a warning when the record is absent, unreadable or malformed.
  */
 function productRepositories() {
-  const controlRepo = process.env[CONTROL_REPO_ENV];
-  if (!controlRepo) allowWithWarning(`$${CONTROL_REPO_ENV} is not set, so the tier record cannot be found`);
-  const recordPath = path.join(controlRepo, TIER_RECORD);
+  const recordPath = process.env[TIER_RECORD_ENV];
+  if (!recordPath) allowWithWarning(`$${TIER_RECORD_ENV} is not set, so the tier record cannot be found`);
   let record;
   try {
     record = JSON.parse(fs.readFileSync(recordPath, 'utf8'));
@@ -146,13 +144,13 @@ function inLinkedWorktree(dir) {
 }
 
 /**
- * True when the target is a file that exists because of AI, so it is tier 2 whatever repository
+ * True when the target is tooling for building tier 1, so it is tier 2 whatever repository
  * holds it: an AGENTS.md or CLAUDE.md at any depth, or anything under the repository's .claude/.
  */
-function isAiToolingFile(repoRoot, realDir, target) {
+function isTier2File(repoRoot, realDir, target) {
   const relative = path.relative(repoRoot, path.join(realDir, path.basename(target)));
-  if (AI_TOOLING_FILES.has(path.basename(relative))) return true;
-  return relative.split(path.sep)[0] === AI_TOOLING_DIR;
+  if (TIER2_FILES.has(path.basename(relative))) return true;
+  return relative.split(path.sep)[0] === TIER2_DIR;
 }
 
 function main() {
@@ -178,7 +176,7 @@ function main() {
   if (!repoRoot) process.exit(0);
   if (isWithin(path.join(repoRoot, WORKTREE_DIR), realDir)) process.exit(0);
   if (inLinkedWorktree(realDir)) process.exit(0);
-  if (isAiToolingFile(repoRoot, realDir, target)) process.exit(0);
+  if (isTier2File(repoRoot, realDir, target)) process.exit(0);
 
   const repoName = path.basename(repoRoot);
   deny([
@@ -190,7 +188,7 @@ function main() {
     `  git -C ${repoRoot} worktree list`,
     `  git -C ${repoRoot} worktree add -b <type>/<bead-id> ${path.join(repoRoot, WORKTREE_DIR)}/<bead-id>-${repoName}`,
     '',
-    `Tier record: $${CONTROL_REPO_ENV}/${TIER_RECORD}`,
+    `Tier record: $${TIER_RECORD_ENV} (${process.env[TIER_RECORD_ENV]})`,
   ]);
 }
 
