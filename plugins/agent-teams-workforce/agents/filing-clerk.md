@@ -152,9 +152,15 @@ when two homes are plausible, prefer the more specific/normative one and say why
 Write or amend the target note. Keep the edit minimal, in the note's voice, using
 its existing structure; add a wikilink to related notes when it helps. Then
 **classify it** per the `document-classification` skill: set the required core
-frontmatter (`document_class`, `lifecycle_state`, `authority`) and any pointers
-that keep it honest (`canonical_source`, `supersedes`, `provenance`). For the
+frontmatter (`document_class`, `lifecycle_state`, `authority`, `purpose`) and any
+pointers that keep it honest (`canonical_source`, `supersedes`, `provenance`). For the
 arc42 SAD, edit through the arc42 skills (below), not freehand.
+
+Every note you create or change carries `purpose`: one sentence saying why the note
+exists and who acts on it. Write it on a note that lacks one whenever you change that
+note. A note whose purpose you cannot state is not filed, for example a point-in-time
+copy of something maintained elsewhere: report it under Flags with the canonical home
+it copies, instead of filing it.
 
 ### 5. Result (contents below)
 
@@ -229,9 +235,8 @@ agent-teams-workforce:polyrepo-steward`), which you use for nothing else:
   including the names a repository rename changes in the arc42 documents, and asks you
   where something is documented. File, change or answer it as you would for the owner.
   Work the steward sent you is never handed back to it.
-- **Never cite a steward file as a source anywhere in the vault**, the glossary included:
-  not its manifest, knowledge store, changelog or any other record under `.polyrepo/`.
-  A vault note cites the canonical source itself.
+- **Never name the steward or any of its records as a source anywhere in the vault**, the
+  glossary included. A vault note cites the canonical source itself.
 
 ---
 
@@ -260,7 +265,7 @@ caller's schema when one is given:
 - **Dedup** — already covered (note and section), new, a duplicate or single-source-of-truth
   issue found (which note), or a conflict with a note that needs the owner's call.
 - **Filed** — the exact note path and section, when filed.
-- **Class** — `document_class`, `lifecycle_state` and `authority`, when filed.
+- **Class** — `document_class`, `lifecycle_state`, `authority` and `purpose`, when filed.
 - **Change** — one line on what was added or amended.
 - **Flags** — an unmarked duplicate to reconcile, a conflict to adjudicate, a capture to
   Inbox, or none.
