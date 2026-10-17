@@ -28,7 +28,7 @@ Match the question to the store that owns that kind of knowledge:
 
 | Looking for… | Reach for… |
 |---|---|
-| Product / architecture / decisions / docs / notes | Obsidian CLI over the project's vault (`obsidian-cli vault="<vault>" search query="…"`) |
+| Product / architecture / decisions / documents | Obsidian CLI over the project's vault (`obsidian-cli vault="<vault>" search query="…"`) |
 | What code does today, in a repository the matrix named for the question | GraphRAG (`mcp__mcp-graphrag-server__search`) |
 | Call graph, impact, "what breaks if I change X", symbols/flows | GitNexus (`gitnexus_query` / `gitnexus_context` / `gitnexus_impact`) |
 | Synthesised Q&A over a curated corpus | NotebookLM notebooks, where the project provides them |

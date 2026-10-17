@@ -518,7 +518,7 @@ Sites that stay, each with its reason:
 4. `agents/polyrepo-steward.md` rows for repository count, uncommitted files, last update and currency with main: live git state.
 5. `skills/polyrepo-setup/SKILL.md`: a one-time bootstrap of the steward's records.
 6. `agents/spec-currency-validator.md`: it checks files and interfaces inside one repository, below what the matrix holds.
-7. `agents/filing-clerk.md`: glossary and general vault notes are outside the matrix's kinds.
+7. `agents/filing-clerk.md`: glossary and general vault documents are outside the matrix's kinds.
 8. `workflows/documentation.js` audit prompt: READMEs, changelogs and API references are repository documents, not arc42.
 9. `ops/sdlc-automation/inventory.py` `_spec_paths`, `_trd_facts`, `_item_documents`, `_filed_documents`: TRD and Spec files are not matrix kinds; their paths are on the beads.
 10. `ops/sdlc-automation/mcpconfig.py` `ALLOWED_SERVERS` entries `mcp-graphrag-server` and GitNexus, the `mcp__mcp-graphrag-server` grants in the agents, and the `graphrag-lookup` skill: GraphRAG indexes the `skillspoke-docs` vault, arc42 and SDLC documents included, and the repositories, for search by meaning; GitNexus indexes each repository's call graph for change impact and renames. Agents go to the matrix first for what it records and use these two for what it does not.

@@ -37,7 +37,7 @@ Follow the precedence ladder in `../polyrepo-info/references/search-recipes.md`:
 Add or update entries in the knowledge store `.polyrepo/knowledge.yaml` (owned by
 **polyrepo-info**; see it for the entry shape and for when an entry may be a `fact`: you
 record pointers to canonical sources, not copies of what they say). Verify every entry against reality before
-storing it — the path, vault note or command it names exists, and the fact it states is what
+storing it — the path, vault document or command it names exists, and the fact it states is what
 the code or the canonical document says now — as **polyrepo-info** describes. Record through
 the learning protocol (`../polyrepo-repo/references/learning-protocol.md`): update the store,
 then run the tool's `commit --message "<what changed and why>"`. There is no read-back step.

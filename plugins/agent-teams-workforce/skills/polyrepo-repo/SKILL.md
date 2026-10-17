@@ -22,7 +22,7 @@ Invoke it by that path (a bare `polyrepo` on `PATH` may be an unrelated program)
 its settings at `.polyrepo/config.yaml` in this order: `--config`, `$POLYREPO_CONFIG`, the
 nearest `.polyrepo/config.yaml` above the working directory, `$SKILLSPOKE_CC/.polyrepo/`.
 The config names the environment variable holding the repository root (`root_env`), the
-GitHub owner, exclusions, the pointer to the vault's repository naming note, where each repository
+GitHub owner, exclusions, the pointer to the vault's repository naming document, where each repository
 is placed (`placement`) and how long a deprecated repository waits to be archived (`deprecation`);
 every repo's path is discovered on disk.
 
@@ -54,7 +54,7 @@ commit the tool makes.
 | `deprecated-prs [--fix]` | Report every open pull request in a `deprecated-` repo of the owner on GitHub. `--fix` closes each with the deprecation comment, keeping its branch. |
 | `archive-due [--dry-run]` | Archive on GitHub (`gh repo archive --yes`) every deprecated repo whose `deprecated_on` is at least `deprecation.archive_after_days` (config) days ago, set its manifest `lifecycle` to `archived` (the record is kept), remove it from the beads fleet list, and delete its local clone and linked worktrees when no work exists only there (the same test as `deprecate`); a clone with uncommitted or untracked files, a stash or unpushed commits on any branch is kept and reported (`archived-clone-kept`). A repo with an open pull request or a matrix stack in it is not archived and is reported (`archive-kept`); a repo with no valid `deprecated_on` is reported (`archive-undated`). An entry already archived only has its clone retried, so the command is idempotent. Commits the records. JSON: `repos` (one row per deprecated or archived entry: `status` `archived`, `planned`, `kept`, `failed`, `not-due`, `undated` or `missing`, `detail`, `deprecated_on`, `due_on`, `clone`), `findings`, `fixed`, `open`. Exit 1 while anything is kept, undated or failed. The launchd agent `com.skillspoke.polyrepo-archive-due` runs it from the installed plugin every day at 07:00 (the JSON report and errors under `$SKILLSPOKE_LOGS/polyrepo-archive-due/`), and `doctor --fix` runs it, so a missed day catches up. It never deletes a repository. |
 | `agents-sync [--check\|--dry-run] [--repo R …] [--space S] [--trailer TEXT]` | Write the shared `AGENTS.md` blocks (the SkillSpoke shared block, the GitNexus block and the Agent Teams Workforce block, listed under `agents_sync.blocks` in the config; a block's `exclude_spaces` lists the app spaces that do not receive it, and none lists any; `--space S` and `--repo R` narrow a run) into every repo, whatever its recorded tier: `AGENTS.md` is tier 2 in every repository (see *Tiers*), so each repo is committed on `main` in its primary working tree and pushed, with no worktree, branch or pull request. Before writing, a repo's `main` is fetched and brought up to `origin/main` (fast-forward, or a rebase of local commits); a repo whose tree is dirty or whose rebase conflicts is reported (state `stale-main`) and left. A push the remote rejects (for example branch protection) leaves the commit local and is reported (status `committed`, with the rejection as `detail`). `{{repo}}` in a block source becomes the repo's name; the GitNexus block replaces the older `<!-- gitnexus:start -->` section; `--check` reports repos out of date. |
-| `naming <name>` | Read-only check of one repository name against the vault's repository naming note. JSON: `valid`, `pattern`, `kind`, `section` and `rule` (the note's section and `**Pattern:**` line the name matched), `document`, `type`, `types`, `space` and `folder` (where the config's `placement` puts it, or `folder_note` when the config maps no folder to its type) and `problem` (why a refused name is refused). Exit 0 when the name matches a pattern, else 1. |
+| `naming <name>` | Read-only check of one repository name against the vault's repository naming document. JSON: `valid`, `pattern`, `kind`, `section` and `rule` (the document's section and `**Pattern:**` line the name matched), `document`, `type`, `types`, `space` and `folder` (where the config's `placement` puts it, or `folder_note` when the config maps no folder to its type) and `problem` (why a refused name is refused). Exit 0 when the name matches a pattern, else 1. |
 | `tier <path>` | Say which tier the repository containing a path is in. JSON: `path`, `repository`, `repository_path`, `tier` (`product` or `tooling`), `source` (`manifest` or `config`) and `linked_worktree` (true when the path is in a linked worktree of the clone). A path inside a clone, its `.worktrees/` included, belongs to that clone; a linked worktree elsewhere belongs to the clone git names as its common directory. Exit 0 when a repository that records a tier contains the path, else 1 (`repository` and `tier` are null; `repository_path` names the git clone that contains the path, when there is one). |
 | `tiers` | List every recorded tier (the manifest's, for the repos on disk, and the config's `tiers.external`). Finding: `tier-external` (a configured path that is not the root of a git clone). |
 | `set-tier <repo> product\|tooling` | Record the tier on the repo's manifest entry, log it and commit it; the export is rewritten with the commit. |
@@ -62,7 +62,7 @@ commit the tool makes.
 | `templates-check` | Which templates lag the repos built from them, and which repo kinds have no template. |
 | `environment [repo…] [--space S] [--fix]` | Check every active Python repo (a `pyproject.toml` and an `install` task in its Taskfile): `.venv/bin/python` exists and runs, every declared dependency is installed and importable, and `aws_cdk` imports where the code uses it. `--fix` runs the repo's `task install` for each gap and checks again; for an infra repo it also runs `cdk synth --profile dev`. `create` runs the same setup and checks. |
 | `python-names [repo…] [--space S]` | Check every active Python repo (a `pyproject.toml`; the control repo excluded) against the Python names of the naming standard: `atw-naming check python-distribution`, `python-package` and `python-package-path` against its `pyproject.toml` name and its source folder, `src` present for a `lib` and a `service`, `tests` present, no `__init__.py` in an app or team folder. One finding per failure. |
-| `doctor [--fix]` | Every health check as one findings list: `reconcile`, `agents-sync --check`, `tiers`, the beads fleet audit, `beads-setup --check`, `beads-fleet`, `environment`, `python-names`, `deprecated-prs`, `archive-due --dry-run`, the governance entries, the knowledge-store pointers, that the vault's repository naming note is readable and states every rule the tool needs, and the matrix's stacks against the repositories (`matrix`). `--fix` first runs `reconcile --fix`, `agents-sync`, `beads-setup --all`, `beads-fleet --fix`, `deprecated-prs --fix` and `archive-due`, then repairs the matrix's stacks and commits the matrix. The launchd agent `com.skillspoke.polyrepo-daily` runs `doctor --fix` every day, logging under `$SKILLSPOKE_LOGS/polyrepo/`. |
+| `doctor [--fix]` | Every health check as one findings list: `reconcile`, `agents-sync --check`, `tiers`, the beads fleet audit, `beads-setup --check`, `beads-fleet`, `environment`, `python-names`, `deprecated-prs`, `archive-due --dry-run`, the governance entries, the knowledge-store pointers, that the vault's repository naming document is readable and states every rule the tool needs, and the matrix's stacks against the repositories (`matrix`). `--fix` first runs `reconcile --fix`, `agents-sync`, `beads-setup --all`, `beads-fleet --fix`, `deprecated-prs --fix` and `archive-due`, then repairs the matrix's stacks and commits the matrix. The launchd agent `com.skillspoke.polyrepo-daily` runs `doctor --fix` every day, logging under `$SKILLSPOKE_LOGS/polyrepo/`. |
 | `commit --message TEXT` | Commit and push the steward's files after a hand edit. |
 
 A record carries `name`, `space`, `path`, `lifecycle`, `tier`, `present` (disk, github,
@@ -92,7 +92,7 @@ judgment, and each has an obvious next step:
 |---|---|
 | `deprecated-undated` | Find the date the repo was deprecated (`git log` of the manifest and of the registries it replaced) and write it as `deprecated_on` in the manifest, then `commit`. Never record today's date as a stand-in: it restarts the clock to archiving. |
 | `deprecation-not-renamed` | `deprecate <repo>` if it is deprecated; otherwise set its `lifecycle` to `active` in the manifest. |
-| `naming-violation`, `space-mismatch` | Choose the correct name or space from the vault's repository naming note (`naming <name>` shows the rule a name matched), then `rename <repo> <new-name>`. |
+| `naming-violation`, `space-mismatch` | Choose the correct name or space from the vault's repository naming document (`naming <name>` shows the rule a name matched), then `rename <repo> <new-name>`. |
 | `tier-invalid` | The entry's `tier` is neither `product` nor `tooling`: decide it (see *Tiers*) and `set-tier <repo> <tier>`. |
 | `open-items` with unsettled items | Put each to the user in the reply, record the answer where it belongs, then remove the section. |
 | `diverged`, `fetch-failed`, `no-default-branch`, `foreign-origin`, `github-missing`, `not-cloned`, `duplicate-name` | Inspect with `git` and `gh`, repair, and run `reconcile --fix` again. `not-cloned` is raised only for an active repo; a deprecated or archived repo is expected to have no local clone. |
@@ -122,9 +122,9 @@ judgment, and each has an obvious next step:
   are `put stack` (see *The matrix*); its purpose is not written here.
 - **rename** — `rename <repo> <new-name>`, on GitHub and locally together. The repo's entry in the beads repository list is replaced with the new path; its beads database keeps its name. The matrix's stacks that name the repo name the new one (`move-repository`). A rename covers the repository, the stack names, the Python names, every reference to them in the other repositories, the matrix, and the vault's architecture documents, which the `filing-clerk` changes and pushes in the same job (see *Renames reach the vault*).
 
-  The Python names follow the vault's resource naming standard, section "Python names" (`resource-naming-standard.md`), which the steward does not copy. Every name comes from `atw-naming` with `--repository` (`name python-package`, `name python-package-path`, `name python-distribution`, `name stack`, `name cdk-stack-file`; `check <type> <name> --repository <repo>` verifies one); never compose one by hand and never second-guess what it gives, a team repository included. One worktree and one pull request per repository changed. Run `--dry-run` first: the plan lists all of it before anything changes. A repository that the approved architecture says is to be merged or retired is not renamed. The new name must end in a repository type the naming note lists; `SkillSpoke-auth-utils` is refused.
+  The Python names follow the vault's resource naming standard, section "Python names" (`resource-naming-standard.md`), which the steward does not copy. Every name comes from `atw-naming` with `--repository` (`name python-package`, `name python-package-path`, `name python-distribution`, `name stack`, `name cdk-stack-file`; `check <type> <name> --repository <repo>` verifies one); never compose one by hand and never second-guess what it gives, a team repository included. One worktree and one pull request per repository changed. Run `--dry-run` first: the plan lists all of it before anything changes. A repository that the approved architecture says is to be merged or retired is not renamed. The new name must end in a repository type the naming document lists; `SkillSpoke-auth-utils` is refused.
 - **delete / deprecate** — `deprecate <repo>`. A repository is never deleted: "delete" means deprecate, and a deprecated repository is archived automatically (see *Placement, membership and deprecation*). The steward never deletes a repository from GitHub and never proposes deleting one; only if the owner deletes one of their own accord does `reconcile --fix` remove its record. A deprecated entry (`deprecated_on`) is kept, and after archiving it stays with lifecycle `archived`; `list`, `search` and `inventory` leave both out unless `--include-inactive` or a `--lifecycle` filter asks for them. Its entry is removed from the beads repository list. The matrix must hold no stack that names it: `deprecate` refuses until each is moved or removed (see *The matrix*).
-  The new name is the deprecated name the naming note gives the repository (`naming <name>`
+  The new name is the deprecated name the naming document gives the repository (`naming <name>`
   shows the rule).
   The rename happens on GitHub and locally together. Every open pull request in the repo is
   then closed with the comment "Closed: this repository is deprecated."; a deprecated repo
@@ -211,23 +211,23 @@ The matrix's code mark `verified` is set by the build driver and by no agent; it
 
 ## Naming rules
 
-The rules are the vault's repository naming note,
+The rules are the vault's repository naming document,
 `docs/tech/architecture/arc42/08-crosscutting-concepts/repository-naming.md` (vault root
 `$SKILLSPOKE_ROOT/skillspoke-docs`); resource names follow `resource-naming-standard.md` beside
 it. The steward has no naming rules of its own and keeps no copy of them (the owner's storage
 rule is in the steward's instructions, *What you store*). The config's `naming.document` names
-the note under `naming.document_root`, and the tool reads the rules from the note's own text
+the document under `naming.document_root`, and the tool reads the rules from the document's own text
 each time it runs: the project prefixes (the table), the repository types (the sentence "`{type}`
 is one of ..."), the name patterns (the `**Pattern:**` line of each repositories section) and the
 deprecated prefix. Creating, renaming, cloning and deprecating a repository and `doctor` use them. A name must
-match a pattern, and an application name must end in a repository type the note lists
+match a pattern, and an application name must end in a repository type the document lists
 (`SkillSpoke-auth-utils` is refused); the command-and-control repository `SkillSpoke` is exempt.
-A project is an open token: the note's project table lists today's projects and is not a limit. A
+A project is an open token: the document's project table lists today's projects and is not a limit. A
 name whose first token is no listed project, no deprecated prefix and no non-application type is
-checked by its shape, `{project}[-team]-{domain}-{type}` with `{type}` one of the note's types
+checked by its shape, `{project}[-team]-{domain}-{type}` with `{type}` one of the document's types
 (`devsecops-resourceNaming-lib` passes), and its project's repositories sit directly in
-`$SKILLSPOKE_APPS/<project>`. `naming <name>` checks one name read-only and shows the note, the section and the pattern line
-of the rule it matched. If the note does not state a rule the tool needs, the tool says so and
+`$SKILLSPOKE_APPS/<project>`. `naming <name>` checks one name read-only and shows the document, the section and the pattern line
+of the rule it matched. If the document does not state a rule the tool needs, the tool says so and
 stops; hand that gap, and any change to the rules, to the `filing-clerk`, never into the config.
 
 ## Placement, membership and deprecation

@@ -930,7 +930,7 @@ The tool records the stack the new repository holds in the matrix.
   type is `web`.
 - **The app space** is the `app` of the repository's stacks. Stacks of more than one type or more
   than one app and stacks that name no app fail the step. The folder inside
-  the space comes from the placement the vault's repository naming note states, which `polyrepo.py create` applies.
+  the space comes from the placement the vault's repository naming document states, which `polyrepo.py create` applies.
 
 **Owner facts.** Recognised before the first `polyrepo.py create` runs, by a preflight whose
 results are exit statuses and command output:

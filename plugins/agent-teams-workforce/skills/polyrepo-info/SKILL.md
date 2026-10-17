@@ -61,7 +61,7 @@ storage, and indexes of common questions with where their answers are, caches, r
 and information that exists nowhere else are welcome.
 
 - **`location` and `pointer`** — the default. The entry names where the answer is (a path or
-  a vault note) and carries no copy of the answer.
+  a vault document) and carries no copy of the answer.
 - **`fact`** — only for information that exists nowhere else, or that is extremely costly to
   collect: it would take a really long time, or a ton of tokens, to fetch, read, collect and
   keep updated. For such an entry the store is the official source, and `source` says how it was
@@ -86,8 +86,8 @@ and information that exists nowhere else are welcome.
 
 An entry is a claim until it is checked, and it is checked every time it is used:
 
-- **Before storing** an entry, confirm it: the file, folder or vault note it names exists
-  (vault notes through `obsidian-cli vault="skillspoke-docs"`), the command it names runs, and
+- **Before storing** an entry, confirm it: the file, folder or vault document it names exists
+  (vault documents through `obsidian-cli vault="skillspoke-docs"`), the command it names runs, and
   the fact it states is what the code, the repo or the canonical document says now. A
   location or pointer carries `resolves`, the path it points at; `polyrepo doctor` checks
   every one on each run and reports the ones that no longer exist.

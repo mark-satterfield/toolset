@@ -5,7 +5,7 @@ description: >-
   disk, GitHub and the manifest; check that every repo carries the current shared
   `AGENTS.md` blocks; audit every repo's beads and the beads fleet list; check that no
   deprecated repo has an open pull request and none is overdue for archiving; check that every governance entry and
-  knowledge-store pointer still resolves; check that the vault's repository naming note is readable and states every rule the tool needs;
+  knowledge-store pointer still resolves; check that the vault's repository naming document is readable and states every rule the tool needs;
   check the matrix's stacks against the repositories; check that every
   repository records a tier. Reports findings, and with `--fix` repairs every finding it can. Use for
   a health check before a release, after significant changes, on a schedule, or on request.
@@ -34,8 +34,8 @@ tool: start from `doctor --json`, or `doctor --fix --json` to repair first.
 | `archive-due` | `archive-due --dry-run`: every deprecated repo whose `deprecated_on` is at least `deprecation.archive_after_days` (config) days ago, and every archived repo with a local clone | nothing is due and nothing is kept. Kinds: `archive-planned` (due; `doctor --fix` archives it), `archive-kept` (an open pull request or a matrix stack in it), `archive-undated` (no valid `deprecated_on`), `archive-failed`, `archived-clone-kept` (the clone holds work that exists only on this machine) |
 | `governance` | each manifest `governance` entry: its `location` exists, and a script or tool's `invoke` (up to its first `<placeholder>`) runs with `--help` | every entry resolves and runs |
 | `knowledge` | each `location` or `pointer` entry in the knowledge store: every path in its `resolves` exists | every pointer resolves |
-| `naming-doc` | the config's `naming.document` under `naming.document_root`: the vault's canonical repository naming note, `docs/tech/architecture/arc42/08-crosscutting-concepts/repository-naming.md`, read the way every command reads it | the note is found, and states every rule the tool needs: each project's prefix (the table with a `Project…` column and a `Prefix` column), the repository types, a pattern for each project and for the non-application and deprecated repositories. Kind `unreadable` carries the sentence naming the rule the note does not state. The report also carries `naming_note`: what was read from the note. There is no copy of the rules to compare |
-| `templates` | the config's `templates.kinds[].types`, the steward's map from repository types to the template that builds them, against the types the naming note lists | no kind lists a type the note does not have. Kind: `type-unknown` |
+| `naming-doc` | the config's `naming.document` under `naming.document_root`: the vault's canonical repository naming document, `docs/tech/architecture/arc42/08-crosscutting-concepts/repository-naming.md`, read the way every command reads it | the document is found, and states every rule the tool needs: each project's prefix (the table with a `Project…` column and a `Prefix` column), the repository types, a pattern for each project and for the non-application and deprecated repositories. Kind `unreadable` carries the sentence naming the rule the document does not state. The report also carries `naming_note`: what was read from the document. There is no copy of the rules to compare |
+| `templates` | the config's `templates.kinds[].types`, the steward's map from repository types to the template that builds them, against the types the naming document lists | no kind lists a type the document does not have. Kind: `type-unknown` |
 | `organization` | the `SKILLSPOKE_*` values the steward's record `organization-structure.md` states, against the environment variables | each stated value equals the variable's value. Kinds: `unset`, `differs`, `missing` |
 | `matrix` | the matrix's stacks (`atw-matrix stacks`) and `atw-matrix check` against the repositories: every active code repository (a name ending in a stack type) is the `repository` of a stack, every stack's `repository` is an active repository, each command a stack records (`commands`, a copy of what the repository declares) is still a task of the repository's Taskfile or a script of its package.json, and the matrix is valid | no finding. Kinds: `stack-missing`, `stack-repository-inactive`, `stack-repository-missing`, `stack-command-stale` (refresh it with `put stack --commands-<test|publish|deploy>` from what the repository declares now), `matrix-invalid`, and `error` when the matrix cannot be read |
 
@@ -77,11 +77,11 @@ is tier 2 in every repository); a repo whose `main` cannot be brought up to `ori
 - A governance entry or knowledge pointer that no longer resolves: find where the thing now
   lives and update the entry (**polyrepo-governance** or **polyrepo-info**), or retire it
   with the reason when the thing is gone.
-- A naming-document finding (`unreadable`): the note is missing, or does not state a rule the
-  tool needs. The note is canonical and you hold no copy of its rules. You never edit the
-  note: hand the missing or wrong rule to the `filing-clerk`, which files the change or brings
-  the conflict to the owner. When the note is not found, `naming.document` and
-  `naming.document_root` do not name it; set them to the note's path, never to a copy of
+- A naming-document finding (`unreadable`): the document is missing, or does not state a rule the
+  tool needs. The document is canonical and you hold no copy of its rules. You never edit the
+  document: hand the missing or wrong rule to the `filing-clerk`, which files the change or brings
+  the conflict to the owner. When the document is not found, `naming.document` and
+  `naming.document_root` do not name it; set them to the document's path, never to a copy of
   your own.
 
 Report exactly what changed and what is still open.

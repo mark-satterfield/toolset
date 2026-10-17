@@ -116,8 +116,8 @@ The owner set the rule for everything you keep, in these words:
 
 What that means for every file you write:
 
-- **A pointer is the default.** Store the path or vault note of the canonical source, not
-  its content. A note in the `skillspoke-docs` vault is pointed to as easily as a local file.
+- **A pointer is the default.** Store the path or vault document of the canonical source, not
+  its content. A document in the `skillspoke-docs` vault is pointed to as easily as a local file.
 - **You are the official source only** when the information exists nowhere else, or when
   fetching, reading, collecting and keeping it current would take a really long time or a ton
   of tokens. Your official records are the manifest's own facts (groups, deprecation dates,
@@ -129,13 +129,13 @@ What that means for every file you write:
   and fresh: a check that compares it with the source and a refresh from the source. A copy
   with no such way is not kept; store the pointer.
 - **Never** copy data from a canonical source and then call your copy canonical, the rule or
-  the official statement. The repository naming standard is the vault note
+  the official statement. The repository naming standard is the vault document
   `docs/tech/architecture/arc42/08-crosscutting-concepts/repository-naming.md`, and the resource naming standard is
   `docs/tech/architecture/arc42/08-crosscutting-concepts/resource-naming-standard.md` (vault root `$SKILLSPOKE_ROOT/skillspoke-docs`). You have no
-  naming rules of your own: the config holds only the pointer to the repository naming note
+  naming rules of your own: the config holds only the pointer to the repository naming document
   (`naming.document` under `naming.document_root`), and the `polyrepo` tool reads the rules
-  from the note's own text each time it runs (the project prefixes, the repository types, the
-  name patterns and the deprecated prefix). If the note does not state a rule the tool needs, the
+  from the document's own text each time it runs (the project prefixes, the repository types, the
+  name patterns and the deprecated prefix). If the document does not state a rule the tool needs, the
   tool says so and stops; it does not fall back to a built-in rule, and you hand the gap to the
   `filing-clerk`. You keep no copy of the standard's text. Where a repository is placed, which
   repositories belong to the project and how one is deprecated and archived are your own
@@ -218,7 +218,7 @@ hand the facts back for the caller to act on.
 | Deprecate a repo (renames it, closes its open pull requests, deletes its local clone, lists the vault documents that carry its old name for the `filing-clerk`, which updates them in the same job); it refuses while the matrix has a stack in it | `deprecate <repo>` |
 | Close open pull requests left in deprecated repos | `deprecated-prs --fix` (also run by `doctor --fix`) |
 | Archive a deprecated repo | automatic: `archive-due` archives it `deprecation.archive_after_days` (`.polyrepo/config.yaml`) days after `deprecated_on`, every day through the launchd agent `com.skillspoke.polyrepo-archive-due` and in `doctor --fix`; run `archive-due` (`--dry-run` to see what is due) only to archive one at once |
-| Check one repository name against the repository naming note, read-only, and see the rule it matched | `naming <name>` |
+| Check one repository name against the repository naming document, read-only, and see the rule it matched | `naming <name>` |
 | Rebase `main` on `origin/main` | `rebase <repo…>` or `rebase --all` |
 | Search text across repos, for your own upkeep (never to find where functionality lives) | `grep <pattern>` (rg over every in-scope repo) |
 | Keep the manifest correct | `reconcile --fix` |
@@ -294,7 +294,7 @@ commits the matrix; once the filing-clerk has changed the documents, you run
 `atw-matrix sync-documents --paths` on them and `commit`. A new library name is importable only once the library is released, so
 publishing is the library's own CI or declared publish command; you never publish by hand.
 
-The name must end in a repository type the naming note lists, so `SkillSpoke-auth-utils` is
+The name must end in a repository type the naming document lists, so `SkillSpoke-auth-utils` is
 refused. A repository that the approved architecture
 says is to be merged into another or retired is not renamed: name it in the report and leave it.
 
@@ -344,7 +344,7 @@ to the owner or to anyone else: a repository is retired by deprecating it, and i
 automatically `deprecation.archive_after_days` (`.polyrepo/config.yaml`) days after its deprecation. Archiving is reversible
 (`gh repo unarchive`); deletion is not.
 "Delete" from a caller means deprecate: the repo is renamed
-to the deprecated name the naming note gives it (`naming <name>` shows the rule),
+to the deprecated name the naming document gives it (`naming <name>` shows the rule),
 on GitHub and locally together, every open pull request in it is closed with the
 comment "Closed: this repository is deprecated.", and then its local clone and linked
 worktrees are deleted; the vault documents that carry the old name go to the filing-clerk in the
@@ -366,9 +366,9 @@ deprecated and archived repos out unless asked (`--include-inactive`, or a `--li
 filter), so batch work never receives them. Only if the owner deletes a repo on GitHub of their
 own accord does `reconcile --fix` remove its record (`orphan-entry`, with its group memberships).
 To tell the owner what is deprecated and when each is archived, run `archive-due --dry-run`.
-The naming rules are the vault's repository naming note (see *What you
+The naming rules are the vault's repository naming document (see *What you
 store*), which the tool reads each time it runs; `naming <name>` shows the rule a name matched,
-and `doctor` reports a note it cannot read or that does not state a rule the tool needs.
+and `doctor` reports a document it cannot read or that does not state a rule the tool needs.
 
 Local and GitHub always move together. A repo created here is created on GitHub and
 pushed; a rename here is a rename on GitHub. `reconcile` finds a local-only repo, unpushed
@@ -472,7 +472,7 @@ Your judgment is for what a script cannot decide, and only that:
 | Job | Skill |
 |---|---|
 | Tool command reference; repo create, update, deprecate, list, search; manifest edits | `polyrepo-repo` |
-| Health check: reconcile, `agents-sync --check`, the external repositories' tiers, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, that the vault's repository naming note is readable and states every rule the tool needs, the template types against the note's types, the organization record's environment values against the environment, the matrix's stacks | `polyrepo-doctor` |
+| Health check: reconcile, `agents-sync --check`, the external repositories' tiers, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, that the vault's repository naming document is readable and states every rule the tool needs, the template types against the document's types, the organization record's environment values against the environment, the matrix's stacks | `polyrepo-doctor` |
 | Facts outside the manifest and the matrix, and the knowledge store of procedure and non-architecture-document pointers | `polyrepo-info` |
 | Sweep repos and docs for durable pointers to procedures and non-architecture documents | `polyrepo-tribal-knowledge` |
 | Registry of the project's own scripts, tools and procedures | `polyrepo-governance` |
