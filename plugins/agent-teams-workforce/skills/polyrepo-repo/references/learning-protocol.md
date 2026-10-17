@@ -1,7 +1,7 @@
 # Learning Protocol
 
-The manifest is the steward's private cache of the repositories plus the few facts neither
-the folders nor GitHub hold: groups and deprecation dates. What a repo holds and why it exists
+The manifest holds the few facts about the repositories that neither the folders nor GitHub
+hold: groups, tiers and deprecation dates, each entry keyed by GitHub's id of its repository. What a repo holds and why it exists
 is the matrix's, not the manifest's. It is
 only useful if it is correct, and the repositories change constantly. Keeping it correct is
 the steward's normal operation, done on its own authority: there is no read-back step and no
@@ -10,13 +10,14 @@ approval step for a manifest change.
 ## Who writes what
 
 - **The `polyrepo` tool** writes every mechanical fact. `reconcile --fix` adds entries for
-  new repos, removes entries whose repo is gone, follows renames, sets `remote_url`,
-  `lifecycle`, archived state and `deprecated_on`, and appends the changelog itself.
+  new repos, removes entries whose repo is gone, records GitHub's id on an entry that records
+  a name, and sets `lifecycle` and archived state; a rename needs no record change, because
+  names are read live.
   `create`, `rename` and `deprecate` do the same for their own changes, and for the matrix's
   stacks (see *The matrix* in the `polyrepo-repo` skill). Every one
   of them commits and pushes the steward's files. Never edit a field the tool maintains.
 - **The steward** writes what needs judgment: groups and `owner` (by editing the manifest, per the
-  `polyrepo-repo` skill). Each such edit gets a changelog entry written by the steward. A stack's
+  `polyrepo-repo` skill), committed with a message that says what changed and why. A stack's
   `homeIn` or alias is written in the matrix (`link`, `put`), not here.
 
 ## What counts as a learning event
@@ -35,19 +36,10 @@ requirements, deployment order) are never stored; see `manifest-schema.md`.
 
 1. **Update the manifest**, preserving comments. Do not stamp a date on the change — git
    history records when it changed.
-2. **Append to `.polyrepo/changelog.md`**:
-
-   ```markdown
-   ## YYYY-MM-DD — <short title>
-   - **What:** the fact, stated plainly.
-   - **Why:** what motivated the change.
-   - **Source:** how the steward learned it — "caller request", "reconcile", "code read".
-   - **Affected:** repo names or fields touched.
-   ```
-
-3. **Verify.** Run `reconcile --json` and confirm the change introduced no finding.
-4. **Commit and push** with `commit --message "<what changed>"`.
-5. **Speak in outcomes.** "Noted — X is now in group Y." Not the file mechanics.
+2. **Verify.** Run `reconcile --json` and confirm the change introduced no finding.
+3. **Commit and push** with `commit --message "<what changed and why>"`: the commit message is
+   the record of the change.
+4. **Speak in outcomes.** "Noted — X is now in group Y." Not the file mechanics.
 
 ## Drift
 
@@ -60,13 +52,13 @@ never records a question or an open item. It never invents an answer.
 
 ## Never destructive
 
-The changelog is append-only. The steward never deletes a repository on GitHub: it is
-deprecated, and the owner deletes it. While the repository exists on GitHub its entry stays with
-`lifecycle` and `deprecated_on`; once it is gone, `reconcile --fix` removes the entry entirely
-and the changelog records why.
+The steward never deletes a repository on GitHub: it is deprecated, then archived, and only
+the owner deletes it. While the repository exists on GitHub its entry stays with `lifecycle`
+and `deprecated_on`; once it is gone, `reconcile --fix` removes the entry entirely, and its
+commit message says why.
 
 ## Audit trail
 
-Git history is the audit trail. Every manifest change has a changelog entry, and every
-entry says what changed and why. Do not add manual date fields (`last_updated` and the
+Git history is the audit trail. Every manifest change is a commit whose message says what
+changed and why; the steward keeps no changelog. Do not add manual date fields (`last_updated` and the
 like); `deprecated_on` is a lifecycle fact, not an audit field.

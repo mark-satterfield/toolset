@@ -9,7 +9,7 @@
 # GitHub: what the project is, its conventions, its owners and what a repository is for are
 # other documents' and the matrix's, and the manifest holds none of them.
 
-schema_version: 5
+schema_version: 6
 
 project:
   name: <project-name>
@@ -21,12 +21,11 @@ project:
 # something the filesystem already answers.
 
 repos:
-  - name: <repo-name>
-    # No local_path — the tool derives it live from the repo root env
-    # var plus this name; a stored path goes stale on every clone.
+  - id: <GitHub node id>        # `gh repo view <owner>/<repo> --json id`; the name is read live
+    # A planned repository not yet on GitHub records `name: <repo-name>` instead of `id`.
+    # No local_path, name or remote_url: the tool reads them live from disk and GitHub.
     # No purpose, role, owner, language, notes or default_branch: what a repo is for is the
     # matrix's, and the repository and GitHub hold the rest.
-    remote_url: <url>           # a copy of GitHub's; `reconcile` checks it and `--fix` rewrites it
     lifecycle: <active | maintenance | deprecated | archived | planned>
     tier: <product | tooling>   # product: holds product code; tooling: builds the product and holds none
 
@@ -35,7 +34,7 @@ repos:
 adjacent_repos: []
 
 # Named sets of repos chosen by judgment. Optional: add a group only when a set needs a name that the
-# repository type (the last token of the name) does not give. Every member must be a real repo name above.
+# repository type (the last token of the name) does not give. Every member is the `id` of an entry above.
 groups: []
 
 # No `relationships`, `conventions`, `ownership`, `rules`, `documentation` or `search_recipes`

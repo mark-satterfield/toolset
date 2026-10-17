@@ -165,23 +165,11 @@ every field you have learned. For fields you do not have answers for
 yet, leave them as empty lists, and ask the human about them in your
 reply; the manifest itself carries no questions.
 
-## Initial changelog entry
+## Committing the manifest
 
-After writing the manifest, create `.polyrepo/changelog.md` with a
-single initial entry of the form:
-
-```markdown
-# Polyrepo Steward Changelog
-
-## YYYY-MM-DD — Initial setup
-- Project: <name>
-- Topology: <category> — <human's description>
-- Repos captured: <count>
-- Manifest location: <path>
-```
-
-This is the first entry of the project's living memory. Every learning
-event from now on appends here.
+Commit the manifest with the tool's `commit --message`, the message stating the project, the
+topology the human described, how many repositories were captured and where the manifest is.
+Git history is the record of every change from then on; the steward keeps no changelog.
 
 ## When to stop
 
@@ -189,7 +177,7 @@ Setup is done when:
 
 - the manifest is written and validates against
   `references/manifest-schema.md`
-- the changelog has its initial entry
+- the manifest is committed and pushed
 - the human has confirmed the topology description matches their
   mental model
 

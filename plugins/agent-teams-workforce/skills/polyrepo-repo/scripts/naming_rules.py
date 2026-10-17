@@ -2,15 +2,13 @@
 
 The note is the one source of the rules: which prefix each project's repositories carry, the
 repository types, the patterns a name must match (with the section of the note that states
-each), which GitHub repositories belong to the project, the deprecated prefix, and the folder
-each repository is placed in. This module reads those rules from the note's own text each time
+each), and the deprecated prefix. This module reads those rules from the note's own text each time
 the tool runs and keeps no copy of them. A rule the note does not state raises
 NamingRulesError, naming the missing rule; there is no built-in rule to fall back on.
 
 The parser keys on the note's structure: the table whose header has a `Project` column and a
 `Prefix` column; the "`{type}` is one of ..." sentence; the `### <project> repositories`
-sections under the patterns, each with a `**Pattern:**` line; the section on which GitHub
-repositories belong to the project; and the placement section.
+sections under the patterns, each with a `**Pattern:**` line.
 """
 
 from __future__ import annotations
@@ -28,18 +26,10 @@ KIND_NON_APPLICATION = "non-application"
 KIND_DEPRECATED = "deprecated"
 PATTERN_LABEL = "**Pattern:**"
 SECTION_SUFFIX = " repositories"
-OWNED_SECTION = "Which GitHub repositories belong to the project"
-PLACEMENT_SECTION = "Placement"
 ALL_LOWERCASE = "all lowercase"
-ANY_CASE = "(any case)"
-CATEGORY_MARKER = "by category:"
-DIRECT_MARKER = "sit directly in their project folder"
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
-ARCHIVE_SENTENCE = re.compile(r"archived on GitHub (\d+) days after")
 TYPES_SENTENCE = re.compile(r"`\{type\}` is one of (.+?)\.(?:\s|$)", re.DOTALL)
 CODE_SPAN = re.compile(r"`([^`]+)`")
-OWNED_SPAN = re.compile(r"`([^`]+)`(\s*\(any case\))?")
-CATEGORY_FOLDER = re.compile(r"(\w+) in `([^`/]+)/([^`/]+)`")
 TYPE_MEANING = re.compile(r"`([a-z]+)` is ")
 WORD_CAMEL = "[a-z0-9][A-Za-z0-9]*"
 WORD_LOWER = "[a-z0-9]+"
@@ -82,11 +72,7 @@ class NamingRules:
     types: tuple[str, ...]
     patterns: tuple[NamingPattern, ...]
     bare_names: frozenset[str]
-    owned: tuple[re.Pattern[str], ...]
     deprecated_prefix: str
-    direct_spaces: frozenset[str]
-    category_folders: dict[str, dict[str, str]]
-    archive_after_days: int
 
     def is_deprecated(self, name: str) -> bool:
         """Tell whether a name carries the deprecated prefix.
@@ -167,56 +153,6 @@ class NamingRules:
             return f"its last token {last!r} is not a repository type the naming note lists ({', '.join(self.types)})"
         return "it matches no pattern the naming note states"
 
-    def expected_space(self, name: str) -> str | None:
-        """Return the app space a repository of this name lives in; a deprecated name keeps its space.
-
-        Returns:
-            The space name, or None when the name implies none.
-
-        """
-        p = self.classify(name)
-        if p is None:
-            return None
-        if p["kind"] == KIND_DEPRECATED:
-            p = self._underlying(self.deprecated_base(name))
-        return p.get("space") if p and p["kind"] == KIND_APPLICATION else None
-
-    def is_owned(self, name: str) -> bool:
-        """Tell whether a GitHub repository name belongs to the project, by the note's list of prefixes.
-
-        Returns:
-            True when the name matches one of the prefixes.
-
-        """
-        return any(r.search(name) for r in self.owned)
-
-    def folder_for(self, space: str, name: str) -> str:
-        """Return the folder inside an app space a repository of this name is placed in.
-
-        Returns:
-            The folder, or an empty string when the note places the space's repositories
-            directly in the space.
-
-        Raises:
-            NamingRulesError: when the note states no placement for the space, or none for
-                this repository's type in it.
-
-        """
-        if space in self.direct_spaces:
-            return ""
-        folders = self.category_folders.get(space)
-        if folders is None:
-            msg = f"{self.document.name} states no folder placement for the {space} space"
-            raise NamingRulesError(msg)
-        repo_type = type_of(name)
-        if repo_type not in folders:
-            msg = (
-                f"{self.document.name} states a {space} folder only for the types {', '.join(folders)}; "
-                f"it states none for the type {repo_type!r} of {name}"
-            )
-            raise NamingRulesError(msg)
-        return folders[repo_type]
-
     def summary(self) -> dict[str, object]:
         """Describe what was read from the note, for a report.
 
@@ -229,13 +165,7 @@ class NamingRules:
             "prefixes": self.prefixes,
             "types": list(self.types),
             "patterns": [{k: v for k, v in p.items() if k != "regex"} for p in self.patterns],
-            "owned": [r.pattern for r in self.owned],
             "deprecated_prefix": self.deprecated_prefix,
-            "archive_after_days": self.archive_after_days,
-            "placement": {
-                **dict.fromkeys(sorted(self.direct_spaces), ""),
-                **self.category_folders,
-            },
         }
 
 
@@ -278,23 +208,6 @@ def _split_sections(text: str) -> list[Section]:
             lines.append(line)
     sections.append(Section(level, title, "\n".join(lines)))
     return sections
-
-
-def _find_section(doc: Path, sections: list[Section], title: str) -> Section:
-    """Find the section with this title.
-
-    Returns:
-        The section.
-
-    Raises:
-        NamingRulesError: when the note has none.
-
-    """
-    found = next((s for s in sections if s.title.lower() == title.lower()), None)
-    if found is None:
-        msg = _missing(doc, f"a section titled {title!r}")
-        raise NamingRulesError(msg)
-    return found
 
 
 def _markdown_tables(text: str) -> list[tuple[list[str], list[list[str]]]]:
@@ -502,93 +415,6 @@ def _read_patterns(
     return tuple(patterns), frozenset(bare), deprecated.get("prefix", "")
 
 
-def _read_archive_days(doc: Path, text: str) -> int:
-    """Read how many days after its deprecation a repository is archived.
-
-    Returns:
-        The number in the sentence "... archived on GitHub N days after its deprecation date".
-
-    Raises:
-        NamingRulesError: when the note has no such sentence.
-
-    """
-    m = ARCHIVE_SENTENCE.search(text)
-    if m is None:
-        msg = _missing(doc, "how many days after its deprecation a repository is archived")
-        raise NamingRulesError(msg)
-    return int(m.group(1))
-
-
-def _read_owned(doc: Path, sections: list[Section]) -> tuple[re.Pattern[str], ...]:
-    """Read which GitHub repositories belong to the project: the names and prefixes the note lists.
-
-    A span ending in a hyphen is a prefix; any other span is a name that matches alone or as
-    the first token of a longer one. A span followed by "(any case)" matches in any case.
-
-    Returns:
-        One pattern per listed span.
-
-    Raises:
-        NamingRulesError: when the note lists none.
-
-    """
-    body = _find_section(doc, sections, OWNED_SECTION).body
-    out = tuple(
-        re.compile(
-            "^" + re.escape(span) + ("" if span.endswith(HYPHEN) else "(?:-|$)"),
-            re.IGNORECASE if any_case else 0,
-        )
-        for span, any_case in OWNED_SPAN.findall(body)
-    )
-    if not out:
-        msg = _missing(doc, f"the names that belong to the project (under '{OWNED_SECTION}')")
-        raise NamingRulesError(msg)
-    return out
-
-
-def _read_placement(
-    doc: Path,
-    sections: list[Section],
-    prefixes: dict[str, str],
-    types: tuple[str, ...],
-) -> tuple[frozenset[str], dict[str, dict[str, str]]]:
-    """Read where each project's repositories are placed.
-
-    Projects named in the sentence that says they "sit directly in their project folder" have
-    no sub-folder. The sentence "by category: a library in `shared/common`, ..." gives, per
-    space, a folder for each category; a category belongs to the one repository type whose name
-    begins the category's word (`lib` for library, `infra` for infrastructure).
-
-    Returns:
-        The spaces placed directly, and each category-placed space's folder per type.
-
-    Raises:
-        NamingRulesError: when the note states neither kind of placement, or a category
-            matches no type.
-
-    """
-    body = _find_section(doc, sections, PLACEMENT_SECTION).body
-    direct: set[str] = set()
-    folders: dict[str, dict[str, str]] = {}
-    for line in body.splitlines():
-        if DIRECT_MARKER in line:
-            direct.update(p for p in prefixes if re.search(rf"\b{re.escape(p)}\b", line, re.IGNORECASE))
-        if CATEGORY_MARKER in line:
-            for word, space, folder in CATEGORY_FOLDER.findall(line.partition(CATEGORY_MARKER)[2]):
-                match = max((t for t in types if word.lower().startswith(t)), key=len, default=None)
-                if space not in prefixes or match is None:
-                    msg = _missing(
-                        doc,
-                        f"which repository type '{word}' is, or which project '{space}' is, in its placement",
-                    )
-                    raise NamingRulesError(msg)
-                folders.setdefault(space, {})[match] = folder
-    if not direct and not folders:
-        msg = _missing(doc, "where the repositories of each project are placed")
-        raise NamingRulesError(msg)
-    return frozenset(direct), folders
-
-
 def read_rules(path: Path) -> NamingRules:
     """Read the repository naming rules from the naming note at `path`.
 
@@ -608,16 +434,11 @@ def read_rules(path: Path) -> NamingRules:
     prefixes = _read_prefixes(path, text)
     types = _read_types(path, text)
     patterns, bare, deprecated_prefix = _read_patterns(path, sections, prefixes)
-    direct, folders = _read_placement(path, sections, prefixes, types)
     return NamingRules(
         document=path,
         prefixes=prefixes,
         types=types,
         patterns=patterns,
         bare_names=bare,
-        owned=_read_owned(path, sections),
         deprecated_prefix=deprecated_prefix,
-        direct_spaces=direct,
-        category_folders=folders,
-        archive_after_days=_read_archive_days(path, text),
     )

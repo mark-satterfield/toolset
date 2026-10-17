@@ -22,16 +22,17 @@ Facts that are true of the repository *as a repository*, and that have no other 
 
 | Belongs | Example |
 |---|---|
-| Repo identity | `name`, `lifecycle` of a planned repo |
+| Repo identity | `id` (GitHub's id of the repository); `name` and `lifecycle` of a planned repo not yet on GitHub |
 | Tier | `tier` (`product` or `tooling`) |
 | Repo grouping | groups |
 | Lifecycle dates | `deprecated_on` |
 | Pointers | a path or link to the canonical document for anything else |
 
 Local paths are derived live by the `polyrepo` tool from the repository folders and are not
-stored. `remote_url` and the lifecycle of a deprecated or archived repo are copies kept so a lookup
-need not call GitHub; `polyrepo reconcile` compares each with disk and GitHub and `reconcile --fix`
-rewrites it. A copy with no such check is not kept.
+stored, and neither is a repository's name or remote URL: the tool reads both live from GitHub
+and disk, through the entry's `id`, which a rename on GitHub keeps. The lifecycle of a deprecated
+or archived repo is a copy kept so a lookup need not call GitHub; `polyrepo reconcile` compares it
+with GitHub and `reconcile --fix` rewrites it. A copy with no such check is not kept.
 
 ### What does not belong
 
@@ -92,7 +93,7 @@ Either way the fact ends up in exactly one place: the canonical document.
 ## Top-level structure
 
 ```yaml
-schema_version: 5
+schema_version: 6
 project:
   name: string                   # short kebab-case identifier
   # No purpose and no owners: what the project is, and who owns it, is the root AGENTS.md.
@@ -125,8 +126,8 @@ them and why.
 ## Repo schema
 
 ```yaml
-- name: string                   # the project-internal name
-  remote_url: string?            # primary remote; a copy of GitHub's, checked by reconcile
+- id: string                     # GitHub's node id of the repository; the name is read live
+  name: string?                  # only for a planned repository not yet on GitHub
   lifecycle: enum                # active, maintenance, deprecated,
                                  # archived, planned
   tier: enum                     # whether the repository holds product code: product or
@@ -137,21 +138,24 @@ them and why.
 ```
 
 No `local_path`. A repo's location on disk is a live fact the steward's
-tool derives from the project's repo-root environment variable plus this
-`name` — recording it in the manifest is exactly the kind of hardcoded,
+tool derives from the project's repo-root environment variable and the
+repository's live name — recording it in the manifest is exactly the kind of hardcoded,
 machine-specific path that goes stale on every re-clone or new machine.
 No `default_branch`, `language`, `owner` or `notes` either: the repository and GitHub hold the
 first two, the root `AGENTS.md` holds ownership, and what a repository is for is the matrix's.
 
-Required: `name`, `lifecycle`, `tier`. An entry that still carries `purpose`, `purpose_head`, `owns`,
-`role`, `owner`, `language`, `notes` or `default_branch` loses them at the tool's next write of the manifest.
+Required: `id` (or, for a planned repository not yet on GitHub, `name`), `lifecycle`, `tier`. An
+entry that still carries `purpose`, `purpose_head`, `owns`, `role`, `owner`, `language`, `notes`,
+`default_branch` or `remote_url` loses them at the tool's next write of the manifest, and an entry
+with an `id` loses its `name`; `reconcile --fix` records the `id` of an entry that records only a
+name (`entry-unkeyed`).
 
 ## Group schema
 
 ```yaml
 - name: string                   # kebab-case, unique across groups
-  members: [string]              # repo names; every entry must resolve
-                                 # to a real repo
+  members: [string]              # each member is its entry's key: the `id`, or the
+                                 # `name` of a planned repo; every one must resolve
 ```
 
 A **group** is a named set of repos the steward chose by judgment. A set that a repository's
@@ -179,8 +183,8 @@ those are content, not metadata the steward must keep current.
 
 When writing or updating the manifest, ensure:
 
-- `schema_version` is present and is `5`.
-- Every `repos[].name` is unique.
+- `schema_version` is present and is `6`.
+- Every `id` is unique.
 - Every `groups[].name` is unique, and every `groups[].members[]` entry
   resolves to a real repo (in `repos`, or an adjacent repo).
 - No `relationships`, `conventions` or `ownership` section, and no `project.purpose` or
@@ -200,7 +204,6 @@ directory (located during setup — see the setup workflow), containing:
 | File / dir | Holds |
 |---|---|
 | `manifest.yaml` | The structural spine — this schema. |
-| `changelog.md` | Append-only learning log; every change appends here. |
 | `knowledge.yaml` | The knowledge store — durable, non-structural facts, mostly *where to find things*. Owned by the `polyrepo-info` skill. |
 | `procedures/` | Local procedures/scripts the steward writes for this project (not pushed to the plugin), registered in `governance`. |
 
@@ -256,8 +259,8 @@ project-specific behavioural preference the agent must read may still live in
 
 If a project needs a field that does not exist here, do not invent one
 silently. Add the field, increment `schema_version` if the change is
-breaking, and record the schema change in *both* the project's
-`.polyrepo/changelog.md` and the *Schema version history* section below.
+breaking, and record the schema change in the *Schema version history* section below and in
+the message of the commit that changes the manifest.
 Future versions of the steward read the schema version to know what to
 expect.
 
@@ -326,3 +329,8 @@ read `schema_version` and know exactly what changed between versions.
   `governance[].notes` (the script's own header and the vault runbook), and the groups that restated
   a repository's type or its imports. The tool drops the entry fields at its next write and reports a
   retired section as `retired-section`.
+- **v6** - an entry is keyed by GitHub's id of its repository (`id`) and records no `name` and no
+  `remote_url`: the tool reads both live, so a rename on GitHub leaves the record true. A planned
+  repository not yet on GitHub keeps its `name` until it is created. Group members are entry keys.
+  `reconcile --fix` converts a v5 entry (`entry-unkeyed`). The `.polyrepo/changelog.md` file is
+  retired: the commit messages of the records are the record of what changed.

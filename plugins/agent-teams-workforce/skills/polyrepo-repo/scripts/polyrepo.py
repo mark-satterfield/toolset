@@ -7,14 +7,16 @@
 
 The repository folders and GitHub are the source of truth. Every fact this tool reports about
 a repo (branch, uncommitted files, last commit, main against origin/main, GitHub state) is read
-live from git and GitHub on each call. The manifest contributes only what neither holds:
-groups and deprecation dates. What a repository holds and why it exists is the matrix's: its
-stacks, with their purposes, read through `atw-matrix` (`inventory` prints them), and this tool
-keeps the matrix's stacks true to the repositories (`create`, `rename`, `deprecate`, `doctor`).
-`reconcile` compares disk, GitHub and the manifest, and
-`reconcile --fix` repairs every mechanical finding: it rewrites the manifest, pushes, creates or
-renames the GitHub repo so local and GitHub move together, and appends the changelog. The
-manifest keeps no `owns`, `purpose`, `purpose_head` or `role`; its next write drops them.
+live from git and GitHub on each call, a repository's name included: a manifest entry records
+GitHub's id of the repository, never its name, so a rename on GitHub leaves the record true. A
+repository belongs to the project when the manifest records it or its clone is under the root.
+The manifest contributes only what neither holds: tiers, groups and deprecation dates. What a
+repository holds and why it exists is the matrix's: its stacks, with their purposes, read through
+`atw-matrix` (`inventory` prints them), and this tool keeps the matrix's stacks true to the
+repositories (`create`, `rename`, `deprecate`, `doctor`). `reconcile` compares disk, GitHub and
+the manifest, and `reconcile --fix` repairs every mechanical finding: it rewrites the manifest,
+pushes, creates or renames the GitHub repo so local and GitHub move together. The manifest keeps
+no `owns`, `purpose`, `purpose_head`, `role` or `remote_url`; its next write drops them.
 
 Settings come from `.polyrepo/config.yaml`, found in this order: `--config`, `$POLYREPO_CONFIG`,
 the nearest `.polyrepo/config.yaml` above the working directory, `$SKILLSPOKE_CC/.polyrepo/`.
@@ -48,21 +50,18 @@ Usage:
   polyrepo.py doctor [--fix]
   polyrepo.py commit --message TEXT
 
-A command that changes the steward's own files (manifest, changelog, knowledge store) commits
-and pushes them itself, on the default branch of the repo that holds them; `commit` does the
-same after a hand edit. A line in the environment variable POLYREPO_COMMIT_TRAILER ends the
-message of every commit the tool makes.
+A command that changes the steward's own files (manifest, knowledge store) commits and pushes
+them itself, on the default branch of the repo that holds them, with a message that says what
+changed; `commit` does the same after a hand edit. A line in the environment variable
+POLYREPO_COMMIT_TRAILER ends the message of every commit the tool makes.
 
-Tier is decided by content, not by repository: tier 1 is the SkillSpoke product (the code,
-infrastructure, scripts and CI/CD that would exist if AI did not), and everything that exists
-because of AI (AGENTS.md, CLAUDE.md, `.claude/`, agents, skills, plugins, the pipeline) is tier 2,
-wherever it sits; tier 2 is committed on `main` with no pull request. The manifest records, for
-every repository, whether it holds product code: `product` (its product files are tier 1: worktrees
-and a pull request) or `tooling` (the repository is tier 2 throughout). `tier <path>` says which
-the repository containing a path is, and the tier export (`.polyrepo/repository-tiers.json`, path
-to `product` or `tooling`) is rewritten with every records commit, for the hooks that read it.
-`agents-sync` writes AI-tooling files, so it commits on `main` in every repository, whatever its
-recorded tier.
+The tiers are defined in the project's root AGENTS.md ("Code quality"). The manifest records, for
+every repository, whether it holds product code: `product` (its product files are tier 1:
+worktrees and a pull request) or `tooling` (the repository is tier 2 throughout). `tier <path>`
+says which the repository containing a path is, and the tier export
+(`.polyrepo/repository-tiers.json`, path to `product` or `tooling`) is rewritten with every
+records commit, for the hooks that read it. `agents-sync` writes AGENTS.md, which is tier 2 in
+every repository, so it commits on `main` whatever the repository's recorded tier.
 
 Every command takes --json (one JSON object on stdout) and --no-cache (ignore the fetch and
 GitHub-listing freshness window). Exit status: 0 success, 1 findings remain (reconcile, a
@@ -102,6 +101,7 @@ from ruamel.yaml.error import YAMLError
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pipeline-contracts" / "scripts"))
 from driver_surface_types import CONTROL_REPO_ENV
 from name_sweep import (
+    NameChange,
     NameSweepError,
     SweepTarget,
     adjust_pyproject,
@@ -123,13 +123,17 @@ from naming_rules import NamingPattern, NamingRules, NamingRulesError, read_rule
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
-    from name_sweep import Checker, FileEdit, FileMove, NameChange, Namer, Rule
+    from name_sweep import Checker, FileEdit, FileMove, Namer, Rule
 
 GIT_TIMEOUT = 60
 FETCH_TIMEOUT = 45
 WORKERS = 16
 LIFECYCLES_INACTIVE = ("deprecated", "archived")
-RETIRED_FIELDS = ("owns", "purpose", "purpose_head", "role", "owner", "language", "notes", "default_branch")
+RETIRED_FIELDS = (
+    "owns", "purpose", "purpose_head", "role", "owner", "language", "notes", "default_branch", "remote_url",
+)  # fmt: skip
+ENTRY_ID = "id"
+ENTRY_NAME = "name"
 RETIRED_SECTIONS = ("conventions", "ownership", "relationships")
 RETIRED_PROJECT_FIELDS = ("purpose", "owners")
 ENTRY_LISTS = ("repos", "deprecations")
@@ -150,8 +154,9 @@ class PolyrepoError(Exception):
 
 
 class GhRepo(TypedDict):
-    """One GitHub repository of the owner, as the tool records it."""
+    """One GitHub repository of the owner, as the tool records it; `id` is GitHub's node id, which a rename keeps."""
 
+    id: str
     name: str
     archived: bool
     pushed_at: str | None
@@ -377,12 +382,14 @@ def parse_gh_repo(value: object) -> GhRepo:
     if not isinstance(value, dict):
         msg = f"GitHub record {value!r} is not a mapping"
         raise PolyrepoError(msg)
+    rid: object = value.get("id")
     name: object = value.get("name")
     archived: object = value.get("archived", False)
-    if not isinstance(name, str) or not isinstance(archived, bool):
-        msg = f"GitHub record {value!r} lacks a string name or a boolean archived"
+    if not isinstance(rid, str) or not isinstance(name, str) or not isinstance(archived, bool):
+        msg = f"GitHub record {value!r} lacks a string id, a string name or a boolean archived"
         raise PolyrepoError(msg)
     return GhRepo(
+        id=rid,
         name=name,
         archived=archived,
         pushed_at=_opt_str(value.get("pushed_at"), "GitHub pushed_at"),
@@ -532,7 +539,6 @@ class Config:
     file: Path
     root: Path
     manifest: Path
-    changelog: Path
     knowledge: Path
     owner: str
     default_branch: str
@@ -542,6 +548,7 @@ class Config:
     ttl: int
     raw: dict[str, object] = dataclasses.field(default_factory=dict)
     changes: list[str] = dataclasses.field(default_factory=list)
+    change_lines: list[str] = dataclasses.field(default_factory=list)
     types_cache: tuple[str, ...] | None = None
     rules_cache: NamingRules | None = None
 
@@ -585,20 +592,42 @@ class Config:
         base = Path(expand_env(str(root))).expanduser() if root else self.file.parent
         return base / str(document)
 
+    def _placement(self) -> dict[str, object]:
+        """Return the config's `placement` section.
+
+        Returns:
+            The section; empty when the config has none.
+
+        """
+        return _map(self.raw.get("placement") or {}, "config placement")
+
     def placement_folder(self, space: str, name: str) -> str:
         """Return the folder inside an app space where a repository of this name is placed.
 
+        A space the config's `placement.by_type` lists places each repository one folder deeper,
+        in the folder its type (the last token of its name) maps to; every other space holds its
+        repositories directly.
+
         Returns:
-            The folder, empty when the note places the space's repositories directly in it.
+            The folder, empty when the space holds its repositories directly.
 
         Raises:
-            PolyrepoError: when the note states no placement for this space and type.
+            PolyrepoError: when the space places by type and the config maps no folder to this type.
 
         """
-        try:
-            return self.rules.folder_for(space, name)
-        except NamingRulesError as exc:
-            raise PolyrepoError(str(exc)) from exc
+        by_type = _map(self._placement().get("by_type") or {}, "config placement.by_type")
+        if space not in by_type:
+            return ""
+        folders = _map(by_type[space], f"config placement.by_type.{space}")
+        repo_type = type_of(name)
+        folder = folders.get(repo_type)
+        if not isinstance(folder, str) or not folder:
+            msg = (
+                f"config placement.by_type.{space} maps a folder only to the types {', '.join(folders)}; "
+                f"it maps none to the type {repo_type!r} of {name}"
+            )
+            raise PolyrepoError(msg)
+        return folder
 
     def stack_type_names(self) -> tuple[str, ...]:
         """Return the stack types a repository name's last token may be, read once per run.
@@ -612,13 +641,20 @@ class Config:
         return self.types_cache
 
     def archive_after_days(self) -> int:
-        """Return the days from deprecating to archiving a repo, as the naming note states them.
+        """Return the days from deprecating to archiving a repo (config `deprecation.archive_after_days`).
 
         Returns:
-            The number of days in the vault's repository naming note.
+            The number of days.
+
+        Raises:
+            PolyrepoError: when the config does not state a positive number of days.
 
         """
-        return self.rules.archive_after_days
+        days = _map(self.raw.get("deprecation") or {}, "config deprecation").get("archive_after_days")
+        if not isinstance(days, int) or isinstance(days, bool) or days < 1:
+            msg = "config deprecation.archive_after_days does not state a positive number of days"
+            raise PolyrepoError(msg)
+        return days
 
     def setting_path(self, section: str, key: str, default: str) -> Path:
         """Resolve a path setting, relative to the config file's folder.
@@ -651,15 +687,6 @@ class Config:
         """
         return self.rules.problem(name)
 
-    def is_owned(self, name: str) -> bool:
-        """Tell whether a GitHub repo name belongs to the project, by the names the naming note lists.
-
-        Returns:
-            True when the name is the project's and not excluded.
-
-        """
-        return name not in self.exclude_names and self.rules.is_owned(name)
-
     def is_deprecated_name(self, name: str) -> bool:
         """Tell whether a repo name carries the deprecated prefix the naming note gives.
 
@@ -669,14 +696,22 @@ class Config:
         """
         return self.rules.is_deprecated(name)
 
-    def expected_space(self, name: str) -> str | None:
-        """Return the app space a repo of this name lives in; deprecated repos keep their space.
+    def expected_space(self, name: str) -> str:
+        """Return the app space a repo of this name lives in; a deprecated repo keeps its space.
+
+        The space is the folder under the root named by the first token of the name (of a
+        deprecated name, after the deprecated prefix), or the folder the config's
+        `placement.spaces` maps that token to; tokens are compared without case.
 
         Returns:
-            The space name, or None when the name implies none.
+            The space name.
 
         """
-        return self.rules.expected_space(name)
+        base = self.rules.deprecated_base(name) if self.is_deprecated_name(name) else name
+        token = base.partition("-")[0]
+        spaces = _map(self._placement().get("spaces") or {}, "config placement.spaces")
+        mapped = next((v for k, v in spaces.items() if k.lower() == token.lower()), None)
+        return mapped if isinstance(mapped, str) and mapped else token
 
     def github_url(self, name: str) -> str:
         """Return the canonical clone URL for a repo name.
@@ -741,7 +776,6 @@ def load_config(explicit: str | None) -> Config:
         file=f,
         root=root,
         manifest=f.parent / raw.get("manifest", "manifest.yaml"),
-        changelog=f.parent / raw.get("changelog", "changelog.md"),
         knowledge=f.parent / raw.get("knowledge", "knowledge.yaml"),
         owner=raw["github_owner"],
         default_branch=raw.get("default_branch", "main"),
@@ -893,6 +927,7 @@ class GitHub:
         self._resolved: dict[str, GhRepo | None] = {}
         self.repos = self._load(use_cache)
         self.lower = {n.lower(): n for n in self.repos}
+        self.ids = {r["id"]: n for n, r in self.repos.items()}
 
     def _load(self, use_cache: bool) -> dict[str, GhRepo]:
         if use_cache and self.cache_file.exists() and time.time() - self.cache_file.stat().st_mtime < self.cfg.ttl:
@@ -900,11 +935,12 @@ class GitHub:
             if not isinstance(cached, dict):
                 msg = f"{self.cache_file} does not hold a mapping"
                 raise PolyrepoError(msg)
-            return {str(k): parse_gh_repo(v) for k, v in cached.items()}
+            if all(isinstance(v, dict) and v.get("id") for v in cached.values()):
+                return {str(k): parse_gh_repo(v) for k, v in cached.items()}
         cp = run(
             [
                 "gh", "repo", "list", self.cfg.owner, "--limit", "2000",
-                "--json", "name,isArchived,pushedAt,url,visibility",
+                "--json", "id,name,isArchived,pushedAt,url,visibility",
             ],
             timeout=120,
         )  # fmt: skip
@@ -923,6 +959,7 @@ class GitHub:
             visibility = _opt_str(r.get("visibility"), "GitHub visibility")
             rec = parse_gh_repo(
                 {
+                    "id": r.get("id"),
                     "name": r.get("name"),
                     "archived": r.get("isArchived"),
                     "pushed_at": r.get("pushedAt"),
@@ -976,6 +1013,7 @@ class GitHub:
                     found = self.get(gh_name) if isinstance(gh_name, str) else None
                     rec = found or parse_gh_repo(
                         {
+                            "id": d.get("node_id"),
                             "name": gh_name,
                             "archived": d.get("archived", False),
                             "pushed_at": d.get("pushed_at"),
@@ -986,36 +1024,149 @@ class GitHub:
         self._resolved[name] = rec
         return rec
 
+    def by_id(self, rid: str) -> GhRepo | None:
+        """Look a repo up by GitHub's id in the listing.
+
+        Returns:
+            The repo record, or None when the owner has no repo with that id.
+
+        """
+        n = self.ids.get(rid)
+        return self.repos.get(n) if n else None
+
+    def id_of(self, name: str) -> str | None:
+        """Return GitHub's id of the repo a name leads to, following GitHub's rename redirects.
+
+        Returns:
+            The id, or None when no repo of the owner has the name.
+
+        """
+        rec = self.resolve(name)
+        return rec["id"] if rec else None
+
+    def note_rename(self, old: str, new: str) -> None:
+        """Rename a repo in the listing this run holds, after it was renamed on GitHub."""
+        rec = self.repos.pop(old, None)
+        if rec is None:
+            return
+        rec = GhRepo(**{**rec, "name": new})
+        self.repos[new] = rec
+        self.lower = {n.lower(): n for n in self.repos}
+        self.ids[rec["id"]] = new
+        self._resolved = {}
+
 
 # --------------------------------------------------------------------------------------------
 # manifest
 
 
-class Manifest:
-    """The steward's manifest, read and written with comments and layout preserved."""
+def entry_key(e: Mapping[str, object]) -> str:
+    """Return the key a manifest entry records: GitHub's id, or the name of a repository not on GitHub.
 
-    def __init__(self, path: Path) -> None:
+    Returns:
+        The key.
+
+    """
+    return str(e.get(ENTRY_ID) or e.get(ENTRY_NAME))
+
+
+class Manifest:
+    """The steward's manifest, read and written with comments and layout preserved.
+
+    An entry records GitHub's id of its repository (`id`), never the name: the name is read live
+    from the GitHub listing on every call. Only an entry whose repository is not on GitHub yet (a
+    planned repository) records a `name`, the steward's own fact. A group member is the key its
+    entry records: the id, or the name of a planned repository.
+    """
+
+    def __init__(self, path: Path, gh: GitHub) -> None:
         """Load the manifest; a missing file starts an empty one."""
         self.path = path
+        self.gh = gh
         self.yaml = _yaml()
         self.doc: CommentedMap = self.yaml.load(path.read_text(encoding="utf-8")) if path.exists() else CommentedMap()
         if self.doc.get("repos") is None:
             self.doc["repos"] = []
         self.dirty = False
 
+    def _all(self) -> list[CommentedMap]:
+        """Return every entry, from `repos` and from the `deprecations` list.
+
+        Returns:
+            The entries in file order.
+
+        """
+        return [e for key in ENTRY_LISTS for e in self.doc.get(key) or [] if isinstance(e, CommentedMap)]
+
+    def _label(self, e: Mapping[str, object]) -> str | None:
+        """Return the name an entry is known by: its repository's live GitHub name, or its own name.
+
+        An entry whose id GitHub no longer has is labelled `id <id>`, so it can be reported.
+
+        Returns:
+            The label, or None for an entry that records neither an id nor a name.
+
+        """
+        rid = e.get(ENTRY_ID)
+        if rid:
+            rec = self.gh.by_id(str(rid))
+            return rec["name"] if rec else f"{ENTRY_ID} {rid}"
+        name = e.get(ENTRY_NAME)
+        return str(name) if name else None
+
     def entries(self) -> dict[str, CommentedMap]:
-        """Return the repo entries by name, from `repos` and from the `deprecations` list.
+        """Return the repo entries by the name each is known by (`label`); a later duplicate is left out.
 
         Returns:
             A name → entry mapping.
 
         """
-        return {
-            e["name"]: e
-            for key in ENTRY_LISTS
-            for e in self.doc.get(key) or []
-            if isinstance(e, CommentedMap) and e.get("name")
-        }
+        out: dict[str, CommentedMap] = {}
+        for e in self._all():
+            name = self._label(e)
+            if name is not None:
+                out.setdefault(name, e)
+        return out
+
+    def duplicates(self) -> list[tuple[str, CommentedMap]]:
+        """Return each entry that records the same repository as an earlier one.
+
+        Returns:
+            (the name, the later entry) for each duplicate.
+
+        """
+        seen: set[str] = set()
+        out: list[tuple[str, CommentedMap]] = []
+        for e in self._all():
+            name = self._label(e)
+            if name is None:
+                continue
+            if name in seen:
+                out.append((name, e))
+            seen.add(name)
+        return out
+
+    def is_unresolved(self, e: Mapping[str, object]) -> bool:
+        """Tell whether an entry records an id the owner's GitHub repositories no longer have.
+
+        Returns:
+            True when the entry has an id and GitHub has no repo with it.
+
+        """
+        rid = e.get(ENTRY_ID)
+        return bool(rid) and self.gh.by_id(str(rid)) is None
+
+    def member_name(self, member: str) -> str | None:
+        """Return the live name of a group member, which is an entry's key.
+
+        Returns:
+            The repository's GitHub name for an id, the member itself for a name, None for an id GitHub does not have.
+
+        """
+        rec = self.gh.by_id(member)
+        if rec is not None:
+            return rec["name"]
+        return None if any(e.get(ENTRY_ID) == member for e in self._all()) else member
 
     def groups(self) -> list[CommentedMap]:
         """Return the group mappings.
@@ -1050,11 +1201,22 @@ class Manifest:
             Group names.
 
         """
-        return [g["name"] for g in self.groups() if name in (g.get("members") or [])]
+        e = self.entries().get(name)
+        if e is None:
+            return []
+        key = entry_key(e)
+        return [g["name"] for g in self.groups() if key in (g.get("members") or [])]
 
     def add_entry(self, name: str, fields: dict[str, object]) -> None:
-        """Append a new repo entry; for an entry that exists, fill only the fields it lacks."""
-        e = self.entries().get(name)
+        """Append a new repo entry keyed by GitHub's id; for an entry that exists, fill only the fields it lacks.
+
+        A repository GitHub does not have is keyed by its name.
+        """
+        rid = self.gh.id_of(name)
+        rec = self.gh.by_id(rid) if rid else None
+        e = self.entries().get(rec["name"] if rec else name)
+        if e is None and rid:
+            e = next((x for x in self._all() if x.get(ENTRY_ID) == rid), None)
         if e is not None:
             for k, v in fields.items():
                 if e.get(k) is None:
@@ -1062,21 +1224,44 @@ class Manifest:
                     self.dirty = True
             return
         m = CommentedMap()
-        m["name"] = name
+        if rid:
+            m[ENTRY_ID] = rid
+        else:
+            m[ENTRY_NAME] = name
         for k, v in fields.items():
             m[k] = v
         self.doc["repos"].append(m)
         self.dirty = True
 
-    def set_member(self, group: str, old: str, new: str | None) -> None:
-        """Rename a group member, or remove it when new is None."""
+    def key_entry(self, name: str) -> None:
+        """Record GitHub's id on an entry that records a name, and drop the name.
+
+        Raises:
+            PolyrepoError: when GitHub has no repository of that name.
+
+        """
+        e = self.entries()[name]
+        rid = self.gh.id_of(name)
+        if rid is None:
+            msg = f"GitHub has no repository {name}"
+            raise PolyrepoError(msg)
+        e.pop(ENTRY_NAME, None)
+        e.insert(0, ENTRY_ID, rid)
         for g in self.groups():
             members = g.get("members")
-            if g["name"] == group and members and old in members:
+            if members and name in members:
+                members[members.index(name)] = rid
+        self.dirty = True
+
+    def set_member(self, group: str, member: str, new: str | None) -> None:
+        """Replace a group member's key, or remove the member when new is None."""
+        for g in self.groups():
+            members = g.get("members")
+            if g["name"] == group and members and member in members:
                 if new is None:
-                    members.remove(old)
+                    members.remove(member)
                 else:
-                    members[members.index(old)] = new
+                    members[members.index(member)] = new
                 self.dirty = True
 
     def remove_section(self, key: str) -> None:
@@ -1111,21 +1296,30 @@ class Manifest:
 
     def remove_entry(self, name: str) -> None:
         """Remove an entry and its group memberships."""
+        self.drop_entry(self.entries()[name])
+
+    def drop_entry(self, entry: CommentedMap) -> None:
+        """Remove this entry object, and the group memberships of its key when no other entry records it."""
         for key in ENTRY_LISTS:
             items = self.doc.get(key)
             if items:
-                keep = [e for e in items if e.get("name") != name]
+                keep = [e for e in items if e is not entry]
                 items.clear()
                 items.extend(keep)
-        for g in self.groups():
-            members = g.get("members")
-            if members and name in members:
-                members.remove(name)
+        k = entry_key(entry)
+        if not any(entry_key(e) == k for e in self._all()):
+            for g in self.groups():
+                members = g.get("members")
+                if members and k in members:
+                    members.remove(k)
         self.dirty = True
 
     def rename_entry(self, old: str, new: str) -> None:
-        """Rename an entry everywhere it is referenced."""
-        self.entries()[old]["name"] = new
+        """Rename an entry that records a name; an entry keyed by GitHub's id needs no change."""
+        e = self.entries()[old]
+        if e.get(ENTRY_ID):
+            return
+        e[ENTRY_NAME] = new
         for g in self.groups():
             members = g.get("members")
             if members and old in members:
@@ -1135,11 +1329,13 @@ class Manifest:
     def drop_retired_fields(self) -> None:
         """Remove the fields the manifest no longer keeps (`RETIRED_FIELDS`) from every entry.
 
-        What a repository holds and why it exists is the matrix's, so an entry carries none of them.
+        An entry keyed by GitHub's id keeps no name: the name is read live.
         """
-        for e in self.entries().values():
+        for e in self._all():
             for key in RETIRED_FIELDS:
                 e.pop(key, None)
+            if e.get(ENTRY_ID):
+                e.pop(ENTRY_NAME, None)
 
     def save(self) -> None:
         """Write the manifest back when it changed, without the retired fields."""
@@ -1387,14 +1583,24 @@ class State:
         """Say what disk and GitHub know of a name.
 
         Returns:
-            "active", "inactive" (deprecated or archived), "renamed:<new name>" when GitHub
-            redirects it, or "missing".
+            "active", "inactive" (deprecated or archived), or "missing".
 
         """
         if name in self.local or self.gh.get(name):
             return "inactive" if self.lifecycle(name) in LIFECYCLES_INACTIVE else "active"
-        rec = self.gh.resolve(name)
-        return f"renamed:{rec['name']}" if rec else "missing"
+        return "missing"
+
+    def local_id(self, r: LocalRepo) -> str | None:
+        """Return GitHub's id of the repo a clone's origin leads to.
+
+        Returns:
+            The id, or None when origin is no GitHub repo of the owner.
+
+        """
+        parsed = parse_github_url(r.origin_url)
+        if parsed is None or parsed[0].lower() != self.cfg.owner.lower():
+            return None
+        return self.gh.id_of(parsed[1])
 
     def lifecycle(self, name: str) -> str:
         """Derive a repo's lifecycle from reality first, the manifest second.
@@ -1412,21 +1618,14 @@ class State:
         man = str(e.get("lifecycle")) if e and e.get("lifecycle") else "active"
         return "active" if man in LIFECYCLES_INACTIVE else man
 
-    def tracked_names(self, all_github: bool = False) -> list[str]:
-        """Every repo in scope: on disk, in the manifest, or a deprecated project repo on GitHub.
-
-        With all_github, every project repo on GitHub is added as well.
+    def tracked_names(self) -> list[str]:
+        """Every repo of the project: the ones the manifest records and the clones under the root.
 
         Returns:
             Sorted names.
 
         """
-        names = set(self.local) | set(self.manifest.entries())
-        for n in self.gh.repos:
-            p = self.cfg.classify(n)
-            if self.cfg.is_owned(n) and (all_github or (p and p["kind"] == "deprecated")):
-                names.add(n)
-        return sorted(names, key=str.lower)
+        return sorted(set(self.local) | set(self.manifest.entries()), key=str.lower)
 
     def record(self, name: str, deep: bool = True) -> dict[str, object]:
         """Build a repo's full record: live facts, the manifest's groups, and the matrix's stacks.
@@ -1504,7 +1703,7 @@ def gather(cfg: Config, fetch: bool, use_cache: bool) -> State:
         gh_future = ex.submit(GitHub, cfg, use_cache)
         collect_all_local(local, cfg, fetch, use_cache)
         gh = gh_future.result()
-    return State(cfg, local, dups, gh, Manifest(cfg.manifest))
+    return State(cfg, local, dups, gh, Manifest(cfg.manifest, gh))
 
 
 # --------------------------------------------------------------------------------------------
@@ -1606,11 +1805,10 @@ def entry_fields(
     lifecycle: str,
     extra: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    """Return the fields of a new manifest entry.
+    """Return the fields of a new manifest entry: the lifecycle and the tier (see `default_tier`).
 
-    The fields are the lifecycle, the tier (see `default_tier`), GitHub URL, and,
-    for a deprecated repo, the deprecation date the changelog records (none when it records
-    none: `reconcile` then reports the entry undated, never dated today).
+    A deprecated repo's `deprecated_on` is the date it was renamed deprecated; an entry added
+    without one is reported undated by `reconcile`, never dated today.
 
     Returns:
         The fields, with extra merged over them.
@@ -1619,37 +1817,8 @@ def entry_fields(
     fields: dict[str, object] = {
         "lifecycle": lifecycle,
         "tier": default_tier(cfg, name),
-        "remote_url": cfg.github_url(name),
     }
-    if lifecycle == "deprecated" and (since := recorded_deprecation_date(cfg, name)):
-        fields["deprecated_on"] = since
     return {**fields, **(extra or {})}
-
-
-CHANGELOG_HEADING = re.compile(r"^## (\d{4}-\d{2}-\d{2}) — (.*)$")
-
-
-def recorded_deprecation_date(cfg: Config, name: str) -> str | None:
-    """Find the date the changelog records a repo's deprecation on.
-
-    The deprecation is the changelog section `polyrepo rename <old> to <name>` or `polyrepo
-    deprecate <name>`, which the tool writes on the day it renames a repo to its deprecated- name.
-
-    Returns:
-        The earliest such section's date (YYYY-MM-DD), or None when the changelog has none.
-
-    """
-    if not cfg.changelog.is_file():
-        return None
-    for line in cfg.changelog.read_text(encoding="utf-8").splitlines():
-        m = CHANGELOG_HEADING.match(line)
-        if m is None:
-            continue
-        title = m.group(2)
-        renamed = title.startswith("polyrepo rename ") and title.endswith(f" to {name}")
-        if renamed or title == f"polyrepo deprecate {name}":
-            return m.group(1)
-    return None
 
 
 def default_tier(cfg: Config, name: str) -> str:
@@ -1671,29 +1840,27 @@ def reconcile(st: State) -> list[Finding]:
 
     """
     entries = st.manifest.entries()
-    out: list[Finding] = []
-    renamed_to: set[str] = set()
-
-    out.extend(
+    local_ids = {rid: name for name, r in st.local.items() if (rid := st.local_id(r))}
+    out: list[Finding] = [
         Finding(
             "duplicate-name",
             name,
             f"same folder name at {', '.join(str(p) for p in paths)}",
         )
         for name, paths in st.duplicates
-    )
+    ]
 
-    out.extend(_check_entries_off_disk(st, entries, renamed_to))
+    out.extend(_check_entries_off_disk(st, entries, local_ids))
 
     # Repos on disk.
+    tracked_ids = {str(e[ENTRY_ID]) for e in entries.values() if e.get(ENTRY_ID)}
     for name, r in sorted(st.local.items(), key=lambda kv: kv[0].lower()):
-        out.extend(_check_local(st, name, r, entries, renamed_to))
+        out.extend(_check_local(st, name, r, entries, tracked_ids))
 
     # Every tracked name, on disk or not: manifest fields that GitHub decides.
     for name in st.tracked_names():
         out.extend(_check_tracked(st, name, entries))
 
-    out.extend(_check_github_only(st, entries, renamed_to))
     out.extend(_check_relationships(st))
     out.extend(_check_open_items(st))
     out.extend(_check_retired_sections(st))
@@ -1703,112 +1870,53 @@ def reconcile(st: State) -> list[Finding]:
 def _check_entries_off_disk(
     st: State,
     entries: dict[str, CommentedMap],
-    renamed_to: set[str],
+    local_ids: dict[str, str],
 ) -> list[Finding]:
-    """Check manifest entries with no repo on disk, recording each GitHub rename in renamed_to.
+    """Check manifest entries with no clone on disk, and entries that record a repository twice.
+
+    A clone whose origin leads to an entry's repository is that entry's clone, whatever its folder
+    is called; `reconcile` reports the folder name separately.
 
     Returns:
         The findings, in manifest order.
 
     """
-    cfg, man, gh = st.cfg, st.manifest, st.gh
-    out: list[Finding] = []
+    cfg, man = st.cfg, st.manifest
+    out: list[Finding] = [
+        Finding(
+            "duplicate-entry",
+            name,
+            f"two manifest entries record {name}",
+            fix="remove the later entry",
+            action=functools.partial(man.drop_entry, e),
+            manifest_change=True,
+        )
+        for name, e in man.duplicates()
+    ]
     for name, e in entries.items():
-        if name in st.local:
+        if name in st.local or str(e.get(ENTRY_ID) or "") in local_ids:
             continue
         lifecycle = str(e.get("lifecycle") or "active")
-        rec = gh.resolve(name)
-        if rec and rec["name"] != name and rec["name"] in entries:
-            out.append(
-                Finding(
-                    "duplicate-entry",
-                    name,
-                    f"GitHub renamed {name} to {rec['name']}, which has its own manifest entry",
-                    fix=f"remove the {name} entry",
-                    action=functools.partial(man.remove_entry, name),
-                    manifest_change=True,
-                ),
-            )
-        elif rec and rec["name"] != name:
-            new = rec["name"]
-            renamed_to.add(new)
-            out.append(
-                Finding(
-                    "renamed",
-                    name,
-                    f"GitHub renamed {name} to {new}",
-                    fix=f"rename the manifest entry to {new}",
-                    action=functools.partial(man.rename_entry, name, new),
-                    manifest_change=True,
-                ),
-            )
-        elif rec is None:
+        rec = None if man.is_unresolved(e) else st.gh.resolve(name)
+        if rec is None and lifecycle != "planned":
             out.append(
                 Finding(
                     "orphan-entry",
                     name,
                     "manifest entry with no repo on disk or on GitHub",
                     fix="remove the entry and its group memberships",
-                    action=functools.partial(man.remove_entry, name),
+                    action=functools.partial(man.drop_entry, e),
                     manifest_change=True,
                 ),
             )
-        elif lifecycle not in LIFECYCLES_INACTIVE and not cfg.is_deprecated_name(name) and not rec["archived"]:
+        elif rec is not None and lifecycle not in LIFECYCLES_INACTIVE and not cfg.is_deprecated_name(name):
+            if rec["archived"]:
+                continue
             out.append(
                 Finding(
                     "not-cloned",
                     name,
                     f"on GitHub and in the manifest but not under {cfg.root}",
-                ),
-            )
-    return out
-
-
-def _check_github_only(
-    st: State,
-    entries: dict[str, CommentedMap],
-    renamed_to: set[str],
-) -> list[Finding]:
-    """Check the project's GitHub repos that are not on disk.
-
-    Returns:
-        The findings, sorted by repo name.
-
-    """
-    cfg, man, gh = st.cfg, st.manifest, st.gh
-    out: list[Finding] = []
-    origins = {p[1].lower() for r in st.local.values() if (p := parse_github_url(r.origin_url))}
-    for name, rec in sorted(gh.repos.items(), key=lambda kv: kv[0].lower()):
-        if not cfg.is_owned(name) or name in st.local or name.lower() in origins:
-            continue
-        pat = cfg.classify(name)
-        if pat is None:
-            out.append(
-                Finding(
-                    "naming-violation",
-                    name,
-                    "GitHub repo name matches no naming pattern",
-                ),
-            )
-            continue
-        if pat["kind"] == "application" and name not in entries and name not in renamed_to:
-            out.append(
-                Finding(
-                    "github-only",
-                    name,
-                    f"on GitHub but not under {cfg.root} and not in the manifest",
-                ),
-            )
-        if pat["kind"] == "deprecated" and name not in entries and name not in renamed_to:
-            lc = "archived" if rec["archived"] else "deprecated"
-            out.append(
-                Finding(
-                    "untracked-github",
-                    name,
-                    f"{lc} repo on GitHub with no manifest entry",
-                    fix=f"add a manifest entry (lifecycle {lc})",
-                    action=functools.partial(_add_entry, man, cfg, name, lc),
-                    manifest_change=True,
                 ),
             )
     return out
@@ -1846,42 +1954,23 @@ def _check_group_members(st: State) -> list[Finding]:
     """Check every group member against disk and GitHub.
 
     Returns:
-        One finding per member that is renamed, unknown or inactive.
+        One finding per member that is unknown or inactive.
 
     """
     man = st.manifest
     out: list[Finding] = []
-    states: dict[str, str] = {}
-
-    def live(n: str) -> str:
-        if n not in states:
-            states[n] = st.live_state(n)
-        return states[n]
-
     for g in man.groups():
         gname = str(g["name"])
         for m in [str(x) for x in g.get("members") or []]:
-            s = live(m)
+            name = man.member_name(m)
+            s = st.live_state(name) if name else "missing"
             if s == "active":
-                continue
-            if s.startswith("renamed:"):
-                new = s.split(":", 1)[1]
-                out.append(
-                    Finding(
-                        "group-member-renamed",
-                        m,
-                        f"member of group {gname}; GitHub renamed it to {new}",
-                        fix=f"rename the member to {new}",
-                        action=functools.partial(man.set_member, gname, m, new),
-                        manifest_change=True,
-                    ),
-                )
                 continue
             why = "on neither disk nor GitHub" if s == "missing" else "deprecated or archived"
             out.append(
                 Finding(
                     f"group-member-{'unknown' if s == 'missing' else 'inactive'}",
-                    m,
+                    name or m,
                     f"member of group {gname}, but {why}",
                     fix=f"remove it from group {gname}",
                     action=functools.partial(man.set_member, gname, m, None),
@@ -1975,9 +2064,12 @@ def _check_local(
     name: str,
     r: LocalRepo,
     entries: dict[str, CommentedMap],
-    renamed_to: set[str],
+    tracked_ids: set[str],
 ) -> list[Finding]:
     """Check one repo on disk: its entry, naming, origin, pushed main and disk-decided fields.
+
+    A clone whose origin leads to a repository the manifest records is tracked, whatever its
+    folder is called.
 
     Returns:
         The findings, in check order.
@@ -1987,7 +2079,7 @@ def _check_local(
     out: list[Finding] = []
     e = entries.get(name)
 
-    if e is None and name not in renamed_to:
+    if e is None and st.local_id(r) not in tracked_ids:
         lc = "deprecated" if cfg.is_deprecated_name(name) else "active"
         out.append(
             Finding(
@@ -2210,21 +2302,20 @@ def _check_tracked(
     name: str,
     entries: dict[str, CommentedMap],
 ) -> list[Finding]:
-    cfg, man = st.cfg, st.manifest
+    man = st.manifest
     e = entries.get(name)
     if e is None:
         return []
     out: list[Finding] = []
     rec = st.gh.get(name)
-    want_url = cfg.github_url(name)
-    if rec is not None and e.get("remote_url") != want_url:
+    if rec is not None and not e.get(ENTRY_ID):
         out.append(
             Finding(
-                "remote-url",
+                "entry-unkeyed",
                 name,
-                f"manifest remote_url is {e.get('remote_url') or '(missing)'}",
-                fix=f"set remote_url to {want_url}",
-                action=lambda: man.set_field(name, "remote_url", want_url),
+                "manifest entry records the repository's name, not GitHub's id of it",
+                fix="record GitHub's id and drop the name; the name is read live",
+                action=functools.partial(man.key_entry, name),
                 manifest_change=True,
             ),
         )
@@ -2252,7 +2343,7 @@ def _check_tracked(
                     "manifest says deprecated but the repo was never renamed with the deprecated- prefix",
                 )
         if st.lifecycle(name) == "deprecated":
-            out.extend(_check_deprecation_age(st, name, e))
+            out.extend(_check_deprecation_age(name, e))
     out.extend(_check_tier(st, name, e))
     return out
 
@@ -2283,41 +2374,28 @@ def _check_tier(st: State, name: str, e: CommentedMap) -> list[Finding]:
     ]
 
 
-def _check_deprecation_age(st: State, name: str, e: CommentedMap) -> list[Finding]:
+def _check_deprecation_age(name: str, e: CommentedMap) -> list[Finding]:
     """Check that a deprecated repo's entry carries its real deprecation date.
 
-    An undated entry takes the date the changelog records the deprecation on; with none recorded
-    it stays an open finding, because today's date would restart the clock to archiving.
-    Archiving itself is `archive-due`'s.
+    An undated entry stays an open finding: the date is found in the git history of the
+    manifest, because today's date would restart the clock to archiving. Archiving itself is
+    `archive-due`'s.
 
     Returns:
         The findings.
 
     """
-    cfg, man = st.cfg, st.manifest
     since = e.get("deprecated_on")
     if since and _deprecation_start(e) is None:
         return [Finding("deprecated-undated", name, f"deprecated_on {since!r} is not a date")]
     if since:
         return []
-    recorded = recorded_deprecation_date(cfg, name)
-    if recorded is None:
-        return [
-            Finding(
-                "deprecated-undated",
-                name,
-                "deprecated repo with no deprecated_on date, and the changelog records no deprecation of it: "
-                "find the date it was deprecated in the git history of the manifest and record it",
-            ),
-        ]
     return [
         Finding(
             "deprecated-undated",
             name,
-            "deprecated repo with no deprecated_on date",
-            fix=f"record deprecated_on {recorded}, the date the changelog records its deprecation on",
-            action=lambda: man.set_field(name, "deprecated_on", recorded),
-            manifest_change=True,
+            "deprecated repo with no deprecated_on date: find the date it was deprecated in the git "
+            "history of the manifest and record it",
         ),
     ]
 
@@ -2356,7 +2434,7 @@ def _local_only(st: State, name: str, r: LocalRepo) -> Finding:
 
 
 def apply_fixes(st: State, findings: list[Finding], dry_run: bool) -> None:
-    """Run every mechanical fix: GitHub and git actions first, then manifest changes, then the changelog."""
+    """Run every mechanical fix: GitHub and git actions first, then manifest changes; note them for the commit."""
     todo = [f for f in findings if f.action is not None]
     ordered = [f for f in todo if not f.manifest_change] + [f for f in todo if f.manifest_change]
     for f in ordered:
@@ -2380,7 +2458,7 @@ def apply_fixes(st: State, findings: list[Finding], dry_run: bool) -> None:
         st.gh.invalidate()
     unlogged = [f for f in done if not f.logged]
     if unlogged:
-        append_changelog(
+        note_change(
             st.cfg,
             "polyrepo reconcile --fix",
             [f"{f.kind} {f.repo}: {f.fix}" for f in unlogged],
@@ -2397,20 +2475,21 @@ def today() -> str:
     return dt.datetime.now().astimezone().date().isoformat()
 
 
-def append_changelog(cfg: Config, title: str, lines: list[str]) -> None:
-    """Append a dated section to the steward's changelog, and note it for the commit."""
-    body = "\n".join(f"- {ln}" for ln in lines)
-    text = f"\n## {today()} — {title}\n{body}\n  - **Source:** `polyrepo`, verified live against disk and GitHub.\n"
-    with cfg.changelog.open("a") as fh:
-        fh.write(text)
+def note_change(cfg: Config, title: str, lines: list[str]) -> None:
+    """Note a change to the steward's files for the message of the commit that records it.
+
+    The title joins the commit subject and each line becomes a line of its body, so the git
+    history of the records says what changed.
+    """
     cfg.changes.append(title.removeprefix("polyrepo ").strip())
+    cfg.change_lines.extend(lines)
 
 
-def commit_records(cfg: Config, subject: str) -> dict[str, object]:
+def commit_records(cfg: Config, subject: str, body: list[str] | None = None) -> dict[str, object]:
     """Commit the steward's own files, then pull --rebase and push.
 
-    The files are the manifest, changelog, knowledge store and fleet list, committed on the
-    default branch of the repo that holds them.
+    The files are the manifest, knowledge store and fleet list, committed on the default branch
+    of the repo that holds them. The body lines, when given, follow the subject in the message.
 
     The tier export (`write_tier_export`) is rewritten first, so it follows every manifest write;
     it is derived and machine-specific, so it is not committed.
@@ -2433,7 +2512,7 @@ def commit_records(cfg: Config, subject: str) -> dict[str, object]:
         return {"status": "failed", "files": [], "error": f"tier export not written: {exc}"}
     rels = [
         p.resolve().relative_to(root.resolve()).as_posix()
-        for p in (cfg.manifest, cfg.changelog, cfg.knowledge, fleet_file(cfg))
+        for p in (cfg.manifest, cfg.knowledge, fleet_file(cfg))
         if p.exists() and p.resolve().is_relative_to(root.resolve())
     ]
     changed = git(root, "status", "--porcelain=v1", "--", *rels).stdout
@@ -2444,7 +2523,8 @@ def commit_records(cfg: Config, subject: str) -> dict[str, object]:
     branch = git_out(root, "symbolic-ref", "--short", "-q", "HEAD")
     try:
         _require_branch(root, branch, b)
-        _commit_paths(root, files, f"chore(polyrepo): {subject}", force=True)
+        message = f"chore(polyrepo): {subject}" + ("\n\n" + "\n".join(f"- {ln}" for ln in body) if body else "")
+        _commit_paths(root, files, message, force=True)
         must(git(root, "pull", "--rebase", "--autostash", "--quiet", timeout=120))
         must(git(root, "push", "origin", b, timeout=120))
     except GitFailedError as exc:
@@ -2467,7 +2547,7 @@ def _require_branch(root: Path, branch: str | None, want: str) -> None:
 def finish_records(cfg: Config, data: dict[str, object]) -> None:
     """Commit and push the steward's files when this run changed them, reporting it in data."""
     if cfg.changes:
-        data["records"] = commit_records(cfg, "; ".join(dict.fromkeys(cfg.changes)))
+        data["records"] = commit_records(cfg, "; ".join(dict.fromkeys(cfg.changes)), cfg.change_lines)
 
 
 # --------------------------------------------------------------------------------------------
@@ -2596,7 +2676,7 @@ def write_tier_export(cfg: Config, *, check: bool = False) -> tuple[Path, bool]:
         rewritten, unless check is set).
 
     """
-    repos, _ = tier_repos(cfg, Manifest(cfg.manifest), discover(cfg)[0])
+    repos, _ = tier_repos(cfg, Manifest(cfg.manifest, GitHub(cfg, use_cache=True)), discover(cfg)[0])
     want = tier_export_text(repos)
     out = tier_export_path(cfg)
     have = out.read_text(encoding="utf-8") if out.is_file() else None
@@ -2640,7 +2720,8 @@ def cmd_naming(args: argparse.Namespace, cfg: Config) -> int:
     """Check one repository name against the vault's repository naming note, and show the rule it matched.
 
     Read-only. The rules are read from the note on every call; the report names the note, the
-    section and the pattern line of the rule the name matched, and the folder the note places it in.
+    section and the pattern line of the rule the name matched, and the space and folder the
+    config's placement gives the name.
 
     Returns:
         0 when the name matches a pattern of the note, else 1.
@@ -2649,14 +2730,13 @@ def cmd_naming(args: argparse.Namespace, cfg: Config) -> int:
     rules = cfg.rules
     name: str = args.name
     pat = rules.classify(name)
-    space = rules.expected_space(name)
+    space = cfg.expected_space(name)
     folder: str | None = None
     folder_note: str | None = None
-    if space is not None:
-        try:
-            folder = cfg.placement_folder(space, rules.deprecated_base(name))
-        except PolyrepoError as exc:
-            folder_note = str(exc)
+    try:
+        folder = cfg.placement_folder(space, rules.deprecated_base(name))
+    except PolyrepoError as exc:
+        folder_note = str(exc)
     data: dict[str, object] = {
         "name": name,
         "valid": pat is not None,
@@ -2670,7 +2750,6 @@ def cmd_naming(args: argparse.Namespace, cfg: Config) -> int:
         "space": space,
         "folder": folder,
         "folder_note": folder_note,
-        "owned": cfg.is_owned(name),
         "problem": None if pat else rules.problem(name),
     }
     emit(
@@ -2692,7 +2771,7 @@ def cmd_tier(args: argparse.Namespace, cfg: Config) -> int:
         0 when a repository that records a tier contains the path, else 1.
 
     """
-    repos, _ = tier_repos(cfg, Manifest(cfg.manifest), discover(cfg)[0])
+    repos, _ = tier_repos(cfg, Manifest(cfg.manifest, GitHub(cfg, use_cache=True)), discover(cfg)[0])
     given = _absolute(expand_env(args.path))
     got = tier_of_path(repos, tuple(dict.fromkeys((given, given.resolve()))))
     where = got.repo.path if got.repo else got.toplevel
@@ -2722,7 +2801,7 @@ def cmd_tiers(args: argparse.Namespace, cfg: Config) -> int:
         0 when the export is current and every external repository resolves, else 1.
 
     """
-    repos, problems = tier_repos(cfg, Manifest(cfg.manifest), discover(cfg)[0])
+    repos, problems = tier_repos(cfg, Manifest(cfg.manifest, GitHub(cfg, use_cache=True)), discover(cfg)[0])
     out, differs = write_tier_export(cfg, check=not args.write)
     findings: list[dict[str, object]] = [
         {"repo": "-", "kind": "tier-external", "detail": p, "status": "open"} for p in problems
@@ -2766,7 +2845,7 @@ def cmd_set_tier(args: argparse.Namespace, cfg: Config) -> int:
         PolyrepoError: when the manifest has no entry for the repository.
 
     """
-    man = Manifest(cfg.manifest)
+    man = Manifest(cfg.manifest, GitHub(cfg, use_cache=True))
     entry = man.entries().get(args.repo)
     if entry is None:
         msg = f"the manifest has no entry for {args.repo!r}"
@@ -2776,7 +2855,7 @@ def cmd_set_tier(args: argparse.Namespace, cfg: Config) -> int:
     if before != args.tier:
         man.set_field(args.repo, "tier", args.tier, "lifecycle")
         man.save()
-        append_changelog(cfg, "polyrepo set-tier", [f"{args.repo}: tier {before or '(none)'} -> {args.tier}"])
+        note_change(cfg, "polyrepo set-tier", [f"{args.repo}: tier {before or '(none)'} -> {args.tier}"])
     finish_records(cfg, data)
     emit(
         args,
@@ -3205,7 +3284,7 @@ def cmd_status(args: argparse.Namespace, cfg: Config) -> int:
 def cmd_inventory(args: argparse.Namespace, cfg: Config) -> int:
     """Report the full record of every repo on disk, with the matrix's stacks for each.
 
-    --all adds every other repo the manifest or GitHub has. --name keeps only the repo with that
+    --all adds every other repo the manifest records. --name keeps only the repo with that
     name, compared without case; `repos` is empty when no repo has it. Deprecated and archived
     repos are left out unless --include-inactive is given or --name names one.
 
@@ -3214,7 +3293,7 @@ def cmd_inventory(args: argparse.Namespace, cfg: Config) -> int:
 
     """
     st = gather(cfg, fetch=not args.no_fetch, use_cache=not args.no_cache)
-    names = st.tracked_names(all_github=True) if args.all else sorted(st.local, key=str.lower)
+    names = st.tracked_names() if args.all else sorted(st.local, key=str.lower)
     if args.name:
         names = [n for n in names if n.casefold() == args.name.casefold()]
     recs = [st.record(n) for n in names]
@@ -3727,21 +3806,29 @@ def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path]:
     if sub is None:
         sub = cfg.placement_folder(space, name)
     space_dir = cfg.root / space
-    if not space_dir.is_dir():
-        msg = f"no app space folder {space_dir}"
-        raise PolyrepoError(msg)
     dest = space_dir / sub / name if sub else space_dir / name
     local, _ = discover(cfg)
     if dest.exists() or name.lower() in {n.lower() for n in local}:
         msg = f"{name} already exists on disk"
         raise PolyrepoError(msg)
-    if GitHub(cfg, use_cache=False).resolve(name) is not None:
+    _require_new_name(cfg, name)
+    return tdir, dest
+
+
+def _require_new_name(cfg: Config, name: str) -> None:
+    """Refuse a name GitHub or the manifest already has.
+
+    Raises:
+        PolyrepoError: when a repository of the owner, or a manifest entry, has the name.
+
+    """
+    gh = GitHub(cfg, use_cache=False)
+    if gh.resolve(name) is not None:
         msg = f"{cfg.owner}/{name} already exists on GitHub"
         raise PolyrepoError(msg)
-    if name in Manifest(cfg.manifest).entries():
+    if name in Manifest(cfg.manifest, gh).entries():
         msg = f"{name} already has a manifest entry"
         raise PolyrepoError(msg)
-    return tdir, dest
 
 
 def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
@@ -3925,7 +4012,7 @@ def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict
 
     """
     name = args.name
-    man = Manifest(cfg.manifest)
+    man = Manifest(cfg.manifest, GitHub(cfg, use_cache=False))
     man.add_entry(name, entry_fields(cfg, name, args.lifecycle, {"tier": args.tier} if args.tier else None))
     man.save()
     log = [
@@ -3963,7 +4050,7 @@ def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict
             res["beads_error"] = str(exc)
             log.append(f"beads setup FAILED: {exc}")
             code = 1
-    append_changelog(cfg, "polyrepo create", log)
+    note_change(cfg, "polyrepo create", log)
     GitHub(cfg, use_cache=True).invalidate()
     finish_records(cfg, res)
     return code
@@ -4669,7 +4756,7 @@ def cmd_beads_setup(args: argparse.Namespace, cfg: Config) -> int:
     names = _beads_setup_names(args, cfg, st, findings)
     results, log = _beads_setup_run(args, cfg, st, names)
     if log:
-        append_changelog(cfg, "polyrepo beads-setup", log)
+        note_change(cfg, "polyrepo beads-setup", log)
     data = {
         "repos": results,
         "open": sum("error" in x for x in results),
@@ -4739,7 +4826,7 @@ def _beads_setup_run(
     """Set up beads in each named repo, then add the set-up repos to the fleet list in one write.
 
     Returns:
-        (one result per repo, plus one for a failed fleet list write; changelog lines).
+        (one result per repo, plus one for a failed fleet list write; the lines for the commit message).
 
     """
     results: list[dict[str, object]] = []
@@ -4774,20 +4861,16 @@ def _beads_setup_run(
 
 
 def _clone_dest(cfg: Config, name: str) -> Path:
-    """Return the one folder a clone of this repo belongs in, from the naming standard.
+    """Return the one folder a clone of this repo belongs in, from the config's placement.
 
     Returns:
-        The destination path: the app space, then the folder the naming note places its type in.
+        The destination path: the app space, then the folder the config places its type in.
 
     Raises:
-        PolyrepoError: when the name matches no application or deprecated pattern, or its
-            app space folder does not exist.
+        PolyrepoError: when its app space folder does not exist.
 
     """
     space = cfg.expected_space(name)
-    if space is None:
-        msg = f"{name} matches no naming pattern that implies an app space"
-        raise PolyrepoError(msg)
     space_dir = cfg.root / space
     if not space_dir.is_dir():
         msg = f"no app space folder {space_dir}"
@@ -4971,15 +5054,15 @@ def _rename_plan(
 def _renamed_path(cfg: Config, path: Path, new: str) -> Path:
     """Return the folder a clone belongs in once renamed: where the new name places it.
 
-    A name whose pattern implies an app space goes in that space's placement folder for its
-    kind, as a clone of it would, so a rename that changes the space also moves the clone
-    there. A deprecated name, or one that implies no space, keeps the clone's parent folder.
+    A name goes in its app space's placement folder for its type, as a clone of it would, so a
+    rename that changes the space also moves the clone there. A deprecated name keeps the
+    clone's parent folder.
 
     Returns:
         The clone's path after the rename.
 
     """
-    if cfg.is_deprecated_name(new) or cfg.expected_space(new) is None:
+    if cfg.is_deprecated_name(new):
         return path.with_name(new)
     return _clone_dest(cfg, new)
 
@@ -5065,6 +5148,8 @@ def _rename_moves(cfg: Config, new: str, plan: _RenamePlan, done: list[str]) -> 
 def _rename_record(st: State, old: str, new: str, plan: _RenamePlan, done: list[str]) -> None:
     """Write the renamed manifest entry, update the fleet list, and log the rename."""
     cfg, man = st.cfg, st.manifest
+    if plan.rec and plan.rec["name"] != new:
+        st.gh.note_rename(plan.rec["name"], new)
     if old in man.entries() and new not in man.entries():
         man.rename_entry(old, new)
     man.add_entry(new, {})
@@ -5086,10 +5171,10 @@ def _rename_record(st: State, old: str, new: str, plan: _RenamePlan, done: list[
             )
         except (OSError, PolyrepoError) as exc:
             done.append(f"beads fleet list NOT updated: {exc}")
-    append_changelog(
+    note_change(
         cfg,
         f"polyrepo rename {old} to {new}",
-        [*done, f"manifest entry is now {new}"],
+        [*done, f"the manifest entry's repository is now {new}"],
     )
     st.gh.invalidate()
 
@@ -5183,7 +5268,7 @@ def _run_names_only(
     res: dict[str, object] = {"repo": repos[0], "repos": repos, "dry_run": args.dry_run, "steps": steps}
     ok = names(res, steps)
     if not args.dry_run:
-        append_changelog(st.cfg, f"polyrepo rename {label} (stack and Python names)", steps)
+        note_change(st.cfg, f"polyrepo rename {label} (stack and Python names)", steps)
     finish_records(st.cfg, res)
     head = f"dry run: names of {label}" if args.dry_run else f"{label}: names"
     emit(args, res, lambda: "\n".join([head, *[f"  {s}" for s in steps], *_records_line(res)]))
@@ -5515,14 +5600,63 @@ def _names_lines(plan: _NamesPlan) -> list[str]:
             "kept": "source kept as is by --keep-src",
         }.get(why, "named by --skip-repo")
         lines.extend(f"not edited ({what}) {name}: {e.path}" for name, e in rows)
-    docs = plan.documents
-    if docs is not None:
-        lines.extend(
-            f"vault document for the filing-clerk {e.path}: line(s) {', '.join(str(n) for n in e.lines)} "
-            f"carry {', '.join(sorted(e.labels))}"
-            for e in docs.found
-        )
+    lines.extend(_documents_lines(plan.documents))
     return lines
+
+
+def _documents_lines(docs: _Documents | None) -> list[str]:
+    """Write the vault documents that still carry an old name as step lines for the filing-clerk.
+
+    Returns:
+        One line per document.
+
+    """
+    if docs is None:
+        return []
+    return [
+        f"vault document for the filing-clerk {e.path}: line(s) {', '.join(str(n) for n in e.lines)} "
+        f"carry {', '.join(sorted(e.labels))}"
+        for e in docs.found
+    ]
+
+
+def _documents_record(docs: _Documents | None) -> dict[str, object]:
+    """Write the vault documents that still carry an old name as JSON.
+
+    Returns:
+        The vault's root and each document with its lines and names; empty when no vault was searched.
+
+    """
+    if docs is None:
+        return {}
+    return {
+        "root": str(docs.root),
+        "carry_old_names": [
+            {"path": e.path, "lines": list(e.lines), "names": sorted(e.labels), "occurrences": e.replacements}
+            for e in docs.found
+        ],
+    }
+
+
+def _repository_documents(cfg: Config, old: str, new: str) -> _Documents | None:
+    """Find the vault documents that still carry a repository's old name, for the filing-clerk.
+
+    Returns:
+        The documents found, or None when the config names no vault folders or the vault is absent.
+
+    """
+    settings = _documents_settings(cfg)
+    if settings is None or not (settings[0] / ".git").exists():
+        return None
+    root, paths = settings
+    change = NameChange("repository", old, new)
+    rules = build_document_rules([change], {change_label(change): new})
+    excludes, _ = _rename_settings(cfg)
+    return _Documents(
+        root,
+        paths,
+        sweep_repo(_sweep_git, SweepTarget("documents", root, paths), rules, excludes, write=False),
+    )
 
 
 def _names_record(plan: _NamesPlan) -> dict[str, object]:
@@ -5536,18 +5670,7 @@ def _names_record(plan: _NamesPlan) -> dict[str, object]:
     def rows(found: list[FileEdit]) -> list[dict[str, object]]:
         return [{"path": e.path, "replacements": e.replacements, "kinds": sorted(e.kinds)} for e in found]
 
-    docs = plan.documents
-    documents: dict[str, object] = (
-        {
-            "root": str(docs.root),
-            "carry_old_names": [
-                {"path": e.path, "lines": list(e.lines), "names": sorted(e.labels), "occurrences": e.replacements}
-                for e in docs.found
-            ],
-        }
-        if docs is not None
-        else {}
-    )
+    documents = _documents_record(plan.documents)
     return {
         "documents": documents,
         "changes": [
@@ -6096,8 +6219,8 @@ def delete_clone(
 
     `clone` is where the clone is now and `final` where it is after the rename (the same
     path once the rename is done). `final` must be under the repository root and its name
-    must carry the deprecated prefix the naming note gives. Records the outcome in res["clone"]; the caller writes the
-    changelog, from the steps of a deletion.
+    must carry the deprecated prefix the naming note gives. Records the outcome in res["clone"]; the caller notes
+    the steps of a deletion for the commit message.
 
     Returns:
         False when the clone was left in place or could not be deleted, and the steps taken or planned.
@@ -6160,7 +6283,9 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
     """Deprecate a repo: rename it, close its pull requests, then delete its local clone.
 
     The rename to its deprecated- name dates the deprecation; every open pull request is
-    closed with the deprecation comment.
+    closed with the deprecation comment. The vault documents that still carry the old name (in the
+    folders the config's `rename.documents` names) are reported under `documents`, never edited:
+    the filing-clerk changes them.
 
     The clone is deleted only when it holds no work that exists only on this machine
     (uncommitted or untracked files, a stash, commits on no remote branch, or such work in
@@ -6187,6 +6312,9 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
     r = st.local.get(name) or st.local.get(new)
 
     def after(res: dict[str, object], steps: list[str]) -> bool:
+        docs = _repository_documents(cfg, name, new)
+        res["documents"] = _documents_record(docs)
+        steps.extend(_documents_lines(docs))
         ok = _close_repo_prs(cfg, name if args.dry_run else new, args.dry_run, res, steps)
         if r is None:
             steps.append("no local clone to delete")
@@ -6196,7 +6324,7 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
         deleted, clone_steps = delete_clone(cfg, clone, final, args.dry_run, res)
         steps.extend(clone_steps)
         if deleted and not args.dry_run:
-            append_changelog(cfg, f"polyrepo deprecate {final.name}: local clone", clone_steps)
+            note_change(cfg, f"polyrepo deprecate {final.name}: local clone", clone_steps)
         return deleted and ok
 
     return _run_rename(args, st, name, new, after=after)
@@ -6442,9 +6570,10 @@ def _sync_one(
 ) -> dict[str, object]:
     """Bring one repo's AGENTS.md blocks current: committed on main in its primary working tree and pushed.
 
-    The shared blocks are AI tooling, so tier 2 applies whatever the repo's tier: no worktree, no
-    branch and no pull request. When writing, the primary tree's main is first brought up to
-    `origin/main` (a fast-forward, or a rebase of local commits), so the commit is a fast-forward push.
+    AGENTS.md is tier 2 in every repository, tooling for building the product, so the blocks are
+    committed directly on main whatever the repo's tier: no worktree, no branch and no pull request.
+    When writing, the primary tree's main is first brought up to `origin/main` (a fast-forward, or a
+    rebase of local commits), so the commit is a fast-forward push.
 
     Returns:
         {repo, state} plus, when it wrote, the status and any detail.
@@ -6576,7 +6705,7 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
     """Write the owned blocks into every repo's AGENTS.md, committing and pushing each repo.
 
     Every repo is committed on its default branch in its primary working tree and pushed, whatever its
-    tier: the shared blocks are AI tooling (see `_sync_one`).
+    tier: AGENTS.md is tier 2 in every repository (see `_sync_one`).
 
     Returns:
         0 when every repo is current (or was brought current and pushed), else 1.
@@ -7079,7 +7208,7 @@ def cmd_beads_fleet(args: argparse.Namespace, cfg: Config) -> int:
             for f in findings:
                 f.status, f.error = ("failed", str(exc)) if f.fix else (f.status, None)
         if changes:
-            append_changelog(
+            note_change(
                 cfg,
                 "polyrepo beads-fleet --fix",
                 [f"beads fleet list (repos.additional): {c}" for c in changes],
@@ -7213,7 +7342,7 @@ def _retire_clone(st: State, name: str, dry_run: bool, row: dict[str, object]) -
     Records the clone's outcome in row["clone"] (absent when there is no clone).
 
     Returns:
-        The changelog lines for what was changed.
+        The lines for the commit message, one per change.
 
     """
     r = st.local.get(name)
@@ -7235,7 +7364,7 @@ def _archive_one(st: State, name: str, dry_run: bool, row: dict[str, object]) ->
     (`_archive_blockers`) is kept and left deprecated.
 
     Returns:
-        The changelog lines for what was changed.
+        The lines for the commit message, one per change.
 
     """
     cfg = st.cfg
@@ -7278,7 +7407,7 @@ def _archive_row(st: State, name: str, e: CommentedMap, days: int) -> tuple[dict
         return row, False
     start = _deprecation_start(e)
     if start is None:
-        row.update(status="undated", detail="no valid deprecated_on date; reconcile records it from the changelog")
+        row.update(status="undated", detail="no valid deprecated_on date; record it from the manifest's git history")
         return row, False
     due = start + dt.timedelta(days=days)
     age = (dt.date.fromisoformat(today()) - start).days
@@ -7291,13 +7420,13 @@ def _archive_row(st: State, name: str, e: CommentedMap, days: int) -> tuple[dict
 
 
 def archive_due(st: State, dry_run: bool) -> tuple[list[dict[str, object]], list[str]]:
-    """Archive every deprecated repo deprecated at least as many days ago as the naming note states.
+    """Archive every deprecated repo deprecated at least `deprecation.archive_after_days` (config) days ago.
 
     An entry the manifest already records archived only has its local clone retired, so a run
     after a clone that was kept is cleaned retries it, and a second run changes nothing.
 
     Returns:
-        One row per deprecated or archived entry, and the changelog lines for what was changed.
+        One row per deprecated or archived entry, and the lines for the commit message, one per change.
 
     """
     days = st.cfg.archive_after_days()
@@ -7366,7 +7495,7 @@ def cmd_archive_due(args: argparse.Namespace, cfg: Config) -> int:
         st.manifest.save()
         if lines:
             st.gh.invalidate()
-            append_changelog(cfg, "polyrepo archive-due", lines)
+            note_change(cfg, "polyrepo archive-due", lines)
     findings = _archive_findings(rows)
     data: dict[str, object] = {
         "archive_after_days": cfg.archive_after_days(),
@@ -7614,7 +7743,8 @@ def _governance_findings(cfg: Config) -> list[DoctorFinding]:
 
     """
     out = []
-    for e in Manifest(cfg.manifest).doc.get("governance") or []:
+    doc: object = YAML(typ="safe").load(cfg.manifest.read_text(encoding="utf-8")) if cfg.manifest.exists() else {}
+    for e in (doc if isinstance(doc, dict) else {}).get("governance") or []:
         if not isinstance(e, dict):
             continue
         subject = str(e.get("id") or e.get("name"))
@@ -7794,7 +7924,7 @@ def _matrix_findings(st: State) -> list[Finding]:
 
     The findings are an active code repository (its name ends in a listed stack type, and it is
     not in a space the matrix leaves alone) that no stack names as its repository; a stack whose
-    repository was renamed, is deprecated or archived, or exists nowhere; and a matrix that
+    repository is deprecated or archived, or exists nowhere; and a matrix that
     `atw-matrix check` finds invalid. A stack whose repository exists nowhere may belong to a
     repository elaboration has yet to create, so it is reported and not repaired.
 
@@ -7812,7 +7942,7 @@ def _matrix_findings(st: State) -> list[Finding]:
         if name in named or st.lifecycle(name) in LIFECYCLES_INACTIVE or (r is None and st.gh.get(name) is None):
             continue
         space = r.space if r else cfg.expected_space(name)
-        if space is None or not holds_stack(name, types):
+        if not holds_stack(name, types):
             continue
         out.append(
             Finding(
@@ -7912,9 +8042,9 @@ def _stack_repository_findings(st: State, s: MatrixStack) -> list[Finding]:
     """Check that the repository one stack names is an active repository.
 
     Returns:
-        No finding for an active repository. For a renamed one, the repair that names its new
-        name; for a deprecated or archived one, the repair that removes a hint stack holding
-        nothing or else unsets the repository; for one that exists nowhere, a finding with no repair.
+        No finding for an active repository. For a deprecated or archived one, the repair that
+        removes a hint stack holding nothing or else unsets the repository; for one that exists
+        nowhere, a finding with no repair.
 
     """
     cfg, repo = st.cfg, str(s.repository)
@@ -7928,17 +8058,6 @@ def _stack_repository_findings(st: State, s: MatrixStack) -> list[Finding]:
                 "stack-repository-missing",
                 repo,
                 f"{s.id} names {repo} as its repository, which exists on neither disk nor GitHub",
-            ),
-        ]
-    if state.startswith("renamed:"):
-        new = state.removeprefix("renamed:")
-        return [
-            Finding(
-                "stack-repository-renamed",
-                repo,
-                f"{s.id} names {repo}, which GitHub has renamed to {new}",
-                fix=f"set the repository of {s.id} to {new}",
-                action=functools.partial(matrix_run, cfg, [*put, "--repository", new]),
             ),
         ]
     drop = s.side == "repository" and s.holds == 0
@@ -8185,7 +8304,7 @@ def _add_inspect_commands(add: Callable[[str, str], argparse.ArgumentParser]) ->
     s.add_argument(
         "--all",
         action="store_true",
-        help="also every repo the manifest or GitHub has that is not on disk",
+        help="also every repo the manifest records that is not on disk",
     )
     s.add_argument("--name", help="only the repo with this name, compared without case")
     s.add_argument("--include-inactive", action="store_true", help="also deprecated and archived repos")
@@ -8409,7 +8528,8 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
 
     s = add(
         "archive-due",
-        "archive on GitHub every deprecated repo as many days after deprecated_on as the naming note states, "
+        "archive on GitHub every deprecated repo deprecation.archive_after_days (config) or more days "
+        "after deprecated_on, "
         "keeping its record, and delete its local clone when no work exists only there",
     )
     s.add_argument("--dry-run", action="store_true", help="report what is due and what would be kept")

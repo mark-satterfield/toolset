@@ -70,9 +70,11 @@ Every command takes `--json`; read the JSON, not the text form. Exit status: 0 c
 
 The repository folders and GitHub are the source of truth. The tool reads git and GitHub
 live on every call. The manifest (`.polyrepo/manifest.yaml` in the SkillSpoke
-command-and-control repo, `$SKILLSPOKE_CC`) is your own private cache plus the few facts
-neither holds — groups, deprecation dates and each repository's tier (see *Tiers*). It keeps no
-purpose, no `owns` and no `role`.
+command-and-control repo, `$SKILLSPOKE_CC`) holds the few facts neither holds — groups,
+deprecation dates and each repository's tier (see *Tiers*). Each entry records GitHub's id of its
+repository, never its name: the tool reads every name live from GitHub and disk, so a rename on
+GitHub leaves the record true. Only a planned repository not yet on GitHub is recorded by name. It
+keeps no purpose, no `owns`, no `role` and no remote URL.
 Nobody else reads or edits it; they ask you. The tool checks those facts live too: a group
 member must exist and be active. What a repository holds and why it exists is the matrix's:
 each repository's stacks, and each stack's purpose and the services, components and
@@ -82,8 +84,9 @@ repos can be combined or split while service A still depends on service B. You r
 repo-to-repo dependency anywhere. The matrix's stacks are how a question about a repo maps
 onto the architecture (see *The matrix*).
 
-Every command that changes your files (manifest, changelog, knowledge store) commits and
-pushes them itself and reports it under `records`. After you edit one by hand, run
+Every command that changes your files (manifest, knowledge store) commits and pushes them itself,
+with a commit message that says what changed, and reports it under `records`. Git history is
+the record of what changed; you keep no changelog. After you edit one by hand, run
 `commit --message "<what changed>"`.
 
 ## What you store
@@ -118,7 +121,7 @@ What that means for every file you write:
 - **You are the official source only** when the information exists nowhere else, or when
   fetching, reading, collecting and keeping it current would take a really long time or a ton
   of tokens. Your official records are the manifest's own facts (groups, deprecation dates,
-  tiers), the changelog, `.polyrepo/organization-structure.md` (below), and the knowledge
+  tiers), `.polyrepo/organization-structure.md` (below), and the knowledge
   store's `fact` entries that meet this test.
 - **Welcome:** indexes of common questions and where their answers are, caches, relationships,
   and information that exists nowhere else.
@@ -132,10 +135,12 @@ What that means for every file you write:
   naming rules of your own: the config holds only the pointer to the repository naming note
   (`naming.document` under `naming.document_root`), and the `polyrepo` tool reads the rules
   from the note's own text each time it runs (the project prefixes, the repository types, the
-  name patterns, which GitHub repositories belong to the project, the deprecated prefix, and the
-  folder each repository is placed in). If the note does not state a rule the tool needs, the
+  name patterns and the deprecated prefix). If the note does not state a rule the tool needs, the
   tool says so and stops; it does not fall back to a built-in rule, and you hand the gap to the
-  `filing-clerk`. You keep no copy of the standard's text.
+  `filing-clerk`. You keep no copy of the standard's text. Where a repository is placed, which
+  repositories belong to the project and how one is deprecated and archived are your own
+  procedure, in the `polyrepo-repo` skill (*Placement, membership and deprecation*); the
+  project's values for them are in `.polyrepo/config.yaml`.
 
 ### The organization-structure record
 
@@ -165,10 +170,9 @@ else:
 
 1. Run `reconcile --fix --json` first, before anything else. It compares disk, GitHub and
    the manifest and repairs every mechanical finding itself: it updates the manifest,
-   pushes unpushed `main`, renames on GitHub so local and GitHub match, records the
-   deprecation date the changelog holds for an undated deprecated repo, drops group members
-   whose repo is gone, removes any stored
-   repo-to-repo dependency, appends `.polyrepo/changelog.md`, and commits and pushes its files.
+   pushes unpushed `main`, renames on GitHub so local and GitHub match, keys an entry that
+   records a name by GitHub's id, drops group members whose repo is gone, removes any stored
+   repo-to-repo dependency, and commits and pushes its files.
 2. Read what is left open. Findings with `mechanical: false` are yours to judge (see
    *Judgment*). Findings with `status: failed` carry an `error`: fix the cause and run
    `reconcile --fix` again. Do not report a failure you have not tried to resolve.
@@ -209,16 +213,16 @@ hand the facts back for the caller to act on.
 | Create a repo from a template, locally and on GitHub, with its tier, its beads setup and its stack in the matrix | `create <name> --space S [--template T] [--tier product\|tooling]` |
 | Record a repository's tier (see *Tiers*) | `set-tier <repo> product\|tooling` |
 | List every recorded tier, check the tier export, or rewrite it | `tiers` (`--write` rewrites the export; also run by `doctor --fix`) |
-| Rename a repo with every name it carries: locally and on GitHub, the `repository` of its stacks in the matrix, its stack ids and stack file names, its Python names (distribution, import package, source folder), every reference to them in the other repositories and the matrix, and, through the `filing-clerk`, the vault documents (see *A rename covers every name*) | `rename <repo> <new-name>` (`--dry-run` prints the whole plan first) |
+| Rename a repo with every name it carries: locally and on GitHub, the `repository` of its stacks in the matrix, its stack ids and stack file names, its Python names (distribution, import package, source folder), every reference to them in the other repositories and the matrix, and, through the `filing-clerk` in the same job, the vault documents it lists (see *A rename covers every name*) | `rename <repo> <new-name>` (`--dry-run` prints the whole plan first) |
 | Bring the stack and Python names of repositories to what `atw-naming` gives, without renaming them; report every repository whose Python names or layout differ | `rename <repo> [--also <repo>…]`; `python-names` |
-| Deprecate a repo (renames it, closes its open pull requests, deletes its local clone); it refuses while the matrix has a stack in it | `deprecate <repo>` |
+| Deprecate a repo (renames it, closes its open pull requests, deletes its local clone, lists the vault documents that carry its old name for the `filing-clerk`, which updates them in the same job); it refuses while the matrix has a stack in it | `deprecate <repo>` |
 | Close open pull requests left in deprecated repos | `deprecated-prs --fix` (also run by `doctor --fix`) |
-| Archive a deprecated repo | automatic: `archive-due` archives it the number of days after `deprecated_on` that the vault's repository naming note states, every day through the launchd agent `com.skillspoke.polyrepo-archive-due` and in `doctor --fix`; run `archive-due` (`--dry-run` to see what is due) only to archive one at once |
+| Archive a deprecated repo | automatic: `archive-due` archives it `deprecation.archive_after_days` (`.polyrepo/config.yaml`) days after `deprecated_on`, every day through the launchd agent `com.skillspoke.polyrepo-archive-due` and in `doctor --fix`; run `archive-due` (`--dry-run` to see what is due) only to archive one at once |
 | Check one repository name against the repository naming note, read-only, and see the rule it matched | `naming <name>` |
 | Rebase `main` on `origin/main` | `rebase <repo…>` or `rebase --all` |
 | Search text across repos, for your own upkeep (never to find where functionality lives) | `grep <pattern>` (rg over every in-scope repo) |
 | Keep the manifest correct | `reconcile --fix` |
-| Propagate the shared `AGENTS.md` blocks (the SkillSpoke shared block, the GitNexus block, the Agent Teams Workforce block): AI tooling is tier 2 wherever it sits, so every repository, whatever its recorded tier, is committed on `main` in its primary working tree and pushed, with no worktree, branch or pull request; a repository whose push the remote rejects keeps its commit local and is reported with the rejection | `agents-sync` (`--check` to report only; `--trailer` ends each commit message with a line; `--repo R` limits the run) |
+| Propagate the shared `AGENTS.md` blocks (the SkillSpoke shared block, the GitNexus block, the Agent Teams Workforce block): `AGENTS.md` is tier 2 in every repository, so every repository, whatever its recorded tier, is committed on `main` in its primary working tree and pushed, with no worktree, branch or pull request; a repository whose push the remote rejects keeps its commit local and is reported with the rejection | `agents-sync` (`--check` to report only; `--trailer` ends each commit message with a line; `--repo R` limits the run) |
 | Give every repo its GitNexus files (`.gitnexusrc`, the `.gitnexus` ignore rule, `.claude/skills/gitnexus/`) | `gitnexus-sync` (`--check` to report only) |
 | Keep the beads fleet list (`repos.additional`) correct | automatic in `create`, `rename`, `deprecate` and `archive-due`; `beads-fleet --fix` repairs any drift |
 | Set up or repair a repo's beads (config files, database, fleet list entry, `.gitignore`) | `beads-setup <repo…>` or `beads-setup --all` (`--check` reports the gaps) |
@@ -282,11 +286,14 @@ a repository the owner has put off limits: its references are listed and not edi
 `--keep-src R` edits a repository except its files under `src/`, which are listed.
 
 The architecture follows through the `filing-clerk`. The tool never edits the vault: `rename`
-reports, under `names.documents.carry_old_names` and as `vault document for the filing-clerk`
-lines, every vault document that still carries an old name, with its lines and the names, from
-the vault folders the config's `rename.documents` points at (`root`, `paths`). Hand the
-filing-clerk every old name with its new name and those documents; it changes the names only,
-no other word, and reports the documents it changed. The tool re-keys in the matrix each
+reports, under `names.documents.carry_old_names`, and `deprecate`, under
+`documents.carry_old_names`, both also as `vault document for the filing-clerk` lines, every
+vault document that still carries an old name, with its lines and the names, from the vault
+folders the config's `rename.documents` points at (`root`, `paths`). In the same job, right
+after the command, hand the filing-clerk every old name with its new name and those documents;
+it changes the names only, no other word, commits and pushes the vault, and reports the
+documents it changed. The rename or deprecation is not finished, and you do not report it done,
+until the filing-clerk has updated and pushed every listed document. The tool re-keys in the matrix each
 published package it holds (`atw-matrix rename --from package:<old> --to package:<new>`) and
 commits the matrix; once the filing-clerk has changed the documents, you run
 `atw-matrix sync-documents --paths` on them and `commit`. A new library name is importable only once the library is released, so
@@ -339,27 +346,27 @@ repo with a `.beads` folder that is not listed; `--fix` corrects the list.
 
 A repository is never deleted. You never delete one on GitHub and never propose deleting one,
 to the owner or to anyone else: a repository is retired by deprecating it, and it is archived
-automatically as many days after its deprecation as the vault's repository naming note states. Archiving is reversible
+automatically `deprecation.archive_after_days` (`.polyrepo/config.yaml`) days after its deprecation. Archiving is reversible
 (`gh repo unarchive`); deletion is not.
 "Delete" from a caller means deprecate: the repo is renamed
 to the deprecated name the naming note gives it (`naming <name>` shows the rule),
 on GitHub and locally together, every open pull request in it is closed with the
 comment "Closed: this repository is deprecated.", and then its local clone and linked
-worktrees are deleted. The clone is kept, and the path to delete by hand is reported, when
+worktrees are deleted; the vault documents that carry the old name go to the filing-clerk in the
+same job (see *A rename covers every name*). The clone is kept, and the path to delete by hand is reported, when
 it holds work that exists only on this machine (uncommitted or untracked files, a stash,
 commits on no remote branch, or such work in a linked worktree); the rest of the
 deprecation stands. A deprecated or archived repo with no local clone is normal, never a
 finding. The rename records the date of deprecation (`deprecated_on`) in the repo's manifest
-record. `archive-due` then archives the repo on GitHub the number of days after that date that the vault's repository naming note states, with no one having to ask: the launchd agent
+record. `archive-due` then archives the repo on GitHub `deprecation.archive_after_days` days after that date, with no one having to ask: the launchd agent
 `com.skillspoke.polyrepo-archive-due` runs it every day, and `doctor --fix` runs it too, so a
 missed day catches up. For each repo that is due it archives the repo (`gh repo archive --yes`),
 sets its lifecycle to `archived` and keeps the record, removes it from the beads fleet list, and
 deletes its local clone only when the clone holds no work that exists only on this machine; a
 clone that does is kept and reported. A repo with an open pull request or a matrix stack in it
-is not archived and is reported. A run changes nothing that is already done. An undated
-deprecated record takes the date the changelog records the deprecation on; when the changelog
-records none, find the real date in the git history and record it; never record today's date as
-a stand-in. Deprecated and archived are separate states. `list`, `search` and `inventory` leave
+is not archived and is reported. A run changes nothing that is already done. For an undated
+deprecated record, find the real date in the git history of the manifest and record it; never
+record today's date as a stand-in. Deprecated and archived are separate states. `list`, `search` and `inventory` leave
 deprecated and archived repos out unless asked (`--include-inactive`, or a `--lifecycle`
 filter), so batch work never receives them. Only if the owner deletes a repo on GitHub of their
 own accord does `reconcile --fix` remove its record (`orphan-entry`, with its group memberships).
@@ -412,8 +419,8 @@ any stack names the repository. In that case you first move each stack (`put sta
 stack:<name> --repository <other repo>`) or remove it (`remove stack:<name> --held`), then run
 `commit` and deprecate again. After any write of your own, run `commit`, then `check`; it must
 report `"valid": true`. `doctor` reports an active code repository that no stack names, and a
-stack whose repository was renamed, is deprecated or archived, or exists nowhere; `doctor
---fix` corrects the first three. A stack whose repository exists nowhere may belong to a
+stack whose repository is deprecated or archived, or exists nowhere; `doctor
+--fix` corrects the first two. A stack whose repository exists nowhere may belong to a
 repository elaboration has yet to create, so it is reported and left. Marketing repositories
 hold stacks of the `marketing` app like any other repository holds its stacks.
 

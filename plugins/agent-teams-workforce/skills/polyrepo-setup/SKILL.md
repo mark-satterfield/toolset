@@ -4,7 +4,7 @@ description: >-
   Bootstrap the polyrepo manifest for the first time. Use when no
   `.polyrepo/manifest.yaml` exists yet and the project's repository map needs to be
   established — the discovery interview, topology inference, the manifest-location
-  decision, and writing the initial manifest and changelog. Not a
+  decision, and writing and committing the initial manifest. Not a
   CUDLS skill; it runs once to stand the manifest up, then hands ongoing work to
   polyrepo-repo and the other polyrepo skills.
 ---
@@ -41,7 +41,7 @@ intended shape.
 ## Outputs
 
 - `.polyrepo/manifest.yaml` (from the template, populated)
-- `.polyrepo/changelog.md` with the first entry
+- the commit that records it, whose message says what was set up
 
 Speak in outcomes, not internals. Once the manifest exists, ongoing changes flow through
 **polyrepo-repo** (structure), **polyrepo-info** (knowledge), and **polyrepo-governance**

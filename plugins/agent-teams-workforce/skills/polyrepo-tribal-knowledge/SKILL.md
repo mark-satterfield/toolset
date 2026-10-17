@@ -39,9 +39,8 @@ Add or update entries in the knowledge store `.polyrepo/knowledge.yaml` (owned b
 record pointers to canonical sources, not copies of what they say). Verify every entry against reality before
 storing it — the path, vault note or command it names exists, and the fact it states is what
 the code or the canonical document says now — as **polyrepo-info** describes. Record through
-the learning protocol (`../polyrepo-repo/references/learning-protocol.md`): update the store
-**and** append `.polyrepo/changelog.md`, then run the tool's `commit --message "<what
-changed>"`. There is no read-back step.
+the learning protocol (`../polyrepo-repo/references/learning-protocol.md`): update the store,
+then run the tool's `commit --message "<what changed and why>"`. There is no read-back step.
 
 ## What you do not do
 
@@ -53,4 +52,4 @@ changed>"`. There is no read-back step.
 
 Every sweep also re-verifies every existing entry the same way. An entry that no longer holds
 is corrected to where the thing lives now, or retired with the reason when the thing is gone,
-and the change is recorded in the changelog. Report what was corrected or retired.
+and the commit message records the change. Report what was corrected or retired.

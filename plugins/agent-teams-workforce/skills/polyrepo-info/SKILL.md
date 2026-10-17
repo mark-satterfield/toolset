@@ -101,8 +101,8 @@ An entry is a claim until it is checked, and it is checked every time it is used
 ## Recording
 
 Curation changes follow the learning protocol (`../polyrepo-repo/references/learning-protocol.md`):
-update `.polyrepo/knowledge.yaml` **and** append `.polyrepo/changelog.md`, then run the tool's
-`commit --message "<what changed>"`. There is no read-back or approval step; verification
+update `.polyrepo/knowledge.yaml`, then run the tool's `commit --message "<what changed and
+why>"`. There is no read-back or approval step; verification
 replaces it.
 
 ## Boundaries

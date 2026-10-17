@@ -68,8 +68,7 @@ and others can discover and run. Registering it is a governance `create`.
 ## Recording
 
 Changes follow the learning protocol (`../polyrepo-repo/references/learning-protocol.md`):
-update the `governance` section **and** append `.polyrepo/changelog.md`, then run the tool's
-`commit --message "<what changed>"`.
+update the `governance` section, then run the tool's `commit --message "<what changed and why>"`.
 
 ## Boundaries
 
