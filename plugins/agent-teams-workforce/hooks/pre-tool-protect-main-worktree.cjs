@@ -4,36 +4,28 @@
 /**
  * PreToolUse hook: no product file is edited in the primary working tree of a product repository.
  *
- * Tier is decided by what a file is, not by the repository it sits in. Tier 1 is the
- * SkillSpoke product, including every shared library and component it depends on, and any
- * other application built or managed from the SkillSpoke repository. Tier 2 is everything
- * used to build tier 1. AGENTS.md, CLAUDE.md and .claude/ are tier 2 wherever they sit,
- * because they are tooling for building tier 1.
+ * The folder layout decides which repositories are product repositories. Every git repository
+ * under $SKILLSPOKE_APPS is product work: it takes a worktree and a pull request. The one
+ * exception is the command-and-control repository at $SKILLSPOKE_CC, which sits under
+ * $SKILLSPOKE_APPS but holds the tooling that builds the product, committed on main. AGENTS.md,
+ * CLAUDE.md and .claude/ are tooling wherever they sit, so they are never blocked.
  *
- * Product files in a product repository (services, libraries, infrastructure, web) take
- * all work in worktrees. Tier 2 repositories commit in their primary working tree, and so
- * do the tier 2 files of a product repository (AGENTS.md or CLAUDE.md at any depth, and
- * anything under the repository's .claude/), so this guard must never block them.
- *
- * Which repository is which comes from the tier record the file named by
- * $ATW_REPOSITORY_TIERS holds: a JSON object mapping each repository's absolute path to
- * "product" or "tooling". The guard blocks only a write inside a repository the record
- * lists as "product". When the variable is unset or the record is absent or unreadable,
- * the guard allows the write and prints one warning line, so a missing record never
- * blocks tier 2 work.
+ * When $SKILLSPOKE_APPS or $SKILLSPOKE_CC is unset, the guard allows the write and prints one
+ * warning line, so a missing variable never blocks tooling work.
  *
  * The guard binds subagents as well as the session the owner talks to: an implementer
  * writing to a product repository's primary tree is the failure it exists to stop.
  *
  * Decision order:
- *   1. unparseable hook input                           -> exit 2 (fail closed)
- *   2. non-edit tool, or no target path                 -> exit 0
- *   3. tier record unnamed, absent or unreadable        -> exit 0, one warning line
- *   4. target outside every "product" repository        -> exit 0
- *   5. target under the repository's .worktrees/        -> exit 0
- *   6. target in a linked worktree                      -> exit 0
- *   7. target is a tier 2 file                          -> exit 0
- *   8. otherwise (a product file in the primary tree)   -> exit 2
+ *   1. unparseable hook input                                  -> exit 2 (fail closed)
+ *   2. non-edit tool, or no target path                        -> exit 0
+ *   3. $SKILLSPOKE_APPS or $SKILLSPOKE_CC unset                -> exit 0, one warning line
+ *   4. target in no git repository below $SKILLSPOKE_APPS       -> exit 0
+ *   5. target in the command-and-control repository           -> exit 0
+ *   6. target under the repository's .worktrees/               -> exit 0
+ *   7. target in a linked worktree                             -> exit 0
+ *   8. target is AGENTS.md, CLAUDE.md or under .claude/        -> exit 0
+ *   9. otherwise (a product file in the primary tree)          -> exit 2
  */
 
 const fs = require('node:fs');
@@ -41,9 +33,8 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
-const TIER_RECORD_ENV = 'ATW_REPOSITORY_TIERS';
-const PRODUCT_TIER = 'product';
-const KNOWN_TIERS = new Set([PRODUCT_TIER, 'tooling']);
+const APPS_ENV = 'SKILLSPOKE_APPS';
+const CONTROL_REPO_ENV = 'SKILLSPOKE_CC';
 const WORKTREE_DIR = '.worktrees';
 const TIER2_FILES = new Set(['AGENTS.md', 'CLAUDE.md']);
 const TIER2_DIR = '.claude';
@@ -111,29 +102,11 @@ function deny(lines) {
   process.exit(2);
 }
 
-/**
- * The real paths of the repositories the tier record lists as "product".
- * Exits 0 with a warning when the record is absent, unreadable or malformed.
- */
-function productRepositories() {
-  const recordPath = process.env[TIER_RECORD_ENV];
-  if (!recordPath) allowWithWarning(`$${TIER_RECORD_ENV} is not set, so the tier record cannot be found`);
-  let record;
-  try {
-    record = JSON.parse(fs.readFileSync(recordPath, 'utf8'));
-  } catch (error) {
-    allowWithWarning(`the tier record ${recordPath} is absent or unreadable (${error.message})`);
-  }
-  if (record === null || typeof record !== 'object' || Array.isArray(record)) {
-    allowWithWarning(`the tier record ${recordPath} is not a JSON object`);
-  }
-  const bad = Object.entries(record).filter(([repo, tier]) => !path.isAbsolute(repo) || !KNOWN_TIERS.has(tier));
-  if (bad.length > 0) {
-    allowWithWarning(`the tier record ${recordPath} has ${bad.length} entr(ies) that are not an absolute path mapped to product or tooling`);
-  }
-  return Object.entries(record)
-    .filter(([, tier]) => tier === PRODUCT_TIER)
-    .map(([repo]) => realOrResolved(repo));
+/** The real path a layout variable names; exits 0 with a warning when it is unset. */
+function layoutRoot(name) {
+  const value = process.env[name];
+  if (!value) allowWithWarning(`$${name} is not set, so the repository layout cannot be read`);
+  return realOrResolved(value);
 }
 
 /** True when the directory is inside a linked worktree, not a primary working tree. */
@@ -143,10 +116,7 @@ function inLinkedWorktree(dir) {
   return Boolean(gitDir && commonDir && path.resolve(dir, gitDir) !== path.resolve(dir, commonDir));
 }
 
-/**
- * True when the target is tooling for building tier 1, so it is tier 2 whatever repository
- * holds it: an AGENTS.md or CLAUDE.md at any depth, or anything under the repository's .claude/.
- */
+/** True when the target is tooling wherever it sits: AGENTS.md or CLAUDE.md at any depth, or under .claude/. */
 function isTier2File(repoRoot, realDir, target) {
   const relative = path.relative(repoRoot, path.join(realDir, path.basename(target)));
   if (TIER2_FILES.has(path.basename(relative))) return true;
@@ -168,12 +138,17 @@ function main() {
   const target = toolInput.file_path ?? toolInput.notebook_path ?? '';
   if (!target) process.exit(0);
 
-  const products = productRepositories();
+  const apps = layoutRoot(APPS_ENV);
+  const controlRepo = layoutRoot(CONTROL_REPO_ENV);
   const dir = containingDir(target);
   if (!dir) process.exit(0);
   const realDir = realOrResolved(dir);
-  const repoRoot = products.find((repo) => isWithin(repo, realDir));
-  if (!repoRoot) process.exit(0);
+  if (!isWithin(apps, realDir)) process.exit(0);
+  const top = git(realDir, ['rev-parse', '--show-toplevel']);
+  if (!top) process.exit(0);
+  const repoRoot = realOrResolved(top);
+  if (repoRoot === apps || !isWithin(apps, repoRoot)) process.exit(0);
+  if (isWithin(controlRepo, realDir)) process.exit(0);
   if (isWithin(path.join(repoRoot, WORKTREE_DIR), realDir)) process.exit(0);
   if (inLinkedWorktree(realDir)) process.exit(0);
   if (isTier2File(repoRoot, realDir, target)) process.exit(0);
@@ -181,14 +156,12 @@ function main() {
   const repoName = path.basename(repoRoot);
   deny([
     `File: ${target}`,
-    `Repo: ${repoRoot} (a product repository, primary working tree)`,
+    `Repo: ${repoRoot} (under $${APPS_ENV}, primary working tree)`,
     '',
-    'Product files in a product repository take all work in worktrees (AGENTS.md, CLAUDE.md and .claude/ are tier 2 and are not blocked). Create or reuse one and work there:',
+    `Every repository under $${APPS_ENV} except the command-and-control repository ($${CONTROL_REPO_ENV}) takes its product work in a worktree and a pull request opened with skillspoke-pr (AGENTS.md, CLAUDE.md and .claude/ are tooling and are not blocked). Create or reuse a worktree and work there:`,
     '',
     `  git -C ${repoRoot} worktree list`,
     `  git -C ${repoRoot} worktree add -b <type>/<bead-id> ${path.join(repoRoot, WORKTREE_DIR)}/<bead-id>-${repoName}`,
-    '',
-    `Tier record: $${TIER_RECORD_ENV} (${process.env[TIER_RECORD_ENV]})`,
   ]);
 }
 

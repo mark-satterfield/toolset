@@ -311,8 +311,7 @@ read `schema_version` and know exactly what changed between versions.
   the tier of a change is decided by what the file is, not by the repository (`AGENTS.md`, `CLAUDE.md` and `.claude/` are tier 2 in every repository). Every entry records one; `reconcile --fix`
   records the default (`tooling` for the control repo, `product` otherwise) on an entry that has none, and
   `set-tier` changes it. The repositories outside the repository root (the toolset repo and the
-  `skillspoke-docs` vault) have no entry: the config's `tiers.external` records their tier. The
-  `repository-tiers.json` export derived from both is what the main-worktree guard hook reads.
+  `skillspoke-docs` vault) have no entry: the config's `tiers.external` records their tier.
 - **v5** - removed repo-to-repo dependencies: `relationships.dependencies`, its
   `Dependency` schema, the `group:<name>` endpoint notation and `relationships.cycles`.
   A dependency is between services, components and infrastructure, never between code

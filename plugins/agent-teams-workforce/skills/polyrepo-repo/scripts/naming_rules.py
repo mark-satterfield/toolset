@@ -6,6 +6,11 @@ each), and the deprecated prefix. This module reads those rules from the note's 
 the tool runs and keeps no copy of them. A rule the note does not state raises
 NamingRulesError, naming the missing rule; there is no built-in rule to fall back on.
 
+A project is an open token. The note's project table lists the projects that exist today, and is
+not a limit: a name whose first token is no listed project, no deprecated prefix and no
+non-application type is checked by its shape, `{project}[-team]-{domain}-{type}`, with `{type}`
+one of the types the note lists. Its project is its first token.
+
 The parser keys on the note's structure: the table whose header has a `Project` column and a
 `Prefix` column; the "`{type}` is one of ..." sentence; the `### <project> repositories`
 sections under the patterns, each with a `**Pattern:**` line.
@@ -36,6 +41,9 @@ WORD_LOWER = "[a-z0-9]+"
 NAME_SLOT = "{name}"
 TYPE_SLOT = "{type}"
 PATTERN_LEVEL = 3
+OPEN_PROJECT = "open project"
+OPEN_SECTION = "Shape"
+OPEN_PROJECT_WORD = "[a-z][A-Za-z0-9]*"
 
 
 class NamingRulesError(Exception):
@@ -73,6 +81,40 @@ class NamingRules:
     patterns: tuple[NamingPattern, ...]
     bare_names: frozenset[str]
     deprecated_prefix: str
+    reserved_tokens: frozenset[str]
+
+    @property
+    def open_regex(self) -> str:
+        """The shape a name of a project the note's table does not list must have.
+
+        Returns:
+            `{project}[-team]-{domain}-{type}`: the project and the domain one camelCase token
+            each, `{type}` one of the note's types.
+
+        """
+        types = "|".join(map(re.escape, self.types))
+        return f"{OPEN_PROJECT_WORD}(?:-team)?-{WORD_CAMEL}-(?:{types})"
+
+    def _open_project(self, name: str) -> NamingPattern | None:
+        """Match a name whose first token is a project the note's table does not list.
+
+        Returns:
+            The open-project pattern, its space the first token, or None when the first token
+            is a listed project, the deprecated prefix or a non-application type, or the name
+            does not have the shape.
+
+        """
+        token = name.partition(HYPHEN)[0]
+        if token.lower() in self.reserved_tokens or not re.fullmatch(self.open_regex, name):
+            return None
+        return NamingPattern(
+            name=OPEN_PROJECT,
+            kind=KIND_APPLICATION,
+            regex=f"(?:{self.open_regex})",
+            section=OPEN_SECTION,
+            rule=f"`{{project}}[-team]-{{domain}}-{{type}}`, `{{type}}` one of {', '.join(self.types)}",
+            space=token,
+        )
 
     def is_deprecated(self, name: str) -> bool:
         """Tell whether a name carries the deprecated prefix.
@@ -124,7 +166,8 @@ class NamingRules:
 
         An application name must also end in a repository type the note lists; the
         command-and-control repository, a name the note gives without `{name}`, is exempt, and
-        so are non-application and deprecated names.
+        so are non-application and deprecated names. A name of a project the note's table does
+        not list is checked by its shape (`open_regex`).
 
         Returns:
             The pattern, or None when no pattern matches or the last token is no listed type.
@@ -137,7 +180,7 @@ class NamingRules:
             elif re.fullmatch(p["regex"], name):
                 typed = p["kind"] != KIND_APPLICATION or name in self.bare_names
                 return p if typed or type_of(name) in self.types else None
-        return None
+        return self._open_project(name)
 
     def problem(self, name: str) -> str:
         """Say why a name is refused: no pattern matches, or its last token is no listed type.
@@ -148,10 +191,12 @@ class NamingRules:
         """
         if self.classify(name) is not None:
             return "it matches a naming pattern, but not an application one"
-        if any(re.fullmatch(p["regex"], name) for p in self.patterns if p["kind"] != KIND_DEPRECATED):
+        open_token = name.partition(HYPHEN)[0].lower() not in self.reserved_tokens
+        shaped = open_token and re.fullmatch(f"{OPEN_PROJECT_WORD}(?:-team)?-{WORD_CAMEL}-{WORD_LOWER}", name)
+        if shaped or any(re.fullmatch(p["regex"], name) for p in self.patterns if p["kind"] != KIND_DEPRECATED):
             last = type_of(name)
             return f"its last token {last!r} is not a repository type the naming note lists ({', '.join(self.types)})"
-        return "it matches no pattern the naming note states"
+        return "it matches no pattern the naming note states, and not the shape {project}[-team]-{domain}-{type}"
 
     def summary(self) -> dict[str, object]:
         """Describe what was read from the note, for a report.
@@ -166,6 +211,7 @@ class NamingRules:
             "types": list(self.types),
             "patterns": [{k: v for k, v in p.items() if k != "regex"} for p in self.patterns],
             "deprecated_prefix": self.deprecated_prefix,
+            "open_project_shape": "{project}[-team]-{domain}-{type}",
         }
 
 
@@ -434,6 +480,13 @@ def read_rules(path: Path) -> NamingRules:
     prefixes = _read_prefixes(path, text)
     types = _read_types(path, text)
     patterns, bare, deprecated_prefix = _read_patterns(path, sections, prefixes)
+    non_application = {
+        t
+        for sec in sections
+        if sec.title.removesuffix(SECTION_SUFFIX) == KIND_NON_APPLICATION
+        for t in TYPE_MEANING.findall(sec.body)
+    }
+    reserved = {x.rstrip(HYPHEN).lower() for x in (*prefixes.values(), deprecated_prefix)} | non_application
     return NamingRules(
         document=path,
         prefixes=prefixes,
@@ -441,4 +494,5 @@ def read_rules(path: Path) -> NamingRules:
         patterns=patterns,
         bare_names=bare,
         deprecated_prefix=deprecated_prefix,
+        reserved_tokens=frozenset(reserved),
     )

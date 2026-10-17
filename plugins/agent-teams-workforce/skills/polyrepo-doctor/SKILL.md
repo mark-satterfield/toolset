@@ -7,7 +7,7 @@ description: >-
   deprecated repo has an open pull request and none is overdue for archiving; check that every governance entry and
   knowledge-store pointer still resolves; check that the vault's repository naming note is readable and states every rule the tool needs;
   check the matrix's stacks against the repositories; check that every
-  repository records a tier and that the tier export is current. Reports findings, and with `--fix` repairs every finding it can. Use for
+  repository records a tier. Reports findings, and with `--fix` repairs every finding it can. Use for
   a health check before a release, after significant changes, on a schedule, or on request.
 ---
 
@@ -23,7 +23,7 @@ tool: start from `doctor --json`, or `doctor --fix --json` to repair first.
 |---|---|---|
 | `reconcile` | `reconcile` | no open finding; a deprecated or archived repo with no local clone is normal (`deprecate` deletes the clone) and raises none |
 | `agents-sync` | `agents-sync --check` | every repo on disk that is not deprecated has the current shared `AGENTS.md` blocks |
-| `tiers` | `tiers`: the tier export (`.polyrepo/repository-tiers.json`) against the manifest's tiers and the config's `tiers.external` | the export exists and holds exactly what the manifest and the config give, and every external path is the root of a git clone. Kinds: `tier-export-missing`, `tier-export-stale` (both repaired by `tiers --write`, which `doctor --fix` runs), `tier-external` (the config's path does not resolve: correct `tiers.external` in the config). A manifest entry with no tier is a `reconcile` finding (`tier-missing`), repaired by `reconcile --fix` |
+| `tiers` | `tiers`: the config's `tiers.external` | every external path is the root of a git clone. Kind: `tier-external` (the config's path does not resolve: correct `tiers.external` in the config). A manifest entry with no tier is a `reconcile` finding (`tier-missing`), repaired by `reconcile --fix` |
 | `gitnexus-sync` | `gitnexus-sync --check` | every repo that is not deprecated has `.gitnexusrc`, the `.gitnexus` ignore rule and the current `.claude/skills/gitnexus/` |
 | `beads` | `polyrepo-beads/scripts/audit-fleet.sh --json` over every non-deprecated, non-archived repo on disk, in every app space | no anomaly |
 | `beads-setup` | `beads-setup --check`: every non-deprecated, non-archived repo (whatever its lifecycle, `planned` included) has `.beads/config.yaml`, `metadata.json` and `.beads/.gitignore` committed, an entry in the beads fleet list, and a `.gitignore` with the beads and standard ignores | no gap |
@@ -46,7 +46,7 @@ are under `$SKILLSPOKE_LOGS/polyrepo/`.
 
 ## `--fix`
 
-`doctor --fix` runs `reconcile --fix`, `tiers --write`, `agents-sync`, `gitnexus-sync`, `beads-setup --all`, `beads-fleet --fix`,
+`doctor --fix` runs `reconcile --fix`, `agents-sync`, `gitnexus-sync`, `beads-setup --all`, `beads-fleet --fix`,
 `deprecated-prs --fix` and then `archive-due` before the checks; each commits and pushes what it changed.
 `archive-due` archives every deprecated repo that is due (the launchd agent
 `com.skillspoke.polyrepo-archive-due` runs it daily too, so `doctor --fix` catches up a missed day).

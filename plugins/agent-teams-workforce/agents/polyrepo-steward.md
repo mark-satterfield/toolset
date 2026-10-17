@@ -212,7 +212,7 @@ hand the facts back for the caller to act on.
 |---|---|
 | Create a repo from a template, locally and on GitHub, with its tier, its beads setup and its stack in the matrix | `create <name> --space S [--template T] [--tier product\|tooling]` |
 | Record a repository's tier (see *Tiers*) | `set-tier <repo> product\|tooling` |
-| List every recorded tier, check the tier export, or rewrite it | `tiers` (`--write` rewrites the export; also run by `doctor --fix`) |
+| List every recorded tier and check that every external repository resolves | `tiers` |
 | Rename a repo with every name it carries: locally and on GitHub, the `repository` of its stacks in the matrix, its stack ids and stack file names, its Python names (distribution, import package, source folder), every reference to them in the other repositories and the matrix, and, through the `filing-clerk` in the same job, the vault documents it lists (see *A rename covers every name*) | `rename <repo> <new-name>` (`--dry-run` prints the whole plan first) |
 | Bring the stack and Python names of repositories to what `atw-naming` gives, without renaming them; report every repository whose Python names or layout differ | `rename <repo> [--also <repo>…]`; `python-names` |
 | Deprecate a repo (renames it, closes its open pull requests, deletes its local clone, lists the vault documents that carry its old name for the `filing-clerk`, which updates them in the same job); it refuses while the matrix has a stack in it | `deprecate <repo>` |
@@ -252,12 +252,7 @@ control repo and `product` for every other repository; `create --tier` states an
 changes one. `reconcile --fix` records the default for an entry that has none (`tier-missing`) and
 leaves an entry whose tier is neither value for you to judge (`tier-invalid`). A repository outside the
 repository root has no manifest entry: the config's `tiers.external` lists it with its tier (the toolset
-repo and the vault), its path built from environment variables. The tier export
-(`.polyrepo/repository-tiers.json`, each clone's absolute path to its tier, a clone reached through a
-symbolic link under both paths) is what the hooks read. It is derived, machine-specific and not
-committed; the tool rewrites it with every records commit, and `tiers --write` (also `doctor --fix`)
-rewrites it on demand. A tier you change or a repository you add is not done until the export is
-current: `tiers` must report no finding.
+repo and the vault), its path built from environment variables. `tiers` must report no finding.
 
 ### A rename covers every name
 
@@ -477,7 +472,7 @@ Your judgment is for what a script cannot decide, and only that:
 | Job | Skill |
 |---|---|
 | Tool command reference; repo create, update, deprecate, list, search; manifest edits | `polyrepo-repo` |
-| Health check: reconcile, `agents-sync --check`, the tier export, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, that the vault's repository naming note is readable and states every rule the tool needs, the template types against the note's types, the organization record's environment values against the environment, the matrix's stacks | `polyrepo-doctor` |
+| Health check: reconcile, `agents-sync --check`, the external repositories' tiers, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, that the vault's repository naming note is readable and states every rule the tool needs, the template types against the note's types, the organization record's environment values against the environment, the matrix's stacks | `polyrepo-doctor` |
 | Facts outside the manifest and the matrix, and the knowledge store of procedure and non-architecture-document pointers | `polyrepo-info` |
 | Sweep repos and docs for durable pointers to procedures and non-architecture documents | `polyrepo-tribal-knowledge` |
 | Registry of the project's own scripts, tools and procedures | `polyrepo-governance` |

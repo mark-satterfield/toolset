@@ -38,7 +38,7 @@ Usage:
   polyrepo.py gitnexus-sync [--check] [--dry-run] [--repo R ...] [--space S]
   polyrepo.py naming <name>
   polyrepo.py tier <path>
-  polyrepo.py tiers [--write]
+  polyrepo.py tiers
   polyrepo.py set-tier <repo> product|tooling
   polyrepo.py templates-check
   polyrepo.py beads-setup [repo ...] [--space S] [--all] [--check] [--dry-run] [--trailer TEXT]
@@ -58,9 +58,7 @@ POLYREPO_COMMIT_TRAILER ends the message of every commit the tool makes.
 The tiers are defined in the project's root AGENTS.md ("Code quality"). The manifest records, for
 every repository, whether it holds product code: `product` (its product files are tier 1:
 worktrees and a pull request) or `tooling` (the repository is tier 2 throughout). `tier <path>`
-says which the repository containing a path is, and the tier export
-(`.polyrepo/repository-tiers.json`, path to `product` or `tooling`) is rewritten with every
-records commit, for the hooks that read it. `agents-sync` writes AGENTS.md, which is tier 2 in
+says which the repository containing a path is. `agents-sync` writes AGENTS.md, which is tier 2 in
 every repository, so it commits on `main` whatever the repository's recorded tier.
 
 Every command takes --json (one JSON object on stdout) and --no-cache (ignore the fetch and
@@ -145,7 +143,6 @@ EXIT_USAGE = 2
 TIER_PRODUCT = "product"
 TIER_TOOLING = "tooling"
 TIERS = (TIER_PRODUCT, TIER_TOOLING)
-TIER_EXPORT_FILE = "repository-tiers.json"
 COMMIT_TRAILER_ENV = "POLYREPO_COMMIT_TRAILER"
 
 
@@ -2491,9 +2488,6 @@ def commit_records(cfg: Config, subject: str, body: list[str] | None = None) -> 
     The files are the manifest, knowledge store and fleet list, committed on the default branch
     of the repo that holds them. The body lines, when given, follow the subject in the message.
 
-    The tier export (`write_tier_export`) is rewritten first, so it follows every manifest write;
-    it is derived and machine-specific, so it is not committed.
-
     Returns:
         {"status": "clean" | "pushed" | "failed", "files": [...], "error"?: str}.
 
@@ -2506,10 +2500,6 @@ def commit_records(cfg: Config, subject: str, body: list[str] | None = None) -> 
             "error": f"{cfg.file.parent} is not in a git repo",
         }
     root = Path(top)
-    try:
-        write_tier_export(cfg)
-    except (PolyrepoError, OSError) as exc:
-        return {"status": "failed", "files": [], "error": f"tier export not written: {exc}"}
     rels = [
         p.resolve().relative_to(root.resolve()).as_posix()
         for p in (cfg.manifest, cfg.knowledge, fleet_file(cfg))
@@ -2553,8 +2543,7 @@ def finish_records(cfg: Config, data: dict[str, object]) -> None:
 # --------------------------------------------------------------------------------------------
 # tiers: which repositories are product (tier 1) and which are tooling (tier 2). The manifest
 # records the tier of every repository it has an entry for. A repository outside the repository
-# root, which has no entry, is listed in the config's `tiers.external`. The export is the file the
-# hooks read: a JSON object from each clone's absolute path to its tier.
+# root, which has no entry, is listed in the config's `tiers.external`.
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -2595,16 +2584,6 @@ def _absolute(raw: str) -> Path:
 
     """
     return Path(os.path.normpath(Path.cwd() / Path(raw).expanduser()))
-
-
-def tier_export_path(cfg: Config) -> Path:
-    """Return the tier export file (config `tiers.export`, by default `repository-tiers.json` in `.polyrepo/`).
-
-    Returns:
-        The path.
-
-    """
-    return cfg.setting_path("tiers", "export", TIER_EXPORT_FILE)
 
 
 def _external_tiers(cfg: Config) -> tuple[list[TierRepo], list[str]]:
@@ -2653,40 +2632,6 @@ def tier_repos(cfg: Config, manifest: Manifest, local: dict[str, LocalRepo]) -> 
     ]
     external, problems = _external_tiers(cfg)
     return sorted([*repos, *external], key=lambda t: str(t.path)), problems
-
-
-def tier_export_text(repos: list[TierRepo]) -> str:
-    """Render the tier export.
-
-    Returns:
-        A JSON object from each repository's absolute path to its tier (a clone reached through
-        a symbolic link has both paths), with a final newline.
-
-    """
-    return json.dumps(dict(sorted((str(p), r.tier) for r in repos for p in r.paths())), indent=2) + "\n"
-
-
-def write_tier_export(cfg: Config, *, check: bool = False) -> tuple[Path, bool]:
-    """Write the tier export, or with check only compare it, from the manifest, the clones on disk and the config.
-
-    The file is replaced in one step, so a hook never reads half of it.
-
-    Returns:
-        The export path, and whether the file differed from what it should hold (and so was
-        rewritten, unless check is set).
-
-    """
-    repos, _ = tier_repos(cfg, Manifest(cfg.manifest, GitHub(cfg, use_cache=True)), discover(cfg)[0])
-    want = tier_export_text(repos)
-    out = tier_export_path(cfg)
-    have = out.read_text(encoding="utf-8") if out.is_file() else None
-    if have == want:
-        return out, False
-    if not check:
-        tmp = out.with_name(out.name + ".tmp")
-        tmp.write_text(want, encoding="utf-8")
-        tmp.replace(out)
-    return out, True
 
 
 def tier_of_path(repos: list[TierRepo], paths: tuple[Path, ...]) -> TierAnswer:
@@ -2795,30 +2740,17 @@ def cmd_tier(args: argparse.Namespace, cfg: Config) -> int:
 
 
 def cmd_tiers(args: argparse.Namespace, cfg: Config) -> int:
-    """List every recorded tier and check the tier export; with --write, rewrite the export first.
+    """List every recorded tier and check that every external repository resolves.
 
     Returns:
-        0 when the export is current and every external repository resolves, else 1.
+        0 when every external repository resolves, else 1.
 
     """
     repos, problems = tier_repos(cfg, Manifest(cfg.manifest, GitHub(cfg, use_cache=True)), discover(cfg)[0])
-    out, differs = write_tier_export(cfg, check=not args.write)
     findings: list[dict[str, object]] = [
         {"repo": "-", "kind": "tier-external", "detail": p, "status": "open"} for p in problems
     ]
-    if differs and not args.write:
-        missing = not out.is_file()
-        findings.append(
-            {
-                "repo": "-",
-                "kind": "tier-export-missing" if missing else "tier-export-stale",
-                "detail": f"{out} {'does not exist' if missing else 'differs from the manifest and the config'}",
-                "status": "open",
-            },
-        )
     data: dict[str, object] = {
-        "export": str(out),
-        "written": differs and args.write,
         "repositories": [{"name": r.name, "path": str(r.path), "tier": r.tier, "source": r.source} for r in repos],
         "findings": findings,
         "open": len(findings),
@@ -2827,7 +2759,7 @@ def cmd_tiers(args: argparse.Namespace, cfg: Config) -> int:
         args,
         data,
         lambda: "\n".join(
-            [f"{len(repos)} repositories record a tier; export {out}{' (rewritten)' if data['written'] else ''}"]
+            [f"{len(repos)} repositories record a tier"]
             + [f"  {r.tier:8} {r.name}  {r.path}" for r in repos]
             + [f"  [{f['kind']}] {f['detail']}" for f in findings],
         ),
@@ -2836,7 +2768,7 @@ def cmd_tiers(args: argparse.Namespace, cfg: Config) -> int:
 
 
 def cmd_set_tier(args: argparse.Namespace, cfg: Config) -> int:
-    """Record a repository's tier in the manifest, log it, and commit it with the rewritten export.
+    """Record a repository's tier in the manifest, log it, and commit it.
 
     Returns:
         0.
@@ -7631,7 +7563,6 @@ DOCTOR_CHECKS: dict[str, list[str]] = {
 }
 DOCTOR_REPAIRS: dict[str, list[str]] = {
     "reconcile --fix": [sys.executable, str(SELF), "reconcile", "--fix", "--json"],
-    "tiers --write": [sys.executable, str(SELF), "tiers", "--write", "--json"],
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--json"],
     "gitnexus-sync": [sys.executable, str(SELF), "gitnexus-sync", "--json"],
     "beads-setup --all": [sys.executable, str(SELF), "beads-setup", "--all", "--json"],
@@ -8424,14 +8355,13 @@ def _add_tier_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
 
     s = add(
         "tiers",
-        "list every recorded tier and check the tier export; --write rewrites the export",
+        "list every recorded tier and check that every external repository resolves",
     )
-    s.add_argument("--write", action="store_true", help="rewrite the export")
     s.set_defaults(func=cmd_tiers)
 
     s = add(
         "set-tier",
-        "record a repository's tier in the manifest and commit it with the rewritten export",
+        "record a repository's tier in the manifest and commit it",
     )
     s.add_argument("repo")
     s.add_argument("tier", choices=TIERS)

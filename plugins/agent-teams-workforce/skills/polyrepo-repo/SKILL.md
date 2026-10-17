@@ -34,7 +34,7 @@ environment error; `grep` follows `rg` (0 match, 1 no match, 2 error).
 A command that changes the steward's files (manifest, knowledge store, beads fleet list) commits
 and pushes them itself, on `main` of the repo that holds them, with a message that says what
 changed, and reports it under `records`. A line in the environment variable `POLYREPO_COMMIT_TRAILER` ends the message of every
-commit the tool makes; the tier export is rewritten with each of these commits (see *Tiers*).
+commit the tool makes.
 
 | Command | What it does |
 |---|---|
@@ -56,13 +56,13 @@ commit the tool makes; the tier export is rewritten with each of these commits (
 | `agents-sync [--check\|--dry-run] [--repo R …] [--space S] [--trailer TEXT]` | Write the shared `AGENTS.md` blocks (the SkillSpoke shared block, the GitNexus block and the Agent Teams Workforce block, listed under `agents_sync.blocks` in the config; a block's `exclude_spaces` lists the app spaces that do not receive it, and none lists any; `--space S` and `--repo R` narrow a run) into every repo, whatever its recorded tier: `AGENTS.md` is tier 2 in every repository (see *Tiers*), so each repo is committed on `main` in its primary working tree and pushed, with no worktree, branch or pull request. Before writing, a repo's `main` is fetched and brought up to `origin/main` (fast-forward, or a rebase of local commits); a repo whose tree is dirty or whose rebase conflicts is reported (state `stale-main`) and left. A push the remote rejects (for example branch protection) leaves the commit local and is reported (status `committed`, with the rejection as `detail`). `{{repo}}` in a block source becomes the repo's name; the GitNexus block replaces the older `<!-- gitnexus:start -->` section; `--check` reports repos out of date. |
 | `naming <name>` | Read-only check of one repository name against the vault's repository naming note. JSON: `valid`, `pattern`, `kind`, `section` and `rule` (the note's section and `**Pattern:**` line the name matched), `document`, `type`, `types`, `space` and `folder` (where the config's `placement` puts it, or `folder_note` when the config maps no folder to its type) and `problem` (why a refused name is refused). Exit 0 when the name matches a pattern, else 1. |
 | `tier <path>` | Say which tier the repository containing a path is in. JSON: `path`, `repository`, `repository_path`, `tier` (`product` or `tooling`), `source` (`manifest` or `config`) and `linked_worktree` (true when the path is in a linked worktree of the clone). A path inside a clone, its `.worktrees/` included, belongs to that clone; a linked worktree elsewhere belongs to the clone git names as its common directory. Exit 0 when a repository that records a tier contains the path, else 1 (`repository` and `tier` are null; `repository_path` names the git clone that contains the path, when there is one). |
-| `tiers [--write]` | List every recorded tier (the manifest's, for the repos on disk, and the config's `tiers.external`) and check the tier export; `--write` rewrites the export. Findings: `tier-export-missing`, `tier-export-stale`, `tier-external` (a configured path that is not the root of a git clone). |
+| `tiers` | List every recorded tier (the manifest's, for the repos on disk, and the config's `tiers.external`). Finding: `tier-external` (a configured path that is not the root of a git clone). |
 | `set-tier <repo> product\|tooling` | Record the tier on the repo's manifest entry, log it and commit it; the export is rewritten with the commit. |
 | `gitnexus-sync [--check\|--dry-run] [--repo R …] [--space S]` | Give every repo its GitNexus files: `.gitnexusrc`, the `.gitnexus` ignore rule and the six skills in `.claude/skills/gitnexus/`, copied from the control repo files the config's `gitnexus` section names; commits and pushes each; `--check` reports repos out of date. |
 | `templates-check` | Which templates lag the repos built from them, and which repo kinds have no template. |
 | `environment [repo…] [--space S] [--fix]` | Check every active Python repo (a `pyproject.toml` and an `install` task in its Taskfile): `.venv/bin/python` exists and runs, every declared dependency is installed and importable, and `aws_cdk` imports where the code uses it. `--fix` runs the repo's `task install` for each gap and checks again; for an infra repo it also runs `cdk synth --profile dev`. `create` runs the same setup and checks. |
 | `python-names [repo…] [--space S]` | Check every active Python repo (a `pyproject.toml`; the control repo excluded) against the Python names of the naming standard: `atw-naming check python-distribution`, `python-package` and `python-package-path` against its `pyproject.toml` name and its source folder, `src` present for a `lib` and a `service`, `tests` present, no `__init__.py` in an app or team folder. One finding per failure. |
-| `doctor [--fix]` | Every health check as one findings list: `reconcile`, `agents-sync --check`, `tiers`, the beads fleet audit, `beads-setup --check`, `beads-fleet`, `environment`, `python-names`, `deprecated-prs`, `archive-due --dry-run`, the governance entries, the knowledge-store pointers, that the vault's repository naming note is readable and states every rule the tool needs, and the matrix's stacks against the repositories (`matrix`). `--fix` first runs `reconcile --fix`, `tiers --write`, `agents-sync`, `beads-setup --all`, `beads-fleet --fix`, `deprecated-prs --fix` and `archive-due`, then repairs the matrix's stacks and commits the matrix. The launchd agent `com.skillspoke.polyrepo-daily` runs `doctor --fix` every day, logging under `$SKILLSPOKE_LOGS/polyrepo/`. |
+| `doctor [--fix]` | Every health check as one findings list: `reconcile`, `agents-sync --check`, `tiers`, the beads fleet audit, `beads-setup --check`, `beads-fleet`, `environment`, `python-names`, `deprecated-prs`, `archive-due --dry-run`, the governance entries, the knowledge-store pointers, that the vault's repository naming note is readable and states every rule the tool needs, and the matrix's stacks against the repositories (`matrix`). `--fix` first runs `reconcile --fix`, `agents-sync`, `beads-setup --all`, `beads-fleet --fix`, `deprecated-prs --fix` and `archive-due`, then repairs the matrix's stacks and commits the matrix. The launchd agent `com.skillspoke.polyrepo-daily` runs `doctor --fix` every day, logging under `$SKILLSPOKE_LOGS/polyrepo/`. |
 | `commit --message TEXT` | Commit and push the steward's files after a hand edit. |
 
 A record carries `name`, `space`, `path`, `lifecycle`, `tier`, `present` (disk, github,
@@ -164,13 +164,11 @@ Every manifest entry records in `tier` which kind of repository it is, that is, 
 The manifest holds the tier of every repository it has an entry for. The toolset repo and the vault are
 outside the repository root and have no entry: the config's `tiers.external` lists each with its `name`,
 its `path` (built from environment variables, `${SKILLSPOKE_ATW_PLUGIN_SOURCE}/../..` and
-`${SKILLSPOKE_ROOT}/skillspoke-docs`) and its `tier`. The tier export, `.polyrepo/repository-tiers.json` (config
-`tiers.export`), is a JSON object from each clone's absolute path to `product` or `tooling`, with both
-paths for a clone reached through a symbolic link (the vault). The main-worktree guard hook of the plugin reads
-it: it blocks an edit to a product file in the primary working tree of a `product` repository only (an `AGENTS.md` or `CLAUDE.md` at any depth, and anything under the repository's `.claude/`, are tier 2 and are allowed), and allows every edit
-while the file is absent. The export is derived, holds this machine's paths and is not committed; the tool
-rewrites it with every records commit (`reconcile --fix`, `set-tier`, `create` and the rest) and `tiers --write` rewrites it on
-demand. `tier <path>` answers from the same records.
+`${SKILLSPOKE_ROOT}/skillspoke-docs`) and its `tier`. `tier <path>` answers from these records. The
+main-worktree guard hook of the plugin reads no record: the folder layout decides it. It blocks an edit to a
+product file in the primary working tree of any git repository under `$SKILLSPOKE_APPS` except the
+command-and-control repository at `$SKILLSPOKE_CC` (an `AGENTS.md` or `CLAUDE.md` at any depth, and anything
+under the repository's `.claude/`, are tier 2 and are allowed).
 
 ## The matrix
 
@@ -224,7 +222,11 @@ is one of ..."), the name patterns (the `**Pattern:**` line of each repositories
 deprecated prefix. Creating, renaming, cloning and deprecating a repository and `doctor` use them. A name must
 match a pattern, and an application name must end in a repository type the note lists
 (`SkillSpoke-auth-utils` is refused); the command-and-control repository `SkillSpoke` is exempt.
-`naming <name>` checks one name read-only and shows the note, the section and the pattern line
+A project is an open token: the note's project table lists today's projects and is not a limit. A
+name whose first token is no listed project, no deprecated prefix and no non-application type is
+checked by its shape, `{project}[-team]-{domain}-{type}` with `{type}` one of the note's types
+(`devsecops-resourceNaming-lib` passes), and its project's repositories sit directly in
+`$SKILLSPOKE_APPS/<project>`. `naming <name>` checks one name read-only and shows the note, the section and the pattern line
 of the rule it matched. If the note does not state a rule the tool needs, the tool says so and
 stops; hand that gap, and any change to the rules, to the `filing-clerk`, never into the config.
 
