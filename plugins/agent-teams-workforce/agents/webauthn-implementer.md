@@ -6,11 +6,12 @@ description: >-
   client-side handling. Use for Implementation work requiring
   WebAuthn ceremony wiring, passkey credential lifecycle, and Cognito
   integration.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp__context7__resolve-library-id, mcp__context7__query-docs
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__gitnexus__query, mcp__gitnexus__context, mcp__gitnexus__impact, mcp__gitnexus__detect_changes, mcp__gitnexus__trace, mcp__gitnexus__explain, mcp__gitnexus__api_impact, mcp__gitnexus__route_map, mcp__gitnexus__tool_map, mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query, mcp__gitnexus__cypher, mcp__gitnexus__check, mcp__gitnexus__list_repos, mcp__gitnexus__group_list, mcp__gitnexus__rename
 disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - context7
   - mcp-graphrag-server
+  - gitnexus
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100

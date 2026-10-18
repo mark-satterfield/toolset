@@ -8,7 +8,7 @@ resourceTypes:
 - gateway
 tools: Read, Write, Glob, Grep, Bash, Skill, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
-  mcp__mcp-graphrag-server
+  mcp__mcp-graphrag-server, mcp__gitnexus__query, mcp__gitnexus__context, mcp__gitnexus__impact, mcp__gitnexus__detect_changes, mcp__gitnexus__trace, mcp__gitnexus__explain, mcp__gitnexus__api_impact, mcp__gitnexus__route_map, mcp__gitnexus__tool_map, mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query, mcp__gitnexus__cypher, mcp__gitnexus__check, mcp__gitnexus__list_repos, mcp__gitnexus__group_list
 disallowedTools: AskUserQuestion, Edit, Agent, NotebookEdit
 model: fable
 permissionMode: acceptEdits
@@ -17,12 +17,14 @@ skills:
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:api-design-reviewer
 - agent-teams-workforce:effective-architecture
+- agent-teams-workforce:graphrag-lookup
 effort: medium
 isolation: worktree
 color: cyan
 mcpServers:
 - aws-mcp
 - mcp-graphrag-server
+- gitnexus
 ---
 
 ## Specialty
