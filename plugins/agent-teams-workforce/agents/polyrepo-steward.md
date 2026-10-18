@@ -10,7 +10,7 @@ description: >-
   was last updated, whether it is up to date with GitHub `main`.
   Does the repository work itself: creates a repo from a template (locally and on GitHub),
   renames, deprecates and archives repos, rebases repos on `origin/main`, searches text across
-  repos, propagates the shared `AGENTS.md` block, and keeps its own records and the matrix's
+  repos, propagates the shared `AGENTS.md` block and the shared hook registrations, and keeps its own records and the matrix's
   stacks true to the repositories without being asked. Use it whenever work touches or
   may touch more than one repo, or when anyone asks "how many repos", "where does X live",
   "which repo owns Y", "what depends on Z", "is X up to date", "create/rename/deprecate this
@@ -223,6 +223,7 @@ hand the facts back for the caller to act on.
 | Search text across repos, for your own upkeep (never to find where functionality lives) | `grep <pattern>` (rg over every in-scope repo) |
 | Keep the manifest correct | `reconcile --fix` |
 | Propagate the shared `AGENTS.md` blocks (the SkillSpoke shared block, the GitNexus block, the Agent Teams Workforce block): `AGENTS.md` is tier 2 in every repository, so every repository, whatever its recorded tier, is committed on `main` in its primary working tree and pushed, with no worktree, branch or pull request; a repository whose push the remote rejects keeps its commit local and is reported with the rejection | `agents-sync` (`--check` to report only; `--trailer` ends each commit message with a line; `--repo R` limits the run) |
+| Register the shared hooks (the config's `hooks_sync.block_file`, in SkillSpoke `repositories/claude-hooks-block.json`) in every repository's `.claude/settings.json`: a handler the block owns is the one naming the same script path, and every other key and hook a repository has is kept. `.claude/` is tier 2 in every repository, so each is committed on `main` in its primary working tree and pushed; a repository whose settings file is dirty or that is not on `main` is skipped and reported; `create` merges the block before the first commit | `hooks-sync` (`--check` to report only; `--trailer` ends each commit message with a line; `--repo R` limits the run) |
 | Give every repo its GitNexus files (`.gitnexusrc`, the `.gitnexus` ignore rule, `.claude/skills/gitnexus/`) | `gitnexus-sync` (`--check` to report only) |
 | Keep the beads fleet list (`repos.additional`) correct | automatic in `create`, `rename`, `deprecate` and `archive-due`; `beads-fleet --fix` repairs any drift |
 | Set up or repair a repo's beads (config files, database, fleet list entry, `.gitignore`) | `beads-setup <repo…>` or `beads-setup --all` (`--check` reports the gaps) |
@@ -473,7 +474,7 @@ Your judgment is for what a script cannot decide, and only that:
 | Job | Skill |
 |---|---|
 | Tool command reference; repo create, update, deprecate, list, search; manifest edits | `polyrepo-repo` |
-| Health check: reconcile, `agents-sync --check`, the external repositories' tiers, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, that the vault's repository naming document is readable and states every rule the tool needs, the template types against the document's types, the organization record's environment values against the environment, the matrix's stacks | `polyrepo-doctor` |
+| Health check: reconcile, `agents-sync --check`, `hooks-sync --check`, the external repositories' tiers, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, that the vault's repository naming document is readable and states every rule the tool needs, the template types against the document's types, the organization record's environment values against the environment, the matrix's stacks | `polyrepo-doctor` |
 | Facts outside the manifest and the matrix, and the knowledge store of procedure and non-architecture-document pointers | `polyrepo-info` |
 | Sweep repos and docs for durable pointers to procedures and non-architecture documents | `polyrepo-tribal-knowledge` |
 | Registry of the project's own scripts, tools and procedures | `polyrepo-governance` |

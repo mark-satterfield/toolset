@@ -35,6 +35,7 @@ Usage:
                      [--pr-footer TEXT]
   polyrepo.py deprecate <repo> [--dry-run]
   polyrepo.py agents-sync [--check] [--dry-run] [--repo R ...] [--space S] [--trailer TEXT]
+  polyrepo.py hooks-sync [--check] [--dry-run] [--repo R ...] [--space S] [--trailer TEXT]
   polyrepo.py gitnexus-sync [--check] [--dry-run] [--repo R ...] [--space S]
   polyrepo.py naming <name>
   polyrepo.py tier <path>
@@ -3758,6 +3759,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         "steps": [
             f"render the {args.template} template into {dest}",
             "write the shared AGENTS.md blocks, including GitNexus",
+            "merge the shared hook registrations into .claude/settings.json (hooks_sync)",
             "install GitNexus: .gitnexusrc, the .gitnexus ignore rule and .claude/skills/gitnexus/",
             f"git init on {b}, exclude {WORKTREES_LINE} locally",
             (
@@ -3788,6 +3790,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
             name,
         ),
     )
+    res["hooks_written"] = write_hooks(cfg, dest, name, args.space)
     try:
         _create_scaffold(args, cfg, dest, res)
     except GitFailedError as exc:
@@ -6633,6 +6636,295 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
     return 1 if bad else 0
 
 
+# hooks-sync -----------------------------------------------------------------------------------
+# The config's `hooks_sync.block_file` is a Claude Code settings fragment whose `hooks` every repo
+# registers in its own `.claude/settings.json`. A handler the block owns is identified by the script
+# path that follows the environment variable in a block command (`"$VAR/ops/x.sh"` owns `ops/x.sh`),
+# so a repo's older registration of the same script, through any variable, is replaced; every other
+# key, event, matcher group and handler a repo has is kept.
+
+CLAUDE_SETTINGS = ".claude/settings.json"
+HOOKS_SYNC_SUBJECT = "chore(claude): sync the shared hook registrations"
+HOOK_SCRIPT_PATH = re.compile(r"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/([^\s\"']+)")
+
+type HookGroup = dict[str, object]
+type HookEvents = dict[str, list[HookGroup]]
+
+
+@dataclasses.dataclass(frozen=True)
+class HooksBlock:
+    """The hook registrations hooks-sync owns in every repo's .claude/settings.json."""
+
+    events: HookEvents
+    owned: frozenset[str]
+    exclude: frozenset[str]
+    exclude_spaces: frozenset[str]
+
+    def applies_to(self, name: str, space: str) -> bool:
+        """Say whether a repo receives the block.
+
+        Returns:
+            True unless the repo or its app space is excluded.
+
+        """
+        return name not in self.exclude and space not in self.exclude_spaces
+
+    def owns(self, handler: object) -> bool:
+        """Say whether a repo's hook handler is one the block owns.
+
+        Returns:
+            True when the handler's command names a script path the block registers.
+
+        """
+        if not isinstance(handler, dict):
+            return False
+        command = str(handler.get("command") or "")
+        return any(f"/{path}" in command for path in self.owned)
+
+
+def _hook_events(value: object, what: str) -> HookEvents:
+    """Validate a settings `hooks` value: event name to a list of matcher groups.
+
+    Returns:
+        The events, each group a mapping with a `hooks` list.
+
+    Raises:
+        PolyrepoError: when the value is not shaped as Claude Code hooks.
+
+    """
+    events = _map(value or {}, what)
+    out: HookEvents = {}
+    for event, groups in events.items():
+        out[event] = [_map(g, f"{what} {event} group") for g in _seq(groups, f"{what} {event}")]
+    bad = [e for e, gs in out.items() for g in gs if not isinstance(g.get("hooks"), list)]
+    if bad:
+        msg = f"{what}: a group under {', '.join(sorted(set(bad)))} has no hooks list"
+        raise PolyrepoError(msg)
+    return out
+
+
+def _hooks_block(cfg: Config) -> HooksBlock | None:
+    """Read the hook block the config names.
+
+    Returns:
+        The block, or None when the config has no `hooks_sync` section.
+
+    Raises:
+        PolyrepoError: when the block file is missing, unreadable or owns no script.
+
+    """
+    raw = cfg.raw.get("hooks_sync")
+    if raw is None:
+        return None
+    spec = _map(raw, "config hooks_sync")
+    f = (cfg.file.parent / str(spec.get("block_file") or "")).resolve()
+    if not spec.get("block_file") or not f.is_file():
+        msg = f"hooks_sync.block_file not found: {f}"
+        raise PolyrepoError(msg)
+    try:
+        parsed: object = json.loads(f.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        msg = f"hooks_sync block {f} is not valid JSON: {exc}"
+        raise PolyrepoError(msg) from exc
+    events = _hook_events(_map(parsed, "hooks block").get("hooks"), "hooks block")
+    commands = [
+        str(_map(h, "hook").get("command") or "")
+        for gs in events.values()
+        for g in gs
+        for h in _seq(g["hooks"], "hooks")
+    ]
+    owned = frozenset(m.group(1) for c in commands if (m := HOOK_SCRIPT_PATH.search(c)))
+    if len(owned) == 0 or len({c for c in commands if HOOK_SCRIPT_PATH.search(c)}) != len(commands):
+        msg = f"hooks_sync block {f}: every command must run a script through an environment variable path"
+        raise PolyrepoError(msg)
+    return HooksBlock(
+        events,
+        owned,
+        frozenset(_strs(spec.get("exclude") or [], "hooks_sync exclude")),
+        frozenset(_strs(spec.get("exclude_spaces") or [], "hooks_sync exclude_spaces")),
+    )
+
+
+def _strip_owned(groups: list[HookGroup], block: HooksBlock) -> list[HookGroup]:
+    """Return the groups with every handler the block owns removed; emptied groups stay in place.
+
+    Returns:
+        New group mappings.
+
+    """
+    return [{**g, "hooks": [h for h in _seq(g["hooks"], "hooks") if not block.owns(h)]} for g in groups]
+
+
+def _merge_group(groups: list[HookGroup], add: HookGroup) -> None:
+    """Add a block group's handlers to the repo's group with the same matcher, or append the group."""
+    same = next((g for g in groups if g.get("matcher", "") == add.get("matcher", "")), None)
+    if same is None:
+        groups.append(json.loads(json.dumps(add)))
+        return
+    same["hooks"] = [*_seq(same["hooks"], "hooks"), *json.loads(json.dumps(add["hooks"]))]
+
+
+def _with_hooks(settings: dict[str, object], block: HooksBlock) -> dict[str, object]:
+    """Merge the block's hooks into a settings object, keeping every other key and hook.
+
+    Returns:
+        The new settings object.
+
+    """
+    current = _hook_events(settings.get("hooks"), CLAUDE_SETTINGS + " hooks")
+    events: HookEvents = {event: _strip_owned(groups, block) for event, groups in current.items()}
+    for event, groups in block.events.items():
+        target = events.setdefault(event, [])
+        for g in groups:
+            _merge_group(target, g)
+    kept = {e: [g for g in gs if g["hooks"]] for e, gs in events.items()}
+    return {**settings, "hooks": {e: gs for e, gs in kept.items() if gs}}
+
+
+def _settings_text(path: Path, block: HooksBlock) -> tuple[str | None, str]:
+    """Read a repo's settings file and build the text it should have.
+
+    Returns:
+        (current text or None when the file is missing, wanted text).
+
+    Raises:
+        PolyrepoError: when the file is not a JSON object or its hooks are malformed.
+
+    """
+    cur = path.read_text(encoding="utf-8") if path.is_file() else None
+    try:
+        parsed: object = json.loads(cur) if cur is not None else {}
+    except json.JSONDecodeError as exc:
+        msg = f"{CLAUDE_SETTINGS} is not valid JSON: {exc}"
+        raise PolyrepoError(msg) from exc
+    merged = _with_hooks(_map(parsed, CLAUDE_SETTINGS), block)
+    if cur is not None and json.loads(cur) == merged:
+        return cur, cur
+    return cur, json.dumps(merged, indent=2, ensure_ascii=False) + "\n"
+
+
+def write_hooks(cfg: Config, dest: Path, name: str, space: str) -> bool:
+    """Merge the hook block into a repo's settings file on disk, committing nothing (used by create).
+
+    Returns:
+        True when the file was written, False when the project has no block or the repo is excluded.
+
+    """
+    block = _hooks_block(cfg)
+    if block is None or not block.applies_to(name, space):
+        return False
+    path = dest / CLAUDE_SETTINGS
+    cur, want = _settings_text(path, block)
+    if cur == want:
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(want, encoding="utf-8")
+    return True
+
+
+def _hooks_sync_one(
+    cfg: Config,
+    r: LocalRepo,
+    block: HooksBlock,
+    write: bool,
+    trailer: str | None,
+) -> dict[str, object]:
+    """Bring one repo's hook registrations current, committed on main in its primary tree and pushed.
+
+    `.claude/` is tier 2 in every repository, so the change is committed on main whatever the repo's
+    tier. A repo whose settings file has uncommitted changes, or that is not on main, is skipped.
+
+    Returns:
+        {repo, state} plus, when it wrote, the status and any detail.
+
+    """
+    path = r.path / CLAUDE_SETTINGS
+    try:
+        cur, want = _settings_text(path, block)
+    except PolyrepoError as exc:
+        return {"repo": r.name, "state": "invalid", "status": "skipped", "detail": str(exc)}
+    state = "current" if cur == want else ("missing-file" if cur is None else "outdated")
+    res: dict[str, object] = {"repo": r.name, "state": state}
+    if state == "current" or not write:
+        return res
+    if git_out(r.path, "status", "--porcelain", "--", CLAUDE_SETTINGS):
+        return {**res, "status": "skipped", "detail": f"{CLAUDE_SETTINGS} has uncommitted changes"}
+    if (stopped := _advance_for_sync(cfg, r)) is not None:
+        return {**res, **stopped}
+    branch = git_out(r.path, "symbolic-ref", "--short", "-q", "HEAD")
+    if branch != cfg.default_branch:
+        return {**res, "status": "skipped", "detail": f"on {branch}, not {cfg.default_branch}"}
+    cur, want = _settings_text(path, block)
+    return {**res, **_commit_hooks(cfg, r, (cur, want), trailer)}
+
+
+def _commit_hooks(cfg: Config, r: LocalRepo, texts: tuple[str | None, str], trailer: str | None) -> dict[str, object]:
+    """Write the settings file, commit it on main and push.
+
+    Returns:
+        The status (`pushed`, `committed` when the push failed, `failed`) and any detail.
+
+    """
+    cur, want = texts
+    path = r.path / CLAUDE_SETTINGS
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(want, encoding="utf-8")
+    try:
+        _commit_paths(r.path, [CLAUDE_SETTINGS], _with_trailer(HOOKS_SYNC_SUBJECT, trailer))
+    except GitFailedError as exc:
+        git(r.path, "reset", "-q", "--", CLAUDE_SETTINGS)
+        if cur is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_text(cur, encoding="utf-8")
+        return {"status": "failed", "detail": str(exc)}
+    cp = git(r.path, "push", "origin", cfg.default_branch, timeout=120)
+    commit = git_out(r.path, "rev-parse", "--short=8", "HEAD")
+    if cp.returncode != 0:
+        return {"status": "committed", "commit": commit, "detail": f"push failed: {_last_line(cp)}"}
+    return {"status": "pushed", "commit": commit}
+
+
+def cmd_hooks_sync(args: argparse.Namespace, cfg: Config) -> int:
+    """Merge the shared hook registrations into every repo's .claude/settings.json.
+
+    Returns:
+        0 when every repo is current (or was brought current and pushed), else 1.
+
+    Raises:
+        PolyrepoError: when the config has no `hooks_sync` section.
+
+    """
+    block = _hooks_block(cfg)
+    if block is None:
+        msg = "the polyrepo config has no hooks_sync section"
+        raise PolyrepoError(msg)
+    repos = [
+        r
+        for r in _local_repos(cfg, args.repo, args.space)
+        if not cfg.is_deprecated_name(r.name) and block.applies_to(r.name, r.space)
+    ]
+    write = not args.check and not args.dry_run
+    with concurrent.futures.ThreadPoolExecutor(max_workers=APPLY_WORKERS if write else WORKERS) as ex:
+        results = list(ex.map(lambda r: _hooks_sync_one(cfg, r, block, write, args.trailer), repos))
+    bad = [x for x in results if x["state"] != "current" and (not write or x.get("status") not in AGENTS_SYNC_DONE)]
+    counts: dict[str, int] = {}
+    for x in results:
+        counts[str(x["state"])] = counts.get(str(x["state"]), 0) + 1
+
+    def text() -> str:
+        head = f"{len(results)} repos: " + ", ".join(f"{v} {k}" for k, v in sorted(counts.items()))
+        rows = [
+            f"  {x['repo']}: {x['state']}  {x.get('status', '')}  {x.get('commit', '')}  {x.get('detail', '')}".rstrip()
+            for x in results
+            if x["state"] != "current"
+        ]
+        return "\n".join([head, *rows])
+
+    emit(args, {"repos": results, "counts": counts, "not_current": len(bad)}, text)
+    return 1 if bad else 0
+
+
 # GitNexus ---------------------------------------------------------------------------------
 # Every repo has GitNexus: `.gitnexusrc`, the `.gitnexus` ignore rule, the six
 # skills in `.claude/skills/gitnexus/`, and the GITNEXUS block in AGENTS.md (an agents-sync
@@ -7484,6 +7776,7 @@ SELF = Path(__file__).resolve()
 DOCTOR_CHECKS: dict[str, list[str]] = {
     "reconcile": [sys.executable, str(SELF), "reconcile", "--json"],
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--check", "--json"],
+    "hooks-sync": [sys.executable, str(SELF), "hooks-sync", "--check", "--json"],
     "gitnexus-sync": [sys.executable, str(SELF), "gitnexus-sync", "--check", "--json"],
     "beads": ["bash", str(BEADS_AUDIT), "--json"],
     "beads-setup": [sys.executable, str(SELF), "beads-setup", "--check", "--json"],
@@ -7497,6 +7790,7 @@ DOCTOR_CHECKS: dict[str, list[str]] = {
 DOCTOR_REPAIRS: dict[str, list[str]] = {
     "reconcile --fix": [sys.executable, str(SELF), "reconcile", "--fix", "--json"],
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--json"],
+    "hooks-sync": [sys.executable, str(SELF), "hooks-sync", "--json"],
     "gitnexus-sync": [sys.executable, str(SELF), "gitnexus-sync", "--json"],
     "beads-setup --all": [sys.executable, str(SELF), "beads-setup", "--all", "--json"],
     "beads-fleet --fix": [sys.executable, str(SELF), "beads-fleet", "--fix", "--json"],
@@ -7505,6 +7799,12 @@ DOCTOR_REPAIRS: dict[str, list[str]] = {
     ],
     "archive-due": [sys.executable, str(SELF), "archive-due", "--json"],
 }  # fmt: skip
+
+
+SYNC_CHECK_DETAIL: dict[str, str] = {
+    "agents-sync": "shared AGENTS.md block not current",
+    "hooks-sync": "shared hook registrations not current",
+}
 
 
 def _finding(check: str, subject: str, kind: str, detail: str) -> DoctorFinding:
@@ -7572,15 +7872,15 @@ def _doctor_findings(check: str, data: dict[str, object]) -> list[DoctorFinding]
             for r in (_map(x, "gitnexus-sync repo") for x in _seq(data.get("repos") or [], "repos"))
             if r.get("state") != "current"
         ]
-    if check == "agents-sync":
+    if check in SYNC_CHECK_DETAIL:
         return [
             _finding(
                 check,
                 str(r["repo"]),
                 str(r["state"]),
-                str(r.get("detail") or "shared AGENTS.md block not current"),
+                str(r.get("detail") or SYNC_CHECK_DETAIL[check]),
             )
-            for r in (_map(x, "agents-sync repo") for x in _seq(data.get("repos") or [], "repos"))
+            for r in (_map(x, f"{check} repo") for x in _seq(data.get("repos") or [], "repos"))
             if r.get("state") != "current"
         ]
     if check == "beads":
@@ -8301,6 +8601,20 @@ def _add_tier_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
     s.set_defaults(func=cmd_set_tier)
 
 
+def _add_hooks_sync_command(add: Callable[[str, str], argparse.ArgumentParser]) -> None:
+    """Add hooks-sync."""
+    s = add(
+        "hooks-sync",
+        "merge the shared hook registrations into every repo's .claude/settings.json",
+    )
+    s.add_argument("--check", action="store_true", help="report repos out of date")
+    s.add_argument("--dry-run", action="store_true", help="same as --check")
+    s.add_argument("--repo", action="append", help="only this repo (repeatable)")
+    s.add_argument("--space", help="only this app space (default: every app space)")
+    s.add_argument("--trailer", help="a line to end each commit message with")
+    s.set_defaults(func=cmd_hooks_sync)
+
+
 def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> None:
     """Add the upkeep commands: agents-sync to commit."""
     s = add(
@@ -8313,6 +8627,7 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
     s.add_argument("--space", help="only this app space (default: every app space)")
     s.add_argument("--trailer", help="a line to end each commit message with")
     s.set_defaults(func=cmd_agents_sync)
+    _add_hooks_sync_command(add)
 
     s = add(
         "gitnexus-sync",
