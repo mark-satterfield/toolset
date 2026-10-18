@@ -121,43 +121,42 @@ from airflow.utils.dates import days_ago
 from datetime import timedelta
 
 default_args = {
-    'owner': 'data-team',
-    'depends_on_past': False,
-    'email_on_failure': True,
-    'email': ['data-alerts@company.com'],
-    'retries': 2,
-    'retry_delay': timedelta(minutes=5),
+    "owner": "data-team",
+    "depends_on_past": False,
+    "email_on_failure": True,
+    "email": ["data-alerts@company.com"],
+    "retries": 2,
+    "retry_delay": timedelta(minutes=5),
 }
 
 with DAG(
-    'daily_etl_pipeline',
+    "daily_etl_pipeline",
     default_args=default_args,
-    description='Daily ETL from PostgreSQL to Snowflake',
-    schedule_interval='0 5 * * *',
+    description="Daily ETL from PostgreSQL to Snowflake",
+    schedule_interval="0 5 * * *",
     start_date=days_ago(1),
     catchup=False,
-    tags=['etl', 'daily'],
+    tags=["etl", "daily"],
 ) as dag:
-
     extract = BashOperator(
-        task_id='extract_source_data',
-        bash_command='python /opt/airflow/scripts/extract.py --date {{ ds }}',
+        task_id="extract_source_data",
+        bash_command="python /opt/airflow/scripts/extract.py --date {{ ds }}",
     )
 
     transform = BashOperator(
-        task_id='run_dbt_models',
-        bash_command='cd /opt/airflow/dbt && dbt run --select marts.*',
+        task_id="run_dbt_models",
+        bash_command="cd /opt/airflow/dbt && dbt run --select marts.*",
     )
 
     test = BashOperator(
-        task_id='run_dbt_tests',
-        bash_command='cd /opt/airflow/dbt && dbt test --select marts.*',
+        task_id="run_dbt_tests",
+        bash_command="cd /opt/airflow/dbt && dbt test --select marts.*",
     )
 
     notify = BashOperator(
-        task_id='send_notification',
-        bash_command='python /opt/airflow/scripts/notify.py --status success',
-        trigger_rule='all_success',
+        task_id="send_notification",
+        bash_command="python /opt/airflow/scripts/notify.py --status success",
+        trigger_rule="all_success",
     )
 
     extract >> transform >> test >> notify
@@ -181,193 +180,96 @@ python scripts/data_quality_validator.py validate \
 
 ### Workflow 2: Implementing Real-Time Streaming
 
-**Scenario:** Stream events from Kafka, process with Flink/Spark Streaming, sink to data lake.
+**Scenario:** Stream high-volume records through Kinesis Data Streams, process them with a Python Lambda, and land them in an Apache Iceberg table on S3 through Amazon Data Firehose. For SkillSpoke business events use EventBridge through the events service instead (the `skillspoke-events` skill); for changes to a service's own table use DynamoDB Streams with the same Lambda pattern.
 
-#### Step 1: Define Event Schema
+#### Step 1: Define the Record Schema
 
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "UserEvent",
-  "type": "object",
-  "required": ["event_id", "user_id", "event_type", "timestamp"],
-  "properties": {
-    "event_id": {"type": "string", "format": "uuid"},
-    "user_id": {"type": "string"},
-    "event_type": {"type": "string", "enum": ["page_view", "click", "purchase"]},
-    "timestamp": {"type": "string", "format": "date-time"},
-    "properties": {"type": "object"}
-  }
-}
-```
-
-#### Step 2: Create Kafka Topic
-
-```bash
-# Create topic with appropriate partitions
-kafka-topics.sh --create \
-  --bootstrap-server localhost:9092 \
-  --topic user-events \
-  --partitions 12 \
-  --replication-factor 3 \
-  --config retention.ms=604800000 \
-  --config cleanup.policy=delete
-
-# Verify topic
-kafka-topics.sh --describe \
-  --bootstrap-server localhost:9092 \
-  --topic user-events
-```
-
-#### Step 3: Implement Spark Streaming Job
+Validate every record at the boundary with a typed model (Powertools parser with Pydantic):
 
 ```python
-# streaming/user_events_processor.py
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import (
-    from_json, col, window, count, avg,
-    to_timestamp, current_timestamp
+from datetime import datetime
+
+from pydantic import BaseModel
+
+
+class UserActivity(BaseModel):
+    """One activity record on the stream; carries identifiers, never seeker content."""
+
+    activity_id: str
+    user_id: str
+    activity_type: str
+    occurred_at: datetime
+```
+
+#### Step 2: Define the Stream, Consumer and Delivery in CDK
+
+Names come from the project's naming command (the `resource-naming` skill).
+
+```python
+from aws_cdk import Duration, aws_kinesis as kinesis, aws_lambda as lambda_
+from aws_cdk import aws_lambda_event_sources as sources, aws_sqs as sqs
+
+stream = kinesis.Stream(
+    self,
+    "ActivityStream",
+    stream_name=stream_name,  # from the naming command
+    stream_mode=kinesis.StreamMode.ON_DEMAND,
+    encryption=kinesis.StreamEncryption.MANAGED,
+    retention_period=Duration.hours(24),
 )
-from pyspark.sql.types import (
-    StructType, StructField, StringType,
-    TimestampType, MapType
-)
 
-# Initialize Spark
-spark = SparkSession.builder \
-    .appName("UserEventsProcessor") \
-    .config("spark.sql.streaming.checkpointLocation", "/checkpoints/user-events") \
-    .config("spark.sql.shuffle.partitions", "12") \
-    .getOrCreate()
+failures = sqs.Queue(self, "ActivityFailures", queue_name=failure_queue_name, enforce_ssl=True)
 
-# Define schema
-event_schema = StructType([
-    StructField("event_id", StringType(), False),
-    StructField("user_id", StringType(), False),
-    StructField("event_type", StringType(), False),
-    StructField("timestamp", StringType(), False),
-    StructField("properties", MapType(StringType(), StringType()), True)
-])
-
-# Read from Kafka
-events_df = spark.readStream \
-    .format("kafka") \
-    .option("kafka.bootstrap.servers", "localhost:9092") \
-    .option("subscribe", "user-events") \
-    .option("startingOffsets", "latest") \
-    .option("failOnDataLoss", "false") \
-    .load()
-
-# Parse JSON
-parsed_df = events_df \
-    .select(from_json(col("value").cast("string"), event_schema).alias("data")) \
-    .select("data.*") \
-    .withColumn("event_timestamp", to_timestamp(col("timestamp")))
-
-# Windowed aggregation
-aggregated_df = parsed_df \
-    .withWatermark("event_timestamp", "10 minutes") \
-    .groupBy(
-        window(col("event_timestamp"), "5 minutes"),
-        col("event_type")
-    ) \
-    .agg(
-        count("*").alias("event_count"),
-        approx_count_distinct("user_id").alias("unique_users")
+consumer.add_event_source(
+    sources.KinesisEventSource(
+        stream,
+        starting_position=lambda_.StartingPosition.TRIM_HORIZON,
+        batch_size=100,
+        bisect_batch_on_error=True,
+        retry_attempts=3,
+        report_batch_item_failures=True,
+        on_failure=sources.SqsDlq(failures),
     )
+)
+```
 
-# Write to Delta Lake
-query = aggregated_df.writeStream \
-    .format("delta") \
-    .outputMode("append") \
-    .option("checkpointLocation", "/checkpoints/user-events-aggregated") \
-    .option("path", "/data/lake/user_events_aggregated") \
-    .trigger(processingTime="1 minute") \
-    .start()
+Land the raw records with an Amazon Data Firehose stream whose source is the Kinesis stream and whose destination is the Iceberg table (Firehose delivers exactly once to Iceberg tables and needs the AWS Glue Data Catalog).
 
-query.awaitTermination()
+#### Step 3: Implement the Consumer
+
+```python
+from aws_lambda_powertools import Logger, Metrics
+from aws_lambda_powertools.metrics import MetricUnit
+from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, process_partial_response
+from aws_lambda_powertools.utilities.data_classes.kinesis_stream_event import KinesisStreamRecord
+from aws_lambda_powertools.utilities.typing import LambdaContext
+
+logger = Logger()
+metrics = Metrics()
+processor = BatchProcessor(event_type=EventType.KinesisDataStreams)
+
+
+def record_handler(record: KinesisStreamRecord) -> None:
+    activity = UserActivity.model_validate_json(record.kinesis.data_as_text())
+    apply_activity(activity)  # idempotent: delivery is at least once
+    metrics.add_metric(name="ActivitiesProcessed", unit=MetricUnit.Count, value=1)
+
+
+@metrics.log_metrics
+@logger.inject_lambda_context
+def handler(event: dict[str, object], context: LambdaContext) -> dict[str, object]:
+    return process_partial_response(event=event, record_handler=record_handler, processor=processor, context=context)
 ```
 
 #### Step 4: Handle Late Data and Errors
 
-```python
-# Dead letter queue for failed records
-from pyspark.sql.functions import current_timestamp, lit
-
-def process_with_error_handling(batch_df, batch_id):
-    try:
-        # Attempt processing
-        valid_df = batch_df.filter(col("event_id").isNotNull())
-        invalid_df = batch_df.filter(col("event_id").isNull())
-
-        # Write valid records
-        valid_df.write \
-            .format("delta") \
-            .mode("append") \
-            .save("/data/lake/user_events")
-
-        # Write invalid to DLQ
-        if invalid_df.count() > 0:
-            invalid_df \
-                .withColumn("error_timestamp", current_timestamp()) \
-                .withColumn("error_reason", lit("missing_event_id")) \
-                .write \
-                .format("delta") \
-                .mode("append") \
-                .save("/data/lake/dlq/user_events")
-
-    except Exception as e:
-        # Log error, alert, continue
-        logger.error(f"Batch {batch_id} failed: {e}")
-        raise
-
-# Use foreachBatch for custom processing
-query = parsed_df.writeStream \
-    .foreachBatch(process_with_error_handling) \
-    .option("checkpointLocation", "/checkpoints/user-events") \
-    .start()
-```
+- Partial batch responses retry only the failed records; bisect on error isolates a poison record, and after the retry attempts it goes to the on-failure destination with its shard ID and sequence numbers.
+- Late records are applied by event time, not arrival time: keep the newest version per key with a conditional write, and let windowed aggregates in the Iceberg table be recomputed by Athena.
+- For windowed aggregation in the consumer, use the event source mapping's tumbling window; for stateful processing beyond that, use Amazon Managed Service for Apache Flink (an hourly-billed application, justified only by a stated need).
 
 #### Step 5: Monitor Stream Health
 
-```python
-# monitoring/stream_metrics.py
-from prometheus_client import Gauge, Counter, start_http_server
-
-# Define metrics
-RECORDS_PROCESSED = Counter(
-    'stream_records_processed_total',
-    'Total records processed',
-    ['stream_name', 'status']
-)
-
-PROCESSING_LAG = Gauge(
-    'stream_processing_lag_seconds',
-    'Current processing lag',
-    ['stream_name']
-)
-
-BATCH_DURATION = Gauge(
-    'stream_batch_duration_seconds',
-    'Last batch processing duration',
-    ['stream_name']
-)
-
-def emit_metrics(query):
-    """Emit Prometheus metrics from streaming query."""
-    progress = query.lastProgress
-    if progress:
-        RECORDS_PROCESSED.labels(
-            stream_name='user-events',
-            status='success'
-        ).inc(progress['numInputRows'])
-
-        if progress['sources']:
-            # Calculate lag from latest offset
-            for source in progress['sources']:
-                end_offset = source.get('endOffset', {})
-                # Parse Kafka offsets and calculate lag
-```
+Alarm in CloudWatch on the consumer's `IteratorAge` (how far behind the stream it is), the on-failure queue's depth, Lambda errors and throttles, and the Firehose delivery metrics; trace the consumer with X-Ray. The `cloudwatch` skill has the alarm patterns.
 
 ---
 
@@ -404,15 +306,12 @@ validator = context.get_validator(
         "datasource_name": "warehouse",
         "data_asset_name": "orders",
     },
-    expectation_suite_name="orders_quality_suite"
+    expectation_suite_name="orders_quality_suite",
 )
 
 # Schema expectations
 validator.expect_table_columns_to_match_ordered_list(
-    column_list=[
-        "order_id", "customer_id", "order_date",
-        "total_amount", "status", "created_at"
-    ]
+    column_list=["order_id", "customer_id", "order_date", "total_amount", "status", "created_at"]
 )
 
 # Completeness expectations
@@ -424,30 +323,18 @@ validator.expect_column_values_to_not_be_null("order_date")
 validator.expect_column_values_to_be_unique("order_id")
 
 # Range expectations
-validator.expect_column_values_to_be_between(
-    "total_amount",
-    min_value=0,
-    max_value=1000000
-)
+validator.expect_column_values_to_be_between("total_amount", min_value=0, max_value=1000000)
 
 # Categorical expectations
-validator.expect_column_values_to_be_in_set(
-    "status",
-    ["pending", "confirmed", "shipped", "delivered", "cancelled"]
-)
+validator.expect_column_values_to_be_in_set("status", ["pending", "confirmed", "shipped", "delivered", "cancelled"])
 
 # Freshness expectation
 validator.expect_column_max_to_be_between(
-    "order_date",
-    min_value={"$PARAMETER": "now - timedelta(days=1)"},
-    max_value={"$PARAMETER": "now"}
+    "order_date", min_value={"$PARAMETER": "now - timedelta(days=1)"}, max_value={"$PARAMETER": "now"}
 )
 
 # Referential integrity
-validator.expect_column_values_to_be_in_set(
-    "customer_id",
-    value_set={"$PARAMETER": "valid_customer_ids"}
-)
+validator.expect_column_values_to_be_in_set("customer_id", value_set={"$PARAMETER": "valid_customer_ids"})
 
 validator.save_expectation_suite(discard_failed_expectations=False)
 ```
