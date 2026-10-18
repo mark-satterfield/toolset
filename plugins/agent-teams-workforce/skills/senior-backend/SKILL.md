@@ -1,25 +1,32 @@
 ---
 name: "senior-backend"
-description: Designs and implements backend systems including REST APIs, microservices, database architectures, authentication flows, and security hardening. Use when the user asks to "design REST APIs", "optimize database queries", "implement authentication", "build microservices", "review backend code", "set up GraphQL", "handle database migrations", or "load test APIs". Covers Node.js/Express/Fastify development, PostgreSQL optimization, API security, and backend architecture patterns.
+description: Designs and implements SkillSpoke backend services - REST APIs on API Gateway REST API v1 with Python Lambda handlers on aws-lambda-powertools, DynamoDB and Aurora PostgreSQL data access, Cognito authentication, and security hardening. Use when the user asks to "design REST APIs", "optimize database queries", "implement authentication", "build microservices", "review backend code", "handle database migrations", or "load test APIs". Covers Python Lambda services, PostgreSQL optimization, API security, and backend architecture patterns.
 ---
 
 # Senior Backend Engineer
 
-Backend development patterns, API design, database optimization, and security practices.
+Backend development patterns, API design, database optimization, and security practices for SkillSpoke's services.
+
+## SkillSpoke's backend stack
+
+Confirm against the architecture constraints and solution strategy (arc42 sections 2 and 4) in the `skillspoke-docs` vault.
+
+- Every service Lambda is Python on `aws-lambda-powertools`, through `shared-chassis-lib`. Django, Flask and FastAPI are banned; Node.js backends (Express, Fastify, Koa, NestJS) are not SkillSpoke's.
+- APIs are API Gateway REST API v1, spec-first: the OpenAPI specification exists before the handler code, and the API is built from it. HTTP API v2 is not used. GraphQL is not used.
+- Data: DynamoDB (on-demand) or Aurora PostgreSQL Serverless v2 through the RDS Data API (see `aurora-postgresql`), each owned by one service. A service never imports another service's source and does not share its tables by default.
+- Authentication: Amazon Cognito user pools; service-to-service calls use OAuth2 client credentials with one app client per calling service. SkillSpoke Lambdas call SkillSpoke APIs through `shared-apiClient-lib`.
+- Infrastructure: CDK in Python (`aws-cdk-development`, `cdk-coding`); names from the naming command (`resource-naming`).
+- Work between services goes through SkillSpoke events (`skillspoke-events`).
+
+Load `python-coding` for every Python change.
 
 ---
 
 ## Quick Start
 
 ```bash
-# Generate API routes from OpenAPI spec
-python scripts/api_scaffolder.py openapi.yaml --framework express --output src/routes/
-
-# Analyze database schema and generate migrations
-python scripts/database_migration_tool.py --connection postgres://localhost/mydb --analyze
-
-# Load test an API endpoint
-python scripts/api_load_tester.py https://api.example.com/users --concurrency 50 --duration 30
+# Load test an API endpoint in AWS dev
+python scripts/api_load_tester.py https://<api-id>.execute-api.us-east-1.amazonaws.com/dev/users --concurrency 5 --duration 30
 ```
 
 ---
@@ -28,54 +35,11 @@ python scripts/api_load_tester.py https://api.example.com/users --concurrency 50
 
 ### 1. API Scaffolder
 
-Generates API route handlers, middleware, and OpenAPI specifications from schema definitions.
-
-**Input:** OpenAPI spec (YAML/JSON) or database schema
-**Output:** Route handlers, validation middleware, TypeScript types
-
-**Usage:**
-```bash
-# Generate Express routes from OpenAPI spec
-python scripts/api_scaffolder.py openapi.yaml --framework express --output src/routes/
-# Output: Generated 12 route handlers, validation middleware, and TypeScript types
-
-# Generate from database schema
-python scripts/api_scaffolder.py --from-db postgres://localhost/mydb --output src/routes/
-
-# Generate OpenAPI spec from existing routes
-python scripts/api_scaffolder.py src/routes/ --generate-spec --output openapi.yaml
-```
-
-**Supported Frameworks:**
-- Express.js (`--framework express`)
-- Fastify (`--framework fastify`)
-- Koa (`--framework koa`)
-
----
+`scripts/api_scaffolder.py` generates Express, Fastify or Koa route handlers. Those frameworks are not SkillSpoke's backend, so do not use its generated routes for SkillSpoke work; write the handlers with the Powertools event handler as shown in the API Design Workflow.
 
 ### 2. Database Migration Tool
 
-Analyzes database schemas, detects changes, and generates migration files with rollback support.
-
-**Input:** Database connection string or schema files
-**Output:** Migration files, schema diff report, optimization suggestions
-
-**Usage:**
-```bash
-# Analyze current schema and suggest optimizations
-python scripts/database_migration_tool.py --connection postgres://localhost/mydb --analyze
-# Output: Missing indexes, N+1 query risks, and suggested migration files
-
-# Generate migration from schema diff
-python scripts/database_migration_tool.py --connection postgres://localhost/mydb \
-  --compare schema/v2.sql --output migrations/
-
-# Dry-run a migration
-python scripts/database_migration_tool.py --connection postgres://localhost/mydb \
-  --migrate migrations/20240115_add_user_indexes.sql --dry-run
-```
-
----
+`scripts/database_migration_tool.py` analyses a PostgreSQL schema over a direct connection string. SkillSpoke reaches Aurora PostgreSQL through the RDS Data API, with migrations and schema review as the `aurora-postgresql` skill states; use that skill's approach for SkillSpoke databases.
 
 ### 3. API Load Tester
 
@@ -87,21 +51,18 @@ Performs HTTP load testing with configurable concurrency, measuring latency perc
 **Usage:**
 ```bash
 # Basic load test
-python scripts/api_load_tester.py https://api.example.com/users --concurrency 50 --duration 30
-# Output: Throughput (req/sec), latency percentiles (P50/P95/P99), error counts, and scaling recommendations
+python scripts/api_load_tester.py https://<api-id>.execute-api.us-east-1.amazonaws.com/dev/users --concurrency 5 --duration 30
 
-# Test with custom headers and body
-python scripts/api_load_tester.py https://api.example.com/orders \
+# Test with a header and body; read the token from an environment variable, never type it
+python scripts/api_load_tester.py https://<api-id>.execute-api.us-east-1.amazonaws.com/dev/orders \
   --method POST \
-  --header "Authorization: Bearer token123" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
   --body '{"product_id": 1, "quantity": 2}' \
-  --concurrency 100 \
+  --concurrency 10 \
   --duration 60
-
-# Compare two endpoints
-python scripts/api_load_tester.py https://api.example.com/v1/users https://api.example.com/v2/users \
-  --compare --concurrency 50 --duration 30
 ```
+
+Size a load test to the stated context (alpha: one dev account, at most five users), and run it only against AWS dev.
 
 ---
 
@@ -111,9 +72,9 @@ python scripts/api_load_tester.py https://api.example.com/v1/users https://api.e
 
 Use when designing a new API or refactoring existing endpoints.
 
-**Step 1: Define resources and operations**
+**Step 1: Write the OpenAPI specification first**
 ```yaml
-# openapi.yaml
+# openapi/api.yaml
 openapi: 3.0.3
 info:
   title: User Service API
@@ -138,50 +99,55 @@ paths:
               $ref: '#/components/schemas/CreateUser'
 ```
 
-**Step 2: Generate route scaffolding**
-```bash
-python scripts/api_scaffolder.py openapi.yaml --framework express --output src/routes/
+**Step 2: Build the REST API from the specification** in the service's Python CDK stack (`apigateway.SpecRestApi` with `ApiDefinition.from_asset`, a Cognito authorizer, and request validation from the specification's schemas).
+
+**Step 3: Implement the handlers with the Powertools event handler**
+```python
+from http import HTTPStatus
+
+from aws_lambda_powertools import Logger, Tracer
+from aws_lambda_powertools.event_handler import APIGatewayRestResolver, Response, content_types
+from aws_lambda_powertools.utilities.typing import LambdaContext
+from pydantic import BaseModel, EmailStr, Field
+
+logger = Logger()
+tracer = Tracer()
+app = APIGatewayRestResolver(enable_validation=True)
+
+
+class CreateUser(BaseModel):
+    """Request body of POST /users, matching components/schemas/CreateUser."""
+
+    email: EmailStr = Field(max_length=255)
+    name: str = Field(min_length=1, max_length=100)
+
+
+@app.post("/users")
+@tracer.capture_method
+def create_user(body: CreateUser) -> Response[dict[str, str]]:
+    user = user_service.create(email=body.email, name=body.name)
+    return Response(
+        status_code=HTTPStatus.CREATED, content_type=content_types.APPLICATION_JSON, body={"id": user.user_id}
+    )
+
+
+@logger.inject_lambda_context
+@tracer.capture_lambda_handler
+def handler(event: dict[str, object], context: LambdaContext) -> dict[str, object]:
+    return app.resolve(event, context)
 ```
 
-**Step 3: Implement business logic**
-```typescript
-// src/routes/users.ts (generated, then customized)
-export const createUser = async (req: Request, res: Response) => {
-  const { email, name } = req.body;
+In a SkillSpoke service the chassis supplies the logger, tracer, metrics and idempotency wiring; use what `shared-chassis-lib` provides rather than re-creating it.
 
-  // Add business logic
-  const user = await userService.create({ email, name });
-
-  res.status(201).json(user);
-};
-```
-
-**Step 4: Add validation middleware**
-```bash
-# Validation is auto-generated from OpenAPI schema
-# src/middleware/validators.ts includes:
-# - Request body validation
-# - Query parameter validation
-# - Path parameter validation
-```
-
-**Step 5: Generate updated OpenAPI spec**
-```bash
-python scripts/api_scaffolder.py src/routes/ --generate-spec --output openapi.yaml
-```
+**Step 4: Validation** comes from the Pydantic models (`enable_validation=True`) and from API Gateway request validation against the specification; both reject a bad request with 4xx before business logic runs.
 
 ---
 
 ### Database Optimization Workflow
 
-Use when queries are slow or database performance needs improvement.
+Use when queries are slow or database performance needs improvement. For DynamoDB, design the keys and indexes for the access patterns (`dynamodb` skill). For Aurora PostgreSQL (`aurora-postgresql` skill):
 
-**Step 1: Analyze current performance**
-```bash
-python scripts/database_migration_tool.py --connection $DATABASE_URL --analyze
-```
-
-**Step 2: Identify slow queries**
+**Step 1: Identify slow queries**
 ```sql
 -- Check query execution plans
 EXPLAIN ANALYZE SELECT * FROM orders
@@ -189,30 +155,10 @@ WHERE user_id = 123
 ORDER BY created_at DESC
 LIMIT 10;
 
--- Look for: Seq Scan (bad), Index Scan (good)
+-- Look for: Seq Scan on a large table (bad), Index Scan (good)
 ```
 
-**Step 3: Generate index migrations**
-```bash
-python scripts/database_migration_tool.py --connection $DATABASE_URL \
-  --suggest-indexes --output migrations/
-```
-
-**Step 4: Test migration (dry-run)**
-```bash
-python scripts/database_migration_tool.py --connection $DATABASE_URL \
-  --migrate migrations/add_indexes.sql --dry-run
-```
-
-**Step 5: Apply and verify**
-```bash
-# Apply migration
-python scripts/database_migration_tool.py --connection $DATABASE_URL \
-  --migrate migrations/add_indexes.sql
-
-# Verify improvement
-python scripts/database_migration_tool.py --connection $DATABASE_URL --analyze
-```
+**Step 2: Add the index in a migration**, reviewed and applied as the `aurora-postgresql` skill states, and verify the plan again.
 
 ---
 
@@ -220,77 +166,32 @@ python scripts/database_migration_tool.py --connection $DATABASE_URL --analyze
 
 Use when preparing an API for production or after a security review.
 
-**Step 1: Review authentication setup**
-```typescript
-// Verify JWT configuration
-const jwtConfig = {
-  secret: process.env.JWT_SECRET,  // Must be from env, never hardcoded
-  expiresIn: '1h',                 // Short-lived tokens
-  algorithm: 'RS256'               // Prefer asymmetric
-};
-```
+**Step 1: Authentication.** Every method has an authorizer: a Cognito user pool authorizer for seekers and employees, OAuth2 client credentials for service-to-service calls. Tokens are short-lived and validated by API Gateway or the chassis, never by hand-rolled JWT code with a shared secret.
 
-**Step 2: Add rate limiting**
-```typescript
-import rateLimit from 'express-rate-limit';
+**Step 2: Rate limiting, only where needed.** AWS WAF rate-based rules protect unauthenticated methods and account forms, and the chassis rate limiter protects identity endpoints only. Other services are not rate-limited; API Gateway stage throttling still bounds every API.
 
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,  // 15 minutes
-  max: 100,                   // 100 requests per window
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+**Step 3: Validate all inputs** at the boundary with typed Pydantic models (as in the API Design Workflow), and reject what does not match.
 
-app.use('/api/', apiLimiter);
-```
-
-**Step 3: Validate all inputs**
-```typescript
-import { z } from 'zod';
-
-const CreateUserSchema = z.object({
-  email: z.string().email().max(255),
-  name: "zstringmin1max100"
-  age: z.number().int().positive().optional()
-});
-
-// Use in route handler
-const data = CreateUserSchema.parse(req.body);
-```
-
-**Step 4: Load test with attack patterns**
+**Step 4: Test the controls in AWS dev**
 ```bash
-# Test rate limiting
-python scripts/api_load_tester.py https://api.example.com/login \
-  --concurrency 200 --duration 10 --expect-rate-limit
-
 # Test input validation
-python scripts/api_load_tester.py https://api.example.com/users \
+python scripts/api_load_tester.py https://<api-id>.execute-api.us-east-1.amazonaws.com/dev/users \
   --method POST \
   --body '{"email": "not-an-email"}' \
   --expect-status 400
 ```
 
-**Step 5: Review security headers**
-```typescript
-import helmet from 'helmet';
-
-app.use(helmet({
-  contentSecurityPolicy: true,
-  crossOriginEmbedderPolicy: true,
-  crossOriginOpenerPolicy: true,
-  crossOriginResourcePolicy: true,
-  hsts: { maxAge: 31536000, includeSubDomains: true },
-}));
-```
+**Step 5: Security headers.** Set them at the edge with a CloudFront response headers policy (HSTS, content security policy, frame options) and on API responses where a header is response-specific.
 
 ---
 
 ## Reference Documentation
 
+The references hold general backend knowledge; their Node.js, Express and GraphQL examples are background, and SkillSpoke writes the same patterns in Python on Powertools.
+
 | File | Contains | Use When |
 |------|----------|----------|
-| `references/api_design_patterns.md` | REST vs GraphQL, versioning, error handling, pagination | Designing new APIs |
+| `references/api_design_patterns.md` | REST conventions, versioning, error handling, pagination | Designing new APIs |
 | `references/database_optimization_guide.md` | Indexing strategies, query optimization, N+1 solutions | Fixing slow queries |
 | `references/backend_security_practices.md` | OWASP Top 10, auth patterns, input validation | Security hardening |
 
@@ -331,7 +232,7 @@ app.use(helmet({
 | 429 | Rate limit exceeded |
 | 500 | Internal server error |
 
-### Database Index Strategy
+### Database Index Strategy (PostgreSQL)
 ```sql
 -- Single column (equality lookups)
 CREATE INDEX idx_users_email ON users(email);
@@ -344,22 +245,4 @@ CREATE INDEX idx_orders_active ON orders(created_at) WHERE status = 'active';
 
 -- Covering (avoid table lookup)
 CREATE INDEX idx_users_email_name ON users(email) INCLUDE (name);
-```
-
----
-
-## Common Commands
-
-```bash
-# API Development
-python scripts/api_scaffolder.py openapi.yaml --framework express
-python scripts/api_scaffolder.py src/routes/ --generate-spec
-
-# Database Operations
-python scripts/database_migration_tool.py --connection $DATABASE_URL --analyze
-python scripts/database_migration_tool.py --connection $DATABASE_URL --migrate file.sql
-
-# Performance Testing
-python scripts/api_load_tester.py https://api.example.com/endpoint --concurrency 50
-python scripts/api_load_tester.py https://api.example.com/endpoint --compare reference.json
 ```
