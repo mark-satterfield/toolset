@@ -4,10 +4,12 @@
 # Follows ONE pull request until GitHub reports it MERGED or CLOSED. Every
 # iteration re-reads the PR from GitHub and decides from that alone:
 #
-#   something to fix  -> start one headless pass session (/agent-teams-workforce:fix-pr)
-#   checks pending, or nothing to fix and auto-merge armed -> wait, poll again
-#   nothing to fix, checks passing, auto-merge NOT armed   -> exit 2
-#   MERGED or CLOSED                                       -> exit 0
+#   auto-merge not armed -> arm it (squash); when GitHub refuses because the PR
+#                           can merge now and nothing is left to fix, squash-merge
+#                           the head the loop read
+#   something to fix     -> start one headless pass session (/agent-teams-workforce:fix-pr)
+#   nothing to fix       -> wait for checks and GitHub auto-merge, poll again
+#   MERGED or CLOSED     -> exit 0
 #
 # "Something to fix" is: a failing or cancelled check, an unresolved review
 # thread, a merge conflict (DIRTY), a branch behind its base (BEHIND), a review
@@ -16,9 +18,16 @@
 # CodeRabbit reply or changes-requested review newer than the last pass's
 # audit comment.
 #
-# SAFETY: this script never merges. It runs no `gh pr merge` and no --admin,
-# and every pass session runs with a deny rule on `Bash(gh pr merge:*)`.
-# GitHub auto-merge merges.
+# MERGE: the loop arms GitHub auto-merge, so GitHub merges once its own
+# requirements are met. It merges by itself only when GitHub refuses to arm
+# because the PR is mergeable now, and only when its own read shows nothing to
+# fix; that merge is pinned to the head it read. It never uses --admin, and every
+# pass session runs with a deny rule on `Bash(gh pr merge:*)`.
+#
+# Each pass session loads the plugin this script belongs to (--plugin-dir), so
+# the fix-pr command exists whatever repository the PR's worktree is in. Each
+# pass's full stream-json output is kept in the log directory, and the loop's
+# own lines are copied to loop.log there.
 #
 # Usage: shepherd-pr.sh <pr-number> [owner/repo] [working-directory]
 #
@@ -30,9 +39,10 @@
 #                                 since its last pass before stopping for human
 #                                 action (7200; below shepherd-prs.sh's 4 h
 #                                 per-PR timeout, so the loop stops itself)
+#   SHEPHERD_LOG_DIR              where loop.log and pass-<n>.jsonl are written
+#                                 (${CLAUDE_CONFIG_DIR:-~/.claude}/shepherd-pr/<owner>-<repo>-<pr>)
 #
-# Exit: 0 merged or closed; 1 stopped for human action; 2 nothing left to fix
-# but auto-merge is not armed.
+# Exit: 0 merged or closed; 1 stopped for human action.
 
 set -euo pipefail
 
@@ -46,9 +56,16 @@ WORKDIR="${WORKDIR#\"}"
 POLL="${SHEPHERD_POLL_SECONDS:-60}"
 MAX_STALLED="${SHEPHERD_MAX_STALLED_PASSES:-3}"
 MAX_WAIT="${SHEPHERD_MAX_WAIT_SECONDS:-7200}"
+PLUGIN_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
+LOG_DIR="${SHEPHERD_LOG_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/shepherd-pr/$OWNER-$REPO-$PR_NUMBER}"
+FIX_COMMAND="agent-teams-workforce:fix-pr"
 
 if [ ! -d "$WORKDIR" ]; then
   echo "Error: working directory '$WORKDIR' does not exist" >&2
+  exit 1
+fi
+if [ ! -f "$PLUGIN_ROOT/commands/fix-pr.md" ]; then
+  echo "Error: '$PLUGIN_ROOT' is not the agent-teams-workforce plugin root (no commands/fix-pr.md)" >&2
   exit 1
 fi
 for tool in gh jq claude; do
@@ -57,8 +74,11 @@ for tool in gh jq claude; do
     exit 1
   fi
 done
+mkdir -p "$LOG_DIR"
+exec > >(tee -a "$LOG_DIR/loop.log") 2>&1
 
 echo "Shepherding PR #$PR_NUMBER in $OWNER/$REPO from $WORKDIR"
+echo "Plugin: $PLUGIN_ROOT  Logs: $LOG_DIR"
 
 # Review threads across EVERY page, and the changes-requested reviews. Prints
 # "<unresolved> <dismissable>": the unresolved threads, and the
@@ -141,27 +161,72 @@ ci_state() {
   fi
 }
 
-# One read of the PR: state, merge state, review decision, head, auto-merge, and
-# whether a reviewer spoke after the last shepherd audit comment. A CodeRabbit
-# conversation reply counts as a reviewer speaking; its PR summary and its
-# acknowledgements of `@coderabbitai` commands do not. Tab-separated:
-# state mergeState reviewDecision headOid autoMerge(yes/no) newActivity(yes/no)
+# One read of the PR: state, merge state, review decision, head, auto-merge, node
+# id, and whether a reviewer spoke after the last shepherd audit comment. A
+# CodeRabbit conversation reply, and any review with a body (a CodeRabbit review
+# body carries its outside-diff findings, which have no thread), count as a
+# reviewer speaking; CodeRabbit's PR summary and its acknowledgements of
+# `@coderabbitai` commands do not. Tab-separated:
+# state mergeState reviewDecision headOid autoMerge(yes/no) newActivity(yes/no) nodeId
 pr_facts() {
   # shellcheck disable=SC2016  # $last and $activity are jq variables
   gh pr view "$PR_NUMBER" --repo "$OWNER/$REPO" \
-    --json state,mergeStateStatus,reviewDecision,headRefOid,autoMergeRequest,comments,latestReviews \
+    --json id,state,mergeStateStatus,reviewDecision,headRefOid,autoMergeRequest,comments,reviews \
     --jq '
       def isbot: (.author.login // "") | test("\\[bot\\]$|^coderabbitai|^github-actions");
       def iscr: (.author.login // "") | test("^coderabbitai");
       def crreply: iscr and ((.body | test("summarize by coderabbit\\.ai|review command invocation")) | not);
       ([.comments[] | select(.body | startswith("## Shepherd-PR Run")) | .createdAt] | max // "") as $last
       | ([.comments[] | select(((isbot | not) or crreply) and ((.body | startswith("## Shepherd-PR Run")) | not) and ((.body | startswith("@coderabbitai")) | not)) | .createdAt]
-         + [.latestReviews[] | select(.state == "CHANGES_REQUESTED" or ((isbot | not) and (.body // "") != "")) | .submittedAt]
+         + [.reviews[] | select(.state == "CHANGES_REQUESTED" or (((isbot | not) or iscr) and (.body // "") != "")) | .submittedAt]
         ) as $activity
       | [ .state, (.mergeStateStatus // "UNKNOWN"), ((.reviewDecision // "") | if . == "" then "NONE" else . end),
           .headRefOid, (if .autoMergeRequest then "yes" else "no" end),
-          (if ([$activity[] | select(. > $last)] | length) > 0 then "yes" else "no" end) ]
+          (if ([$activity[] | select(. > $last)] | length) > 0 then "yes" else "no" end), .id ]
       | @tsv'
+}
+
+# Arm GitHub auto-merge (squash, the merge method the organisation requires),
+# pinned to the head the loop read. Prints "armed", "clean" (GitHub refuses
+# because the PR can merge now) or "error <GitHub's message>".
+arm_auto_merge() {
+  local out
+  # shellcheck disable=SC2016  # GraphQL variables, bound via -f
+  if out=$(gh api graphql -f query='
+      mutation($id:ID!, $head:GitObjectID!) {
+        enablePullRequestAutoMerge(input:{pullRequestId:$id, mergeMethod:SQUASH, expectedHeadOid:$head}) {
+          pullRequest { autoMergeRequest { enabledAt } }
+        }
+      }' -f id="$node_id" -f head="$head_oid" 2>&1); then
+    echo "armed"
+    return 0
+  fi
+  case "$out" in
+    *"clean status"*) echo "clean" ;;
+    *) echo "error $(tr '\n' ' ' <<<"$out")" ;;
+  esac
+}
+
+# Squash-merge the head the loop read, through the REST merge endpoint (no
+# --admin). Called only when GitHub refused to arm auto-merge because the PR is
+# mergeable now and the loop's own read shows nothing left to fix.
+merge_now() {
+  gh api -X PUT "repos/$OWNER/$REPO/pulls/$PR_NUMBER/merge" \
+    -f merge_method=squash -f sha="$head_oid" --jq '.message'
+}
+
+# Summarise one pass's stream-json log: whether the fix-pr command was loaded,
+# how many tools the pass called, and its final result line.
+pass_summary() {
+  local log="$1" loaded tools result
+  loaded=$(jq -r --arg cmd "$FIX_COMMAND" 'select(.type == "system" and .subtype == "init")
+            | if ([.slash_commands[]? | select(. == $cmd)] | length) > 0 then "yes" else "NO" end' "$log" | head -n 1)
+  tools=$(jq -s '[.[] | select(.type == "assistant") | .message.content[]? | select(.type == "tool_use")] | length' "$log")
+  result=$(jq -r 'select(.type == "result") | "\(.subtype) is_error=\(.is_error) turns=\(.num_turns): \(.result // "" | gsub("\n"; " ") | .[0:300])"' "$log" | tail -n 1)
+  echo "pass $pass: fix-pr loaded=${loaded:-unknown} tool-calls=$tools result=${result:-none} log=$log"
+  if [ "$loaded" != "yes" ] || [ "$tools" = "0" ]; then
+    echo "WARNING: pass $pass did no work (fix-pr loaded=${loaded:-unknown}, tool-calls=$tools). Read $log"
+  fi
 }
 
 # Sleep one poll interval, counted against MAX_WAIT since the last pass; past
@@ -185,7 +250,7 @@ while :; do
     wait_or_stop "the PR could not be read"
     continue
   fi
-  IFS=$'\t' read -r state merge_state decision head_oid auto_merge new_activity <<<"$facts"
+  IFS=$'\t' read -r state merge_state decision head_oid auto_merge new_activity node_id <<<"$facts"
 
   case "$state" in
     MERGED) echo "$(date -u +%FT%TZ) PR #$PR_NUMBER is MERGED."; exit 0 ;;
@@ -208,18 +273,24 @@ while :; do
   esac
   [ "$new_activity" = "yes" ] && reasons="$reasons reviewer-activity"
 
-  if [ -z "$reasons" ]; then
-    if [ "$checks" = "PASS" ] && [ "$unresolved" = "0" ] && [ "$auto_merge" = "no" ]; then
-      echo "Nothing left to fix and checks pass, but GitHub auto-merge is NOT armed on PR #$PR_NUMBER."
-      echo "This loop never merges. Arm auto-merge (the owner's action) and the PR will merge."
-      exit 2
-    else
-      case "$checks" in
-        PENDING*) waiting_on="waiting on pending checks" ;;
-        PASS)     waiting_on="waiting on GitHub auto-merge (merge state $merge_state)" ;;
-        *)        waiting_on="checks or threads unreadable (checks=$checks threads=$unresolved)" ;;
-      esac
+  if [ "$auto_merge" = "no" ]; then
+    armed=$(arm_auto_merge)
+    echo "auto-merge: $armed"
+    if [ "$armed" = "clean" ] && [ -z "$reasons" ] && [ "$checks" = "PASS" ] \
+        && [ "$unresolved" = "0" ] && [ "$decision" != "CHANGES_REQUESTED" ]; then
+      echo "Nothing left to fix and GitHub reports PR #$PR_NUMBER mergeable now; squash-merging $head_oid."
+      merge_now || echo "The merge was refused; reading the PR again."
+      sleep "$POLL"
+      continue
     fi
+  fi
+
+  if [ -z "$reasons" ]; then
+    case "$checks" in
+      PENDING*) waiting_on="waiting on pending checks" ;;
+      PASS)     waiting_on="waiting on GitHub to merge (merge state $merge_state)" ;;
+      *)        waiting_on="checks or threads unreadable (checks=$checks threads=$unresolved)" ;;
+    esac
     wait_or_stop "$waiting_on"
     continue
   fi
@@ -228,16 +299,20 @@ while :; do
   waited=0
   before="$head_oid|$unresolved $dismissable|$decision|$merge_state|$checks|$new_activity"
   echo "--- pass $pass:$reasons ---"
-  prompt="/agent-teams-workforce:fix-pr ${PR_NUMBER} ${OWNER}/${REPO} \"${WORKDIR}\""
+  prompt="/${FIX_COMMAND} ${PR_NUMBER} ${OWNER}/${REPO} \"${WORKDIR}\""
+  pass_log="$LOG_DIR/pass-$(date -u +%Y%m%dT%H%M%SZ)-$pass.jsonl"
   rc=0
   (cd "$WORKDIR" && printf '%s' "$prompt" \
     | env -u CLAUDECODE SHEPHERD_PR_PASS=1 CI=1 TERM=dumb NO_COLOR=1 \
-        claude --print --permission-mode bypassPermissions \
-          --settings '{"permissions":{"deny":["Bash(gh pr merge:*)","Bash(gh pr merge)"]}}') || rc=$?
+        claude --print --plugin-dir "$PLUGIN_ROOT" --permission-mode bypassPermissions \
+          --output-format stream-json --verbose \
+          --settings '{"permissions":{"deny":["Bash(gh pr merge:*)","Bash(gh pr merge)"]}}' \
+          > "$pass_log") || rc=$?
   echo "--- pass $pass ended (exit $rc) ---"
+  pass_summary "$pass_log"
 
   if after_facts=$(pr_facts); then
-    IFS=$'\t' read -r _s a_merge a_decision a_head _a a_new <<<"$after_facts"
+    IFS=$'\t' read -r _s a_merge a_decision a_head _a a_new _id <<<"$after_facts"
     after="$a_head|$(thread_state)|$a_decision|$a_merge|$(ci_state)|$a_new"
   else
     after="unreadable"

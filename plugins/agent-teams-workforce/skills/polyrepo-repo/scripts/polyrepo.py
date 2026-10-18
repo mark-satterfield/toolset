@@ -5204,7 +5204,6 @@ NAMING_TIMEOUT = 60
 PR_COMMAND_ENV = "ATW_PR_COMMAND"
 PR_COMMAND_DEFAULT = "~/.local/bin/skillspoke-pr"
 PR_TIMEOUT = 900
-PR_AUTOMERGE_NOT_ARMED = 3
 CHECK_TASKS = ("lint", "typecheck", "test")
 APPLY_WORKERS = 4
 CHECK_TIMEOUT = 3600
@@ -5806,19 +5805,17 @@ def _open_pr(
     """Push the worktree's branch and open its pull request with the project's PR command.
 
     `text` is the title and body, `how` the PR command and a footer line for the body. The row gets
-    `status` `pr-opened` (with `pr_url`, and `error` when auto-merge could not be armed) or `pr-failed`.
+    `status` `pr-opened` (with `pr_url`) or `pr-failed`.
     """
     title, body = text
     pr_command, pr_footer = how
     footer = f"\n\n{pr_footer}" if pr_footer else ""
     cp = run([str(pr_command), "--title", title, "--body", body + footer], cwd=worktree, timeout=PR_TIMEOUT)
     url = cp.stdout.strip().splitlines()[0] if cp.stdout.strip() else ""
-    if url and cp.returncode in {0, PR_AUTOMERGE_NOT_ARMED}:
-        row.update(status="pr-opened", pr_url=url)
-        if cp.returncode == PR_AUTOMERGE_NOT_ARMED:
-            row["error"] = f"auto-merge not armed: {_last_line(cp)}"
-    else:
+    if not url or cp.returncode != 0:
         row.update(status="pr-failed", error=_last_line(cp))
+        return
+    row.update(status="pr-opened", pr_url=url)
 
 
 def _stage_changes(
