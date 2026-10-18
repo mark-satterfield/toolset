@@ -306,6 +306,8 @@ def invoke_with_guardrails(prompt, guardrail_id, guardrail_version):
 ## Batch Inference
 
 ```python
+import time
+
 import boto3
 
 bedrock = boto3.client("bedrock")
@@ -330,44 +332,31 @@ def create_batch_job(input_s3_uri, output_s3_uri, model_id, role_arn):
 
 ## Error Handling
 
+Retries come from the SDK: configure the client with `botocore.config.Config` and never wrap a Bedrock call in a hand-written retry loop. Use adaptive mode for a Bedrock runtime client, because on-demand quotas make it throttle-bound against one resource (https://docs.aws.amazon.com/sdkref/latest/guide/feature-retry-behavior.html). `ThrottlingException` is retried by the SDK; `ValidationException` and `AccessDeniedException` are not retryable, so fix the request or the permissions.
+
 ```python
+import json
+
+import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
-import time
+
+bedrock = boto3.client("bedrock-runtime", config=Config(retries={"mode": "adaptive"}))
 
 
-class BedrockInvoker:
-    def __init__(self, model_id):
-        self.bedrock = boto3.client("bedrock-runtime")
-        self.model_id = model_id
-
-    def invoke(self, body, max_retries=3):
-        last_error = None
-
-        for attempt in range(max_retries):
-            try:
-                response = self.bedrock.invoke_model(
-                    modelId=self.model_id,
-                    contentType="application/json",
-                    accept="application/json",
-                    body=json.dumps(body),
-                )
-                return json.loads(response["body"].read())
-
-            except ClientError as e:
-                error_code = e.response["Error"]["Code"]
-                last_error = e
-
-                if error_code == "ThrottlingException":
-                    wait_time = (2**attempt) + random.random()
-                    time.sleep(wait_time)
-                elif error_code == "ModelNotReadyException":
-                    time.sleep(5)
-                elif error_code == "ValidationException":
-                    raise  # Don't retry validation errors
-                else:
-                    raise
-
-        raise last_error
+def invoke(model_id: str, body: dict) -> dict:
+    try:
+        response = bedrock.invoke_model(
+            modelId=model_id,
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps(body),
+        )
+    except ClientError as error:
+        if error.response["Error"]["Code"] == "ModelNotReadyException":
+            raise RuntimeError(f"Model {model_id} is not ready; retry the request later") from error
+        raise
+    return json.loads(response["body"].read())
 ```
 
 ## Provisioned Throughput

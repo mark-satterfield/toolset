@@ -13,7 +13,7 @@ mcpServers:
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa, agent-teams-workforce:cumulative-regression, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:software-engineering]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa, agent-teams-workforce:cumulative-regression, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:software-engineering, agent-teams-workforce:typescript-coding, agent-teams-workforce:web-frontend-coding]
 effort: medium
 color: red
 ---

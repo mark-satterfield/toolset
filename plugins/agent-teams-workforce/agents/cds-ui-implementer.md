@@ -8,7 +8,7 @@ mcpServers:
 disallowedTools: Agent, SendMessage, AskUserQuestion
 model: opus
 maxTurns: 80
-skills: [agent-teams-workforce:subagent-contract, cds:apply-design-system, cds:audit-against-system, cds:compose-page, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:software-engineering]
+skills: [agent-teams-workforce:subagent-contract, cds:apply-design-system, cds:audit-against-system, cds:compose-page, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:software-engineering, agent-teams-workforce:typescript-coding, agent-teams-workforce:web-frontend-coding]
 ---
 
 # cds-ui-implementer

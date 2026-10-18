@@ -37,6 +37,7 @@ skills:
 - aws-core:aws-cdk
 - agent-teams-workforce:aurora-postgresql
 - agent-teams-workforce:graphrag-lookup
+- agent-teams-workforce:cdk-coding
 effort: medium
 isolation: worktree
 color: cyan

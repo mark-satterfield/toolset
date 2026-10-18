@@ -119,20 +119,26 @@ your result.
 - Name the repository in every GitNexus call (`repo`): many repositories are indexed, and a call
   without one may answer from the wrong index. `list_repos` returns the indexed repositories
   (page with `offset` while `pagination.hasMore` is true).
-- `group_list` returns the configured GitNexus groups. When a group holds the repositories you
-  need, pass `repo: "@<group>"` to `query`, `context`, `impact` or `trace` to work across them:
+- Every SkillSpoke repository is a member of the GitNexus group `skillspoke`, named by its clone
+  path under `$SKILLSPOKE_APPS`. `group_list` lists the members. To work across repositories, pass
+  `repo: "@skillspoke/<group path>"`, naming the member (for example
+  `@skillspoke/personal-agent/SkillSpoke-chat-service`), to `query`, `context`, `impact` or `trace`:
   `impact` then follows cross-repository contracts (HTTP routes, topics) to their consumers, and
   `trace` with no `to` follows a client call to the handler that serves it. A result with
   `truncated: true` is a floor, not a verdict; read its `truncationReason`.
-- When no group holds them, run the GitNexus call in each repository the matrix names, and use
+- For a repository that is not a member of the group, run the GitNexus call in that repository, and use
   GraphRAG to find repositories the matrix does not name.
 - The matrix says which repositories are related; GitNexus says how their code is connected;
   GraphRAG finds what neither records.
 
 ## When the index is stale or missing
 
-- A GitNexus tool warns when a repository's index is behind the repository. Re-index the repository with
-  `"$SKILLSPOKE_CC/ops/indexing/gitnexus-reindex.sh" <repository path>`, then repeat the call.
+- Indexes refresh themselves: a git hook queues a background re-index after every commit, merge,
+  checkout and rebase, and every session start queues any repository that is behind. A GitNexus
+  tool warns when a repository's index is behind the repository. First run
+  `python3 "$SKILLSPOKE_CC/ops/indexing/gitnexus-fleet.py" status`; re-index with
+  `"$SKILLSPOKE_CC/ops/indexing/gitnexus-reindex.sh" <repository path>` only when that shows no
+  re-index queued for the repository, then repeat the call.
   Run any other GitNexus command through `"$SKILLSPOKE_CC/ops/indexing/gitnexus-pinned.sh"
   <command>`; never start GitNexus another way, because the project pins one version.
 - Never rebuild a group's contract registry (`group_sync`) and never change `group.yaml`; a
