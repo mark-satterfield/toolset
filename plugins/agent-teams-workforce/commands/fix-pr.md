@@ -31,11 +31,11 @@ WORKDIR="${WORKDIR%\"}"; WORKDIR="${WORKDIR#\"}"   # arrives quoted when it cont
 cd "$WORKDIR"
 ```
 
-This command never merges the PR, and neither does the loop script. `skillspoke-pr` switches GitHub auto-merge on when it opens the PR, and GitHub merges once all required checks pass and all review threads are resolved. A pass's job is to leave the PR in a state where auto-merge can fire. The script never decides what to do about a thread.
+This command never merges the PR, and neither does the loop script. A pass's job is to leave the PR with nothing blocking its merge: all required checks passing and all review threads resolved. The script never decides what to do about a thread.
 
 ### Guards (every pass)
 
-- **Never merge.** No `gh pr merge` (no `gh api .../merge` either), no `--admin`. GitHub auto-merge merges.
+- **Never merge.** No `gh pr merge` (no `gh api .../merge` either), no `--admin`.
 - **Never loosen lint or type configuration** to make a check pass: no new `noqa`, `# type: ignore`, `eslint-disable`, `@ts-ignore`/`@ts-expect-error`, `per-file-ignores`, relaxed `mypy`/`tsconfig`/ESLint/Prettier settings, or excluded paths. Fix the code. Loosening config is an owner decision.
 - **Never weaken or delete a test to make it pass**: no deleting, skipping (`skip`, `xfail`, `.only`/`.skip`), loosening an assertion, or lowering a coverage threshold. Fix the code — or, when the test is provably wrong about the specified behavior, correct it and cite the spec in the commit and the audit comment.
 - **Never bypass hooks**: no `--no-verify`, no `-n`.
@@ -47,10 +47,10 @@ This command never merges the PR, and neither does the loop script. `skillspoke-
 Phase 1 and Phase 4 both rebase unconditionally on `origin/$BASE`, regardless of `mergeStateStatus`. This is a workaround for a specific GitHub behavior, not a stylistic choice:
 
 1. GitHub does not report `BEHIND` or `CONFLICTED` until a merge is actually attempted. A PR can be silently behind at the start of an invocation and still report `CLEAN`.
-2. Because merge is handled by auto-merge rather than the shepherd, there is no merge-attempt signal to react to. A failed merge would surface `BEHIND`, but by then the pass has already ended and the audit comment has already claimed success.
+2. The shepherd never merges, so a pass has no merge-attempt signal to react to. A failed merge would surface `BEHIND`, but by then the pass has already ended and the audit comment has already claimed success.
 3. Fix work can take 30 minutes to 3 hours. Other PRs can merge to `main` during that window, silently pushing this branch behind between Phase 1 and Phase 4.
 
-The two unconditional rebases (at the start of the pass, and immediately before committing fixes) are what keep the branch continuously current so auto-merge does not silently reject the work the pass just did.
+The two unconditional rebases (at the start of the pass, and immediately before committing fixes) are what keep the branch continuously current so a merge does not silently reject the work the pass just did.
 
 ---
 
@@ -138,7 +138,7 @@ fi
 4. `git add` the files, `git rebase --continue`, and repeat until the rebase completes. Then run the repository's lint and unit-test commands (see Phase 5) on the result before pushing with `--force-with-lease`.
 5. Only when a conflict cannot be resolved with ≥80% confidence (two incompatible designs, a product decision): `git rebase --abort`, record the conflicted files and the competing intents in the audit comment, create an escalation issue with the WARNING-block artifacts, and continue the pass with the remaining phases against the un-rebased branch.
 
-**Output:** The branch is current with `origin/$BASE`, or an escalation names the conflict that needs a human. There is no merge fallback: linear history is required on `main`, so a merge commit on the PR branch would fail the eventual auto-merge anyway.
+**Output:** The branch is current with `origin/$BASE`, or an escalation names the conflict that needs a human. There is no merge fallback: linear history is required on `main`, so a merge commit on the PR branch would fail the eventual merge anyway.
 
 ---
 
@@ -392,7 +392,7 @@ Phase 4 consumes the decision records from Phase 3 and acts on them. No decision
 
 #### 4.0 Rebase Before Committing Fixes
 
-Before applying the first fix, rebase again on `origin/$BASE`. Phase 1 rebased at invocation start, but Phases 2 and 3 can take significant time (30 minutes to 3 hours is normal), during which other PRs can merge to `main` and leave this branch silently behind. Committing onto a stale HEAD causes the eventual auto-merge to fail silently. See *Why the rebases are unconditional* above.
+Before applying the first fix, rebase again on `origin/$BASE`. Phase 1 rebased at invocation start, but Phases 2 and 3 can take significant time (30 minutes to 3 hours is normal), during which other PRs can merge to `main` and leave this branch silently behind. Committing onto a stale HEAD causes the eventual merge to fail silently. See *Why the rebases are unconditional* above.
 
 ```bash
 BASE=$(gh pr view "$PR_NUMBER" --repo "$OWNER/$REPO" --json baseRefName --jq '.baseRefName')

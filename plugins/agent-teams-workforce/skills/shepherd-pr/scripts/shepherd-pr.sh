@@ -5,9 +5,7 @@
 # iteration re-reads the PR from GitHub and decides from that alone:
 #
 #   something to fix     -> start one headless pass session (/agent-teams-workforce:fix-pr)
-#   nothing to fix       -> wait for checks and GitHub auto-merge, poll again
-#   nothing to fix, checks passing and auto-merge off
-#                        -> stop for human action: GitHub will not merge it
+#   nothing to fix       -> wait, poll again
 #   MERGED or CLOSED     -> exit 0
 #
 # "Something to fix" is: a failing or cancelled check, an unresolved review
@@ -17,10 +15,9 @@
 # CodeRabbit reply or changes-requested review newer than the last pass's
 # audit comment.
 #
-# MERGE: the loop never arms auto-merge and never merges. skillspoke-pr switches
-# GitHub auto-merge on when it opens the PR, and GitHub merges once its own
-# requirements are met. Every pass session runs with a deny rule on
-# `Bash(gh pr merge:*)`.
+# MERGE: the loop never merges. Whoever or whatever merges or closes the PR,
+# the loop follows it until GitHub reports MERGED or CLOSED. Every pass session
+# runs with a deny rule on `Bash(gh pr merge:*)`.
 #
 # Each pass session loads the plugin this script belongs to (--plugin-dir), so
 # the fix-pr command exists whatever repository the PR's worktree is in. Each
@@ -159,17 +156,17 @@ ci_state() {
   fi
 }
 
-# One read of the PR: state, merge state, review decision, head, auto-merge, and
-# whether a reviewer spoke after the last shepherd audit comment. A
-# CodeRabbit conversation reply, and any review with a body (a CodeRabbit review
+# One read of the PR: state, merge state, review decision, head, and whether
+# a reviewer spoke after the last shepherd audit comment. A CodeRabbit
+# conversation reply, and any review with a body (a CodeRabbit review
 # body carries its outside-diff findings, which have no thread), count as a
 # reviewer speaking; CodeRabbit's PR summary and its acknowledgements of
 # `@coderabbitai` commands do not. Tab-separated:
-# state mergeState reviewDecision headOid autoMerge(yes/no) newActivity(yes/no)
+# state mergeState reviewDecision headOid newActivity(yes/no)
 pr_facts() {
   # shellcheck disable=SC2016  # $last and $activity are jq variables
   gh pr view "$PR_NUMBER" --repo "$OWNER/$REPO" \
-    --json state,mergeStateStatus,reviewDecision,headRefOid,autoMergeRequest,comments,reviews \
+    --json state,mergeStateStatus,reviewDecision,headRefOid,comments,reviews \
     --jq '
       def isbot: (.author.login // "") | test("\\[bot\\]$|^coderabbitai|^github-actions");
       def iscr: (.author.login // "") | test("^coderabbitai");
@@ -179,7 +176,7 @@ pr_facts() {
          + [.reviews[] | select(.state == "CHANGES_REQUESTED" or (((isbot | not) or iscr) and (.body // "") != "")) | .submittedAt]
         ) as $activity
       | [ .state, (.mergeStateStatus // "UNKNOWN"), ((.reviewDecision // "") | if . == "" then "NONE" else . end),
-          .headRefOid, (if .autoMergeRequest then "yes" else "no" end),
+          .headRefOid,
           (if ([$activity[] | select(. > $last)] | length) > 0 then "yes" else "no" end) ]
       | @tsv'
 }
@@ -219,7 +216,7 @@ while :; do
     wait_or_stop "the PR could not be read"
     continue
   fi
-  IFS=$'\t' read -r state merge_state decision head_oid auto_merge new_activity <<<"$facts"
+  IFS=$'\t' read -r state merge_state decision head_oid new_activity <<<"$facts"
 
   case "$state" in
     MERGED) echo "$(date -u +%FT%TZ) PR #$PR_NUMBER is MERGED."; exit 0 ;;
@@ -228,7 +225,7 @@ while :; do
 
   read -r unresolved dismissable <<<"$(thread_state)"
   checks=$(ci_state)
-  echo "$(date -u +%FT%TZ) state=$state merge=$merge_state review=$decision threads=$unresolved resolved-change-requests=$dismissable checks=$checks auto-merge=$auto_merge new-activity=$new_activity"
+  echo "$(date -u +%FT%TZ) state=$state merge=$merge_state review=$decision threads=$unresolved resolved-change-requests=$dismissable checks=$checks new-activity=$new_activity"
 
   reasons=""
   case "$checks" in FAIL*) reasons="$reasons failing-checks" ;; esac
@@ -242,17 +239,10 @@ while :; do
   esac
   [ "$new_activity" = "yes" ] && reasons="$reasons reviewer-activity"
 
-  if [ -z "$reasons" ] && [ "$checks" = "PASS" ] && [ "$auto_merge" = "no" ]; then
-    echo "Stopping: nothing left to fix on PR #$PR_NUMBER, but GitHub auto-merge is not switched on,"
-    echo "so GitHub will not merge it. The shepherd does not arm auto-merge (skillspoke-pr does)."
-    echo "Human action required on PR #$PR_NUMBER."
-    exit 1
-  fi
-
   if [ -z "$reasons" ]; then
     case "$checks" in
       PENDING*) waiting_on="waiting on pending checks" ;;
-      PASS)     waiting_on="waiting on GitHub to merge (merge state $merge_state)" ;;
+      PASS)     waiting_on="waiting for the PR to be merged or closed (merge state $merge_state)" ;;
       *)        waiting_on="checks or threads unreadable (checks=$checks threads=$unresolved)" ;;
     esac
     wait_or_stop "$waiting_on"
@@ -276,7 +266,7 @@ while :; do
   pass_summary "$pass_log"
 
   if after_facts=$(pr_facts); then
-    IFS=$'\t' read -r _s a_merge a_decision a_head _a a_new <<<"$after_facts"
+    IFS=$'\t' read -r _s a_merge a_decision a_head a_new <<<"$after_facts"
     after="$a_head|$(thread_state)|$a_decision|$a_merge|$(ci_state)|$a_new"
   else
     after="unreadable"
