@@ -16,7 +16,7 @@ tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, 
   mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, Skill, mcp__mcp-graphrag-server,
   mcp__pg-aiguide__search_docs, mcp__awslabs-postgres-mcp-server__connect_to_database,
   mcp__awslabs-postgres-mcp-server__is_database_connected, mcp__awslabs-postgres-mcp-server__get_database_connection_info,
-  mcp__awslabs-postgres-mcp-server__get_table_schema, mcp__awslabs-postgres-mcp-server__run_query
+  mcp__awslabs-postgres-mcp-server__get_table_schema, mcp__awslabs-postgres-mcp-server__run_query, mcp__awslabs-amazon-neptune-mcp-server__get_graph_status, mcp__awslabs-amazon-neptune-mcp-server__get_graph_schema, mcp__awslabs-amazon-neptune-mcp-server__run_opencypher_query, mcp__awslabs-amazon-neptune-mcp-server__run_gremlin_query
 disallowedTools: AskUserQuestion, Edit, Agent, NotebookEdit
 mcpServers:
 - aws-mcp
@@ -24,6 +24,7 @@ mcpServers:
 - mcp-graphrag-server
 - pg-aiguide
 - awslabs-postgres-mcp-server
+- awslabs-amazon-neptune-mcp-server
 model: fable
 permissionMode: acceptEdits
 maxTurns: 80

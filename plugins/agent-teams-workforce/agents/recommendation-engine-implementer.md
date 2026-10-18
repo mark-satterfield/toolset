@@ -5,10 +5,11 @@ description: >-
   minimum code to pass failing unit tests. Use for Implementation
   work requiring recommendation pipeline assembly, candidate
   sourcing, re-ranking, and serving-layer composition.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp__pg-aiguide__search_docs
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp__pg-aiguide__search_docs, mcp__awslabs-amazon-neptune-mcp-server__get_graph_status, mcp__awslabs-amazon-neptune-mcp-server__get_graph_schema, mcp__awslabs-amazon-neptune-mcp-server__run_opencypher_query, mcp__awslabs-amazon-neptune-mcp-server__run_gremlin_query
 mcpServers:
 - mcp-graphrag-server
 - pg-aiguide
+- awslabs-amazon-neptune-mcp-server
 disallowedTools: AskUserQuestion, Agent
 model: opus
 permissionMode: acceptEdits

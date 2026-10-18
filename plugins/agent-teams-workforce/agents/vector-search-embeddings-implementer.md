@@ -5,11 +5,12 @@ description: >-
   generation, index read/write, similarity queries. Use for Implementation
   work requiring embedding pipelines, vector index access, and
   similarity queries.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp__pg-aiguide__search_docs, mcp__awslabs-postgres-mcp-server__connect_to_database, mcp__awslabs-postgres-mcp-server__is_database_connected, mcp__awslabs-postgres-mcp-server__get_database_connection_info, mcp__awslabs-postgres-mcp-server__get_table_schema, mcp__awslabs-postgres-mcp-server__run_query
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp__pg-aiguide__search_docs, mcp__awslabs-postgres-mcp-server__connect_to_database, mcp__awslabs-postgres-mcp-server__is_database_connected, mcp__awslabs-postgres-mcp-server__get_database_connection_info, mcp__awslabs-postgres-mcp-server__get_table_schema, mcp__awslabs-postgres-mcp-server__run_query, mcp__awslabs-amazon-neptune-mcp-server__get_graph_status, mcp__awslabs-amazon-neptune-mcp-server__get_graph_schema, mcp__awslabs-amazon-neptune-mcp-server__run_opencypher_query, mcp__awslabs-amazon-neptune-mcp-server__run_gremlin_query
 mcpServers:
 - mcp-graphrag-server
 - pg-aiguide
 - awslabs-postgres-mcp-server
+- awslabs-amazon-neptune-mcp-server
 disallowedTools: AskUserQuestion, Agent
 model: opus
 permissionMode: acceptEdits

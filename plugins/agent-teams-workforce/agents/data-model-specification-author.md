@@ -6,12 +6,13 @@ tools: Read, Write, Edit, Glob, Grep, Bash, mcp__awslabs-dynamodb-mcp-server__dy
   mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, Skill,
   mcp__pg-aiguide__search_docs, mcp__awslabs-postgres-mcp-server__connect_to_database,
   mcp__awslabs-postgres-mcp-server__is_database_connected, mcp__awslabs-postgres-mcp-server__get_database_connection_info,
-  mcp__awslabs-postgres-mcp-server__get_table_schema, mcp__awslabs-postgres-mcp-server__run_query
+  mcp__awslabs-postgres-mcp-server__get_table_schema, mcp__awslabs-postgres-mcp-server__run_query, mcp__awslabs-amazon-neptune-mcp-server__get_graph_status, mcp__awslabs-amazon-neptune-mcp-server__get_graph_schema, mcp__awslabs-amazon-neptune-mcp-server__run_opencypher_query, mcp__awslabs-amazon-neptune-mcp-server__run_gremlin_query
 disallowedTools: AskUserQuestion, Agent
 mcpServers:
 - awslabs-dynamodb-mcp-server
 - pg-aiguide
 - awslabs-postgres-mcp-server
+- awslabs-amazon-neptune-mcp-server
 model: fable
 permissionMode: acceptEdits
 maxTurns: 100
