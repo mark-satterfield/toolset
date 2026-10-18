@@ -48,17 +48,6 @@ JAVASCRIPT_SUFFIXES: Final = frozenset({".js", ".jsx", ".mjs", ".cjs"})
 SHELL_SUFFIXES: Final = frozenset({".sh", ".bash"})
 SHELL_SHEBANG: Final = re.compile(r"^#!.*\b(ba)?sh\b")
 CDK_FILES: Final = frozenset({"cdk.json", "cdk.context.json"})
-DEPENDENCY_FILES: Final = frozenset(
-    {
-        "pyproject.toml",
-        "uv.lock",
-        "requirements.txt",
-        "package.json",
-        "package-lock.json",
-        "pnpm-lock.yaml",
-        "yarn.lock",
-    },
-)
 CONFIG_SUFFIXES: Final = frozenset({".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"})
 TOOL_TIMEOUT_SECONDS: Final = 600
 EXIT_CLEAN: Final = 0
@@ -80,6 +69,7 @@ class Spec:
     pins: dict[str, str]
     node_pins: dict[str, str]
     cdk_apps: tuple[str, ...]
+    cdk_app_files: frozenset[str]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -162,6 +152,7 @@ def load_spec() -> Spec:
         _string_map(flat_pins, "pins"),
         _string_map(node, "pins.node"),
         _string_list(parsed.get("cdk_apps", []), "cdk_apps"),
+        frozenset(_string_list(parsed.get("cdk_app_files", sorted(CDK_FILES)), "cdk_app_files")),
     )
 
 
@@ -403,22 +394,20 @@ def cdk_app_folder(cdk_json: str) -> Path | None:
 def apps_for(path: Path, spec: Spec) -> list[str]:
     """Return the CDK apps a changed file belongs to.
 
-    A dependency manifest or lockfile belongs to every app whose `cdk.json` sits in its folder or
-    below, because it sets the CDK library version the app synthesizes with.
+    A file named in the spec's `cdk_app_files` (`cdk.json`, `cdk.context.json` and the dependency
+    files that set the CDK library version) belongs to the apps whose `cdk.json` sits beside it.
 
     Args:
         path: The changed file.
         spec: The spec.
 
     Returns:
-        The `cdk.json` paths whose app folder holds the file, whose folder holds the changed
-        `cdk.json` or `cdk.context.json`, or that sit under the changed dependency manifest.
+        The `cdk.json` paths whose app folder holds the file, or whose folder holds the changed
+        file named in `cdk_app_files`.
 
     """
-    if path.name in CDK_FILES:
+    if path.name in spec.cdk_app_files:
         return [app for app in spec.cdk_apps if (TREE / app).parent.resolve() == path.parent]
-    if path.name in DEPENDENCY_FILES:
-        return [app for app in spec.cdk_apps if (TREE / app).resolve().is_relative_to(path.parent)]
     return [app for app in spec.cdk_apps if (folder := cdk_app_folder(app)) is not None and path.is_relative_to(folder)]
 
 

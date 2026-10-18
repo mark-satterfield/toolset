@@ -7,7 +7,8 @@ common entries and the entries of each stack the tech-stacks scan finds in it; n
 repository or a stack.
 
 Into `.code-checks/` go the runner payload (the scripts in `code_checks/` beside this module) and
-`checks.json`, which tells the runner the repository's stacks, the pins and its CDK apps. The edit
+`checks.json`, which tells the runner the repository's stacks, the pins, its CDK apps and the files
+beside a `cdk.json` that belong to its app (the stacks' `hook_files`). The edit
 hook, the commit hook and the repository's `lint` task all run that runner, so every caller checks
 with one definition.
 
@@ -1245,7 +1246,9 @@ def plan_repository(root: Path, found_stacks: Iterable[str], spec: ChecksSpec, g
     files = list_files(root, git_output)
     cdk_apps = sorted(rel for rel in files if PurePosixPath(rel).name == "cdk.json")
     names = [stack.name for stack in stacks]
-    checks_json = json.dumps({"stacks": names, "pins": spec.pins, "cdk_apps": cdk_apps}, indent=2) + "\n"
+    cdk_app_files = sorted({name for stack in stacks for names in stack.hook_files.values() for name in names})
+    checks = {"stacks": names, "pins": spec.pins, "cdk_apps": cdk_apps, "cdk_app_files": cdk_app_files}
+    checks_json = json.dumps(checks, indent=2) + "\n"
     canonical = _canonical_files(stacks)
     current_pre_commit = _read(root, PRE_COMMIT_CONFIG)
     wanted: dict[str, str | None] = {
