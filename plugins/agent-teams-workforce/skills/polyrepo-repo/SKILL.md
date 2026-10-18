@@ -66,7 +66,7 @@ commit the tool makes.
 | `commit --message TEXT` | Commit and push the steward's files after a hand edit. |
 
 A record carries `name`, `space`, `path`, `lifecycle`, `tier`, `present` (disk, github,
-manifest), `naming`, `branch`, `uncommitted`, `uncommitted_files`, `last_commit`, `main`,
+manifest), `branch`, `uncommitted`, `uncommitted_files`, `last_commit`, `main`,
 `origin_url`, `github`, `groups` (only for a repo that exists and is active) and, in
 `inventory` and in `search` on `stacks`, `stacks`: the matrix's stacks that name the repo, each
 with its `id`, `name`, `type`, `side`, `purpose`, `executionUse` and what it holds. A record
@@ -92,7 +92,6 @@ judgment, and each has an obvious next step:
 |---|---|
 | `deprecated-undated` | Find the date the repo was deprecated (`git log` of the manifest and of the registries it replaced) and write it as `deprecated_on` in the manifest, then `commit`. Never record today's date as a stand-in: it restarts the clock to archiving. |
 | `deprecation-not-renamed` | `deprecate <repo>` if it is deprecated; otherwise set its `lifecycle` to `active` in the manifest. |
-| `naming-violation`, `space-mismatch` | Choose the correct name or space from the vault's repository naming document (`naming <name>` shows the rule a name matched), then `rename <repo> <new-name>`. |
 | `tier-invalid` | The entry's `tier` is neither `product` nor `tooling`: decide it (see *Tiers*) and `set-tier <repo> <tier>`. |
 | `open-items` with unsettled items | Put each to the user in the reply, record the answer where it belongs, then remove the section. |
 | `diverged`, `fetch-failed`, `no-default-branch`, `foreign-origin`, `github-missing`, `not-cloned`, `duplicate-name` | Inspect with `git` and `gh`, repair, and run `reconcile --fix` again. `not-cloned` is raised only for an active repo; a deprecated or archived repo is expected to have no local clone. |
@@ -219,7 +218,9 @@ rule is in the steward's instructions, *What you store*). The config's `naming.d
 the document under `naming.document_root`, and the tool reads the rules from the document's own text
 each time it runs: the project prefixes (the table), the repository types (the sentence "`{type}`
 is one of ..."), the name patterns (the `**Pattern:**` line of each repositories section) and the
-deprecated prefix. Creating, renaming, cloning and deprecating a repository and `doctor` use them. A name must
+deprecated prefix. A name is checked against them only when it is new: when a repository is
+created or renamed. No other command checks or reports the name of an existing repository;
+cloning and deprecating use the rules only to place a repository and to give its deprecated name. A new name must
 match a pattern, and an application name must end in a repository type the document lists
 (`SkillSpoke-auth-utils` is refused); the command-and-control repository `SkillSpoke` is exempt.
 A project is an open token: the document's project table lists today's projects and is not a limit. A
@@ -240,8 +241,9 @@ space is the folder named by the first token of the repository's name; a depreca
 keeps the space of the name it had (the first token after the deprecated prefix). The config's
 `placement.spaces` maps a first token to a folder of another name, compared without case. A space
 listed under `placement.by_type` holds its repositories one folder deeper, in the folder mapped to
-the repository's type (the last token of its name); every other space holds them directly. A type
-with no mapped folder in such a space is refused until the config maps one. A new project is a new
+the repository's type (the last token of its name); every other space holds them directly. A new
+name whose type has no mapped folder in such a space is refused until the config maps one; a clone
+of an existing repository of such a type sits directly in the space. A new project is a new
 first token: `create` places its first repository in a new folder of that name.
 
 **Which repositories belong to the project.** A repository belongs to the project when the

@@ -598,18 +598,26 @@ class Config:
         """
         return _map(self.raw.get("placement") or {}, "config placement")
 
-    def placement_folder(self, space: str, name: str) -> str:
+    def placement_folder(self, space: str, name: str, *, required: bool = True) -> str:
         """Return the folder inside an app space where a repository of this name is placed.
 
         A space the config's `placement.by_type` lists places each repository one folder deeper,
         in the folder its type (the last token of its name) maps to; every other space holds its
-        repositories directly.
+        repositories directly, and so does a by-type space for a type it maps no folder to when
+        the folder is not required.
+
+        Args:
+            space: The app space.
+            name: The repository name, without the deprecated prefix.
+            required: Whether a by-type space must map a folder to the name's type; a new
+                name requires one, an existing repository does not.
 
         Returns:
             The folder, empty when the space holds its repositories directly.
 
         Raises:
-            PolyrepoError: when the space places by type and the config maps no folder to this type.
+            PolyrepoError: when the folder is required, the space places by type and the config
+                maps no folder to this type.
 
         """
         by_type = _map(self._placement().get("by_type") or {}, "config placement.by_type")
@@ -618,7 +626,10 @@ class Config:
         folders = _map(by_type[space], f"config placement.by_type.{space}")
         repo_type = type_of(name)
         folder = folders.get(repo_type)
-        if not isinstance(folder, str) or not folder:
+        mapped = isinstance(folder, str) and bool(folder)
+        if not mapped and not required:
+            return ""
+        if not isinstance(folder, str) or not mapped:
             msg = (
                 f"config placement.by_type.{space} maps a folder only to the types {', '.join(folders)}; "
                 f"it maps none to the type {repo_type!r} of {name}"
@@ -1640,7 +1651,6 @@ class State:
         r = self.local.get(name)
         e = self.manifest.entries().get(name) or CommentedMap()
         g = self.gh.get(name)
-        pat = self.cfg.classify(name)
         lifecycle = self.lifecycle(name)
         live = r is not None or g is not None
         rec: dict[str, object] = {
@@ -1652,10 +1662,6 @@ class State:
                 "disk": r is not None,
                 "github": g is not None,
                 "manifest": bool(e),
-            },
-            "naming": {
-                "pattern": pat["name"] if pat else None,
-                "valid": pat is not None,
             },
             "branch": r.branch if r else None,
             "uncommitted": r.uncommitted if r else None,
@@ -2063,7 +2069,7 @@ def _check_local(
     entries: dict[str, CommentedMap],
     tracked_ids: set[str],
 ) -> list[Finding]:
-    """Check one repo on disk: its entry, naming, origin, pushed main and disk-decided fields.
+    """Check one repo on disk: its entry, origin, pushed main and disk-decided fields.
 
     A clone whose origin leads to a repository the manifest records is tracked, whatever its
     folder is called.
@@ -2089,44 +2095,17 @@ def _check_local(
             ),
         )
 
-    pat = _check_naming(cfg, name, r, out)
-    origin_ok = _check_origin(st, name, r, pat, out)
+    origin_ok = _check_origin(st, name, r, out)
     out.extend(_check_main_pushed(st, name, r, origin_ok=origin_ok))
     if e is not None:
         out.extend(_check_disk_fields(st, name, r, e))
     return out
 
 
-def _check_naming(cfg: Config, name: str, r: LocalRepo, out: list[Finding]) -> NamingPattern | None:
-    """Check a repo's folder name and placement, appending findings to out.
-
-    Returns:
-        The naming pattern the name matches, or None.
-
-    """
-    pat = cfg.classify(name)
-    if pat is None:
-        out.append(
-            Finding("naming-violation", name, f"folder name is refused: {cfg.naming_problem(name)}"),
-        )
-    else:
-        space = cfg.expected_space(name)
-        if space and space != r.space:
-            out.append(
-                Finding(
-                    "space-mismatch",
-                    name,
-                    f"a {pat['name']} name lives in space {r.space}, not {space}",
-                ),
-            )
-    return pat
-
-
 def _check_origin(
     st: State,
     name: str,
     r: LocalRepo,
-    pat: NamingPattern | None,
     out: list[Finding],
 ) -> bool:
     """Check a repo's origin remote against GitHub, appending findings to out.
@@ -2177,7 +2156,7 @@ def _check_origin(
         return False
     gh_name = rec["name"]
     if gh_name != name:
-        out.append(_name_mismatch(st, name, gh_name, name_valid=pat is not None))
+        out.append(_name_mismatch(st, name, gh_name))
         return False
     if origin_name != gh_name:
         out.append(
@@ -2192,15 +2171,18 @@ def _check_origin(
     return True
 
 
-def _name_mismatch(st: State, name: str, gh_name: str, *, name_valid: bool) -> Finding:
+def _name_mismatch(st: State, name: str, gh_name: str) -> Finding:
     """Report a folder whose GitHub repo has another name, with the rename fix when it is free.
+
+    The fix renames the GitHub repo to the folder's name, so that name is checked as a rename's
+    new name is.
 
     Returns:
         The name-mismatch finding.
 
     """
     taken = st.gh.resolve(name)
-    if taken is None and name_valid:
+    if taken is None and st.cfg.classify(name) is not None:
         return Finding(
             "name-mismatch",
             name,
@@ -4792,8 +4774,14 @@ def _beads_setup_run(
 # clone -----------------------------------------------------------------------------------------
 
 
-def _clone_dest(cfg: Config, name: str) -> Path:
+def _clone_dest(cfg: Config, name: str, *, new_name: bool = False) -> Path:
     """Return the one folder a clone of this repo belongs in, from the config's placement.
+
+    Args:
+        cfg: The project settings.
+        name: The repository name.
+        new_name: Whether the name is a rename's new name, which must have a placement folder
+            for its type; an existing repository is placed whatever its name.
 
     Returns:
         The destination path: the app space, then the folder the config places its type in.
@@ -4807,7 +4795,7 @@ def _clone_dest(cfg: Config, name: str) -> Path:
     if not space_dir.is_dir():
         msg = f"no app space folder {space_dir}"
         raise PolyrepoError(msg)
-    sub = cfg.placement_folder(space, cfg.rules.deprecated_base(name))
+    sub = cfg.placement_folder(space, cfg.rules.deprecated_base(name), required=new_name)
     return space_dir / sub / name if sub else space_dir / name
 
 
@@ -4888,7 +4876,8 @@ def rename(
     run it. It finds the local clone under either name and the GitHub repo through its
     origin (following GitHub's rename redirects), so it also completes a rename that only
     one side has made. It refuses, with the PolyrepoError of `_rename_plan`, when the new
-    name matches no naming pattern, another GitHub repo has it, the target folder exists, or
+    name matches no naming pattern (a deprecation's name, made from the old one, is not
+    checked), another GitHub repo has it, the target folder exists, or
     the local default branch is not known to be pushed. A name starting with `deprecated-`
     makes the entry deprecated, dated today unless it already has a date.
 
@@ -4945,7 +4934,7 @@ def _rename_plan(
     if old == new:
         msg = f"{old} is already named {new}"
         raise PolyrepoError(msg)
-    if cfg.classify(new) is None:
+    if new != cfg.rules.deprecated_name(old) and cfg.classify(new) is None:
         msg = f"{new} is refused: {cfg.naming_problem(new)}"
         raise PolyrepoError(msg)
     r = st.local.get(old) or st.local.get(new)
@@ -4996,7 +4985,7 @@ def _renamed_path(cfg: Config, path: Path, new: str) -> Path:
     """
     if cfg.is_deprecated_name(new):
         return path.with_name(new)
-    return _clone_dest(cfg, new)
+    return _clone_dest(cfg, new, new_name=True)
 
 
 def _rename_local_steps(cfg: Config, r: LocalRepo, new: str, url: str, steps: list[str]) -> Path:

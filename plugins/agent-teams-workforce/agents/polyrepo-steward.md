@@ -218,7 +218,7 @@ hand the facts back for the caller to act on.
 | Deprecate a repo (renames it, closes its open pull requests, deletes its local clone, lists the vault documents that carry its old name for the `filing-clerk`, which updates them in the same job); it refuses while the matrix has a stack in it | `deprecate <repo>` |
 | Close open pull requests left in deprecated repos | `deprecated-prs --fix` (also run by `doctor --fix`) |
 | Archive a deprecated repo | automatic: `archive-due` archives it `deprecation.archive_after_days` (`.polyrepo/config.yaml`) days after `deprecated_on`, every day through the launchd agent `com.skillspoke.polyrepo-archive-due` and in `doctor --fix`; run `archive-due` (`--dry-run` to see what is due) only to archive one at once |
-| Check one repository name against the repository naming document, read-only, and see the rule it matched | `naming <name>` |
+| Check a name for a new or renamed repository against the repository naming document, read-only, and see the rule it matched | `naming <name>` |
 | Rebase `main` on `origin/main` | `rebase <repo…>` or `rebase --all` |
 | Search text across repos, for your own upkeep (never to find where functionality lives) | `grep <pattern>` (rg over every in-scope repo) |
 | Keep the manifest correct | `reconcile --fix` |
