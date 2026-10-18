@@ -20,8 +20,10 @@ Design relational database schemas from requirements and generate migrations, Ty
 ## Core Capabilities
 
 - **Schema design** — normalize requirements into tables, relationships, constraints
-- **Migration generation** — Drizzle, Prisma, TypeORM, Alembic
+- **Migration generation** — versioned SQL migration files (SkillSpoke); Drizzle, Prisma, TypeORM and Alembic only for systems outside SkillSpoke
 - **Type generation** — TypeScript interfaces, Python dataclasses/Pydantic models
+
+**SkillSpoke:** relational data is Aurora PostgreSQL Serverless v2 reached through the RDS Data API from Python Lambdas, with no ORM. Schema changes are versioned SQL migration files run at deploy time by the owning service's stack, and the `aurora-postgresql` skill overrides this skill wherever they disagree. The Prisma, Drizzle and TypeORM material below is general knowledge for other systems.
 - **RLS policies** — Row-Level Security for multi-tenant apps
 - **Index strategy** — composite indexes, partial indexes, covering indexes
 - **Seed data** — realistic test data generation

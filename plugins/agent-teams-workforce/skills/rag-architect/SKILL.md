@@ -83,6 +83,8 @@ The RAG (Retrieval-Augmented Generation) Architect skill provides comprehensive 
 
 ### 3. Vector Database Selection
 
+**SkillSpoke stores vectors in Aurora PostgreSQL Serverless v2 with pgvector, reached through the RDS Data API and owned by the service whose data it is** (see `aurora-postgresql` and `pgvector-semantic-search`). Pinecone, Weaviate, Qdrant and Chroma are outside SkillSpoke's stack; the comparison below is general knowledge for other systems. Embeddings come from an Amazon Bedrock embeddings model through `skillSpoke-ai-lib`, since all SkillSpoke inference runs on Bedrock; self-hosted sentence-transformers models are not part of the stack.
+
 #### Pinecone
 - **Managed service**: Fully hosted, auto-scaling
 - **Features**: Metadata filtering, hybrid search, real-time updates
@@ -127,7 +129,7 @@ The RAG (Retrieval-Augmented Generation) Architect skill provides comprehensive 
 - **Implementation**: Vector similarity search with k-NN or ANN algorithms
 
 #### Sparse Retrieval
-- **Keyword-based**: TF-IDF, BM25, Elasticsearch
+- **Keyword-based**: TF-IDF, BM25, Elasticsearch; in SkillSpoke, PostgreSQL full-text search (`tsvector`, `ts_rank`) beside pgvector
 - **Advantages**: Exact keyword matching, interpretable results
 - **Limitations**: Misses semantic similarity, vulnerable to vocabulary mismatch
 - **Implementation**: Inverted indexes, term frequency analysis
@@ -210,7 +212,7 @@ The RAG (Retrieval-Augmented Generation) Architect skill provides comprehensive 
 - **Query-level caching**: Cache results for identical queries
 - **Semantic caching**: Cache for semantically similar queries
 - **Chunk-level caching**: Cache embedding computations
-- **Multi-level caching**: Redis for hot queries, disk for warm queries
+- **Multi-level caching**: an in-memory cache for hot queries elsewhere; SkillSpoke deploys no ElastiCache or Redis without a measured need, and caches in DynamoDB (with TTL) or in the Lambda execution environment
 
 #### Streaming Retrieval
 - **Progressive loading**: Stream results as they become available

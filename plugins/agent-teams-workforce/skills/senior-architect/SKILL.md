@@ -203,15 +203,16 @@ Use when choosing a database for a new project or migrating existing data.
 | Document-oriented data | | ✓ |
 | Time-series data | | ✓ (specialized) |
 
-**Step 2: Evaluate scale requirements**
-- <1M records, single region → PostgreSQL or MySQL
-- 1M-100M records, read-heavy → PostgreSQL with read replicas
-- >100M records, global distribution → CockroachDB, Aurora Global Database, or DynamoDB global tables
-- High write throughput (>10K/sec) → Cassandra or ScyllaDB
+**Step 2: Choose among SkillSpoke's stores.** SkillSpoke chooses persistence per data set from three stores, each owned by one service (arc42 section 4; constraints in section 2):
+- **DynamoDB (on-demand)** → key-value and document data with known access patterns, session records, idempotency records (`dynamodb`)
+- **Aurora PostgreSQL Serverless v2 through the RDS Data API** → relational data, joins, transactions, temporal facts, vectors with pgvector, graph-shaped data in most cases (`aurora-postgresql`, which also states when a graph database is justified)
+- **Versioned S3** → documents, files and large content
+
+MySQL, MongoDB, Cassandra, ScyllaDB, CockroachDB and TimescaleDB are outside SkillSpoke's stack. ElastiCache and Redis are deployed only when a measured need appears. Size to the stated development context (alpha: one dev account, at most five users); do not design for hypothetical scale.
 
 **Step 3: Check consistency requirements**
-- Strong consistency required → SQL or CockroachDB
-- Eventual consistency acceptable → DynamoDB, Cassandra, MongoDB
+- Strong consistency or multi-row transactions required → Aurora PostgreSQL, or DynamoDB transactions and strongly consistent reads within one table's partition
+- Eventual consistency acceptable → DynamoDB (GSIs are eventually consistent), or a read model built from SkillSpoke events
 
 **Step 4: Describe the result in the architecture**
 Make the chosen design part of the architecture description, as current state: update the views that show the elements it changes, at every scope they appear in (a pattern used across services is a crosscutting concept in section 8), with:
@@ -219,13 +220,11 @@ Make the chosen design part of the architecture description, as current state: u
 - The reason for it, where it departs from an established pattern
 - The limits and trade-offs it accepts
 
-**Quick reference:**
+**Quick reference (SkillSpoke):**
 ```
-PostgreSQL → Default choice for most applications
-MongoDB    → Document store, flexible schema
-Redis      → Caching, sessions, real-time features
-DynamoDB   → Serverless, auto-scaling, AWS-native
-TimescaleDB → Time-series data with SQL interface
+DynamoDB (on-demand)          → Key-value and document data, known access patterns
+Aurora PostgreSQL (Data API)  → Relational data, transactions, pgvector
+Versioned S3                  → Files, documents, large results
 ```
 
 ---
@@ -233,6 +232,8 @@ TimescaleDB → Time-series data with SQL interface
 ### Architecture Pattern Selection Workflow
 
 Use when designing a new system or refactoring existing architecture.
+
+**SkillSpoke's style is decided:** a serverless, event-driven microservices platform on AWS, decomposed by bounded context, each service one CDK app with its own stores, coordinating through SkillSpoke events (arc42 section 4). Pieces are consolidated only when they always change and deploy together, have one owner and have no reason to scale or fail independently. Inside SkillSpoke, use the workflow below only to apply that consolidation rule or to choose patterns inside one service (DDD, CQRS, hexagonal); the team-size guidance does not reopen the style. For a system outside SkillSpoke it applies in full.
 
 **Step 1: Assess team and project size**
 | Team Size | Recommended Starting Point |
@@ -304,12 +305,9 @@ Load these files for detailed information:
 
 ## Tech Stack Coverage
 
-**Languages:** TypeScript, JavaScript, Python, Go, Swift, Kotlin, Rust
-**Frontend:** React, Next.js, Vue, Angular, React Native, Flutter
-**Backend:** Node.js, Express, FastAPI, Go, GraphQL, REST
-**Databases:** PostgreSQL, MySQL, MongoDB, Redis, DynamoDB, Cassandra
-**Infrastructure:** Docker, Kubernetes, Terraform, AWS
-**CI/CD:** GitHub Actions, GitLab CI, CircleCI, Jenkins
+**SkillSpoke's stack:** Python Lambdas on `aws-lambda-powertools` (Django, Flask and FastAPI banned); API Gateway REST API v1 spec-first in OpenAPI and the WebSocket API (HTTP API v2 not used); DynamoDB, Aurora PostgreSQL Serverless v2 through the RDS Data API, versioned S3; SkillSpoke events through the events service onto EventBridge; Cognito; SES; Bedrock and AgentCore; CDK in Python, values across stacks through SSM Parameter Store; CloudWatch, X-Ray and ADOT; Next.js and React Native on CDS; GitHub Actions.
+
+**General knowledge for other systems:** TypeScript, Go, Swift, Kotlin, Rust; Vue, Angular, Flutter; Node.js, Express, GraphQL; MySQL, MongoDB, Redis, Cassandra; Docker, Kubernetes, Terraform; GitLab CI, CircleCI, Jenkins. These describe systems you may read; they are not choices for SkillSpoke.
 
 ---
 

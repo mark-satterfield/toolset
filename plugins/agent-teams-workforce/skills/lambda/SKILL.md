@@ -324,14 +324,14 @@ aws iam list-attached-role-policies \
 **Symptom:** Cannot reach internet or AWS services
 
 **Causes:**
-- No NAT Gateway for internet access
-- Missing VPC endpoint for AWS services
+- Missing VPC endpoint for an AWS service
 - Security group blocking outbound
+- A call to an internet destination that does not go through the Egress Boundary service
 
 **Solutions:**
-- Add NAT Gateway for internet
-- Add VPC endpoints for AWS services
+- Add the VPC endpoint for the AWS service (SkillSpoke reaches AWS services from the VPC through VPC endpoints)
 - Check security group rules
+- Send an internet call through the Egress Boundary service, the only internet path SkillSpoke allows, for an allow-listed destination; do not add a NAT Gateway to a service
 
 ## References
 

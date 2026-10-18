@@ -210,9 +210,8 @@ SkillSpoke is serverless on AWS, and its observability stack is AWS-native and p
 - **Performance Regression:** Automated performance monitoring in pipelines
 
 ### Incident Management Integration
-- **PagerDuty/VictorOps:** Alert routing and escalation policies
-- **Slack/Teams:** Notification and collaboration integration
-- **JIRA/ServiceNow:** Incident tracking and resolution workflows
+- **Alert routing:** CloudWatch alarms notify an Amazon SNS topic (operational alerts only, never customer email); SkillSpoke uses no PagerDuty, VictorOps, JIRA or ServiceNow
+- **Tracking:** follow-up work is tracked in beads (`bd`)
 - **Post-Mortem:** Automated incident analysis and improvement tracking
 
 ## Advanced Patterns
@@ -224,10 +223,10 @@ SkillSpoke is serverless on AWS, and its observability stack is AWS-native and p
 - **Compliance Monitoring:** Security and compliance posture tracking with AWS Config and Security Hub
 
 ### Microservices Observability
-- **Service Mesh Integration:** Istio/Linkerd observability configuration
-- **API Gateway Monitoring:** Request routing and rate limiting observability
-- **Container Orchestration:** Kubernetes cluster and workload monitoring
-- **Service Discovery:** Dynamic service monitoring and health checks
+- **API Gateway Monitoring:** REST API latency, 4XX/5XX and throttling metrics per stage and method
+- **Event Flow:** SkillSpoke observability events (unit-of-work start and outcome, error events) in the one event log, correlated by `trace.correlationId` (see `skillspoke-events`)
+- **Tracing:** X-Ray and ADOT across API Gateway, Lambda, SQS and EventBridge
+- SkillSpoke runs no containers or service mesh, so Kubernetes, Istio and Linkerd monitoring do not apply
 
 ### Machine Learning Observability
 - **Model Performance:** Accuracy, drift, and bias monitoring
