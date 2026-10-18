@@ -5,8 +5,6 @@ context: fork
 skills:
   - aws-mcp-setup
 allowed-tools:
-  - mcp__pricing__*
-  - mcp__costexp__*
   - mcp__cw__*
   - mcp__aws-mcp__*
   - mcp__awsdocs__*
@@ -39,7 +37,7 @@ Cost work goes through the AWS MCP server tools the agent holds, following `aws-
 - **Check the current date first**, before any Cost Explorer, Budgets or forecast call, so every time range is right
 - **Every calculation is scripted**: monthly totals, unit costs and comparisons are computed in a script (`run_script` or a scratchpad script), never by reasoning, and the script's output is what the result reports
 
-**Scale**: size every estimate to the stated development context: one development AWS account and at most five users. Do not plan for growth or hypothetical production load. Where a requirement can be met either way, prefer per-request pricing (for example Lambda, DynamoDB on-demand); where the architecture uses a provisioned service (for example the PostgreSQL database on RDS), size it to the stated context and report its monthly floor.
+**Scale**: size every estimate to the stated development context: one development AWS account and at most five users. Do not plan for growth or hypothetical production load. Where a requirement can be met either way, prefer per-request pricing (for example Lambda, DynamoDB on-demand); where the architecture uses a service with a capacity floor (for example Aurora PostgreSQL Serverless v2 at its minimum ACUs, which is 0 only with automatic pause), size it to the stated context and report its monthly floor.
 
 #### Amazon CloudWatch MCP Server (`cw`)
 **Purpose**: Metrics, alarms, and logs analysis
@@ -143,6 +141,8 @@ Use this skill when:
 5. Set up distributed tracing
 
 ### Container and Kubernetes Monitoring
+
+SkillSpoke runs on Lambda and is observed with CloudWatch, X-Ray, ADOT and SkillSpoke observability events; it runs no container workloads and uses no Prometheus. This section applies only to a workload on ECS or EKS outside SkillSpoke.
 
 **For containerized workloads**:
 1. Use **AWS Managed Prometheus MCP** for metrics
