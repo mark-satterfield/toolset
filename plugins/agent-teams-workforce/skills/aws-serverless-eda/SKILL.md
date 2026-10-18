@@ -1,6 +1,6 @@
 ---
 name: aws-serverless-eda
-description: AWS serverless and event-driven architecture expert based on Well-Architected Framework. Use when building serverless APIs, Lambda functions, REST APIs, microservices, or async workflows. Covers Lambda with TypeScript/Python, API Gateway (REST/HTTP), DynamoDB, Step Functions, EventBridge, SQS, SNS, and serverless patterns. Essential when user mentions serverless, Lambda, API Gateway, event-driven, async processing, queues, pub/sub, or wants to build scalable serverless applications with AWS best practices.
+description: AWS serverless and event-driven architecture expert based on the Well-Architected Framework, applied to SkillSpoke's stack (Python Lambdas on aws-lambda-powertools, API Gateway REST API v1, DynamoDB, CDK in Python, SkillSpoke events through the events service onto EventBridge). Use when building serverless APIs, Lambda functions, REST APIs, microservices, or async workflows. Covers Lambda, API Gateway REST API v1 and the WebSocket API, DynamoDB, Step Functions, EventBridge, SQS, SNS, and serverless patterns. Essential when user mentions serverless, Lambda, API Gateway, event-driven, async processing, queues, pub/sub, or wants to build scalable serverless applications with AWS best practices.
 context: fork
 skills:
   - aws-mcp-setup
@@ -9,7 +9,7 @@ allowed-tools:
   - mcp__aws-mcp__*
   - mcp__awsdocs__*
   - mcp__cdk__*
-  - Bash(sam *)
+  - Bash(sam local *)
   - Bash(aws lambda *)
   - Bash(aws apigateway *)
   - Bash(aws apigatewayv2 *)
@@ -19,16 +19,18 @@ allowed-tools:
   - Bash(aws sqs *)
   - Bash(aws sns *)
   - Bash(aws sts get-caller-identity)
-hooks:
-  PreToolUse:
-    - matcher: Bash(sam deploy*)
-      command: aws sts get-caller-identity --query Account --output text
-      once: true
 ---
 
 # AWS Serverless & Event-Driven Architecture
 
-This skill provides comprehensive guidance for building serverless applications and event-driven architectures on AWS based on Well-Architected Framework principles.
+This skill provides guidance for building serverless applications and event-driven architectures on AWS based on Well-Architected Framework principles, in SkillSpoke's stack:
+
+- Every service Lambda is Python on `aws-lambda-powertools`, through `shared-chassis-lib`. Django, Flask and FastAPI are banned.
+- APIs are API Gateway REST API v1, spec-first in OpenAPI; HTTP API v2 is not used. Live push uses the API Gateway WebSocket API (the `apigatewayv2` CLI covers WebSocket APIs; it is never used to create an HTTP API).
+- Infrastructure is CDK in Python, one CDK app per service with one stack per environment holding every resource the service owns. Values cross stacks only through SSM Parameter Store, never CloudFormation exports and imports.
+- SkillSpoke events are published only through the central event API of the events service, which puts them on the single bus; a routing rule is owned by the stack of its target. Load the `skillspoke-events` skill for anything that produces, routes or receives a SkillSpoke event.
+- Every name comes from the project's naming command (the `resource-naming` skill).
+- Alpha scale (one dev account, at most five users): per-request pricing (Lambda, DynamoDB on-demand) over always-on capacity unless a stated need justifies it.
 
 ## AWS Documentation Requirement
 
@@ -39,7 +41,7 @@ Always verify AWS facts using MCP tools (`mcp__aws-mcp__*` or `mcp__*awsdocs*__*
 This skill leverages the CDK MCP server (provided via `aws-cdk-development` dependency) and AWS Documentation MCP for serverless guidance.
 
 > **Note**: The following AWS MCP servers are available separately via the Full AWS MCP Server (see `aws-mcp-setup` skill) and are not bundled with this plugin:
-> - AWS Serverless MCP — SAM CLI lifecycle (init, deploy, local test)
+> - AWS Serverless MCP — SAM CLI local testing (SkillSpoke deploys with CDK, not `sam deploy`)
 > - AWS Lambda Tool MCP — Direct Lambda invocation
 > - AWS Step Functions MCP — Workflow orchestration
 > - Amazon SNS/SQS MCP — Messaging and queue management
@@ -62,28 +64,26 @@ Use this skill when:
 
 **Functions should be concise and single-purpose**
 
-```typescript
-// ✅ GOOD - Single purpose, focused function
-export const processOrder = async (event: OrderEvent) => {
-  // Only handles order processing
-  const order = await validateOrder(event);
-  await saveOrder(order);
-  await publishOrderCreatedEvent(order);
-  return { statusCode: 200, body: JSON.stringify({ orderId: order.id }) };
-};
+```python
+from aws_lambda_powertools.utilities.typing import LambdaContext
 
-// ❌ BAD - Function does too much
-export const handleEverything = async (event: any) => {
-  // Handles orders, inventory, payments, shipping...
-  // Too many responsibilities
-};
+
+# GOOD - single purpose, focused function
+def process_order(event: dict[str, object], context: LambdaContext) -> dict[str, object]:
+    order = validate_order(event)
+    save_order(order)
+    publish_order_created(order)  # through the central event API
+    return {"statusCode": 200, "body": json.dumps({"orderId": order.order_id})}
+
+
+# BAD - one function handles orders, inventory, payments, shipping...
 ```
 
 **Keep functions environmentally efficient and cost-aware**:
 - Minimize cold start times
 - Optimize memory allocation
-- Use provisioned concurrency only when needed
-- Leverage connection reuse
+- Use provisioned concurrency only when a measured latency need justifies its always-on cost
+- Leverage connection reuse (create SDK clients at module scope)
 
 ### 2. Think Concurrent Requests, Not Total Requests
 
@@ -95,49 +95,44 @@ Lambda scales horizontally - design considerations should focus on:
 - Shared resource contention
 - Connection pool sizing
 
-```typescript
-// Consider concurrent Lambda executions accessing DynamoDB
-const table = new dynamodb.Table(this, 'Table', {
-  billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, // Auto-scales with load
-});
+```python
+from aws_cdk import aws_dynamodb as dynamodb
 
-// Or with provisioned capacity + auto-scaling
-const table = new dynamodb.Table(this, 'Table', {
-  billingMode: dynamodb.BillingMode.PROVISIONED,
-  readCapacity: 5,
-  writeCapacity: 5,
-});
-
-// Enable auto-scaling for concurrent load
-table.autoScaleReadCapacity({ minCapacity: 5, maxCapacity: 100 });
-table.autoScaleWriteCapacity({ minCapacity: 5, maxCapacity: 100 });
+# On-demand capacity scales with concurrent load and costs nothing when idle.
+table = dynamodb.TableV2(
+    self,
+    "Table",
+    table_name=table_name,  # from the naming command
+    partition_key=dynamodb.Attribute(name="pk", type=dynamodb.AttributeType.STRING),
+    billing=dynamodb.Billing.on_demand(),
+)
 ```
+
+Provisioned capacity with auto-scaling is cheaper only for steady, predictable traffic high enough to keep the provisioned units busy; at SkillSpoke's alpha scale it is a monthly floor that low usage does not reduce. Choose it only for a stated, measured need (see the `dynamodb` skill).
 
 ### 3. Share Nothing
 
 **Function runtime environments are short-lived**
 
-```typescript
-// ❌ BAD - Relying on local file system
-export const handler = async (event: any) => {
-  fs.writeFileSync('/tmp/data.json', JSON.stringify(data)); // Lost after execution
-};
+```python
+# BAD - relying on the local file system between invocations
+def handler(event: dict[str, object], context: LambdaContext) -> None:
+    Path("/tmp/data.json").write_text(json.dumps(data))  # lost when the environment is recycled
 
-// ✅ GOOD - Use persistent storage
-export const handler = async (event: any) => {
-  await s3.putObject({
-    Bucket: process.env.BUCKET_NAME,
-    Key: 'data.json',
-    Body: JSON.stringify(data),
-  });
-};
+
+# GOOD - persistent storage
+s3 = boto3.client("s3")
+
+
+def handler(event: dict[str, object], context: LambdaContext) -> None:
+    s3.put_object(Bucket=os.environ["BUCKET_NAME"], Key="data.json", Body=json.dumps(data))
 ```
 
 **State management**:
-- Use DynamoDB for persistent state
+- Use DynamoDB for persistent state and for the session record
 - Use Step Functions or Lambda durable functions for workflow state (see principle 5)
-- Use ElastiCache for session state
-- Use S3 for file storage
+- Use S3 for file storage and for large results
+- ElastiCache is deployed only when a measured need appears; it is not the session store and not the idempotency store
 
 ### 4. Assume No Hardware Affinity
 
@@ -145,11 +140,10 @@ export const handler = async (event: any) => {
 
 Infrastructure can change without notice:
 - Lambda functions can run on different hardware
-- Container instances can be replaced
 - No assumption about underlying infrastructure
 
 **Design for portability**:
-- Use environment variables for configuration
+- Read configuration at run time (environment variables for deploy-time values, SSM Parameter Store and runtime configuration for values that change)
 - Avoid hardware-specific optimizations
 - Test across different environments
 
@@ -161,26 +155,24 @@ Choose on the workload (https://docs.aws.amazon.com/lambda/latest/dg/durable-ste
 - **Lambda durable functions** when the workflow is code-first and tightly coupled with the business logic of a Lambda function, with fine-grained steps, retries and checkpoints inside that function.
 - **Step Functions** when the workflow orchestrates across AWS services (native integrations with no Lambda in between), needs a visual or auditable definition, or spans several services or teams.
 
+Coordination between SkillSpoke services is by events, not a central state machine: a state machine orchestrates work inside one service, and rollback across services uses compensating events.
+
 Record which one you chose and why in your result.
 
-```typescript
-// ❌ BAD - Lambda function chaining
-export const handler1 = async (event: any) => {
-  const result = await processStep1(event);
-  await lambda.invoke({
-    FunctionName: 'handler2',
-    Payload: JSON.stringify(result),
-  });
-};
+```python
+from aws_cdk import aws_stepfunctions as sfn
 
-// ✅ GOOD - Step Functions orchestration
-const stateMachine = new stepfunctions.StateMachine(this, 'OrderWorkflow', {
-  definition: stepfunctions.Chain
-    .start(validateOrder)
-    .next(processPayment)
-    .next(shipOrder)
-    .next(sendConfirmation),
-});
+# BAD - one Lambda invoking the next with lambda_client.invoke(...)
+
+# GOOD - Step Functions orchestration inside one service
+state_machine = sfn.StateMachine(
+    self,
+    "OrderWorkflow",
+    state_machine_name=state_machine_name,  # from the naming command
+    definition_body=sfn.DefinitionBody.from_chainable(
+        validate_order.next(process_payment).next(ship_order).next(send_confirmation)
+    ),
+)
 ```
 
 **Benefits of Step Functions**:
@@ -194,26 +186,18 @@ const stateMachine = new stepfunctions.StateMachine(this, 'OrderWorkflow', {
 
 **Event-driven over synchronous request/response**
 
-```typescript
-// Pattern: Event-driven processing
-const bucket = new s3.Bucket(this, 'DataBucket');
+```python
+from aws_cdk import aws_s3 as s3, aws_s3_notifications as s3n
 
-bucket.addEventNotification(
-  s3.EventType.OBJECT_CREATED,
-  new s3n.LambdaDestination(processFunction),
-  { prefix: 'uploads/' }
-);
-
-// Pattern: EventBridge integration
-const rule = new events.Rule(this, 'OrderRule', {
-  eventPattern: {
-    source: ['orders'],
-    detailType: ['OrderPlaced'],
-  },
-});
-
-rule.addTarget(new targets.LambdaFunction(processOrderFunction));
+# Pattern: a resource event inside the service
+bucket.add_event_notification(
+    s3.EventType.OBJECT_CREATED,
+    s3n.LambdaDestination(process_function),
+    s3.NotificationKeyFilter(prefix="uploads/"),
+)
 ```
+
+Between services, a SkillSpoke event is published through the central event API (never with a direct `PutEvents` from the producer), and the stack that owns the target owns the routing rule on the bus, with the target's retry policy and DLQ. The bus name and ARN are read from the SSM parameters `shared-events-infra` publishes. The `skillspoke-events` skill holds the rule, its event pattern and the target's obligations.
 
 **Benefits**:
 - Loose coupling between services
@@ -225,34 +209,41 @@ rule.addTarget(new targets.LambdaFunction(processOrderFunction));
 
 **Operations must be idempotent**
 
-```typescript
-// ✅ GOOD - Idempotent operation
-export const handler = async (event: SQSEvent) => {
-  for (const record of event.Records) {
-    const orderId = JSON.parse(record.body).orderId;
+Delivery is at least once, so every operation that creates or changes something is idempotent. Never check for a record and then write it as two calls: two concurrent deliveries both see no record and both process. Use the Powertools idempotency utility with its DynamoDB persistence layer (through the chassis), which claims the key with a conditional write before the work runs. Each service that needs it owns an on-demand idempotency table with TTL in its own stack (attribute `id` as partition key, TTL on `expiration`). Reads are never made idempotent.
 
-    // Check if already processed (idempotency)
-    const existing = await dynamodb.getItem({
-      TableName: process.env.TABLE_NAME,
-      Key: { orderId },
-    });
+```python
+import os
 
-    if (existing.Item) {
-      console.log('Order already processed:', orderId);
-      continue; // Skip duplicate
-    }
+from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, process_partial_response
+from aws_lambda_powertools.utilities.data_classes.sqs_event import SQSRecord
+from aws_lambda_powertools.utilities.idempotency import (
+    DynamoDBPersistenceLayer,
+    IdempotencyConfig,
+    idempotent_function,
+)
+from aws_lambda_powertools.utilities.typing import LambdaContext
 
-    // Process order
-    await processOrder(orderId);
+persistence = DynamoDBPersistenceLayer(table_name=os.environ["IDEMPOTENCY_TABLE_NAME"])
+config = IdempotencyConfig(event_key_jmespath="orderId")
+processor = BatchProcessor(event_type=EventType.SQS)
 
-    // Mark as processed
-    await dynamodb.putItem({
-      TableName: process.env.TABLE_NAME,
-      Item: { orderId, processedAt: Date.now() },
-    });
-  }
-};
+
+@idempotent_function(data_keyword_argument="order", config=config, persistence_store=persistence)
+def process_order(order: dict[str, str]) -> dict[str, str]:
+    ...  # create or change something; return a small result (an ID or a status)
+    return {"orderId": order["orderId"], "status": "processed"}
+
+
+def record_handler(record: SQSRecord) -> None:
+    process_order(order=record.json_body)
+
+
+def handler(event: dict[str, object], context: LambdaContext) -> dict[str, object]:
+    config.register_lambda_context(context)
+    return process_partial_response(event=event, record_handler=record_handler, processor=processor, context=context)
 ```
+
+Where the operation itself is a single DynamoDB write, a conditional write (`ConditionExpression="attribute_not_exists(pk)"`, treating `ConditionalCheckFailedException` as "already done") is idempotent on its own and needs no idempotency table.
 
 **Retries come from the SDK, not from a hand-written loop**: the AWS SDK already retries with exponential backoff and jitter, and a loop around an SDK call multiplies the attempts. Configure the client's retry mode instead: standard mode unless you have a specific reason to choose another (https://docs.aws.amazon.com/sdkref/latest/guide/feature-retry-behavior.html); adaptive mode only for a client throttled against a single resource. Retries of a failed event belong to the event source (SQS redelivery, EventBridge retry policy) with a DLQ, which is why the handler must be idempotent.
 
@@ -262,7 +253,7 @@ For detailed implementation patterns with full code examples, see the reference 
 
 ### Event-Driven Architecture Patterns
 **File**: `references/eda-patterns.md`
-- Event Router with EventBridge (custom event bus, schema registry, rule-based routing)
+- Event Router with EventBridge (rule-based routing; SkillSpoke events go through the events service onto the one bus)
 - Queue-Based Processing with SQS (standard/FIFO, DLQ, Lambda consumers)
 - Pub/Sub Fan-Out with SNS + SQS (multi-consumer, filtering)
 - Saga Pattern with Step Functions (distributed transactions, compensating actions)
@@ -270,78 +261,87 @@ For detailed implementation patterns with full code examples, see the reference 
 
 ### Serverless Architecture Patterns
 **File**: `references/serverless-patterns.md`
-- API-Driven Microservices (REST API + Lambda backend)
+- API-Driven Microservices (REST API v1 + Lambda backend)
 - Stream Processing with Kinesis (real-time, batch windowing, bisect on error)
 - Async Task Processing with SQS (background jobs, concurrency control)
-- Scheduled Jobs with EventBridge (cron/rate schedules)
+- Scheduled Jobs with EventBridge Scheduler (cron/rate schedules)
 - Webhook Processing (signature validation, async queue forwarding)
 
-> **Important**: When using CDK code examples from references, avoid hardcoding resource names (e.g., `restApiName`, `eventBusName`). Let CDK generate unique names automatically to enable reusability and parallel deployments. See `aws-cdk-development` skill for details.
+The reference files hold some TypeScript examples; SkillSpoke writes the same constructs in Python CDK and the handlers in Python.
+
+> **Important**: Every resource name in CDK code (`rest_api_name`, `function_name`, `table_name`, `queue_name`, state machine and stack names, SSM parameter names) comes from the project's naming command, never typed by hand and never left for CDK to generate (see the `resource-naming` skill). When `printenv ATW_NAMING_COMMAND` prints nothing, say so in your result and leave the name unmade.
 
 ## Best Practices
 
 ### Error Handling
 
-**Implement comprehensive error handling**:
+**Report partial batch failures** so only the failed records are retried (enable `report_batch_item_failures` on the event source mapping). Powertools `process_partial_response` (shown in principle 7) builds the `batchItemFailures` response:
 
-```typescript
-export const handler = async (event: SQSEvent) => {
-  const failures: SQSBatchItemFailure[] = [];
+```python
+from aws_cdk import aws_lambda_event_sources as sources
 
-  for (const record of event.Records) {
-    try {
-      await processRecord(record);
-    } catch (error) {
-      console.error('Failed to process record:', record.messageId, error);
-      failures.push({ itemIdentifier: record.messageId });
-    }
-  }
-
-  // Return partial batch failures for retry
-  return { batchItemFailures: failures };
-};
+function.add_event_source(sources.SqsEventSource(queue, report_batch_item_failures=True))
 ```
 
 ### Dead Letter Queues
 
 **Always configure DLQs for error handling**:
 
-```typescript
-const dlq = new sqs.Queue(this, 'DLQ', {
-  retentionPeriod: Duration.days(14),
-});
+```python
+from aws_cdk import Duration, aws_cloudwatch as cloudwatch, aws_sqs as sqs
 
-const queue = new sqs.Queue(this, 'Queue', {
-  deadLetterQueue: {
-    queue: dlq,
-    maxReceiveCount: 3,
-  },
-});
+dlq = sqs.Queue(
+    self,
+    "Dlq",
+    queue_name=dlq_name,  # from the naming command
+    retention_period=Duration.days(14),
+    encryption=sqs.QueueEncryption.KMS_MANAGED,
+    enforce_ssl=True,
+)
 
-// Monitor DLQ depth
-new cloudwatch.Alarm(this, 'DLQAlarm', {
-  metric: dlq.metricApproximateNumberOfMessagesVisible(),
-  threshold: 1,
-  evaluationPeriods: 1,
-  alarmDescription: 'Messages in DLQ require attention',
-});
+queue = sqs.Queue(
+    self,
+    "Queue",
+    queue_name=queue_name,  # from the naming command
+    dead_letter_queue=sqs.DeadLetterQueue(queue=dlq, max_receive_count=3),
+    encryption=sqs.QueueEncryption.KMS_MANAGED,
+    enforce_ssl=True,
+)
+
+cloudwatch.Alarm(
+    self,
+    "DlqAlarm",
+    metric=dlq.metric_approximate_number_of_messages_visible(),
+    threshold=1,
+    evaluation_periods=1,
+    alarm_description="Messages in DLQ require attention",
+)
 ```
 
 ### Observability
 
-**Enable tracing and monitoring**:
+**Enable tracing and monitoring** (CloudWatch, X-Ray, ADOT):
 
-```typescript
-new NodejsFunction(this, 'Function', {
-  entry: 'src/handler.ts',
-  tracing: lambda.Tracing.ACTIVE, // X-Ray tracing
-  environment: {
-    POWERTOOLS_SERVICE_NAME: 'order-service',
-    POWERTOOLS_METRICS_NAMESPACE: 'MyApp',
-    LOG_LEVEL: 'INFO',
-  },
-});
+```python
+from aws_cdk import aws_lambda as lambda_
+
+lambda_.Function(
+    self,
+    "Function",
+    function_name=function_name,  # from the naming command
+    runtime=lambda_.Runtime.PYTHON_3_14,
+    handler="handler.handler",
+    code=lambda_.Code.from_asset("src"),
+    tracing=lambda_.Tracing.ACTIVE,  # X-Ray tracing
+    environment={
+        "POWERTOOLS_SERVICE_NAME": powertools_service,  # from the naming command
+        "POWERTOOLS_METRICS_NAMESPACE": metrics_namespace,  # from the naming command
+        "POWERTOOLS_LOG_LEVEL": "INFO",
+    },
+)
 ```
+
+Packaging Python dependencies and the shared constructs every stack uses come from `shared-cdk-lib`; see the `aws-cdk-development` and `cdk-coding` skills.
 
 ## Using MCP Servers Effectively
 

@@ -529,46 +529,28 @@ new stepfunctions.StateMachine(this, 'OrderSaga', {
 
 ### Idempotency
 
-**Always make event handlers idempotent**:
+**Always make event handlers idempotent.** Never check for a record and then write it as two calls: two concurrent deliveries both see no record and both process the event. In SkillSpoke, idempotency uses the Powertools idempotency utility with its DynamoDB persistence layer through the chassis: it claims the key with a conditional write before the work runs, marks the record complete with the result afterwards, and lets a failed attempt be retried. Each service that needs it owns an on-demand idempotency table with TTL in its own stack. It applies only to operations that create or change something, and the stored result stays small (an ID, a status, or an S3 reference for large content).
 
-```typescript
-// Use idempotency keys
-export const handler = async (event: any) => {
-  const idempotencyKey = event.requestId || event.messageId;
+```python
+import os
 
-  // Check if already processed
-  try {
-    const existing = await dynamodb.getItem({
-      TableName: process.env.IDEMPOTENCY_TABLE,
-      Key: { idempotencyKey },
-    });
+from aws_lambda_powertools.utilities.idempotency import (
+    DynamoDBPersistenceLayer,
+    IdempotencyConfig,
+    idempotent,
+)
+from aws_lambda_powertools.utilities.typing import LambdaContext
 
-    if (existing.Item) {
-      console.log('Already processed:', idempotencyKey);
-      return existing.Item.result; // Return cached result
-    }
-  } catch (error) {
-    // First time processing
-  }
+persistence = DynamoDBPersistenceLayer(table_name=os.environ["IDEMPOTENCY_TABLE_NAME"])
+config = IdempotencyConfig(event_key_jmespath="detail.eventId", expires_after_seconds=86400)
 
-  // Process event
-  const result = await processEvent(event);
 
-  // Store result
-  await dynamodb.putItem({
-    TableName: process.env.IDEMPOTENCY_TABLE,
-    Item: {
-      idempotencyKey,
-      result,
-      processedAt: Date.now(),
-    },
-    // Optional: Set TTL for cleanup
-    ExpirationTime: Math.floor(Date.now() / 1000) + 86400, // 24 hours
-  });
-
-  return result;
-};
+@idempotent(config=config, persistence_store=persistence)
+def handler(event: dict[str, object], context: LambdaContext) -> dict[str, str]:
+    return process_event(event)
 ```
+
+For a batch from SQS, decorate the per-record function with `idempotent_function` and run it through `process_partial_response` (see the SKILL.md of this skill).
 
 ### Event Versioning
 
