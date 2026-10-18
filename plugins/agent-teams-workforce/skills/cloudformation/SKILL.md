@@ -73,13 +73,21 @@ Resources:
       VersioningConfiguration:
         Status: !If [IsProd, Enabled, Suspended]
 
+  # Share the value with other stacks through SSM Parameter Store, never an Export
+  BucketNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/my-app/${Environment}/bucket-name'
+      Type: String
+      Value: !Ref MyBucket
+
 Outputs:
   BucketName:
     Description: S3 bucket name
     Value: !Ref MyBucket
-    Export:
-      Name: !Sub '${AWS::StackName}-BucketName'
 ```
+
+A consuming stack reads the value at deploy time with an SSM-typed parameter (`Type: AWS::SSM::Parameter::Value<String>`, `Default: /my-app/dev/bucket-name`) or a dynamic reference (`'{{resolve:ssm:/my-app/dev/bucket-name}}'`).
 
 ### Deploy a Stack
 
@@ -291,7 +299,7 @@ Resources:
 - **Use parameters** for environment-specific values
 - **Use mappings** for static lookup tables
 - **Use conditions** for optional resources
-- **Export outputs** for cross-stack references
+- **Share cross-stack values through SSM Parameter Store**: the producing stack writes an `AWS::SSM::Parameter`, the consuming stack reads it with an SSM-typed parameter or `{{resolve:ssm:...}}`; never `Export` and `Fn::ImportValue`
 - **Add descriptions** to parameters and outputs
 
 ### Security

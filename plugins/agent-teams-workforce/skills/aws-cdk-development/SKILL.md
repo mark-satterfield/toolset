@@ -93,7 +93,7 @@ new PythonFunction(this, 'MyFunction', {
 
 ### Pre-Deployment Validation
 
-**cdk-nag**: where the project's hooks run cdk-nag on synth, do not add or run it; write constructs that pass the AwsSolutions and Serverless packs (load `cdk-coding`). Acknowledge an accepted finding with the cdk-nag 3 Validations API as `cdk-coding` describes under "Acknowledging a finding"; `NagSuppressions` and Aspects are the removed v2 API.
+**cdk-nag**: where the project's hooks run cdk-nag on synth, do not add or run it; write constructs that pass the AwsSolutions and Serverless packs (load `cdk-coding`). Acknowledge an accepted finding with the cdk-nag 3 Validations API as `cdk-coding` describes under "Acknowledging a finding"; `NagSuppressions` and Aspects are the removed v2 API. `aws-core:aws-cdk` shows the cdk-nag 2 API (`Aspects.of(app).add(...)`, `NagSuppressions`); that guidance is superseded here.
 
 Before deploying:
 
@@ -140,7 +140,7 @@ The validation script checks:
 
 - Use nested stacks for complex applications
 - Separate concerns into logical construct boundaries
-- Export values that other stacks may need
+- Share values between stacks through SSM Parameter Store (the producing stack writes the parameter, the consuming stack reads it at deploy time); never CloudFormation exports or passing constructs across stacks (see `cdk-coding`)
 - Use CDK context for environment-specific configuration
 
 ### Testing Strategy

@@ -15,6 +15,8 @@ description: "Database Schema Designer"
 
 Design relational database schemas from requirements and generate migrations, TypeScript/Python types, seed data, RLS policies, and indexes. Handles multi-tenancy, soft deletes, audit trails, versioning, and polymorphic associations.
 
+**Scope:** this skill applies to relational stores. In SkillSpoke that is PostgreSQL on Amazon RDS, including its graph and vector uses. Normalization, foreign keys and relational migrations do not apply to a DynamoDB store: a DynamoDB store is designed access-pattern first, as the `dynamodb` skill describes. Apply each store's guidance to that store.
+
 ## Core Capabilities
 
 - **Schema design** — normalize requirements into tables, relationships, constraints

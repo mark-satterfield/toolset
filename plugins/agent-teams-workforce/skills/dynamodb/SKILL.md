@@ -132,10 +132,10 @@ response = table.query(
     ExpressionAttributeNames={"#name": "name"},
 )
 
-# Paginated query
+# Paginated query (the resource's meta.client marshals plain Python values)
 paginator = dynamodb.meta.client.get_paginator("query")
 for page in paginator.paginate(
-    TableName="Users", KeyConditionExpression="PK = :pk", ExpressionAttributeValues={":pk": {"S": "USER#123"}}
+    TableName="Users", KeyConditionExpression="PK = :pk", ExpressionAttributeValues={":pk": "USER#123"}
 ):
     for item in page["Items"]:
         print(item)
@@ -176,16 +176,16 @@ aws dynamodb update-table \
 ### Conditional Writes
 
 ```python
-from botocore.exceptions import ClientError
+from boto3.dynamodb.conditions import Attr
 
-# Only put if item doesn't exist
+# Only put if item doesn't exist. Catch the typed exception for the one
+# outcome you handle; every other error propagates to the caller.
 try:
     table.put_item(
-        Item={"PK": "USER#123", "SK": "PROFILE", "name": "John"}, ConditionExpression="attribute_not_exists(PK)"
+        Item={"PK": "USER#123", "SK": "PROFILE", "name": "John"}, ConditionExpression=Attr("PK").not_exists()
     )
-except ClientError as e:
-    if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-        print("Item already exists")
+except table.meta.client.exceptions.ConditionalCheckFailedException as exc:
+    raise UserAlreadyExistsError("USER#123") from exc
 
 # Optimistic locking with version
 table.update_item(
@@ -266,14 +266,16 @@ table.update_item(
 
 **Solutions:**
 
+The SDK already retries throttled requests with exponential backoff and jitter; never wrap SDK calls in a hand-written retry loop. Use standard retry mode unless you have a specific reason to choose another (https://docs.aws.amazon.com/sdkref/latest/guide/feature-retry-behavior.html). Adaptive mode is that reason only for a client that is throttle-bound against a single table.
+
 ```python
-# Use exponential backoff
-import time
 from botocore.config import Config
 
-config = Config(retries={"max_attempts": 10, "mode": "adaptive"})
+config = Config(retries={"mode": "standard"})
 dynamodb = boto3.resource("dynamodb", config=config)
 ```
+
+Fix the cause (hot partition, provisioned capacity too low) rather than adding retries.
 
 ### Hot Partitions
 

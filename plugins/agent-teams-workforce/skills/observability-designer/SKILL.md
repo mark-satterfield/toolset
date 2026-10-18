@@ -60,7 +60,7 @@ Observability Designer enables you to create production-ready observability stra
 - **Time Ranges:** Default to meaningful windows (4h for incidents, 7d for trends)
 
 #### Panel Design
-- **Metric Queries:** Efficient Prometheus/InfluxDB queries with proper aggregation
+- **Metric Queries:** Efficient CloudWatch metric math and Logs Insights queries with proper aggregation
 - **Alerting Integration:** Visual alert state indicators on relevant panels
 - **Interactive Elements:** Template variables, drill-down links, and annotation overlays
 - **Performance:** Sub-second render times through query optimization
@@ -189,16 +189,19 @@ Analyzes and optimizes existing alert configurations:
 ### 3. Dashboard Generator (`dashboard_generator.py`)
 Creates comprehensive dashboard specifications:
 - **Input:** Service/system description JSON
-- **Output:** Grafana-compatible dashboard JSON and documentation
+- **Output:** a dashboard specification (panels, metrics, queries) and documentation; the SkillSpoke dashboard is built from it as a CloudWatch dashboard in CDK, and any Grafana JSON the script emits is not used
 - **Features:** Golden signals coverage, RED/USE methods, drill-down paths, role-based views
 
 ## Integration Patterns
 
 ### Monitoring Stack Integration
-- **Prometheus:** Metric collection and alerting rule generation
-- **Grafana:** Dashboard creation and visualization configuration
-- **Elasticsearch/Kibana:** Log analysis and dashboard integration
-- **Jaeger/Zipkin:** Distributed tracing configuration and analysis
+
+SkillSpoke is serverless on AWS, and its observability stack is AWS-native and priced per use (see `aws-core:aws-observability` for the services):
+- **Metrics:** CloudWatch metrics, emitted from Lambda as Embedded Metric Format through Powertools `Metrics`
+- **Alerting:** CloudWatch alarms (metric, composite and anomaly detection), including SLO burn-rate alarms
+- **Dashboards:** CloudWatch dashboards, defined in CDK
+- **Logs:** CloudWatch Logs with Powertools `Logger` structured JSON, queried with Logs Insights
+- **Tracing:** AWS X-Ray through Powertools `Tracer`, or ADOT where OpenTelemetry instrumentation is needed
 
 ### CI/CD Integration
 - **Pipeline Monitoring:** Build, test, and deployment observability

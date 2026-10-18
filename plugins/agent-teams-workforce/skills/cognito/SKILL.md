@@ -72,10 +72,43 @@ aws cognito-idp create-user-pool \
 
 ### Create App Client
 
+Choose the client type by where the code runs (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-client-apps.html):
+
+- **Public client** (browser or mobile app, which cannot keep a secret): no client secret, authorization code grant with PKCE. **The SkillSpoke web client is a public client.**
+- **Confidential client** (server-side code that can keep a secret): client secret, and every call sends `SECRET_HASH`.
+
+Public client (SkillSpoke web and mobile):
+
 ```bash
 aws cognito-idp create-user-pool-client \
   --user-pool-id us-east-1_abc123 \
   --client-name my-web-app \
+  --no-generate-secret \
+  --explicit-auth-flows ALLOW_USER_SRP_AUTH ALLOW_REFRESH_TOKEN_AUTH \
+  --supported-identity-providers COGNITO \
+  --callback-urls https://myapp.com/callback \
+  --logout-urls https://myapp.com/logout \
+  --allowed-o-auth-flows code \
+  --allowed-o-auth-scopes openid email profile \
+  --allowed-o-auth-flows-user-pool-client \
+  --access-token-validity 60 \
+  --id-token-validity 60 \
+  --refresh-token-validity 30 \
+  --token-validity-units '{
+    "AccessToken": "minutes",
+    "IdToken": "minutes",
+    "RefreshToken": "days"
+  }'
+```
+
+The client sends a PKCE `code_challenge` (S256) on the authorize request and the matching `code_verifier` on the token request.
+
+Confidential client (server-side only):
+
+```bash
+aws cognito-idp create-user-pool-client \
+  --user-pool-id us-east-1_abc123 \
+  --client-name my-server-app \
   --generate-secret \
   --explicit-auth-flows ALLOW_USER_SRP_AUTH ALLOW_REFRESH_TOKEN_AUTH \
   --supported-identity-providers COGNITO \
@@ -95,6 +128,8 @@ aws cognito-idp create-user-pool-client \
 ```
 
 ### Sign Up User
+
+The examples below are for a confidential client, which sends `SECRET_HASH`. A public client omits `SecretHash` and `SECRET_HASH`.
 
 ```python
 import boto3
@@ -293,24 +328,43 @@ aws cognito-idp admin-get-user \
 
 **Validate JWT:**
 
+On a REST API route, the Cognito user pools authorizer verifies the token; handler code does not. Where code must verify a token itself, use a maintained library and check every claim AWS requires (https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-tokens-verifying-a-jwt.html): the signature against the JWKS key whose `kid` matches the token header, `iss`, `exp`, `token_use`, and `aud` for an ID token or `client_id` for an access token (an access token has no `aud`).
+
 ```python
-import jwt
-import requests
+import jwt  # PyJWT
 
-# Get JWKS
-jwks_url = f"https://cognito-idp.us-east-1.amazonaws.com/us-east-1_abc123/.well-known/jwks.json"
-jwks = requests.get(jwks_url).json()
+ISSUER = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_abc123"
+APP_CLIENT_ID = "client-id"
+jwks_client = jwt.PyJWKClient(f"{ISSUER}/.well-known/jwks.json")
 
-# Decode and verify (use python-jose or similar)
-from jose import jwt
 
-claims = jwt.decode(
-    token,
-    jwks,
-    algorithms=["RS256"],
-    audience="client-id",
-    issuer="https://cognito-idp.us-east-1.amazonaws.com/us-east-1_abc123",
-)
+def verify_access_token(token: str) -> dict:
+    signing_key = jwks_client.get_signing_key_from_jwt(token)  # matched by kid
+    claims = jwt.decode(
+        token,
+        signing_key.key,
+        algorithms=["RS256"],
+        issuer=ISSUER,
+        options={"require": ["exp", "iss", "token_use", "client_id"], "verify_aud": False},
+    )
+    if claims["token_use"] != "access" or claims["client_id"] != APP_CLIENT_ID:
+        raise jwt.InvalidTokenError("not an access token for this app client")
+    return claims
+
+
+def verify_id_token(token: str) -> dict:
+    signing_key = jwks_client.get_signing_key_from_jwt(token)
+    claims = jwt.decode(
+        token,
+        signing_key.key,
+        algorithms=["RS256"],
+        issuer=ISSUER,
+        audience=APP_CLIENT_ID,
+        options={"require": ["exp", "iss", "aud", "token_use"]},
+    )
+    if claims["token_use"] != "id":
+        raise jwt.InvalidTokenError("not an ID token")
+    return claims
 ```
 
 ### Hosted UI Not Working

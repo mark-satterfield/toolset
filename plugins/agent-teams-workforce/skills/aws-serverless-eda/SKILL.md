@@ -135,7 +135,7 @@ export const handler = async (event: any) => {
 
 **State management**:
 - Use DynamoDB for persistent state
-- Use Step Functions for workflow state
+- Use Step Functions or Lambda durable functions for workflow state (see principle 5)
 - Use ElastiCache for session state
 - Use S3 for file storage
 
@@ -155,7 +155,13 @@ Infrastructure can change without notice:
 
 ### 5. Orchestrate with State Machines, Not Function Chaining
 
-**Use Step Functions for orchestration**
+**Orchestrate with Step Functions or Lambda durable functions, never Lambda-to-Lambda chaining**
+
+Choose on the workload (https://docs.aws.amazon.com/lambda/latest/dg/durable-step-functions.html):
+- **Lambda durable functions** when the workflow is code-first and tightly coupled with the business logic of a Lambda function, with fine-grained steps, retries and checkpoints inside that function.
+- **Step Functions** when the workflow orchestrates across AWS services (native integrations with no Lambda in between), needs a visual or auditable definition, or spans several services or teams.
+
+Record which one you chose and why in your result.
 
 ```typescript
 // ❌ BAD - Lambda function chaining
@@ -248,20 +254,7 @@ export const handler = async (event: SQSEvent) => {
 };
 ```
 
-**Implement retry logic with exponential backoff**:
-```typescript
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      return await fn();
-    } catch (error) {
-      if (i === maxRetries - 1) throw error;
-      await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
-    }
-  }
-  throw new Error('Max retries exceeded');
-}
-```
+**Retries come from the SDK, not from a hand-written loop**: the AWS SDK already retries with exponential backoff and jitter, and a loop around an SDK call multiplies the attempts. Configure the client's retry mode instead: standard mode unless you have a specific reason to choose another (https://docs.aws.amazon.com/sdkref/latest/guide/feature-retry-behavior.html); adaptive mode only for a client throttled against a single resource. Retries of a failed event belong to the event source (SQS redelivery, EventBridge retry policy) with a DLQ, which is why the handler must be idempotent.
 
 ## Architecture Patterns
 

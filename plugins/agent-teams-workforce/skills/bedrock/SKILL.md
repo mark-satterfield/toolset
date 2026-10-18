@@ -44,183 +44,112 @@ Models must be enabled in your account before use:
 
 ## Common Patterns
 
-### Invoke Model (Text Generation)
+Invoke text models through the **Converse API** (`converse`, `converse_stream`): one request format across every model. Use `invoke_model` only for a provider-specific feature Converse does not expose, and for embeddings models, which Converse does not serve (https://docs.aws.amazon.com/bedrock/latest/userguide/apis.html).
+
+- **Always set `inferenceConfig.maxTokens`** on every call.
+- **Call models through an inference profile ID** (for example the `us.` geographic or `global.` profile), not a bare in-Region model ID. Look up the current profile IDs with `aws bedrock list-inference-profiles` and the model's card in the Bedrock User Guide; keep the ID in configuration, never hardcoded in handler code. The examples use `us.anthropic.claude-sonnet-5`.
+- **Retries come from the SDK.** Configure the client with `botocore.config.Config`; never wrap a Bedrock call in a hand-written retry loop. Use adaptive mode for a Bedrock runtime client, because on-demand quotas make it throttle-bound against one resource; every other client uses standard mode (https://docs.aws.amazon.com/sdkref/latest/guide/feature-retry-behavior.html).
+
+### Converse (Text Generation)
 
 **AWS CLI:**
 
 ```bash
-# Invoke Claude
-aws bedrock-runtime invoke-model \
-  --model-id anthropic.claude-3-sonnet-20240229-v1:0 \
-  --content-type application/json \
-  --accept application/json \
-  --body '{
-    "anthropic_version": "bedrock-2023-05-31",
-    "max_tokens": 1024,
-    "messages": [
-      {"role": "user", "content": "Explain AWS Lambda in 3 sentences."}
-    ]
-  }' \
-  response.json
-
-cat response.json | jq -r '.content[0].text'
+aws bedrock-runtime converse \
+  --model-id us.anthropic.claude-sonnet-5 \
+  --messages '[{"role": "user", "content": [{"text": "Explain AWS Lambda in 3 sentences."}]}]' \
+  --inference-config '{"maxTokens": 1024}' \
+  --query 'output.message.content[0].text'
 ```
 
 **boto3:**
 
 ```python
 import boto3
-import json
+from botocore.config import Config
 
-bedrock = boto3.client("bedrock-runtime")
+MODEL_ID = "us.anthropic.claude-sonnet-5"  # from configuration in real code
+
+bedrock = boto3.client("bedrock-runtime", config=Config(retries={"mode": "adaptive"}))
 
 
-def invoke_claude(prompt, max_tokens=1024):
-    response = bedrock.invoke_model(
-        modelId="anthropic.claude-3-sonnet-20240229-v1:0",
-        contentType="application/json",
-        accept="application/json",
-        body=json.dumps({
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": max_tokens,
-            "messages": [{"role": "user", "content": prompt}],
-        }),
+def converse(prompt: str, max_tokens: int = 1024) -> str:
+    response = bedrock.converse(
+        modelId=MODEL_ID,
+        messages=[{"role": "user", "content": [{"text": prompt}]}],
+        inferenceConfig={"maxTokens": max_tokens},
     )
-
-    result = json.loads(response["body"].read())
-    return result["content"][0]["text"]
-
-
-# Usage
-response = invoke_claude("What is Amazon S3?")
-print(response)
+    return response["output"]["message"]["content"][0]["text"]
 ```
 
 ### Streaming Response
 
 ```python
-import boto3
-import json
-
-bedrock = boto3.client("bedrock-runtime")
+from collections.abc import Iterator
 
 
-def stream_claude(prompt):
-    response = bedrock.invoke_model_with_response_stream(
-        modelId="anthropic.claude-3-sonnet-20240229-v1:0",
-        contentType="application/json",
-        accept="application/json",
-        body=json.dumps({
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 1024,
-            "messages": [{"role": "user", "content": prompt}],
-        }),
+def stream(prompt: str, max_tokens: int = 1024) -> Iterator[str]:
+    response = bedrock.converse_stream(
+        modelId=MODEL_ID,
+        messages=[{"role": "user", "content": [{"text": prompt}]}],
+        inferenceConfig={"maxTokens": max_tokens},
     )
-
-    for event in response["body"]:
-        chunk = json.loads(event["chunk"]["bytes"])
-        if chunk["type"] == "content_block_delta":
-            yield chunk["delta"].get("text", "")
-
-
-# Usage
-for text in stream_claude("Write a haiku about cloud computing."):
-    print(text, end="", flush=True)
+    for event in response["stream"]:
+        if "contentBlockDelta" in event:
+            yield event["contentBlockDelta"]["delta"].get("text", "")
 ```
 
 ### Generate Embeddings
 
+Embeddings models are called with `invoke_model`:
+
 ```python
-import boto3
 import json
 
-bedrock = boto3.client("bedrock-runtime")
 
-
-def get_embedding(text):
+def get_embedding(text: str) -> list[float]:
     response = bedrock.invoke_model(
         modelId="amazon.titan-embed-text-v2:0",
         contentType="application/json",
         accept="application/json",
         body=json.dumps({"inputText": text, "dimensions": 1024, "normalize": True}),
     )
-
-    result = json.loads(response["body"].read())
-    return result["embedding"]
-
-
-# Usage
-embedding = get_embedding("AWS Lambda is a serverless compute service.")
-print(f"Embedding dimension: {len(embedding)}")
+    return json.loads(response["body"].read())["embedding"]
 ```
 
 ### Conversation with History
 
 ```python
-import boto3
-import json
-
-bedrock = boto3.client("bedrock-runtime")
-
-
 class Conversation:
-    def __init__(self, system_prompt=None):
-        self.messages = []
-        self.system = system_prompt
+    def __init__(self, system_prompt: str | None = None) -> None:
+        self.messages: list[dict] = []
+        self.system = [{"text": system_prompt}] if system_prompt else []
 
-    def chat(self, user_message):
-        self.messages.append({"role": "user", "content": user_message})
-
-        body = {"anthropic_version": "bedrock-2023-05-31", "max_tokens": 1024, "messages": self.messages}
-
-        if self.system:
-            body["system"] = self.system
-
-        response = bedrock.invoke_model(
-            modelId="anthropic.claude-3-sonnet-20240229-v1:0",
-            contentType="application/json",
-            accept="application/json",
-            body=json.dumps(body),
+    def chat(self, user_message: str) -> str:
+        self.messages.append({"role": "user", "content": [{"text": user_message}]})
+        response = bedrock.converse(
+            modelId=MODEL_ID,
+            messages=self.messages,
+            system=self.system,
+            inferenceConfig={"maxTokens": 1024},
         )
-
-        result = json.loads(response["body"].read())
-        assistant_message = result["content"][0]["text"]
-
-        self.messages.append({"role": "assistant", "content": assistant_message})
-
-        return assistant_message
-
-
-# Usage
-conv = Conversation(system_prompt="You are an AWS solutions architect.")
-print(conv.chat("What database should I use for a chat application?"))
-print(conv.chat("What about for time-series data?"))
+        assistant_message = response["output"]["message"]
+        self.messages.append(assistant_message)
+        return assistant_message["content"][0]["text"]
 ```
 
-### List Available Models
+### List Available Models and Inference Profiles
 
 ```bash
-# List all foundation models
-aws bedrock list-foundation-models \
-  --query 'modelSummaries[*].[modelId,modelName,providerName]' \
+# Inference profiles available to the account (use these IDs to invoke)
+aws bedrock list-inference-profiles \
+  --query 'inferenceProfileSummaries[*].[inferenceProfileId,inferenceProfileName,status]' \
   --output table
 
-# Filter by provider
+# Foundation models by provider
 aws bedrock list-foundation-models \
   --by-provider anthropic \
-  --query 'modelSummaries[*].modelId'
-
-# Get model details
-aws bedrock get-foundation-model \
-  --model-identifier anthropic.claude-3-sonnet-20240229-v1:0
-```
-
-### Request Model Access
-
-```bash
-# List model access status
-aws bedrock list-foundation-model-agreement-offers \
-  --model-id anthropic.claude-3-sonnet-20240229-v1:0
+  --query 'modelSummaries[*].[modelId,modelLifecycle.status]'
 ```
 
 ## CLI Reference
@@ -229,6 +158,7 @@ aws bedrock list-foundation-model-agreement-offers \
 
 | Command | Description |
 |---------|-------------|
+| `aws bedrock list-inference-profiles` | List inference profiles |
 | `aws bedrock list-foundation-models` | List available models |
 | `aws bedrock get-foundation-model` | Get model details |
 | `aws bedrock list-custom-models` | List fine-tuned models |
@@ -239,10 +169,10 @@ aws bedrock list-foundation-model-agreement-offers \
 
 | Command | Description |
 |---------|-------------|
-| `aws bedrock-runtime invoke-model` | Invoke model synchronously |
-| `aws bedrock-runtime invoke-model-with-response-stream` | Invoke with streaming |
-| `aws bedrock-runtime converse` | Multi-turn conversation API |
-| `aws bedrock-runtime converse-stream` | Streaming conversation |
+| `aws bedrock-runtime converse` | Invoke a text model (preferred) |
+| `aws bedrock-runtime converse-stream` | Invoke a text model with streaming (preferred) |
+| `aws bedrock-runtime invoke-model` | Provider-specific request format; embeddings models |
+| `aws bedrock-runtime invoke-model-with-response-stream` | Provider-specific streaming |
 
 ### Bedrock Agent Runtime
 
@@ -257,7 +187,7 @@ aws bedrock list-foundation-model-agreement-offers \
 ### Cost Optimization
 
 - **Use appropriate models**: Smaller models for simple tasks
-- **Set max_tokens**: Limit output length when possible
+- **Always set maxTokens**: on every call, sized to the expected output
 - **Cache responses**: For repeated identical queries
 - **Batch when possible**: Use batch inference for bulk processing
 - **Monitor usage**: Set up CloudWatch alarms for cost
@@ -278,6 +208,8 @@ aws bedrock list-foundation-model-agreement-offers \
 
 ### IAM Permissions
 
+Invoking through a cross-Region inference profile needs the profile ARN and the foundation-model ARN in every Region the profile routes to:
+
 ```json
 {
   "Version": "2012-10-17",
@@ -289,7 +221,8 @@ aws bedrock list-foundation-model-agreement-offers \
         "bedrock:InvokeModelWithResponseStream"
       ],
       "Resource": [
-        "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
+        "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-5",
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-5",
         "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
       ]
     }
@@ -297,77 +230,56 @@ aws bedrock list-foundation-model-agreement-offers \
 }
 ```
 
+`converse` and `converse_stream` are authorized by `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`.
+
 ## Troubleshooting
 
 ### AccessDeniedException
 
 **Causes:**
 - Model access not enabled in console
-- IAM policy missing `bedrock:InvokeModel`
+- IAM policy missing `bedrock:InvokeModel`, or missing the foundation-model ARN in a Region the inference profile routes to
 - Wrong model ID or region
 
 **Debug:**
 
 ```bash
-# Check model access status
-aws bedrock list-foundation-models \
-  --query 'modelSummaries[?modelId==`anthropic.claude-3-sonnet-20240229-v1:0`]'
+# Check the inference profile exists and is active
+aws bedrock get-inference-profile \
+  --inference-profile-identifier us.anthropic.claude-sonnet-5
 
 # Test IAM permissions
 aws iam simulate-principal-policy \
   --policy-source-arn arn:aws:iam::123456789012:role/my-role \
   --action-names bedrock:InvokeModel \
-  --resource-arns "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+  --resource-arns "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-5"
 ```
 
-### ModelNotReadyException
-
-**Cause:** Model is still being provisioned or temporarily unavailable.
-
-**Solution:** Implement retry with exponential backoff:
-
-```python
-import time
-from botocore.exceptions import ClientError
-
-
-def invoke_with_retry(bedrock, body, max_retries=3):
-    for attempt in range(max_retries):
-        try:
-            return bedrock.invoke_model(modelId="anthropic.claude-3-sonnet-20240229-v1:0", body=json.dumps(body))
-        except ClientError as e:
-            if e.response["Error"]["Code"] == "ModelNotReadyException":
-                time.sleep(2**attempt)
-            else:
-                raise
-    raise Exception("Max retries exceeded")
-```
-
-### ThrottlingException
+### ModelNotReadyException and ThrottlingException
 
 **Causes:**
-- Exceeded on-demand quota
-- Too many concurrent requests
+- Model still being provisioned or temporarily unavailable
+- Exceeded on-demand quota, or too many concurrent requests
 
 **Solutions:**
-- Request quota increase
-- Implement exponential backoff
-- Consider provisioned throughput
+- Let the SDK retry: adaptive retry mode on the Bedrock runtime client (see Common Patterns); no hand-written loop
+- Use a cross-Region or global inference profile to spread load
+- Request a quota increase
+- Treat `ValidationException` and `AccessDeniedException` as non-retryable: fix the request or the permissions
 
 ### ValidationException
 
 **Common issues:**
-- Invalid model ID
-- Malformed request body
-- max_tokens exceeds model limit
+- Invalid or retired model ID (check the model's lifecycle status)
+- Malformed request
+- maxTokens exceeds model limit
 
 **Debug:**
 
-```python
-# Check model-specific requirements
-aws bedrock get-foundation-model \
-  --model-identifier anthropic.claude-3-sonnet-20240229-v1:0 \
-  --query 'modelDetails.inferenceTypesSupported'
+```bash
+aws bedrock list-foundation-models \
+  --by-provider anthropic \
+  --query 'modelSummaries[*].[modelId,modelLifecycle.status,inferenceTypesSupported]'
 ```
 
 ## References

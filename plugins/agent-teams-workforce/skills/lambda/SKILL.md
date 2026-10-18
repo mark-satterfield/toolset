@@ -212,7 +212,7 @@ aws lambda invoke \
 ### Performance
 
 - **Right-size memory**: More memory = more CPU = faster execution
-- **Minimize cold starts**: Keep functions warm, use Provisioned Concurrency
+- **Minimize cold starts**: smaller package and lazy imports, more memory, ARM64, SnapStart where the runtime supports it; Provisioned Concurrency only when a stated latency requirement needs it (see Cold Start Latency)
 - **Optimize package size**: Smaller packages deploy faster
 - **Use layers** for shared dependencies
 - **Initialize outside handler**: Reuse connections across invocations
@@ -295,19 +295,12 @@ aws lambda update-function-configuration \
 - VPC configuration
 - Many dependencies to load
 
-**Solutions:**
-- Use Provisioned Concurrency
-- Reduce package size
-- Use layers for dependencies
-- Consider Graviton2 (ARM)
-
-```bash
-# Enable Provisioned Concurrency
-aws lambda put-provisioned-concurrency-config \
-  --function-name MyFunction \
-  --qualifier LIVE \
-  --provisioned-concurrent-executions 5
-```
+**Solutions, in this order:**
+1. Reduce package size and import heavy modules lazily
+2. Increase memory (more memory also means more CPU during init)
+3. Use ARM64 (Graviton)
+4. Enable SnapStart where the runtime supports it
+5. Provisioned Concurrency only when a stated latency requirement needs it. It is billed for the time it is configured whether or not it serves requests (https://docs.aws.amazon.com/lambda/latest/dg/provisioned-concurrency.html), so weigh that monthly floor against the development context (one account, at most five users), where per-request pricing is preferred.
 
 ### Permission Denied
 

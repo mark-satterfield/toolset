@@ -36,7 +36,7 @@ Never expose secrets or edit section 2.
 
 Read the TRD, what the Story builds and the architecture your repository context points to. Derive access patterns when none are separately
 provided; specify owned tables, keys, indexes, consistency, retention, relationships and capacity
-assumptions at the stated scale, using the appropriate data-model skills. Specify every
+assumptions at the stated scale, using the appropriate data-model skills: `dynamodb` (access-pattern-first) for a DynamoDB store, and `database-schema-designer` (relational design) for a relational store, which in SkillSpoke is PostgreSQL on Amazon RDS, including its graph and vector uses. Specify every
 data item the Story builds without judging existing code satisfied. Write the assigned nonempty UTF-8 data-model
 document with decisionIds frontmatter and exact source references. A surface with no applicable
 work gets a short reasoned not-applicable document. Do not create infrastructure or change the

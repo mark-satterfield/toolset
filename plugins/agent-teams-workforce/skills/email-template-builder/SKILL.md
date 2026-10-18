@@ -15,6 +15,8 @@ description: "Email Template Builder"
 
 Build complete transactional email systems: React Email templates, provider integration, preview server, i18n support, dark mode, spam optimization, and analytics tracking. Output production-ready code for Resend, Postmark, SendGrid, or AWS SES.
 
+**SkillSpoke sends customer email through Amazon SES** (the SES v2 API), which keeps credentials in IAM rather than a third-party API key and is priced per message; SES bounce and complaint events go to an SNS topic or EventBridge for handling. The template-building guidance below applies unchanged. Amazon SNS email subscriptions are for operational alerts, never customer email.
+
 ---
 
 ## Core Capabilities
@@ -301,13 +303,14 @@ const styles = {
 
 ```typescript
 // emails/lib/send.ts
-import { Resend } from "resend"
+import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2"
 import { render } from "@react-email/render"
 import { WelcomeEmail } from "../templates/welcome"
 import { InvoiceEmail } from "../templates/invoice"
 import { addTrackingParams } from "./tracking"
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+// Credentials come from the execution role; no API key.
+const ses = new SESv2Client({})
 
 type EmailPayload =
   | { type: "welcome"; props: Parameters<typeof WelcomeEmail>[0] }
@@ -323,13 +326,21 @@ export async function sendEmail(to: string, payload: EmailPayload) {
   const html = render(template.component(payload.props as any))
   const trackedHtml = addTrackingParams(html, { campaign: payload.type })
 
-  const result = await resend.emails.send({
-    from: "MyApp <hello@yourapp.com>",
-    to,
-    subject: template.subject,
-    html: trackedHtml,
-    tags: [{ name: "email-type", value: payload.type }],
-  })
+  const text = render(template.component(payload.props as any), { plainText: true })
+
+  const result = await ses.send(
+    new SendEmailCommand({
+      FromEmailAddress: "MyApp <hello@yourapp.com>",
+      Destination: { ToAddresses: [to] },
+      Content: {
+        Simple: {
+          Subject: { Data: template.subject },
+          Body: { Html: { Data: trackedHtml }, Text: { Data: text } },
+        },
+      },
+      EmailTags: [{ Name: "email-type", Value: payload.type }],
+    }),
+  )
 
   return result
 }

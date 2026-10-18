@@ -9,6 +9,8 @@ doc_source: https://docs.aws.amazon.com/secretsmanager/latest/userguide/
 
 AWS Secrets Manager helps protect access to applications, services, and IT resources. Store, retrieve, and automatically rotate credentials, API keys, and other secrets.
 
+**You (the agent) never read a secret value**: no `get-secret-value` or `batch-get-secret-value` call through the CLI, the SDK, an MCP tool or any other means; see `aws-core:aws-secrets-manager`. **The code you write reads secrets at runtime.** In a SkillSpoke Lambda that is the Powertools Parameters utility (`parameters.get_secret`), which caches the value between invocations.
+
 ## Table of Contents
 
 - [Core Concepts](#core-concepts)
@@ -84,48 +86,25 @@ response = secrets.create_secret(
 )
 ```
 
-### Retrieve a Secret
+### Retrieve a Secret at Runtime (Lambda)
+
+Application code in a SkillSpoke Lambda reads a secret with Powertools Parameters. The value is cached in the execution environment for `max_age` seconds, so the handler does not call Secrets Manager on every invocation, and a rotated value is picked up when the cache expires.
 
 ```python
-import boto3
-import json
+from typing import Any
 
-secrets = boto3.client("secretsmanager")
+from aws_lambda_powertools.utilities import parameters
+from aws_lambda_powertools.utilities.typing import LambdaContext
 
-
-def get_secret(secret_name):
-    response = secrets.get_secret_value(SecretId=secret_name)
-
-    if "SecretString" in response:
-        return json.loads(response["SecretString"])
-    else:
-        import base64
-
-        return base64.b64decode(response["SecretBinary"])
+SECRET_NAME = "prod/myapp/database"  # from an environment variable in real code
 
 
-# Usage
-credentials = get_secret("prod/myapp/database")
-db_password = credentials["password"]
+def handler(event: dict, context: LambdaContext) -> dict:
+    credentials: dict[str, Any] = parameters.get_secret(SECRET_NAME, transform="json", max_age=300)
+    ...
 ```
 
-### Caching Secrets
-
-```python
-from aws_secretsmanager_caching import SecretCache, SecretCacheConfig
-
-# Configure cache
-cache_config = SecretCacheConfig(
-    max_cache_size=100, secret_refresh_interval=3600, secret_version_stage_refresh_interval=3600
-)
-
-cache = SecretCache(config=cache_config)
-
-
-def get_cached_secret(secret_name):
-    secret = cache.get_secret_string(secret_name)
-    return json.loads(secret)
-```
+The function's execution role needs `secretsmanager:GetSecretValue` on that secret (and `kms:Decrypt` when it uses a customer-managed key). Never log the value.
 
 ### Update a Secret
 
@@ -183,29 +162,6 @@ Resources:
         AutomaticallyAfterDays: 30
 ```
 
-### Use in Lambda with Extension
-
-```python
-import json
-import urllib.request
-
-
-def handler(event, context):
-    # Use AWS Parameters and Secrets Lambda Extension
-    secrets_port = 2773
-    secret_name = "prod/myapp/database"
-
-    url = f"http://localhost:{secrets_port}/secretsmanager/get?secretId={secret_name}"
-    headers = {"X-Aws-Parameters-Secrets-Token": os.environ["AWS_SESSION_TOKEN"]}
-
-    request = urllib.request.Request(url, headers=headers)
-    response = urllib.request.urlopen(request)
-    secret = json.loads(response.read())["SecretString"]
-
-    credentials = json.loads(secret)
-    return credentials
-```
-
 ## CLI Reference
 
 ### Secret Management
@@ -214,7 +170,6 @@ def handler(event, context):
 |---------|-------------|
 | `aws secretsmanager create-secret` | Create secret |
 | `aws secretsmanager describe-secret` | Get secret metadata |
-| `aws secretsmanager get-secret-value` | Retrieve secret value |
 | `aws secretsmanager update-secret` | Update secret |
 | `aws secretsmanager delete-secret` | Delete secret |
 | `aws secretsmanager restore-secret` | Restore deleted secret |
@@ -276,9 +231,8 @@ def handler(event, context):
 
 ### Application Integration
 
-- **Cache secrets** to reduce API calls
-- **Handle rotation** gracefully (retry with new credentials)
-- **Use Lambda extension** for faster access
+- **Read secrets with Powertools Parameters** in Lambda code; it caches them to reduce API calls
+- **Handle rotation** gracefully (on an authentication failure, fetch again with `force_fetch=True`)
 - **Never log secrets**
 
 ## Troubleshooting

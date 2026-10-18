@@ -1,13 +1,15 @@
 ---
 name: api-gateway
-description: AWS API Gateway for REST and HTTP API management. Use when creating APIs, configuring integrations, setting up authorization, managing stages, implementing rate limiting, or troubleshooting API issues.
+description: AWS API Gateway REST API (v1) management. Use when creating APIs, configuring integrations, setting up authorization, managing stages, implementing rate limiting, or troubleshooting API issues.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/apigateway/latest/developerguide/
 ---
 
 # AWS API Gateway
 
-Amazon API Gateway is a fully managed service for creating, publishing, and securing APIs at any scale. Supports REST APIs, HTTP APIs, and WebSocket APIs.
+Amazon API Gateway is a fully managed service for creating, publishing, and securing APIs at any scale.
+
+**SkillSpoke uses REST APIs (API Gateway v1, the `apigateway` API) only. HTTP APIs (v2, `apigatewayv2`) are banned** by SkillSpoke standing rule 4. Every API, authorizer, CLI call and CDK construct in this skill is the REST API kind; a WebSocket API is used only where a requirement names it.
 
 ## Table of Contents
 
@@ -24,9 +26,8 @@ Amazon API Gateway is a fully managed service for creating, publishing, and secu
 
 | Type | Description | Use Case |
 |------|-------------|----------|
-| **HTTP API** | Low-latency, cost-effective | Simple APIs, Lambda proxy |
-| **REST API** | Full-featured, more control | Complex APIs, transformation |
-| **WebSocket API** | Bidirectional communication | Real-time apps, chat |
+| **REST API** | Full-featured: Cognito user pools authorizers, usage plans, WAF, request validation | Every SkillSpoke API |
+| **WebSocket API** | Bidirectional communication | Only where a requirement names real-time bidirectional traffic |
 
 ### Key Components
 
@@ -46,47 +47,6 @@ Amazon API Gateway is a fully managed service for creating, publishing, and secu
 | **Mock** | Return static response |
 
 ## Common Patterns
-
-### Create HTTP API with Lambda
-
-**AWS CLI:**
-
-```bash
-# Create HTTP API
-aws apigatewayv2 create-api \
-  --name my-api \
-  --protocol-type HTTP \
-  --target arn:aws:lambda:us-east-1:123456789012:function:MyFunction
-
-# Get API endpoint
-aws apigatewayv2 get-api --api-id abc123 --query 'ApiEndpoint'
-```
-
-**SAM Template:**
-
-```yaml
-AWSTemplateFormatVersion: '2010-09-09'
-Transform: AWS::Serverless-2016-10-31
-
-Resources:
-  MyApi:
-    Type: AWS::Serverless::HttpApi
-    Properties:
-      StageName: prod
-
-  MyFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: app.handler
-      Runtime: python3.12
-      Events:
-        ApiEvent:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref MyApi
-            Path: /items
-            Method: GET
-```
 
 ### Create REST API with Lambda Proxy
 
@@ -133,44 +93,25 @@ aws apigateway create-deployment \
 
 ### Lambda Handler for API Gateway
 
+SkillSpoke Lambdas use `aws-lambda-powertools` only. The REST API proxy event (payload format 1.0) is resolved with `APIGatewayRestResolver`:
+
 ```python
-import json
+from aws_lambda_powertools.event_handler import APIGatewayRestResolver
+from aws_lambda_powertools.utilities.typing import LambdaContext
+
+app = APIGatewayRestResolver()
 
 
-def handler(event, context):
-    # HTTP API event
-    http_method = event.get("requestContext", {}).get("http", {}).get("method")
-    path = event.get("rawPath", "")
-    query_params = event.get("queryStringParameters", {})
-    body = event.get("body", "")
+@app.get("/items")
+def list_items() -> dict[str, str]:
+    return {"message": "Success", "path": app.current_event.path}
 
-    if body and event.get("isBase64Encoded"):
-        import base64
 
-        body = base64.b64decode(body).decode("utf-8")
-
-    # Process request
-    response_body = {"message": "Success", "path": path}
-
-    return {"statusCode": 200, "headers": {"Content-Type": "application/json"}, "body": json.dumps(response_body)}
+def handler(event: dict, context: LambdaContext) -> dict:
+    return app.resolve(event, context)
 ```
 
 ### Configure CORS
-
-**HTTP API:**
-
-```bash
-aws apigatewayv2 update-api \
-  --api-id abc123 \
-  --cors-configuration '{
-    "AllowOrigins": ["https://example.com"],
-    "AllowMethods": ["GET", "POST", "PUT", "DELETE"],
-    "AllowHeaders": ["Content-Type", "Authorization"],
-    "MaxAge": 86400
-  }'
-```
-
-**REST API:**
 
 ```bash
 # Enable CORS on resource
@@ -210,32 +151,20 @@ aws apigateway put-integration-response \
   }'
 ```
 
-### JWT Authorization (HTTP API)
+### Cognito User Pools Authorization
+
+A REST API verifies Cognito tokens with a Cognito user pools authorizer, so handler code does not verify them.
 
 ```bash
-aws apigatewayv2 create-authorizer \
-  --api-id abc123 \
-  --name jwt-authorizer \
-  --authorizer-type JWT \
-  --identity-source '$request.header.Authorization' \
-  --jwt-configuration '{
-    "Issuer": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_abc123",
-    "Audience": ["client-id"]
-  }'
+aws apigateway create-authorizer \
+  --rest-api-id $API_ID \
+  --name cognito-authorizer \
+  --type COGNITO_USER_POOLS \
+  --provider-arns arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_abc123 \
+  --identity-source 'method.request.header.Authorization'
 ```
 
 ## CLI Reference
-
-### HTTP API (apigatewayv2)
-
-| Command | Description |
-|---------|-------------|
-| `aws apigatewayv2 create-api` | Create API |
-| `aws apigatewayv2 get-apis` | List APIs |
-| `aws apigatewayv2 create-route` | Create route |
-| `aws apigatewayv2 create-integration` | Create integration |
-| `aws apigatewayv2 create-stage` | Create stage |
-| `aws apigatewayv2 create-authorizer` | Create authorizer |
 
 ### REST API (apigateway)
 
@@ -252,8 +181,7 @@ aws apigatewayv2 create-authorizer \
 
 ### Performance
 
-- **Use HTTP APIs** for simple use cases (70% cheaper, lower latency)
-- **Enable caching** for REST APIs
+- **Enable stage caching only for a stated latency need**: the API Gateway cache is billed per hour while it is enabled, whether or not it serves requests, so at alpha scale it is opt-in, not a default
 - **Use regional endpoints** unless global distribution needed
 - **Implement pagination** for list endpoints
 
@@ -289,7 +217,7 @@ aws apigatewayv2 create-authorizer \
 aws apigateway get-api-key --api-key abc123 --include-value
 
 # Check authorizer
-aws apigatewayv2 get-authorizer --api-id abc123 --authorizer-id xyz789
+aws apigateway get-authorizer --rest-api-id abc123 --authorizer-id xyz789
 ```
 
 ### 502 Bad Gateway
@@ -318,7 +246,7 @@ return {"message": "success"}
 **Solutions:**
 - Increase Lambda timeout
 - Use async processing for long operations
-- Increase integration timeout (max 29s for REST, 30s for HTTP)
+- Increase the integration timeout (29 s by default for REST APIs)
 
 ### CORS Errors
 

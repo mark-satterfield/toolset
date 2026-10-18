@@ -259,7 +259,7 @@ def handler(event, context):
 ### Security
 
 - **Use queue policies** to control access
-- **Enable encryption** with SSE-SQS or SSE-KMS
+- **Enable encryption at rest**: SSE-SQS (SQS-managed keys, no key charge) by default. Use SSE-KMS with a customer-managed key only when the data classification requires key-level control (key policy, auditable key use, revocation) or a cross-account producer or consumer needs a key policy it can be granted; a customer-managed key adds a monthly key charge and key-policy work per queue
 - **Use VPC endpoints** for private access
 
 ## Troubleshooting

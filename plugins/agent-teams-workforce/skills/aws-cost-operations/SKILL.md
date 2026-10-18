@@ -31,27 +31,17 @@ This skill provides comprehensive guidance for AWS cost optimization, monitoring
 
 Always verify AWS facts using MCP tools (`mcp__aws-mcp__*` or `mcp__*awsdocs*__*`) before answering. The `aws-mcp-setup` dependency is auto-loaded — if MCP tools are unavailable, guide the user through that skill's setup flow.
 
-## Integrated MCP Servers
+## Cost Tools and Method
 
-This plugin provides 3 MCP servers:
+Cost work goes through the AWS MCP server tools the agent holds, following `aws-core:aws-billing-and-cost-management`:
+- **Pricing and estimates**: the Pricing API through the AWS MCP server's `run_script`, and AWS pricing pages through `search_documentation` and `read_documentation`; for DynamoDB, `compute_performances_and_costs` where the agent holds it
+- **Actual spend, anomalies and budgets**: the Cost Explorer, Cost Anomaly Detection and Budgets APIs through `run_script`
+- **Check the current date first**, before any Cost Explorer, Budgets or forecast call, so every time range is right
+- **Every calculation is scripted**: monthly totals, unit costs and comparisons are computed in a script (`run_script` or a scratchpad script), never by reasoning, and the script's output is what the result reports
 
-### Bundled Servers
+**Scale**: size every estimate to the stated development context: one development AWS account and at most five users. Do not plan for growth or hypothetical production load. Where a requirement can be met either way, prefer per-request pricing (for example Lambda, DynamoDB on-demand); where the architecture uses a provisioned service (for example the PostgreSQL database on RDS), size it to the stated context and report its monthly floor.
 
-#### 1. AWS Pricing MCP Server (`pricing`)
-**Purpose**: Pre-deployment cost estimation and optimization
-- Estimate costs before deploying resources
-- Compare pricing across regions
-- Calculate Total Cost of Ownership (TCO)
-- Evaluate different service options for cost efficiency
-
-#### 2. AWS Cost Explorer MCP Server (`costexp`)
-**Purpose**: Detailed cost analysis and reporting
-- Analyze historical spending patterns
-- Identify cost anomalies and trends
-- Forecast future costs
-- Analyze cost by service, region, or tag
-
-#### 3. Amazon CloudWatch MCP Server (`cw`)
+#### Amazon CloudWatch MCP Server (`cw`)
 **Purpose**: Metrics, alarms, and logs analysis
 - Query CloudWatch metrics and logs
 - Create and manage CloudWatch alarms
@@ -83,11 +73,11 @@ Use this skill when:
 ### Pre-Deployment Cost Estimation
 
 **Always estimate costs before deploying**:
-1. Use **AWS Pricing MCP** to estimate resource costs
+1. Get resource prices through the AWS MCP server (Pricing API, AWS pricing pages)
 2. Compare pricing across different regions
 3. Evaluate alternative service options
-4. Calculate expected monthly costs
-5. Plan for scaling and growth
+4. Calculate expected monthly costs in a script
+5. Use the stated development context (one account, at most five users) as the volume, never projected growth
 
 **Example workflow**:
 ```
@@ -98,7 +88,7 @@ Use this skill when:
 ### Cost Analysis and Optimization
 
 **Regular cost reviews**:
-1. Use **Cost Explorer MCP** to analyze spending trends
+1. Use the Cost Explorer API through the AWS MCP server to analyze spending trends
 2. Identify cost anomalies and unexpected charges
 3. Review costs by service, region, and environment
 4. Compare actual vs. budgeted costs
@@ -108,14 +98,14 @@ Use this skill when:
 - Right-size over-provisioned resources
 - Use appropriate storage classes (S3, EBS)
 - Implement auto-scaling for dynamic workloads
-- Leverage Savings Plans and Reserved Instances
+- Savings Plans and Reserved Instances are out of scope until a stated steady-state workload justifies a commitment
 - Delete unused resources and snapshots
 - Use cost allocation tags effectively
 
 ### Budget Monitoring
 
 **Track spending against budgets**:
-1. Use **Billing and Cost Management MCP** to monitor budgets
+1. Use the Budgets API through the AWS MCP server to monitor budgets
 2. Set up budget alerts for threshold breaches
 3. Review budget utilization regularly
 4. Adjust budgets based on trends
@@ -199,10 +189,10 @@ Use this skill when:
 
 ### Cost Analysis Workflow
 
-1. **Pre-deployment**: Use Pricing MCP to estimate costs
-2. **Post-deployment**: Use Billing MCP to track actual spending
-3. **Analysis**: Use Cost Explorer MCP for detailed cost analysis
-4. **Optimization**: Implement recommendations from Cost Explorer
+1. **Pre-deployment**: estimate costs from the Pricing API through the AWS MCP server, calculated in a script
+2. **Post-deployment**: track actual spending with the Cost Explorer and Budgets APIs through the AWS MCP server
+3. **Analysis**: break costs down by service, tag and usage type, calculated in a script
+4. **Optimization**: act on findings that fit the development context
 
 ### Monitoring Workflow
 
