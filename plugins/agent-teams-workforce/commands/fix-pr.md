@@ -31,7 +31,7 @@ WORKDIR="${WORKDIR%\"}"; WORKDIR="${WORKDIR#\"}"   # arrives quoted when it cont
 cd "$WORKDIR"
 ```
 
-This command never merges the PR. The loop script arms GitHub auto-merge, and GitHub merges once all required checks pass and all review threads are resolved. A pass's job is to leave the PR in a state where auto-merge can fire. The script never decides what to do about a thread.
+This command never merges the PR, and neither does the loop script. `skillspoke-pr` switches GitHub auto-merge on when it opens the PR, and GitHub merges once all required checks pass and all review threads are resolved. A pass's job is to leave the PR in a state where auto-merge can fire. The script never decides what to do about a thread.
 
 ### Guards (every pass)
 

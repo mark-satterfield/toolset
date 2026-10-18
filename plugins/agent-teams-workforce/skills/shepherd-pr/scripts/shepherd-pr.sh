@@ -4,11 +4,10 @@
 # Follows ONE pull request until GitHub reports it MERGED or CLOSED. Every
 # iteration re-reads the PR from GitHub and decides from that alone:
 #
-#   auto-merge not armed -> arm it (squash); when GitHub refuses because the PR
-#                           can merge now and nothing is left to fix, squash-merge
-#                           the head the loop read
 #   something to fix     -> start one headless pass session (/agent-teams-workforce:fix-pr)
 #   nothing to fix       -> wait for checks and GitHub auto-merge, poll again
+#   nothing to fix, checks passing and auto-merge off
+#                        -> stop for human action: GitHub will not merge it
 #   MERGED or CLOSED     -> exit 0
 #
 # "Something to fix" is: a failing or cancelled check, an unresolved review
@@ -18,11 +17,10 @@
 # CodeRabbit reply or changes-requested review newer than the last pass's
 # audit comment.
 #
-# MERGE: the loop arms GitHub auto-merge, so GitHub merges once its own
-# requirements are met. It merges by itself only when GitHub refuses to arm
-# because the PR is mergeable now, and only when its own read shows nothing to
-# fix; that merge is pinned to the head it read. It never uses --admin, and every
-# pass session runs with a deny rule on `Bash(gh pr merge:*)`.
+# MERGE: the loop never arms auto-merge and never merges. skillspoke-pr switches
+# GitHub auto-merge on when it opens the PR, and GitHub merges once its own
+# requirements are met. Every pass session runs with a deny rule on
+# `Bash(gh pr merge:*)`.
 #
 # Each pass session loads the plugin this script belongs to (--plugin-dir), so
 # the fix-pr command exists whatever repository the PR's worktree is in. Each
@@ -161,17 +159,17 @@ ci_state() {
   fi
 }
 
-# One read of the PR: state, merge state, review decision, head, auto-merge, node
-# id, and whether a reviewer spoke after the last shepherd audit comment. A
+# One read of the PR: state, merge state, review decision, head, auto-merge, and
+# whether a reviewer spoke after the last shepherd audit comment. A
 # CodeRabbit conversation reply, and any review with a body (a CodeRabbit review
 # body carries its outside-diff findings, which have no thread), count as a
 # reviewer speaking; CodeRabbit's PR summary and its acknowledgements of
 # `@coderabbitai` commands do not. Tab-separated:
-# state mergeState reviewDecision headOid autoMerge(yes/no) newActivity(yes/no) nodeId
+# state mergeState reviewDecision headOid autoMerge(yes/no) newActivity(yes/no)
 pr_facts() {
   # shellcheck disable=SC2016  # $last and $activity are jq variables
   gh pr view "$PR_NUMBER" --repo "$OWNER/$REPO" \
-    --json id,state,mergeStateStatus,reviewDecision,headRefOid,autoMergeRequest,comments,reviews \
+    --json state,mergeStateStatus,reviewDecision,headRefOid,autoMergeRequest,comments,reviews \
     --jq '
       def isbot: (.author.login // "") | test("\\[bot\\]$|^coderabbitai|^github-actions");
       def iscr: (.author.login // "") | test("^coderabbitai");
@@ -182,37 +180,8 @@ pr_facts() {
         ) as $activity
       | [ .state, (.mergeStateStatus // "UNKNOWN"), ((.reviewDecision // "") | if . == "" then "NONE" else . end),
           .headRefOid, (if .autoMergeRequest then "yes" else "no" end),
-          (if ([$activity[] | select(. > $last)] | length) > 0 then "yes" else "no" end), .id ]
+          (if ([$activity[] | select(. > $last)] | length) > 0 then "yes" else "no" end) ]
       | @tsv'
-}
-
-# Arm GitHub auto-merge (squash, the merge method the organisation requires),
-# pinned to the head the loop read. Prints "armed", "clean" (GitHub refuses
-# because the PR can merge now) or "error <GitHub's message>".
-arm_auto_merge() {
-  local out
-  # shellcheck disable=SC2016  # GraphQL variables, bound via -f
-  if out=$(gh api graphql -f query='
-      mutation($id:ID!, $head:GitObjectID!) {
-        enablePullRequestAutoMerge(input:{pullRequestId:$id, mergeMethod:SQUASH, expectedHeadOid:$head}) {
-          pullRequest { autoMergeRequest { enabledAt } }
-        }
-      }' -f id="$node_id" -f head="$head_oid" 2>&1); then
-    echo "armed"
-    return 0
-  fi
-  case "$out" in
-    *"clean status"*) echo "clean" ;;
-    *) echo "error $(tr '\n' ' ' <<<"$out")" ;;
-  esac
-}
-
-# Squash-merge the head the loop read, through the REST merge endpoint (no
-# --admin). Called only when GitHub refused to arm auto-merge because the PR is
-# mergeable now and the loop's own read shows nothing left to fix.
-merge_now() {
-  gh api -X PUT "repos/$OWNER/$REPO/pulls/$PR_NUMBER/merge" \
-    -f merge_method=squash -f sha="$head_oid" --jq '.message'
 }
 
 # Summarise one pass's stream-json log: whether the fix-pr command was loaded,
@@ -250,7 +219,7 @@ while :; do
     wait_or_stop "the PR could not be read"
     continue
   fi
-  IFS=$'\t' read -r state merge_state decision head_oid auto_merge new_activity node_id <<<"$facts"
+  IFS=$'\t' read -r state merge_state decision head_oid auto_merge new_activity <<<"$facts"
 
   case "$state" in
     MERGED) echo "$(date -u +%FT%TZ) PR #$PR_NUMBER is MERGED."; exit 0 ;;
@@ -273,16 +242,11 @@ while :; do
   esac
   [ "$new_activity" = "yes" ] && reasons="$reasons reviewer-activity"
 
-  if [ "$auto_merge" = "no" ]; then
-    armed=$(arm_auto_merge)
-    echo "auto-merge: $armed"
-    if [ "$armed" = "clean" ] && [ -z "$reasons" ] && [ "$checks" = "PASS" ] \
-        && [ "$unresolved" = "0" ] && [ "$decision" != "CHANGES_REQUESTED" ]; then
-      echo "Nothing left to fix and GitHub reports PR #$PR_NUMBER mergeable now; squash-merging $head_oid."
-      merge_now || echo "The merge was refused; reading the PR again."
-      sleep "$POLL"
-      continue
-    fi
+  if [ -z "$reasons" ] && [ "$checks" = "PASS" ] && [ "$auto_merge" = "no" ]; then
+    echo "Stopping: nothing left to fix on PR #$PR_NUMBER, but GitHub auto-merge is not switched on,"
+    echo "so GitHub will not merge it. The shepherd does not arm auto-merge (skillspoke-pr does)."
+    echo "Human action required on PR #$PR_NUMBER."
+    exit 1
   fi
 
   if [ -z "$reasons" ]; then
@@ -312,7 +276,7 @@ while :; do
   pass_summary "$pass_log"
 
   if after_facts=$(pr_facts); then
-    IFS=$'\t' read -r _s a_merge a_decision a_head _a a_new _id <<<"$after_facts"
+    IFS=$'\t' read -r _s a_merge a_decision a_head _a a_new <<<"$after_facts"
     after="$a_head|$(thread_state)|$a_decision|$a_merge|$(ci_state)|$a_new"
   else
     after="unreadable"
