@@ -1,275 +1,138 @@
 ---
 name: "senior-devops"
-description: Comprehensive DevOps skill for CI/CD, infrastructure automation, containerization, and AWS. Includes pipeline setup, infrastructure as code, deployment automation, and monitoring. Use when setting up pipelines, deploying applications, managing infrastructure, implementing monitoring, or optimizing deployment processes.
+description: DevOps skill for SkillSpoke's CI/CD, infrastructure automation and deployment on AWS serverless - GitHub Actions checks, CDK in Python deployed to AWS dev, packages published to CodeArtifact, Lambda deployments with aliases and CodeDeploy, and CloudWatch monitoring. Use when setting up pipelines, deploying applications, managing infrastructure, implementing monitoring, or optimizing deployment processes.
 ---
 
 # Senior Devops
 
-Complete toolkit for senior devops with modern tools and best practices.
+DevOps practice for SkillSpoke: serverless services on AWS, infrastructure as CDK in Python, CI on GitHub Actions.
 
-## Quick Start
+## SkillSpoke's delivery stack
 
-### Main Capabilities
+- **Infrastructure as code:** AWS CDK in Python through `shared-cdk-lib` (`aws-cdk-development`, `cdk-coding`). Not Terraform, not raw CloudFormation. A service is one CDK app with one stack per environment; values cross stacks through SSM Parameter Store; names come from the naming command (`resource-naming`).
+- **Compute:** Python Lambdas on `aws-lambda-powertools`, deployed as CDK assets. SkillSpoke runs no ECS, EKS or Kubernetes workloads and builds no container images for services (an AgentCore Runtime agent is the exception, packaged as the `aws-agentic-ai` skill states).
+- **Packages:** shared libraries are published to AWS CodeArtifact as versioned packages; services consume them as packages, never as source.
+- **Environments:** `dev`, `qa` and `prod`, each its own AWS account; `dev` exists today. Deployment is to AWS dev; qa and prod are not deployed.
+- **CI:** GitHub Actions runs the repository's checks on pull requests; tier 1 work merges through pull requests opened with the project's PR command.
+- **Monitoring:** CloudWatch metrics, logs and alarms, X-Ray and ADOT, and SkillSpoke observability events.
 
-This skill provides three core capabilities through automated scripts:
-
-```bash
-# Script 1: Pipeline Generator — scaffolds CI/CD pipelines for GitHub Actions or CircleCI
-python scripts/pipeline_generator.py ./app --platform=github --stages=build,test,deploy
-
-# Script 2: Terraform Scaffolder — generates and validates IaC modules for AWS
-python scripts/terraform_scaffolder.py ./infra --provider=aws --module=ecs-service --verbose
-
-# Script 3: Deployment Manager — orchestrates container deployments with rollback support
-python scripts/deployment_manager.py deploy --env=production --image=app:1.2.3 --strategy=blue-green
-```
+What a repository publishes and deploys is answered by the `polyrepo-steward` (the `deploy-mechanism` workflow), from the repository's own declarations.
 
 ## Core Capabilities
 
 ### 1. Pipeline Generator
 
-Scaffolds CI/CD pipeline configurations for GitHub Actions or CircleCI, with stages for build, test, security scan, and deploy.
+`scripts/pipeline_generator.py` scaffolds GitHub Actions or CircleCI configurations. SkillSpoke uses GitHub Actions; a generated workflow is a starting point that must run the repository's own declared checks.
 
-**Example — GitHub Actions workflow:**
+**Example — GitHub Actions checks for a Python CDK service:**
 ```yaml
 # .github/workflows/ci.yml
-name: CI/CD Pipeline
+name: CI
 on:
-  push:
-    branches: [main, develop]
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
-  build-and-test:
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: '20'
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test -- --coverage
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-
-  build-docker:
-    needs: build-and-test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build and push image
-        uses: docker/build-push-action@v5
+          python-version: '3.14'
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy --strict .
+      - run: pytest
+      - uses: actions/setup-node@v4
         with:
-          push: ${{ github.ref == 'refs/heads/main' }}
-          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
-
-  deploy:
-    needs: build-docker
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy to ECS
-        run: |
-          aws ecs update-service \
-            --cluster production \
-            --service app-service \
-            --force-new-deployment
+          node-version: '22'
+      - run: npx aws-cdk synth
 ```
+
+Pin action versions as the repository's existing workflows do, and use the repository's declared commands (its `AGENTS.md`, `CLAUDE.md` or Taskfile) rather than these placeholders. Deployment to AWS dev is not run from CI by default.
 
 **Usage:**
 ```bash
-python scripts/pipeline_generator.py <project-path> --platform=github|circleci --stages=build,test,deploy
+python scripts/pipeline_generator.py <project-path> --platform=github --stages=build,test
 ```
 
-### 2. Terraform Scaffolder
+### 2. Infrastructure as Code
 
-Generates, validates, and plans Terraform modules. Enforces consistent module structure and runs `terraform validate` + `terraform plan` before any apply.
+Infrastructure is CDK in Python. `scripts/terraform_scaffolder.py` generates Terraform modules, which SkillSpoke does not use; do not use its output for SkillSpoke work.
 
-**Example — AWS ECS service module:**
-```hcl
-# modules/ecs-service/main.tf
-resource "aws_ecs_task_definition" "app" {
-  family                   = var.service_name
-  requires_compatibilities = ["FARGATE"]
-  network_mode             = "awsvpc"
-  cpu                      = var.cpu
-  memory                   = var.memory
-
-  container_definitions = jsonencode([{
-    name      = var.service_name
-    image     = var.container_image
-    essential = true
-    portMappings = [{
-      containerPort = var.container_port
-      protocol      = "tcp"
-    }]
-    environment = [for k, v in var.env_vars : { name = k, value = v }]
-    logConfiguration = {
-      logDriver = "awslogs"
-      options = {
-        awslogs-group         = "/ecs/${var.service_name}"
-        awslogs-region        = var.aws_region
-        awslogs-stream-prefix = "ecs"
-      }
-    }
-  }])
-}
-
-resource "aws_ecs_service" "app" {
-  name            = var.service_name
-  cluster         = var.cluster_id
-  task_definition = aws_ecs_task_definition.app.arn
-  desired_count   = var.desired_count
-  launch_type     = "FARGATE"
-
-  network_configuration {
-    subnets          = var.private_subnet_ids
-    security_groups  = [aws_security_group.app.id]
-    assign_public_ip = false
-  }
-
-  load_balancer {
-    target_group_arn = aws_lb_target_group.app.arn
-    container_name   = var.service_name
-    container_port   = var.container_port
-  }
-}
-```
-
-**Usage:**
 ```bash
-python scripts/terraform_scaffolder.py <target-path> --provider=aws --module=ecs-service|eks-deployment|lambda-function [--verbose]
+# Synthesize and review the change before deploying
+cdk synth --profile dev
+cdk diff --profile dev <stack-name>
+
+# Deploy to AWS dev
+cdk deploy --profile dev <stack-name>
+
+# Verify the stack reached CREATE_COMPLETE or UPDATE_COMPLETE
+aws cloudformation describe-stacks --profile dev --stack-name <stack-name> --query 'Stacks[0].StackStatus'
 ```
 
-### 3. Deployment Manager
+### 3. Deployment Strategies for Lambda
 
-Orchestrates deployments with blue/green or rolling strategies, health-check gates, and automatic rollback on failure.
+A Lambda change can shift traffic gradually with an alias and AWS CodeDeploy, which rolls back automatically when a CloudWatch alarm fires:
 
-**Example — Kubernetes blue/green deployment (blue-slot specific elements):**
-```yaml
-# k8s/deployment-blue.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: app-blue
-  labels:
-    app: myapp
-    slot: blue      # slot label distinguishes blue from green
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: myapp
-      slot: blue
-  template:
-    metadata:
-      labels:
-        app: myapp
-        slot: blue
-    spec:
-      containers:
-        - name: app
-          image: ghcr.io/org/app:1.2.3
-          readinessProbe:       # gate: pod must pass before traffic switches
-            httpGet:
-              path: /healthz
-              port: 8080
-            initialDelaySeconds: 10
-            periodSeconds: 5
-          resources:
-            requests:
-              cpu: "250m"
-              memory: "256Mi"
-            limits:
-              cpu: "500m"
-              memory: "512Mi"
+```python
+from aws_cdk import aws_codedeploy as codedeploy, aws_lambda as lambda_
+
+alias = lambda_.Alias(self, "LiveAlias", alias_name="live", version=handler.current_version)
+
+codedeploy.LambdaDeploymentGroup(
+    self,
+    "DeploymentGroup",
+    alias=alias,
+    deployment_config=codedeploy.LambdaDeploymentConfig.CANARY_10PERCENT_5MINUTES,
+    alarms=[errors_alarm],
+)
 ```
 
-**Usage:**
-```bash
-python scripts/deployment_manager.py deploy \
-  --env=staging|production \
-  --image=app:1.2.3 \
-  --strategy=blue-green|rolling \
-  --health-check-url=https://app.example.com/healthz
-
-python scripts/deployment_manager.py rollback --env=production --to-version=1.2.2
-python scripts/deployment_manager.py --analyze --env=production   # audit current state
-```
+At alpha scale (one dev account, at most five users), an all-at-once deploy with a smoke test is usually enough; add canary shifting when a stated availability requirement needs it, and record the choice. `scripts/deployment_manager.py` targets container deployments (Kubernetes blue/green), which SkillSpoke does not run.
 
 ## Resources
 
-- Pattern Reference: `references/cicd_pipeline_guide.md` — detailed CI/CD patterns, best practices, anti-patterns
-- Workflow Guide: `references/infrastructure_as_code.md` — IaC step-by-step processes, optimization, troubleshooting
-- Technical Guide: `references/deployment_strategies.md` — deployment strategy configs, security considerations, scalability
+The references hold general DevOps knowledge; their Terraform, Docker, ECS and Kubernetes examples are background, and SkillSpoke follows this file where they differ.
+
+- Pattern Reference: `references/cicd_pipeline_guide.md` — CI/CD patterns, best practices, anti-patterns
+- Workflow Guide: `references/infrastructure_as_code.md` — IaC processes, optimization, troubleshooting
+- Technical Guide: `references/deployment_strategies.md` — deployment strategies, security considerations, scalability
 - Tool Scripts: `scripts/` directory
 
 ## Development Workflow
 
-### 1. Infrastructure Changes (Terraform)
+### 1. Infrastructure Changes
 
 ```bash
-# Scaffold or update module
-python scripts/terraform_scaffolder.py ./infra --provider=aws --module=ecs-service --verbose
+# Synthesize and run the repository's synth assertion tests
+cdk synth --profile dev
+pytest
 
-# Validate and plan — review diff before applying
-terraform -chdir=infra init
-terraform -chdir=infra validate
-terraform -chdir=infra plan -out=tfplan
-
-# Apply only after plan review
-terraform -chdir=infra apply tfplan
-
-# Verify resources are healthy
-aws ecs describe-services --cluster production --services app-service \
-  --query 'services[0].{Status:status,Running:runningCount,Desired:desiredCount}'
+# Review the diff, then deploy to AWS dev
+cdk diff --profile dev <stack-name>
+cdk deploy --profile dev <stack-name>
 ```
 
-### 2. Application Deployment
+### 2. Package Publication
+
+A shared library publishes a new version to CodeArtifact with the publish command its repository declares; a consuming service then raises its dependency to that version.
+
+### 3. Rollback
+
+A failed CloudFormation update rolls back on its own. To undo a deployed change, revert the commit and deploy again; with a CodeDeploy deployment group, a firing alarm shifts traffic back to the previous Lambda version.
 
 ```bash
-# Generate or update pipeline config
-python scripts/pipeline_generator.py . --platform=github --stages=build,test,security,deploy
-
-# Build and tag image
-docker build -t ghcr.io/org/app:$(git rev-parse --short HEAD) .
-docker push ghcr.io/org/app:$(git rev-parse --short HEAD)
-
-# Deploy with health-check gate
-python scripts/deployment_manager.py deploy \
-  --env=production \
-  --image=app:$(git rev-parse --short HEAD) \
-  --strategy=blue-green \
-  --health-check-url=https://app.example.com/healthz
-
-# Verify pods are running
-kubectl get pods -n production -l app=myapp
-kubectl rollout status deployment/app-blue -n production
-
-# Switch traffic after verification
-kubectl patch service app-svc -n production \
-  -p '{"spec":{"selector":{"slot":"blue"}}}'
-```
-
-### 3. Rollback Procedure
-
-```bash
-# Immediate rollback via deployment manager
-python scripts/deployment_manager.py rollback --env=production --to-version=1.2.2
-
-# Or via kubectl
-kubectl rollout undo deployment/app -n production
-kubectl rollout status deployment/app -n production
-
-# Verify rollback succeeded
-kubectl get pods -n production -l app=myapp
-curl -sf https://app.example.com/healthz || echo "ROLLBACK FAILED — escalate"
+# See why a deploy failed
+aws cloudformation describe-stack-events --profile dev --stack-name <stack-name> --query 'StackEvents[?contains(ResourceStatus, `FAILED`)]'
 ```
 
 ## Troubleshooting
 
-Check the comprehensive troubleshooting section in `references/deployment_strategies.md`.
+Check the troubleshooting section in `references/deployment_strategies.md` for general patterns, and `aws-core:aws-cdk` and `aws-core:aws-cloudformation` for CDK and stack failures.
