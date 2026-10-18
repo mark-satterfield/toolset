@@ -5,8 +5,10 @@ description: >-
   verifying the test suite stays green. Use for Code Quality
   work requiring independent change-set review, regression detection, and
   behavior-preservation verification.
-tools: Read, Glob, Grep, Bash, Write, Skill
+tools: Read, Glob, Grep, Bash, Write, Skill, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability
 disallowedTools: AskUserQuestion, Edit, Agent
+mcpServers:
+  - aws-mcp
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90

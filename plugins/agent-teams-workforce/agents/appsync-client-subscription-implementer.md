@@ -5,8 +5,10 @@ description: >-
   Implementation work requiring GraphQL subscription wiring,
   connection lifecycle handling, real-time state updates, and reconnection
   handling.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp__context7__resolve-library-id, mcp__context7__query-docs
 disallowedTools: AskUserQuestion, Agent
+mcpServers:
+  - context7
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100

@@ -17,6 +17,7 @@ skills:
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:aws-cost-operations
 - agent-teams-workforce:effective-architecture
+- aws-core:aws-billing-and-cost-management
 effort: medium
 isolation: worktree
 color: cyan

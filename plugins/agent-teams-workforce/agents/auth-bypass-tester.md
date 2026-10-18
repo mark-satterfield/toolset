@@ -11,7 +11,7 @@ disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-secops, agent-teams-workforce:cognito]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-secops, agent-teams-workforce:cognito, aws-core:aws-auth]
 effort: medium
 isolation: worktree
 color: orange

@@ -26,6 +26,8 @@ skills:
 - agent-teams-workforce:senior-architect
 - agent-teams-workforce:aws-serverless-eda
 - agent-teams-workforce:effective-architecture
+- aws-core:aws-serverless
+- aws-core:aws-messaging-and-streaming
 effort: medium
 isolation: worktree
 color: cyan

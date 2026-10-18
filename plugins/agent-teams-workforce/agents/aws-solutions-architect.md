@@ -30,6 +30,7 @@ skills:
 - agent-teams-workforce:aws-serverless-eda
 - agent-teams-workforce:senior-security
 - agent-teams-workforce:graphrag-lookup
+- aws-core:aws-serverless
 ---
 
 ## What you are responsible for

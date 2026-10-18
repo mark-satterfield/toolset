@@ -5,8 +5,10 @@ description: >-
   keeping tests green after every change. Use for Code Quality
   work requiring behavior-preserving restructuring, duplication removal, and
   complexity reduction.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability
 disallowedTools: AskUserQuestion, Agent
+mcpServers:
+  - aws-mcp
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100

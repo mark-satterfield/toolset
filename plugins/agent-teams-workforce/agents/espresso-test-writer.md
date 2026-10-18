@@ -5,8 +5,10 @@ description: >-
   criteria, confirming each test fails for the intended reason. Use for Test
   Design work requiring Espresso authoring, Android UI coverage,
   Compose semantics matchers, and Red confirmation.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__context7__resolve-library-id, mcp__context7__query-docs
 disallowedTools: AskUserQuestion, Agent
+mcpServers:
+  - context7
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 90

@@ -5,8 +5,10 @@ description: >-
   to pass failing Detox and Maestro tests. Use for Implementation
   work requiring React Native components, navigation and state wiring, and
   native module integration.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp__context7__resolve-library-id, mcp__context7__query-docs
 disallowedTools: AskUserQuestion, Agent
+mcpServers:
+  - context7
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100

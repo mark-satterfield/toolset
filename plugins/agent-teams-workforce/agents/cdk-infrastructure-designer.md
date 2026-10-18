@@ -33,6 +33,7 @@ skills:
 - agent-teams-workforce:aws-cdk-development
 - agent-teams-workforce:resource-naming
 - agent-teams-workforce:effective-architecture
+- aws-core:aws-cdk
 effort: medium
 isolation: worktree
 color: cyan

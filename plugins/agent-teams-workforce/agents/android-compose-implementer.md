@@ -5,8 +5,10 @@ description: >-
   code to pass failing Espresso suites. Use for Implementation
   work requiring Compose UI, Kotlin state and navigation wiring, and on-device
   ML Kit integration.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp__context7__resolve-library-id, mcp__context7__query-docs
 disallowedTools: AskUserQuestion, Agent
+mcpServers:
+  - context7
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100

@@ -5,8 +5,10 @@ description: >-
   cross-platform mobile flows before implementation, confirming each fails
   for the intended reason. Use for Test Design work requiring
   mobile E2E authoring, Detox and Maestro scripting, and Red confirmation.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__context7__resolve-library-id, mcp__context7__query-docs
 disallowedTools: AskUserQuestion, Agent
+mcpServers:
+  - context7
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 90

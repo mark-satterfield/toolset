@@ -6,8 +6,10 @@ description: >-
   reason. Use for Test Design work requiring XCUITest authoring,
   iOS UI flow coverage, accessibility-identifier queries, and Red
   confirmation.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__context7__resolve-library-id, mcp__context7__query-docs
 disallowedTools: AskUserQuestion, Agent
+mcpServers:
+  - context7
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 90

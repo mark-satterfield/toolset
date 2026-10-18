@@ -16,6 +16,7 @@ skills:
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:observability-designer
 - agent-teams-workforce:effective-architecture
+- aws-core:aws-observability
 effort: low
 isolation: worktree
 color: cyan

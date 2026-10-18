@@ -13,7 +13,7 @@ mcpServers:
 model: opus
 permissionMode: acceptEdits
 maxTurns: 80
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:aws-cost-operations]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:aws-cost-operations, aws-core:aws-billing-and-cost-management]
 effort: medium
 isolation: worktree
 color: pink

@@ -13,7 +13,7 @@ mcpServers:
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:dynamodb, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-coding]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:dynamodb, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-coding, aws-core:aws-serverless, aws-core:aws-sdk-python-usage]
 effort: medium
 color: green
 ---

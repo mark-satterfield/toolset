@@ -5,12 +5,15 @@ description: >-
   built on the chassis, subscription lifecycle, refunds, and idempotent
   operations, with secrets in Secrets Manager. Use for Implementation work requiring Stripe integration, payment webhook handling, and
   subscription lifecycle management.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, mcp__context7__resolve-library-id, mcp__context7__query-docs
 disallowedTools: AskUserQuestion, Agent
+mcpServers:
+  - aws-mcp
+  - context7
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:stripe-integration-expert, agent-teams-workforce:secrets-manager, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:skillspoke-events, agent-teams-workforce:python-coding]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:stripe-integration-expert, agent-teams-workforce:secrets-manager, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:skillspoke-events, agent-teams-workforce:python-coding, aws-core:aws-serverless, aws-core:aws-secrets-manager]
 effort: medium
 color: green
 ---

@@ -17,6 +17,7 @@ skills:
 - agent-teams-workforce:database-schema-designer
 - agent-teams-workforce:artifact-handoff
 - agent-teams-workforce:effective-architecture
+- aws-core:aws-database
 effort: medium
 isolation: worktree
 color: purple

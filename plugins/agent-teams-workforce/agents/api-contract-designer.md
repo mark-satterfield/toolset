@@ -19,6 +19,7 @@ skills:
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:api-design-reviewer
 - agent-teams-workforce:effective-architecture
+- aws-core:aws-serverless
 effort: medium
 isolation: worktree
 color: cyan

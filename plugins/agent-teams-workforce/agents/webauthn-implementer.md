@@ -6,12 +6,14 @@ description: >-
   client-side handling. Use for Implementation work requiring
   WebAuthn ceremony wiring, passkey credential lifecycle, and Cognito
   integration.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp__context7__resolve-library-id, mcp__context7__query-docs
 disallowedTools: AskUserQuestion, Agent
+mcpServers:
+  - context7
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-frontend, agent-teams-workforce:cognito, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-coding]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-frontend, agent-teams-workforce:cognito, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-coding, aws-core:aws-auth]
 effort: medium
 color: green
 ---

@@ -5,12 +5,14 @@ description: >-
   templates, rendering pipelines, delivery via AWS messaging, and
   bounce/complaint handling. Use for Implementation work
   requiring email template construction and delivery wiring.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability
 disallowedTools: AskUserQuestion, Agent
+mcpServers:
+  - aws-mcp
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:email-template-builder, agent-teams-workforce:sns, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:skillspoke-events, agent-teams-workforce:python-coding]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:email-template-builder, agent-teams-workforce:sns, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:skillspoke-events, agent-teams-workforce:python-coding, aws-core:aws-messaging-and-streaming, aws-core:aws-sdk-python-usage]
 effort: medium
 color: green
 ---

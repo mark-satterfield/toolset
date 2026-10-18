@@ -4,8 +4,10 @@ description: >-
   Optimizes frontend performance in green-tested code without breaking
   tests. Use for Code Quality work requiring bundle trimming,
   render-path optimization, and Core Web Vitals improvement.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__context7__resolve-library-id, mcp__context7__query-docs
 disallowedTools: AskUserQuestion, Agent
+mcpServers:
+  - context7
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100

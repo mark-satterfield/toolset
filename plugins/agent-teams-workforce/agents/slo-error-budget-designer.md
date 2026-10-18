@@ -12,7 +12,7 @@ mcpServers:
 model: opus
 permissionMode: acceptEdits
 maxTurns: 80
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:observability-designer, agent-teams-workforce:cloudwatch]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:observability-designer, agent-teams-workforce:cloudwatch, aws-core:aws-observability]
 effort: medium
 isolation: worktree
 color: pink

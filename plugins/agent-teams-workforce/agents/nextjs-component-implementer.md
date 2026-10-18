@@ -5,8 +5,10 @@ description: >-
   fetching, Next.js routing — writing minimum code to pass failing unit tests.
   Visual component and page work goes to cds:cds-ui-author, which builds with
   the cds design system.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp__context7__resolve-library-id, mcp__context7__query-docs
 disallowedTools: AskUserQuestion, Agent
+mcpServers:
+  - context7
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100

@@ -5,12 +5,14 @@ description: >-
   metrics, drift alerts — writing minimum code to pass failing tests. Use for
   Implementation work requiring LLM telemetry instrumentation,
   quality-signal capture, and drift alerting.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability
 disallowedTools: AskUserQuestion, Agent
+mcpServers:
+  - aws-mcp
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-ml-engineer, agent-teams-workforce:observability-designer, agent-teams-workforce:senior-prompt-engineer, agent-teams-workforce:aws-agentic-ai, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-coding]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-ml-engineer, agent-teams-workforce:observability-designer, agent-teams-workforce:senior-prompt-engineer, agent-teams-workforce:aws-agentic-ai, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-coding, aws-core:aws-observability, aws-core:amazon-bedrock]
 effort: medium
 color: green
 ---

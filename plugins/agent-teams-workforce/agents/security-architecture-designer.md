@@ -28,6 +28,8 @@ skills:
 - agent-teams-workforce:iam
 - agent-teams-workforce:secrets-manager
 - agent-teams-workforce:effective-architecture
+- aws-core:aws-iam
+- aws-core:aws-auth
 effort: medium
 isolation: worktree
 color: cyan

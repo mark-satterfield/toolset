@@ -27,6 +27,7 @@ skills:
 - agent-teams-workforce:eventbridge
 - agent-teams-workforce:effective-architecture
 - agent-teams-workforce:skillspoke-events
+- aws-core:aws-messaging-and-streaming
 effort: medium
 isolation: worktree
 color: cyan
