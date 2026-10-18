@@ -10,7 +10,7 @@ tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__context7__resolve-librar
 disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - context7
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 90
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa, agent-teams-workforce:tdd-guide, agent-teams-workforce:cumulative-regression]

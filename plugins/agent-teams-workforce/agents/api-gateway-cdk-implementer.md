@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - aws-mcp
   - mcp-graphrag-server
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 100
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-gateway, agent-teams-workforce:aws-cdk-development, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:resource-naming, agent-teams-workforce:python-coding, aws-core:aws-cdk, aws-core:aws-serverless, aws-core:aws-auth]

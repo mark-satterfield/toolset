@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - aws-mcp
   - context7
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 100
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:mcp-server-builder, agent-teams-workforce:aws-agentic-ai, agent-teams-workforce:aws-mcp-setup, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:resource-naming, agent-teams-workforce:python-coding, aws-core:amazon-bedrock, aws-core:aws-cdk]

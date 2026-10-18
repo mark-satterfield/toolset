@@ -7,7 +7,7 @@ description: >-
   similarity queries.
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 100
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:rag-architect, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-coding, aws-core:amazon-bedrock, aws-core:aws-sdk-python-usage]

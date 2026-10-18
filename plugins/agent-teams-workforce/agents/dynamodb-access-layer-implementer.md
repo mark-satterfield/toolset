@@ -11,7 +11,7 @@ mcpServers:
   - aws-mcp
   - awslabs-dynamodb-mcp-server
   - mcp-graphrag-server
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 100
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:dynamodb, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:resource-naming, agent-teams-workforce:python-coding, aws-core:aws-sdk-python-usage, aws-core:aws-database]

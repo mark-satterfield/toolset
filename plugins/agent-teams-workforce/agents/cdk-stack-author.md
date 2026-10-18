@@ -9,7 +9,7 @@ tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documenta
 disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - aws-mcp
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 100
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-cdk-development, agent-teams-workforce:cloudformation, agent-teams-workforce:resource-naming, agent-teams-workforce:python-coding, aws-core:aws-cdk]

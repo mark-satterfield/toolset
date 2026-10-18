@@ -7,7 +7,7 @@ description: >-
   authorization matrix verification.
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 90
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-security, agent-teams-workforce:cumulative-regression, agent-teams-workforce:python-coding]

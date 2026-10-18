@@ -8,7 +8,7 @@ tools: Read, Write, Edit, Glob, Grep, Bash, mcp__awslabs-dynamodb-mcp-server__co
 disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - awslabs-dynamodb-mcp-server
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 100
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:dynamodb, agent-teams-workforce:aws-cost-operations, agent-teams-workforce:python-coding, aws-core:aws-database]

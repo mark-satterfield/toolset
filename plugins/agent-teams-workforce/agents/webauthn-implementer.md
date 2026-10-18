@@ -10,7 +10,7 @@ tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp
 disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - context7
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 100
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-frontend, agent-teams-workforce:cognito, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-coding, aws-core:aws-auth]
