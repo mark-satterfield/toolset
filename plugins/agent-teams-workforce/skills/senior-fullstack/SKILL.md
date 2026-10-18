@@ -1,11 +1,28 @@
 ---
 name: "senior-fullstack"
-description: Fullstack development toolkit with project scaffolding for Next.js, FastAPI, MERN, and Django stacks, code quality analysis with security and complexity scoring, and stack selection guidance. Use when the user asks to "scaffold a new project", "create a Next.js app", "set up FastAPI with React", "analyze code quality", "audit my codebase", "what stack should I use", "generate project boilerplate", or mentions fullstack development, project setup, or tech stack comparison.
+description: Fullstack development for SkillSpoke's stack (Next.js web and React Native mobile on the CDS design system, calling Python Lambda services on aws-lambda-powertools behind API Gateway REST API v1, with Cognito sign-in), with code quality analysis scoring security and complexity. Use when the user asks to "scaffold a new project", "create a Next.js app", "analyze code quality", "audit my codebase", "what stack should I use", "generate project boilerplate", or mentions fullstack development, project setup, or tech stack comparison.
 ---
 
 # Senior Fullstack
 
 Fullstack development skill with project scaffolding and code quality analysis tools.
+
+## SkillSpoke's stack
+
+The stack is decided; confirm it against the solution strategy and the architecture constraints (arc42 sections 4 and 2) in the `skillspoke-docs` vault. A stack choice is not re-made per project.
+
+| Layer | SkillSpoke |
+|-------|------------|
+| Web front end | Next.js, TypeScript, on the CDS design system (`cds` skills), behind CloudFront and AWS WAF |
+| Mobile front end | React Native, on the CDS design system |
+| API | API Gateway REST API v1, spec-first in OpenAPI; the web client uses its own generated client. HTTP API v2 is not used; live push uses the API Gateway WebSocket API |
+| Backend | Python Lambdas on `aws-lambda-powertools` through `shared-chassis-lib` (see `senior-backend`). Django, Flask and FastAPI are banned; Node.js backends (Express, Fastify, NestJS) and Next.js API routes are not SkillSpoke's backend |
+| Data | DynamoDB, Aurora PostgreSQL Serverless v2 through the RDS Data API, versioned S3, each owned by one service |
+| Auth | Amazon Cognito, one user pool per trust domain |
+| Infrastructure | CDK in Python through `shared-cdk-lib`, names from the naming command (`resource-naming`) |
+| Payments | Stripe |
+
+Load `web-frontend-coding` and `typescript-coding` for front-end code and `python-coding` for service code.
 
 ---
 
@@ -23,7 +40,6 @@ Fullstack development skill with project scaffolding and code quality analysis t
 Use this skill when you hear:
 - "scaffold a new project"
 - "create a Next.js app"
-- "set up FastAPI with React"
 - "analyze code quality"
 - "check for security issues in codebase"
 - "what stack should I use"
@@ -36,13 +52,11 @@ Use this skill when you hear:
 
 ### Project Scaffolder
 
-Generates fullstack project structures with boilerplate code.
+Generates generic fullstack project structures with boilerplate code. A new SkillSpoke repository is created by the `polyrepo-steward` from the project's repository templates, not by this scaffolder; use the scaffolder only for a throwaway prototype outside the SkillSpoke repositories.
 
-**Supported Templates:**
-- `nextjs` - Next.js 14+ with App Router, TypeScript, Tailwind CSS
-- `fastapi-react` - FastAPI backend + React frontend + PostgreSQL
-- `mern` - MongoDB, Express, React, Node.js with TypeScript
-- `django-react` - Django REST Framework + React frontend
+**Templates:**
+- `nextjs` - Next.js 14+ with App Router, TypeScript, Tailwind CSS (the only template whose front end matches SkillSpoke's; SkillSpoke styles with CDS, not ad hoc Tailwind)
+- `fastapi-react`, `mern`, `django-react` - generic stacks SkillSpoke does not use (FastAPI and Django are banned; MongoDB and Express are not in the stack); never use them for SkillSpoke work
 
 **Usage:**
 
@@ -52,15 +66,6 @@ python scripts/project_scaffolder.py --list-templates
 
 # Create Next.js project
 python scripts/project_scaffolder.py nextjs my-app
-
-# Create FastAPI + React project
-python scripts/project_scaffolder.py fastapi-react my-api
-
-# Create MERN stack project
-python scripts/project_scaffolder.py mern my-project
-
-# Create Django + React project
-python scripts/project_scaffolder.py django-react my-app
 
 # Specify output directory
 python scripts/project_scaffolder.py nextjs my-app --output ./projects
@@ -73,7 +78,7 @@ python scripts/project_scaffolder.py nextjs my-app --json
 
 | Parameter | Description |
 |-----------|-------------|
-| `template` | Template name (nextjs, fastapi-react, mern, django-react) |
+| `template` | Template name (see Templates above) |
 | `project_name` | Name for the new project directory |
 | `--output, -o` | Output directory (default: current directory) |
 | `--list-templates, -l` | List all available templates |
@@ -81,7 +86,7 @@ python scripts/project_scaffolder.py nextjs my-app --json
 
 **Output includes:**
 - Project structure with all necessary files
-- Package configurations (package.json, requirements.txt)
+- Package configurations (package.json)
 - TypeScript configuration
 - Docker and docker-compose setup
 - Environment file templates
@@ -167,9 +172,11 @@ Total Lines: 12,500
 
 ## Workflows
 
-### Workflow 1: Start New Project
+### Workflow 1: Start New Prototype
 
-1. Choose appropriate stack based on requirements (see Stack Decision Matrix)
+A new SkillSpoke repository comes from the `polyrepo-steward`; this workflow is for a throwaway prototype outside the SkillSpoke repositories.
+
+1. Use SkillSpoke's stack (see the table at the top)
 2. Scaffold project structure
 3. Verify scaffold: confirm `package.json` (or `requirements.txt`) exists
 4. Run initial quality check — address any P0 issues before proceeding
@@ -216,70 +223,63 @@ python scripts/code_quality_analyzer.py /path/to/project --verbose
 
 ### Workflow 3: Stack Selection
 
-Use the tech stack guide to evaluate options:
+SkillSpoke's stack is fixed (see the table at the top). For a new SkillSpoke capability:
 
-1. **SEO Required?** → Next.js with SSR
-2. **API-heavy backend?** → Separate FastAPI or NestJS
-3. **Real-time features?** → Add WebSocket layer
-4. **Team expertise** → Match stack to team skills
+1. **Web or mobile UI** → Next.js or React Native on CDS
+2. **API** → an OpenAPI specification first, then API Gateway REST API v1 with Python Lambda handlers
+3. **Real-time features** → the API Gateway WebSocket API
+4. **Work between services** → SkillSpoke events through the events service (`skillspoke-events`)
 
-See `references/tech_stack_guide.md` for detailed comparison.
+`references/tech_stack_guide.md` compares general frameworks; it is background for reading other systems, not a menu for SkillSpoke.
 
 ---
 
 ## Reference Guides
 
+The references hold general fullstack knowledge; where they recommend a framework, database, auth product or host outside SkillSpoke's stack, follow the stack table at the top instead.
+
 ### Architecture Patterns (`references/architecture_patterns.md`)
 
 - Frontend component architecture (Atomic Design, Container/Presentational)
 - Backend patterns (Clean Architecture, Repository Pattern)
-- API design (REST conventions, GraphQL schema design)
-- Database patterns (connection pooling, transactions, read replicas)
+- API design (REST conventions; SkillSpoke uses REST, not GraphQL)
+- Database patterns (transactions, access through the RDS Data API)
 - Caching strategies (cache-aside, HTTP cache headers)
-- Authentication architecture (JWT + refresh tokens, sessions)
+- Authentication architecture (Cognito tokens)
 
 ### Development Workflows (`references/development_workflows.md`)
 
-- Local development setup (Docker Compose, environment config)
 - Git workflows (trunk-based, conventional commits)
 - CI/CD pipelines (GitHub Actions examples)
 - Testing strategies (unit, integration, E2E)
 - Code review process (PR templates, checklists)
 - Deployment strategies (blue-green, canary, feature flags)
-- Monitoring and observability (logging, metrics, health checks)
+- Monitoring and observability (in SkillSpoke: CloudWatch, X-Ray, ADOT and observability events)
 
 ### Tech Stack Guide (`references/tech_stack_guide.md`)
 
-- Frontend frameworks comparison (Next.js, React+Vite, Vue)
-- Backend frameworks (Express, Fastify, NestJS, FastAPI, Django)
-- Database selection (PostgreSQL, MongoDB, Redis)
-- ORMs (Prisma, Drizzle, SQLAlchemy)
-- Authentication solutions (Auth.js, Clerk, custom JWT)
-- Deployment on AWS (Amplify Hosting, App Runner, ECS, Lambda)
-- Stack recommendations by use case (MVP, SaaS, Enterprise)
+- General comparison of frontend frameworks, backend frameworks, databases, ORMs, auth products and hosting; background only
 
 ---
 
 ## Quick Reference
 
-### Stack Decision Matrix
+### SkillSpoke Decision Matrix
 
-| Requirement | Recommendation |
+| Requirement | SkillSpoke |
 |-------------|---------------|
-| SEO-critical site | Next.js with SSR |
-| Internal dashboard | React + Vite |
-| API-first backend | FastAPI or Fastify |
-| Enterprise scale | NestJS + PostgreSQL |
-| Rapid prototype | Next.js API routes |
-| Document-heavy data | MongoDB |
-| Complex queries | PostgreSQL |
+| SEO-critical or public page | Next.js with SSR, behind CloudFront |
+| Employee screens | Role-gated screens in the same Next.js web shell |
+| API | OpenAPI spec + API Gateway REST API v1 + Python Lambda |
+| Document-shaped or key-value data | DynamoDB |
+| Relational queries, vectors | Aurora PostgreSQL Serverless v2 (Data API, pgvector) |
+| Sign-in | Cognito |
 
 ### Common Issues
 
 | Issue | Solution |
 |-------|----------|
-| N+1 queries | Use DataLoader or eager loading |
+| N+1 queries | Batch the reads (DynamoDB `BatchGetItem`, one SQL query with `IN`) |
 | Slow builds | Check bundle size, lazy load |
-| Auth complexity | Use Auth.js or Clerk |
 | Type errors | Enable strict mode in tsconfig |
-| CORS issues | Configure middleware properly |
+| CORS issues | Configure CORS on the REST API (OpenAPI `x-amazon-apigateway` responses and the Lambda response headers) |
