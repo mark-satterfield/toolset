@@ -361,12 +361,20 @@ API_KEY = get_secret("api/key")
 
 ### SQL Injection Prevention
 
-```python
-# BAD: String concatenation
-query = f"SELECT * FROM users WHERE id = {user_id}"
+SkillSpoke reaches Aurora PostgreSQL through the RDS Data API, which binds named parameters (`aurora-postgresql`):
 
-# GOOD: Parameterized query
-cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+```python
+# BAD: string formatting builds the SQL
+sql = f"SELECT * FROM users WHERE id = '{user_id}'"
+
+# GOOD: a named parameter bound by the Data API
+rds_data.execute_statement(
+    resourceArn=cluster_arn,
+    secretArn=secret_arn,
+    database=database,
+    sql="SELECT * FROM users WHERE id = :id",
+    parameters=[{"name": "id", "value": {"stringValue": user_id}}],
+)
 ```
 
 ### XSS Prevention
@@ -381,36 +389,35 @@ import DOMPurify from 'dompurify';
 const safeHTML = DOMPurify.sanitize(userInput);
 ```
 
+In React (SkillSpoke's Next.js and React Native front ends), render untrusted data as JSX text, which React escapes, and never pass it to `dangerouslySetInnerHTML` unsanitized (`web-frontend-coding`).
+
 ### Authentication
 
-```javascript
-// Password hashing
-const bcrypt = require('bcrypt');
-const SALT_ROUNDS = 12;
-
-// Hash password
-const hash = await bcrypt.hash(password, SALT_ROUNDS);
-
-// Verify password
-const match = await bcrypt.compare(password, hash);
-```
+SkillSpoke stores no passwords: Amazon Cognito user pools hold credentials, MFA and password policy, and services validate Cognito tokens (`cognito`). Service-to-service calls use OAuth2 client credentials with one app client per calling service. Never write password hashing or a hand-rolled JWT check for SkillSpoke.
 
 ### Security Headers
 
-```javascript
-// Express.js security headers
-const helmet = require('helmet');
-app.use(helmet());
+Set security headers at the edge with a CloudFront response headers policy, defined in Python CDK:
 
-// Or manually set headers:
-app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  res.setHeader('Content-Security-Policy', "default-src 'self'");
-  next();
-});
+```python
+from aws_cdk import Duration, aws_cloudfront as cloudfront
+
+cloudfront.ResponseHeadersPolicy(
+    self,
+    "SecurityHeaders",
+    security_headers_behavior=cloudfront.ResponseSecurityHeadersBehavior(
+        content_type_options=cloudfront.ResponseHeadersContentTypeOptions(override=True),
+        frame_options=cloudfront.ResponseHeadersFrameOptions(
+            frame_option=cloudfront.HeadersFrameOption.DENY, override=True
+        ),
+        strict_transport_security=cloudfront.ResponseHeadersStrictTransportSecurity(
+            access_control_max_age=Duration.days(365), include_subdomains=True, override=True
+        ),
+        content_security_policy=cloudfront.ResponseHeadersContentSecurityPolicy(
+            content_security_policy="default-src 'self'", override=True
+        ),
+    ),
+)
 ```
 
 ---

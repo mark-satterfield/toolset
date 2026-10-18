@@ -18,6 +18,15 @@ triggers:
 
 Production ML engineering patterns for model deployment, MLOps infrastructure, and LLM integration.
 
+## SkillSpoke's ML stack
+
+- **Inference:** all inference runs on Amazon Bedrock in the SkillSpoke account, and service code calls a model only through `skillSpoke-ai-lib`, the one way to call a model (`bedrock` skill). Agents run on Amazon Bedrock AgentCore Runtime (`aws-agentic-ai`). Agents reach data only through the owning services' APIs; deterministic computation such as scoring is service code, and the model explains the result.
+- **Vectors:** Aurora PostgreSQL Serverless v2 with pgvector, through the RDS Data API (`aurora-postgresql`, `pgvector-semantic-search`).
+- **Serving code:** Python Lambdas on `aws-lambda-powertools`; FastAPI, Flask and Django are banned, and SkillSpoke runs no Kubernetes or container serving.
+- **Pipelines and monitoring:** Step Functions, EventBridge, S3; CloudWatch, X-Ray and ADOT. A self-trained model, if a stated need ever requires one, goes to Amazon SageMaker (`aws-core:aws-ai-ml`), not a self-managed cluster.
+
+The container, Kubernetes, MLflow, Kafka, Pinecone and LangChain material below is general ML engineering knowledge for other systems; in SkillSpoke, follow this section where they differ.
+
 ---
 
 ## Table of Contents
@@ -66,7 +75,8 @@ CMD ["uvicorn", "src.server:app", "--host", "0.0.0.0", "--port", "8080"]
 
 | Option | Latency | Throughput | Use Case |
 |--------|---------|------------|----------|
-| FastAPI + Uvicorn | Low | Medium | REST APIs, small models |
+| FastAPI + Uvicorn | Low | Medium | REST APIs, small models (not SkillSpoke: FastAPI is banned) |
+| Amazon Bedrock | Low | High | SkillSpoke: every foundation-model call, through `skillSpoke-ai-lib` |
 | Triton Inference Server | Very Low | Very High | GPU inference, batching |
 | TensorFlow Serving | Low | High | TensorFlow models |
 | TorchServe | Low | High | PyTorch models |
@@ -180,7 +190,7 @@ Build retrieval-augmented generation pipeline:
 | Qdrant | Both | High | Very Low | Performance-critical |
 | Weaviate | Both | High | Low | Hybrid search |
 | Chroma | Self-hosted | Medium | Low | Prototyping |
-| pgvector | Self-hosted | Medium | Medium | Existing Postgres |
+| pgvector on Aurora PostgreSQL | Managed (Aurora) | Medium | Medium | Existing Postgres; SkillSpoke's vector store |
 
 ### Chunking Strategies
 
@@ -292,11 +302,11 @@ Sets up drift detection, alerting, and performance dashboards.
 
 ## Tech Stack
 
-| Category | Tools |
-|----------|-------|
-| ML Frameworks | PyTorch, TensorFlow, Scikit-learn, XGBoost |
-| LLM Frameworks | LangChain, LlamaIndex, DSPy |
-| MLOps | MLflow, Weights & Biases, Kubeflow |
-| Data | Spark, Airflow, dbt, Kafka |
-| Deployment | Docker, Kubernetes, Triton |
-| Databases | PostgreSQL, Redshift, Pinecone, Redis |
+| Category | SkillSpoke | Other systems you may meet |
+|----------|------------|----------------------------|
+| Models | Amazon Bedrock through `skillSpoke-ai-lib`; AgentCore Runtime for agents | PyTorch, TensorFlow, Scikit-learn, XGBoost |
+| LLM Frameworks | Bedrock Converse API; Strands Agents on AgentCore | LangChain, LlamaIndex, DSPy |
+| MLOps | Step Functions, CloudWatch; SageMaker for a self-trained model | MLflow, Weights & Biases, Kubeflow |
+| Data | S3, EventBridge, DynamoDB Streams, Kinesis | Spark, Airflow, dbt, Kafka |
+| Deployment | Lambda via CDK in Python | Docker, Kubernetes, Triton |
+| Databases | Aurora PostgreSQL with pgvector, DynamoDB | Redshift, Pinecone, Redis |

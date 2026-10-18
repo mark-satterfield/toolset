@@ -13,7 +13,9 @@ description: "Stripe Integration Expert"
 
 ## Overview
 
-Implement production-grade Stripe integrations: subscriptions with trials and proration, one-time payments, usage-based billing, checkout sessions, idempotent webhook handlers, customer portal, and invoicing. Covers Next.js and Express patterns.
+Implement production-grade Stripe integrations: subscriptions with trials and proration, one-time payments, usage-based billing, checkout sessions, idempotent webhook handlers, customer portal, and invoicing.
+
+**SkillSpoke:** payments are delegated to Stripe, and the server side runs in SkillSpoke's stack, not in Next.js API routes or Express: the checkout, portal and webhook endpoints are API Gateway REST API v1 methods (spec-first in OpenAPI) on Python Lambdas with `aws-lambda-powertools`, using the `stripe` Python SDK. The webhook handler verifies the `Stripe-Signature` header with `stripe.Webhook.construct_event` on the raw body, reads the signing secret and API key from Secrets Manager with Powertools Parameters, and is made idempotent on the Stripe event ID with the Powertools idempotency utility (never a check-then-insert, which races on concurrent redelivery). Billing state lives in the owning service's own store, and the change is published as a SkillSpoke event through the events service. The TypeScript examples below show the Stripe API calls and event handling logic; write them in Python for SkillSpoke, and render only the browser-side Checkout redirect in the Next.js app.
 
 ---
 
