@@ -1,6 +1,6 @@
 ---
 name: aws-cdk-development
-description: AWS Cloud Development Kit (CDK) expert for building cloud infrastructure with TypeScript/Python. Use when creating CDK stacks, defining CDK constructs, implementing infrastructure as code, or when the user mentions CDK, CloudFormation, IaC, cdk synth, cdk deploy, or wants to define AWS infrastructure programmatically. Covers CDK app structure, construct patterns, stack composition, and deployment workflows.
+description: AWS Cloud Development Kit (CDK) expert for building cloud infrastructure; SkillSpoke writes CDK in Python. Use when creating CDK stacks, defining CDK constructs, implementing infrastructure as code, or when the user mentions CDK, CloudFormation, IaC, cdk synth, cdk deploy, or wants to define AWS infrastructure programmatically. Covers CDK app structure, construct patterns, stack composition, and deployment workflows.
 context: fork
 skills:
   - aws-mcp-setup
@@ -56,39 +56,41 @@ Use this skill when:
 
 ### Resource Naming
 
-Use the resource-naming skill: the project's naming command (`printenv ATW_NAMING_COMMAND` prints it) gives every stack and resource name (`name build <kind> ...`), and `name check <name> --kind <kind>` verifies one. Never compose a name by hand. When the project configures no naming command (`printenv ATW_NAMING_COMMAND` prints nothing), let CDK generate names.
+Use the resource-naming skill: the project's naming command (`printenv ATW_NAMING_COMMAND` prints it) gives every stack and resource name (`name build <kind> ...`), and `name check <name> --kind <kind>` verifies one. Never compose a name by hand, and never leave a name for CDK to generate. When the project configures no naming command (`printenv ATW_NAMING_COMMAND` prints nothing), say so in your result and leave the name unmade, as the resource-naming skill says.
 
 ### Lambda Function Development
 
-Use the appropriate Lambda construct based on runtime:
+SkillSpoke infrastructure is CDK in Python, and every service Lambda is Python on `aws-lambda-powertools` through `shared-chassis-lib`. Use the constructs `shared-cdk-lib` provides where it has one for the job. Otherwise use the stable `aws_lambda.Function` from `aws-cdk-lib` and bundle the dependencies with `Code.from_asset` and the runtime's bundling image. `@aws-cdk/aws-lambda-python-alpha` (`PythonFunction`) is an experimental alpha module outside `aws-cdk-lib`, with no stability guarantee; do not use it.
 
-**TypeScript/JavaScript**: Use `@aws-cdk/aws-lambda-nodejs`
-```typescript
-import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
+```python
+from aws_cdk import BundlingOptions, aws_lambda as lambda_
 
-new NodejsFunction(this, 'MyFunction', {
-  entry: 'lambda/handler.ts',
-  handler: 'handler',
-  // Automatically handles bundling, dependencies, and transpilation
-});
+lambda_.Function(
+    self,
+    "Handler",
+    function_name=function_name,  # from the naming command
+    runtime=lambda_.Runtime.PYTHON_3_14,
+    architecture=lambda_.Architecture.ARM_64,
+    handler="handler.handler",
+    code=lambda_.Code.from_asset(
+        "lambda",
+        bundling=BundlingOptions(
+            image=lambda_.Runtime.PYTHON_3_14.bundling_image,
+            command=[
+                "bash",
+                "-c",
+                "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output",
+            ],
+        ),
+    ),
+)
 ```
 
-**Python**: Use `@aws-cdk/aws-lambda-python`
-```typescript
-import { PythonFunction } from '@aws-cdk/aws-lambda-python-alpha';
-
-new PythonFunction(this, 'MyFunction', {
-  entry: 'lambda',
-  index: 'handler.py',
-  handler: 'handler',
-  // Automatically handles dependencies and packaging
-});
-```
+Pin the runtime to the latest Python runtime Lambda supports (check with the AWS documentation tools) and use the same runtime for the bundling image, so compiled dependencies match.
 
 **Benefits**:
-- Automatic bundling and dependency management
-- Transpilation handled automatically
-- No manual packaging required
+- Stable `aws-cdk-lib` API, with no alpha module to track
+- Dependencies installed in a container that matches the Lambda runtime
 - Consistent deployment patterns
 
 ### Pre-Deployment Validation
@@ -97,15 +99,12 @@ new PythonFunction(this, 'MyFunction', {
 
 Before deploying:
 
-1. **Build**: Ensure compilation succeeds
+1. **Synth**: Ensure the app synthesizes
    ```bash
-   npm run build  # or language-specific build command
+   cdk synth --profile dev
    ```
 
-2. **Tests**: Run unit and integration tests
-   ```bash
-   npm test  # or pytest, mvn test, etc.
-   ```
+2. **Tests**: Run the repository's synth assertion tests (the test command the repository declares, for example `pytest`)
 
 3. **Validation Script**: Meta-level checks
    ```bash
@@ -138,8 +137,8 @@ The validation script checks:
 
 ### Stack Organization
 
-- Use nested stacks for complex applications
-- Separate concerns into logical construct boundaries
+- One CDK app per service, with one stack per environment holding every resource the service owns; no separate data stack and no nested stacks to split a service
+- Separate concerns into logical construct boundaries inside that stack
 - Share values between stacks through SSM Parameter Store (the producing stack writes the parameter, the consuming stack reads it at deploy time); never CloudFormation exports or passing constructs across stacks (see `cdk-coding`)
 - Use CDK context for environment-specific configuration
 
@@ -162,8 +161,8 @@ The validation script checks:
 - Security best practices for AWS services
 
 **Example scenarios**:
-- "Check if Lambda supports Python 3.13 runtime"
-- "Verify DynamoDB is available in eu-south-2"
+- "Which is the latest Python runtime Lambda supports?"
+- "Verify a service is available in us-east-1"
 - "What are the current Lambda timeout limits?"
 - "Get latest S3 encryption options"
 
@@ -178,9 +177,9 @@ The validation script checks:
 
 **Example scenarios**:
 - "What's the recommended CDK construct for API Gateway REST API?"
-- "How to configure NodejsFunction bundling options?"
+- "How to configure Python bundling options for `Code.from_asset`?"
 - "Best practices for CDK stack organization"
-- "CDK construct for DynamoDB with auto-scaling"
+- "CDK construct for an on-demand DynamoDB table (`TableV2`)"
 
 ### MCP Usage Best Practices
 

@@ -1,6 +1,6 @@
 # AWS CDK Patterns and Best Practices
 
-This reference provides detailed patterns, anti-patterns, and best practices for AWS CDK development.
+This reference provides patterns, anti-patterns, and best practices for AWS CDK development in SkillSpoke's stack: CDK in Python through `shared-cdk-lib`, one CDK app per service with one stack per environment holding every resource the service owns, Python Lambdas on `aws-lambda-powertools`, API Gateway REST API v1 spec-first in OpenAPI, and values that cross stacks only through SSM Parameter Store. Load `cdk-coding` for the rules a CDK change must pass.
 
 ## Table of Contents
 
@@ -14,54 +14,59 @@ This reference provides detailed patterns, anti-patterns, and best practices for
 
 ## Naming Conventions
 
-Use the resource-naming skill: stack, API, table, bucket, role and SSM parameter names all come from the project's naming command (`name build <kind> ...`), and `name check <name> --kind <kind>` verifies one. When the project configures no naming command, let CDK generate names.
+Use the resource-naming skill: stack, API, function, table, bucket, role and SSM parameter names all come from the project's naming command (`name build <kind> ...`), and `name check <name> --kind <kind>` verifies one. Never type a name by hand and never leave it for CDK to generate. When the project configures no naming command, say so in your result and leave the name unmade.
 
 ## Construct Patterns
 
-### L3 Constructs (Patterns)
+### Spec-first REST API
 
-Prefer high-level patterns that encapsulate best practices:
+APIs are API Gateway REST API v1, and the OpenAPI specification exists before the handler code. Build the API from the specification with `SpecRestApi`, not from a proxy construct that invents the routes:
 
-```typescript
-import * as patterns from 'aws-cdk-lib/aws-apigateway';
+```python
+from aws_cdk import aws_apigateway as apigateway
 
-new patterns.LambdaRestApi(this, 'MyApi', {
-  handler: myFunction,
-  // Includes CloudWatch Logs, IAM roles, and API Gateway configuration
-});
+api = apigateway.SpecRestApi(
+    self,
+    "Api",
+    rest_api_name=rest_api_name,  # from the naming command
+    api_definition=apigateway.ApiDefinition.from_asset("openapi/api.yaml"),
+)
 ```
 
 ### Custom Constructs
 
-Create reusable constructs for repeated patterns:
+Create reusable constructs for repeated patterns, and use the one `shared-cdk-lib` already provides where it has one:
 
-```typescript
-export class ApiWithDatabase extends Construct {
-  public readonly api: apigateway.RestApi;
-  public readonly table: dynamodb.Table;
+```python
+from aws_cdk import aws_dynamodb as dynamodb, aws_lambda as lambda_
+from constructs import Construct
 
-  constructor(scope: Construct, id: string, props: ApiWithDatabaseProps) {
-    super(scope, id);
 
-    this.table = new dynamodb.Table(this, 'Table', {
-      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-    });
+class ApiWithTable(Construct):
+    """A Lambda handler with the on-demand table it reads and writes."""
 
-    const handler = new NodejsFunction(this, 'Handler', {
-      entry: props.handlerEntry,
-      environment: {
-        TABLE_NAME: this.table.tableName,
-      },
-    });
-
-    this.table.grantReadWriteData(handler);
-
-    this.api = new apigateway.LambdaRestApi(this, 'Api', {
-      handler,
-    });
-  }
-}
+    def __init__(self, scope: Construct, construct_id: str, *, names: ServiceNames, code: lambda_.Code) -> None:
+        super().__init__(scope, construct_id)
+        self.table = dynamodb.TableV2(
+            self,
+            "Table",
+            table_name=names.table,
+            partition_key=dynamodb.Attribute(name="pk", type=dynamodb.AttributeType.STRING),
+            billing=dynamodb.Billing.on_demand(),
+            point_in_time_recovery_specification=dynamodb.PointInTimeRecoverySpecification(
+                point_in_time_recovery_enabled=True
+            ),
+        )
+        self.handler = lambda_.Function(
+            self,
+            "Handler",
+            function_name=names.function,
+            runtime=lambda_.Runtime.PYTHON_3_14,
+            handler="handler.handler",
+            code=code,
+            environment={"TABLE_NAME": self.table.table_name},
+        )
+        self.table.grant_read_write_data(self.handler)
 ```
 
 ## Security Patterns
@@ -70,316 +75,215 @@ export class ApiWithDatabase extends Construct {
 
 Use grant methods instead of broad policies:
 
-```typescript
-// ✅ GOOD - Specific grants
-const table = new dynamodb.Table(this, 'Table', { /* ... */ });
-const lambda = new lambda.Function(this, 'Function', { /* ... */ });
+```python
+# GOOD - specific grants
+table.grant_read_write_data(handler)
 
-table.grantReadWriteData(lambda);
-
-// ❌ BAD - Overly broad permissions
-lambda.addToRolePolicy(new iam.PolicyStatement({
-  actions: ['dynamodb:*'],
-  resources: ['*'],
-}));
+# BAD - overly broad permissions
+handler.add_to_role_policy(iam.PolicyStatement(actions=["dynamodb:*"], resources=["*"]))
 ```
 
 ### Secrets Management
 
-Use Secrets Manager for sensitive data:
+Use Secrets Manager for sensitive data, with the value generated by the service, never typed into code:
 
-```typescript
-import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+```python
+from aws_cdk import aws_secretsmanager as secretsmanager
 
-const secret = new secretsmanager.Secret(this, 'DbPassword', {
-  generateSecretString: {
-    secretStringTemplate: JSON.stringify({ username: 'admin' }),
-    generateStringKey: 'password',
-    excludePunctuation: true,
-  },
-});
-
-// Grant read access to Lambda
-secret.grantRead(myFunction);
+secret = secretsmanager.Secret(
+    self,
+    "ApiKey",
+    secret_name=secret_name,  # from the naming command
+    generate_secret_string=secretsmanager.SecretStringGenerator(exclude_punctuation=True),
+)
+secret.grant_read(handler)
 ```
 
-### VPC Configuration
+### VPC
 
-Follow VPC best practices:
-
-```typescript
-const vpc = new ec2.Vpc(this, 'Vpc', {
-  maxAzs: 2,
-  natGateways: 1, // Cost optimization: use 1 for dev, 2+ for prod
-  subnetConfiguration: [
-    {
-      name: 'Public',
-      subnetType: ec2.SubnetType.PUBLIC,
-      cidrMask: 24,
-    },
-    {
-      name: 'Private',
-      subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-      cidrMask: 24,
-    },
-    {
-      name: 'Isolated',
-      subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
-      cidrMask: 24,
-    },
-  ],
-});
-```
+A service stack does not create its own VPC. Everything that can be inside the environment VPC is, reached through VPC endpoints; the only internet path is the egress tier used by the Egress Boundary service. Read the VPC and subnet identifiers from the SSM parameters the networking stack publishes, and do not add NAT Gateways to a service.
 
 ## Lambda Integration
 
-### NodejsFunction (TypeScript/JavaScript)
+### Python function with bundled dependencies
 
-```typescript
-import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
+Use the stable `aws_lambda.Function` with `Code.from_asset` bundling in the runtime's image. `@aws-cdk/aws-lambda-python-alpha` (`PythonFunction`) is an experimental alpha module outside `aws-cdk-lib`; do not use it.
 
-const fn = new NodejsFunction(this, 'Function', {
-  entry: 'src/handlers/process.ts',
-  handler: 'handler',
-  runtime: lambda.Runtime.NODEJS_20_X,
-  timeout: Duration.seconds(30),
-  memorySize: 512,
-  environment: {
-    TABLE_NAME: table.tableName,
-  },
-  bundling: {
-    minify: true,
-    sourceMap: true,
-    externalModules: ['@aws-sdk/*'], // Use AWS SDK from Lambda runtime
-  },
-});
-```
+```python
+from aws_cdk import BundlingOptions, Duration, aws_lambda as lambda_
 
-### PythonFunction
-
-```typescript
-import { PythonFunction } from '@aws-cdk/aws-lambda-python-alpha';
-
-const fn = new PythonFunction(this, 'Function', {
-  entry: 'src/handlers',
-  index: 'process.py',
-  handler: 'handler',
-  runtime: lambda.Runtime.PYTHON_3_12,
-  timeout: Duration.seconds(30),
-  memorySize: 512,
-});
+fn = lambda_.Function(
+    self,
+    "Function",
+    function_name=function_name,  # from the naming command
+    runtime=lambda_.Runtime.PYTHON_3_14,
+    architecture=lambda_.Architecture.ARM_64,
+    handler="process.handler",
+    timeout=Duration.seconds(30),
+    memory_size=512,
+    tracing=lambda_.Tracing.ACTIVE,
+    environment={"TABLE_NAME": table.table_name},
+    code=lambda_.Code.from_asset(
+        "src/handlers",
+        bundling=BundlingOptions(
+            image=lambda_.Runtime.PYTHON_3_14.bundling_image,
+            command=[
+                "bash",
+                "-c",
+                "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output",
+            ],
+        ),
+    ),
+)
 ```
 
 ### Lambda Layers
 
-Share code across functions:
+Share code across functions only through a layer or a published package; services never import another service's source. Prefer the shared libraries as published packages (`shared-chassis-lib`, `shared-runtime-lib`) over a hand-built layer.
 
-```typescript
-const layer = new lambda.LayerVersion(this, 'CommonLayer', {
-  code: lambda.Code.fromAsset('layers/common'),
-  compatibleRuntimes: [lambda.Runtime.NODEJS_20_X],
-  description: 'Common utilities',
-});
-
-new NodejsFunction(this, 'Function', {
-  entry: 'src/handler.ts',
-  layers: [layer],
-});
+```python
+layer = lambda_.LayerVersion(
+    self,
+    "CommonLayer",
+    layer_version_name=layer_name,  # from the naming command
+    code=lambda_.Code.from_asset("layers/common"),
+    compatible_runtimes=[lambda_.Runtime.PYTHON_3_14],
+)
 ```
 
 ## Testing Patterns
 
-### Snapshot Testing
-
-```typescript
-import { Template } from 'aws-cdk-lib/assertions';
-
-test('Stack creates expected resources', () => {
-  const app = new cdk.App();
-  const stack = new MyStack(app, 'TestStack');
-
-  const template = Template.fromStack(stack);
-  expect(template.toJSON()).toMatchSnapshot();
-});
-```
-
 ### Fine-Grained Assertions
 
-```typescript
-test('Lambda has correct environment', () => {
-  const app = new cdk.App();
-  const stack = new MyStack(app, 'TestStack');
+```python
+from aws_cdk import App
+from aws_cdk.assertions import Match, Template
 
-  const template = Template.fromStack(stack);
 
-  template.hasResourceProperties('AWS::Lambda::Function', {
-    Runtime: 'nodejs20.x',
-    Timeout: 30,
-    Environment: {
-      Variables: {
-        TABLE_NAME: { Ref: Match.anyValue() },
-      },
-    },
-  });
-});
+def test_lambda_has_table_name() -> None:
+    template = Template.from_stack(ServiceStack(App(), "TestStack"))
+    template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "Runtime": "python3.14",
+            "Environment": {"Variables": {"TABLE_NAME": {"Ref": Match.any_value()}}},
+        },
+    )
 ```
 
 ### Resource Count Validation
 
-```typescript
-test('Stack has correct number of functions', () => {
-  const app = new cdk.App();
-  const stack = new MyStack(app, 'TestStack');
-
-  const template = Template.fromStack(stack);
-  template.resourceCountIs('AWS::Lambda::Function', 3);
-});
+```python
+def test_stack_function_count() -> None:
+    template = Template.from_stack(ServiceStack(App(), "TestStack"))
+    template.resource_count_is("AWS::Lambda::Function", 3)
 ```
 
 ## Cost Optimization
 
+SkillSpoke is at alpha scale (one dev account, at most five users). Per-request pricing (Lambda, DynamoDB on-demand) costs cents a month at this scale; provisioned always-on capacity (an ElastiCache node, an idle RDS instance, a NAT Gateway, provisioned concurrency, DynamoDB provisioned capacity) carries a monthly floor that low usage does not reduce. Choose provisioned capacity only for a stated, measured need, and record the cost comparison.
+
 ### Right-Sizing Lambda
 
-```typescript
-// Development
-const devFunction = new NodejsFunction(this, 'DevFunction', {
-  memorySize: 256, // Lower for dev
-  timeout: Duration.seconds(30),
-});
+Size memory from measured duration (Lambda Power Tuning), not by environment guesswork, and set a timeout that fits the work.
 
-// Production
-const prodFunction = new NodejsFunction(this, 'ProdFunction', {
-  memorySize: 1024, // Higher for prod performance
-  timeout: Duration.seconds(10),
-  reservedConcurrentExecutions: 10, // Prevent runaway costs
-});
+### DynamoDB Billing
+
+```python
+table = dynamodb.TableV2(
+    self,
+    "Table",
+    table_name=table_name,  # from the naming command
+    partition_key=dynamodb.Attribute(name="pk", type=dynamodb.AttributeType.STRING),
+    billing=dynamodb.Billing.on_demand(),
+)
 ```
 
-### DynamoDB Billing Modes
-
-```typescript
-// Development/Low Traffic
-const devTable = new dynamodb.Table(this, 'DevTable', {
-  billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-});
-
-// Production/Predictable Load
-const prodTable = new dynamodb.Table(this, 'ProdTable', {
-  billingMode: dynamodb.BillingMode.PROVISIONED,
-  readCapacity: 5,
-  writeCapacity: 5,
-  autoScaling: { /* ... */ },
-});
-```
+Provisioned capacity with auto-scaling (`dynamodb.Billing.provisioned(...)`) is cheaper only for steady traffic high enough to keep the provisioned units busy (see the `dynamodb` skill).
 
 ### S3 Lifecycle Policies
 
-```typescript
-const bucket = new s3.Bucket(this, 'DataBucket', {
-  lifecycleRules: [
-    {
-      id: 'MoveToIA',
-      transitions: [
-        {
-          storageClass: s3.StorageClass.INFREQUENT_ACCESS,
-          transitionAfter: Duration.days(30),
-        },
-        {
-          storageClass: s3.StorageClass.GLACIER,
-          transitionAfter: Duration.days(90),
-        },
-      ],
-    },
-    {
-      id: 'CleanupOldVersions',
-      noncurrentVersionExpiration: Duration.days(30),
-    },
-  ],
-});
+```python
+from aws_cdk import Duration, aws_s3 as s3
+
+bucket = s3.Bucket(
+    self,
+    "DataBucket",
+    bucket_name=bucket_name,  # from the naming command
+    versioned=True,
+    lifecycle_rules=[
+        s3.LifecycleRule(
+            id="MoveToIA",
+            transitions=[
+                s3.Transition(storage_class=s3.StorageClass.INFREQUENT_ACCESS, transition_after=Duration.days(30)),
+                s3.Transition(storage_class=s3.StorageClass.GLACIER, transition_after=Duration.days(90)),
+            ],
+        ),
+        s3.LifecycleRule(id="CleanupOldVersions", noncurrent_version_expiration=Duration.days(30)),
+    ],
+)
 ```
 
 ## Anti-Patterns
 
-### ❌ Ad-hoc Names
+### Ad-hoc Names
 
-A name typed in by hand instead of generated by the resource-naming skill is wrong; so is an explicit name in a project that configures no naming command. Generate names with the naming command's `name build`, or let CDK generate them.
+A name typed in by hand, copied from a neighbouring stack, or left for CDK to generate is wrong. Generate names with the naming command's `name build`.
 
-### ❌ Overly Broad IAM Permissions
+### Overly Broad IAM Permissions
 
-```typescript
-// BAD
-function.addToRolePolicy(new iam.PolicyStatement({
-  actions: ['*'],
-  resources: ['*'],
-}));
+```python
+# BAD
+handler.add_to_role_policy(iam.PolicyStatement(actions=["*"], resources=["*"]))
 
-// GOOD
-table.grantReadWriteData(function);
+# GOOD
+table.grant_read_write_data(handler)
 ```
 
-### ❌ Manual Dependency Management
+### Manual Dependency Management
 
-```typescript
-// BAD - Manual bundling
-new lambda.Function(this, 'Function', {
-  code: lambda.Code.fromAsset('lambda.zip'), // Pre-bundled manually
-  // ...
-});
+```python
+# BAD - a zip bundled by hand outside the app
+lambda_.Code.from_asset("lambda.zip")
 
-// GOOD - Let CDK handle it
-new NodejsFunction(this, 'Function', {
-  entry: 'src/handler.ts',
-  // CDK handles bundling automatically
-});
+# GOOD - bundled at synth in the runtime's image (see Lambda Integration)
 ```
 
-### ❌ Missing Environment Variables
+### Values Hardcoded in Lambda Code
 
-```typescript
-// BAD
-new NodejsFunction(this, 'Function', {
-  entry: 'src/handler.ts',
-  // Table name hardcoded in Lambda code
-});
-
-// GOOD
-new NodejsFunction(this, 'Function', {
-  entry: 'src/handler.ts',
-  environment: {
-    TABLE_NAME: table.tableName,
-  },
-});
+```python
+# BAD - the table name written into the handler source
+# GOOD - passed in by the stack
+environment = {"TABLE_NAME": table.table_name}
 ```
 
-### ❌ Ignoring Stack Outputs
+### CloudFormation Exports Between Stacks
 
-```typescript
-// BAD - No way to reference resources
-new MyStack(app, 'Stack', {});
+Never share a value between stacks with `CfnOutput(export_name=...)` and `Fn.import_value`, or by passing a construct from one stack to another: an export locks the producing stack until every consumer is removed. The producing stack writes the value to SSM Parameter Store, and the consuming stack reads that parameter.
 
-// GOOD - Export important values
-class MyStack extends Stack {
-  constructor(scope: Construct, id: string) {
-    super(scope, id);
+```python
+from aws_cdk import aws_ssm as ssm
 
-    const api = new apigateway.RestApi(this, 'Api', {});
+# Producing stack
+ssm.StringParameter(
+    self,
+    "ApiUrlParameter",
+    parameter_name=api_url_parameter_name,  # from the naming command
+    string_value=api.url,
+)
 
-    new CfnOutput(this, 'ApiUrl', {
-      value: api.url,
-      description: 'API Gateway URL',
-      exportName: 'MyApiUrl',
-    });
-  }
-}
+# Consuming stack
+api_url = ssm.StringParameter.value_for_string_parameter(self, api_url_parameter_name)
 ```
 
 ## Summary
 
-- **Name** resources with the resource-naming skill (the naming command's `name build`) when the project configures a naming command; otherwise let CDK generate them
-- **Use** high-level constructs (L2/L3) over low-level (L1)
+- **Name** every resource with the resource-naming skill (the naming command's `name build`)
+- **Write** CDK in Python, one app per service with one stack per environment
+- **Build** REST APIs from the OpenAPI specification (`SpecRestApi`)
+- **Use** high-level constructs (L2/L3, `shared-cdk-lib`) over low-level (L1)
 - **Prefer** grant methods for IAM permissions
-- **Leverage** `NodejsFunction` and `PythonFunction` for automatic bundling
-- **Test** stacks with assertions and snapshots
-- **Optimize** costs based on environment (dev vs prod)
-- **Validate** infrastructure before deployment
-- **Document** custom constructs and patterns
+- **Bundle** Python dependencies with `Code.from_asset` and the runtime's bundling image
+- **Share** values between stacks through SSM Parameter Store, never exports
+- **Default** to per-request pricing at alpha scale
+- **Test** stacks with assertions
