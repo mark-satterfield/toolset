@@ -3987,6 +3987,7 @@ def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict
 ENV_SYNTH_KINDS = ("infra",)
 ENV_SETUP_TIMEOUT = 1800
 ENV_SYNTH_TIMEOUT = 900
+ENV_VERSION_TIMEOUT = 30
 ENV_PROBE = r"""
 import importlib, importlib.metadata as md, json, os, re, sys, tomllib
 
@@ -4108,9 +4109,11 @@ def probe_environment(path: Path) -> list[str]:
 
     """
     py = path / ".venv" / "bin" / "python"
+    if py.is_symlink() and not py.exists():
+        return [f".venv/bin/python points at a missing interpreter: {py.readlink()}"]
     if not py.is_file():
         return [".venv/bin/python is missing"]
-    ver = run([str(py), "--version"], timeout=30)
+    ver = run([str(py), "--version"], timeout=ENV_VERSION_TIMEOUT)
     if ver.returncode != 0:
         return [f".venv/bin/python does not run: {_tail(ver)}"]
     cp = run([str(py), "-I", "-c", ENV_PROBE, str(path)], timeout=600)
@@ -4134,8 +4137,37 @@ def probe_environment(path: Path) -> list[str]:
     return problems
 
 
+def broken_venv(path: Path) -> Path | None:
+    """Find a repo's `.venv` whose interpreter is missing, a dangling link, or does not start.
+
+    Args:
+        path: The repo's working tree.
+
+    Returns:
+        The `.venv` folder when it exists as a real folder and its interpreter cannot run,
+        else None.
+
+    """
+    venv = path / ".venv"
+    if venv.is_symlink() or not venv.is_dir():
+        return None
+    py = venv / "bin" / "python"
+    if not py.is_file():
+        return venv
+    ver = run([str(py), "--version"], timeout=ENV_VERSION_TIMEOUT)
+    return venv if ver.returncode != 0 else None
+
+
 def setup_environment(path: Path, synth: bool) -> EnvResult:
-    """Run the repo's `install` task, then verify the environment (and `cdk synth --profile dev`).
+    """Rebuild a broken `.venv`, force the repo's `install` task, then verify the environment.
+
+    A `.venv` whose interpreter is missing, a dangling link or does not start is removed first.
+    The `install` task runs with `--force`, so a Taskfile `status` check that only tests for the
+    `.venv` folder cannot skip it. An infra repo also runs `cdk synth --profile dev`.
+
+    Args:
+        path: The repo's working tree.
+        synth: Whether to run `cdk synth --profile dev` after the environment verifies.
 
     Returns:
         {"steps": [...], "problems": [...]}; empty problems means the environment holds.
@@ -4145,15 +4177,22 @@ def setup_environment(path: Path, synth: bool) -> EnvResult:
     problems: list[str] = []
     if shutil.which("task") is None:
         return EnvResult(steps=steps, problems=["the task binary is not on PATH"])
+    venv = broken_venv(path)
+    if venv is not None:
+        try:
+            shutil.rmtree(venv)
+        except OSError as exc:
+            return EnvResult(steps=steps, problems=[f"removing the broken {venv} failed: {exc}"])
+        steps.append("removed .venv, whose interpreter is missing or does not start")
     cp = run(
-        ["task", "--dir", str(path), "install"],
+        ["task", "--dir", str(path), "--force", "install"],
         timeout=ENV_SETUP_TIMEOUT,
         env={"VIRTUAL_ENV": None},
     )
     if cp.returncode != 0:
-        problems.append(f"task install failed: {_tail(cp)}")
+        problems.append(f"task install --force failed: {_tail(cp)}")
     else:
-        steps.append("ran task install")
+        steps.append("ran task install --force")
     problems.extend(probe_environment(path))
     if not problems:
         steps.append("verified .venv/bin/python, dependencies and imports")

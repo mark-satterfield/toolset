@@ -321,7 +321,9 @@ create` runs the template's setup task (`task install`), then verifies `.venv/bi
 every declared dependency is installed and importable, `aws_cdk` imports where the code uses it,
 and, for an infra template, `cdk synth --profile dev` succeeds. It exits 1 and reports
 `environment_error` when any of these does not hold; repair the cause and run
-`polyrepo.py environment <repo> --fix`. Never report a created repository as done while
+`polyrepo.py environment <repo> --fix`, which removes a `.venv` whose interpreter is missing, a
+dangling link or does not start, then runs `task install --force` so a Taskfile `status` check
+on the `.venv` folder cannot skip it. Never report a created repository as done while
 `environment_error` is present. `polyrepo.py environment` (also a `doctor` check) lists any
 active Python repository whose environment has drifted. Setup creates only gitignored local
 files; a failure that needs a change to a repository's code or `pyproject.toml` is reported, not
