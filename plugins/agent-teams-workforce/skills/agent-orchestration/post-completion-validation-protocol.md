@@ -342,13 +342,8 @@ TRIGGER: Sub-agent claims style changes complete
 
 VERIFICATION_CHECKLIST:
 
-1. Require proof linters pass
-   - "Show linter output"
-   - Linter results
-2. Require proof formatters applied
-   - "Show formatter execution output"
-   - Formatter results
-3. Require proof tests still pass
+1. Require the commit hook to have passed on the change (the hook output or the commit)
+2. Require proof tests still pass
    - "Show test suite results"
    - Test execution output
 4. Require proof no functional changes introduced
@@ -466,11 +461,9 @@ REJECTION_PATTERN: IF agent_skips_any_step THEN
 
 MINIMUM_VERIFICATION_GATES:
 
-- [ ] Pre-commit hooks passed (if they exist)
+- [ ] Commit hooks passed (lint, format and type checks run there; necessary but NOT sufficient)
 - [ ] Unit tests executed and passed
 - [ ] Integration tests executed and passed
-- [ ] Linting passed (necessary but NOT sufficient)
-- [ ] Type checking passed (necessary but NOT sufficient)
 - [ ] Manual testing in realistic scenarios completed
 - [ ] Evidence collected and provided
 

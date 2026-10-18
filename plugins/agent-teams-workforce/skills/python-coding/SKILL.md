@@ -622,14 +622,7 @@ Replace these five recurring habits on sight. Each row points to the section tha
 - Write code cleanly enough to pass Flake8, Ruff, and MyPy with zero warnings or errors on the first attempt.
 - Treat laziness, an unhandled edge case, or messy formatting as a failed task.
 - Deliver correct imports, docstrings, and types in the first draft: imports sorted, unused names removed, line length within config, and docstrings present as Ruff requires.
-- Know the lint profile a file falls under before writing it. In the SkillSpoke repository, Python lints under the strict Ruff profile in `pyproject.toml`:
-  - Service and library code: the full profile — type annotations, docstrings with `Returns:` and `Raises:`, no `print`, exception classes.
-  - `ops/**/*.py`: the full profile, including annotations and docstrings. Diagnostics use `logging`; real CLI output uses `sys.stdout.write`.
-  - `.claude/skills/**/scripts/*.py`: the existing skill-script exceptions apply; annotations and docstrings remain required.
-- Before finishing, run these on the files changed and report zero diagnostics. Run them before attempting the commit: discovering lint debt at the pre-commit gate is the failure, not the gate itself.
-  - `ruff check`
-  - `ruff format --check`
-  - strict mypy with the repository's additional `Any` restrictions
-  - the generators' `--check`, when a schema or shared block changed
+- Know the lint profile a file falls under before writing it: read the repository's `ruff.toml` (or `[tool.ruff]`) and its per-file ignores.
+- Where the project's hooks run `ruff check`, `ruff format --check` and strict mypy on each edit and commit, fix every finding they report; where no hook runs them, run them on the changed files before finishing. Run a generator's `--check` when a schema or shared block changed.
 - A clean static check is not proof that runtime preconditions or real data contracts are correct. Probe the changed producer and its consumer once with realistic input: import the changed module and call the changed function or entry point.
 - For tier 2 tooling (the machinery that builds SkillSpoke, as the root `AGENTS.md` "Code quality" section defines it), that probe is the sanity check. It is a throwaway, scoped to what changed: it is not kept, committed, wired into a hook, or run again by a later step. No test or check suite exists for tier 2 tooling and none is written; the owner's pipeline run is the test.

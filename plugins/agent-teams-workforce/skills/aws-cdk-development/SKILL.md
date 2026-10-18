@@ -93,51 +93,9 @@ new PythonFunction(this, 'MyFunction', {
 
 ### Pre-Deployment Validation
 
-Use a **multi-layer validation strategy** for comprehensive CDK quality checks:
+**cdk-nag**: where the project's hooks run cdk-nag on synth, do not add or run it; write constructs that pass the AwsSolutions and Serverless packs (load `cdk-coding`). Acknowledge an accepted finding with the cdk-nag 3 Validations API as `cdk-coding` describes under "Acknowledging a finding"; `NagSuppressions` and Aspects are the removed v2 API.
 
-#### Layer 1: Real-Time IDE Feedback (Recommended)
-
-**For TypeScript/JavaScript projects**:
-
-Install [cdk-nag](https://github.com/cdklabs/cdk-nag) for synthesis-time validation:
-```bash
-npm install --save-dev cdk-nag
-```
-
-Add to your CDK app:
-```typescript
-import { Aspects } from 'aws-cdk-lib';
-import { AwsSolutionsChecks } from 'cdk-nag';
-
-const app = new App();
-Aspects.of(app).add(new AwsSolutionsChecks());
-```
-
-**Optional - VS Code users**: Install [CDK NAG Validator extension](https://marketplace.visualstudio.com/items?itemName=alphacrack.cdk-nag-validator) for faster feedback on file save.
-
-**For Python/Java/C#/Go projects**: cdk-nag is available in all CDK languages and provides the same synthesis-time validation.
-
-#### Layer 2: Synthesis-Time Validation (Required)
-
-1. **Synthesis with cdk-nag**: Validate stack with comprehensive rules
-   ```bash
-   cdk synth  # cdk-nag runs automatically via Aspects
-   ```
-
-2. **Suppress legitimate exceptions** with documented reasons:
-   ```typescript
-   import { NagSuppressions } from 'cdk-nag';
-
-   // Document WHY the exception is needed
-   NagSuppressions.addResourceSuppressions(resource, [
-     {
-       id: 'AwsSolutions-L1',
-       reason: 'Lambda@Edge requires specific runtime for CloudFront compatibility'
-     }
-   ]);
-   ```
-
-#### Layer 3: Pre-Commit Safety Net
+Before deploying:
 
 1. **Build**: Ensure compilation succeeds
    ```bash
@@ -154,7 +112,7 @@ Aspects.of(app).add(new AwsSolutionsChecks());
    ./scripts/validate-stack.sh
    ```
 
-The validation script now focuses on:
+The validation script checks:
 - Language detection
 - Template size and resource count analysis
 - Synthesis success verification

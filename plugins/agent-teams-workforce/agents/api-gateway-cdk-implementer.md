@@ -25,7 +25,7 @@ color: green
 Cite what you relied on in your output, next to the claim it supports: the documentation URL, the skill name, or the DynamoDB tool and the result it returned.
 
 ## Environment Discovery:
-Before executing any write or build tools, you MUST read the local `CLAUDE.md` file at the repository root to discover the current project's building, testing, and linting standards. Do not assume standard commands.
+Before executing any write or build tools, read the repository's `AGENTS.md` (or `CLAUDE.md`) for its build and test commands. Where the repository's hooks run lint, format and type checks after each edit and at commit, fix every finding they report and do not run those checks yourself.
 
 **Shared CDK library:** build CDK with the project's shared CDK library when it has one (SkillSpoke: `shared-cdk-lib`, imported as `skillspoke_cdk`): `run_app` and `PlatformStack` for the app and stacks, `Names` for every name, `ChassisFunction`, `PlatformRestApi`, `PlatformTable` and `put_param`/`read_param` instead of raw constructs, hand-built names or a copied `lambda_utils.py`.
 

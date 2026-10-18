@@ -141,35 +141,25 @@ What I observed: [what actually happened when tests ran?]
 
 ### 4. Static Analysis
 
-**Question:** Have you run linting, formatting, type checking tools and do they pass WITHOUT warnings?
+**Question:** Did the repository's hooks, which run lint, format and type checks on every edited file and at commit, report the change clean?
 
 **Levels:**
 
-- `not_run` = Linting/formatting/type checking not performed
-- `warnings` = Ran but produced warnings or errors
-- `clean` = ALL static analysis passes without warnings or errors
+- `clean` = The last hook report for each changed file was empty and the commit hook passed
+- `findings` = A hook reported findings on a changed file, or the commit hook failed
 
 **Your Assessment:**
 
 ```text
 Level: [choose one above]
 
-Evidence - You MUST actually run these tools:
-- [ ] I ran linting via: [exact command]
-- [ ] Output: [paste output or state "no issues found"]
-- [ ] I ran formatting via: [exact command]
-- [ ] Output: [paste output or state "no changes needed"]
-- [ ] I ran type checking via: [exact command]
-- [ ] Output: [paste output or state "no errors"]
-- [ ] Exit codes: linting=___, formatting=___, type checking=___
-OR
-- [ ] Static analysis tools NOT run
-- [ ] Static analysis produced warnings: [show them]
+Evidence:
+- [ ] Last hook report for each changed file: [empty, or paste the findings]
+- [ ] Commit hook result: [passed, or paste the output]
 
-Static analysis execution evidence:
-[Paste actual Bash output, or state "NOT RUN"]
-
-What I observed: [what actually happened when tools ran?]
+Where the repository has no such hooks, run the checks yourself:
+- [ ] Commands run: [exact commands]
+- [ ] Output: [paste output]
 ```
 
 ---

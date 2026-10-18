@@ -100,10 +100,7 @@ import anthropic
 client = anthropic.Anthropic(api_key="your-api-key")
 
 # Create skill with files
-skill = client.skills.create(
-    name="tdd-guide",
-    files=["tdd-guide/SKILL.md", "tdd-guide/*.py"]
-)
+skill = client.skills.create(name="tdd-guide", files=["tdd-guide/SKILL.md", "tdd-guide/*.py"])
 ```
 
 ## Quick Start
@@ -229,25 +226,26 @@ Framework: Pytest
 import pytest
 from shopping_cart import ShoppingCart
 
+
 class TestShoppingCart:
     """Test suite for shopping cart functionality."""
 
     def test_add_single_item_successfully(self):
         """Should add single item with quantity."""
         cart = ShoppingCart()
-        cart.add_item('apple', quantity=3, price=1.50)
+        cart.add_item("apple", quantity=3, price=1.50)
 
         assert len(cart.items) == 1
-        assert cart.items['apple']['quantity'] == 3
+        assert cart.items["apple"]["quantity"] == 3
         assert cart.get_total() == 4.50
 
     def test_update_quantity_for_existing_item(self):
         """Should update quantity if item already exists."""
         cart = ShoppingCart()
-        cart.add_item('apple', quantity=3, price=1.50)
-        cart.add_item('apple', quantity=2, price=1.50)
+        cart.add_item("apple", quantity=3, price=1.50)
+        cart.add_item("apple", quantity=2, price=1.50)
 
-        assert cart.items['apple']['quantity'] == 5
+        assert cart.items["apple"]["quantity"] == 5
         assert cart.get_total() == 7.50
 
     def test_reject_negative_quantity(self):
@@ -255,7 +253,7 @@ class TestShoppingCart:
         cart = ShoppingCart()
 
         with pytest.raises(ValueError, match="Quantity must be positive"):
-            cart.add_item('apple', quantity=-1, price=1.50)
+            cart.add_item("apple", quantity=-1, price=1.50)
 ```
 
 ### Example 2: Coverage Analysis with Recommendations
@@ -636,12 +634,6 @@ pip install -r requirements-dev.txt
 
 # Run tests
 pytest tests/ -v
-
-# Run linter
-pylint *.py
-
-# Run type checker
-mypy *.py
 ```
 
 ## Version History

@@ -55,7 +55,7 @@ persona and objective it used, and write the ruling to `#/$defs/DeadlockRuling` 
 the candidate path the brief names, with the checkpoint commands it gives.
 
 ## Environment Discovery:
-Before executing any write or build tools, you MUST read the local `CLAUDE.md` file at the repository root to discover the current project's building, testing, and linting standards. Do not assume standard commands.
+Before executing any write or build tools, read the repository's `AGENTS.md` (or `CLAUDE.md`) for its build and test commands. Where the repository's hooks run lint, format and type checks after each edit and at commit, fix every finding they report and do not run those checks yourself.
 
 ## Prompt Defense Rules
 
