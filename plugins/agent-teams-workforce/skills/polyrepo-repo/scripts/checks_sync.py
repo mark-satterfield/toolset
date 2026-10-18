@@ -109,12 +109,16 @@ class ChecksSpec:
 
 @dataclasses.dataclass(frozen=True)
 class FileChange:
-    """One path whose text differs from what the spec wants; `wanted` None removes the file."""
+    """One path whose text differs from what the spec wants; `wanted` None removes the file.
+
+    `hook` marks the commit hook git runs from the tree (a `core.hooksPath` folder inside it).
+    """
 
     path: str
     current: str | None
     wanted: str | None
     executable: bool = False
+    hook: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -917,7 +921,7 @@ def plan_hook(root: Path, spec: ChecksSpec, git_output: GitOutput) -> HookPlan:
         note = None if current == wanted else f"core.hooksPath hook {path} outside the tree does not run pre-commit"
         return HookPlan(None, install=False, note=note)
     rel = path.relative_to(root.resolve()).as_posix()
-    change = FileChange(rel, current, wanted, executable=True) if current != wanted else None
+    change = FileChange(rel, current, wanted, executable=True, hook=True) if current != wanted else None
     return HookPlan(change, install=False, note=None)
 
 

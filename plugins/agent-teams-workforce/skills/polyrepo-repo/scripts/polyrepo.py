@@ -6948,6 +6948,7 @@ def cmd_hooks_sync(args: argparse.Namespace, cfg: Config) -> int:
 # written is tier 2 (configuration and hooks), so it is committed on main whatever the repo's tier.
 
 CHECKS_SYNC_SUBJECT = "chore(checks): sync the canonical checker configurations"
+CHECKS_HOOK_SUBJECT = "chore(checks): run the canonical checks from the commit hook"
 PRE_COMMIT_INSTALL_TIMEOUT = 300
 
 
@@ -7066,6 +7067,9 @@ def write_checks(cfg: Config, dest: Path, name: str, space: str) -> bool:
 def _committable(r: LocalRepo, changes: Sequence[FileChange]) -> list[str]:
     """Name the changed paths a commit can carry: not ignored, and present or tracked.
 
+    A tracked path inside an ignored folder (a beads hook under `.beads/`) is kept, so the commit
+    stages these paths with `git add -f`.
+
     Returns:
         The paths.
 
@@ -7076,26 +7080,55 @@ def _committable(r: LocalRepo, changes: Sequence[FileChange]) -> list[str]:
     return [c.path for c in changes if c.path not in ignored and (c.wanted is not None or c.path in tracked)]
 
 
+def _commit_changes(
+    r: LocalRepo,
+    changes: Sequence[FileChange],
+    subject: str,
+    trailer: str | None,
+) -> dict[str, object] | None:
+    """Write these planned files and commit them on the current branch, putting them back on failure.
+
+    Returns:
+        None when they were committed or there was nothing to commit, else the failed status and its detail.
+
+    """
+    if not changes:
+        return None
+    apply_changes(r.path, changes)
+    paths = _committable(r, changes)
+    if not paths:
+        return None
+    try:
+        _commit_paths(r.path, paths, _with_trailer(subject, trailer), force=True)
+    except GitFailedError as exc:
+        git(r.path, "reset", "-q", "--", *paths)
+        restore_changes(r.path, changes)
+        return {"status": "failed", "detail": str(exc)}
+    return None
+
+
 def _commit_checks(
     cfg: Config,
     r: LocalRepo,
     plan: RepoPlan,
     trailer: str | None,
 ) -> dict[str, object]:
-    """Write the planned files, commit them on main and push.
+    """Commit the planned files on main, then the commit hook that runs them, and push.
+
+    The hook goes in its own later commit, so the commit that brings the canonical checks is
+    made before they run on commit, as it is where `pre-commit install` writes the hook outside
+    the tree.
 
     Returns:
         The status (`pushed`, `committed` when the push failed, `failed`) and any detail.
 
     """
-    apply_changes(r.path, plan.changes)
-    paths = _committable(r, plan.changes)
-    try:
-        _commit_paths(r.path, paths, _with_trailer(CHECKS_SYNC_SUBJECT, trailer))
-    except GitFailedError as exc:
-        git(r.path, "reset", "-q", "--", *paths)
-        restore_changes(r.path, plan.changes)
-        return {"status": "failed", "detail": str(exc)}
+    files = [c for c in plan.changes if not c.hook]
+    hooks = [c for c in plan.changes if c.hook]
+    files_failure = _commit_changes(r, files, CHECKS_SYNC_SUBJECT, trailer)
+    failure = files_failure or _commit_changes(r, hooks, CHECKS_HOOK_SUBJECT, trailer)
+    if failure is not None:
+        return failure
     cp = git(r.path, "push", "origin", cfg.default_branch, timeout=120)
     commit = git_out(r.path, "rev-parse", "--short=8", "HEAD")
     if cp.returncode != 0:
