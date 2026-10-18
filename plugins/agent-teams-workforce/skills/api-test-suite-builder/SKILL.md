@@ -13,7 +13,7 @@ description: "API Test Suite Builder"
 
 ## Overview
 
-Scans API route definitions across frameworks (Next.js App Router, Express, FastAPI, Django REST) and
+Scans API route definitions (SkillSpoke's OpenAPI specifications and Powertools handlers, and Next.js App Router routes) and
 auto-generates comprehensive test suites covering auth, input validation, error codes, pagination, file
 uploads, and rate limiting. Outputs ready-to-run test files for Vitest+Supertest (Node) or Pytest+httpx
 (Python).
@@ -62,41 +62,18 @@ find ./app/api -name "route.ts" | while read f; do
 done
 ```
 
-### Express
+### SkillSpoke services (OpenAPI + Powertools)
+SkillSpoke APIs are API Gateway REST API v1, spec-first, with Python Lambda handlers on the Powertools event handler; Express, FastAPI and Django are not used (FastAPI and Django are banned). The OpenAPI specification is the route map, and the tests are generated from it:
+
 ```bash
-# Find all router files
-find ./src -name "*.ts" -o -name "*.js" | xargs grep -l "router\.\(get\|post\|put\|delete\|patch\)" 2>/dev/null
+# Every path and method in the specification
+yq '.paths | to_entries | .[] | .key as $p | .value | keys | .[] | . + " " + $p' openapi/api.yaml
 
-# Extract routes with line numbers
-grep -rn "router\.\(get\|post\|put\|delete\|patch\)\|app\.\(get\|post\|put\|delete\|patch\)" \
-  src/ --include="*.ts" | grep -oE "(get|post|put|delete|patch)\(['\"][^'\"]*['\"]"
-
-# Generate route map
-grep -rn "router\.\|app\." src/ --include="*.ts" | \
-  grep -oE "\.(get|post|put|delete|patch)\(['\"][^'\"]+['\"]" | \
-  sed "s/\.\(.*\)('\(.*\)'/\U\1 \2/"
+# Powertools resolver routes in the handlers, to check they match the specification
+grep -rnE "@app\.(get|post|put|delete|patch)\(" src --include="*.py"
 ```
 
-### FastAPI
-```bash
-# Find all route decorators
-grep -rn "@app\.\|@router\." . --include="*.py" | \
-  grep -E "@(app|router)\.(get|post|put|delete|patch)"
-
-# Extract with path and function name
-grep -rn "@\(app\|router\)\.\(get\|post\|put\|delete\|patch\)" . --include="*.py" | \
-  grep -oE "@(app|router)\.(get|post|put|delete|patch)\(['\"][^'\"]*['\"]"
-```
-
-### Django REST Framework
-```bash
-# urlpatterns extraction
-grep -rn "path\|re_path\|url(" . --include="*.py" | grep "urlpatterns" -A 50 | \
-  grep -E "path\(['\"]" | grep -oE "['\"][^'\"]+['\"]" | head -40
-
-# ViewSet router registration
-grep -rn "router\.register\|DefaultRouter\|SimpleRouter" . --include="*.py"
-```
+Generate Pytest tests that build an API Gateway REST (v1) proxy event for each route and call the Lambda handler directly, with the service's collaborators mocked (London School); an integration suite then calls the deployed AWS dev stage over HTTPS with a Cognito token.
 
 ---
 
