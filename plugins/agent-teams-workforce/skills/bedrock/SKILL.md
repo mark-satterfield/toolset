@@ -22,10 +22,12 @@ Amazon Bedrock provides access to foundation models (FMs) from AI companies thro
 
 ### Foundation Models
 
-Pre-trained models available through Bedrock:
-- **Claude** (Anthropic): Text generation, analysis, coding — Opus 4.8 for frontier reasoning, Sonnet 4.6 for balanced workloads, Haiku 4.5 for fast, low-cost tasks
-- **Titan** (Amazon): Text, embeddings, image generation
-- **Stable Diffusion** (Stability AI): Image generation
+Pre-trained models available through Bedrock (from the Bedrock User Guide's model cards; the lineup changes, so check https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards.html with the AWS documentation tools before choosing):
+- **Claude** (Anthropic): text generation, analysis, coding and agents. The current family is Claude 5.5: Opus 5.5 for the most capable reasoning and long-running tasks, Sonnet 5.5 for balanced workloads, Haiku 5.5 for fast, high-volume, low-cost tasks. Claude Fable 5.1 is Anthropic's frontier model for ambitious coding and long-horizon agents. Earlier generations (Claude 5 and 4.x) remain available.
+- **Nova** (Amazon): Nova 2 Lite, Nova Pro, Lite and Micro for text, Nova Canvas for images, Nova Multimodal Embeddings
+- **Titan Text Embeddings V2** (Amazon) and **Cohere Embed v4**: text embeddings
+
+In SkillSpoke, all inference runs on Amazon Bedrock in the SkillSpoke account, and service code calls a model only through `skillSpoke-ai-lib`, the one way to call a model; the patterns below are what that library and its callers rest on.
 
 ### Model Access
 
@@ -47,7 +49,7 @@ Models must be enabled in your account before use:
 Invoke text models through the **Converse API** (`converse`, `converse_stream`): one request format across every model. Use `invoke_model` only for a provider-specific feature Converse does not expose, and for embeddings models, which Converse does not serve (https://docs.aws.amazon.com/bedrock/latest/userguide/apis.html).
 
 - **Always set `inferenceConfig.maxTokens`** on every call.
-- **Call models through an inference profile ID** (for example the `us.` geographic or `global.` profile), not a bare in-Region model ID. Look up the current profile IDs with `aws bedrock list-inference-profiles` and the model's card in the Bedrock User Guide; keep the ID in configuration, never hardcoded in handler code. The examples use `us.anthropic.claude-sonnet-5`.
+- **Call models through an inference profile ID** (for example the `us.` geographic or `global.` profile), not a bare in-Region model ID. Look up the current profile IDs with `aws bedrock list-inference-profiles` and the model's card in the Bedrock User Guide; keep the ID in configuration, never hardcoded in handler code. The examples use `us.anthropic.claude-sonnet-5-5`.
 - **Retries come from the SDK.** Configure the client with `botocore.config.Config`; never wrap a Bedrock call in a hand-written retry loop. Use adaptive mode for a Bedrock runtime client, because on-demand quotas make it throttle-bound against one resource; every other client uses standard mode (https://docs.aws.amazon.com/sdkref/latest/guide/feature-retry-behavior.html).
 
 ### Converse (Text Generation)
@@ -56,7 +58,7 @@ Invoke text models through the **Converse API** (`converse`, `converse_stream`):
 
 ```bash
 aws bedrock-runtime converse \
-  --model-id us.anthropic.claude-sonnet-5 \
+  --model-id us.anthropic.claude-sonnet-5-5 \
   --messages '[{"role": "user", "content": [{"text": "Explain AWS Lambda in 3 sentences."}]}]' \
   --inference-config '{"maxTokens": 1024}' \
   --query 'output.message.content[0].text'
@@ -68,7 +70,7 @@ aws bedrock-runtime converse \
 import boto3
 from botocore.config import Config
 
-MODEL_ID = "us.anthropic.claude-sonnet-5"  # from configuration in real code
+MODEL_ID = "us.anthropic.claude-sonnet-5-5"  # from configuration in real code
 
 bedrock = boto3.client("bedrock-runtime", config=Config(retries={"mode": "adaptive"}))
 
@@ -197,7 +199,7 @@ aws bedrock list-foundation-models \
 - **Use streaming**: For better user experience with long outputs
 - **Connection pooling**: Reuse boto3 clients
 - **Regional deployment**: Use closest region to reduce latency
-- **Provisioned throughput**: For consistent high-volume workloads
+- **Provisioned throughput**: Only for a measured, consistent high-volume workload; it is an hourly commitment billed whatever the traffic, so at SkillSpoke's alpha scale on-demand inference is the default
 
 ### Security
 
@@ -221,8 +223,8 @@ Invoking through a cross-Region inference profile needs the profile ARN and the 
         "bedrock:InvokeModelWithResponseStream"
       ],
       "Resource": [
-        "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-5",
-        "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-5",
+        "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-5-5",
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-5-5",
         "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
       ]
     }
@@ -246,13 +248,13 @@ Invoking through a cross-Region inference profile needs the profile ARN and the 
 ```bash
 # Check the inference profile exists and is active
 aws bedrock get-inference-profile \
-  --inference-profile-identifier us.anthropic.claude-sonnet-5
+  --inference-profile-identifier us.anthropic.claude-sonnet-5-5
 
 # Test IAM permissions
 aws iam simulate-principal-policy \
   --policy-source-arn arn:aws:iam::123456789012:role/my-role \
   --action-names bedrock:InvokeModel \
-  --resource-arns "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-5"
+  --resource-arns "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-5-5"
 ```
 
 ### ModelNotReadyException and ThrottlingException
