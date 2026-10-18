@@ -24,6 +24,7 @@ tool: start from `doctor --json`, or `doctor --fix --json` to repair first.
 | `reconcile` | `reconcile` | no open finding; a deprecated or archived repo with no local clone is normal (`deprecate` deletes the clone) and raises none |
 | `agents-sync` | `agents-sync --check` | every repo on disk that is not deprecated has the current shared `AGENTS.md` blocks |
 | `hooks-sync` | `hooks-sync --check` | every repo on disk that is not deprecated registers the current shared hooks in its `.claude/settings.json` |
+| `checks-sync` | `checks-sync --check` | every repo on disk that is not deprecated has the current canonical code checks of its stacks (`.code-checks/`, the canonical configuration files, the assembled `.pre-commit-config.yaml`, the `lint` task), nothing that contradicts them, every repository file consuming them, and the commit hook installed. A note on a repository's own file (a tsconfig or ESLint config that weakens the base, missing Node devDependencies) is tier 1 work in that repository |
 | `tiers` | `tiers`: the config's `tiers.external` | every external path is the root of a git clone. Kind: `tier-external` (the config's path does not resolve: correct `tiers.external` in the config). A manifest entry with no tier is a `reconcile` finding (`tier-missing`), repaired by `reconcile --fix` |
 | `gitnexus-sync` | `gitnexus-sync --check` | every repo that is not deprecated has `.gitnexusrc`, the `.gitnexus` ignore rule and the current `.claude/skills/gitnexus/` |
 | `beads` | `polyrepo-beads/scripts/audit-fleet.sh --json` over every non-deprecated, non-archived repo on disk, in every app space | no anomaly |
@@ -47,7 +48,7 @@ are under `$SKILLSPOKE_LOGS/polyrepo/`.
 
 ## `--fix`
 
-`doctor --fix` runs `reconcile --fix`, `agents-sync`, `hooks-sync`, `gitnexus-sync`, `beads-setup --all`, `beads-fleet --fix`,
+`doctor --fix` runs `reconcile --fix`, `agents-sync`, `hooks-sync`, `checks-sync`, `gitnexus-sync`, `beads-setup --all`, `beads-fleet --fix`,
 `deprecated-prs --fix` and then `archive-due` before the checks; each commits and pushes what it changed.
 `archive-due` archives every deprecated repo that is due (the launchd agent
 `com.skillspoke.polyrepo-archive-due` runs it daily too, so `doctor --fix` catches up a missed day).
@@ -58,7 +59,7 @@ repository.
 `beads-fleet --fix` removes every listed path that is missing or not an active fleet repo
 and adds every unlisted active repo with a `.beads` folder. `deprecated-prs --fix` closes
 every open pull request in a deprecated repo with the comment "Closed: this repository is
-deprecated." and keeps its branch. `agents-sync` and `hooks-sync` commit every repo on `main` in its primary working tree and push it, whatever its tier (`AGENTS.md`
+deprecated." and keeps its branch. `agents-sync`, `hooks-sync` and `checks-sync` commit every repo on `main` in its primary working tree and push it, whatever its tier (`AGENTS.md`
 and `.claude/` are tier 2 in every repository); a repo whose `main` cannot be brought up to `origin/main`
 (`stale-main`) or whose push the remote rejects (`committed`) keeps its finding until that is settled. What stays open needs judgment:
 

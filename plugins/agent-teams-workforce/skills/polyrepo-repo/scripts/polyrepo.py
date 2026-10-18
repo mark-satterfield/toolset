@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --quiet --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["ruamel.yaml>=0.18", "pyyaml>=6"]
+# dependencies = ["ruamel.yaml>=0.18", "pyyaml>=6", "tomlkit>=0.13"]
 # ///
 """polyrepo — live facts about the project's repositories, and the manifest kept true to them.
 
@@ -37,6 +37,7 @@ Usage:
   polyrepo.py deprecate <repo> [--dry-run]
   polyrepo.py agents-sync [--check] [--dry-run] [--repo R ...] [--space S] [--trailer TEXT]
   polyrepo.py hooks-sync [--check] [--dry-run] [--repo R ...] [--space S] [--trailer TEXT]
+  polyrepo.py checks-sync [--check] [--dry-run] [--repo R ...] [--space S] [--trailer TEXT]
   polyrepo.py gitnexus-sync [--check] [--dry-run] [--repo R ...] [--space S]
   polyrepo.py naming <name>
   polyrepo.py tier <path>
@@ -100,6 +101,16 @@ from ruamel.yaml.error import YAMLError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pipeline-contracts" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "resource-naming" / "scripts"))
+from checks_sync import (
+    ChecksSpec,
+    ChecksSpecError,
+    FileChange,
+    RepoPlan,
+    apply_changes,
+    plan_repository,
+    restore_changes,
+)
+from checks_sync import load_spec as load_checks_spec
 from driver_surface_types import CONTROL_REPO_ENV
 from name_sweep import (
     NameChange,
@@ -3762,6 +3773,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
             f"render the {args.template} template into {dest}",
             "write the shared AGENTS.md blocks, including GitNexus",
             "merge the shared hook registrations into .claude/settings.json (hooks_sync)",
+            "after git init, write the canonical code checks of its stacks and install the commit hook (checks_sync)",
             "install GitNexus: .gitnexusrc, the .gitnexus ignore rule and .claude/skills/gitnexus/",
             f"git init on {b}, exclude {WORKTREES_LINE} locally",
             (
@@ -3866,6 +3878,7 @@ def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dic
     name, b = args.name, cfg.default_branch
     must(git(dest, "init", f"--initial-branch={b}"))
     _exclude_worktrees(dest)
+    res["checks_written"] = write_checks(cfg, dest, name, args.space)
     # Before the first commit, so the lockfile the setup task writes is committed too.
     if env_applicable(dest):
         tspec = _map(
@@ -6927,6 +6940,286 @@ def cmd_hooks_sync(args: argparse.Namespace, cfg: Config) -> int:
     return 1 if bad else 0
 
 
+# checks-sync ----------------------------------------------------------------------------------
+# The config's `checks_sync.spec_file` names the project's canonical code checks: one pin per tool,
+# the common pre-commit fragment and, per stack, the canonical configuration files, the pre-commit
+# fragment and the configurations they replace. checks_sync.py plans what each repository receives
+# from the stacks the tech-stacks scan finds in it; this section commits and pushes it. Everything
+# written is tier 2 (configuration and hooks), so it is committed on main whatever the repo's tier.
+
+CHECKS_SYNC_SUBJECT = "chore(checks): sync the canonical checker configurations"
+PRE_COMMIT_INSTALL_TIMEOUT = 300
+
+
+@dataclasses.dataclass(frozen=True)
+class ChecksSync:
+    """The project's checks spec and the repos and spaces that do not receive it."""
+
+    spec: ChecksSpec
+    exclude: frozenset[str]
+    exclude_spaces: frozenset[str]
+
+    def applies_to(self, name: str, space: str) -> bool:
+        """Say whether a repo receives the canonical checks.
+
+        Returns:
+            True unless the repo or its app space is excluded.
+
+        """
+        return name not in self.exclude and space not in self.exclude_spaces
+
+
+def _checks_sync(cfg: Config) -> ChecksSync | None:
+    """Read the checks spec the config names.
+
+    Returns:
+        The spec, or None when the config has no `checks_sync` section.
+
+    Raises:
+        PolyrepoError: when the spec file is missing or invalid.
+
+    """
+    raw = cfg.raw.get("checks_sync")
+    if raw is None:
+        return None
+    section = _map(raw, "config checks_sync")
+    spec_file = (cfg.file.parent / str(section.get("spec_file") or "")).resolve()
+    if not section.get("spec_file") or not spec_file.is_file():
+        msg = f"checks_sync.spec_file not found: {spec_file}"
+        raise PolyrepoError(msg)
+    try:
+        spec = load_checks_spec(spec_file)
+    except ChecksSpecError as exc:
+        raise PolyrepoError(str(exc)) from exc
+    return ChecksSync(
+        spec,
+        frozenset(_strs(section.get("exclude") or [], "checks_sync exclude")),
+        frozenset(_strs(section.get("exclude_spaces") or [], "checks_sync exclude_spaces")),
+    )
+
+
+def _checks_plan(sync: ChecksSync, path: Path, name: str) -> RepoPlan:
+    """Scan a working tree's stacks and plan its canonical checks.
+
+    Returns:
+        The plan.
+
+    Raises:
+        PolyrepoError: when the tree cannot be scanned or a repository file cannot be parsed.
+
+    """
+    scan = scan_repository(name, path, _git_output)
+    if scan.error:
+        raise PolyrepoError(scan.error)
+    try:
+        return plan_repository(path, [stack.name for stack in scan.stacks], sync.spec, _git_output)
+    except ChecksSpecError as exc:
+        raise PolyrepoError(str(exc)) from exc
+
+
+def _install_pre_commit(path: Path, sync: ChecksSync) -> str | None:
+    """Install the pre-commit hook in a primary tree (worktrees share it).
+
+    Returns:
+        None on success, else the reason it failed.
+
+    """
+    found = shutil.which("pre-commit")
+    argv = [found, "install"] if found else ["uvx", f"pre-commit@{sync.spec.pre_commit_pin}", "install"]
+    try:
+        cp = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed argv, no shell
+            argv,
+            cwd=path,
+            capture_output=True,
+            text=True,
+            timeout=PRE_COMMIT_INSTALL_TIMEOUT,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"pre-commit install failed: {exc}"
+    return None if cp.returncode == 0 else f"pre-commit install failed: {_last_line(cp)}"
+
+
+def write_checks(cfg: Config, dest: Path, name: str, space: str) -> bool:
+    """Write the canonical checks into a new repo and install its commit hook, committing nothing (create).
+
+    Runs after `git init`, so the scan can list the rendered files.
+
+    Returns:
+        True when files were written, False when the project has no spec or the repo is excluded.
+
+    Raises:
+        PolyrepoError: when the plan cannot be made or the hook cannot be installed.
+
+    """
+    sync = _checks_sync(cfg)
+    if sync is None or not sync.applies_to(name, space):
+        return False
+    plan = _checks_plan(sync, dest, name)
+    apply_changes(dest, plan.changes)
+    failure = _install_pre_commit(dest, sync) if plan.install_pre_commit else None
+    if failure:
+        raise PolyrepoError(failure)
+    return bool(plan.changes)
+
+
+def _committable(r: LocalRepo, changes: Sequence[FileChange]) -> list[str]:
+    """Name the changed paths a commit can carry: not ignored, and present or tracked.
+
+    Returns:
+        The paths.
+
+    """
+    paths = [c.path for c in changes]
+    ignored = set((git_out(r.path, "check-ignore", "--", *paths) or "").splitlines())
+    tracked = set((git_out(r.path, "ls-files", "--", *paths) or "").splitlines())
+    return [c.path for c in changes if c.path not in ignored and (c.wanted is not None or c.path in tracked)]
+
+
+def _commit_checks(
+    cfg: Config,
+    r: LocalRepo,
+    plan: RepoPlan,
+    trailer: str | None,
+) -> dict[str, object]:
+    """Write the planned files, commit them on main and push.
+
+    Returns:
+        The status (`pushed`, `committed` when the push failed, `failed`) and any detail.
+
+    """
+    apply_changes(r.path, plan.changes)
+    paths = _committable(r, plan.changes)
+    try:
+        _commit_paths(r.path, paths, _with_trailer(CHECKS_SYNC_SUBJECT, trailer))
+    except GitFailedError as exc:
+        git(r.path, "reset", "-q", "--", *paths)
+        restore_changes(r.path, plan.changes)
+        return {"status": "failed", "detail": str(exc)}
+    cp = git(r.path, "push", "origin", cfg.default_branch, timeout=120)
+    commit = git_out(r.path, "rev-parse", "--short=8", "HEAD")
+    if cp.returncode != 0:
+        return {"status": "committed", "commit": commit, "detail": f"push failed: {_last_line(cp)}"}
+    return {"status": "pushed", "commit": commit}
+
+
+def _checks_result(name: str, plan: RepoPlan) -> dict[str, object]:
+    """Describe a repo's plan.
+
+    Returns:
+        {repo, state, stacks} plus the changed paths, the notes and the stacks with no canonical checks.
+
+    """
+    res: dict[str, object] = {"repo": name, "state": plan.state, "stacks": list(plan.stacks)}
+    extra = {
+        "changes": [c.path for c in plan.changes],
+        "notes": list(plan.notes),
+        "unchecked": list(plan.unchecked),
+        "install_pre_commit": plan.install_pre_commit,
+    }
+    return {**res, **{key: value for key, value in extra.items() if value}}
+
+
+def _checks_sync_one(
+    cfg: Config,
+    r: LocalRepo,
+    sync: ChecksSync,
+    write: bool,
+    trailer: str | None,
+) -> dict[str, object]:
+    """Bring one repo's canonical checks current, committed on main in its primary tree and pushed.
+
+    A repo with uncommitted changes in a planned path, or that is not on main, is skipped. After the
+    commit the pre-commit hook is installed when it is not.
+
+    Returns:
+        {repo, state, ...} plus, when it wrote, the status and any detail.
+
+    """
+    try:
+        plan = _checks_plan(sync, r.path, r.name)
+    except PolyrepoError as exc:
+        return {"repo": r.name, "state": "invalid", "status": "skipped", "detail": str(exc)}
+    res = _checks_result(r.name, plan)
+    if not write or plan.state == "current":
+        return res
+    if plan.changes:
+        res = {**res, **_sync_checks_files(cfg, r, sync, plan, trailer)}
+    failure = _install_pre_commit(r.path, sync) if plan.install_pre_commit else None
+    return {**res, "status": "failed", "detail": failure} if failure else res
+
+
+def _sync_checks_files(
+    cfg: Config,
+    r: LocalRepo,
+    sync: ChecksSync,
+    plan: RepoPlan,
+    trailer: str | None,
+) -> dict[str, object]:
+    """Commit and push the planned files after bringing main up to origin.
+
+    Returns:
+        The status and any detail.
+
+    """
+    if git_out(r.path, "status", "--porcelain", "--", *[c.path for c in plan.changes]):
+        return {"status": "skipped", "detail": "a planned path has uncommitted changes"}
+    if (stopped := _advance_for_sync(cfg, r)) is not None:
+        return stopped
+    branch = git_out(r.path, "symbolic-ref", "--short", "-q", "HEAD")
+    if branch != cfg.default_branch:
+        return {"status": "skipped", "detail": f"on {branch}, not {cfg.default_branch}"}
+    fresh = _checks_plan(sync, r.path, r.name)
+    if not fresh.changes:
+        return {"status": "current-on-origin"}
+    return _commit_checks(cfg, r, fresh, trailer)
+
+
+def cmd_checks_sync(args: argparse.Namespace, cfg: Config) -> int:
+    """Give every repo the canonical code checks of the stacks it holds.
+
+    Returns:
+        0 when every repo is current (or was brought current and pushed), else 1.
+
+    Raises:
+        PolyrepoError: when the config has no `checks_sync` section.
+
+    """
+    sync = _checks_sync(cfg)
+    if sync is None:
+        msg = "the polyrepo config has no checks_sync section"
+        raise PolyrepoError(msg)
+    repos = [
+        r
+        for r in _local_repos(cfg, args.repo, args.space)
+        if not cfg.is_deprecated_name(r.name) and sync.applies_to(r.name, r.space)
+    ]
+    write = not args.check and not args.dry_run
+    with concurrent.futures.ThreadPoolExecutor(max_workers=APPLY_WORKERS if write else WORKERS) as ex:
+        results = list(ex.map(lambda r: _checks_sync_one(cfg, r, sync, write, args.trailer), repos))
+    bad = [x for x in results if x["state"] != "current" and (not write or x.get("status") not in AGENTS_SYNC_DONE)]
+    counts: dict[str, int] = {}
+    for x in results:
+        counts[str(x["state"])] = counts.get(str(x["state"]), 0) + 1
+
+    def row(x: dict[str, object]) -> list[str]:
+        head = f"  {x['repo']}: {x['state']}  {x.get('status', '')}  {x.get('commit', '')}  {x.get('detail', '')}"
+        notes = [f"      {note}" for note in _strs(x.get("notes") or [], "notes")]
+        unchecked = _strs(x.get("unchecked") or [], "unchecked")
+        return [
+            head.rstrip(),
+            *notes,
+            *([f"      code with no canonical checks: {', '.join(unchecked)}"] if unchecked else []),
+        ]
+
+    def text() -> str:
+        head = f"{len(results)} repos: " + ", ".join(f"{v} {k}" for k, v in sorted(counts.items()))
+        return "\n".join([head, *[line for x in results if x["state"] != "current" for line in row(x)]])
+
+    emit(args, {"repos": results, "counts": counts, "not_current": len(bad)}, text)
+    return 1 if bad else 0
+
+
 # GitNexus ---------------------------------------------------------------------------------
 # Every repo has GitNexus: `.gitnexusrc`, the `.gitnexus` ignore rule, the six
 # skills in `.claude/skills/gitnexus/`, and the GITNEXUS block in AGENTS.md (an agents-sync
@@ -7843,6 +8136,7 @@ DOCTOR_CHECKS: dict[str, list[str]] = {
     "reconcile": [sys.executable, str(SELF), "reconcile", "--json"],
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--check", "--json"],
     "hooks-sync": [sys.executable, str(SELF), "hooks-sync", "--check", "--json"],
+    "checks-sync": [sys.executable, str(SELF), "checks-sync", "--check", "--json"],
     "gitnexus-sync": [sys.executable, str(SELF), "gitnexus-sync", "--check", "--json"],
     "beads": ["bash", str(BEADS_AUDIT), "--json"],
     "beads-setup": [sys.executable, str(SELF), "beads-setup", "--check", "--json"],
@@ -7857,6 +8151,7 @@ DOCTOR_REPAIRS: dict[str, list[str]] = {
     "reconcile --fix": [sys.executable, str(SELF), "reconcile", "--fix", "--json"],
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--json"],
     "hooks-sync": [sys.executable, str(SELF), "hooks-sync", "--json"],
+    "checks-sync": [sys.executable, str(SELF), "checks-sync", "--json"],
     "gitnexus-sync": [sys.executable, str(SELF), "gitnexus-sync", "--json"],
     "beads-setup --all": [sys.executable, str(SELF), "beads-setup", "--all", "--json"],
     "beads-fleet --fix": [sys.executable, str(SELF), "beads-fleet", "--fix", "--json"],
@@ -7870,6 +8165,7 @@ DOCTOR_REPAIRS: dict[str, list[str]] = {
 SYNC_CHECK_DETAIL: dict[str, str] = {
     "agents-sync": "shared AGENTS.md block not current",
     "hooks-sync": "shared hook registrations not current",
+    "checks-sync": "canonical checker configurations not current",
 }
 
 
@@ -8694,6 +8990,20 @@ def _add_hooks_sync_command(add: Callable[[str, str], argparse.ArgumentParser]) 
     s.set_defaults(func=cmd_hooks_sync)
 
 
+def _add_checks_sync_command(add: Callable[[str, str], argparse.ArgumentParser]) -> None:
+    """Add checks-sync."""
+    s = add(
+        "checks-sync",
+        "give every repo the canonical code checks of its stacks and the commit hook that runs them",
+    )
+    s.add_argument("--check", action="store_true", help="report repos out of date")
+    s.add_argument("--dry-run", action="store_true", help="same as --check")
+    s.add_argument("--repo", action="append", help="only this repo (repeatable)")
+    s.add_argument("--space", help="only this app space (default: every app space)")
+    s.add_argument("--trailer", help="a line to end each commit message with")
+    s.set_defaults(func=cmd_checks_sync)
+
+
 def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> None:
     """Add the upkeep commands: agents-sync to commit."""
     s = add(
@@ -8707,6 +9017,7 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
     s.add_argument("--trailer", help="a line to end each commit message with")
     s.set_defaults(func=cmd_agents_sync)
     _add_hooks_sync_command(add)
+    _add_checks_sync_command(add)
 
     s = add(
         "gitnexus-sync",

@@ -34,7 +34,7 @@ FINGERPRINT_LENGTH: Final = 12
 EXCLUDED_DIRS: Final = frozenset({
     ".git", ".worktrees", ".venv", "venv", "node_modules", "dist", "build", "cdk.out", ".next", ".nuxt",
     "__pycache__", ".mypy_cache", ".ruff_cache", ".pytest_cache", ".tox", "site-packages", ".turbo",
-    "coverage", ".gitnexus",
+    "coverage", ".gitnexus", ".code-checks",
 })  # fmt: skip
 SUFFIX_KINDS: Final[Mapping[str, str]] = {
     ".py": "python", ".pyi": "python",

@@ -3,6 +3,9 @@ target-version = "py314"
 preview = true
 extend-exclude = [".claude/skills/ui-ux-pro-max", ".cursor/skills"]
 
+[per-file-target-version]
+"plugins/agent-teams-workforce/skills/polyrepo-repo/scripts/code_checks/*.py" = "py312"
+
 [lint]
 select = [
     "A", "ANN", "ARG", "ASYNC", "B", "BLE", "C4", "C90", "COM",
