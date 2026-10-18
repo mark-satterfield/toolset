@@ -6,6 +6,8 @@ description: >-
   requiring CI/CD pipeline implementation, OIDC auth wiring, and deploy
   configuration.
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
+mcpServers:
+- mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: opus
 permissionMode: acceptEdits

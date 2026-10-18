@@ -2,6 +2,8 @@
 name: cds-ui-implementer
 description: Implements assigned UI using the CDS plugin and its existing design system, supplied bundle and review contracts.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill, mcp__mcp-graphrag-server
+mcpServers:
+- mcp-graphrag-server
 disallowedTools: Agent, SendMessage, AskUserQuestion
 model: opus
 maxTurns: 80

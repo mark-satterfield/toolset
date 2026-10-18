@@ -8,6 +8,8 @@ description: >-
   code. Use after an architecture ruling created, changed or retired
   architecture views.
 tools: Read, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
+mcpServers:
+- mcp-graphrag-server
 disallowedTools: AskUserQuestion, Edit, Write, Agent
 model: opus
 permissionMode: default

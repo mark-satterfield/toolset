@@ -9,6 +9,7 @@ tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp
 disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - context7
+  - mcp-graphrag-server
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100

@@ -10,6 +10,7 @@ disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - aws-mcp
   - context7
+  - mcp-graphrag-server
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100

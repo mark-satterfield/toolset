@@ -7,6 +7,8 @@ description: >-
   workflow currently dispatches it. Use for bug diagnosis requiring
   evidence-chain analysis.
 tools: Read, Glob, Grep, Write, Skill, mcp__mcp-graphrag-server
+mcpServers:
+- mcp-graphrag-server
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus
 permissionMode: acceptEdits

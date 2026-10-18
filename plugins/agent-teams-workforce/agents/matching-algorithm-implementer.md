@@ -6,6 +6,8 @@ description: >-
   work requiring matching logic, scoring and ranking functions, and
   recommendation pipelines.
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
+mcpServers:
+- mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: opus
 permissionMode: acceptEdits

@@ -6,6 +6,8 @@ description: >-
   tests. Use for Implementation work requiring analytics SQL
   authoring, external table definition, and warehouse modeling.
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
+mcpServers:
+- mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: opus
 permissionMode: acceptEdits

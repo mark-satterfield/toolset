@@ -6,6 +6,8 @@ description: >-
   work requiring embedding pipelines, vector index access, and
   similarity queries.
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
+mcpServers:
+- mcp-graphrag-server
 disallowedTools: AskUserQuestion, Agent
 model: opus
 permissionMode: acceptEdits

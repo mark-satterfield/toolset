@@ -6,6 +6,8 @@ description: >-
   views it was designed against. Use for Implementation work requiring
   implementer selection.
 tools: Read, Glob, Grep, Skill, mcp__mcp-graphrag-server
+mcpServers:
+- mcp-graphrag-server
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash, Agent, SendMessage
 model: sonnet
 permissionMode: default
