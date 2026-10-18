@@ -48,6 +48,17 @@ JAVASCRIPT_SUFFIXES: Final = frozenset({".js", ".jsx", ".mjs", ".cjs"})
 SHELL_SUFFIXES: Final = frozenset({".sh", ".bash"})
 SHELL_SHEBANG: Final = re.compile(r"^#!.*\b(ba)?sh\b")
 CDK_FILES: Final = frozenset({"cdk.json", "cdk.context.json"})
+DEPENDENCY_FILES: Final = frozenset(
+    {
+        "pyproject.toml",
+        "uv.lock",
+        "requirements.txt",
+        "package.json",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+    },
+)
 CONFIG_SUFFIXES: Final = frozenset({".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"})
 TOOL_TIMEOUT_SECONDS: Final = 600
 EXIT_CLEAN: Final = 0
@@ -390,20 +401,43 @@ def cdk_app_folder(cdk_json: str) -> Path | None:
 
 
 def apps_for(path: Path, spec: Spec) -> list[str]:
-    """Return the CDK apps an edited file belongs to.
+    """Return the CDK apps a changed file belongs to.
+
+    A dependency manifest or lockfile belongs to every app whose `cdk.json` sits in its folder or
+    below, because it sets the CDK library version the app synthesizes with.
 
     Args:
-        path: The edited file.
+        path: The changed file.
         spec: The spec.
 
     Returns:
-        The `cdk.json` paths whose app folder holds the file, or whose folder holds the edited
-        `cdk.json` or `cdk.context.json`.
+        The `cdk.json` paths whose app folder holds the file, whose folder holds the changed
+        `cdk.json` or `cdk.context.json`, or that sit under the changed dependency manifest.
 
     """
     if path.name in CDK_FILES:
         return [app for app in spec.cdk_apps if (TREE / app).parent.resolve() == path.parent]
+    if path.name in DEPENDENCY_FILES:
+        return [app for app in spec.cdk_apps if (TREE / app).resolve().is_relative_to(path.parent)]
     return [app for app in spec.cdk_apps if (folder := cdk_app_folder(app)) is not None and path.is_relative_to(folder)]
+
+
+def apps_for_files(mode: str, files: Sequence[str], spec: Spec) -> list[str]:
+    """Return the CDK apps a set of changed files belongs to, in the spec's order.
+
+    Args:
+        mode: `edit`, `commit` or `all`; `all` takes every app.
+        files: The changed files relative to the tree.
+        spec: The spec.
+
+    Returns:
+        The `cdk.json` paths to check.
+
+    """
+    if mode == "all":
+        return list(spec.cdk_apps)
+    touched: set[str] = {app for rel in files for app in apps_for((TREE / rel).resolve(), spec)}
+    return [app for app in spec.cdk_apps if app in touched]
 
 
 def cdk_nag_check(apps: Sequence[str]) -> list[Outcome]:
@@ -734,7 +768,7 @@ type CheckRunner = Callable[[str, Sequence[str], Spec], list[Outcome]]
 HOOKS: Final[dict[str, tuple[str, CheckRunner]]] = {
     "python-ruff": ("python", ruff_checks),
     "python-mypy": ("python", mypy_check),
-    "cdk-nag": ("cdk", lambda _mode, _files, spec: cdk_nag_check(spec.cdk_apps)),
+    "cdk-nag": ("cdk", lambda mode, files, spec: cdk_nag_check(apps_for_files(mode, files, spec))),
     "ts-eslint": ("typescript", lambda mode, files, spec: eslint_check("typescript", mode, files, spec)),
     "ts-prettier": ("typescript", lambda mode, files, spec: prettier_check("typescript", mode, files, spec)),
     "ts-tsc": ("typescript", lambda mode, files, _spec: tsc_check(mode, files)),
