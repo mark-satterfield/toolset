@@ -114,6 +114,21 @@ from checks_sync import (
 )
 from checks_sync import load_spec as load_checks_spec
 from driver_surface_types import CONTROL_REPO_ENV
+from gitnexus_setup import (
+    GitHookSpec,
+    GitNexusSetupError,
+    GroupPlan,
+    apply_group,
+    enqueue_reindex,
+    group_members,
+    group_path,
+    hook_current,
+    install_hook,
+    load_git_hook,
+    plan_group,
+    read_group_name,
+    sync_group,
+)
 from name_sweep import (
     NameChange,
     NameSweepError,
@@ -3789,7 +3804,10 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
             "record the repo's stack in the matrix when its name ends in a stack type (purpose not stated)",
             "set up beads: .beads config files, shared-server database, standard .gitignore; commit and push",
             "add it to the beads fleet list (repos.additional)",
-            "index it once with the pinned GitNexus (gitnexus-reindex.sh)",
+            (
+                "index it once with the pinned GitNexus (gitnexus-reindex.sh), register its re-index git hook "
+                "and add it to the GitNexus group"
+            ),
         ],
     }
     if args.dry_run:
@@ -3912,8 +3930,9 @@ def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dic
     )
     create_on_github(cfg, name, dest)
     failure = gitnexus_index(cfg, dest)
-    if failure:
-        res["gitnexus_error"] = failure
+    failures = [*([failure] if failure else []), *gitnexus_register(cfg, dest, name)]
+    if failures:
+        res["gitnexus_error"] = "; ".join(failures)
 
 
 def _create_stack_records(cfg: Config, name: str, space: str) -> list[str]:
@@ -3968,7 +3987,7 @@ def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict
         log.append(f"GitNexus index FAILED: {res['gitnexus_error']}")
         code = 1
     elif res.get("gitnexus_files") is not None:
-        log.append("GitNexus installed and indexed once with the pinned version")
+        log.append("GitNexus installed, indexed once with the pinned version, git hook registered, added to the group")
     if args.lifecycle not in LIFECYCLES_INACTIVE:
         try:
             done = beads_setup(
@@ -4882,8 +4901,11 @@ def _clone_conflicts(cfg: Config, name: str) -> list[Path]:
 def cmd_clone(args: argparse.Namespace, cfg: Config) -> int:
     """Clone a repo into the folder its name and project give it, never anywhere else.
 
+    A new clone of an active repo gets its re-index git hook and GitNexus group entry, and is
+    queued for a background re-index.
+
     Returns:
-        0 when the repo is cloned or is already at its correct folder.
+        0 when the repo is cloned or is already at its correct folder; 1 when its GitNexus setup failed.
 
     Raises:
         PolyrepoError: when the repo already exists at any other path, is on disk more than
@@ -4913,8 +4935,19 @@ def cmd_clone(args: argparse.Namespace, cfg: Config) -> int:
         msg = f"git clone failed: {_last_line(cp)}"
         raise PolyrepoError(msg)
     res["cloned"] = True
-    emit(args, res, lambda: f"{name}: cloned to {dest}")
-    return 0
+    failures: list[str] = []
+    if not cfg.is_deprecated_name(name):
+        failures = gitnexus_register(cfg, dest, name)
+        if (err := gitnexus_queue(cfg, [dest])) is not None:
+            failures.append(err)
+    if failures:
+        res["gitnexus_error"] = "; ".join(failures)
+    emit(
+        args,
+        res,
+        lambda: f"{name}: cloned to {dest}" + (f"; GitNexus setup failed: {res['gitnexus_error']}" if failures else ""),
+    )
+    return 1 if failures else 0
 
 
 # rename ----------------------------------------------------------------------------------------
@@ -7358,24 +7391,32 @@ def cmd_checks_sync(args: argparse.Namespace, cfg: Config) -> int:
 
 
 # GitNexus ---------------------------------------------------------------------------------
-# Every repo has GitNexus: `.gitnexusrc`, the `.gitnexus` ignore rule, the six
-# skills in `.claude/skills/gitnexus/`, and the GITNEXUS block in AGENTS.md (an agents-sync
-# block). The sources are files of the control repo named by the config's `gitnexus` section.
-# Re-indexing is `gitnexus-reindex.sh`, which runs the one pinned GitNexus version.
+# Every repo has GitNexus: `.gitnexusrc`, the `.gitnexus` ignore rule, the six skills in
+# `.claude/skills/gitnexus/` and the GITNEXUS block in AGENTS.md (an agents-sync block), which are
+# committed; and, local to the machine, the re-index git hook in its `.git/config` and a member
+# entry in the GitNexus group, at the group path equal to its clone's path under the root. The
+# sources are files of the control repo named by the config's `gitnexus` section. Re-indexing is
+# `gitnexus-reindex.sh` (the one pinned GitNexus version), queued in the background by the fleet
+# script, which the git hook and the session-start check run.
 
 GITNEXUS_RC = ".gitnexusrc"
 GITNEXUS_SKILLS = ".claude/skills/gitnexus"
 GITNEXUS_IGNORE = ".gitnexus"
 GITNEXUS_INDEX_TIMEOUT = 3600
+GITNEXUS_FILE_KEYS = ("rc_file", "reindex_script", "pinned_script", "fleet_script", "git_hook_file", "group_file")
 
 
 @dataclasses.dataclass(frozen=True)
 class GitNexusSources:
-    """The control repo files every repo's GitNexus setup is copied from."""
+    """The control repo files every repo's GitNexus setup is copied from or run through."""
 
     rc: Path
     skills: Path
     reindex: Path
+    pinned: Path
+    fleet: Path
+    hook: GitHookSpec
+    group: str
 
 
 def _gitnexus_sources(cfg: Config) -> GitNexusSources:
@@ -7385,12 +7426,12 @@ def _gitnexus_sources(cfg: Config) -> GitNexusSources:
         The sources.
 
     Raises:
-        PolyrepoError: when a key is missing or its file or folder does not exist.
+        PolyrepoError: when a key is missing, its file or folder does not exist, or a file is malformed.
 
     """
     gc = _map(cfg.raw.get("gitnexus") or {}, "config gitnexus")
     found: dict[str, Path] = {}
-    for key in ("rc_file", "skills_dir", "reindex_script"):
+    for key in ("skills_dir", *GITNEXUS_FILE_KEYS):
         v = gc.get(key)
         if not isinstance(v, str) or not v:
             msg = f"config gitnexus.{key} is missing"
@@ -7400,7 +7441,19 @@ def _gitnexus_sources(cfg: Config) -> GitNexusSources:
             msg = f"config gitnexus.{key}: {f} not found"
             raise PolyrepoError(msg)
         found[key] = f
-    return GitNexusSources(found["rc_file"], found["skills_dir"], found["reindex_script"])
+    try:
+        hook, group = load_git_hook(found["git_hook_file"]), read_group_name(found["group_file"])
+    except GitNexusSetupError as exc:
+        raise PolyrepoError(str(exc)) from exc
+    return GitNexusSources(
+        found["rc_file"],
+        found["skills_dir"],
+        found["reindex_script"],
+        found["pinned_script"],
+        found["fleet_script"],
+        hook,
+        group,
+    )
 
 
 def _gitnexus_plan(src: GitNexusSources, repo: Path) -> dict[str, bytes]:
@@ -7456,15 +7509,67 @@ def gitnexus_index(cfg: Config, repo: Path) -> str | None:
     return None if cp.returncode == 0 else f"gitnexus-reindex.sh exited {cp.returncode}: {_last_line(cp)}"
 
 
-def _gitnexus_sync_one(cfg: Config, src: GitNexusSources, r: LocalRepo, write: bool) -> dict[str, object]:
-    """Bring one repo's GitNexus files current, committing and pushing them when write is set.
+def gitnexus_register(cfg: Config, repo: Path, name: str) -> list[str]:
+    """Register a repo's machine-local GitNexus setup: the re-index git hook and its group member entry.
+
+    Used by create and clone; gitnexus-sync brings every repo current the same way.
 
     Returns:
-        {repo, state, files} plus, when it wrote, the status and any detail.
+        What failed; empty on success.
+
+    """
+    src = _gitnexus_sources(cfg)
+    failures: list[str] = []
+    try:
+        if not hook_current(repo, src.hook) and (err := install_hook(repo, src.hook)) is not None:
+            failures.append(err)
+        plan = plan_group(group_members(src.pinned, src.group), {group_path(cfg.root, repo): name}, prune=False)
+        failures.extend(apply_group(src.pinned, src.group, plan) if not plan.current else [])
+    except GitNexusSetupError as exc:
+        failures.append(str(exc))
+    return failures
+
+
+def gitnexus_queue(cfg: Config, repos: list[Path]) -> str | None:
+    """Queue repos for a background re-index through the control repo's fleet script.
+
+    Returns:
+        None on success, else what failed.
+
+    """
+    return enqueue_reindex(_gitnexus_sources(cfg).fleet, repos)
+
+
+def _gitnexus_hook_one(src: GitNexusSources, r: LocalRepo, write: bool) -> dict[str, object]:
+    """Bring one repo's re-index git hook current; it lives in `.git/config`, so nothing is committed.
+
+    Returns:
+        {hook} plus a hook_detail when installing it failed.
+
+    """
+    try:
+        if hook_current(r.path, src.hook):
+            return {"hook": "current"}
+        if not write:
+            return {"hook": "missing"}
+        err = install_hook(r.path, src.hook)
+    except GitNexusSetupError as exc:
+        err = str(exc)
+    return {"hook": "installed"} if err is None else {"hook": "failed", "hook_detail": err}
+
+
+def _gitnexus_sync_one(cfg: Config, src: GitNexusSources, r: LocalRepo, write: bool) -> dict[str, object]:
+    """Bring one repo's GitNexus files and git hook current, committing and pushing the files when write is set.
+
+    Returns:
+        {repo, state, files, hook} plus, when it wrote, the status and any detail.
 
     """
     plan = _gitnexus_plan(src, r.path)
-    res: dict[str, object] = {"repo": r.name, "state": "outdated" if plan else "current", "files": sorted(plan)}
+    hook = _gitnexus_hook_one(src, r, write)
+    stale = bool(plan) or hook["hook"] in {"missing", "failed"}
+    res: dict[str, object] = {"repo": r.name, "state": "outdated" if stale else "current", "files": sorted(plan)}
+    res.update(hook)
     if not plan or not write:
         return res
     b = cfg.default_branch
@@ -7488,11 +7593,50 @@ def _gitnexus_sync_one(cfg: Config, src: GitNexusSources, r: LocalRepo, write: b
     return {**res, "status": "pushed"}
 
 
-def cmd_gitnexus_sync(args: argparse.Namespace, cfg: Config) -> int:
-    """Give every repo its GitNexus configuration and skills, committing and pushing each.
+def _gitnexus_group_sync(
+    cfg: Config,
+    src: GitNexusSources,
+    repos: list[LocalRepo],
+    write: bool,
+    prune: bool,
+) -> dict[str, object]:
+    """Bring the GitNexus group's members to the repos, and rebuild its contracts after a change.
 
     Returns:
-        0 when every repo is current (or was brought current and pushed), else 1.
+        {name, state, add, remove} plus, when it wrote, the status and any detail.
+
+    """
+    wanted = {group_path(cfg.root, r.path): r.name for r in repos}
+    try:
+        plan: GroupPlan = plan_group(group_members(src.pinned, src.group), wanted, prune)
+    except GitNexusSetupError as exc:
+        return {"name": src.group, "state": "invalid", "add": [], "remove": [], "status": "failed", "detail": str(exc)}
+    res: dict[str, object] = {
+        "name": src.group,
+        "state": "current" if plan.current else ("missing" if not plan.exists else "outdated"),
+        "add": sorted(plan.add),
+        "remove": plan.remove,
+    }
+    if plan.current or not write:
+        return res
+    failures = apply_group(src.pinned, src.group, plan)
+    if not failures and (err := sync_group(src.pinned, src.group)) is not None:
+        failures.append(err)
+    if failures:
+        return {**res, "status": "failed", "detail": "; ".join(failures)}
+    return {**res, "status": "updated"}
+
+
+def cmd_gitnexus_sync(args: argparse.Namespace, cfg: Config) -> int:
+    """Give every repo its GitNexus configuration, skills, re-index git hook and group membership.
+
+    The files are committed and pushed in each repo; the git hook and the group are local to the
+    machine. The group is pruned of members that are no repo only when every repo is considered
+    (no --repo and no --space). With write, every repo whose index is not current is queued for a
+    background re-index.
+
+    Returns:
+        0 when every repo and the group are current (or were brought current), else 1.
 
     """
     src = _gitnexus_sources(cfg)
@@ -7500,21 +7644,36 @@ def cmd_gitnexus_sync(args: argparse.Namespace, cfg: Config) -> int:
     write = not args.check and not args.dry_run
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
         results = list(ex.map(lambda r: _gitnexus_sync_one(cfg, src, r, write), repos))
+    group = _gitnexus_group_sync(cfg, src, repos, write, prune=not args.repo and not args.space)
+    queued = gitnexus_queue(cfg, [r.path for r in repos]) if write else None
     if write:
-        bad = [x for x in results if x["state"] != "current" and x["status"] != "pushed"]
+        bad = [x for x in results if x["state"] != "current" and x.get("status", "pushed") != "pushed"]
+        bad += [x for x in results if x.get("hook") == "failed"]
+        group_bad = group["state"] != "current" and group.get("status") != "updated"
     else:
         bad = [x for x in results if x["state"] != "current"]
+        group_bad = group["state"] != "current"
 
     def text() -> str:
         lines = [f"{len(results)} repos, {len([x for x in results if x['state'] != 'current'])} not current"]
         for x in results:
             if x["state"] == "current":
                 continue
-            lines.append(f"  {x['repo']}: {x.get('status', 'would update')} {x.get('detail', '')}".rstrip())
+            what = str(x.get("status", "would update")) if x["files"] else ""
+            hook = f"git hook {x['hook']}" if x["hook"] != "current" else ""
+            detail = f"{x.get('detail', '')} {x.get('hook_detail', '')}".strip()
+            lines.append(f"  {x['repo']}: {' '.join(s for s in (what, hook, detail) if s)}")
+        added, removed = _strs(group["add"], "add"), _strs(group["remove"], "remove")
+        lines.append(
+            f"group {group['name']}: {group['state']} {group.get('status', '')} "
+            f"(add {len(added)}, remove {len(removed)}) {group.get('detail', '')}".rstrip(),
+        )
+        if queued:
+            lines.append(f"queueing the re-index failed: {queued}")
         return "\n".join(lines)
 
-    emit(args, {"repos": results, "not_current": len(bad)}, text)
-    return 1 if bad else 0
+    emit(args, {"repos": results, "group": group, "queue_error": queued, "not_current": len(bad)}, text)
+    return 1 if bad or group_bad or queued else 0
 
 
 # tech-stacks ----------------------------------------------------------------------------------
@@ -8335,6 +8494,32 @@ def _run_json(argv: list[str], extra: list[str]) -> tuple[int, dict[str, object]
     return cp.returncode, data
 
 
+def _gitnexus_findings(check: str, data: dict[str, object]) -> list[DoctorFinding]:
+    """Turn gitnexus-sync's JSON output into doctor findings: each repo not current, and the group.
+
+    Returns:
+        One finding per repo not current, plus one when the group is not current.
+
+    """
+    found: list[DoctorFinding] = []
+    for r in (_map(x, "gitnexus-sync repo") for x in _seq(data.get("repos") or [], "repos")):
+        if r.get("state") == "current":
+            continue
+        files = _strs(r.get("files") or [], "files")
+        parts = [f"GitNexus files out of date: {', '.join(files)}"] if files else []
+        if r.get("hook") != "current":
+            parts.append(f"re-index git hook {r.get('hook')}")
+        found.append(_finding(check, str(r["repo"]), str(r["state"]), "; ".join(parts)))
+    group = _map(data.get("group") or {}, "gitnexus-sync group")
+    if group and group.get("state") != "current":
+        detail = (
+            f"GitNexus group {group.get('name')} {group.get('state')}: "
+            f"add {len(_seq(group.get('add') or [], 'add'))}, remove {len(_seq(group.get('remove') or [], 'remove'))}"
+        )
+        found.append(_finding(check, str(group.get("name")), str(group.get("state")), detail))
+    return found
+
+
 def _doctor_findings(check: str, data: dict[str, object]) -> list[DoctorFinding]:
     """Turn one check's JSON output into doctor findings.
 
@@ -8361,16 +8546,7 @@ def _doctor_findings(check: str, data: dict[str, object]) -> list[DoctorFinding]
             if f.get("status") in {"open", "failed", "planned"}
         ]
     if check == "gitnexus-sync":
-        return [
-            _finding(
-                check,
-                str(r["repo"]),
-                str(r["state"]),
-                "GitNexus files out of date: " + ", ".join(_strs(r.get("files") or [], "files")),
-            )
-            for r in (_map(x, "gitnexus-sync repo") for x in _seq(data.get("repos") or [], "repos"))
-            if r.get("state") != "current"
-        ]
+        return _gitnexus_findings(check, data)
     if check in SYNC_CHECK_DETAIL:
         return [
             _finding(
@@ -9158,7 +9334,7 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
 
     s = add(
         "gitnexus-sync",
-        "give every repo its GitNexus configuration and skills",
+        "give every repo its GitNexus configuration, skills, re-index git hook and group membership",
     )
     s.add_argument("--check", action="store_true", help="report repos out of date")
     s.add_argument("--dry-run", action="store_true", help="same as --check")
