@@ -9,6 +9,8 @@ doc_source: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/
 
 Amazon Relational Database Service (RDS) provides managed relational databases including MySQL, PostgreSQL, MariaDB, Oracle, SQL Server, and Aurora. RDS handles provisioning, patching, backups, and failover.
 
+**SkillSpoke uses Aurora PostgreSQL Serverless v2, reached through the RDS Data API, not provisioned RDS instances.** Each service's cluster is defined in its own Python CDK stack with `PlatformPostgresCluster` from `shared-cdk-lib`, and the `aurora-postgresql` skill is the authority for it (capacity, scaling to 0 ACUs, migrations, access, security). The instance-class, read-replica and `create-db-instance` material below is general RDS knowledge for exploring and for systems outside SkillSpoke; never create a SkillSpoke database from the CLI or boto3. A provisioned instance is always-on capacity with a monthly floor, which SkillSpoke's alpha scale (one dev account, at most five users) does not justify without a stated need.
+
 ## Table of Contents
 
 - [Core Concepts](#core-concepts)

@@ -9,6 +9,8 @@ doc_source: https://docs.aws.amazon.com/eventbridge/latest/userguide/
 
 Amazon EventBridge is a serverless event bus that connects applications using events. Route events from AWS services, custom applications, and SaaS partners.
 
+**SkillSpoke uses one bus, `skillSpoke-events`, owned by `shared-events-infra`.** A SkillSpoke service never creates its own event bus and never calls `PutEvents` itself: it publishes a SkillSpoke event through the central event API of `shared-events-service`, which builds, validates and puts the standard event on the bus. A routing rule and its targets, retry policy and DLQ belong to the stack of the target, defined in Python CDK with names from the naming command, reading the bus name and ARN from the SSM parameters `shared-events-infra` publishes. SkillSpoke does not use EventBridge archive or replay. Load the `skillspoke-events` skill for any SkillSpoke event. The CLI and boto3 examples below (custom buses, direct `put_events`) show the EventBridge API itself, for exploring and for systems outside SkillSpoke; EventBridge Scheduler and AWS service events (for example S3 or SES events on the default bus) are used directly.
+
 ## Table of Contents
 
 - [Core Concepts](#core-concepts)
@@ -271,7 +273,7 @@ aws events put-rule \
 - **Use DLQs** for failed deliveries
 - **Implement idempotency** in consumers
 - **Monitor failed invocations**
-- **Use archive and replay** for recovery
+- **Archive and replay** can support recovery elsewhere; SkillSpoke does not use them, and recovers from each target's DLQ
 
 ### Security
 
@@ -282,7 +284,6 @@ aws events put-rule \
 ### Cost Optimization
 
 - **Use specific event patterns** to reduce matches
-- **Archive selectively** — not all events
 
 ## Troubleshooting
 
