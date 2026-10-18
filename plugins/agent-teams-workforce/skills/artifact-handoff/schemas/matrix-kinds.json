@@ -10,7 +10,7 @@
       "description": "executable: a service, a Lambda, anything run or called. imported: code other code imports.",
       "enum": ["executable", "imported"]
     },
-    "app": {"enum": ["employer", "marketing", "personal-agent", "shared"]},
+    "app": {"description": "The project the stack belongs to: an open token, lowercase words joined by hyphens.", "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"},
     "anchor": {
       "type": "object",
       "additionalProperties": false,
