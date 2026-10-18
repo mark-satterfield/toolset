@@ -13,7 +13,7 @@ disallowedTools: AskUserQuestion, Agent
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:s3, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:resource-naming, agent-teams-workforce:python-coding, aws-core:aws-storage, aws-core:aws-sdk-python-usage]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:s3, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:resource-naming, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, aws-core:aws-storage, aws-core:aws-sdk-python-usage]
 effort: medium
 color: green
 ---

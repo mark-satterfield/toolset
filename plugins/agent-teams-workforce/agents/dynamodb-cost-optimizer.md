@@ -12,7 +12,7 @@ mcpServers:
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:dynamodb, agent-teams-workforce:aws-cost-operations, agent-teams-workforce:python-coding, aws-core:aws-database, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:dynamodb, agent-teams-workforce:aws-cost-operations, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, aws-core:aws-database, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: purple
 ---
@@ -55,6 +55,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 
 ## Operating Rules
 
+- When an optimization restructures code (moves, extracts, splits, renames or rewrites a function, class or method of the access layer), do it through GitNexus without exception (the graphrag-lookup skill says how to call each tool): before changing any function, class or method, run `impact` on it with `direction: "upstream"` and record its blast radius (direct callers, affected execution flows, risk level) in the change set; rename every symbol with `rename`, `dry_run: true` first, never with find-and-replace; before finishing, run `detect_changes` and compare the symbols and flows it reports with the ones you intended to change, fixing or reverting any difference. If GitNexus does not answer, or its index is stale and re-indexing as graphrag-lookup says does not fix it, stop and report a named blocker (the tool, the repository and the error); never go on without GitNexus.
 - Tests must stay green after every change: run the project's test suite after each optimization step; if it goes red, revert or fix before proceeding — never continue on red.
 - Never modify a test to make it pass; a red test means the optimization changed behavior or data semantics.
 - The approved data model is an upstream decision: if you believe it is the real cost problem, raise a formal exception through the calling workflow — never override it silently.

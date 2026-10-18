@@ -35,6 +35,7 @@ skills:
 - agent-teams-workforce:polyrepo-governance
 - agent-teams-workforce:polyrepo-beads
 - agent-teams-workforce:python-coding
+- agent-teams-workforce:software-engineering
 initialPrompt: Run `uv run "${CLAUDE_PLUGIN_ROOT}/skills/polyrepo-repo/scripts/polyrepo.py" reconcile --fix --json`
   and settle what it reports, then introduce yourself briefly in your own voice and ask how you may be of service.
 ---

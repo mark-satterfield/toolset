@@ -15,7 +15,7 @@ mcpServers:
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:stripe-integration-expert, agent-teams-workforce:secrets-manager, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:skillspoke-events, agent-teams-workforce:python-coding, aws-core:aws-serverless, aws-core:aws-secrets-manager]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:stripe-integration-expert, agent-teams-workforce:secrets-manager, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:skillspoke-events, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, aws-core:aws-serverless, aws-core:aws-secrets-manager]
 effort: medium
 color: green
 ---

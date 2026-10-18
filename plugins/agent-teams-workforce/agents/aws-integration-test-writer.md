@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion, Agent
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:cumulative-regression, agent-teams-workforce:python-coding, aws-core:aws-sdk-python-usage, aws-core:aws-messaging-and-streaming, aws-core:aws-serverless, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:cumulative-regression, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, aws-core:aws-sdk-python-usage, aws-core:aws-messaging-and-streaming, aws-core:aws-serverless, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: red
 mcpServers:

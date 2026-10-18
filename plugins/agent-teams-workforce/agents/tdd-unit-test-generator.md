@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion, Agent
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:tdd-guide, agent-teams-workforce:cumulative-regression, agent-teams-workforce:python-coding, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:tdd-guide, agent-teams-workforce:cumulative-regression, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: red
 mcpServers:

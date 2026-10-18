@@ -1,7 +1,7 @@
 export const meta = {
   name: 'tdd-refactor',
   description:
-    "Shared-tail mini \u2014 TDD Refactor. gitfacts.py (through relayrun.py) records the tree as a snapshot before the code-refactoring-specialist refactors the code Green changed for clarity without changing behavior; the specialist keeps the suite green or gives up, and when it gives up gitfacts.py puts the tree back at the snapshot. The files the refactor changed are read from git against the snapshot, not from the session. Returns alreadySatisfied when nothing needed refactoring or the refactor was reverted, and dispatchFailed when the specialist returned nothing. With snapshotTree (a tree id the caller recorded before the refactor) it takes no snapshot and uses that one. With restoreTo (a snapshot tree id the refactor recorded) gitfacts.py puts the tree back at that snapshot and it returns { restored }. A caller passes relay: { runner, dir } (relayrun.py and a directory for this run's relay files); without it they are resolved from the plugin registry and mkdtemp.",
+    "Shared-tail mini \u2014 TDD Refactor. gitfacts.py (through relayrun.py) records the tree as a snapshot before the code-refactoring-specialist refactors the code Green changed for clarity without changing behavior; the specialist keeps the suite green or gives up, and when it gives up gitfacts.py puts the tree back at the snapshot. The specialist refactors through GitNexus without exception (impact upstream before each symbol changes, rename for every rename, detect_changes before it finishes); when GitNexus is unreachable or its index stays stale, gitfacts.py puts the tree back at the snapshot and it returns dispatchFailed with blocked naming the blocker. The files the refactor changed are read from git against the snapshot, not from the session. Returns alreadySatisfied when nothing needed refactoring or the refactor was reverted, and dispatchFailed when the specialist returned nothing. With snapshotTree (a tree id the caller recorded before the refactor) it takes no snapshot and uses that one. With restoreTo (a snapshot tree id the refactor recorded) gitfacts.py puts the tree back at that snapshot and it returns { restored }. A caller passes relay: { runner, dir } (relayrun.py and a directory for this run's relay files); without it they are resolved from the plugin registry and mkdtemp.",
   phases: [{ title: 'Refactor', detail: 'behavior-preserving refactor; tests stay green' }],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -857,12 +857,18 @@ ${a.feedback ? `\nFeedback to address:\n${a.feedback}` : ''}
 
 The workflow recorded the tree before you start (snapshot ${snapshotTree}) and restores it itself when needed: do not snapshot, stash, reset or restore anything.
 
+GitNexus is required for this refactor, without exception (the graphrag-lookup skill says how to call each tool; name the indexed repository as \`repo\` in every call):
+- Before changing any function, class or method, run \`impact\` on it with \`direction: "upstream"\`, and record its blast radius (direct callers, affected execution flows, risk level) in blastRadius.
+- Rename every symbol with \`rename\`, \`dry_run: true\` first, then \`dry_run: false\`; never rename with find-and-replace or by hand.
+- Before finishing, run \`detect_changes\` with \`scope: "all"\` and \`worktree\` set to the absolute path above, compare the symbols and flows it reports with the ones you intended to change, fix or revert any difference, and record the comparison in detectChanges.
+- If GitNexus does not answer, or its index is stale and re-indexing as graphrag-lookup says does not fix it, stop at once and return gitnexusBlocker naming the tool, the repository and the error: the workflow puts the tree back at the snapshot. Never refactor without GitNexus.
+
 Steps:
 1. If these files need no refactoring, change nothing.
-2. Otherwise refactor, then run the test suite${suiteCommand ? ` with exactly \`cd "${repo}" && ${suiteCommand}\`, the command the run judges the suite by` : ''}.
+2. Otherwise refactor through GitNexus as above, then run the test suite${suiteCommand ? ` with exactly \`cd "${repo}" && ${suiteCommand}\`, the command the run judges the suite by` : ''}.
 3. If the suite is not green and you cannot make it green without changing behavior, stop and return reverted=true: the workflow puts the tree back at the snapshot.
 
-Deliver whether tests are green, whether the tree must be reverted, and the captured test output.`,
+Deliver whether tests are green, whether the tree must be reverted, the captured test output, the blast radius and detect_changes comparison, and a GitNexus blocker if one stopped you.`,
   {
     label: 'refactor:apply',
     phase: 'Refactor',
@@ -876,6 +882,9 @@ Deliver whether tests are green, whether the tree must be reverted, and the capt
         testsGreen: { type: 'boolean' },
         reverted: { type: 'boolean' },
         evidence: { type: 'string' },
+        blastRadius: { type: 'string' },
+        detectChanges: { type: 'string' },
+        gitnexusBlocker: { type: 'string' },
         notes: { type: 'string' },
       },
     },
@@ -892,6 +901,25 @@ if (!refactor) {
     changedFiles: [],
     snapshotTree,
     ledger: ledgerOf('default', false),
+  })
+}
+
+// A refactor never proceeds without GitNexus: the tree goes back to the snapshot and the step fails with the named blocker.
+const gitnexusBlocker = str(refactor.gitnexusBlocker)
+if (gitnexusBlocker) {
+  const restore = await restoreTree(snapshotTree, 'refactor-gitnexus-blocked')
+  return dispatchOutcome({
+    ok: false,
+    dispatchFailed: true,
+    blocked: gitnexusBlocker,
+    refactor,
+    changedFiles: [],
+    testsGreen: false,
+    behaviorPreserved: false,
+    restored: restore.restored === true,
+    snapshotTree,
+    reason: `the refactor stopped on a GitNexus blocker${restore.restored ? '' : ` and the tree could not be put back at ${snapshotTree}`}: ${gitnexusBlocker}`,
+    ledger: ledgerOf('gitnexus-blocked', false),
   })
 }
 
