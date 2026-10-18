@@ -5,12 +5,14 @@ description: >-
   SQL, NoSQL, command, and template injection; reports each confirmed path
   with a minimal reproduction. Use for Adversarial Validation phase work
   requiring injection probing and input-boundary attack.
-tools: Read, Glob, Grep, Bash, Write, Skill
+tools: Read, Glob, Grep, Bash, Write, Skill, mcp__awslabs-postgres-mcp-server__connect_to_database, mcp__awslabs-postgres-mcp-server__is_database_connected, mcp__awslabs-postgres-mcp-server__get_database_connection_info, mcp__awslabs-postgres-mcp-server__get_table_schema, mcp__awslabs-postgres-mcp-server__run_query
 disallowedTools: AskUserQuestion, Edit, Agent
+mcpServers:
+  - awslabs-postgres-mcp-server
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-secops]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-secops, agent-teams-workforce:aurora-postgresql]
 effort: medium
 isolation: worktree
 color: orange

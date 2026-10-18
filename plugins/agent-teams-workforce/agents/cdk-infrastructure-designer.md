@@ -34,6 +34,7 @@ skills:
 - agent-teams-workforce:resource-naming
 - agent-teams-workforce:effective-architecture
 - aws-core:aws-cdk
+- agent-teams-workforce:aurora-postgresql
 effort: medium
 isolation: worktree
 color: cyan

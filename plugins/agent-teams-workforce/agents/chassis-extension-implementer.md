@@ -5,15 +5,16 @@ description: >-
   endpoints and event consumers; writes minimum code to pass failing unit
   tests. Use for Implementation work requiring Lambda handlers,
   chassis extension, and endpoint/consumer business logic.
-tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill, mcp__mcp-graphrag-server
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill, mcp__mcp-graphrag-server, mcp__pg-aiguide__search_docs
 disallowedTools: AskUserQuestion, Agent
 mcpServers:
   - aws-mcp
   - mcp-graphrag-server
+  - pg-aiguide
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:lambda, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:resource-naming, agent-teams-workforce:skillspoke-events, agent-teams-workforce:python-coding, aws-core:aws-serverless, aws-core:aws-sdk-python-usage]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:lambda, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:resource-naming, agent-teams-workforce:skillspoke-events, agent-teams-workforce:python-coding, aws-core:aws-serverless, aws-core:aws-sdk-python-usage, agent-teams-workforce:aurora-postgresql]
 effort: medium
 color: green
 ---

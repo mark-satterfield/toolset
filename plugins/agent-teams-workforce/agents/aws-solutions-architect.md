@@ -13,12 +13,14 @@ tools: Read, Glob, Grep, Bash, Write, Skill, Agent, SendMessage,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions,
   mcp__aws-mcp__aws___get_regional_availability,
   mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs,
-  mcp__mcp-graphrag-server
+  mcp__mcp-graphrag-server,
+  mcp__pg-aiguide__search_docs
 disallowedTools: AskUserQuestion, Edit, NotebookEdit
 mcpServers:
 - aws-mcp
 - mcp-graphrag-server
 - awslabs-dynamodb-mcp-server
+- pg-aiguide
 model: opus
 effort: high
 maxTurns: 300

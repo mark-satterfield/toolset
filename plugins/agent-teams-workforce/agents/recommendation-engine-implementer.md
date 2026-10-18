@@ -5,14 +5,15 @@ description: >-
   minimum code to pass failing unit tests. Use for Implementation
   work requiring recommendation pipeline assembly, candidate
   sourcing, re-ranking, and serving-layer composition.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp__pg-aiguide__search_docs
 mcpServers:
 - mcp-graphrag-server
+- pg-aiguide
 disallowedTools: AskUserQuestion, Agent
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-ml-engineer, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-coding]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-ml-engineer, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-coding, agent-teams-workforce:aurora-postgresql]
 effort: medium
 color: green
 ---

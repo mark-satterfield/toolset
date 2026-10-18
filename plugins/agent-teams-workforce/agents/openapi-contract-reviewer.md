@@ -5,15 +5,17 @@ description: >-
   contracts document, data-model document and acceptance criteria against the
   implementation-level criteria of the review standard, once, and returns
   findings a document's author can correct without interpretation.
-tools: Read, Glob, Grep, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, Skill
+tools: Read, Glob, Grep, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, Skill, mcp__pg-aiguide__search_docs, mcp__awslabs-postgres-mcp-server__connect_to_database, mcp__awslabs-postgres-mcp-server__is_database_connected, mcp__awslabs-postgres-mcp-server__get_database_connection_info, mcp__awslabs-postgres-mcp-server__get_table_schema, mcp__awslabs-postgres-mcp-server__run_query
 disallowedTools: AskUserQuestion, Edit, Agent, Bash
 mcpServers:
   - aws-mcp
   - awslabs-dynamodb-mcp-server
+  - pg-aiguide
+  - awslabs-postgres-mcp-server
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:skillspoke-events, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:skillspoke-events, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture, agent-teams-workforce:aurora-postgresql, agent-teams-workforce:design-postgres-tables]
 effort: low
 isolation: worktree
 color: purple
@@ -23,6 +25,8 @@ color: purple
 
 - **`aws-mcp`** (AWS documentation, AWS skills, regional availability): When a contract or data model you review claims AWS behaviour (API Gateway REST API limits and errors, EventBridge event rules, DynamoDB limits), confirm it in the AWS documentation. Search with `aws___search_documentation`, read the page with `aws___read_documentation`, and use `aws___list_regions` and `aws___get_regional_availability` when a choice depends on a service or feature being available in the target region.
 - **`awslabs-dynamodb-mcp-server`** (DynamoDB data modeling, validation and cost): When you review a DynamoDB data model, check its schema.json with `dynamodb_data_model_schema_validator` when one exists, and check the capacity and cost the model states with `compute_performances_and_costs`.
+- **`pg-aiguide`** (the PostgreSQL manual, by version): When you review a PostgreSQL data model, confirm the PostgreSQL behaviour it relies on (types, constraints, index methods, pgvector operators) with `search_docs`, and review it against the `aurora-postgresql` skill.
+- **`awslabs-postgres-mcp-server`** (read-only, `dev` only): When it is configured and the service's `dev` cluster exists, compare the data model with the live schema (`get_table_schema`) after connecting with `connect_to_database`; it never changes anything.
 
 Cite what you relied on in a finding's observation: the documentation URL, the skill name, or the DynamoDB tool and the result it returned.
 

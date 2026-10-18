@@ -237,6 +237,7 @@ const IMPLEMENTER_ROSTER = [
   'event-api-client-implementer',
   'event-driven-consumer-implementer',
   'dynamodb-access-layer-implementer',
+  'postgresql-access-layer-implementer',
   'cognito-lambda-trigger-implementer',
   'webauthn-implementer',
   'payments-integration-implementer',

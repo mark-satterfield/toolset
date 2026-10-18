@@ -5,14 +5,16 @@ description: >-
   generation, index read/write, similarity queries. Use for Implementation
   work requiring embedding pipelines, vector index access, and
   similarity queries.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, mcp__pg-aiguide__search_docs, mcp__awslabs-postgres-mcp-server__connect_to_database, mcp__awslabs-postgres-mcp-server__is_database_connected, mcp__awslabs-postgres-mcp-server__get_database_connection_info, mcp__awslabs-postgres-mcp-server__get_table_schema, mcp__awslabs-postgres-mcp-server__run_query
 mcpServers:
 - mcp-graphrag-server
+- pg-aiguide
+- awslabs-postgres-mcp-server
 disallowedTools: AskUserQuestion, Agent
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:rag-architect, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-coding, aws-core:amazon-bedrock, aws-core:aws-sdk-python-usage]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:rag-architect, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-coding, aws-core:amazon-bedrock, aws-core:aws-sdk-python-usage, agent-teams-workforce:aurora-postgresql, agent-teams-workforce:pgvector-semantic-search]
 effort: medium
 color: green
 ---

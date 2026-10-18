@@ -3,10 +3,15 @@ name: data-model-specification-author
 description: Specify data ownership and access patterns for what one repository's Story builds.
 tools: Read, Write, Edit, Glob, Grep, Bash, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_modeling, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation,
   mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_converter,
-  mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, Skill
+  mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, Skill,
+  mcp__pg-aiguide__search_docs, mcp__awslabs-postgres-mcp-server__connect_to_database,
+  mcp__awslabs-postgres-mcp-server__is_database_connected, mcp__awslabs-postgres-mcp-server__get_database_connection_info,
+  mcp__awslabs-postgres-mcp-server__get_table_schema, mcp__awslabs-postgres-mcp-server__run_query
 disallowedTools: AskUserQuestion, Agent
 mcpServers:
 - awslabs-dynamodb-mcp-server
+- pg-aiguide
+- awslabs-postgres-mcp-server
 model: fable
 permissionMode: acceptEdits
 maxTurns: 100
@@ -18,6 +23,9 @@ skills:
 - agent-teams-workforce:artifact-handoff
 - agent-teams-workforce:effective-architecture
 - aws-core:aws-database
+- agent-teams-workforce:aurora-postgresql
+- agent-teams-workforce:design-postgres-tables
+- agent-teams-workforce:pgvector-semantic-search
 effort: medium
 isolation: worktree
 color: purple
@@ -36,7 +44,7 @@ Never expose secrets or edit section 2.
 
 Read the TRD, what the Story builds and the architecture your repository context points to. Derive access patterns when none are separately
 provided; specify owned tables, keys, indexes, consistency, retention, relationships and capacity
-assumptions at the stated scale, using the appropriate data-model skills: `dynamodb` (access-pattern-first) for a DynamoDB store, and `database-schema-designer` (relational design) for a relational store, which in SkillSpoke is PostgreSQL on Amazon RDS, including its graph and vector uses. Specify every
+assumptions at the stated scale, using the appropriate data-model skills: `dynamodb` (access-pattern-first) for a DynamoDB store, and `aurora-postgresql` with `design-postgres-tables` and `database-schema-designer` (relational design) for a relational store, which in SkillSpoke is Aurora PostgreSQL Serverless v2 reached through the RDS Data API, including its graph and vector uses (`pgvector-semantic-search`). Specify every
 data item the Story builds without judging existing code satisfied. Write the assigned nonempty UTF-8 data-model
 document with decisionIds frontmatter and exact source references. A surface with no applicable
 work gets a short reasoned not-applicable document. Do not create infrastructure or change the

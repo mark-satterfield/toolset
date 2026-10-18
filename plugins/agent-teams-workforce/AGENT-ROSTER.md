@@ -169,6 +169,7 @@ shown the answer is not a checker.
 | api-gateway-cdk-implementer | execute | Implements API Gateway resources, methods, and authorizers in CDK. |
 | event-api-client-implementer | execute | Implements the calls a service makes to the shared-events-service API to publish SkillSpoke events |
 | dynamodb-access-layer-implementer | execute | Implements DynamoDB access patterns from the data model specification: single-table patterns, GSI queries, conditional writes. |
+| postgresql-access-layer-implementer | execute | Implements Aurora PostgreSQL access patterns through the RDS Data API from the data model specification: parameterized queries, transactions, migrations, pgvector and recursive graph queries. |
 | event-driven-consumer-implementer | execute | Implements consumers of the SkillSpoke standard event on the delivery path the effective architecture describes |
 | power-tools-configuration-implementer | execute | Configures Lambda Power Tools: structured logging, tracing, metrics, idempotency, validation |
 | cognito-lambda-trigger-implementer | execute | Implements Cognito Lambda triggers for authentication flows. |

@@ -13,7 +13,7 @@ mcpServers:
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-devops, agent-teams-workforce:aws-mcp-setup, aws-core:aws-cdk]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-devops, agent-teams-workforce:aws-mcp-setup, aws-core:aws-cdk, agent-teams-workforce:aurora-postgresql]
 effort: medium
 isolation: worktree
 color: cyan
