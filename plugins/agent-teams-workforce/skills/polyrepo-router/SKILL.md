@@ -4,7 +4,9 @@ description: >-
   The way to reach the polyrepo-steward. Load this skill whenever repository work is
   needed — the count or list of repos, where something lives, which repo owns a piece
   of functionality, whether a repo has uncommitted files or is up to date with GitHub
-  `main`, when it was last updated, the naming convention, creating, renaming,
+  `main`, when it was last updated, which repos contain Python, CDK, TypeScript, JavaScript
+  or web code and which linter, type-check, pre-commit and CI checker configurations each
+  carries, the naming convention, creating, renaming,
   deprecating or rebasing a repo, searching across repos, or any knowledge about the
   project's repositories. It instantiates the `polyrepo-steward` agent and hands the
   request to it; the steward answers and does the repository work itself.
@@ -51,6 +53,7 @@ uv run "${CLAUDE_PLUGIN_ROOT}/skills/polyrepo-repo/scripts/polyrepo.py" <command
 | Repos with an attribute | `search attr=value` (dotted keys, e.g. `main.behind=0`, `github.archived=false`) |
 | Every repo's full record (path, groups, live state, and the matrix's stacks with their purposes) | `inventory` |
 | Text across every repo | `grep <pattern>` |
+| Which repos hold which tech stacks (Python, CDK, TypeScript, JavaScript, web, shell, YAML, JSON, Markdown), which checker configurations each carries, which copies are identical, and which checks a repo lacks for a stack it holds | `tech-stacks` (one repo: `--repo R`; grouped: `--summary`) |
 
 Invoke the tool by that path; a bare `polyrepo` on `PATH` may be an unrelated program.
 Everything else — which repo owns a piece of functionality (the matrix's answer, not

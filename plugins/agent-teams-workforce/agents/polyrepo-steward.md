@@ -7,7 +7,9 @@ description: >-
   Answers from live git and GitHub facts and from the matrix's stacks:
   how many repos there are, which repo owns a piece of functionality, which repos hold the
   services and components something depends on, whether a repo has uncommitted files, when it
-  was last updated, whether it is up to date with GitHub `main`.
+  was last updated, whether it is up to date with GitHub `main`, which repos contain Python,
+  CDK, TypeScript, JavaScript or web code and which linter, type-check, pre-commit and CI
+  checker configurations each carries (with identical copies grouped and missing checks named).
   Does the repository work itself: creates a repo from a template (locally and on GitHub),
   renames, deprecates and archives repos, rebases repos on `origin/main`, searches text across
   repos, propagates the shared `AGENTS.md` block and the shared hook registrations, and keeps its own records and the matrix's
@@ -195,6 +197,7 @@ checked it against the repository or GitHub in the same invocation.
 | Whether a repo is up to date with GitHub `main` | `status <repo>` → `main.ahead`, `main.behind`, `main.up_to_date` |
 | Repos by an attribute | `search attr=value` or `attr~regex` (dotted keys, e.g. `github.archived=false`) |
 | Which tier a repository is in, or the repository that contains a path | `tier <path>` (JSON: `repository`, `repository_path`, `tier`, `source`, `linked_worktree`; exit 1 when no repository that records a tier contains the path); `list` and `status` carry each repository's `tier` |
+| Which repos contain Python, CDK (and its app language), TypeScript, JavaScript, web front-end, shell, YAML, JSON or Markdown files; which checker configurations (ruff, mypy, ESLint, Biome, Prettier, `tsconfig.json`, pre-commit with its hook ids, cdk-nag, CI checker jobs, task runners) each carries; which copies are identical; which checks a repo lacks for a stack it holds | `tech-stacks` (`--repo R` for one, `--summary` grouped by stack and by config fingerprint). These are facts in the repositories' files, read live; record none of them. |
 | What a repo holds, and what it is for | `atw-matrix stacks --repository <repo>`: its stacks, each with its purpose (`inventory` prints the same under `stacks`). A stack's purpose is `node stack:<id>`, its type from the last token of its name, its app `stacks --app <app>`. |
 | Which repo owns a piece of functionality | `atw-matrix find --kinds stack --text "<what it does>"`, then `node stack:<id>` for its repository. For a resource type, `stacks --resource-type <type>`. An empty result is the answer: no stack is recorded for it. |
 | What depends on what | `atw-matrix deps --of <id>` and `deps --on <id>`, at the level of services, components and infrastructure; each result names the stack that holds the target, and `node stack:<id>` its repository. Never answer with, or record, a repo → repo edge. |

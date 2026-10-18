@@ -29,6 +29,7 @@ Usage:
   polyrepo.py search attr=value [attr~regex ...] [--fetch] [--include-inactive]
   polyrepo.py inventory [--all] [--no-fetch] [--name N] [--include-inactive]
   polyrepo.py grep <pattern> [--space S] [--repo R ...] [-i] [-l] [-F] [-w] [--glob G ...]
+  polyrepo.py tech-stacks [--repo R ...] [--space S] [--summary]
   polyrepo.py rebase <repo ...|--all>
   polyrepo.py create <name> --space S [--template T] [--tier product|tooling] [--dry-run]
   polyrepo.py rename <repo> [<new-name>] [--also R ...] [--dry-run] [--skip-repo R ...] [--trailer TEXT]
@@ -119,6 +120,7 @@ from name_sweep import (
 )
 from naming_command import NamingCommandError, repository_names, repository_type
 from naming_rules import NamingPattern, NamingRules, NamingRulesError, read_rules, type_of
+from stack_scan import scan_markdown, scan_repository, summarize, summary_markdown
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -7085,6 +7087,70 @@ def cmd_gitnexus_sync(args: argparse.Namespace, cfg: Config) -> int:
     return 1 if bad else 0
 
 
+# tech-stacks ----------------------------------------------------------------------------------
+
+
+def _tech_stack_targets(cfg: Config, wanted: list[str] | None, space: str | None) -> list[tuple[str, Path]]:
+    """List the active clones to scan: those under the root, and the external ones unless a space is named.
+
+    Args:
+        cfg: The project settings.
+        wanted: Repository names to keep, compared without case; None keeps every one.
+        space: The app space to keep; None keeps every space and the external repositories.
+
+    Returns:
+        (name, path) for each clone.
+
+    Raises:
+        PolyrepoError: When a wanted name is no active clone.
+
+    """
+    local = [(r.name, r.path) for r in _local_repos(cfg, None, space) if not cfg.is_deprecated_name(r.name)]
+    external = [] if space else [(t.name, t.path) for t in _external_tiers(cfg)[0]]
+    by_name = {name.lower(): (name, path) for name, path in [*local, *external]}
+    if not wanted:
+        return sorted(by_name.values(), key=lambda item: item[0].lower())
+    unknown = [w for w in wanted if w.lower() not in by_name]
+    if unknown:
+        msg = f"no active clone named {', '.join(unknown)}"
+        raise PolyrepoError(msg)
+    return [by_name[w.lower()] for w in wanted]
+
+
+def _git_output(root: Path, args: Sequence[str]) -> str | None:
+    """Run git in a folder for the tech-stack scan.
+
+    Args:
+        root: The folder.
+        args: The git arguments.
+
+    Returns:
+        The stripped output, or None when git fails.
+
+    """
+    return git_out(root, *args)
+
+
+def cmd_tech_stacks(args: argparse.Namespace, cfg: Config) -> int:
+    """Report each repository's tech stacks and checker configurations, or a summary of them all.
+
+    Returns:
+        0, or 1 when a repository could not be scanned.
+
+    """
+    targets = _tech_stack_targets(cfg, args.repo, args.space)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        scans = list(ex.map(lambda target: scan_repository(target[0], target[1], _git_output), targets))
+    failed = any(scan.error for scan in scans)
+    if args.summary:
+        summary = summarize(scans)
+        emit(args, dataclasses.asdict(summary), lambda: summary_markdown(summary))
+        return 1 if failed else 0
+    data = {"count": len(scans), "repos": [dataclasses.asdict(scan) for scan in scans]}
+    emit(args, data, lambda: "\n".join(scan_markdown(scan) for scan in scans))
+    return 1 if failed else 0
+
+
 # templates-check ------------------------------------------------------------------------------
 
 
@@ -8484,6 +8550,19 @@ def _add_inspect_commands(add: Callable[[str, str], argparse.ArgumentParser]) ->
     s.add_argument("-l", "--files", action="store_true", help="files with matches only")
     s.add_argument("--glob", action="append", help="rg --glob (repeatable)")
     s.set_defaults(func=cmd_grep)
+
+    s = add(
+        "tech-stacks",
+        "the tech stacks each repo holds and the checker configurations it carries, read from its files",
+    )
+    s.add_argument("--repo", action="append", help="only this repo (repeatable)")
+    s.add_argument("--space", help="only this app space (default: every app space and the external repos)")
+    s.add_argument(
+        "--summary",
+        action="store_true",
+        help="group repos by stack and configurations by fingerprint, and list missing checks",
+    )
+    s.set_defaults(func=cmd_tech_stacks)
 
 
 def _add_repo_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> None:
