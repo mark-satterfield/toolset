@@ -15,12 +15,16 @@ Commands:
         repository's default branch. With B, how many commits HEAD has that origin/B lacks
         (`--fetch-base` fetches origin B first; `--unset-base-upstream` unsets an upstream
         that is origin/B, so nothing pushes to the default branch).
-    provision --repo R --branch B --path P
+    provision --repo R --branch B (--name N | --path P) [--from-origin]
         Reuse the worktree registered for branch B or at P, or cut one at P on B from
         origin/<default>. A worktree lives inside its own repository: P must be
-        R/.worktrees/<name>, and a reused tree found anywhere else is moved to P. A reused
-        tree is left as it is. Reports the tree, its branch, whether it was reused, the default
-        branch, the git-common-dir and what was worked around (`blocked`).
+        R/.worktrees/<name>, and a reused tree found anywhere else is moved to P. `--name N`
+        places the tree at R/.worktrees/N, so a caller names the tree and never writes the
+        path. `--from-origin` stands the tree on the existing remote branch origin/B (a pull
+        request's head, for example) instead of cutting B from the default branch; it fails
+        when origin/B does not exist. A reused tree is left as it is. Reports the tree, its
+        branch, whether it was reused, the default branch, the git-common-dir and what was
+        worked around (`blocked`).
     hash-files --tree T [FILE ...]
         The git blob hash of each FILE in T (`missing` when it is not a file), and
         `treeDigest`: the SHA-256 of HEAD, the status and the content of every changed or
@@ -443,6 +447,72 @@ def cut_worktree(
         raise GitError(failure_message(repo, add, added))
 
 
+def checkout_from_origin(repo: str, branch: str, path: str, blocked: list[str]) -> None:
+    """Fetch origin/<branch> and add the worktree on that existing remote branch.
+
+    A local branch of that name is checked out as it is, and a difference from origin is
+    noted; otherwise the local branch is created from origin/<branch>, tracking it.
+
+    Args:
+        repo: The repository.
+        branch: The remote branch, for example a pull request's head.
+        path: Where the worktree goes.
+        blocked: Where to note what was worked around.
+
+    Raises:
+        GitError: When origin/<branch> cannot be fetched or the worktree cannot be added.
+
+    """
+    fetched: subprocess.CompletedProcess[str] = git(repo, "fetch", "origin", branch, check=False)
+    remote_ref: str = f"origin/{branch}"
+    remote_head: str | None = out(repo, "rev-parse", "--verify", "--quiet", f"refs/remotes/{remote_ref}")
+    if not remote_head:
+        msg: str = f"{remote_ref} does not exist: git fetch origin {branch} said {fetched.stderr.strip()!r}"
+        raise GitError(msg)
+    if fetched.returncode != 0:
+        blocked.append(f"git fetch origin {branch} failed; using the {remote_ref} already fetched")
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    add: tuple[str, ...]
+    local_head: str | None = out(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")
+    if local_head:
+        add = ("worktree", "add", path, branch)
+        if local_head != remote_head:
+            blocked.append(f"the local {branch} ({local_head[:12]}) differs from {remote_ref} ({remote_head[:12]})")
+    else:
+        add = ("worktree", "add", "--track", "-b", branch, path, remote_ref)
+    added: subprocess.CompletedProcess[str] = git(repo, *add, check=False)
+    if added.returncode != 0:
+        raise GitError(failure_message(repo, add, added))
+
+
+def planned_path(repo: str, name: str | None, path: str | None) -> str:
+    """Return where the worktree belongs: R/.worktrees/<name>, from --name or --path.
+
+    Args:
+        repo: The repository.
+        name: The tree's name under R/.worktrees, or None when a path is given.
+        path: The tree's full path, or None when a name is given.
+
+    Returns:
+        The path.
+
+    Raises:
+        GitError: When the name is not one path component, or the path is not R/.worktrees/<name>.
+
+    """
+    home: Path = Path(repo).resolve() / WORKTREES_DIRNAME
+    if name is not None:
+        if name in {"", ".", ".."} or Path(name).name != name:
+            msg: str = f"--name {name!r} is not a single directory name"
+            raise GitError(msg)
+        return str(home / name)
+    planned: str = path or ""
+    if Path(planned).resolve().parent != home:
+        msg = f"{planned} is not {home}/<name>; a worktree lives inside its own repository"
+        raise GitError(msg)
+    return planned
+
+
 def require_default_branch(repo: str) -> str:
     """Return the repository's default branch, which provisioning cannot do without.
 
@@ -505,22 +575,18 @@ def cmd_provision(args: argparse.Namespace) -> ProvisionResult:
     Returns:
         What was established.
 
-    Raises:
-        GitError: When the default branch cannot be found or the worktree cannot be added.
-
     """
     repo: str = args.repo
     branch: str = args.branch
-    path: str = args.path
+    path: str = planned_path(repo, args.name, args.path)
     blocked: list[str] = []
     home: Path = Path(repo).resolve() / WORKTREES_DIRNAME
-    if Path(path).resolve().parent != home:
-        msg: str = f"{path} is not {home}/<name>; a worktree lives inside its own repository"
-        raise GitError(msg)
     default: str = require_default_branch(repo)
     reused_tree: str | None = reuse_worktree(repo, branch, path, home, blocked)
     tree: str = reused_tree or path
-    if not reused_tree:
+    if not reused_tree and args.from_origin:
+        checkout_from_origin(repo, branch, path, blocked)
+    elif not reused_tree:
         cut_worktree(repo, branch, path, default, blocked)
     facts: TreeFacts = tree_facts(tree)
     on: str = facts.get("branch") or ""
@@ -700,7 +766,10 @@ def build_parser() -> argparse.ArgumentParser:
     prov: argparse.ArgumentParser = sub.add_parser("provision", help="reuse or cut the worktree for a branch")
     prov.add_argument("--repo", required=True)
     prov.add_argument("--branch", required=True)
-    prov.add_argument("--path", required=True)
+    where = prov.add_mutually_exclusive_group(required=True)
+    where.add_argument("--name", help="the tree's directory name under <repo>/.worktrees")
+    where.add_argument("--path", help="the tree's full path, which must be <repo>/.worktrees/<name>")
+    prov.add_argument("--from-origin", action="store_true", help="stand the tree on the existing origin/<branch>")
     hashes: argparse.ArgumentParser = sub.add_parser("hash-files", help="blob hashes and the work tree digest")
     hashes.add_argument("--tree", required=True)
     hashes.add_argument("files", nargs="*")
