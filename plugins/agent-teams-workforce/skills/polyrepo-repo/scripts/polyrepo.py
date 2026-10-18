@@ -102,6 +102,8 @@ from ruamel.yaml.error import YAMLError
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pipeline-contracts" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "resource-naming" / "scripts"))
 from checks_sync import (
+    CHECKS_JSON,
+    RUNNER_MARK,
     ChecksSpec,
     ChecksSpecError,
     FileChange,
@@ -3775,6 +3777,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
             "merge the shared hook registrations into .claude/settings.json (hooks_sync)",
             "after git init, write the canonical code checks of its stacks and install the commit hook (checks_sync)",
             "install GitNexus: .gitnexusrc, the .gitnexus ignore rule and .claude/skills/gitnexus/",
+            "run the repo's own formatters (.code-checks/run.py commit mode) over the rendered files once",
             f"git init on {b}, exclude {WORKTREES_LINE} locally",
             (
                 "run the template's setup task (task install) and verify .venv/bin/python, "
@@ -3823,6 +3826,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
             [
                 f"{name}: created at {dest} and pushed to GitHub"
                 + (f"; environment setup failed: {res['environment_error']}" if res.get("environment_error") else "")
+                + (f"; formatting left findings: {res['format_error']}" if res.get("format_error") else "")
                 + (f"; matrix update failed: {res['matrix_error']}" if res.get("matrix_error") else "")
                 + (f"; beads setup failed: {res['beads_error']}" if res.get("beads_error") else "")
                 + (f"; GitNexus index failed: {res['gitnexus_error']}" if res.get("gitnexus_error") else ""),
@@ -3891,6 +3895,11 @@ def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dic
         if env_res["problems"]:
             res["environment_error"] = "; ".join(env_res["problems"])
     res["gitnexus_files"] = gitnexus_install(cfg, dest)
+    # The template's output is formatted as the repo's own checkers format it, so the first
+    # commit carries no formatting findings and the commit hook has nothing to rewrite.
+    format_problems = format_rendered(dest)
+    if format_problems:
+        res["format_error"] = "; ".join(format_problems)
     must(git(dest, "add", "-A"))
     must(
         git(
@@ -6989,6 +6998,62 @@ def cmd_hooks_sync(args: argparse.Namespace, cfg: Config) -> int:
 CHECKS_SYNC_SUBJECT = "chore(checks): sync the canonical checker configurations"
 CHECKS_HOOK_SUBJECT = "chore(checks): run the canonical checks from the commit hook"
 PRE_COMMIT_INSTALL_TIMEOUT = 300
+FORMAT_TIMEOUT = 600
+# The runner's formatting hooks, by stack: (stack, hook id, the suffixes it takes, or None for
+# every file). In commit mode the runner writes the formatting in place (ruff check --fix and
+# ruff format; prettier --write --ignore-unknown, which honours the repo's .prettierignore).
+FORMAT_HOOKS: tuple[tuple[str, str, frozenset[str] | None], ...] = (
+    ("python", "python-ruff", frozenset({".py", ".pyi"})),
+    ("typescript", "ts-prettier", None),
+    ("javascript", "js-prettier", None),
+)
+
+
+def _checks_stacks(dest: Path) -> frozenset[str]:
+    """Read the stacks the repo's synced `checks.json` names.
+
+    Returns:
+        The stacks; none when the repo has no readable `checks.json`.
+
+    """
+    spec_path = dest / CHECKS_JSON
+    if not spec_path.is_file():
+        return frozenset()
+    try:
+        parsed: object = json.loads(spec_path.read_text())
+    except json.JSONDecodeError:
+        return frozenset()
+    stacks = parsed.get("stacks") if isinstance(parsed, dict) else None
+    return frozenset(s for s in stacks if isinstance(s, str)) if isinstance(stacks, list) else frozenset()
+
+
+def format_rendered(dest: Path) -> list[str]:
+    """Run the repo's own formatters over its uncommitted files once, before the first commit (create).
+
+    Each formatting hook of a stack the synced `checks.json` names runs through the synced
+    `.code-checks/run.py` in commit mode, the mode that writes, over the files git would commit.
+    A finding a formatter cannot fix is reported, not raised: the commit hook reports it again.
+
+    Returns:
+        One problem per hook that left findings or could not run; empty when all came out clean.
+
+    """
+    runner = dest / RUNNER_MARK
+    if not runner.is_file():
+        return []
+    listing = git_out(dest, "ls-files", "--others", "--exclude-standard", "-z") or ""
+    files = [f for f in listing.split("\0") if f]
+    stacks = _checks_stacks(dest)
+    hooks = [(hook, suffixes) for stack, hook, suffixes in FORMAT_HOOKS if stack in stacks]
+    problems: list[str] = []
+    for hook, suffixes in hooks:
+        targets = [f for f in files if suffixes is None or Path(f).suffix in suffixes]
+        if not targets:
+            continue
+        cp = run([sys.executable, str(runner), "commit", hook, *targets], cwd=dest, timeout=FORMAT_TIMEOUT)
+        if cp.returncode != 0:
+            problems.append(f"{hook}: {_last_line(cp)}")
+    return problems
 
 
 @dataclasses.dataclass(frozen=True)
