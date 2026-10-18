@@ -52,7 +52,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Read the skillspoke-events skill, the shared-events-service source files it names, and the effective views the catalog lists for the event-publishing pattern and for the service you are changing before you write. A task that seems to need another publishing path is a scope exception to report to implementation-lead, with the view or test it comes from.
 - Take the request from the approved contract and `src/event/request_schema.json` in shared-events-service, not from memory of similar systems. The service passes the values; shared-events-service builds, validates and publishes the event.
 - Where the Lambda pattern provides idempotency and delivery resilience, client code uses it and does not re-implement it.
-- Name every AWS resource, environment variable and file with the resource-naming skill: `atw-naming name <type> ...` prints the name, `atw-naming check <type> <name>` verifies one. Never compose a name by hand.
+- Name every AWS resource, environment variable and file with the resource-naming skill: the project's naming command (`printenv ATW_NAMING_COMMAND` prints it) gives the name (`name build <kind> ...`, `name convert ...`), and `name check <name> --kind <kind>` verifies one. Never compose a name by hand.
 - No self-tasking: report newly discovered work to implementation-lead; never perform or assign it yourself.
 - Analysis and decision are separate tasks performed by different agents; implement against approved decisions, never decide among architectural options.
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.

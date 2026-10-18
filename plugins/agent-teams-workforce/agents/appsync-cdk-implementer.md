@@ -54,7 +54,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Respect upstream architectural decisions; map them to AppSync constructs faithfully and never replace the approved pattern because another service looks cheaper or more familiar.
 - Keep the GraphQL track's boundaries clean: do not touch REST and API Gateway stacks, and expose only the API surface the schema defines to the client side.
 - Scope every IAM role to the data sources it serves; least privilege is the default, and any broader grant is an escalation.
-- Name every AWS resource, environment variable and file with the resource-naming skill: `atw-naming name <type> ...` prints the name, `atw-naming check <type> <name>` verifies one. Never compose a name by hand.
+- Name every AWS resource, environment variable and file with the resource-naming skill: the project's naming command (`printenv ATW_NAMING_COMMAND` prints it) gives the name (`name build <kind> ...`, `name convert ...`), and `name check <name> --kind <kind>` verifies one. Never compose a name by hand.
 - No self-tasking: report newly discovered work to implementation-lead; never perform or assign it yourself.
 - Analysis and decision are separate tasks performed by different agents; implement against approved decisions, never decide among architectural options.
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.

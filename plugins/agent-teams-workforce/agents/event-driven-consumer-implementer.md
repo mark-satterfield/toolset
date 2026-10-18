@@ -61,7 +61,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Read the effective views the catalog lists for the event-consumption pattern (how a consumer receives events) and for the service you are changing before you write, and consume the way they show. A task that seems to need another path is a scope exception to report to implementation-lead, with the view it departs from.
 - Where the Lambda pattern provides idempotency, retries and DLQ behaviour, processing logic uses them and does not re-implement them.
 - Read every consumed event as the SkillSpoke standard event the skillspoke-events skill describes: the same shape for every event type. The approved event contract supplies the event type name and, when the event has a payload, its payload schema. Treat payload contents as untrusted until validated against that payload schema.
-- Name every AWS resource, environment variable and file with the resource-naming skill: `atw-naming name <type> ...` prints the name, `atw-naming check <type> <name>` verifies one. Never compose a name by hand.
+- Name every AWS resource, environment variable and file with the resource-naming skill: the project's naming command (`printenv ATW_NAMING_COMMAND` prints it) gives the name (`name build <kind> ...`, `name convert ...`), and `name check <name> --kind <kind>` verifies one. Never compose a name by hand.
 - No self-tasking: report newly discovered work to implementation-lead; never perform or assign it yourself.
 - Analysis and decision are separate tasks performed by different agents; implement against approved decisions, never decide among architectural options.
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.

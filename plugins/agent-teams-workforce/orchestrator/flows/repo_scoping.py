@@ -9,7 +9,7 @@ description and the producers in that stack as information, never as further wor
 is used only to find those stacks, each stack's repository, the documents that describe each
 element and the architecture-side dependencies between them. Everything else the Epic reaches
 is context, never work. No session is started. A repository that a stack the Stories build in
-lacks is named by the project's naming rules, recorded on the stack, and created by the
+lacks is named by the project's naming command, recorded on the stack, and created by the
 ``polyrepo`` tool, which takes its template from the name; a stack no Story builds in is never
 touched.
 """
@@ -30,7 +30,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifac
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "resource-naming" / "scripts"))
 import hierarchy
-import naming
 from driver_surface_types import CONTROL_REPO_ENV
 from matrix_contract import (
     AUTHORITY_SIDE,
@@ -57,6 +56,7 @@ from matrixtraverse import (
     stack_type,
 )
 from matrixwrite import put
+from naming_command import NamingAnswer, NamingCommandError, produced, run_naming, violations_text
 from placement_contract import (
     KEY_ITEM_IDS,
     KEY_MISSING_REPOS,
@@ -126,9 +126,8 @@ Publishing an event and a rule matching an event make no build dependency; a rul
 and ``routesTo`` do.
 """
 NAMING_REPOSITORY: Final = "repository"
-"""The naming rules' resource for the repository that holds a stack."""
-NAMING_STACK_SEGMENT: Final = "stackName"
-"""The segment that resource is named from: the stack's name."""
+NAMING_STACK: Final = "cdk-stack"
+"""The naming command's kinds of a repository name and of the stack name it is converted from."""
 
 
 DependsOn = TypedDict(
@@ -495,26 +494,39 @@ def repository_name(matrix: Matrix, stack: EntryId) -> str:
         stack: The stack's id.
 
     Returns:
-        The stack's ``repository`` attribute; when it states none, the name the project's
-        naming rules (``atw-naming name repository --stack-name``) give the repository of a
-        stack with the stack's name in the stack's app. Never the raw stack name.
+        The stack's ``repository`` attribute; when it states none, the repository name the
+        project's naming command converts the stack's name to (``name convert <stack> --from
+        cdk-stack --to repository``). Never the raw stack name.
 
     Raises:
-        ValueError: The stack states no repository and the naming rules cannot name one.
+        ValueError: The stack states no repository and the naming command cannot name one.
 
     """
     entry: Entry = matrix.entry(stack)
     stated: JsonValue = entry.attributes.get(ATTR_REPOSITORY)
     if isinstance(stated, str) and stated:
         return stated
-    app: JsonValue = entry.attributes.get(ATTR_APP)
+    message: str
     try:
-        rules: naming.Rules = naming.load_rules(None)
-        resource: naming.Resource = rules.resource(NAMING_REPOSITORY)
-        return rules.build(resource, *rules.derive(resource, {NAMING_STACK_SEGMENT: entry.name}, _text_or_none(app)))
-    except (naming.ConfigError, naming.NamingError) as error:
-        message: str = f"{stack} names no repository and the naming rules cannot name one: {error}"
+        answer: NamingAnswer = run_naming([
+            "name",
+            "convert",
+            entry.name,
+            "--from",
+            NAMING_STACK,
+            "--to",
+            NAMING_REPOSITORY,
+        ])
+    except NamingCommandError as error:
+        message = f"{stack} names no repository and the naming command cannot name one: {error}"
         raise ValueError(message) from error
+    name: str | None = produced(answer)
+    if name is None:
+        message = (
+            f"{stack} names no repository and the naming command cannot name one: {violations_text(answer.document)}"
+        )
+        raise ValueError(message)
+    return name
 
 
 def _text_or_none(value: JsonValue) -> str | None:
@@ -651,7 +663,7 @@ def _item_stacks(matrix: Matrix, entry_id: EntryId, repository: str | None) -> l
 def _record_repository_names(items: Sequence[DeltaItem]) -> list[EntryId]:
     """Record on each stack that names no repository the name its Story's repository is given.
 
-    The name comes from the naming rules (:func:`repository_name`), so the stack and the
+    The name comes from the naming command (:func:`repository_name`), so the stack and the
     repository created for it carry one name. It is written on the architecture side, in one
     matrix change.
 
@@ -998,7 +1010,7 @@ def span(run: StepRun) -> Completion:
 
     What the Stories build is the architect's ``addedOrChangedElements`` and nothing more
     (:func:`story_builds`). Nothing is recorded in the matrix but the name of the
-    repository of a stack the Stories build in that names none (from the naming rules), and the
+    repository of a stack the Stories build in that names none (from the naming command), and the
     name of a repository that was created under another name than the one its stacks stated.
 
     Returns:

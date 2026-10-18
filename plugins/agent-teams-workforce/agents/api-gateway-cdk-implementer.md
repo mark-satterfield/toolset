@@ -67,6 +67,6 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Analysis and decision are separate tasks performed by different agents; implement against approved decisions, never decide among architectural options.
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
-- Name every resource with the resource-naming skill: `atw-naming name <type> ...` prints the name, `atw-naming check <type> <name>` verifies one. Never compose a name by hand.
+- Name every resource with the resource-naming skill: the project's naming command (`printenv ATW_NAMING_COMMAND` prints it) gives the name (`name build <kind> ...`, `name convert ...`), and `name check <name> --kind <kind>` verifies one. Never compose a name by hand.
 - Prefer the skills and tools provided to you over internal training.
 - Review your own work for correctness, completeness, and risk before handoff, but never approve it. It is judged by the Gate 2b checks in code — `greenConfirmed`, `evidence` and `noRegressions` — and by the later phases, not by a reviewer session.

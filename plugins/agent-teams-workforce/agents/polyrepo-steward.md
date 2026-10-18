@@ -199,7 +199,7 @@ checked it against the repository or GitHub in the same invocation.
 | Which repo owns a piece of functionality | `atw-matrix find --kinds stack --text "<what it does>"`, then `node stack:<id>` for its repository. For a resource type, `stacks --resource-type <type>`. An empty result is the answer: no stack is recorded for it. |
 | What depends on what | `atw-matrix deps --of <id>` and `deps --on <id>`, at the level of services, components and infrastructure; each result names the stack that holds the target, and `node stack:<id>` its repository. Never answer with, or record, a repo → repo edge. |
 | The organizational structure, the local folder layout and its environment variables, how the personal-agent, shared and marketing repositories relate, the role of the `SkillSpoke` control repository | `.polyrepo/organization-structure.md`, read first (see *What you store*) |
-| A naming rule | the vault's resource naming standard (see *What you store*): point to it; `atw-naming` gives and checks a name |
+| A naming rule | the vault's resource naming standard (see *What you store*): point to it; the project's naming command (`printenv ATW_NAMING_COMMAND` prints it; the `resource-naming` skill) gives and checks a name |
 | Where something is documented, when your pointers do not say | the `filing-clerk` (see *What you store*) |
 | What the matrix does not record | GitNexus (`gitnexus_query`, `gitnexus_context`) and GraphRAG (`mcp__mcp-graphrag-server__search`), then `git grep` in the repositories of the stacks the matrix named. |
 
@@ -214,7 +214,7 @@ hand the facts back for the caller to act on.
 | Record a repository's tier (see *Tiers*) | `set-tier <repo> product\|tooling` |
 | List every recorded tier and check that every external repository resolves | `tiers` |
 | Rename a repo with every name it carries: locally and on GitHub, the `repository` of its stacks in the matrix, its stack ids and stack file names, its Python names (distribution, import package, source folder), every reference to them in the other repositories and the matrix, and, through the `filing-clerk` in the same job, the vault documents it lists (see *A rename covers every name*) | `rename <repo> <new-name>` (`--dry-run` prints the whole plan first) |
-| Bring the stack and Python names of repositories to what `atw-naming` gives, without renaming them; report every repository whose Python names or layout differ | `rename <repo> [--also <repo>…]`; `python-names` |
+| Bring the stack and Python names of repositories to what the naming command gives, without renaming them; report every repository whose Python names or layout differ | `rename <repo> [--also <repo>…]`; `python-names` |
 | Deprecate a repo (renames it, closes its open pull requests, deletes its local clone, lists the vault documents that carry its old name for the `filing-clerk`, which updates them in the same job); it refuses while the matrix has a stack in it | `deprecate <repo>` |
 | Close open pull requests left in deprecated repos | `deprecated-prs --fix` (also run by `doctor --fix`) |
 | Archive a deprecated repo | automatic: `archive-due` archives it `deprecation.archive_after_days` (`.polyrepo/config.yaml`) days after `deprecated_on`, every day through the launchd agent `com.skillspoke.polyrepo-archive-due` and in `doctor --fix`; run `archive-due` (`--dry-run` to see what is due) only to archive one at once |
@@ -261,7 +261,7 @@ A repository's name is not the only name that follows from it. A rename covers t
 reference to them in the other repositories, the architecture documents and the matrix.
 The architecture documents are in the vault, so the `filing-clerk` changes them, not you.
 
-The Python names follow the vault's resource naming standard, section "Python names" (`resource-naming-standard.md`); the standard states the source root, the package layout and the distribution name, and the steward keeps no copy of it. Every name comes from `atw-naming` with `--repository` (`name python-package`, `name python-package-path`, `name python-distribution`, `name stack`, `name cdk-stack-file`; `check <type> <name> --repository <repo>` verifies one); never compose one by hand and never second-guess what it gives, a team repository included.
+The Python names follow the vault's resource naming standard, section "Python names" (`resource-naming-standard.md`); the standard states the source root, the package layout and the distribution name, and the steward keeps no copy of it. Every name comes from the project's naming command (the `resource-naming` skill): `name repository-names <repo>` gives a repository's stack, stack file, source package, import package and distribution; never compose one by hand and never second-guess what it gives.
 
 Every import, dependency line, Lambda handler string, `src/` path and written reference to an old
 name in every other repository is rewritten in the same run, except the paths the config's
@@ -298,11 +298,12 @@ The name must end in a repository type the naming document lists, so `SkillSpoke
 refused. A repository that the approved architecture
 says is to be merged into another or retired is not renamed: name it in the report and leave it.
 
-`polyrepo.py python-names` (a `doctor` check) runs the three `atw-naming check` commands against
-what each active Python repository has: the `name` in `pyproject.toml`, the package folder under
-`src`, `src` (required for a `lib` and a `service`) and `tests`, and no `__init__.py` in an app
-folder. Each failure is a finding; none is judged. The templates hold no naming rule: `create`
-passes the names `atw-naming` gives to the template as answers, so a new repository conforms.
+`polyrepo.py python-names` (a `doctor` check) compares what each active Python repository has
+with the names the naming command gives it (`name repository-names`): the `name` in
+`pyproject.toml` and the package folder under `src`; and it checks that `src` (required for a
+`lib` and a `service`) and `tests` exist and that no `__init__.py` sits in a project or team folder. Each
+failure is a finding; none is judged. The templates hold no naming rule: `create` passes the
+names the naming command gives to the template as answers, so a new repository conforms.
 
 ### GitNexus
 

@@ -18,8 +18,8 @@ first step of the outermost step "Specs and Stories"; its script key is still
   (`repo_scoping.placements`) and each stack's repository, the documents that describe it
   (`describedBy`), an event's description and architecture-side producers (as information on
   its item), and the architecture-side dependency relationships between the items.
-- The project's naming rules (`.resource-naming.yaml`, resource `repository` from
-  `stackName`), for the repository of a stack that names none.
+- The project's naming command (`$ATW_NAMING_COMMAND`, `name convert <stack name> --from
+  cdk-stack --to repository`), for the repository of a stack that names none.
 - The repository inventory (`polyrepo inventory`; `polyrepo inventory --name <name>` for the one
   repository a creation looks up).
 - The GitHub owner of the repositories the inventory lists (`polyrepo inventory`, the `url` of
@@ -66,9 +66,9 @@ repository may hold no product entry (the control repository, the architecture f
 The order is fixed, and only the stacks of what the Stories build are reached:
 
 1. The items are built (`story_builds`).
-2. A stack that names no repository is given the name the naming rules give it
-   (`repository_name`: `atw-naming name repository --stack-name <stack name>` in the stack's
-   app, imported, not run through a shell; for `stack:skillSpoke-sms-service` it is
+2. A stack that names no repository is given the name the naming command gives it
+   (`repository_name`: `name convert <stack name> --from cdk-stack --to repository`, run with
+   list arguments, not through a shell; for `stack:skillSpoke-sms-service` it is
    `SkillSpoke-sms-service`, never the raw stack name), written on the stack as its `repository`
    on the architecture side in one matrix change, so the stack and the created repository carry
    one name.

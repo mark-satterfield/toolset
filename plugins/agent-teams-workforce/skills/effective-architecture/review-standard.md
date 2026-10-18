@@ -89,7 +89,7 @@ I2. Each store has its key attribute names, indexes, access patterns and expiry 
 I3. Each event names its publishing service and has the values passed to the
     shared-events-service API.
 I4. Configuration names, SSM parameter names, and log, metric and alarm names are present
-    and are generated with atw-naming.
+    and are generated with the project's naming command.
 I5. Idempotency key fields and timeout settings are stated.
 I6. Each contract this repository shares with another repository (a route it exposes or
     calls, an event it publishes or a routing rule matches) names the other repository's

@@ -6,7 +6,7 @@ The script steps, each one read over all of its inputs with no judgment in it:
   Epics with their requirements and the arc42 documents (``matrixsync``), then
   :func:`seed_stacks`, :func:`seed_packages` and :func:`seed_inputs`.
 - :func:`seed_stacks` (``seed-stacks``) records one stack per repository that is not deprecated
-  and whose name ends in a type the project's naming rules list.
+  and whose name the project's naming command reads as a repository that holds a stack.
 - :func:`seed_packages` (``seed-packages``) records the package each library stack is
   distributed as, and the imports between stacks their ``pyproject.toml`` files state.
 - :func:`seed_inputs` (``seed-inputs``) writes the batch files the seeding sessions are handed,
@@ -41,11 +41,11 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final, Literal, TypedDict, assert_never
 
-import yaml
 from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "resource-naming" / "scripts"))
 from matrix_contract import (
     AUTHORITY_SIDE,
     ENTRY_RULES,
@@ -105,7 +105,7 @@ from matrixsync import (
     sync_epics,
     vault_root,
 )
-from matrixtraverse import STACK_NAME_SEPARATOR, stack_type
+from naming_command import NamingCommandError, repository_type
 
 type SeedStep = Literal["architecture", "repository", "features"]
 type Outcome = Literal["created", "changed", "unchanged"]
@@ -121,9 +121,6 @@ OUTCOME_UNCHANGED: Final[Literal["unchanged"]] = "unchanged"
 PLUGIN: Final[Path] = Path(__file__).resolve().parents[2]
 POLYREPO_PARTS: Final[tuple[str, ...]] = ("skills", "polyrepo-repo", "scripts", "polyrepo.py")
 """Where the ``polyrepo`` tool is, under the plugin root."""
-NAMING_CONFIG_ENV: Final = "RESOURCE_NAMING_CONFIG"
-NAMING_CONFIG_FILE: Final = ".resource-naming.yaml"
-"""The project's naming rules, in the control repository: the machine form of the naming standard."""
 LIFECYCLE_DEPRECATED: Final = "deprecated"
 LIBRARY_TYPE: Final = "lib"
 """The stack type of code other code imports."""
@@ -571,54 +568,32 @@ def seed_directory(matrix_file: Path) -> Path:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def naming_config(control: Path, environ: Mapping[str, str]) -> Path:
-    """Decide which file holds the project's naming rules.
+def repository_types(repositories: Sequence[Repository], environ: Mapping[str, str]) -> dict[str, str]:
+    """Ask the project's naming command which repositories hold a stack, and of what type.
 
     Args:
-        control: The control repository.
-        environ: The process environment.
+        repositories: The repositories (:func:`read_repositories`); deprecated ones are not asked.
+        environ: The environment the naming command is read from.
 
     Returns:
-        The file the naming variable names; else the naming file of the control repository.
+        The type token of each repository the naming command reads as a repository that holds a
+        stack, by repository name.
 
     Raises:
-        TypeError: ``control`` is not a path.
+        MatrixError: No naming command is configured, or it does not answer.
 
     """
-    if not isinstance(control, Path):
-        message: str = "the control repository must be a path"
-        raise TypeError(message)
-    stated: str = environ.get(NAMING_CONFIG_ENV, "").strip()
-    return Path(stated).expanduser() if stated else control / NAMING_CONFIG_FILE
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def stack_types(config: Path) -> tuple[str, ...]:
-    """Read the stack types the project's naming rules list.
-
-    Args:
-        config: The naming rules file (:func:`naming_config`).
-
-    Returns:
-        The values a name's ``type`` segment may have, in the order the rules list them.
-
-    Raises:
-        MatrixError: The file cannot be read, is not YAML, or lists no types for the segment.
-
-    """
-    message: str
-    try:
-        loaded: object = yaml.safe_load(config.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, yaml.YAMLError) as error:
-        message = f"cannot read the naming rules {config}: {error}"
-        raise MatrixError(message) from error
-    segments: object = loaded.get("segments") if isinstance(loaded, dict) else None
-    segment: object = segments.get("type") if isinstance(segments, dict) else None
-    listed: object = segment.get("enum") if isinstance(segment, dict) else None
-    if not isinstance(listed, list) or not listed or not all(isinstance(item, str) and item for item in listed):
-        message = f"the naming rules {config} list no values for the type segment (segments.type.enum)"
-        raise MatrixError(message)
-    return tuple(str(item) for item in listed)
+    types: dict[str, str] = {}
+    for repository in repositories:
+        if repository.lifecycle == LIFECYCLE_DEPRECATED:
+            continue
+        try:
+            kind: str | None = repository_type(repository.name, environ)
+        except NamingCommandError as error:
+            raise MatrixError(str(error)) from error
+        if kind is not None:
+            types[repository.name] = kind
+    return types
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -798,8 +773,8 @@ def _record_relationship(matrix: Matrix, stated: Relationship) -> Outcome:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def seed_stacks(matrix: Matrix, repositories: Sequence[Repository], types: Sequence[str]) -> StacksSeeded:
-    """Record one stack per repository that is not deprecated and whose name ends in a listed type.
+def seed_stacks(matrix: Matrix, repositories: Sequence[Repository], types: Mapping[str, str]) -> StacksSeeded:
+    """Record one stack per repository that is not deprecated and that holds a stack.
 
     The stack takes the repository's name as its name, with its repository, its app and its
     execution use: imported when the type is the library type, otherwise executable. It is
@@ -809,7 +784,7 @@ def seed_stacks(matrix: Matrix, repositories: Sequence[Repository], types: Seque
     Args:
         matrix: The matrix, changed in place.
         repositories: Every known repository (:func:`read_repositories`).
-        types: The stack types the naming rules list (:func:`stack_types`).
+        types: The type of each repository that holds a stack, by its name (:func:`repository_types`).
 
     Returns:
         The stacks created and changed, how many were already as stated, the repositories whose
@@ -821,7 +796,7 @@ def seed_stacks(matrix: Matrix, repositories: Sequence[Repository], types: Seque
 
     """
     if not types:
-        message: str = "seed-stacks needs the stack types the naming rules list"
+        message: str = "seed-stacks needs the types of the repositories that hold a stack"
         raise ValueError(message)
     result: StacksSeeded = {
         "created": [],
@@ -836,8 +811,8 @@ def seed_stacks(matrix: Matrix, repositories: Sequence[Repository], types: Seque
         if repository.lifecycle == LIFECYCLE_DEPRECATED:
             result["deprecated"].append(repository.name)
             continue
-        kind: str = stack_type(repository.name)
-        if STACK_NAME_SEPARATOR not in repository.name or kind not in types:
+        kind: str | None = types.get(repository.name)
+        if kind is None:
             result["noType"].append(repository.name)
             continue
         attributes: dict[str, JsonValue] = {
@@ -1912,13 +1887,13 @@ def seed(  # ruff: ignore[too-many-arguments] - One place per source seeding rea
     control: Path,
     arch: Path,
     prd_dir: Path,
-    naming: Path,
+    environ: Mapping[str, str],
     replace_existing: bool = False,
     wait: float = DEFAULT_LOCK_WAIT,
 ) -> Seeded:
     """Write an empty matrix file and fill it from beads, the PRDs, the documents and the repositories.
 
-    The open Epics, the repositories and the stack types are read first, so a source that cannot
+    The open Epics, the repositories and their types are read first, so a source that cannot
     be read leaves the file as it was. Then the empty file is written, and in one write the
     Epics with their requirements, the arc42 documents, the stacks and the packages are
     recorded. The batch files are written last, into the seeding folder of the matrix file
@@ -1931,7 +1906,7 @@ def seed(  # ruff: ignore[too-many-arguments] - One place per source seeding rea
             run in it.
         arch: The architecture root inside the vault.
         prd_dir: The folder of the vault the PRD files are under.
-        naming: The naming rules file (:func:`naming_config`).
+        environ: The environment the naming command is read from (:func:`repository_types`).
         replace_existing: Whether a matrix file already at ``path`` is replaced by the empty one.
         wait: Seconds to wait for the matrix's lock.
 
@@ -1948,7 +1923,7 @@ def seed(  # ruff: ignore[too-many-arguments] - One place per source seeding rea
         raise MatrixRefusedError(message)
     epics: list[EpicBead] = read_epics(control)
     repositories: list[Repository] = read_repositories(control)
-    types: tuple[str, ...] = stack_types(naming)
+    types: dict[str, str] = repository_types(repositories, environ)
     vault: Path = vault_root(prd_dir)
     create_matrix(path, replace_existing=replace_existing, wait=wait)
 

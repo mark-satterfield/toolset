@@ -223,7 +223,7 @@
       "id": "I4",
       "level": "implementation",
       "home": "specs",
-      "text": "Configuration names, SSM parameter names, and log, metric and alarm names are present and are generated with atw-naming."
+      "text": "Configuration names, SSM parameter names, and log, metric and alarm names are present and are generated with the project's naming command."
     },
     {
       "id": "I5",

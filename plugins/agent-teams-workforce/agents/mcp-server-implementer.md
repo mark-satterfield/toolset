@@ -54,7 +54,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Gateway-fronted servers stay gateway-fronted: never expose a direct endpoint around an AgentCore Gateway decision, even temporarily.
 - The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
 - Read the effective views the catalog lists for the server's hosting and the patterns it uses before you write, and build to them. Credentials are retrieved at runtime by name, and idempotency where applicable comes from what the Lambda pattern provides; neither is inlined or re-implemented.
-- Name every AWS resource, environment variable and file with the resource-naming skill: `atw-naming name <type> ...` prints the name, `atw-naming check <type> <name>` verifies one. Never compose a name by hand.
+- Name every AWS resource, environment variable and file with the resource-naming skill: the project's naming command (`printenv ATW_NAMING_COMMAND` prints it) gives the name (`name build <kind> ...`, `name convert ...`), and `name check <name> --kind <kind>` verifies one. Never compose a name by hand.
 - No self-tasking: report newly discovered work to implementation-lead; never perform or assign it yourself.
 - Analysis and decision are separate tasks performed by different agents; implement against approved decisions, never decide among hosting or authorization options.
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.

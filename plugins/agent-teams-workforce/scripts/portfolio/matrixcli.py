@@ -58,15 +58,14 @@ from matrixseed import (
     StacksSeeded,
     as_step,
     list_proposed,
-    naming_config,
     read_repositories,
+    repository_types,
     seed,
     seed_apply,
     seed_directory,
     seed_inputs,
     seed_packages,
     seed_stacks,
-    stack_types,
 )
 from matrixstore import (
     ATTR_ARCHITECTURE_APPROVED,
@@ -542,17 +541,6 @@ def _run_sync_events(call: Call) -> Outcome:
     return Outcome(update_matrix(call.matrix(), change, wait=call.lock_wait()))
 
 
-def _naming(call: Call, control: Path) -> Path:
-    """Decide which file holds the naming rules a seeding command reads.
-
-    Returns:
-        The file ``--naming`` names, else the one the environment or the control repository holds.
-
-    """
-    stated: str | None = call.text("naming")
-    return naming_config(control, call.environ) if stated is None else Path(stated).expanduser()
-
-
 def _run_seed(call: Call) -> Outcome:
     """Run ``seed``.
 
@@ -567,7 +555,7 @@ def _run_seed(call: Call) -> Outcome:
             control=control,
             arch=call.required_folder("arch", [ARCH_PATH_ENV]),
             prd_dir=call.required_folder("prd_dir", [PRD_DIR_ENV]),
-            naming=_naming(call, control),
+            environ=call.environ,
             replace_existing=call.flag("replace"),
             wait=call.lock_wait(),
         ),
@@ -583,7 +571,7 @@ def _run_seed_stacks(call: Call) -> Outcome:
     """
     control: Path = _control(call)
     repositories: list[Repository] = read_repositories(control)
-    types: tuple[str, ...] = stack_types(_naming(call, control))
+    types: dict[str, str] = repository_types(repositories, call.environ)
 
     def change(matrix: Matrix) -> StacksSeeded:
         return seed_stacks(matrix, repositories, types)
@@ -929,15 +917,14 @@ def _sync_parsers(
         help="event entries, their purposes and publishers, from the event catalog in arc42 section 6",
     )
     events.add_argument("--catalog", help=f"the event catalog file; default: {CATALOG_PATH} under --arch")
-    naming: argparse.ArgumentParser = sources["naming"]
     folder: argparse.ArgumentParser = sources["folder"]
     seeded: argparse.ArgumentParser = commands.add_parser(
         "seed",
-        parents=[where, control, arch, prds, naming],
+        parents=[where, control, arch, prds],
         help="write an empty matrix and fill it from beads, the PRDs, arc42 and the repositories",
     )
     seeded.add_argument("--replace", action="store_true", help="replace the matrix file that is there")
-    commands.add_parser("seed-stacks", parents=[where, control, naming], help="one stack per repository")
+    commands.add_parser("seed-stacks", parents=[where, control], help="one stack per repository")
     commands.add_parser("seed-packages", parents=[where, control], help="project packages and imports between stacks")
     inputs: argparse.ArgumentParser = commands.add_parser(
         "seed-inputs",
@@ -1022,8 +1009,8 @@ def add_parsers(
         commands: The sub-command group of the ``atw-matrix`` parser.
         where: The options that name the matrix file.
         sources: The option groups that name a source, by ``control`` (the control repository),
-            ``arch`` (the architecture root), ``prds`` (the PRD folder), ``naming`` (the naming
-            rules file) and ``folder`` (the seeding folder).
+            ``arch`` (the architecture root), ``prds`` (the PRD folder) and ``folder`` (the
+            seeding folder).
 
     """
     _change_parsers(commands, where)

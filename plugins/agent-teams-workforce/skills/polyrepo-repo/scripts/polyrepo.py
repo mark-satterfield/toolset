@@ -97,6 +97,7 @@ from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.error import YAMLError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pipeline-contracts" / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "resource-naming" / "scripts"))
 from driver_surface_types import CONTROL_REPO_ENV
 from name_sweep import (
     NameChange,
@@ -108,20 +109,21 @@ from name_sweep import (
     build_rules,
     change_label,
     normalize,
-    parse_repo_name,
     plan_changes,
     planned_moves,
+    project_folders,
     python_problems,
     read_facts,
-    stack_module,
     sweep_repo,
 )
+from naming_command import NamingCommandError, repository_names, repository_type
 from naming_rules import NamingPattern, NamingRules, NamingRulesError, read_rules, type_of
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
-    from name_sweep import Checker, FileEdit, FileMove, Namer, Rule
+    from name_sweep import FileEdit, FileMove, Rule
+    from naming_command import RepositoryNames
 
 GIT_TIMEOUT = 60
 FETCH_TIMEOUT = 45
@@ -546,7 +548,8 @@ class Config:
     raw: dict[str, object] = dataclasses.field(default_factory=dict)
     changes: list[str] = dataclasses.field(default_factory=list)
     change_lines: list[str] = dataclasses.field(default_factory=list)
-    types_cache: tuple[str, ...] | None = None
+    types_cache: dict[str, str | None] = dataclasses.field(default_factory=dict)
+    names_cache: dict[str, RepositoryNames | None] = dataclasses.field(default_factory=dict)
     rules_cache: NamingRules | None = None
 
     @property
@@ -637,16 +640,41 @@ class Config:
             raise PolyrepoError(msg)
         return folder
 
-    def stack_type_names(self) -> tuple[str, ...]:
-        """Return the stack types a repository name's last token may be, read once per run.
+    def repository_type(self, name: str) -> str | None:
+        """Return the type the naming command reads in a repository name, asked once per name and run.
 
         Returns:
-            The types the project's naming rules list.
+            The type token (for example `service` or `lib`) when the naming command reads the
+            name as a repository that holds a stack; None for any other name.
+
+        Raises:
+            PolyrepoError: when no naming command is configured or it does not answer.
 
         """
-        if self.types_cache is None:
-            self.types_cache = stack_types(self)
-        return self.types_cache
+        if name not in self.types_cache:
+            try:
+                self.types_cache[name] = repository_type(name)
+            except NamingCommandError as exc:
+                raise PolyrepoError(str(exc)) from exc
+        return self.types_cache[name]
+
+    def repository_names(self, name: str) -> RepositoryNames | None:
+        """Return the names the naming command gives a repository name, asked once per name and run.
+
+        Returns:
+            Its stack, stack file and Python names; None when the naming command reads the name as
+            no repository that holds a stack.
+
+        Raises:
+            PolyrepoError: when no naming command is configured or it does not answer.
+
+        """
+        if name not in self.names_cache:
+            try:
+                self.names_cache[name] = repository_names(name)
+            except NamingCommandError as exc:
+                raise PolyrepoError(str(exc)) from exc
+        return self.names_cache[name]
 
     def archive_after_days(self) -> int:
         """Return the days from deprecating to archiving a repo (config `deprecation.archive_after_days`).
@@ -1363,9 +1391,6 @@ MATRIX_ROLE = "repository-steward"
 MATRIX_ROLE_ENV = "ATW_MATRIX_ROLE"
 MATRIX_FILE_ENV = "ATW_MATRIX"
 MATRIX_TIMEOUT = 300
-NAMING_RULES_ENV = "RESOURCE_NAMING_CONFIG"
-NAMING_RULES_FILE = ".resource-naming.yaml"
-STACK_NAME_SEPARATOR = "-"
 LIBRARY_STACK_TYPE = "lib"
 EXECUTION_IMPORTED = "imported"
 EXECUTION_EXECUTABLE = "executable"
@@ -1474,42 +1499,14 @@ def matrix_commit(cfg: Config) -> str:
     return f"matrix committed: {bool(done.get('committed'))}, pushed: {bool(done.get('pushed'))}"
 
 
-def stack_types(cfg: Config) -> tuple[str, ...]:
-    """Read the stack types the project's naming rules list (`segments.type.enum`).
-
-    The rules are the file `$RESOURCE_NAMING_CONFIG` names, else `.resource-naming.yaml` in the
-    control repository.
+def holds_stack(cfg: Config, name: str) -> bool:
+    """Tell whether a repository of this name holds a stack.
 
     Returns:
-        The values a repository name's type segment may have.
-
-    Raises:
-        PolyrepoError: when the file cannot be read or lists no types.
+        True when the naming command reads the name as a repository that holds a stack.
 
     """
-    stated = os.environ.get(NAMING_RULES_ENV, "").strip()
-    path = Path(stated).expanduser() if stated else cfg.file.parent.parent / NAMING_RULES_FILE
-    try:
-        loaded: object = YAML(typ="safe").load(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, YAMLError) as exc:
-        msg = f"cannot read the naming rules {path}: {exc}"
-        raise PolyrepoError(msg) from exc
-    segment = _map(_map(_map(loaded, "the naming rules").get("segments"), "segments").get("type"), "segments.type")
-    types = _strs(segment.get("enum"), "segments.type.enum")
-    if not types:
-        msg = f"the naming rules {path} list no stack types (segments.type.enum)"
-        raise PolyrepoError(msg)
-    return tuple(types)
-
-
-def holds_stack(name: str, types: tuple[str, ...]) -> bool:
-    """Tell whether a repository of this name holds a stack: its name ends in a listed stack type.
-
-    Returns:
-        True when the last hyphen-separated token of the name is one of the types.
-
-    """
-    return STACK_NAME_SEPARATOR in name and name.rpartition(STACK_NAME_SEPARATOR)[2] in types
+    return cfg.repository_type(name) is not None
 
 
 def record_stack(cfg: Config, name: str, space: str, known: list[MatrixStack]) -> str:
@@ -1530,8 +1527,7 @@ def record_stack(cfg: Config, name: str, space: str, known: list[MatrixStack]) -
     if any(s.id == sid for s in known):
         matrix_run(cfg, args)
         return f"matrix: {sid} now names {name} as its repository"
-    kind = name.rpartition(STACK_NAME_SEPARATOR)[2]
-    use = EXECUTION_IMPORTED if kind == LIBRARY_STACK_TYPE else EXECUTION_EXECUTABLE
+    use = EXECUTION_IMPORTED if cfg.repository_type(name) == LIBRARY_STACK_TYPE else EXECUTION_EXECUTABLE
     matrix_run(cfg, [*args, "--name", name, "--app", space, "--execution-use", use, "--purpose", PURPOSE_NOT_STATED])
     return f"matrix: recorded {sid} ({use}, app {space}), purpose not stated"
 
@@ -3609,32 +3605,26 @@ def _service_name(cfg: Config, name: str) -> str:
 
 
 def _template_data(cfg: Config, name: str) -> dict[str, str]:
-    """Build the answers a template is rendered with: the names, each given by `atw-naming`.
+    """Build the answers a template is rendered with: the names, each given by the naming command.
 
     A template holds no naming rule of its own. The import package (`package_name`, dotted),
     its folder under `src` (`package_path`), the distribution (`distribution_name`) and the
-    stack module (`stack_module_name`) are what `atw-naming name` prints for the repository.
+    stack module (`stack_module_name`) are what `name repository-names` gives the repository.
 
     Returns:
-        The answers; the Python names are left out for a name that is not
-        `{prefix}[-team]-{domain}-{type}`, so a template that needs them then refuses to render.
-
-    Raises:
-        PolyrepoError: when `atw-naming` refuses a name of a repository that parses.
+        The answers; the Python names are left out for a name the naming command reads as no
+        repository that holds a stack, so a template that needs them then refuses to render.
 
     """
     data = {"service_name": _service_name(cfg, name), "repo_name": name}
-    parts = parse_repo_name(name)
-    if parts is None:
+    names = cfg.repository_names(name)
+    if names is None:
         return data
-    namer = _namer(cfg)
-    try:
-        data["package_name"] = namer(["name", "python-package", "--repository", name])
-        data["package_path"] = namer(["name", "python-package-path", "--repository", name]).removeprefix("src/")
-        data["distribution_name"] = namer(["name", "python-distribution", "--repository", name])
-        data["stack_module_name"] = stack_module(parts, namer)
-    except NameSweepError as exc:
-        raise PolyrepoError(str(exc)) from exc
+    data["package_name"] = names.python_import_package
+    data["package_path"] = names.python_source_package.removeprefix("src/")
+    data["distribution_name"] = names.python_distribution
+    if names.cdk_stack_file:
+        data["stack_module_name"] = Path(names.cdk_stack_file).stem
     return data
 
 
@@ -3902,8 +3892,9 @@ def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dic
 def _create_stack_records(cfg: Config, name: str, space: str) -> list[str]:
     """Record in the matrix the stack the new repo holds, when it holds one (S1).
 
-    A repo holds a stack when its name ends in a stack type the naming rules list. A repo that
-    some stack already names as its repository is left as it is. The matrix file is committed after a change.
+    A repo holds a stack when the naming command reads its name as a repository that holds one.
+    A repo that some stack already names as its repository is left as it is. The matrix file is
+    committed after a change.
 
     Returns:
         One sentence for each thing done or left.
@@ -3913,8 +3904,8 @@ def _create_stack_records(cfg: Config, name: str, space: str) -> list[str]:
     held = [s.id for s in known if s.repository == name]
     if held:
         return [f"matrix: {', '.join(held)} already name {name} as their repository"]
-    if not holds_stack(name, stack_types(cfg)):
-        return [f"matrix: no stack recorded; {name} ends in no stack type"]
+    if not holds_stack(cfg, name):
+        return [f"matrix: no stack recorded; the naming command reads {name} as no repository that holds a stack"]
     return [record_stack(cfg, name, space, known), matrix_commit(cfg)]
 
 
@@ -5143,8 +5134,8 @@ def cmd_rename(args: argparse.Namespace, cfg: Config) -> int:
     The new name must match a naming pattern and end in a stack type. The repository moves on
     GitHub and on disk together, origin and the manifest follow, and the beads fleet list
     (`repos.additional`) is updated with the folder. The stack ids, the stack file names, the
-    Python distribution and the import package are then brought to what `atw-naming` gives
-    for the new name, and every import, dependency line and written reference to an old name
+    Python distribution and the import package are then brought to what the naming command
+    gives the new name, and every import, dependency line and written reference to an old name
     in the other repositories is rewritten. Each repository that changes gets one worktree,
     one commit and one pull request opened with the project's PR command; the plan lists all
     of it first (`--dry-run` stops there). With no new name only the stack and Python names
@@ -5199,8 +5190,6 @@ def _run_names_only(
 # --------------------------------------------------------------------------------------------
 # the names a rename covers besides the repository (name_sweep.py has the rules)
 
-NAMING_COMMAND = PLUGIN_ROOT / "bin" / "atw-naming"
-NAMING_TIMEOUT = 60
 PR_COMMAND_ENV = "ATW_PR_COMMAND"
 PR_COMMAND_DEFAULT = "~/.local/bin/skillspoke-pr"
 PR_TIMEOUT = 900
@@ -5288,28 +5277,6 @@ def _sweep_git(repo: Path, args: Sequence[str]) -> tuple[int, str, str]:
     return cp.returncode, cp.stdout, cp.stderr
 
 
-def _namer(cfg: Config) -> Namer:
-    """Build the function that asks `atw-naming` for a name.
-
-    Returns:
-        A function from `atw-naming` arguments to the name it prints; a refusal raises NameSweepError.
-
-    """
-    env: dict[str, str | None] = {}
-    if not os.environ.get(CONTROL_REPO_ENV):
-        env[CONTROL_REPO_ENV] = str(cfg.file.parent.parent)
-
-    def name(args: Sequence[str]) -> str:
-        cp = run([str(NAMING_COMMAND), *args], timeout=NAMING_TIMEOUT, env=env)
-        out = cp.stdout.strip()
-        if cp.returncode != 0 or not out:
-            msg = f"atw-naming {' '.join(args)} failed: {_last_line(cp)}"
-            raise NameSweepError(msg)
-        return out
-
-    return name
-
-
 def _rename_settings(cfg: Config) -> tuple[list[str], Path]:
     """Read the paths a sweep never edits from the config's `rename` section, and the PR command from `$ATW_PR_COMMAND`.
 
@@ -5333,7 +5300,6 @@ def _names_subjects(st: State, pairs: list[tuple[str, str]], *, dry_run: bool) -
 
     """
     cfg = st.cfg
-    namer = _namer(cfg)
     subjects: list[_Subject] = []
     rules: list[Rule] = []
     for old, new in pairs:
@@ -5342,8 +5308,9 @@ def _names_subjects(st: State, pairs: list[tuple[str, str]], *, dry_run: bool) -
             msg = f"{old} has no local clone"
             raise NameSweepError(msg)
         path = held.path if dry_run or old == new else _renamed_path(cfg, held.path, new)
-        facts = read_facts(_sweep_git, path)
-        changes, notes = plan_changes(old, new, facts, cfg.stack_type_names(), namer)
+        before, after = cfg.repository_names(old), cfg.repository_names(new)
+        facts = read_facts(_sweep_git, path, project_folders(before, after))
+        changes, notes = plan_changes(old, facts, before, after, new)
         subjects.append(_Subject(old, new, path, changes, planned_moves(changes, facts), notes))
         rules.extend(build_rules(changes, new))
     return subjects, rules
@@ -5630,7 +5597,7 @@ def _rename_names(
         return False
     plan.branch_slug = args.branch_slug or SHARED_BRANCH_SLUG
     lines = _names_lines(plan)
-    steps.extend(lines or ["stack and Python names: already what atw-naming gives, no reference to update"])
+    steps.extend(lines or ["stack and Python names: already what the naming command gives, no reference to update"])
     res["names"] = _names_record(plan)
     if args.dry_run or not plan.edits:
         return True
@@ -7444,37 +7411,17 @@ def cmd_archive_due(args: argparse.Namespace, cfg: Config) -> int:
     return 1 if data["open"] else 0
 
 
-PYTHON_NAMES_DETAIL = 300
 PYTHON_NAMES_TEXT = 110
-
-
-def _name_checker(cfg: Config) -> Checker:
-    """Build the function that runs `atw-naming check`.
-
-    Returns:
-        A function from the check's arguments (type, name, `--repository`, repository) to
-        (whether the name passed, the check's message).
-
-    """
-    env: dict[str, str | None] = {}
-    if not os.environ.get(CONTROL_REPO_ENV):
-        env[CONTROL_REPO_ENV] = str(cfg.file.parent.parent)
-
-    def check(args: Sequence[str]) -> tuple[bool, str]:
-        cp = run([str(NAMING_COMMAND), "check", *args], timeout=NAMING_TIMEOUT, env=env)
-        text = " ".join(line.strip() for line in (cp.stdout + cp.stderr).strip().splitlines())
-        return cp.returncode == 0, text[:PYTHON_NAMES_DETAIL]
-
-    return check
 
 
 def python_names_findings(st: State, only: list[str] | None = None) -> list[Finding]:
     """Check every active Python repo's names and layout against the naming standard.
 
-    For each repository that has a `pyproject.toml` (the control repo is left out) the three
-    `atw-naming check` commands run against what it has: the `name` in `pyproject.toml`, the
-    source package and its folder under `src`. `src` and `tests` must exist and no `__init__.py`
-    may sit in an app or team folder. The check is deterministic: nothing is judged.
+    For each repository that has a `pyproject.toml` (the control repo is left out) what it has
+    is compared with the names the naming command gives it (`name repository-names`): the `name`
+    in `pyproject.toml`, the source package and its folder under `src`. `src` and `tests` must
+    exist and no `__init__.py` may sit in a project or team folder. The check is deterministic:
+    nothing is judged.
 
     Returns:
         One finding per failed check or missing part.
@@ -7482,7 +7429,6 @@ def python_names_findings(st: State, only: list[str] | None = None) -> list[Find
     """
     cfg = st.cfg
     control = os.path.normpath(fleet_file(cfg).parent.parent)
-    check = _name_checker(cfg)
     todo = [
         r
         for name, r in sorted(st.local.items(), key=lambda kv: kv[0].lower())
@@ -7494,12 +7440,13 @@ def python_names_findings(st: State, only: list[str] | None = None) -> list[Find
 
     def one(r: LocalRepo) -> list[Finding]:
         try:
-            facts = read_facts(_sweep_git, r.path)
-        except NameSweepError as exc:
+            names = cfg.repository_names(r.name)
+            facts = read_facts(_sweep_git, r.path, project_folders(names))
+        except (NameSweepError, PolyrepoError) as exc:
             return [Finding("python-names", r.name, str(exc))]
         return [
             Finding(p.check if p.check.startswith("python-") else f"python-{p.check}", r.name, p.detail)
-            for p in python_problems(facts, r.name, check)
+            for p in python_problems(facts, names)
         ]
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
@@ -7507,7 +7454,7 @@ def python_names_findings(st: State, only: list[str] | None = None) -> list[Find
 
 
 def cmd_python_names(args: argparse.Namespace, cfg: Config) -> int:
-    """Report every repo whose Python names or layout differ from what `atw-naming` gives.
+    """Report every repo whose Python names or layout differ from what the naming command gives.
 
     Returns:
         0 when every repo conforms, else 1.
@@ -7839,9 +7786,10 @@ def _organization_findings(cfg: Config) -> list[DoctorFinding]:
 def _matrix_findings(st: State) -> list[Finding]:
     """Check the matrix's stacks against the repositories (S6), with the repair for each.
 
-    The findings are an active code repository (its name ends in a listed stack type, and it is
-    not in a space the matrix leaves alone) that no stack names as its repository; a stack whose
-    repository is deprecated or archived, or exists nowhere; and a matrix that
+    The findings are an active code repository (the naming command reads its name as a
+    repository that holds a stack, and it is not in a space the matrix leaves alone) that no
+    stack names as its repository; a stack whose repository is deprecated or archived, or exists
+    nowhere; and a matrix that
     `atw-matrix check` finds invalid. A stack whose repository exists nowhere may belong to a
     repository elaboration has yet to create, so it is reported and not repaired.
 
@@ -7851,7 +7799,6 @@ def _matrix_findings(st: State) -> list[Finding]:
     """
     cfg = st.cfg
     known = st.matrix_stacks()
-    types = stack_types(cfg)
     named = {s.repository for s in known if s.repository}
     out: list[Finding] = []
     for name in st.tracked_names():
@@ -7859,7 +7806,7 @@ def _matrix_findings(st: State) -> list[Finding]:
         if name in named or st.lifecycle(name) in LIFECYCLES_INACTIVE or (r is None and st.gh.get(name) is None):
             continue
         space = r.space if r else cfg.expected_space(name)
-        if not holds_stack(name, types):
+        if not holds_stack(cfg, name):
             continue
         out.append(
             Finding(
@@ -8293,7 +8240,7 @@ def _add_repo_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
     s.add_argument(
         "new_name",
         nargs="?",
-        help="the new repository name; omit it to bring only the stack and Python names to what atw-naming gives",
+        help="the new repository name; omit it to bring only the stack and Python names to the naming command's",
     )
     s.add_argument("--dry-run", action="store_true", help="check and print the whole plan, change nothing")
     s.add_argument(

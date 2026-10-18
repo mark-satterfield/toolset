@@ -184,7 +184,7 @@ Deliver CDK-expressible provisioning intent:
 - stacks: the CDK stacks the resources belong to.
 - crossStackRefs: cross-stack references, by the mechanism the owner's constraints in arc42 section 2 name.
 - affectedStacks: the stacks created or modified by this intent (names).
-Name every stack and resource with the resource-naming skill ('atw-naming name <type> ...'; verify with 'atw-naming check'), never by hand.
+Name every stack and resource with the resource-naming skill (the project's naming command, which 'printenv ATW_NAMING_COMMAND' prints: 'name build <kind> ...' or 'name convert ...'; verify with 'name check <name> --kind <kind>'), never by hand.
 - rationale: why this shape, tied to the change.
 Size every resource for the load the change and the project state; prefer per-request pricing over provisioned always-on capacity unless that load requires it.`,
   {

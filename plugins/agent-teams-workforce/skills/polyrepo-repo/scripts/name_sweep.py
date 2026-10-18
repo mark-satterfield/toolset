@@ -2,20 +2,19 @@
 
 `polyrepo.py rename` uses this module. A rename covers four kinds of name besides the repository:
 the CDK stack ids and the stack file names inside it, and the Python distribution and import
-package it publishes. Every new name comes from `atw-naming` (the `Namer` the caller supplies);
-nothing here composes a name by hand.
+package it publishes. Every new name comes from the project's naming command
+(`name repository-names`, which the caller runs and hands in as `RepositoryNames`); nothing here
+composes or parses a name.
 
-The Python names follow the "Python names" section of the resource naming standard. The source
-root is `src`. The source package is `src/{app}/{domain}` (and `src/{app}/{team}/{domain}` for a
-team repository), imported as `{app}.{domain}`; the app folder holds no `__init__.py`. The
-distribution is the hyphenated lower case name with the type. The tool gives all three from the
-repository name: `name python-package`, `name python-package-path` and `name python-distribution`,
-each with `--repository`.
+The source root is `src`, and the source package is the folder the naming command gives; the
+project folder above it (`src/{project}`) is a namespace folder and holds no `__init__.py`. A
+repository may also hold its package one folder deeper, under a `team` folder, or directly under
+`src`; the facts read here find it in each of those places.
 
 The old name of each kind is read from the repository (the `name` in `pyproject.toml`, the package
-folders under `src/`, the stack modules under `cdk/stacks/`) or, for a stack, derived from the old
-repository name. A sweep then rewrites every reference to an old name in the tracked text files of
-the repositories it is handed:
+folders under `src/`, the stack modules under `cdk/stacks/`) or, for a stack id, from the names
+the naming command gives the old repository name. A sweep then rewrites every reference to an
+old name in the tracked text files of the repositories it is handed:
 
 - a hyphenated name (repository, stack id) is replaced wherever it stands alone;
 - a distribution is replaced where it is a dependency line (`pyproject.toml`, `setup.cfg`, a
@@ -43,18 +42,11 @@ from typing import TYPE_CHECKING, Literal, assert_never
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-type NameKind = Literal["repository", "stack", "stack-file", "distribution", "import-package"]
-type Namer = Callable[[Sequence[str]], str]
-type Git = Callable[[Path, Sequence[str]], tuple[int, str, str]]
-type Checker = Callable[[Sequence[str]], tuple[bool, str]]
+    from naming_command import RepositoryNames
 
-PREFIX_PROJECTS: dict[str, str] = {
-    "SkillSpoke": "personal-agent",
-    "shared": "shared",
-    "marketing": "marketing",
-    "employer": "employer",
-}
-APP_FOLDERS: frozenset[str] = frozenset(p.lower() for p in PREFIX_PROJECTS)
+type NameKind = Literal["repository", "stack", "stack-file", "distribution", "import-package"]
+type Git = Callable[[Path, Sequence[str]], tuple[int, str, str]]
+
 TEAM_FOLDER = "team"
 LOCK_FILES: frozenset[str] = frozenset({"uv.lock", "poetry.lock", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"})
 PYTHON_SUFFIXES: frozenset[str] = frozenset({".py", ".pyi"})
@@ -67,11 +59,8 @@ TESTS_FOLDER = "tests"
 STACK_FOLDER = "cdk/stacks"
 GREP_LIST_FOUND = 0
 GREP_LIST_NONE = 1
-TEAM_TOKENS = 3
-BODY_TOKENS = 2
 STACK_DEPTH = 3
 SOURCE_TYPES: tuple[str, ...] = ("lib", "service")
-STACK_KINDS: tuple[tuple[NameKind, str], ...] = (("stack", "stack"), ("stack-file", "cdk-stack-file"))
 MYPY_SECTION = re.compile(r"(?m)^\[tool\.mypy\][ \t]*\r?\n")
 MYPY_PATH_SRC = '"src"'
 MYPY_PATH_SRC_CDK = '["src", "cdk"]'
@@ -85,18 +74,8 @@ class NameSweepError(Exception):
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class RepoParts:
-    """A repository name taken apart: `{prefix}[-team]-{domain}-{type}`."""
-
-    project: str
-    team: bool
-    domain: str
-    type: str
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
 class NameChange:
-    """One name that changes: its kind, the name now, and the name `atw-naming` gives."""
+    """One name that changes: its kind, the name now, and the name the naming command gives."""
 
     kind: NameKind
     old: str
@@ -160,91 +139,62 @@ class FileEdit:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class PythonProblem:
-    """One way a repository's Python names differ from what `atw-naming` gives."""
+    """One way a repository's Python names differ from what the naming command gives."""
 
     check: str
     detail: str
 
 
-def parse_repo_name(name: str) -> RepoParts | None:
-    """Take a repository name apart into project, team flag, domain and type.
+def _stem(module_file: str | None) -> str | None:
+    """Drop the `.py` of a stack file name.
 
     Returns:
-        The parts, or None when the name is not `{prefix}[-team]-{domain}-{type}` with a known prefix.
+        The module name, or None when there is no file name.
 
     """
-    tokens = name.split("-")
-    project = PREFIX_PROJECTS.get(tokens[0])
-    if project is None:
-        return None
-    rest = tokens[1:]
-    team = len(rest) == TEAM_TOKENS and rest[0] == "team"
-    body = rest[1:] if team else rest
-    if len(body) != BODY_TOKENS:
-        return None
-    return RepoParts(project, team, body[0], body[1])
+    return Path(module_file).stem if module_file else None
 
 
-def _name_args(parts: RepoParts, stack_type: str) -> list[str]:
-    """Build the `atw-naming` flags that name a stack of this repository.
+def stack_changes(
+    old: str,
+    before: RepositoryNames | None,
+    after: RepositoryNames,
+    facts: HolderFacts,
+) -> tuple[list[NameChange], list[str]]:
+    """Name the stack id and stack file module that change between two repository names.
+
+    The new names are the ones the naming command gives the new repository name. The old stack
+    id is the one it gives the old name; the old stack file is that one too, or else the one stack
+    module the repository holds.
 
     Returns:
-        The flags.
+        One change per stack id and per stack module whose name differs, and notes on what was
+        not planned and why.
 
     """
-    args = ["--project", parts.project]
-    if parts.team:
-        args.append("--team")
-    return [*args, "--domain", parts.domain, "--type", stack_type]
-
-
-def _try_name(namer: Namer, args: Sequence[str]) -> str | None:
-    """Ask `atw-naming` for a name, treating its refusal as "no such name for these inputs".
-
-    A stack type that the repository's project does not allow is refused; that is not an error here.
-
-    Returns:
-        The name, or None when `atw-naming` refuses the inputs.
-
-    """
-    try:
-        return namer(args)
-    except NameSweepError:
-        return None
-
-
-def stack_changes(old: RepoParts, new: RepoParts, types: Sequence[str], namer: Namer) -> list[NameChange]:
-    """Name the stack ids and stack file modules that change between two repository names.
-
-    Every stack type is tried, so a repository's data stack follows its service stack; the
-    stacks that the renamed repository holds are the ones a sweep finds hits for.
-
-    Returns:
-        One change per stack id and per stack module whose name differs.
-
-    """
-    pairs = {(t, t) for t in types} | {(old.type, new.type)}
     out: list[NameChange] = []
-    for t_old, t_new in sorted(pairs):
-        for kind, resource in STACK_KINDS:
-            before = _try_name(namer, ["name", resource, *_name_args(old, t_old)])
-            after = _try_name(namer, ["name", resource, *_name_args(new, t_new)])
-            if before is None or after is None:
-                continue
-            if kind == "stack-file":
-                before, after = Path(before).stem, Path(after).stem
-            change = NameChange(kind, before, after)
-            if before != after and change not in out:
-                out.append(change)
-    return out
+    notes: list[str] = []
+    if before is None:
+        notes.append(
+            f"{old} is not a repository name the naming command reads, so no old stack id is derived from it; "
+            "a stack id spelled like the repository is covered by the repository rename",
+        )
+    elif before.cdk_stack and after.cdk_stack and before.cdk_stack != after.cdk_stack:
+        out.append(NameChange("stack", before.cdk_stack, after.cdk_stack))
+    held = facts.stack_modules[0] if len(facts.stack_modules) == 1 else None
+    old_module = _stem(before.cdk_stack_file) if before is not None else held
+    new_module = _stem(after.cdk_stack_file)
+    if old_module and new_module and old_module != new_module:
+        out.append(NameChange("stack-file", old_module, new_module))
+    return out, notes
 
 
-def _source_root(dirs: Sequence[str]) -> tuple[str, ...]:
-    """Find the package folder a source file sits in: the app (and team) folders, then one more.
+def _source_root(dirs: Sequence[str], projects: frozenset[str]) -> tuple[str, ...]:
+    """Find the package folder a source file sits in: the project (and team) folders, then one more.
 
-    The app folder (`shared`, `skillspoke`, `employer`, `marketing`) and, under it, the `team`
-    folder are namespace folders. A source package is the first folder below them; in the old
-    layout, which has no app folder, it is the first folder below `src`.
+    A project folder (one of `projects`) and a `team` folder under it are namespace folders. A
+    source package is the first folder below them; in a repository whose `src` holds no project
+    folder, it is the first folder below `src`.
 
     Returns:
         The folders from `src`'s children down to the package folder, or () for a file that
@@ -252,25 +202,26 @@ def _source_root(dirs: Sequence[str]) -> tuple[str, ...]:
 
     """
     depth = 0
-    if dirs and dirs[0] in APP_FOLDERS:
+    if dirs and dirs[0] in projects:
         depth = 2 if len(dirs) > 1 and dirs[1] == TEAM_FOLDER else 1
     return tuple(dirs[: depth + 1]) if len(dirs) > depth else ()
 
 
-def stack_module(parts: RepoParts, namer: Namer) -> str:
-    """Name the module file of the repository's own stack under `cdk/stacks`, without `.py`.
+def project_folders(*names: RepositoryNames | None) -> frozenset[str]:
+    """Collect the project folders under `src` that the repositories' import packages sit in.
 
     Returns:
-        The module name `atw-naming` gives (`cdk-stack-file`).
+        The first part of each import package the naming command gave.
 
     """
-    return Path(namer(["name", "cdk-stack-file", *_name_args(parts, parts.type)])).stem
+    return frozenset(n.python_import_package.split(".", 1)[0] for n in names if n is not None)
 
 
-def read_facts(git: Git, root: Path) -> HolderFacts:
+def read_facts(git: Git, root: Path, projects: frozenset[str]) -> HolderFacts:
     """Read the repository's current distribution, source packages, stack modules and layout.
 
     Only tracked files count: a leftover folder that git does not track is not the repository's.
+    `projects` are the project folders a source package may sit in (:func:`project_folders`).
 
     Returns:
         The facts. `packages` holds the dotted import name of each source package folder.
@@ -285,11 +236,11 @@ def read_facts(git: Git, root: Path) -> HolderFacts:
         raise NameSweepError(msg)
     files = [f.split("/") for f in out.split("\0") if f]
     below_src = [p[1:] for p in files if len(p) > 1 and p[0] == SRC_FOLDER]
-    roots = sorted({r for p in below_src if p[-1].endswith(".py") and (r := _source_root(p[:-1]))})
+    roots = sorted({r for p in below_src if p[-1].endswith(".py") and (r := _source_root(p[:-1], projects))})
     inits = sorted(
         "/".join([SRC_FOLDER, *p])
         for p in below_src
-        if p[-1] == "__init__.py" and _source_root(p[:-1]) == () and len(p) > 1
+        if p[-1] == "__init__.py" and _source_root(p[:-1], projects) == () and len(p) > 1
     )
     stacks = sorted(
         p[2].removesuffix(".py")
@@ -331,17 +282,18 @@ def _distribution(root: Path) -> str | None:
 
 def plan_changes(
     old: str,
-    new: str,
     facts: HolderFacts,
-    types: Sequence[str],
-    namer: Namer,
+    before: RepositoryNames | None,
+    after: RepositoryNames | None,
+    new: str,
 ) -> tuple[list[NameChange], list[str]]:
-    """Plan every name a rename of `old` to `new` changes, each named by `atw-naming`.
+    """Plan every name a rename of `old` to `new` changes, each as the naming command gives it.
 
+    `before` and `after` are what the naming command gives the old and the new repository name
+    (`name repository-names`), None for a name it does not read as a repository holding a stack.
     With `old == new` only the Python names are planned: the repository stays and the names it
-    holds are brought to what `atw-naming` gives for it (`python-distribution` and
-    `python-package`, each with `--repository`). A repository that holds several source packages
-    is reported in the notes and its packages are left alone.
+    holds are brought to what the naming command gives for it. A repository that holds several
+    source packages is reported in the notes and its packages are left alone.
 
     Returns:
         The changes (repository first), and notes on what was not planned and why.
@@ -351,24 +303,20 @@ def plan_changes(
     notes: list[str] = []
     if old != new:
         changes.append(NameChange("repository", old, new))
-    parts = parse_repo_name(new)
-    if parts is None:
-        notes.append(
-            f"{new} is not {{prefix}}[-team]-{{domain}}-{{type}}, so no stack or Python name is planned for it",
-        )
+    if after is None:
+        notes.append(f"the naming command gives {new} no stack or Python names, so none is planned for it")
         return changes, notes
-    wanted = namer(["name", "python-distribution", "--repository", new])
-    if facts.distribution is not None and facts.distribution != wanted:
-        changes.append(NameChange("distribution", facts.distribution, wanted))
+    if facts.distribution is not None and facts.distribution != after.python_distribution:
+        changes.append(NameChange("distribution", facts.distribution, after.python_distribution))
     if len(facts.packages) == 1:
-        package = namer(["name", "python-package", "--repository", new])
-        if facts.packages[0] != package:
-            changes.append(NameChange("import-package", facts.packages[0], package))
+        if facts.packages[0] != after.python_import_package:
+            changes.append(NameChange("import-package", facts.packages[0], after.python_import_package))
     elif facts.packages:
         notes.append(f"{new} holds several source packages ({', '.join(facts.packages)}); none is renamed")
-    before = parse_repo_name(old)
-    if before is not None and before != parts:
-        changes.extend(c for c in stack_changes(before, parts, types, namer) if _held(c, facts))
+    if old != new:
+        stacks, stack_notes = stack_changes(old, before, after, facts)
+        changes.extend(c for c in stacks if _held(c, facts))
+        notes.extend(stack_notes)
     return changes, notes
 
 
@@ -540,19 +488,20 @@ def _distribution_rules(change: NameChange, holder: str) -> list[Rule]:
     return rules
 
 
-def _is_generic(package: str) -> bool:
-    """Tell whether a package name is a common word that real code and prose also use.
+def _is_generic(change: NameChange) -> bool:
+    """Tell whether the old package name is a common word that real code and prose also use.
 
-    A name that starts with an app (`skillspoke_text`, `shared.text`, `employer_authn_service`)
-    is distinctive. Any other name is generic, an underscore included: `career_profile` and
-    `job_boards` are also variable names, file names and prose, so they are replaced only
-    where they are an import, a dotted path, a `src/` path and the like.
+    A name that starts with the project folder of the new package (`skillspoke_text`,
+    `shared.text`) is distinctive. Any other name is generic, an underscore included:
+    `career_profile` and `job_boards` are also variable names, file names and prose, so they are
+    replaced only where they are an import, a dotted path, a `src/` path and the like.
 
     Returns:
-        False when the name starts with an app name followed by `_` or `.`, else True.
+        False when the old name starts with the new package's project folder followed by `_`
+        or `.`, else True.
 
     """
-    return package.replace(".", "_").split("_", 1)[0] not in APP_FOLDERS
+    return change.old.replace(".", "_").split("_", 1)[0] != change.new.split(".", 1)[0]
 
 
 def _package_rules(change: NameChange, holder: str) -> list[Rule]:
@@ -570,7 +519,7 @@ def _package_rules(change: NameChange, holder: str) -> list[Rule]:
     old_path, new_path = change.old.replace(".", "/"), change.new.replace(".", "/")
     label = change_label(change)
     kind = change.kind
-    generic = _is_generic(change.old)
+    generic = _is_generic(change)
     where = holder if generic else None
     app = new_path.split("/", 1)[0]
     rules = [
@@ -804,45 +753,64 @@ def sweep_repo(
     return [e for e in edits if e is not None]
 
 
+def _name_problems(facts: HolderFacts, names: RepositoryNames | None) -> list[PythonProblem]:
+    """Compare the distribution and the one source package with the names the naming command gives.
+
+    Returns:
+        One problem per name that differs, or that the naming command does not give.
+
+    """
+    if names is None:
+        return [PythonProblem("python-names", "the naming command gives this repository name no Python names")]
+    out: list[PythonProblem] = []
+    if facts.distribution is not None and facts.distribution != names.python_distribution:
+        out.append(
+            PythonProblem(
+                "python-distribution",
+                f"pyproject.toml names {facts.distribution}; the naming command gives {names.python_distribution}",
+            ),
+        )
+    if facts.has_src and len(facts.packages) == 1:
+        package = facts.packages[0]
+        out.extend(
+            PythonProblem(kind, f"{value} is not {wanted}, which the naming command gives")
+            for kind, value, wanted in (
+                ("python-package", package, names.python_import_package),
+                ("python-package-path", package_path(package), names.python_source_package),
+            )
+            if value != wanted
+        )
+    return out
+
+
 def python_problems(
     facts: HolderFacts,
-    repository: str,
-    check: Checker,
+    names: RepositoryNames | None,
     *,
     unit_tests: bool = True,
 ) -> list[PythonProblem]:
-    """Check what a repository has against the Python names `atw-naming` gives it.
+    """Check what a repository has against the Python names the naming command gives it.
 
-    Three checks go to `atw-naming check` with `--repository`: the distribution (the `name` in
-    `pyproject.toml`), the import package, and the source folder path. The rest is the layout the
-    standard sets: `src` is the source root, `tests` the unit test root, and no `__init__.py` sits
-    in an app or team folder. A repository with several source packages has none of the three
-    package checks run, because there is no one package to check.
+    `names` is what the naming command gives the repository name (`name repository-names`), None
+    for a name it does not read as a repository holding a stack. The distribution (the `name` in
+    `pyproject.toml`), the import package and the source folder path must be those names. The rest
+    is the layout: `src` is the source root, `tests` the unit test root, and no `__init__.py` sits
+    in a project or team folder. A repository with several source packages has none of the package
+    checks run, because there is no one package to check.
 
     Returns:
         One problem per failed check or missing part; empty when the repository conforms.
 
     """
-    out: list[PythonProblem] = []
+    out = _name_problems(facts, names)
     if facts.distribution is None:
         out.append(PythonProblem("python-distribution", "pyproject.toml names no project"))
-    else:
-        ok, msg = check(["python-distribution", facts.distribution, "--repository", repository])
-        if not ok:
-            out.append(PythonProblem("python-distribution", msg))
-    parts = parse_repo_name(repository)
     if not facts.has_src:
-        if parts is None or parts.type in SOURCE_TYPES:
+        if names is None or names.component_type in SOURCE_TYPES:
             out.append(PythonProblem("src", "no src folder: the source root is src"))
     elif len(facts.packages) != 1:
         found = ", ".join(facts.packages) or "none"
         out.append(PythonProblem("python-package", f"src holds {len(facts.packages)} source packages ({found})"))
-    else:
-        package = facts.packages[0]
-        for kind, value in (("python-package", package), ("python-package-path", package_path(package))):
-            ok, msg = check([kind, value, "--repository", repository])
-            if not ok:
-                out.append(PythonProblem(kind, msg))
     if unit_tests and not facts.has_tests:
         out.append(PythonProblem("tests", "no tests folder: the unit test root is tests"))
     out.extend(

@@ -53,7 +53,6 @@ from matrixquery import (
     uses_view,
 )
 from matrixreview import review_scope
-from matrixseed import NAMING_CONFIG_ENV
 from matrixstore import (
     CONTROL_REPO_FALLBACK_ENV,
     DEFAULT_LOCK_WAIT,
@@ -386,10 +385,6 @@ def _parser() -> argparse.ArgumentParser:
         ),
         "arch": _source("--arch", f"the architecture root in the vault; default: {ARCH_PATH_ENV}"),
         "prds": _source("--prd-dir", f"the folder of the vault the PRD files are under; default: {PRD_DIR_ENV}"),
-        "naming": _source(
-            "--naming",
-            f"the naming rules file; default: {NAMING_CONFIG_ENV}, else the control repository's",
-        ),
         "folder": _source("--directory", "the seeding folder; default: state/seed beside the matrix file"),
     }
     parser: argparse.ArgumentParser = argparse.ArgumentParser(

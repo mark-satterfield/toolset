@@ -1,136 +1,92 @@
 ---
 name: resource-naming
 description: >-
-  Generates and checks the name of every named cloud resource and code artifact from the
-  project's own naming rules, so no agent composes a name by hand. Use whenever you name,
-  rename or review the name of a CDK stack, Lambda function, DynamoDB table or cache table,
-  S3 bucket, API Gateway API, IAM role, CloudWatch log group, Step Functions state machine,
-  EventBridge bus, rule or schema, SQS queue or dead-letter queue, Secrets Manager secret,
-  SSM parameter, VPC, subnet, security group, KMS alias, Cognito user pool or app client,
-  Powertools service name or metrics namespace, environment variable, Python module file,
-  Python import package and its folder under `src`, Python distribution (the `name` in
-  `pyproject.toml`), CDK stack file or Lambda config file. Run `atw-naming name ...` to get the name and
-  `atw-naming check ...` to verify an existing one; never type a name from memory or by
+  Builds, converts and checks the name of every named cloud resource and code artifact with the
+  project's naming command, so no agent composes a name by hand. Use whenever you name, rename
+  or review the name of a repository, CDK stack or stack file, Lambda function, DynamoDB table,
+  S3 bucket, API Gateway API, IAM role, log group, state machine, EventBridge bus, rule or
+  schema, SQS queue, secret, SSM parameter, VPC, subnet, security group, KMS alias, Cognito
+  user pool or app client, Powertools service or metrics namespace, environment variable,
+  Python module, package or distribution, or any other name the project's naming standard
+  covers. Find the command with `printenv ATW_NAMING_COMMAND`, then run it (`<command> name
+  build ...`, `name convert ...`, `name check ...`); never type a name from memory or by
   copying a neighbour.
 allowed-tools: [Bash]
 ---
 
 # Resource Naming
 
-Every name a covered item carries comes out of the naming script. The rules are the
-project's, kept in one config file the project owns (`.resource-naming.yaml`); the script
-only applies them, deterministically. This skill holds no project rule: run `atw-naming list`
-to see the project's resource types, patterns and domain table.
+The plugin holds no naming rule. Every name comes from the project's naming command: the
+executable the project names in the environment variable `ATW_NAMING_COMMAND`, which
+implements the `resource-naming` command line of the project's naming standard. The command
+is the only thing that knows the patterns, the token forms and the lists the standard closes;
+this skill only says how to call it.
+
+## Find the command
+
+Run `printenv ATW_NAMING_COMMAND`. It prints the command (a name on `PATH` or an absolute
+path); run that command by what it printed, with the arguments below, as one Bash call. When
+it prints nothing, no naming command is configured: no name can be made or checked. Say so in
+your result and leave the name unmade; never compose one by hand instead.
 
 ## The rule
 
-- **Always call the script.** Get the name with `atw-naming name`, put exactly what it prints
-  into the code (CDK `stack_name`, `function_name`, `table_name`, SSM parameter names, the
-  Powertools `service`, file names), and verify any existing or hand-edited name with
-  `atw-naming check`.
+- **Always call the command.** Get every name from it and put exactly what it prints into the
+  code (CDK `stack_name`, `function_name`, `table_name`, SSM parameter names, the Powertools
+  `service`, file names). Check any existing or hand-edited name with `name check`.
 - **Never hand-compose a name**, never "fix up" a printed name, and never copy a name from a
-  neighbouring stack as the pattern. A name the script refuses is wrong, however it reads.
-- When the script refuses an input, change the input (a camelCase one-token domain, an
-  action without redundant words such as `handler`), not the name.
-- **Name the project.** Every name starts with the prefix of the project the resource
-  belongs to, so `name` requires `--project` (the projects are in `atw-naming list`); there is
-  no default project. Pass `--team` for a resource of an internal (employee-facing)
-  application: `team` goes right after the prefix. A project with categories accepts only
-  their `{type}` values.
-- Language-native conventions still apply to code identifiers the config does not cover:
-  Python classes in PascalCase, functions and variables in snake_case, TypeScript in
-  camelCase. The config's file-name and env-var types cover file names and environment
-  variable names.
-- A resource type the config does not list is not covered: report it in your result as a
-  gap in the naming config instead of inventing a pattern.
+  neighbouring stack as the pattern. A name the command refuses is wrong, however it reads.
+- **Trust what it returns.** A name the command built, converted or swapped is correct, and a
+  check that reported valid is final; do not check it again.
+- When the command refuses an input, read the violations it lists and change the input (the
+  words of a token, the token you gave), not the name.
+- A kind of name the command does not know is not covered: report it in your result as a gap
+  in the naming standard instead of inventing a pattern.
+- Language-native conventions still apply to code identifiers the standard does not name:
+  Python classes in PascalCase, functions and variables in snake_case, TypeScript in camelCase.
 
 ## Commands
 
-`atw-naming` is on the Bash tool's `PATH` (it runs
-`${CLAUDE_PLUGIN_ROOT}/skills/resource-naming/scripts/naming.py`, which needs PyYAML).
+`<command>` below is what `printenv ATW_NAMING_COMMAND` printed. Every command takes one
+output option: none (text for people), `-q` (only the result; for a check, only the exit
+status), `-v` (also how the result was reached, on stderr for a produced value) or `--json`
+(one JSON document on stdout). Programs and scripts use `--json` and the exit status, never
+the text, which may be reworded.
+
+| To | Run |
+|---|---|
+| list the kinds, each with its pattern | `<command> name build --help` |
+| see the tokens one kind takes | `<command> name build <kind> --help` |
+| build a name from its tokens | `<command> name build <kind> --<role> <value> ...` |
+| turn an existing name into a name of another kind | `<command> name convert <name> --to <kind> [--from <kind>] [--with <role>=<value> ...]` |
+| replace one token of an existing name | `<command> name swap <name> --set <role>=<value> ... [--kind <kind>]` |
+| check a name as a kind | `<command> name check <name> --kind <kind> [--expect <role>=<value> ...]` |
+| list the kinds a name is valid as | `<command> name identify <name>` |
+| check a repository name | `<command> name check-repository <name>` |
+| get the stack, stack file and Python names a repository name determines | `<command> name repository-names <repository>` |
+| build, check or convert one token | `<command> token build\|check\|convert ...` (`<command> token build --help`) |
+
+Token values may be given in any normal form (`"career profile"`, `career-profile`,
+`careerProfile`); quote a value that holds spaces. For example:
 
 ```bash
-atw-naming list                                   # projects, resource types, patterns, flags, domains
-atw-naming name stack --project <project> --domain careerProfile --type service
-atw-naming name stack --project <project> --team --domain support --type service
-atw-naming name lambda --project <project> --domain careerProfile --action scoreMatch
-atw-naming name ssm --project <project> --namespace careerProfile --resource-type dynamodb --resource-name arn
-atw-naming check stack <name>                     # exit 0, or non-zero with reasons
-atw-naming check stack <name> --project <project> # also require that project's prefix
-atw-naming name python-package --repository <repository-name>        # import name
-atw-naming name python-package-path --repository <repository-name>   # its folder under src
-atw-naming name python-distribution --repository <repository-name>   # pyproject.toml name
-atw-naming check python-package <name> --repository <repository-name>
-atw-naming check python-package-path <path> --repository <repository-name>
-atw-naming check python-distribution <name> --repository <repository-name>
-atw-naming where                                  # which config file is in use
+<command> name build cdk-stack --project SkillSpoke --domain "career profile" --type service -q
+<command> name convert SkillSpoke-dataAccess-lib --to python-distribution -q
+<command> name convert skillSpoke-image-service --to lambda-function --with action=resize -q
+<command> name check skillSpoke-careerProfile-service --kind cdk-stack
+<command> name repository-names SkillSpoke-careerProfile-service --json
 ```
 
-Each `{segment}` in a pattern is a flag of the same name in kebab-case (`{resourceType}` is
-`--resource-type`); a segment in `[...]` is optional; a `flag` segment (`--team`) takes no
-value. `name` refuses a missing or unknown `--project` and missing, extra or invalid
-segments; `check` accepts any project's prefix unless `--project` is given. `check` also
-takes the segment flags: each one given must be the value the name carries in that segment,
-after the pattern's transform, so a name that has the right shape but was built from another
-value fails. Pass them whenever you know what the name was built from.
+When a name can be read as more than one kind and the readings give different results,
+`name convert` stops and prints one `name build` command per result: run the one you mean, or
+give `--from <kind>`.
 
-## Python names of a repository
+Exit status: 0 the value was produced, or the name is valid; 1 refused or invalid (the
+violations say which rules); 2 a usage error (unknown command, kind, role or option); 70 an
+internal error of the command.
 
-The three Python names come from the repository name and take `--repository` and no other
-flag (no `--project`, no `--domain`): the app, the team flag, the domain and the stack type
-are read out of the repository name. `check` with `--repository` passes only the exact name
-`name` prints for that repository.
+## Plugin scripts
 
-| Type | What it names | `shared-apiClient-lib` | `SkillSpoke-dataAccess-lib` |
-|---|---|---|---|
-| `python-package` | The import name: the app, then the domain, snake_case, joined by a dot, without the stack type | `shared.api_client` | `skillspoke.data_access` |
-| `python-package-path` | The folder of that package under the source root `src` | `src/shared/api_client` | `src/skillspoke/data_access` |
-| `python-distribution` | The `name` in `pyproject.toml`: lower case, the domain split into hyphenated words, with the stack type | `shared-api-client-lib` | `skillspoke-data-access-lib` |
-
-The brand is one lower-case word in Python: `skillspoke`, never `skill_spoke` or
-`skill-spoke`.
-
-Exit codes: 0 ok; 1 the name or an input breaks a rule (the reasons are on
-stderr); 2 no config, an invalid config or an unknown resource type.
-
-## Where the config comes from
-
-In order: `--config PATH`; `$RESOURCE_NAMING_CONFIG`; `.resource-naming.yaml` in the control repository
-(the directory the `pipeline-contracts` skill's `CONTROL_REPO_ENV` variable names, which is how a fleet repository or a worktree outside the control
-repository finds it); else the first `.resource-naming.yaml` in the working directory or any
-directory above it. With none, the script exits 2 and lists every place it tried. There are
-no built-in defaults: a missing config is reported, never guessed around.
-
-## Config format
-
-```yaml
-projects:                     # the umbrella each resource belongs to; --project names one
-  <project-id>:
-    prefix: <camelCase one token>     # starts every name; lowercased where AWS requires
-    repo_prefix: <prefix of its repositories>
-    metrics_namespace: <Name>         # optional; default the prefix with a capital first letter
-    categories: {<category>: [<type>, ...]}   # optional; restricts {type}
-forbidden_substrings: [...]   # spellings never valid anywhere (case-insensitive)
-forbidden_tokens: [...]       # words no name may contain (e.g. environment names)
-permitted_suffixes: [...]     # the only literal endings an AWS resource pattern may have
-type_words: [...]             # words for a kind of resource; no aws name may contain one (permitted suffixes exempt)
-segments:                     # style: camelCase|PascalCase|lowercase|kebab|hyphenated|region|az|accountId, enum, or flag
-  team: {flag: team}          # value-less --team; patterns place it as [-{team}] after {project}
-  domain: {style: camelCase}
-  repository: {style: hyphenated, pattern: "{repoPrefix}[-{team}]-{domain}-{type}"}   # a compound value
-  action: {style: camelCase, reject_words: [handler]}
-domains:                      # reference table; a name containing an `avoid` term fails
-  - {name: <Label>, external: <kebab>, internal: <camelCase>, avoid: [...]}
-resources:
-  <type>: {description: ..., pattern: "...", category: aws|code, min_length: N, max_length: N, type_words: [...]}
-  <type>: {pattern: "...", from: <segment with a pattern>}   # named from that one compound value
-```
-
-Pattern grammar: `{segment}` is caller-supplied; `{segment|lower|kebab|snake|upper_snake}`
-transforms it; `[...]` is optional; `{project}`, `{projectLower}`, `{metricsNamespace}` and
-`{repoPrefix}` come from the project named by `--project`; everything else is literal.
-
-A segment with a `pattern` is a compound value: the pattern splits it into a project (by a
-project constant such as `{repoPrefix}`) and other segments. A resource with `from: <that
-segment>` takes that one flag and nothing else; its own pattern is rendered from the project
-and the segments read out of the value, and it may use only segments that pattern supplies.
+The plugin's Python scripts call the command through `scripts/naming_command.py` in this
+skill, which reads `ATW_NAMING_COMMAND`, adds `--json`, and reads the document and the exit
+status. It holds no naming rule either.

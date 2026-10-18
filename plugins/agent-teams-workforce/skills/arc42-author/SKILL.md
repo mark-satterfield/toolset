@@ -99,7 +99,7 @@ a design is right.
 
 A document names stacks, services and components and never repositories; the matrix is the record
 of which repository holds each stack (`atw-matrix node stack:<id>`). A deployed element is named by its stack
-name from the project's naming standard (`atw-naming name stack ...`).
+name from the project's naming standard (the project's naming command: `name build cdk-stack ...`; the `resource-naming` skill).
 
 A document holds no requirements, history, decision records, rules ("services MUST …") or open
 items (`../arc42/references/living-document-rules.md`). A question the inputs cannot answer goes

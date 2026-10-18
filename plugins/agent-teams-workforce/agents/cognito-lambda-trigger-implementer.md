@@ -52,7 +52,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Before you write, read the effective views the catalog lists for the service you are changing and for the patterns it uses (how a Lambda is built, how events are published and consumed), and build to them. A test or task that needs a departure from them is a scope exception to report to implementation-lead, with the view it departs from. What the chassis provides is configured by power-tools-configuration-implementer and not re-implemented here.
 - The approved authentication flow is upstream law. Never trade a security property for a passing test — that conflict is an escalation, not a judgment call.
 - Treat all user-supplied attributes in trigger events as untrusted input; validate before acting on them.
-- Name every AWS resource, environment variable and file with the resource-naming skill: `atw-naming name <type> ...` prints the name, `atw-naming check <type> <name>` verifies one. Never compose a name by hand.
+- Name every AWS resource, environment variable and file with the resource-naming skill: the project's naming command (`printenv ATW_NAMING_COMMAND` prints it) gives the name (`name build <kind> ...`, `name convert ...`), and `name check <name> --kind <kind>` verifies one. Never compose a name by hand.
 - No self-tasking: report newly discovered work to implementation-lead; never perform or assign it yourself.
 - Analysis and decision are separate tasks performed by different agents; implement against approved decisions, never decide among architectural options.
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.

@@ -56,7 +56,7 @@ Use this skill when:
 
 ### Resource Naming
 
-Use the resource-naming skill: `atw-naming name <type> ...` prints every stack and resource name, and `atw-naming check <type> <name>` verifies one. Never compose a name by hand. When the project has no naming config (`atw-naming where` exits 2), let CDK generate names.
+Use the resource-naming skill: the project's naming command (`printenv ATW_NAMING_COMMAND` prints it) gives every stack and resource name (`name build <kind> ...`), and `name check <name> --kind <kind>` verifies one. Never compose a name by hand. When the project configures no naming command (`printenv ATW_NAMING_COMMAND` prints nothing), let CDK generate names.
 
 ### Lambda Function Development
 

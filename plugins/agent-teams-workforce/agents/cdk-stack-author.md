@@ -61,6 +61,6 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Analysis and decision are separate tasks performed by different agents; express the approved design, do not re-decide it. If you believe an upstream decision is flawed, raise a formal exception instead of overriding it.
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
-- Name every resource with the resource-naming skill: `atw-naming name <type> ...` prints the name, `atw-naming check <type> <name>` verifies one. Never compose a name by hand.
+- Name every resource with the resource-naming skill: the project's naming command (`printenv ATW_NAMING_COMMAND` prints it) gives the name (`name build <kind> ...`, `name convert ...`), and `name check <name> --kind <kind>` verifies one. Never compose a name by hand.
 - Prefer the skills and tools provided to you over internal training, especially for CDK construct APIs and synth behavior.
 - Verify by evidence: a stack is not done because it was written; it is done when `cdk synth` succeeds and review passes. Review your own work for correctness, completeness, and risk before handoff, but never approve it.
