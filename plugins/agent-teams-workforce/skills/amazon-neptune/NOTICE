@@ -1,0 +1,23 @@
+Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+   http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+This skill is the amazon-neptune skill of the Agent Toolkit for AWS
+(https://github.com/aws/agent-toolkit-for-aws, path
+skills/specialized-skills/database-skills/amazon-neptune), copied from commit
+44ba1a5451913998815111cc2d518f5c45f95ef7: SKILL.md and references/. The text is
+unmodified; the Python code blocks in references/ are reformatted by ruff format
+(layout and quote style only). The upstream scripts/ directory is not included. Its files (agentic_memory.py,
+cdk_test_env.py, graphrag_pipeline.py, input_validator.py, seed_test_data.py) are at
+that upstream path, and through the AWS MCP server's aws___retrieve_skill with
+skill_name "amazon-neptune" and file "scripts/<name>".
