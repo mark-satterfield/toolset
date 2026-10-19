@@ -1,7 +1,7 @@
 export const meta = {
   name: 'tdd-refactor',
   description:
-    "Shared-tail mini \u2014 TDD Refactor. gitfacts.py (through relayrun.py) records the tree as a snapshot before the code-refactoring-specialist refactors the code Green changed for clarity without changing behavior; the specialist keeps the suite green or gives up, and when it gives up gitfacts.py puts the tree back at the snapshot. The specialist refactors through GitNexus without exception (impact upstream before each symbol changes, rename for every rename, detect_changes before it finishes); when GitNexus is unreachable or its index stays stale, gitfacts.py puts the tree back at the snapshot and it returns dispatchFailed with blocked naming the blocker. The files the refactor changed are read from git against the snapshot, not from the session. Returns alreadySatisfied when nothing needed refactoring or the refactor was reverted, and dispatchFailed when the specialist returned nothing. With snapshotTree (a tree id the caller recorded before the refactor) it takes no snapshot and uses that one. With restoreTo (a snapshot tree id the refactor recorded) gitfacts.py puts the tree back at that snapshot and it returns { restored }. A caller passes relay: { runner, dir } (relayrun.py and a directory for this run's relay files); without it they are resolved from the plugin registry and mkdtemp.",
+    "Shared-tail mini \u2014 TDD Refactor. gitutils.py (through relayrun.py) records the tree as a snapshot before the code-refactoring-specialist refactors the code Green changed for clarity without changing behavior; the specialist keeps the suite green or gives up, and when it gives up gitutils.py puts the tree back at the snapshot. The specialist refactors through GitNexus without exception (impact upstream before each symbol changes, rename for every rename, detect_changes before it finishes); when GitNexus is unreachable or its index stays stale, gitutils.py puts the tree back at the snapshot and it returns dispatchFailed with blocked naming the blocker. The files the refactor changed are read from git against the snapshot, not from the session. Returns alreadySatisfied when nothing needed refactoring or the refactor was reverted, and dispatchFailed when the specialist returned nothing. With snapshotTree (a tree id the caller recorded before the refactor) it takes no snapshot and uses that one. With restoreTo (a snapshot tree id the refactor recorded) gitutils.py puts the tree back at that snapshot and it returns { restored }. A caller passes relay: { runner, dir } (relayrun.py and a directory for this run's relay files); without it they are resolved from the plugin registry and mkdtemp.",
   phases: [{ title: 'Refactor', detail: 'behavior-preserving refactor; tests stay green' }],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -770,7 +770,7 @@ else:
 emit({"runner": os.path.join(os.path.normpath(root), *marker), "dir": folder})`
 const RUNNER_TAIL = '/scripts/portfolio/relayrun.py'
 let relaySeq = 0
-/** Returns { runner, dir, gitfacts } for this run, or { error }. */
+/** Returns { runner, dir, gitutils } for this run, or { error }. */
 async function relaySetup(name, given, phaseTitle) {
   const g = given && typeof given === 'object' ? given : {}
   const runner = String(g.runner || '').trim()
@@ -788,27 +788,27 @@ async function relaySetup(name, given, phaseTitle) {
     found = { runner: String(r.view.runner || ''), dir: String(r.view.dir || '').replace(/\/+$/, '') }
   }
   if (!found.runner.startsWith('/') || !found.dir.startsWith('/')) return { error: 'the relay runner or its directory is not an absolute path' }
-  return { ...found, gitfacts: `${found.runner.slice(0, -'relayrun.py'.length)}gitfacts.py` }
+  return { ...found, gitutils: `${found.runner.slice(0, -'relayrun.py'.length)}gitutils.py` }
 }
 /** The next relay file in `dir`, numbered by this run's counter. */
 const relayFileIn = (dir, label) => `${dir}/${String(++relaySeq).padStart(3, '0')}-${String(label).replace(/[^A-Za-z0-9._-]+/g, '-')}.json`
 
 phase('Refactor')
 
-// The snapshot, the restore and the list of changed files are mechanical git: gitfacts.py runs them
+// The snapshot, the restore and the list of changed files are mechanical git: gitutils.py runs them
 // through relayrun.py. The specialist session only refactors, and judges whether it must give up.
 const relay = await relaySetup('tdd-refactor', a.relay, 'Refactor')
-/** Runs one gitfacts.py command on the tree; returns { facts } or { error, noResult }. */
-async function gitfacts(label, argv) {
+/** Runs one gitutils.py command on the tree; returns { facts } or { error, noResult }. */
+async function gitutils(label, argv) {
   if (relay.error) return { error: relay.error, noResult: !!relay.noResult }
-  const r = await relayKit.run(settleAgent, { label, phase: 'Refactor', runner: relay.runner, argv: ['python3', relay.gitfacts, ...argv], file: relayFileIn(relay.dir, label) })
+  const r = await relayKit.run(settleAgent, { label, phase: 'Refactor', runner: relay.runner, argv: ['python3', relay.gitutils, ...argv], file: relayFileIn(relay.dir, label) })
   if (!r.ok) return { error: r.error, noResult: !!r.noResult }
-  if (r.exitCode !== 0 || !r.json || r.json.error) return { error: String((r.json && r.json.error) || `gitfacts.py ${argv[0]} exited ${r.exitCode}`) }
+  if (r.exitCode !== 0 || !r.json || r.json.error) return { error: String((r.json && r.json.error) || `gitutils.py ${argv[0]} exited ${r.exitCode}`) }
   return { facts: r.json }
 }
 /** Puts the tree back at `tree`, documentation excepted; returns { restored, evidence, noResult? }. */
 async function restoreTree(tree, label) {
-  const r = await gitfacts(label, ['restore', '--tree', repo, '--to', tree])
+  const r = await gitutils(label, ['restore', '--tree', repo, '--to', tree])
   if (r.error) return { restored: false, evidence: r.error, noResult: !!r.noResult }
   const remaining = Array.isArray(r.facts.remaining) ? r.facts.remaining : []
   return { restored: r.facts.restored === true, evidence: remaining.length ? `still differing from ${tree}: ${remaining.join(', ')}` : `the tree matches ${tree} (documentation excepted)` }
@@ -831,7 +831,7 @@ const ledgerOf = (mode, ok) => ({ phase: 'refactor', beadId, chosen: ['code-refa
 
 // A caller that recorded the tree before this run passes it as snapshotTree; no snapshot is taken then.
 const givenSnapshot = str(a.snapshotTree)
-const snap = givenSnapshot ? { facts: { tree: givenSnapshot } } : await gitfacts('refactor-snapshot', ['snapshot', '--tree', repo])
+const snap = givenSnapshot ? { facts: { tree: givenSnapshot } } : await gitutils('refactor-snapshot', ['snapshot', '--tree', repo])
 if (snap.error) {
   return dispatchOutcome({
     ok: false,
@@ -954,7 +954,7 @@ if (refactor.reverted === true) {
 }
 
 // The files the refactor changed, read from git against the snapshot.
-const diff = await gitfacts('refactor-changed', ['changed', '--tree', repo, '--since', snapshotTree])
+const diff = await gitutils('refactor-changed', ['changed', '--tree', repo, '--since', snapshotTree])
 if (diff.error) {
   return dispatchOutcome({
     ok: false,

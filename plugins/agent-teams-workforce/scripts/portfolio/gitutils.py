@@ -1,6 +1,6 @@
-"""Git facts and mechanical git steps for the workflow scripts, printed as one JSON object.
+"""Git utilities for the workflow scripts: git facts and mechanical git steps, printed as one JSON object.
 
-A workflow script runs this through relayrun.py (`run -- python3 gitfacts.py ...`), so what it
+A workflow script runs this through relayrun.py (`run -- python3 gitutils.py ...`), so what it
 prints reaches the script checked. Every command prints one JSON object on stdout and exits 0;
 a command that cannot do its work prints `{"error": ...}` and exits 2. Nothing here judges
 anything: each command runs fixed git commands and reports what git printed.

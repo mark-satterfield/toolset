@@ -1,7 +1,7 @@
 export const meta = {
   name: 'settle',
   description:
-    "Lands a worktree in git: commits, pushes the branch and opens the pull request with the project PR command. With commitOnly it commits on the branch and stops: no push, no pull request. The git facts it branches on (branch, head, uncommitted changes, commits ahead of the base) come from gitfacts.py through relayrun.py, read before and after the one session that writes the commit message and runs the PR command; a tree with nothing to land dispatches no session. A caller passes relay: { runner, dir } (relayrun.py and a directory for this run's relay files); without it they are resolved from the plugin registry and mkdtemp. Returns { status }: not-applicable (no tree), blocked (no PR command), error (the landing agent failed or a git fact could not be read), or reported (treeClean, hasWork, branch, prUrl, commit, blocked).",
+    "Lands a worktree in git: commits, pushes the branch and opens the pull request with the project PR command. With commitOnly it commits on the branch and stops: no push, no pull request. The git facts it branches on (branch, head, uncommitted changes, commits ahead of the base) come from gitutils.py through relayrun.py, read before and after the one session that writes the commit message and runs the PR command; a tree with nothing to land dispatches no session. A caller passes relay: { runner, dir } (relayrun.py and a directory for this run's relay files); without it they are resolved from the plugin registry and mkdtemp. Returns { status }: not-applicable (no tree), blocked (no PR command), error (the landing agent failed or a git fact could not be read), or reported (treeClean, hasWork, branch, prUrl, commit, blocked).",
   phases: [{ title: 'Settle', detail: 'commit, push and open the pull request' }],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -746,7 +746,7 @@ else:
 emit({"runner": os.path.join(os.path.normpath(root), *marker), "dir": folder})`
 const RUNNER_TAIL = '/scripts/portfolio/relayrun.py'
 let relaySeq = 0
-/** Returns { runner, dir, gitfacts } for this run, or { error }. */
+/** Returns { runner, dir, gitutils } for this run, or { error }. */
 async function relaySetup(name, given, phaseTitle) {
   const g = given && typeof given === 'object' ? given : {}
   const runner = String(g.runner || '').trim()
@@ -764,20 +764,20 @@ async function relaySetup(name, given, phaseTitle) {
     found = { runner: String(r.view.runner || ''), dir: String(r.view.dir || '').replace(/\/+$/, '') }
   }
   if (!found.runner.startsWith('/') || !found.dir.startsWith('/')) return { error: 'the relay runner or its directory is not an absolute path' }
-  return { ...found, gitfacts: `${found.runner.slice(0, -'relayrun.py'.length)}gitfacts.py` }
+  return { ...found, gitutils: `${found.runner.slice(0, -'relayrun.py'.length)}gitutils.py` }
 }
 /** The next relay file in `dir`, numbered by this run's counter. */
 const relayFileIn = (dir, label) => `${dir}/${String(++relaySeq).padStart(3, '0')}-${String(label).replace(/[^A-Za-z0-9._-]+/g, '-')}.json`
 
 // The git facts settle branches on (branch, head, dirty, commits ahead of the base) come from
-// gitfacts.py through relayrun.py, read before and after the one session that writes the commit
+// gitutils.py through relayrun.py, read before and after the one session that writes the commit
 // message and runs the PR command; the session's account of them is not used.
 let relay = null
-/** Runs gitfacts.py facts on the tree; returns the facts, or throws with the reason. */
+/** Runs gitutils.py facts on the tree; returns the facts, or throws with the reason. */
 async function treeFacts(label, extra) {
-  const r = await relayKit.run(settleAgent, { label, phase: 'Settle', runner: relay.runner, argv: ['python3', relay.gitfacts, 'facts', '--path', wt, ...(extra || [])], file: relayFileIn(relay.dir, label) })
+  const r = await relayKit.run(settleAgent, { label, phase: 'Settle', runner: relay.runner, argv: ['python3', relay.gitutils, 'facts', '--path', wt, ...(extra || [])], file: relayFileIn(relay.dir, label) })
   if (!r.ok) throw new Error(`${label}: ${r.error}`)
-  if (r.exitCode !== 0 || !r.json || r.json.error) throw new Error(`${label}: ${String((r.json && r.json.error) || `gitfacts.py exited ${r.exitCode}`)}`)
+  if (r.exitCode !== 0 || !r.json || r.json.error) throw new Error(`${label}: ${String((r.json && r.json.error) || `gitutils.py exited ${r.exitCode}`)}`)
   if (r.json.isGitTree !== true) throw new Error(`${label}: ${wt} is not a git tree`)
   return r.json
 }

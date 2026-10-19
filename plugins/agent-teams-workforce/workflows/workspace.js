@@ -1,7 +1,7 @@
 export const meta = {
   name: 'workspace',
   description:
-    "Establishes the git worktree the writing phases work in: reuses the tree already registered for the bead, or cuts one on a feature branch at <repo>/.worktrees/<bead>-<repo>, inside the repository it belongs to; no other location is used. The git work is mechanical and runs as gitfacts.py provision through relayrun.py, so the workflow receives its result checked; a second, separate gitfacts.py facts run verifies the tree independently (a git tree of the same repository, a linked worktree, on the branch reported). A reused tree is left exactly as it is, uncommitted changes included. Refuses (ok:false with the reason in blocked) when repoPath or beadId is missing, provisioning fails, verification disagrees, or the tree is on a default branch or a detached HEAD. A caller passes relay: { runner, dir } (relayrun.py and a directory for this run's relay files); without it they are resolved from the plugin registry and mkdtemp. Returns { ok, applicable, repoPath, branch, reused, isLinkedWorktree: true, independentlyVerified: true, defaultBranch, verification, blocked, ledger }.",
+    "Establishes the git worktree the writing phases work in: reuses the tree already registered for the bead, or cuts one on a feature branch at <repo>/.worktrees/<bead>-<repo>, inside the repository it belongs to; no other location is used. The git work is mechanical and runs as gitutils.py provision through relayrun.py, so the workflow receives its result checked; a second, separate gitutils.py facts run verifies the tree independently (a git tree of the same repository, a linked worktree, on the branch reported). A reused tree is left exactly as it is, uncommitted changes included. Refuses (ok:false with the reason in blocked) when repoPath or beadId is missing, provisioning fails, verification disagrees, or the tree is on a default branch or a detached HEAD. A caller passes relay: { runner, dir } (relayrun.py and a directory for this run's relay files); without it they are resolved from the plugin registry and mkdtemp. Returns { ok, applicable, repoPath, branch, reused, isLinkedWorktree: true, independentlyVerified: true, defaultBranch, verification, blocked, ledger }.",
   phases: [{ title: 'Workspace', detail: 'provision or reuse the linked worktree the writing phases operate in' }],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -764,7 +764,7 @@ else:
 emit({"runner": os.path.join(os.path.normpath(root), *marker), "dir": folder})`
 const RUNNER_TAIL = '/scripts/portfolio/relayrun.py'
 let relaySeq = 0
-/** Returns { runner, dir, gitfacts } for this run, or { error }. */
+/** Returns { runner, dir, gitutils } for this run, or { error }. */
 async function relaySetup(name, given, phaseTitle) {
   const g = given && typeof given === 'object' ? given : {}
   const runner = String(g.runner || '').trim()
@@ -782,7 +782,7 @@ async function relaySetup(name, given, phaseTitle) {
     found = { runner: String(r.view.runner || ''), dir: String(r.view.dir || '').replace(/\/+$/, '') }
   }
   if (!found.runner.startsWith('/') || !found.dir.startsWith('/')) return { error: 'the relay runner or its directory is not an absolute path' }
-  return { ...found, gitfacts: `${found.runner.slice(0, -'relayrun.py'.length)}gitfacts.py` }
+  return { ...found, gitutils: `${found.runner.slice(0, -'relayrun.py'.length)}gitutils.py` }
 }
 /** The next relay file in `dir`, numbered by this run's counter. */
 const relayFileIn = (dir, label) => `${dir}/${String(++relaySeq).padStart(3, '0')}-${String(label).replace(/[^A-Za-z0-9._-]+/g, '-')}.json`
@@ -792,17 +792,17 @@ phase('Workspace')
 const relay = await relaySetup('workspace', a.relay, 'Workspace')
 if (relay.error) return dispatchOutcome(refuse(relay.error, relay.noResult ? failedDispatch('workspace:relay-setup') : {}))
 
-/** Runs one gitfacts.py command through relayrun.py; returns { facts } or { error, noResult }. */
-async function gitfacts(label, argv) {
-  const r = await relayKit.run(settleAgent, { label, phase: 'Workspace', runner: relay.runner, argv: ['python3', relay.gitfacts, ...argv], file: relayFileIn(relay.dir, label) })
+/** Runs one gitutils.py command through relayrun.py; returns { facts } or { error, noResult }. */
+async function gitutils(label, argv) {
+  const r = await relayKit.run(settleAgent, { label, phase: 'Workspace', runner: relay.runner, argv: ['python3', relay.gitutils, ...argv], file: relayFileIn(relay.dir, label) })
   if (!r.ok) return { error: r.error, noResult: !!r.noResult }
-  if (r.exitCode !== 0 || !r.json || r.json.error) return { error: String((r.json && r.json.error) || `gitfacts.py ${argv[0]} exited ${r.exitCode}`) }
+  if (r.exitCode !== 0 || !r.json || r.json.error) return { error: String((r.json && r.json.error) || `gitutils.py ${argv[0]} exited ${r.exitCode}`) }
   return { facts: r.json, relayFile: r.relayFile }
 }
 
-// The git work is mechanical: gitfacts.py provision reuses the tree registered for the branch or path,
+// The git work is mechanical: gitutils.py provision reuses the tree registered for the branch or path,
 // or fetches, fast-forwards a clean main tree and cuts the worktree. A reused tree is left as it is.
-const provisioned = await gitfacts('workspace-provision', ['provision', '--repo', repoPath, '--branch', BRANCH, '--path', plannedWorktreePath])
+const provisioned = await gitutils('workspace-provision', ['provision', '--repo', repoPath, '--branch', BRANCH, '--path', plannedWorktreePath])
 if (provisioned.error) {
   return dispatchOutcome(refuse(`no worktree was established: ${provisioned.error}`, provisioned.noResult ? failedDispatch('workspace-provision') : {}))
 }
@@ -813,8 +813,8 @@ if (p.ok !== true) {
 }
 const treePath = String(p.worktree || '').trim().replace(/\/+$/, '') || plannedWorktreePath
 
-// Independent verification: a second, separate run of gitfacts.py reads the tree's own git facts.
-const verified = await gitfacts('workspace-verify', ['facts', '--path', treePath, '--repo', repoPath])
+// Independent verification: a second, separate run of gitutils.py reads the tree's own git facts.
+const verified = await gitutils('workspace-verify', ['facts', '--path', treePath, '--repo', repoPath])
 if (verified.error) {
   return dispatchOutcome(refuse(`the worktree ${treePath} could not be verified: ${verified.error}`, verified.noResult ? failedDispatch('workspace-verify') : {}))
 }

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Final, Literal
 
 from contracts import JsonObject, JsonValue, json_object
-from gitfacts import cmd_hash_files
+from gitutils import cmd_hash_files
 from jsonartifact import read_artifact
 
 KINDS: Final[frozenset[str]] = frozenset({"unit", "contract", "integration", "nonfunctional"})
@@ -446,7 +446,7 @@ def _tree_digest(root: Path) -> str:
     """Hash the repository tree as tested.
 
     Returns:
-        The tree digest gitfacts reports.
+        The tree digest gitutils reports.
 
     """
     return cmd_hash_files(argparse.Namespace(tree=str(root), files=[]))["treeDigest"]

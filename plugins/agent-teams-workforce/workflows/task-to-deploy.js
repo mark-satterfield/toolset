@@ -1091,7 +1091,7 @@ const scripts = relayRunner.slice(0, -'relayrun.py'.length)
 const RELAY = {
   runner: relayRunner,
   dir: String(givenRelay.dir || '').trim().replace(/\/+$/, ''),
-  gitfacts: `${scripts}gitfacts.py`,
+  gitutils: `${scripts}gitutils.py`,
   depscore: `${scripts}depscore.py`,
   regression: `${scripts}regression.py`,
   artifactcontract: `${scripts}artifactcontract.py`,
@@ -1191,11 +1191,11 @@ const runValue = (run) => ({
 })
 
 const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
-/** Runs one gitfacts.py command through relayrun.py; returns { facts } or { error }. */
-async function gitfacts(label, argv) {
-  const r = await relayKit.run(guardedAgent, { label, phase: currentPhase || phaseTitle('green'), runner: RELAY.runner, argv: ['python3', RELAY.gitfacts, ...argv], file: relayFileIn(stepDir(), label) })
+/** Runs one gitutils.py command through relayrun.py; returns { facts } or { error }. */
+async function gitutils(label, argv) {
+  const r = await relayKit.run(guardedAgent, { label, phase: currentPhase || phaseTitle('green'), runner: RELAY.runner, argv: ['python3', RELAY.gitutils, ...argv], file: relayFileIn(stepDir(), label) })
   if (!r.ok) return { error: r.error }
-  if (r.exitCode !== 0 || !r.json || r.json.error) return { error: String((r.json && r.json.error) || `gitfacts.py ${argv[0]} exited ${r.exitCode}`) }
+  if (r.exitCode !== 0 || !r.json || r.json.error) return { error: String((r.json && r.json.error) || `gitutils.py ${argv[0]} exited ${r.exitCode}`) }
   return { facts: r.json }
 }
 // The role this workflow runs atw-matrix as (matrix-kinds.json roles): check-reuse runs for no other role.
@@ -1216,7 +1216,7 @@ async function matrixCommand(label, argv, keys) {
 async function fingerprint(tree, files, label) {
   let r
   try {
-    r = await gitfacts(label, ['hash-files', '--tree', tree, ...files])
+    r = await gitutils(label, ['hash-files', '--tree', tree, ...files])
   } catch (err) {
     return { error: String((err && err.message) || err).slice(0, 300) }
   }
@@ -1999,9 +1999,9 @@ async function stepTestRuling(step) {
 
 async function stepRefactorSnapshot(step) {
   enterPhase('refactor')
-  const snap = await gitfacts('refactor-snapshot', ['snapshot', '--tree', treeAt(step)])
+  const snap = await gitutils('refactor-snapshot', ['snapshot', '--tree', treeAt(step)])
   const tree = snap.error ? '' : String(snap.facts.tree || '').trim()
-  if (!tree) return failed('refactor', `refactor: the pre-refactor snapshot could not be recorded: ${snap.error || 'gitfacts.py snapshot named no tree'}`)
+  if (!tree) return failed('refactor', `refactor: the pre-refactor snapshot could not be recorded: ${snap.error || 'gitutils.py snapshot named no tree'}`)
   return { artifacts: [valueArtifact('refactorSnapshot', tree)] }
 }
 

@@ -160,7 +160,7 @@ function main() {
     '',
     `Every repository under $${APPS_ENV} except the command-and-control repository ($${CONTROL_REPO_ENV}) takes its product work in a worktree and a pull request opened with skillspoke-pr (AGENTS.md, CLAUDE.md and .claude/ are tooling and are not blocked). Create or reuse a worktree and work there:`,
     '',
-    `  python3 ${path.join(__dirname, '..', 'scripts', 'portfolio', 'gitfacts.py')} provision --repo ${repoRoot} --branch <type>/<bead-id> --name <bead-id>-${repoName}`,
+    `  python3 ${path.join(__dirname, '..', 'scripts', 'portfolio', 'gitutils.py')} provision --repo ${repoRoot} --branch <type>/<bead-id> --name <bead-id>-${repoName}`,
     '',
     `It reuses the worktree registered for the branch, or creates one at ${path.join(repoRoot, WORKTREE_DIR)}/<bead-id>-${repoName}; never run git worktree add with a path of your own.`,
   ]);

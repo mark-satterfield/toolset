@@ -762,7 +762,7 @@ else:
 emit({"runner": os.path.join(os.path.normpath(root), *marker), "dir": folder})`
 const RUNNER_TAIL = '/scripts/portfolio/relayrun.py'
 let relaySeq = 0
-/** Returns { runner, dir, gitfacts } for this run, or { error }. */
+/** Returns { runner, dir, gitutils } for this run, or { error }. */
 async function relaySetup(name, given, phaseTitle) {
   const g = given && typeof given === 'object' ? given : {}
   const runner = String(g.runner || '').trim()
@@ -780,7 +780,7 @@ async function relaySetup(name, given, phaseTitle) {
     found = { runner: String(r.view.runner || ''), dir: String(r.view.dir || '').replace(/\/+$/, '') }
   }
   if (!found.runner.startsWith('/') || !found.dir.startsWith('/')) return { error: 'the relay runner or its directory is not an absolute path' }
-  return { ...found, gitfacts: `${found.runner.slice(0, -'relayrun.py'.length)}gitfacts.py` }
+  return { ...found, gitutils: `${found.runner.slice(0, -'relayrun.py'.length)}gitutils.py` }
 }
 /** The next relay file in `dir`, numbered by this run's counter. */
 const relayFileIn = (dir, label) => `${dir}/${String(++relaySeq).padStart(3, '0')}-${String(label).replace(/[^A-Za-z0-9._-]+/g, '-')}.json`
