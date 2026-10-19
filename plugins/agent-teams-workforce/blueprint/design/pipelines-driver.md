@@ -26,8 +26,9 @@ end with a recommendation. What each pipeline does inside is drawn in
 | `A ->> B` (sequence) | A calls or starts B: B does work for A |
 | `B -->> A` (sequence) | B returns its result to A |
 | `A -) Store` (sequence) | A writes to a store; nothing is returned |
-| `alt` / `opt` or a node labelled "open - ..." | The owner has not decided this; every branch shown is an option, not a decision. The id names the entry under "Open questions" at the end |
-| Q17 and above | A question new to these diagram documents; Q1 to Q16 are the owner's questions from the elaboration plan |
+| `alt`, or a node, labelled "open - ..." | The owner has not decided this; every branch shown is an option, not a decision. The id names the entry under "Open questions" at the end |
+| `opt` (sequence) | Steps that run only when the labelled condition holds |
+| Q17 | A question new to these diagram documents; Q1 to Q16 are the owner's questions from the elaboration plan |
 | `([...])` (activity) | Start or end |
 | `{...?}` (activity) | A decision; every outgoing edge is labelled with its guard |
 | "fork" / "join" nodes (activity) | Work that runs concurrently, and the point where all of it has finished |
@@ -66,7 +67,7 @@ sequenceDiagram
 
     O->>K: runs keeper.py
     O->>S: runs supervisor.py
-    Note over K,S: open - Q18 - whether one starts the other, and whether each runs alone
+    Note over K,S: each runs on its own, started by the owner. Neither starts the other
     K->>BD: reads Stories
     BD-->>K: Stories whose Tasks are all built
     loop each such Story
@@ -91,6 +92,8 @@ Notes on the diagram:
 
 - Only the deploy of a Story is drawn as started by `keeper.py`, because the owner said so. No
   other program starts a deploy.
+- `keeper.py` and `supervisor.py` each run on their own, started by the owner, and neither starts
+  the other, because independent processes fail independently and the owner starts each.
 - What `supervisor.py` starts is an open question (Q17). Both branches are
   options; the owner's words name `supervisor.py` as a program the owner runs and nothing more.
 - No session and no agent runs either program, and none rehearses a run (`AGENTS.md`). A run is
@@ -109,24 +112,24 @@ order among the ready ones.
 "Bugs": "A Bug bead is a report that something is wrong. It is not pipeline work" and "A person
 triages a Bug into an Epic, a Task, or a closure." The owner: "keeper is what knows to deploy a
 story." and "Ever agent needs to have a reason to be used." `docs/sdlc/sdlc.md`: "User stories in
-the SkillSpoke SDLC are recorded ONLY as Beads issues". The order of Epics is not stated by the
-owner's sources: `docs/sdlc/sdlc.md` and [requirements/pipelines.md](../requirements/pipelines.md)
-say nothing of architecture dependencies or WSJF as the order (Q20).
+the SkillSpoke SDLC are recorded ONLY as Beads issues".
 
 ```mermaid
 flowchart TD
     s(["A free place to start work"]) --> read["Read beads: open beads not yet worked"]
     read --> kind{"What kind of bead?"}
     kind -->|"Bug"| bug["Not pipeline work. Left for a person to triage into an Epic, a Task or a closure"]
-    kind -->|"Epic"| eReady{"open - Q19 - is the Epic ready, with its PRD?"}
-    kind -->|"Task"| tReady{"open - Q21 - is the Task ready, with its build contract and its Story's branch?"}
+    kind -->|"Epic"| eReady{"Has its PRD passed validation, and has validation set the Epic ready in beads?"}
+    kind -->|"Task"| tReady{"Are the Tasks it depends on, by beads dependency edges, closed?"}
     kind -->|"Story"| sReady{"Are all of the Story's Tasks built?"}
-    kind -->|"any other kind"| other["open - Q23 - what happens to it"]
+    kind -->|"any other kind"| other["Not routed to a pipeline. Skipped with the reason logged, left for a person"]
     eReady -->|"no"| skip["Not started this time"]
-    eReady -->|"yes"| eOrder["open - Q20 - order among ready Epics"]
+    eReady -->|"yes"| eDeps{"Are the Epics whose architecture decisions it rests on elaborated?"}
+    eDeps -->|"no"| skip
+    eDeps -->|"yes"| eOrder["Taken in WSJF order among the eligible Epics"]
     eOrder --> eRun(["Elaboration of the Epic - pipelines-elaboration.md"])
     tReady -->|"no"| skip
-    tReady -->|"yes"| tOrder["open - Q21 - order among ready Tasks"]
+    tReady -->|"yes"| tOrder["Taken in WSJF order among the ready Tasks"]
     tOrder --> tRun(["Build of the Task - pipelines-build.md"])
     sReady -->|"no: a Task is not built"| skip
     sReady -->|"yes"| sRun(["keeper.py deploys the Story - pipelines-deploy.md"])
@@ -143,6 +146,17 @@ Notes on the diagram:
 - A Story is never elaborated or built by itself: it is created with its Spec in elaboration and
   deployed once its Tasks are built (`docs/sdlc/sdlc.md`,
   [requirements/pipelines.md](../requirements/pipelines.md)).
+- An Epic is ready when its PRD has passed validation and validation set it ready in beads,
+  because one setter and one condition keep one source of truth.
+- Architecture dependencies between Epics decide which Epics may be elaborated: an Epic waits for
+  the Epics whose architecture decisions it rests on, because an Epic designed before those
+  decisions would be redesigned. WSJF orders the eligible Epics, because it puts the most value per
+  effort first.
+- A Task is ready when the Tasks it depends on (beads dependency edges) are closed, and ready Tasks
+  are taken in WSJF order, because the edges carry build order and WSJF orders what is free to run.
+- A bead of any kind not routed to a pipeline is skipped with the reason logged and left for a
+  person, as a Bug is, and the routing table is data that accepts new kinds, because no closed list
+  of today's kinds is kept and no pipeline runs work it was not designed for.
 - No pipeline is started for a bead it does not apply to. The owner: "I also do not want a
   pipeline that blindly sends everything to ever agent, whether it applies or not".
 
@@ -157,8 +171,7 @@ several at once.
 The owner: "keeper is what knows to deploy a story.", "we can process 20 Epics through elaboration
 with out building anything." and "I need a working pipeline ... and dosn't take 2 hours to run
 through a single Epic". `docs/sdlc/sdlc.md`: one Spec and one Story per repository, all beneath
-the single Epic. No source states how many Epics, Tasks or Stories run at once
-(Q22).
+the single Epic.
 
 ```mermaid
 flowchart TD
@@ -166,9 +179,9 @@ flowchart TD
     fork1 --> el["Elaboration - once per Epic. Started by: open - Q17"]
     fork1 --> bu["Build - once per Task, on its Story's branch. Started by: open - Q17"]
     fork1 --> de["Deploy - once per Story whose Tasks are all built. Started by keeper.py"]
-    el --> elN["How many Epics at once: open - Q22"]
-    bu --> buN["How many Tasks at once: open - Q22"]
-    de --> deN["How many Stories at once: open - Q22"]
+    el --> elN["Epics at once: up to the number in flight the owner sets"]
+    bu --> buN["Tasks at once: different repositories in parallel, one at a time per repository and Story branch"]
+    de --> deN["Stories at once: different repositories in parallel, one at a time per repository"]
     elN --> elOut["Stories and Tasks in beads. Needs no build: 20 Epics can be elaborated with nothing built"]
     buN --> buOut["Task built and tested on its Story's branch"]
     deN --> deOut["Story deployed to AWS dev and verified, one merged pull request"]
@@ -184,6 +197,10 @@ Notes on the diagram:
   elaboration with out building anything."
 - The owner's time goal covers one Epic: a working pipeline that "dosn't take 2 hours to run
   through a single Epic".
+- Runs on different repositories go in parallel, runs on the same repository (and the same Story
+  branch) run one at a time, and the number in flight is a setting the owner can change, not a
+  constant, because parallel work on different files is safe and fast and one writer per branch
+  avoids conflicts.
 
 ## 4. An Epic, a Story and a Task, across the pipelines
 
@@ -214,19 +231,24 @@ stateDiagram-v2
     state "Being elaborated" as eElab
     state "Elaborated - Stories and Tasks in beads" as eDone
     state "Every Task of every Story built and tested, deployment working" as eBuilt
+    state "Tested and signed off by a person" as eSigned
     [*] --> eOpen: PRD creation writes the PRD and the Epic together
-    eOpen --> eReady: open - Q19 - what makes it ready
+    eOpen --> eReady: its PRD passes validation, and validation sets it ready
     eReady --> eElab: the driver starts its elaboration
     eElab --> eDone: elaboration writes the Stories and Tasks
     eElab --> eReady: the run fails or stops - section 5
-    eDone --> eBuilt: the last Story of the Epic is deployed and tested
-    eBuilt --> [*]: open - Q25 - when the Epic is closed
+    eDone --> eBuilt: the last Story of the Epic closes
+    eBuilt --> eSigned: a person tests it and signs off
+    eSigned --> [*]: the driver closes the Epic
 ```
 
-At "Every Task of every Story built and tested, deployment working", the Epic's architecture and
-relationships in the matrix can be set verified (the owner). Which step sets them is
-Q48. An open Epic is never a condition for other work: its
-Stories and Tasks are worked while it is open (`AGENTS.md`).
+When the last Story of the Epic closes, a deterministic step sets all of the Epic's architecture
+and relationships in the matrix verified, because the condition is factual (the owner: "Once all
+of the tasks for all of the stories for and Epic have been built and tested ... then all of the
+architecture and rellationships for the Epic can be set to verified."). The Epic closes only after
+a person has tested it and signed off, never because its Stories closed, because closure records
+proof, not counting. An open Epic is never a condition for other work: its Stories and Tasks are
+worked while it is open (`AGENTS.md`).
 
 ### 4.2 A Story
 
@@ -243,10 +265,11 @@ stateDiagram-v2
     sReady --> sDeploy: keeper.py deploys the Story
     sDeploy --> sReady: the deploy fails or stops - section 5
     sDeploy --> sDone: the deploy is verified
-    sDone --> [*]: open - Q25 - when the Story is closed
+    sDone --> [*]: the driver closes the Story
 ```
 
-A Story is never closed because its Tasks are closed (`AGENTS.md`).
+A Story closes when its pull request has merged and its deploy is verified working, and never
+because its Tasks are closed (`AGENTS.md`), because closure records proof, not counting.
 
 ### 4.3 A Task
 
@@ -257,15 +280,16 @@ stateDiagram-v2
     state "Being built" as tBuild
     state "Closed - built and all tests passing" as tClosed
     [*] --> tOpen: elaboration writes the Task
-    tOpen --> tReady: open - Q21 - what makes it ready
+    tOpen --> tReady: the Tasks it depends on are closed
     tReady --> tBuild: the driver starts its build
     tBuild --> tReady: the run fails or stops - section 5
-    tBuild --> tClosed: it completes, including passing all tests
+    tBuild --> tClosed: it completes, including passing all tests, and the driver closes it
     tClosed --> [*]
 ```
 
-Who moves a bead from one state to the next in beads (the driver or the pipeline it started) is
-Q24. A closed bead is never reopened or changed: history is never changed
+The driver writes every bead state change, deterministically from each run's result; agents write
+content, not states, because a state is a fact the run's contract reports, so code sets it the same
+way every time. A closed bead is never reopened or changed: history is never changed
 (`AGENTS.md`).
 
 ## 5. When a pipeline run fails or stops
@@ -291,32 +315,37 @@ and handled at run time (deploy time)."
 
 ```mermaid
 flowchart TD
-    s(["A pipeline run for one bead"]) --> work["Each step writes its output to disk as it is produced"]
+    s(["A pipeline run for one bead"]) --> work["Each step records its result before the next starts"]
     work --> res{"How did the run end?"}
     res -->|"completed"| done(["The bead moves on - section 4"])
-    res -->|"failed"| kindF{"open - Q26 - is the cause one a retry can clear?"}
+    res -->|"failed"| kindF{"Is the cause transient: a rate limit, the network, a timed-out session?"}
     res -->|"stopped: by the owner, or the machine stopped"| kept
-    kindF -->|"yes"| retry["open - Q26 - retried, how often and after what wait"]
-    kindF -->|"no"| report["The cause is reported to the owner"]
-    retry --> again{"Did the retry complete?"}
+    kindF -->|"yes"| retry["Retried with exponential backoff and jitter, up to a bounded number of attempts"]
+    kindF -->|"no: a failure of the work itself"| release["Not retried. The bead is released with its cause recorded and reported to the owner"]
+    retry --> again{"Did a retry complete?"}
     again -->|"yes"| done
-    again -->|"no"| report
-    report --> others["open - Q26 - whether other beads keep running"]
-    others --> kept["The steps already done stay on disk"]
+    again -->|"no: attempts spent"| release
+    release --> others["Other beads keep running"]
+    others --> kept["The steps already done stay recorded"]
     kept --> fixT{"Is the cause in the pipeline tooling?"}
     fixT -->|"yes"| adapt["The tooling is adapted and corrected"]
     fixT -->|"no"| m(("merge"))
     adapt --> m
     m --> owner["The owner runs keeper.py or supervisor.py again"]
-    owner --> resume{"What kind of bead?"}
-    resume -->|"Epic"| reuseE["Elaboration reuses every phase whose recorded inputs are unchanged"]
-    resume -->|"Task or Story"| reuseTS["open - Q27 - how the build or deploy resumes"]
-    reuseE --> s
-    reuseTS --> s
+    owner --> resume["The rerun starts at the first step not done and reuses every finished step whose inputs are unchanged"]
+    resume --> s
 ```
 
 Notes on the diagram:
 
+- Transient failures (rate limits, network, a timed-out session) retry with exponential backoff
+  and jitter up to a bounded number of attempts; a failure of the work itself is not retried
+  blindly, the bead is released with its cause recorded, and other beads keep running, because the
+  AWS Well-Architected reliability guidance calls for bounded retries and one failing bead must not
+  stop the rest.
+- Every step of every pipeline (elaboration, build and deploy) records its result before the next
+  starts, and a rerun starts at the first step not done and reuses every finished step whose inputs
+  are unchanged, because a halt never forces finished work to be redone (`docs/sdlc/sdlc.md`).
 - Only the owner starts the next run. No session or agent restarts `keeper.py` or `supervisor.py`
   (`AGENTS.md`).
 - A value known only at deploy time, such as the region or environment, is not a failure: it is
@@ -347,6 +376,7 @@ sequenceDiagram
     participant EL as Elaboration
     participant BU as Build
     participant DE as Deploy
+    participant V as Verified step, deterministic
     box Stores
         participant BD as beads
         participant MX as matrix
@@ -354,9 +384,7 @@ sequenceDiagram
     end
 
     S->>BD: reads beads ready for work - Q17
-    opt open - Q20 - the order of Epics reads the matrix
-        S->>MX: what each ready Epic drives and rests on
-    end
+    S->>MX: the Epics each ready Epic rests on
     S->>EL: an Epic, with the paths on its bead
     EL->>MX: what is known for the Epic, at every step
     EL->>A42: effective documents
@@ -365,13 +393,16 @@ sequenceDiagram
     S->>BU: a Task
     BU->>BD: the Task and its build contract
     BU->>MX: the ids the Task states
-    BU-)BD: the Task closed when built and all tests pass
+    BU-->>S: the Task built and all tests passing
+    S-)BD: the Task closed
     K->>BD: Stories whose Tasks are all built
     K->>DE: a Story
     DE->>BD: the Story and its Tasks
     DE->>MX: the stacks and resources its Tasks state
-    opt every Task of every Story of the Epic built and tested, deployment working
-        DE-)MX: the Epic's architecture and relationships set verified - Q48
+    DE-->>K: deploy verified working, pull request merged
+    K-)BD: the Story closed
+    opt the closed Story is the last Story of its Epic
+        V-)MX: all of the Epic's architecture and relationships set verified
     end
     Note over BD,MX: no Story, no Task and nothing about what is deployed is written to the matrix
 ```
@@ -381,8 +412,12 @@ Notes on the diagram:
 - The driver chooses work from beads. The matrix is read by the pipelines' steps, because its
   purpose is that each step does not "research and scan or rediscover what pertains the task that
   step is performing" (the owner).
-- Who writes each bead state is Q24; the diagram shows the build closing a
-  Task only where `AGENTS.md` states when a Task closes.
+- The order of Epics reads, from the matrix, the Epics each ready Epic rests on, because an Epic
+  waits for the Epics whose architecture decisions it rests on (section 2).
+- The driver writes each bead state from the run's result, and the pipelines write content, because
+  code sets a state the same way every time (section 4).
+- A deterministic step that runs when the last Story of an Epic closes sets all of the Epic's
+  architecture and relationships verified, because the condition is factual.
 
 ## Open questions
 
@@ -392,64 +427,3 @@ Notes on the diagram:
   the owner placed deploy with `keeper.py` ("keeper is what knows to deploy a story."), every
   pipeline needs a program that starts it, and one program per kind of start keeps each with one
   responsibility.
-- **Q18. Does one of `keeper.py` and `supervisor.py` start the other, or does
-  the owner start each on its own, and may each run without the other?** Appears in section 1.
-  Recommendation: the owner starts each, neither starts the other, and each runs without the other.
-  Reason: the owner's sources say the owner runs both; elaboration needs no build or deploy
-  ("we can process 20 Epics through elaboration with out building anything"), so neither should
-  depend on the other being up.
-- **Q19. What makes an Epic ready for elaboration?** Appears in sections 2
-  and 4.1. Recommendation: its PRD file resolves and PRD validation passed it with no blocker
-  finding. Reason: [requirements/pipelines.md](../requirements/pipelines.md) says elaboration takes
-  "A ready Epic and its PRD", and PRD validation exists to judge the PRD before elaboration.
-- **Q20. In what order are ready Epics elaborated?** Appears in sections 2
-  and 6. Recommendation: an Epic whose architecture other Epics rest on is elaborated before them,
-  and WSJF orders the Epics that rest on nothing unelaborated; the driver reads those dependencies
-  from the matrix. Reason: each later Epic starts from what earlier Epics approved (the owner:
-  "each learnine piece of information is to help the next step in the pipelines"), and WSJF is a
-  standard way to order work by value over size once dependencies allow it.
-- **Q21. What makes a Task ready for build, and in what order are ready Tasks
-  built?** Appears in sections 2 and 4.3. Recommendation: a Task is ready when every Task it depends
-  on in beads is closed, and ready Tasks are built in dependency order, then by WSJF. Reason: a
-  Task builds on its Story's branch from what earlier Tasks committed, and beads holds the build
-  dependencies (the matrix holds no Task).
-- **Q22. How many Epics, Tasks and Stories are worked at once?** Appears in
-  section 3. Recommendation: a number per pipeline that the owner sets when starting the run, with
-  the Tasks of one Story built one at a time. Reason: work on different things runs in parallel by
-  default, work on the same files runs in sequence, and the Tasks of one Story share one branch;
-  the owner's cost and time goals ("dosn't take 2 hours to run through a single Epic") are met by
-  the owner choosing the number for the run.
-- **Q23. What happens to a bead that is not an Epic, a Story, a Task or a Bug?**
-  Appears in section 2. Recommendation: it is not started, and the run reports it to the owner with
-  its kind. Reason: every agent needs a reason to be used, and no pipeline is defined for it; a
-  report keeps it from being silently ignored.
-- **Q24. Who changes a bead's state in beads: the driver that started the run,
-  or the pipeline doing the work?** Appears in sections 4 and 6. Recommendation: the pipeline that
-  completes the work writes the state its work reached, and the driver writes only that it started
-  a run. Reason: the actor that does the work knows when it is done, and one writer per state
-  keeps beads a single source of truth.
-- **Q25. When are a Story and an Epic closed?** Appears in sections 4.1 and
-  4.2. Recommendation: a Story is closed when its deploy is verified and its pull request merged;
-  an Epic is closed when every Story beneath it is closed and its architecture and relationships are
-  set verified. Reason: `AGENTS.md` rules out closing either because its Tasks are closed, and these
-  are the points at which the owner's sources say the work of each is done.
-- **Q26. When a run fails, which causes are retried, how often and after what
-  wait, and do other beads keep running?** Appears in section 5. Recommendation: a cause outside the
-  work (a rate limit, a network or service outage) is retried with increasing waits a small fixed
-  number of times; any other cause stops that bead's run and is reported to the owner with the
-  cause, and other beads keep running unless the cause would fail them too. Reason: the owner wants
-  "more fault-tolerance for the pipeline", a run is "long and expensive", and the reliability pillar
-  of the AWS Well-Architected Framework calls for bounded retries with backoff and for isolating a
-  failure to what it affects.
-- **Q27. How does the build of a Task or the deploy of a Story resume after a
-  failed or stopped run?** Appears in section 5. Recommendation: the same as an Epic: each step's
-  output is recorded as it is produced, and the next run begins at the first step not done, reusing
-  every step whose recorded inputs are unchanged. Reason: `docs/sdlc/sdlc.md` states this for an
-  Epic, and a run that makes "real project progress" must not redo finished work.
-- **Q48. Which step sets the Epic's architecture and
-  relationships verified, once the last Story of the Epic is deployed and tested?** Appears in
-  sections 4.1 and 6 (raised in [architecture and matrix states](pipelines-architecture-states.md)).
-  Recommendation: the deploy of the Story that completes the condition, started by `keeper.py`,
-  checks that every Task of every Story of the Epic is built and tested with deployment working and
-  sets them verified. Reason: the owner's condition includes "deployemen must also work", which is
-  known first when that deploy is verified.
