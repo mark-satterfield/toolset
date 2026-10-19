@@ -36,7 +36,7 @@ the only way to prove tht the architecture is likely to work."
 | "fork" / "join" nodes (activity) | Work that runs concurrently, and the point where all of it has finished |
 | "merge" node (activity) | Alternative paths coming back together; no waiting |
 | `[*]` and labelled transitions (state machine) | Initial state; event [guard] / effect |
-| `keeper.py` | The driver in `ops/sdlc-automation` that starts the deploy of a Story. Only the owner runs it |
+| `keeper.py`, `supervisor.py` | The driver in `ops/sdlc-automation`. The owner runs only `keeper.py`, which runs `supervisor.py`; the supervisor's deploy lane starts the deploy of a Story and closes the Story bead |
 | beads | The issue tracker that holds the Epic, its Stories and their Tasks |
 | matrix | The one record of how Epics, documents, resources, stacks, SSM parameters and repositories relate ([requirements/matrix.md](../requirements/matrix.md)). It holds no Story and no Task |
 | arc42 (vault) | The arc42 architecture and design documents in the `skillspoke-docs` vault |
@@ -58,7 +58,11 @@ and, for the last Story of an Epic, the Epic's verification.
 **Purpose:** the order of the steps, what each needs before it starts, and where each loop ends.
 **Boundary:** the build of each Task is in [build](pipelines-build.md); each step here is drawn in
 detail in the sections that follow.
-**Sources:** the owner: "keeper is what knows to deploy a story."; the requirements row for Deploy:
+**Sources:** the owner: "keeper is what knows to deploy a story."; the code, which is the source for
+`keeper.py` and `supervisor.py`: `keeper.py` runs `supervisor.py`, whose deploy lane
+(`selection.select_deploy`, `storyorder.gate`) takes each Story whose Tasks are all closed, one
+Story at a time per repository, and runs its deploy through `storydeploy.run`, whose
+`deploy:close` step closes the Story bead (`ops/sdlc-automation/keeper.py`, `supervisor.py`, `selection.py`, `storyorder.py` and `storydeploy.py`); the requirements row for Deploy:
 "A Story whose Tasks are all built" producing "The Story's repository published and deployed to
 the development environment and verified, the record of what was built, and one merged pull
 request" ([requirements/pipelines.md](../requirements/pipelines.md)); custom Python libraries,
@@ -71,7 +75,7 @@ merge, and never merge yourself."
 
 ```mermaid
 flowchart TD
-    start(["keeper.py: a Story whose Tasks are all built"]) --> chk["OPEN Q14 - which checks of upstream steps stay?"]
+    start(["keeper.py runs supervisor.py, whose deploy lane takes a Story whose Tasks are all built"]) --> chk["OPEN Q14 - which checks of upstream steps stay?"]
     chk --> look["Read from the matrix what the Story's repository publishes and deploys, and the commands"]
     look --> what{"What does the repository publish and deploy?"}
     what -->|"a custom Python library"| pub["A script publishes a pre-release version from the Story's branch to CodeArtifact - section 2"]
@@ -96,7 +100,7 @@ flowchart TD
     ok -->|"yes"| gh["GitHub auto-merge merges the pull request"]
     ok -->|"no: the shepherd cannot fix what is left"| blocked2(["Pull request and Story stay open, cause reported to the owner"])
     gh --> rel["A script publishes the release version from main, when the repository has a package"]
-    rel --> doneS["Merged and the deploy verified working: keeper.py closes the Story bead"]
+    rel --> doneS["Merged and the deploy verified working: the deploy lane closes the Story bead"]
     doneS --> all{"Every Story of the Epic closed?"}
     all -->|"no"| wait(["Other Stories still in build or deploy"])
     all -->|"yes"| ver["A deterministic step sets all of the Epic's architecture and relationships verified in the matrix - section 7"]
@@ -117,8 +121,9 @@ Notes on the diagram:
 - When the shepherd cannot finish, the pull request and the Story stay open and the cause is
   reported to the owner, because merge is automatic and never forced.
 - A Story is done when its pull request has merged and its deploy was verified working, because
-  both are proof; `keeper.py`, the driver, then closes the Story bead, because the driver is the
-  one setter of bead states.
+  both are proof; the driver then closes the Story bead, in the close step of `storydeploy.py`
+  that the deploy lane of `supervisor.py` runs, because the driver is the one setter of bead
+  states.
 - A value known only at deploy time, such as the region or the environment, is supplied at
   deploy time and stops nothing (section 3).
 - The deploy adds no Story and no Task to the matrix. The owner: "The matrix does not include
@@ -140,12 +145,13 @@ which agree with the owner's matrix as the index that saves every step a scan ("
 not need the scan a perform complicated searches over and over just to figure out answer to
 simple questions"); checks of upstream steps, the owner: "I don't want every subsequent step in a
 process constantly checking that upstream steps were done right" with the exception "like if B is
-going to be a universal or shared component".
+going to be a universal or shared component". For who starts the deploy, the code: `ops/sdlc-automation/keeper.py`,
+`supervisor.py`, `selection.py` and `storydeploy.py`.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant K as keeper.py
+    participant K as keeper.py - supervisor.py deploy lane
     participant DW as Deploy of the Story
     participant RUN as Publish script
     box Stores
@@ -474,12 +480,13 @@ could have a verified flag. The node could have a verified flag. Neither wold be
 every situation." and "For an Epic, I should be able to instantly know what AWS resources are
 invalidated and what stacks and repos those AWS resources are in."; `AGENTS.md`: "A Story or Epic
 is never closed because its Tasks are closed, and an open Epic is never a condition for other
-work."
+work." For who closes the Story, the code: `ops/sdlc-automation/supervisor.py` and the
+`deploy:close` step of `storydeploy.py`.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant K as keeper.py
+    participant K as keeper.py - supervisor.py deploy lane
     participant VS as Verification step - deterministic
     box Stores
         participant BD as beads
@@ -545,9 +552,9 @@ stateDiagram-v2
 
     [*] --> building
     building --> built : the last Task built and tested
-    built --> publishing : keeper.py starts the deploy [the repository publishes a package]
-    built --> deploying : keeper.py starts the deploy [stacks only]
-    built --> record : keeper.py starts the deploy [neither] / nothing to deploy recorded
+    built --> publishing : the deploy lane starts the deploy [the repository publishes a package]
+    built --> deploying : the deploy lane starts the deploy [stacks only]
+    built --> record : the deploy lane starts the deploy [neither] / nothing to deploy recorded
     publishing --> deploying : published [the repository has stacks]
     publishing --> record : published [no stacks]
     publishing --> fixing : publish failed
@@ -563,7 +570,7 @@ stateDiagram-v2
     shepherding --> shepherding : the shepherd pushes a fix / checks re-run, publish and deploy re-run when it touches code or infrastructure
     shepherding --> merged : checks pass and threads resolve / GitHub auto-merge
     shepherding --> stuck : the shepherd cannot fix what is left
-    merged --> closed : release version published when there is a package / keeper.py closes the Story bead
+    merged --> closed : release version published when there is a package / the deploy lane closes the Story bead
     closed --> [*] : when it is the Epic's last, the Epic's architecture and relationships set verified
 ```
 
@@ -578,12 +585,13 @@ dev, and how.
 matrix does not include stories and tasks (it isn't a build tracker), and it doesn't care about
 what has actually been deployed." and "The architecture process is designed to clean up the
 matrix is it works, and the same with the build."; `git-conventions.md` and `AGENTS.md`, quoted
-in sections 3 and 6.
+in sections 3 and 6. For the deploy lane, the code: `ops/sdlc-automation/keeper.py`,
+`supervisor.py`, `selection.py` and `storydeploy.py`.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant KP as keeper.py
+    participant KP as keeper.py - supervisor.py deploy lane
     participant PB as Publish script
     participant DP as cdk deploy script and check
     participant FX as story-deploy-fix
@@ -639,11 +647,11 @@ agent a reason to be used.
 pipeline that blindly sends everything to ever agent", "I do prefer to spin up agents in headless
 claude sessions to do work, and then get out." and "i'm a huge fan of the contracs being
 deterministic in files and code"; `git-conventions.md` on the shepherd; the owner: "keeper is what
-knows to deploy a story."
+knows to deploy a story."; `ops/sdlc-automation/keeper.py`, `supervisor.py`, `selection.py`, `storyorder.py` and `storydeploy.py`, for who starts the deploy and closes the Story.
 
 | Role | Who fills it | Reason it is used |
 |---|---|---|
-| Starts the deploy of a Story, closes the Story bead, and starts the Epic's verification | `keeper.py` (the owner: "keeper is what knows to deploy a story") | Knows the Story's Tasks are all built, and is the one setter of bead states |
+| Starts the deploy of a Story, closes the Story bead, and starts the Epic's verification | The deploy lane of `supervisor.py`, which `keeper.py` runs (the owner: "keeper is what knows to deploy a story"; `selection.select_deploy`, `storydeploy.py`) | Knows the Story's Tasks are all built, and is the one setter of bead states |
 | Runs the publish command and `cdk deploy` | A script | Running a named command needs no reasoning; the commands come from the matrix |
 | Writes the smoke tests | For example `smoke-test-author` | Its subject: "post-deployment smoke tests verifying the feature's critical paths against live endpoints" |
 | Decides that the deployment works | A script: every stack complete and the smoke tests passing | Deploy success alone does not show the code runs |
