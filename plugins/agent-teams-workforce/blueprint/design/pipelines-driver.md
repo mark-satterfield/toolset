@@ -1,437 +1,455 @@
-# The pipelines: driver and routing
+# The pipelines: driver
 
 Parent: [The pipelines: overview](pipelines.md)
 
-The driver is the process that runs every pipeline. It lives in the control repository at
-`ops/sdlc-automation`: `keeper.py` keeps `supervisor.py` running, and the supervisor runs three
-lanes, elaboration, build and deploy, each with its own pool of slots. Each lane reads beads,
-selects the eligible work, ranks it, and dispatches one bead per free slot: an Epic to the Python
-orchestrator (`orchestrator/run.py`, composite `prd-to-spec`), a Task to a headless Workflow
-session running `workflows/task-to-deploy.js`, and a Story to its own Story deploy
-(`storydeploy.py`, see [The pipelines: deploy](pipelines-deploy.md)). Every build and deploy
-begins at the first step of the bead's step journal that is not done. Routing decides which
-composite owns a bead: the driver routes with `routing.py`; a session routes one bead with
-`commands/work-bead.md`, which calls `workflows/route-build.js` or
-`workflows/route-elaboration.js` and dispatches nothing. Only the owner runs the driver. The
-requirements are `blueprint/requirements/pipelines.md` (the three pipelines, Bugs, composites),
-the vault's `docs/sdlc/sdlc.md` (the chain of documents and beads) and the owner's statements of
-2026-10-19 quoted below; `orchestrator/specs/epic/driver-contract.md` describes the elaboration
-boundary as built.
+The driver is what runs every pipeline. The owner starts it, and only the owner: it begins where
+the owner runs `keeper.py` and `supervisor.py` in the control repository's `ops/sdlc-automation`.
+It takes in the beads that are ready for work and starts, for each, the pipeline that works it:
+elaboration once per Epic, build once per Task, deploy once per Story. It produces no artifact of
+its own; what it produces is pipeline runs that make real project progress, each done by agents in
+headless Claude sessions that do the work and get out. This document draws the driver **as the
+owner wants it**. The sources are the owner's messages of 2026-10-19 (quoted with their
+qualifiers in Part 1 of the elaboration plan), the owner's statement "keeper is what knows to
+deploy a story.", the SkillSpoke repository's root `AGENTS.md` ("Pipeline runs belong to the
+owner", "Standing facts", "Code quality"), the vault's `docs/sdlc/sdlc.md`, and
+[requirements/pipelines.md](../requirements/pipelines.md) where it agrees with the owner's words.
+Where the owner has not said what is wanted, the step is drawn as an open question, listed at the
+end with a recommendation. What each pipeline does inside is drawn in
+[elaboration](pipelines-elaboration.md), [build](pipelines-build.md) and
+[deploy](pipelines-deploy.md); the arc42 and matrix states in
+[architecture and matrix states](pipelines-architecture-states.md).
 
 ## Legend
 
 | Notation | Meaning |
 |---|---|
-| `->>` (sequence) | a call or a dispatch: the caller starts the work |
-| `-->>` (sequence) | the return of that call |
-| `-)` (sequence) | an asynchronous message, or a write to a store with no reply |
-| `([...])` (activity) | start or end |
-| `{...?}` (activity) | a decision; each outgoing edge is labelled with its guard |
-| `fork` / `join` nodes (activity) | concurrent work starts / ends |
-| `[*]` (state machine) | initial or terminal state; transitions read "event [guard] / effect" |
-| "arc42 (vault)", "matrix", "beads", "vault", "git / GitHub" | the stores, named the same everywhere |
-| note "differs from required" | the as-built behaviour differs from the requirement named |
-| "assumption" | an element neither the requirements nor the code specifies |
+| `A ->> B` (sequence) | A calls or starts B: B does work for A |
+| `B -->> A` (sequence) | B returns its result to A |
+| `A -) Store` (sequence) | A writes to a store; nothing is returned |
+| `alt` / `opt` or a node labelled "open - ..." | The owner has not decided this; every branch shown is an option, not a decision. The id names the entry under "Open questions" at the end |
+| `NEWQ-pipelines-driver-n` | A question new to this document, with a placeholder id |
+| `([...])` (activity) | Start or end |
+| `{...?}` (activity) | A decision; every outgoing edge is labelled with its guard |
+| "fork" / "join" nodes (activity) | Work that runs concurrently, and the point where all of it has finished |
+| "merge" node (activity) | Alternative paths coming back together; no waiting |
+| `[*]` and labelled transitions (state machine) | Initial or final state; the event or condition that moves the bead |
+| headless session | A headless Claude session that does one piece of work and gets out |
+| arc42 (vault), matrix, beads, vault, git / GitHub, AWS dev | The stores, named the same in every document |
 
-The owner's statements of 2026-10-19 this document draws as required:
+## 1. The owner starts keeper and supervisor
 
-- "I do prefer to spin up agents in headless claude sessions to do work, and then get out." and "I know a subagent can start a workflow with subagents, etc. There can be nested subagents."
-- "i'm a huge fan of the contracs being deterministic in files and code, and for agents, a skill can contain both schemas and een the code to read and write and verify the schemas."
-- "What I do not want is python code deciding which specialists to use, because pythin doesn't have the reasoning to make that determination." and "I also do not want a pipeline that blindly sends everything to ever agent, whether it applies or not".
-
-## 1. The driver's processes
-
-**Subject.** The processes and threads of the driver.
-**Scope.** One owner-started run of `keeper.py`.
-**Purpose.** Show who restarts whom, and where each lane hands off its work.
-**Boundary.** Outside: the dashboard (`dashboard.py`), and the inside of each dispatch (section 4).
-**Basis.** As built: `keeper.py` `Keeper._run_supervisors` (line 296), `_retry_decision`
-(line 335), `_after_exit` (line 352); `supervisor.py` `SdlcSupervisor.run` (line 468), `_run_lane`
-(line 506); `lane.py` `LaneRunner.loop` (line 358); `headless.py` `dispatch_one` (line 653).
-Required: the three pipelines of `requirements/pipelines.md`; the owner's preference for
-headless sessions.
-
-```mermaid
-flowchart TD
-  OWN(["owner runs keeper.py"]) --> K["keeper.py<br/>launches supervisor.py as a child"]
-  K --> SUP["supervisor.py<br/>control watcher plus one thread per lane"]
-  SUP --> F{{"fork"}}
-  F --> LE["elaboration lane<br/>--elaboration-concurrency slots"]
-  F --> LB["build lane<br/>--build-concurrency slots"]
-  F --> LD["deploy lane<br/>--deploy-concurrency slots"]
-  LE --> OR["orchestrator/run.py prd-to-spec<br/>child process, starts bounded agent sessions"]
-  LB --> HS["headless claude Workflow session<br/>task-to-deploy.js"]
-  LD --> SD["storydeploy.run in the driver<br/>dispatches deploy-mechanism.js, story-deploy-fix.js, built-version.js as headless sessions"]
-  LE --> J{{"join: every lane thread ended"}}
-  LB --> J
-  LD --> J
-  J --> X{"supervisor exit code?"}
-  X -->|"0"| END1(["keeper done"])
-  X -->|"restart requested"| K
-  X -->|"waiting, a quota pause"| PW["wait out the pause"] --> K
-  X -->|"transient recorded cause"| BO["back off, doubling to a cap"] --> K
-  X -->|"any other cause"| END2(["keeper stops, cause recorded, not relaunched"])
-```
-
-## 2. One turn of a lane
-
-**Subject.** The loop each lane thread runs.
-**Scope.** One lane, one turn.
-**Purpose.** Show when a lane waits, selects, dispatches, and collects a finished dispatch.
-**Boundary.** Outside: which beads are eligible (section 3) and what a dispatch runs (section 4).
-**Basis.** As built: `lane.py` `_turn` (line 386), `_next_work` (line 490), `_launch_selected`
-(line 466), `_await_after` (line 450), `_recover` (line 419), `_collect_outcome` (line 1277),
-`_follow_up` (line 1347); `nextwork.py` `next_item` (line 257); `ordering.py` `rank` (line 122).
-
-```mermaid
-flowchart TD
-  A(["turn starts"]) --> C["collect finished dispatches<br/>see section 5"]
-  C --> L{"--max-rounds reached?"}
-  L -->|"yes, none running"| E1(["lane stops"])
-  L -->|"yes, some running"| A
-  L -->|"no"| B{"every slot busy, or a quota hold with work running, or the lane held?"}
-  B -->|"yes: wait one poll"| A
-  B -->|"no"| R["bd export, fresh bead index"]
-  R --> RQ{"beads readable?"}
-  RQ -->|"no: wait and read again"| A
-  RQ -->|"yes"| SEL["lane selection, section 3<br/>minus running, backing off, owner-held, unchanged holds"]
-  SEL --> RK["rank: Epic WSJF, then item WSJF, in progress breaks ties"]
-  RK --> OW{"highest-ranked item owned by a live execution?"}
-  OW -->|"all owned"| W1["wait: every eligible item owned"] --> A
-  OW -->|"none eligible"| W2["wait: nothing open"] --> IDLE{"idle limit reached?"}
-  IDLE -->|"yes"| E2(["lane stops"])
-  IDLE -->|"no"| A
-  OW -->|"first unowned item"| Q{"quota held?"}
-  Q -->|"yes, a probe allowed"| SUB
-  Q -->|"yes, no probe"| A
-  Q -->|"no"| SUB["submit to a slot, dispatch, section 4"]
-  SUB --> A
-```
-
-A lane loop that raises a beads timeout restarts after a backoff, keeping in-flight work running;
-any other error, or more crashes than the window allows, ends the lane, and the supervisor stops.
-
-## 3. Selection in each lane
-
-**Subject.** Which beads each lane may dispatch.
-**Scope.** The elaboration, build and deploy lanes.
-**Purpose.** Show the eligibility rules that move a bead from one pipeline to the next.
-**Boundary.** Outside: ranking (section 2) and routing (section 6).
-**Basis.** As built: `selection.py` `_epic_candidate` (line 264), `build_candidates` (line 321),
-`select_build` (line 408), `select_deploy` (line 433), `hold_for_person` (line 233);
-`elabstate.py` `candidacy`, `unmet_blockers`; `storyorder.py` `gate` (line 184), `_take_holder`,
-`_group_tasks`, `startable_without_tasks` (line 116), `_deploy` (line 149); `storydeploy.wait_of`
-(line 1798); `workitems.py` `find_prd` (line 326, `atw-matrix epic`). Required: the Deploy row
-("A Story whose Tasks are all built"), the Build row ("A Task with its build contract, on its
-Story's branch") and the Elaboration row ("A ready Epic and its PRD") of
-`requirements/pipelines.md`.
-
-```mermaid
-flowchart TD
-  subgraph ELAB["Elaboration lane"]
-    E1["every bead of type epic, open, not excluded"] --> E2{"every tracks or blocks prerequisite is an Epic with elaboration done?"}
-    E2 -->|"no"| EX1["not selected"]
-    E2 -->|"yes"| E3{"elaboration_state?"}
-    E3 -->|"ready"| E4
-    E3 -->|"in_progress, no live owner: reclaimed"| E4["workable"]
-    E3 -->|"done, in_progress owned, authoring, held"| EX2["not selected"]
-    E4 --> E5{"WSJF scored and a PRD resolves through atw-matrix epic?"}
-    E5 -->|"yes"| E6["one Epic per PRD, composite prd-to-spec"]
-    E5 -->|"no"| EX3["not selected"]
-  end
-  subgraph BUILD["Build lane"]
-    B1["type task or an infrastructure type, WSJF scored, unblocked in beads, not closed, no human-action label"] --> B2{"repository, Story and elaboration key recorded?"}
-    B2 -->|"no"| BX1["problem reported"]
-    B2 -->|"yes"| B3{"its Epic's elaboration done?"}
-    B3 -->|"no"| BX2["not selected"]
-    B3 -->|"yes"| B4["group by Story, one Story per repository holds the repository:<br/>the started Story, else the highest ranked"]
-    B4 --> B5["the holder's unfinished Tasks first, else its open Tasks, composite task-to-deploy"]
-  end
-  subgraph DEPLOY["Deploy lane"]
-    D1{"open Story in_progress with every Task closed, or with no Task and its Epic done?"} -->|"yes"| D2{"its journal waits: SSM parameter missing or PR not merged?"}
-    D1 -->|"no"| DX1["not selected"]
-    D2 -->|"yes"| DX2["not selected until the probe clears"]
-    D2 -->|"no"| D3["composite story-deploy"]
-  end
-```
-
-Differences from the requirements:
-
-- The Elaboration row takes in "A ready Epic"; as built an Epic in progress with no live owner is
-  also selected (reclaimed). This continues a stopped run rather than starting one, so no
-  requirement is broken; it is as built only.
-- The build lane builds no Task of an Epic whose elaboration is not done, and only one Story per
-  repository is worked at a time. No requirement covers either rule; as built only.
-
-## 4. Dispatch
-
-**Subject.** What one dispatch does, by composite.
-**Scope.** `LaneRunner._work_in_scope` to the returned handback.
-**Purpose.** Show the three dispatch paths, what each sends, and how the step journal is written.
-**Boundary.** Outside: the steps of `prd-to-spec` and `task-to-deploy` (their own documents), and
-the Story deploy's steps ([The pipelines: deploy](pipelines-deploy.md)).
-**Basis.** As built: `lane.py` `_work_in_scope` (line 1192), `_claim_build` (line 1113),
-`_with_step_journal` (line 1230); `workitems.py` `journal_args` (line 607), `composite_args`
-(line 663); `headless.py` `dispatch_one` (line 653), `_dispatch_with_recovery`,
-`_dispatch_session`, `_step_journal_reader`; `orchestrated.py`; `orchestrator/run.py` `main`;
-`orchestrator/specs/epic/driver-contract.md` sections 3 and 4;
-`orchestrator/core/journal_lines.py` `ChangeReader.feed`;
-`skills/pipeline-contracts/SKILL.md` ("Journal changes a workflow script reports", driver
-surface). Required: the owner's preference for headless sessions; deterministic contracts in
-files and code.
+**Subject:** the two programs the owner runs, and what each starts.
+**Scope:** from the owner starting a run to the pipelines it starts.
+**Purpose:** who starts the driver, what each program is for, and which pipeline each starts.
+**Boundary:** how a bead is chosen is section 2; the inside of each pipeline is in its own
+document.
+**Sources:** `AGENTS.md`, "Pipeline runs belong to the owner": "Only the owner runs `keeper.py`
+and `supervisor.py`; their real runs are the test of the pipeline." and "A pipeline run is long
+and expensive, so a successful run must make real project progress." The owner: "keeper is what
+knows to deploy a story." and "I do prefer to spin up agents in headless claude sessions to do
+work, and then get out." and "There can be nested subagents."
+[requirements/pipelines.md](../requirements/pipelines.md), "What the pipelines are": elaboration
+runs once per Epic, build once per Task, deploy once per Story.
 
 ```mermaid
 sequenceDiagram
-  autonumber
-  participant LN as Lane runner lane.py
-  participant HL as headless.py dispatch_one
-  participant OR as orchestrator/run.py child process
-  participant SD as storydeploy.run
-  participant WS as headless claude Workflow session
-  box rgb(235,240,245) Stores
-    participant BDS as beads
-    participant JRN as step journal
-    participant LED as ledger state/ledger.jsonl
-  end
-  alt build lane, task-to-deploy
-    LN-)BDS: bd update --claim Task, Story to in_progress
-    LN->>JRN: open the Task's journal with the build plan, name a run
-  else deploy lane, story-deploy
-    LN-)BDS: Story to in_progress
-  end
-  LN-)LED: dispatched, composite, reason, arguments
-  LN->>HL: dispatch_one bead, composite, arguments
-  alt composite prd-to-spec, runner orchestrator
-    HL->>OR: arguments.json, ATW_* environment, ATW_EXECUTION_ID
-    OR->>BDS: claim the Epic, elaboration_state in_progress
-    OR->>JRN: run the Epic's journal steps from the first not done
-    OR-)LED: phase, verdict and session events
-    OR-->>HL: handback file, validated by handback_contract
-  else composite story-deploy, runner driver
-    HL->>SD: run the Story's journal in the driver
-    SD-->>HL: handback of the step that stopped, or the closed Story
-  else composite task-to-deploy, runner workflow
-    HL->>WS: claude headless, Workflow scriptPath, arguments with journal path and run, denied tools, model fallback keys
-    loop while the session runs
-      WS-)HL: STEP-JOURNAL lines on its log
-      HL->>JRN: journal_lines.ChangeReader.feed applies each change once, in order of n
+    autonumber
+    actor O as owner
+    participant K as keeper.py
+    participant S as supervisor.py
+    participant EL as Elaboration, one Epic
+    participant BU as Build, one Task
+    participant DE as Deploy, one Story
+    box Stores
+        participant BD as beads
     end
-    WS-->>HL: workflow result or handback sentinel line
-  end
-  HL-->>LN: Handback
-  LN-)LED: handback event
+
+    O->>K: runs keeper.py
+    O->>S: runs supervisor.py
+    Note over K,S: open - NEWQ-pipelines-driver-2 - whether one starts the other, and whether each runs alone
+    K->>BD: reads Stories
+    BD-->>K: Stories whose Tasks are all built
+    loop each such Story
+        K->>DE: deploys the Story, in a headless session
+        Note over DE: agents in headless sessions do the work and get out. There can be nested subagents
+        DE-->>K: deployed and verified, or failed - section 5
+    end
+    alt open - NEWQ-pipelines-driver-1 - what supervisor.py starts
+        S->>BD: reads ready Epics
+        S->>EL: elaborates an Epic, in a headless session
+        EL-->>S: Stories and Tasks written to beads
+    else
+        S->>BD: reads ready Tasks
+        S->>BU: builds a Task, in a headless session
+        BU-->>S: Task built and tested
+    end
+    K-->>O: what each run did, and why any stopped
+    S-->>O: what each run did, and why any stopped
 ```
 
-Differences from the requirements: none found. The composites declared in
-`skills/pipeline-contracts/schemas/composites.json` each have a runner (`prd-to-spec`
-orchestrator; `task-to-deploy`, `story-deploy-fix`, `deploy-mechanism`, `built-version`
-workflow; `story-deploy` driver), as "Composites" in `requirements/pipelines.md` requires. The
-workflow `workflows/deploy.js` is declared as no composite and nothing dispatches it.
+Notes on the diagram:
 
-## 5. Collecting an outcome
+- Only the deploy of a Story is drawn as started by `keeper.py`, because the owner said so. No
+  other program starts a deploy.
+- What `supervisor.py` starts is an open question (NEWQ-pipelines-driver-1). Both branches are
+  options; the owner's words name `supervisor.py` as a program the owner runs and nothing more.
+- No session and no agent runs either program, and none rehearses a run (`AGENTS.md`). A run is
+  the test of the pipeline, so each run is drawn as doing real work.
 
-**Subject.** What the lane does with a finished dispatch.
-**Scope.** `LaneRunner._collect_outcome` and `_collect_error`.
-**Purpose.** Show how a bead's beads state changes after a run, and when it is held, backed off
-or excluded.
-**Boundary.** Outside: the outcome classification inside `attempts.py`.
-**Basis.** As built: `lane.py` `_collect_outcome` (line 1277), `_settle_build` (line 1155),
-`_unlanded` (line 1130), `_elaboration_done` (line 799), `_file_artifacts` (line 994),
-`_follow_up` (line 1347), `_collect_error` (line 1295);
-`orchestrator/specs/epic/driver-contract.md` section 4.
+## 2. Choosing a bead and routing it to its pipeline
+
+**Subject:** how the driver picks the next bead and decides which pipeline works it.
+**Scope:** one pick of one bead.
+**Purpose:** which kinds of bead are pipeline work, what each needs before it is started, and the
+order among the ready ones.
+**Boundary:** the readiness of an Epic's PRD is decided by PRD validation
+([PRD creation and PRD validation](pipelines-prd.md)).
+**Sources:** [requirements/pipelines.md](../requirements/pipelines.md): "A ready Epic and its PRD",
+"A Task with its build contract, on its Story's branch", "A Story whose Tasks are all built", and
+"Bugs": "A Bug bead is a report that something is wrong. It is not pipeline work" and "A person
+triages a Bug into an Epic, a Task, or a closure." The owner: "keeper is what knows to deploy a
+story." and "Ever agent needs to have a reason to be used." `docs/sdlc/sdlc.md`: "User stories in
+the SkillSpoke SDLC are recorded ONLY as Beads issues". The order of Epics is not stated by the
+owner's sources: `docs/sdlc/sdlc.md` and [requirements/pipelines.md](../requirements/pipelines.md)
+say nothing of architecture dependencies or WSJF as the order (NEWQ-pipelines-driver-4).
 
 ```mermaid
 flowchart TD
-  A(["dispatch finished"]) --> RAISE{"the dispatch raised?"}
-  RAISE -->|"yes"| ERR["failure and hard failure recorded, handback event, Task released, bead excluded for this invocation"] --> Z(["done"])
-  RAISE -->|"no"| BL{"build lane, task-to-deploy?"}
-  BL -->|"yes"| OKQ{"ok and the Story worktree clean?"}
-  OKQ -->|"yes"| CLOSE["audit metadata, bd close Task"]
-  OKQ -->|"no"| REL["build_state and stop metadata, Task back to open"]
-  BL -->|"no"| EDQ
-  CLOSE --> EDQ
-  REL --> EDQ
-  EDQ{"elaboration lane and beads now say elaboration_state done?"}
-  EDQ -->|"yes"| FILE["file the TRD and Spec documents in the vault, write their paths on the Epic and Stories"]
-  EDQ -->|"no"| FU
-  FILE --> FU{"follow-up"}
-  FU -->|"refusal"| HOLD1["hold until the Epic's beads facts change"]
-  FU -->|"repeats"| BACK["back off the bead"]
-  FU -->|"needs a person"| HOLD2["hold for a person, owner inbox entry, Epic to authoring with awaiting-human cause"]
-  FU -->|"failed"| EXC["item failure recorded, excluded for this invocation"]
-  FU -->|"ok"| Z
-  HOLD1 --> Z
-  BACK --> Z
-  HOLD2 --> Z
-  EXC --> Z
+    s(["A free place to start work"]) --> read["Read beads: open beads not yet worked"]
+    read --> kind{"What kind of bead?"}
+    kind -->|"Bug"| bug["Not pipeline work. Left for a person to triage into an Epic, a Task or a closure"]
+    kind -->|"Epic"| eReady{"open - NEWQ-pipelines-driver-3 - is the Epic ready, with its PRD?"}
+    kind -->|"Task"| tReady{"open - NEWQ-pipelines-driver-5 - is the Task ready, with its build contract and its Story's branch?"}
+    kind -->|"Story"| sReady{"Are all of the Story's Tasks built?"}
+    kind -->|"any other kind"| other["open - NEWQ-pipelines-driver-7 - what happens to it"]
+    eReady -->|"no"| skip["Not started this time"]
+    eReady -->|"yes"| eOrder["open - NEWQ-pipelines-driver-4 - order among ready Epics"]
+    eOrder --> eRun(["Elaboration of the Epic - pipelines-elaboration.md"])
+    tReady -->|"no"| skip
+    tReady -->|"yes"| tOrder["open - NEWQ-pipelines-driver-5 - order among ready Tasks"]
+    tOrder --> tRun(["Build of the Task - pipelines-build.md"])
+    sReady -->|"no: a Task is not built"| skip
+    sReady -->|"yes"| sRun(["keeper.py deploys the Story - pipelines-deploy.md"])
+    bug --> m(("merge"))
+    other --> m
+    skip --> m
+    m --> e(["Next pick"])
 ```
 
-## 6. Routing
+Notes on the diagram:
 
-**Subject.** Which composite owns a bead.
-**Scope.** The driver's router and the plugin's two routers.
-**Purpose.** Show the rules, and where the two as-built routers disagree with each other and with
-the policy document.
-**Boundary.** Outside: selection, which comes after routing in the driver (section 3).
-**Basis.** As built: `ops/sdlc-automation/routing.py` `route` (line 431), `route_build`
-(line 340), `route_elaboration` (line 400); `workflows/route-build.js`;
-`workflows/route-elaboration.js`; `commands/work-bead.md`; `workflows/ROUTING.md`. Required:
-"Bugs" and "What the pipelines are" in `requirements/pipelines.md` ("Every unit of work the
-pipelines do is an Epic, a Story or a Task"; "both routers skip a Bug and say why").
+- A Bug is never started by the driver. The Epic or Task a person triages it into is then
+  pipeline work like any other ([requirements/pipelines.md](../requirements/pipelines.md)).
+- A Story is never elaborated or built by itself: it is created with its Spec in elaboration and
+  deployed once its Tasks are built (`docs/sdlc/sdlc.md`,
+  [requirements/pipelines.md](../requirements/pipelines.md)).
+- No pipeline is started for a bead it does not apply to. The owner: "I also do not want a
+  pipeline that blindly sends everything to ever agent, whether it applies or not".
+
+## 3. The pipelines the driver runs, and how many at once
+
+**Subject:** the three pipelines as places the driver starts work, and the concurrency of each.
+**Scope:** one run of the driver.
+**Purpose:** what each pipeline runs once per, who starts it, and what the sources say of running
+several at once.
+**Boundary:** the inside of each pipeline is in its own document.
+**Sources:** [requirements/pipelines.md](../requirements/pipelines.md), "What the pipelines are".
+The owner: "keeper is what knows to deploy a story.", "we can process 20 Epics through elaboration
+with out building anything." and "I need a working pipeline ... and dosn't take 2 hours to run
+through a single Epic". `docs/sdlc/sdlc.md`: one Spec and one Story per repository, all beneath
+the single Epic. No source states how many Epics, Tasks or Stories run at once
+(NEWQ-pipelines-driver-6).
 
 ```mermaid
 flowchart TD
-  A(["a bead: type, labels, parent chain"]) --> T{"type epic, story or feature, or that label on an unknown type?"}
-  T -->|"yes"| RE["route_elaboration"]
-  T -->|"no"| RB["route_build"]
-  RE --> RE1{"kind?"}
-  RE1 -->|"epic"| PS["elaborate: prd-to-spec"]
-  RE1 -->|"story"| PS2["elaborate: prd-to-spec through its parent Epic"]
-  RE1 -->|"feature"| FS["driver: skip, a feature needs a PRD and an Epic<br/>route-elaboration.js: elaborate, prd-to-spec"]
-  RB --> RB1{"kind?"}
-  RB1 -->|"bug, or a bug label"| SB["skip: awaiting triage by a person"]
-  RB1 -->|"label human, route-build.js only"| SH["skip: held for a person"]
-  RB1 -->|"task, or an infrastructure type or label"| TD["work: task-to-deploy, with Infra Intent for infrastructure"]
-  RB1 -->|"epic, story, feature"| SE["skip: route through route-elaboration"]
-  RB1 -->|"chore, docs, research, spike, anything else"| SO["skip: out of the pipeline or unclassifiable"]
+    s(["The owner starts a run"]) --> fork1(("fork"))
+    fork1 --> el["Elaboration - once per Epic. Started by: open - NEWQ-pipelines-driver-1"]
+    fork1 --> bu["Build - once per Task, on its Story's branch. Started by: open - NEWQ-pipelines-driver-1"]
+    fork1 --> de["Deploy - once per Story whose Tasks are all built. Started by keeper.py"]
+    el --> elN["How many Epics at once: open - NEWQ-pipelines-driver-6"]
+    bu --> buN["How many Tasks at once: open - NEWQ-pipelines-driver-6"]
+    de --> deN["How many Stories at once: open - NEWQ-pipelines-driver-6"]
+    elN --> elOut["Stories and Tasks in beads. Needs no build: 20 Epics can be elaborated with nothing built"]
+    buN --> buOut["Task built and tested on its Story's branch"]
+    deN --> deOut["Story deployed to AWS dev and verified, one merged pull request"]
+    elOut --> join1(("join: the run ends"))
+    buOut --> join1
+    deOut --> join1
+    join1 --> e(["What the run did, reported to the owner"])
 ```
 
-The `work-bead` command routes one bead the same way through the plugin routers, then prints the
-next step of the bead's journal with `atw-step-journal next`; it dispatches nothing. The driver
-does not call the plugin routers: each holds its own copy of the rules.
+Notes on the diagram:
 
-Differences from the requirements, and between the as-built routers:
+- Elaboration does not wait for the build. The owner: "we can process 20 Epics through
+  elaboration with out building anything."
+- The owner's time goal covers one Epic: a working pipeline that "dosn't take 2 hours to run
+  through a single Epic".
 
-- A feature: `requirements/pipelines.md` names Epics, Stories and Tasks as the only units of
-  work. The driver's `route_elaboration` skips a feature; `route-elaboration.js` routes it to
-  `prd-to-spec`. `route-elaboration.js` differs from the requirement and from the driver.
-- The `human` label: `route-build.js` skips a bead labelled `human`; the driver's `route_build`
-  does not, and the build and deploy lanes drop such beads at selection instead
-  (`selection.hold_for_person`). The outcome matches; the rule lives in two places.
-- `ROUTING.md` describes rules the routers do not implement: a `spec-ready` / `implementation`
-  label rule (its rule 3), `task` among the skipped types (its rule 5), and an
-  `ambiguity-detector` classification (its rule 6). Neither router has them. Both routers skip a
-  Bug and say why, as required.
+## 4. An Epic, a Story and a Task, across the pipelines
 
-## 7. Bead states and how a bead moves between pipelines
+**Subject:** the states of each kind of bead as the pipelines work it.
+**Scope:** from the bead's creation to its closure.
+**Purpose:** which pipeline moves each bead, and which states the sources name.
+**Boundary:** the matrix's approved and verified flags and the arc42 `effective` and `in-review`
+states are drawn in [architecture and matrix states](pipelines-architecture-states.md); they are
+states of matrix content and documents, not of beads.
+**Sources:** `docs/sdlc/sdlc.md`: "A PRD and its Epic are created together", "A Spec and its Story
+are created together - one Story bead per Spec, scoped to exactly one repository", and user
+stories are recorded only as Beads issues. `AGENTS.md`, "Standing facts": "A Task closes when it
+completes, including passing all tests. A Story or Epic is never closed because its Tasks are
+closed, and an open Epic is never a condition for other work." and "History is never changed:
+closed or completed issues". [requirements/pipelines.md](../requirements/pipelines.md): "A ready
+Epic and its PRD", "A Story whose Tasks are all built". The owner: "keeper is what knows to deploy
+a story." and "Once all of the tasks for all of the stories for and Epic have been built and
+tested (including CI (CDK), which means deployemen must also work), then all of the architecture
+and rellationships for the Epic can be set to verified." The matrix holds no Story and no Task
+(the owner: "The matrix does not include stories and tasks (it isn't a build tracker)").
 
-### 7.1 An Epic
-
-**Subject.** An Epic's `elaboration_state` and its beads status.
-**Scope.** One Epic bead.
-**Purpose.** Show who moves an Epic between states and which state makes it elaboration work.
-**Boundary.** Outside: the Epic's WSJF score and edges (assessment workflows).
-**Basis.** As built: `elabstate.py` (`AUTHORING`, `READY`, `IN_PROGRESS`, `DONE`, `candidacy`,
-`hold_for_person`, `restore_command`); `orchestrator/specs/epic/driver-contract.md` section 2;
-`depscore.py` `elaboration-start`, `elaboration-finish`; `elabmark.py`. Required: the
-Elaboration row of `requirements/pipelines.md`; `sdlc.md` "The Chain" (a PRD and its Epic are
-created together).
+### 4.1 An Epic
 
 ```mermaid
 stateDiagram-v2
-  [*] --> authoring : PRD and Epic created / no elaboration_state
-  authoring --> ready : owner sets elaboration_state ready
-  ready --> in_progress : prd-to-spec dispatch claims it / elaboration-start, owner token
-  in_progress --> in_progress : run stopped, no live owner / reclaimed by the next dispatch
-  in_progress --> authoring : run needs a person / driver hold, cause awaiting-human
-  authoring --> in_progress : owner runs elabmark restore command
-  in_progress --> done : journal step marks the Epic elaborated / Stories, Tasks, edges, scores written
-  done --> ready : owner sets it explicitly
-  done --> [*]
+    state "Open, created with its PRD" as eOpen
+    state "Ready, with its PRD" as eReady
+    state "Being elaborated" as eElab
+    state "Elaborated - Stories and Tasks in beads" as eDone
+    state "Every Task of every Story built and tested, deployment working" as eBuilt
+    [*] --> eOpen: PRD creation writes the PRD and the Epic together
+    eOpen --> eReady: open - NEWQ-pipelines-driver-3 - what makes it ready
+    eReady --> eElab: the driver starts its elaboration
+    eElab --> eDone: elaboration writes the Stories and Tasks
+    eElab --> eReady: the run fails or stops - section 5
+    eDone --> eBuilt: the last Story of the Epic is deployed and tested
+    eBuilt --> [*]: open - NEWQ-pipelines-driver-9 - when the Epic is closed
 ```
 
-Nothing in the pipelines closes an Epic bead.
+At "Every Task of every Story built and tested, deployment working", the Epic's architecture and
+relationships in the matrix can be set verified (the owner). Which step sets them is
+NEWQ-pipelines-architecture-states-2. An open Epic is never a condition for other work: its
+Stories and Tasks are worked while it is open (`AGENTS.md`).
 
-### 7.2 A Task and a Story
-
-**Subject.** The beads status of a Task and of a Story.
-**Scope.** One Task bead, one Story bead.
-**Purpose.** Show which lane moves each status.
-**Boundary.** Outside: the Task's build steps (its step journal, section 8).
-**Basis.** As built: `lane.py` `_claim_build` (line 1113), `_settle_build` (line 1155);
-`beadsio.py` `claim`, `start`, `release`, `close`; `storydeploy.py` `_close_step` (line 1508);
-`supervisor.py` `_continue_unfinished` (line 743, stranded claims released at start).
-Required: the Build and Deploy rows of `requirements/pipelines.md`.
+### 4.2 A Story
 
 ```mermaid
 stateDiagram-v2
-  state "Task" as T {
-    [*] --> t_open : written by elaboration
-    t_open --> t_in_progress : build lane dispatch / bd update --claim
-    t_in_progress --> t_closed : run ok [Story worktree clean] / bd close
-    t_in_progress --> t_open : run failed or not landed / build_state recorded, released
-    t_closed --> [*]
-  }
-  state "Story" as S {
-    [*] --> s_open : written by elaboration
-    s_open --> s_in_progress : its first Task dispatched, or a Story with no Task dispatched to deploy / bd update in_progress
-    s_in_progress --> s_closed : deploy:close [PR merged, or branch holds no commit] / verified mark, bd close
-    s_closed --> [*]
-  }
+    state "Open, created with its Spec, one repository" as sOpen
+    state "Its Tasks being built" as sBuild
+    state "Every Task built" as sReady
+    state "Being deployed by keeper.py" as sDeploy
+    state "Deployed to AWS dev and verified, one merged pull request" as sDone
+    [*] --> sOpen: elaboration writes the Spec and the Story together
+    sOpen --> sBuild: the first of its Tasks is started
+    sBuild --> sReady: its last Task closes
+    sReady --> sDeploy: keeper.py deploys the Story
+    sDeploy --> sReady: the deploy fails or stops - section 5
+    sDeploy --> sDone: the deploy is verified
+    sDone --> [*]: open - NEWQ-pipelines-driver-9 - when the Story is closed
 ```
 
-### 7.3 How a bead moves between pipelines
+A Story is never closed because its Tasks are closed (`AGENTS.md`).
 
-**Subject.** The hand-offs from elaboration to build to deploy.
-**Scope.** One Epic and the Stories and Tasks under it.
-**Purpose.** Show the condition at each hand-off.
-**Boundary.** Outside: Bugs, which no pipeline takes ("Bugs", `requirements/pipelines.md`).
-**Basis.** Required: "What the pipelines are" and "Bugs" in `requirements/pipelines.md`; `sdlc.md`
-"The Chain". As built: `selection.py`, `storyorder.py`, `lane.py`, `storydeploy.py`; the
-verified mark per [The pipelines: deploy](pipelines-deploy.md) section 8.
+### 4.3 A Task
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Elaboration : Epic ready, prerequisites done, WSJF scored, PRD resolves
-  Elaboration --> Build : Epic elaboration done / Stories and Tasks written, scored, ordered
-  Build --> Build : next Task of the Story holding the repository [unblocked, scored]
-  Build --> Deploy : every Task of the Story closed
-  Deploy --> Build : Story closed / the repository's next Story may start
-  Deploy --> Closed : Story merged and closed / verified mark per Story
-  Closed --> [*]
-  state Triage <<choice>>
-  [*] --> Triage : a Bug bead
-  Triage --> Elaboration : a person makes it an Epic
-  Triage --> Build : a person makes it a Task
+    state "Open, created under its Story with its build contract" as tOpen
+    state "Ready" as tReady
+    state "Being built" as tBuild
+    state "Closed - built and all tests passing" as tClosed
+    [*] --> tOpen: elaboration writes the Task
+    tOpen --> tReady: open - NEWQ-pipelines-driver-5 - what makes it ready
+    tReady --> tBuild: the driver starts its build
+    tBuild --> tReady: the run fails or stops - section 5
+    tBuild --> tClosed: it completes, including passing all tests
+    tClosed --> [*]
 ```
 
-Differences from the requirements: the verified mark at `Closed` is per Story; the owner requires
-it per Epic once all Tasks of all its Stories are built and tested (see
-[The pipelines: deploy](pipelines-deploy.md), section 8.2).
+Who moves a bead from one state to the next in beads (the driver or the pipeline it started) is
+NEWQ-pipelines-driver-8. A closed bead is never reopened or changed: history is never changed
+(`AGENTS.md`).
 
-## 8. A step of a step journal
+## 5. When a pipeline run fails or stops
 
-**Subject.** The status of one step of a bead's step journal, for every pipeline.
-**Scope.** Any step of an Epic's, Task's or Story's journal.
-**Purpose.** Show the only thing that decides where a run begins.
-**Boundary.** Outside: the deploy-specific waits and fix limit
-([The pipelines: deploy](pipelines-deploy.md), section 9).
-**Basis.** As built: `skills/pipeline-contracts/schemas/step-journal.schema.json`
-(`stepStatus`, `changeOp` add, start, done, fail); `orchestrator/core/step_journal.py`
-(`start_step`, `finish_step`, `fail_step`, `next_step`, `unclosed_steps`, `_settle_container`,
-`_reset`); `orchestrator/core/journal_lines.py`; `skills/pipeline-contracts/SKILL.md` ("A run of
-any pipeline begins at the first step of the bead's journal that is not done").
+**Subject:** what happens to a bead's work when its run fails or is stopped.
+**Scope:** one run of one pipeline for one bead.
+**Purpose:** that work already done is kept and reused, that a failed run is visible to the owner,
+and that the next real run makes progress.
+**Boundary:** how a failed deploy is fixed inside the deploy pipeline is in
+[deploy](pipelines-deploy.md); a defect a build finds is fixed in that run
+([requirements/pipelines.md](../requirements/pipelines.md): "A build that finds a defect fixes it
+in that run.").
+**Sources:** `docs/sdlc/sdlc.md`, "Documents Are Written to Disk as They're Produced": documents
+are "written to disk by the agent that produces them", and "A rerun of an Epic reuses every phase
+whose recorded inputs are unchanged instead of restarting from step 1." `AGENTS.md`: "A pipeline
+run is long and expensive, so a successful run must make real project progress.", "Only the owner
+runs `keeper.py` and `supervisor.py`", and of the tooling: "The owner verifies it by running the
+pipeline: it works or it does not, and when it does not, adapt and correct." The owner: "Your
+default is fault-intolerant. I need more fault-tolerance for the pipeline, and need more trust."
+and "I can't afford to constantly refact the pipelines evey 2 weeks." Values known only at deploy
+time: "We don't want to stop because of that. We need to make sure some of that is accommodated
+and handled at run time (deploy time)."
 
 ```mermaid
-stateDiagram-v2
-  state "step with an agent or a script" as P {
-    [*] --> planned : plan, or add by a result or a workflow
-    planned --> running : start [first step not done]
-    running --> done : done / artifacts, steps the result adds
-    running --> failed : fail / failure text
-    failed --> running : start, the next dispatch runs it again from its beginning
-    done --> planned : owner reset with elabmark --start-at
-    failed --> planned : owner reset with elabmark --start-at
-  }
-  state "step that only contains child steps" as C {
-    [*] --> c_planned : every child planned
-    c_planned --> c_running : any child started
-    c_running --> c_done : every child done
-  }
+flowchart TD
+    s(["A pipeline run for one bead"]) --> work["Each step writes its output to disk as it is produced"]
+    work --> res{"How did the run end?"}
+    res -->|"completed"| done(["The bead moves on - section 4"])
+    res -->|"failed"| kindF{"open - NEWQ-pipelines-driver-10 - is the cause one a retry can clear?"}
+    res -->|"stopped: by the owner, or the machine stopped"| kept
+    kindF -->|"yes"| retry["open - NEWQ-pipelines-driver-10 - retried, how often and after what wait"]
+    kindF -->|"no"| report["The cause is reported to the owner"]
+    retry --> again{"Did the retry complete?"}
+    again -->|"yes"| done
+    again -->|"no"| report
+    report --> others["open - NEWQ-pipelines-driver-10 - whether other beads keep running"]
+    others --> kept["The steps already done stay on disk"]
+    kept --> fixT{"Is the cause in the pipeline tooling?"}
+    fixT -->|"yes"| adapt["The tooling is adapted and corrected"]
+    fixT -->|"no"| m(("merge"))
+    adapt --> m
+    m --> owner["The owner runs keeper.py or supervisor.py again"]
+    owner --> resume{"What kind of bead?"}
+    resume -->|"Epic"| reuseE["Elaboration reuses every phase whose recorded inputs are unchanged"]
+    resume -->|"Task or Story"| reuseTS["open - NEWQ-pipelines-driver-11 - how the build or deploy resumes"]
+    reuseE --> s
+    reuseTS --> s
 ```
 
-A performed step whose child steps are all done waits for its own `done` (the driver's step for a
-workflow it dispatched); `unclosed_steps` returns it first.
+Notes on the diagram:
 
-Differences from the requirements: none; no requirement states the journal's states. As built
-only.
+- Only the owner starts the next run. No session or agent restarts `keeper.py` or `supervisor.py`
+  (`AGENTS.md`).
+- A value known only at deploy time, such as the region or environment, is not a failure: it is
+  handled at deploy time (the owner).
+
+## 6. Where beads and the matrix are read
+
+**Subject:** which store the driver and the pipelines it starts read and write.
+**Scope:** one run of the driver.
+**Purpose:** that the driver works from beads, that the pipelines read the matrix at their steps,
+and that no Story or Task is written to the matrix.
+**Boundary:** each pipeline's reads and writes are drawn in its own document.
+**Sources:** `docs/sdlc/sdlc.md`: Stories and Tasks live only in beads, and "Documents are handed
+between agents as paths recorded on the owning Beads issue (Epic or Story), never as content."
+The owner: "The matrix does not include stories and tasks (it isn't a build tracker), and it
+doesn't care about what has actually been deployed.", "Regarding the matrix: It's entire purpose is
+to mintain a mapping (a matrix) between things to every step of every pipeline doesn't need to
+research and scan or rediscover what pertains the task that step is performing.", "arc42 is both
+input and out. The matrix is both input and output." and "Once all of the tasks for all of the
+stories for and Epic have been built and tested ... then all of the architecture and
+rellationships for the Epic can be set to verified."
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant K as keeper.py
+    participant S as supervisor.py
+    participant EL as Elaboration
+    participant BU as Build
+    participant DE as Deploy
+    box Stores
+        participant BD as beads
+        participant MX as matrix
+        participant A42 as arc42 (vault)
+    end
+
+    S->>BD: reads beads ready for work - NEWQ-pipelines-driver-1
+    opt open - NEWQ-pipelines-driver-4 - the order of Epics reads the matrix
+        S->>MX: what each ready Epic drives and rests on
+    end
+    S->>EL: an Epic, with the paths on its bead
+    EL->>MX: what is known for the Epic, at every step
+    EL->>A42: effective documents
+    EL-)MX: the Epic's entries and relationships, then approved
+    EL-)BD: Stories and Tasks, with the paths of their documents
+    S->>BU: a Task
+    BU->>BD: the Task and its build contract
+    BU->>MX: the ids the Task states
+    BU-)BD: the Task closed when built and all tests pass
+    K->>BD: Stories whose Tasks are all built
+    K->>DE: a Story
+    DE->>BD: the Story and its Tasks
+    DE->>MX: the stacks and resources its Tasks state
+    opt every Task of every Story of the Epic built and tested, deployment working
+        DE-)MX: the Epic's architecture and relationships set verified - NEWQ-pipelines-architecture-states-2
+    end
+    Note over BD,MX: no Story, no Task and nothing about what is deployed is written to the matrix
+```
+
+Notes on the diagram:
+
+- The driver chooses work from beads. The matrix is read by the pipelines' steps, because its
+  purpose is that each step does not "research and scan or rediscover what pertains the task that
+  step is performing" (the owner).
+- Who writes each bead state is NEWQ-pipelines-driver-8; the diagram shows the build closing a
+  Task only where `AGENTS.md` states when a Task closes.
+
+## Open questions
+
+- **NEWQ-pipelines-driver-1. What does `supervisor.py` start: the elaboration of Epics, the build
+  of Tasks, or both?** Appears in sections 1, 3 and 6. Recommendation: `supervisor.py` starts the
+  elaboration of Epics and the build of Tasks, and `keeper.py` starts the deploy of Stories. Reason:
+  the owner placed deploy with `keeper.py` ("keeper is what knows to deploy a story."), every
+  pipeline needs a program that starts it, and one program per kind of start keeps each with one
+  responsibility.
+- **NEWQ-pipelines-driver-2. Does one of `keeper.py` and `supervisor.py` start the other, or does
+  the owner start each on its own, and may each run without the other?** Appears in section 1.
+  Recommendation: the owner starts each, neither starts the other, and each runs without the other.
+  Reason: the owner's sources say the owner runs both; elaboration needs no build or deploy
+  ("we can process 20 Epics through elaboration with out building anything"), so neither should
+  depend on the other being up.
+- **NEWQ-pipelines-driver-3. What makes an Epic ready for elaboration?** Appears in sections 2
+  and 4.1. Recommendation: its PRD file resolves and PRD validation passed it with no blocker
+  finding. Reason: [requirements/pipelines.md](../requirements/pipelines.md) says elaboration takes
+  "A ready Epic and its PRD", and PRD validation exists to judge the PRD before elaboration.
+- **NEWQ-pipelines-driver-4. In what order are ready Epics elaborated?** Appears in sections 2
+  and 6. Recommendation: an Epic whose architecture other Epics rest on is elaborated before them,
+  and WSJF orders the Epics that rest on nothing unelaborated; the driver reads those dependencies
+  from the matrix. Reason: each later Epic starts from what earlier Epics approved (the owner:
+  "each learnine piece of information is to help the next step in the pipelines"), and WSJF is a
+  standard way to order work by value over size once dependencies allow it.
+- **NEWQ-pipelines-driver-5. What makes a Task ready for build, and in what order are ready Tasks
+  built?** Appears in sections 2 and 4.3. Recommendation: a Task is ready when every Task it depends
+  on in beads is closed, and ready Tasks are built in dependency order, then by WSJF. Reason: a
+  Task builds on its Story's branch from what earlier Tasks committed, and beads holds the build
+  dependencies (the matrix holds no Task).
+- **NEWQ-pipelines-driver-6. How many Epics, Tasks and Stories are worked at once?** Appears in
+  section 3. Recommendation: a number per pipeline that the owner sets when starting the run, with
+  the Tasks of one Story built one at a time. Reason: work on different things runs in parallel by
+  default, work on the same files runs in sequence, and the Tasks of one Story share one branch;
+  the owner's cost and time goals ("dosn't take 2 hours to run through a single Epic") are met by
+  the owner choosing the number for the run.
+- **NEWQ-pipelines-driver-7. What happens to a bead that is not an Epic, a Story, a Task or a Bug?**
+  Appears in section 2. Recommendation: it is not started, and the run reports it to the owner with
+  its kind. Reason: every agent needs a reason to be used, and no pipeline is defined for it; a
+  report keeps it from being silently ignored.
+- **NEWQ-pipelines-driver-8. Who changes a bead's state in beads: the driver that started the run,
+  or the pipeline doing the work?** Appears in sections 4 and 6. Recommendation: the pipeline that
+  completes the work writes the state its work reached, and the driver writes only that it started
+  a run. Reason: the actor that does the work knows when it is done, and one writer per state
+  keeps beads a single source of truth.
+- **NEWQ-pipelines-driver-9. When are a Story and an Epic closed?** Appears in sections 4.1 and
+  4.2. Recommendation: a Story is closed when its deploy is verified and its pull request merged;
+  an Epic is closed when every Story beneath it is closed and its architecture and relationships are
+  set verified. Reason: `AGENTS.md` rules out closing either because its Tasks are closed, and these
+  are the points at which the owner's sources say the work of each is done.
+- **NEWQ-pipelines-driver-10. When a run fails, which causes are retried, how often and after what
+  wait, and do other beads keep running?** Appears in section 5. Recommendation: a cause outside the
+  work (a rate limit, a network or service outage) is retried with increasing waits a small fixed
+  number of times; any other cause stops that bead's run and is reported to the owner with the
+  cause, and other beads keep running unless the cause would fail them too. Reason: the owner wants
+  "more fault-tolerance for the pipeline", a run is "long and expensive", and the reliability pillar
+  of the AWS Well-Architected Framework calls for bounded retries with backoff and for isolating a
+  failure to what it affects.
+- **NEWQ-pipelines-driver-11. How does the build of a Task or the deploy of a Story resume after a
+  failed or stopped run?** Appears in section 5. Recommendation: the same as an Epic: each step's
+  output is recorded as it is produced, and the next run begins at the first step not done, reusing
+  every step whose recorded inputs are unchanged. Reason: `docs/sdlc/sdlc.md` states this for an
+  Epic, and a run that makes "real project progress" must not redo finished work.
+- **NEWQ-pipelines-architecture-states-2. Which step sets the Epic's architecture and
+  relationships verified, once the last Story of the Epic is deployed and tested?** Appears in
+  sections 4.1 and 6 (raised in [architecture and matrix states](pipelines-architecture-states.md)).
+  Recommendation: the deploy of the Story that completes the condition, started by `keeper.py`,
+  checks that every Task of every Story of the Epic is built and tested with deployment working and
+  sets them verified. Reason: the owner's condition includes "deployemen must also work", which is
+  known first when that deploy is verified.

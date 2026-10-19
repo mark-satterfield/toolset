@@ -1,23 +1,19 @@
 # The pipelines: overview
 
 How the SDLC pipelines of the `agent-teams-workforce` plugin and the driver in
-`ops/sdlc-automation` fit together, drawn as diagrams. What the pipelines must do, and why, is in
-[requirements/pipelines.md](../requirements/pipelines.md) and
+`ops/sdlc-automation` fit together, drawn as diagrams of what the owner wants. What the pipelines
+must do, and why, is in [requirements/pipelines.md](../requirements/pipelines.md) and
 [requirements/matrix.md](../requirements/matrix.md). This document is the parent of the focused
 diagram documents listed below; each of them links back here.
 
 ## How to read these documents
 
-Every diagram, or every part of one, carries a basis:
-
-- **Basis: required** - drawn from the owner's requirements: the blueprint's requirements
-  documents, the vault's `docs/sdlc/sdlc.md`, and the owner's statements of 2026-10-19 recorded in
-  Part 1 of the elaboration plan.
-- **Basis: as built** - drawn from the current workflows, flows, agents and scripts, with file
-  references.
-
-Where the two differ, the document says so under the diagram. The requirement states what is
-required; the code is what changes ([README](../README.md), "How it is used").
+Every diagram shows a pipeline as the owner wants it. The sources, in order: the owner's own words
+(quoted with their qualifiers), the vault's `docs/sdlc/sdlc.md`, the SkillSpoke repository's root
+`AGENTS.md` and `.claude/rules/git-conventions.md`, and the blueprint's requirements documents
+where they agree with the owner's words. Where the owner has not said what is wanted, the step is
+drawn as an open question and listed at the end of its document with a recommendation. Questions
+Q1 to Q16 are the owner's questions from the elaboration plan; higher numbers are new.
 
 Each document has its own legend. The common notation:
 
@@ -29,67 +25,67 @@ Each document has its own legend. The common notation:
 | `{...?}` with labelled edges (activity) | A decision and its guards |
 | "fork" / "join", "merge" (activity) | Concurrent work and where it ends; alternative paths rejoining |
 | `[*]` and labelled transitions (state machine) | Initial state; event [guard] / effect |
-| "owner's open choice" | Not decided by the owner; every branch shown is an option, not a decision |
-| "assumption" | Not stated by any source; drawn so the diagram reads |
-| arc42 (vault), matrix, beads, vault, git / GitHub | The stores, named the same in every document |
+| "open - Qn" | Not decided by the owner; every branch shown is an option, not a decision |
+| arc42 (vault), matrix, beads, vault, git / GitHub, AWS dev | The stores, named the same in every document |
 
 ## The documents
 
-| Document | What it draws | Basis |
-|---|---|---|
-| [pipelines-prd.md](pipelines-prd.md) | PRD creation and PRD validation | required and as built |
-| [pipelines-elaboration.md](pipelines-elaboration.md) | Elaboration of one Epic, as the owner requires it | required |
-| [pipelines-elaboration-as-built.md](pipelines-elaboration-as-built.md) | Elaboration (`prd-to-spec`) as the code runs it today | as built |
-| [pipelines-architecture-states.md](pipelines-architecture-states.md) | arc42 `effective` / `in-review`, matrix approved / verified, versions across Epics | required |
-| [pipelines-build.md](pipelines-build.md) | The build of one Task | required and as built |
-| [pipelines-deploy.md](pipelines-deploy.md) | The deploy of one Story | required and as built |
-| [pipelines-driver.md](pipelines-driver.md) | The driver and the routing of beads to pipelines | required and as built |
+| Document | What it draws |
+|---|---|
+| [pipelines-driver.md](pipelines-driver.md) | `keeper.py` and `supervisor.py`, which the owner runs, and how beads reach each pipeline |
+| [pipelines-prd.md](pipelines-prd.md) | PRD creation and PRD validation |
+| [pipelines-elaboration.md](pipelines-elaboration.md) | Elaboration of one Epic: architecture at every level, the TRD, the specs, task decomposition |
+| [pipelines-architecture-states.md](pipelines-architecture-states.md) | arc42 `effective` / `in-review`, matrix approved / verified, versions across Epics |
+| [pipelines-build.md](pipelines-build.md) | The build of one Task: test first, implement, refactor, integration, quality gates |
+| [pipelines-deploy.md](pipelines-deploy.md) | The deploy of one Story, the fix of a failed deploy, the pull request, and verification |
 
 ## The pipelines end to end
 
-**Subject:** every SDLC pipeline, from a stakeholder request to deployed, verified work.
+**Subject:** every SDLC pipeline, from where the owner starts it to deployed, verified work.
 **Scope:** one PRD and its Epic, its Stories and its Tasks.
-**Purpose:** the order of the pipelines, what each takes in and produces, and which document draws
-it.
+**Purpose:** what the owner starts, the order of the pipelines, what each takes in and produces,
+and which document draws it.
 **Boundary:** the inside of each pipeline is in its own document.
-**Basis:** required for elaboration, build and deploy and what each takes in and produces
-([requirements/pipelines.md](../requirements/pipelines.md), "What the pipelines are"); required
-for the PRD and Epic created together and one Spec and one Story per repository (vault
-`docs/sdlc/sdlc.md`); required for verified (the owner: "Once all of the tasks for all of the
-stories for and Epic have been built and tested (including CI (CDK), which means deployemen must
-also work), then all of the architecture and rellationships for the Epic can be set to
-verified."); as built for PRD creation and PRD validation as pipelines of their own
-(`workflows/prd-creation.js`, `workflows/prd-validation.js`), which the requirements' table does
-not list.
+**Sources:** SkillSpoke `AGENTS.md`, "Pipeline runs belong to the owner": "Only the owner runs
+`keeper.py` and `supervisor.py`; their real runs are the test of the pipeline." The owner: "keeper
+is what knows to deploy a story." [requirements/pipelines.md](../requirements/pipelines.md): one
+elaboration per Epic, one build per Task, one deploy per Story. The vault's `docs/sdlc/sdlc.md`: "A
+PRD and its Epic are created together"; one Spec and one Story per repository. The owner on
+verification: "Once all of the tasks for all of the stories for and Epic have been built and tested
+(including CI (CDK), which means deployemen must also work), then all of the architecture and
+rellationships for the Epic can be set to verified." and "we can process 20 Epics through
+elaboration with out building anything."
 
 ```mermaid
 flowchart TD
-    req(["Stakeholder request"]) --> prdc["PRD creation - as built - pipelines-prd.md"]
-    prdc -->|"PRD file and its Epic, created together"| prdv["PRD validation - as built - pipelines-prd.md"]
-    prdv --> ready{"Epic ready?"}
-    ready -->|"no: blocker findings"| notReady(["Findings reported on the PRD - see pipelines-prd.md"])
+    owner(["Owner"]) -->|"runs"| keeper["keeper.py"]
+    owner -->|"runs"| sup["supervisor.py"]
+    sup --> supq{"open - NEWQ-pipelines-driver-1 - what does supervisor.py start?"}
+    keeper -->|"deploys each Story whose Tasks are all built"| deploy
+    req(["Stakeholder request"]) --> prdc["PRD creation - pipelines-prd.md"]
+    prdc -->|"PRD and its Epic, created together"| prdv["PRD validation - pipelines-prd.md"]
+    prdv --> ready{"Epic ready for elaboration?"}
+    ready -->|"no: findings on the PRD"| fix(["PRD revised - pipelines-prd.md"])
     ready -->|"yes"| elab["Elaboration, once per Epic - pipelines-elaboration.md"]
-    elab -->|"architecture and design approved, TRD, Specs, Stories and Tasks"| fork1(("fork: each Task"))
+    supq -.->|"open - NEWQ-pipelines-driver-1"| elab
+    supq -.->|"open - NEWQ-pipelines-driver-1"| build
+    elab -->|"approved architecture and design, TRD, Specs, Stories and Tasks"| fork1(("fork: each Task"))
     fork1 --> build["Build, once per Task - pipelines-build.md"]
     build -->|"code and tests on the Story's branch, whole suite passing"| join1(("join: every Task of the Story built"))
     join1 --> deploy["Deploy, once per Story - pipelines-deploy.md"]
-    deploy -->|"published and deployed to AWS dev, verified, one merged pull request"| allS{"Every Story of the Epic deployed and tested?"}
-    allS -->|"no"| wait["Other Stories still in build or deploy"]
-    wait --> allS
+    deploy -->|"deployed to AWS dev and tested, CI and CDK working, one pull request merged"| allS{"Every Story of the Epic deployed and tested?"}
+    allS -->|"no: other Stories still in build or deploy"| waitS["Wait for the next Story to finish"]
+    waitS --> allS
     allS -->|"yes"| ver(["The Epic's architecture and relationships set verified in the matrix"])
-    driver["Driver in ops/sdlc-automation - pipelines-driver.md"] -.->|"dispatches each bead to its pipeline"| elab
-    driver -.->|"dispatches"| build
-    driver -.->|"dispatches"| deploy
 ```
 
 Notes on the diagram:
 
-- Elaboration of many Epics can run before anything is built. The owner: "we can process 20 Epics
-  through elaboration with out building anything." (drawn in
-  [pipelines-elaboration.md](pipelines-elaboration.md), section 7).
-- A Bug bead is not pipeline work; a person triages it into an Epic, a Task or a closure
+- Who starts PRD creation, PRD validation, elaboration and the build, and in what order Epics and
+  Tasks are taken, are open questions drawn in [pipelines-driver.md](pipelines-driver.md).
+- A Bug is not pipeline work; a person triages it into an Epic, a Task or a closure
   ([requirements/pipelines.md](../requirements/pipelines.md), "Bugs").
-- The "wait" loop exits when the last Story of the Epic is deployed and tested.
+- The wait loop exits when the last Story of the Epic is deployed and tested.
 
 ## Where the stores are read and written
 
@@ -97,10 +93,13 @@ Notes on the diagram:
 **Scope:** all pipelines.
 **Purpose:** a map from each store to the pipelines that touch it.
 **Boundary:** the detail of each read and write is in the pipeline's own document.
-**Basis:** required: arc42 and the matrix are input and output (the owner: "arc42 is both input
-and out. The matrix is both input and output."); the matrix records no Story and no Task and not
-what is deployed ([requirements/matrix.md](../requirements/matrix.md) R40, the owner); build and
-deploy maintain only the verified mark (R39, R46).
+**Sources:** the owner: "arc42 is both input and out. The matrix is both input and output.", "The
+matrix does not include stories and tasks (it isn't a build tracker), and it doesn't care about what
+has actually been deployed.", "Regarding the matrix: It's entire purpose is to mintain a mapping (a
+matrix) between things to every step of every pipeline doesn't need to research and scan or
+rediscover what pertains the task that step is performing." The vault's `docs/sdlc/sdlc.md`: PRD,
+TRD and Spec files live in the vault; Stories live only in beads. `git-conventions.md`: tier 1 work
+in a worktree, one pull request through `skillspoke-pr`, merged automatically.
 
 ```mermaid
 flowchart LR
@@ -108,31 +107,33 @@ flowchart LR
         PRD["PRD creation and validation"]
         EL["Elaboration"]
         BU["Build"]
-        DE["Deploy"]
+        DE["Deploy and verification"]
     end
     subgraph S["Stores"]
+        V[("vault: PRD, TRD, Spec files")]
         A42[("arc42 (vault)")]
         MX[("matrix")]
         BD[("beads")]
-        V[("vault: PRD, TRD, Spec files")]
         G[("git / GitHub")]
+        AWS[("AWS dev")]
     end
     PRD -->|"writes PRD"| V
-    PRD -->|"creates Epic"| BD
-    PRD -->|"records Epic and PRD pair"| MX
+    PRD -->|"Epic created with the PRD"| BD
+    PRD -->|"records the Epic and its PRD"| MX
+    EL -->|"reads PRD, writes TRD and Specs"| V
     EL -->|"reads and writes documents, in-review then effective"| A42
     EL -->|"reads, adds, corrects, sets approved"| MX
-    EL -->|"reads PRD, writes TRD and Specs"| V
     EL -->|"writes Stories and Tasks"| BD
     BU -->|"reads the Task"| BD
+    BU -->|"reads the Spec"| V
+    BU -->|"reads the full architecture and design of the component"| A42
     BU -->|"reads the ids the Task states"| MX
-    BU -->|"reads linked architecture and design"| A42
-    BU -->|"commits on the Story branch"| G
-    DE -->|"pushes, opens and merges one pull request"| G
-    DE -->|"sets verified"| MX
-    DE -->|"updates Story state"| BD
+    BU -->|"commits on the Story's branch in its worktree"| G
+    DE -->|"deploys and tests"| AWS
+    DE -->|"pushes, one pull request, auto-merge"| G
+    DE -->|"sets the Epic verified once every Story is done"| MX
+    DE -->|"Story state"| BD
 ```
 
-Assumption: "DE sets verified" places the verified write in deploy, after a Story's deployment
-works; the per-Epic condition is drawn in
-[pipelines-architecture-states.md](pipelines-architecture-states.md), section 3.
+Which step writes the verified mark is open question NEWQ-pipelines-architecture-states-2 in
+[pipelines-architecture-states.md](pipelines-architecture-states.md).
