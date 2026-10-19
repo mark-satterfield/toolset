@@ -7,7 +7,7 @@ argument-hint: <pr-number> [owner/repo] [working-directory]
 
 Run ONE pass of the PR shepherd on PR $ARGUMENTS.
 
-Make exactly ONE pass: stabilize the branch, gather context, triage every thread and review, execute dispositions, fix every failing check, and post an audit comment — Phases 1 to 6 below — then stop. Do not run the `shepherd-pr` skill's loop, do not loop, and do not wait for CI to re-run: the loop re-reads GitHub and starts another pass when one is warranted. To shepherd a PR until it merges, invoke the `shepherd-pr` skill itself instead.
+Make exactly ONE pass: stabilize the branch, gather context, triage every thread and review, execute dispositions, fix every failing check, and post an audit comment — Phases 1 to 6 below — then stop. Do not run the `shepherd-pr` skill's loop, do not loop, and do not wait for CI to re-run: the loop re-reads GitHub and starts another pass when one is warranted. To shepherd a PR until it qualifies for merging, invoke the `shepherd-pr` skill itself instead.
 
 ### Argument contract
 
@@ -31,7 +31,7 @@ WORKDIR="${WORKDIR%\"}"; WORKDIR="${WORKDIR#\"}"   # arrives quoted when it cont
 cd "$WORKDIR"
 ```
 
-This command never merges the PR, and neither does the loop script. A pass's job is to leave the PR with nothing blocking its merge: all required checks passing and all review threads resolved. The script never decides what to do about a thread.
+This command never merges the PR, and neither does the loop script. A pass's job is to leave the PR qualifying for merging, with nothing blocking it: all required checks passing and all review threads resolved. The script never decides what to do about a thread.
 
 ### Guards (every pass)
 

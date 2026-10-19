@@ -1,12 +1,25 @@
 #!/usr/bin/env bash
 # shepherd-pr.sh — the shepherd-pr skill's loop.
 #
-# Follows ONE pull request until GitHub reports it MERGED or CLOSED. Every
-# iteration re-reads the PR from GitHub and decides from that alone:
+# Works through the issues on ONE pull request until the PR qualifies for
+# merging, or until it cannot fix what is left. Every iteration re-reads the
+# PR from GitHub and decides from that alone:
 #
-#   something to fix     -> start one headless pass session (/agent-teams-workforce:fix-pr)
-#   nothing to fix       -> wait, poll again
-#   MERGED or CLOSED     -> exit 0
+#   MERGED or CLOSED            -> ends, exit 0
+#   something to fix            -> start one headless pass session (/agent-teams-workforce:fix-pr)
+#   qualifies for merging       -> ends, exit 0
+#   checks running, or nothing  -> wait, poll again
+#   the shepherd can act on
+#   no change and no new        -> ends, exit 2, naming what is still unfixed
+#   findings for MAX_STALLED
+#   passes, or not qualified
+#   past MAX_WAIT
+#
+# "Qualifies for merging" is GitHub's own merge requirement facts: nothing
+# below is left to fix, no review decision of CHANGES_REQUESTED, no unresolved
+# review thread, every required check passed, and a merge state of CLEAN,
+# HAS_HOOKS or UNSTABLE (GitHub reports BEHIND only when the repository
+# requires the branch to be current, and BLOCKED while a requirement is unmet).
 #
 # "Something to fix" is: a failing or cancelled check, an unresolved review
 # thread, a merge conflict (DIRTY), a branch behind its base (BEHIND), a review
@@ -15,9 +28,9 @@
 # CodeRabbit reply or changes-requested review newer than the last pass's
 # audit comment.
 #
-# MERGE: the loop never merges. Whoever or whatever merges or closes the PR,
-# the loop follows it until GitHub reports MERGED or CLOSED. Every pass session
-# runs with a deny rule on `Bash(gh pr merge:*)`.
+# MERGE: merging and closing are not the shepherd's job. The loop never
+# merges, and does not wait for a merge. Every pass session runs with a deny
+# rule on `Bash(gh pr merge:*)`.
 #
 # Each pass session loads the plugin this script belongs to (--plugin-dir), so
 # the fix-pr command exists whatever repository the PR's worktree is in. Each
@@ -28,16 +41,28 @@
 #
 # Environment:
 #   SHEPHERD_POLL_SECONDS         seconds between GitHub reads while waiting (60)
-#   SHEPHERD_MAX_STALLED_PASSES   passes in a row that change nothing on the PR
-#                                 before stopping for human action (3)
-#   SHEPHERD_MAX_WAIT_SECONDS     seconds the loop may wait with nothing to fix
-#                                 since its last pass before stopping for human
-#                                 action (7200; below shepherd-prs.sh's 4 h
-#                                 per-PR timeout, so the loop stops itself)
-#   SHEPHERD_LOG_DIR              where loop.log and pass-<n>.jsonl are written
+#   SHEPHERD_MAX_STALLED_PASSES   passes in a row with no change on the PR and
+#                                 no new findings before the shepherd ends as
+#                                 unable to fix the PR (3)
+#   SHEPHERD_MAX_WAIT_SECONDS     seconds the loop may wait, since its last pass,
+#                                 for a PR that does not qualify for merging and
+#                                 has nothing the shepherd can act on, before it
+#                                 ends as unable to fix the PR (7200; below
+#                                 shepherd-prs.sh's 4 h per-PR timeout)
+#   SHEPHERD_LOG_DIR              where loop.log, pass-<n>.jsonl and ending are
+#                                 written
 #                                 (${CLAUDE_CONFIG_DIR:-~/.claude}/shepherd-pr/<owner>-<repo>-<pr>)
 #
-# Exit: 0 merged or closed; 1 stopped for human action.
+# Exit status:
+#   0  the job is done: the PR qualifies for merging, or it is already merged
+#      or closed
+#   1  the shepherd could not start (bad arguments, a missing tool, not the
+#      plugin root)
+#   2  the shepherd could not fix the PR: what is still unfixed is printed
+# The same ending is written as one tab-separated line, "<exit> <outcome>
+# <message>", to $SHEPHERD_LOG_DIR/ending, where outcome is qualifies,
+# merged, closed or could-not-fix; a caller that cannot see the exit status
+# reads it there.
 
 set -euo pipefail
 
@@ -70,6 +95,8 @@ for tool in gh jq claude; do
   fi
 done
 mkdir -p "$LOG_DIR"
+ENDING_FILE="$LOG_DIR/ending"
+rm -f "$ENDING_FILE"
 exec > >(tee -a "$LOG_DIR/loop.log") 2>&1
 
 echo "Shepherding PR #$PR_NUMBER in $OWNER/$REPO from $WORKDIR"
@@ -156,6 +183,32 @@ ci_state() {
   fi
 }
 
+# Required check state: PASS (every required check passed or was skipped, or
+# the repository requires none), PENDING <n>, FAIL <n>, or ERROR <why>.
+required_state() {
+  local out rc=0 failing pending
+  out=$(gh pr checks "$PR_NUMBER" --repo "$OWNER/$REPO" --required --json bucket \
+          --jq '[.[].bucket] | "\(map(select(. == "fail" or . == "cancel")) | length) \(map(select(. == "pending")) | length)"' 2>&1) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    case "$out" in
+      *"no required checks"*) printf 'PASS\n' ;;
+      *) printf 'ERROR %s\n' "$rc" ;;
+    esac
+    return 0
+  fi
+  read -r failing pending <<<"$out"
+  case "$failing$pending" in
+    ''|*[!0-9]*) printf 'ERROR unparseable\n'; return 0 ;;
+  esac
+  if [ "$failing" -gt 0 ]; then
+    printf 'FAIL %s\n' "$failing"
+  elif [ "$pending" -gt 0 ]; then
+    printf 'PENDING %s\n' "$pending"
+  else
+    printf 'PASS\n'
+  fi
+}
+
 # One read of the PR: state, merge state, review decision, head, and whether
 # a reviewer spoke after the last shepherd audit comment. A CodeRabbit
 # conversation reply, and any review with a body (a CodeRabbit review
@@ -195,13 +248,19 @@ pass_summary() {
   fi
 }
 
+# End the shepherd: print the message, record the ending for a caller, exit.
+finish() {
+  local code="$1" outcome="$2" message="$3"
+  echo "$(date -u +%FT%TZ) $message"
+  printf '%s\t%s\t%s\n' "$code" "$outcome" "$message" > "$ENDING_FILE"
+  exit "$code"
+}
+
 # Sleep one poll interval, counted against MAX_WAIT since the last pass; past
-# it, stop with the reason the loop was waiting.
+# it, end as unable to fix the PR, naming what the loop was waiting on.
 wait_or_stop() {
   if [ "$waited" -ge "$MAX_WAIT" ]; then
-    echo "Stopping: waited ${waited}s since the last pass (limit ${MAX_WAIT}s) with nothing to fix, $1."
-    echo "Human action required on PR #$PR_NUMBER."
-    exit 1
+    finish 2 could-not-fix "PR #$PR_NUMBER does not qualify for merging after ${waited}s since the last pass (limit ${MAX_WAIT}s) with nothing the shepherd can act on; still waiting on: $1."
   fi
   sleep "$POLL"
   waited=$((waited + POLL))
@@ -219,8 +278,8 @@ while :; do
   IFS=$'\t' read -r state merge_state decision head_oid new_activity <<<"$facts"
 
   case "$state" in
-    MERGED) echo "$(date -u +%FT%TZ) PR #$PR_NUMBER is MERGED."; exit 0 ;;
-    CLOSED) echo "$(date -u +%FT%TZ) PR #$PR_NUMBER is CLOSED without merging."; exit 0 ;;
+    MERGED) finish 0 merged "PR #$PR_NUMBER is MERGED." ;;
+    CLOSED) finish 0 closed "PR #$PR_NUMBER is CLOSED." ;;
   esac
 
   read -r unresolved dismissable <<<"$(thread_state)"
@@ -240,12 +299,26 @@ while :; do
   [ "$new_activity" = "yes" ] && reasons="$reasons reviewer-activity"
 
   if [ -z "$reasons" ]; then
-    case "$checks" in
-      PENDING*) waiting_on="waiting on pending checks" ;;
-      PASS)     waiting_on="waiting for the PR to be merged or closed (merge state $merge_state)" ;;
-      *)        waiting_on="checks or threads unreadable (checks=$checks threads=$unresolved)" ;;
+    required=$(required_state)
+    waiting_on=""
+    case "$required" in
+      PASS) ;;
+      PENDING*) waiting_on="$waiting_on, required checks still running (${required#PENDING })" ;;
+      *)        waiting_on="$waiting_on, required checks $required" ;;
     esac
-    wait_or_stop "$waiting_on"
+    case "$unresolved" in
+      0) ;;
+      *) waiting_on="$waiting_on, review threads unreadable" ;;
+    esac
+    [ "$decision" = "CHANGES_REQUESTED" ] && waiting_on="$waiting_on, review decision CHANGES_REQUESTED"
+    case "$merge_state" in
+      CLEAN|HAS_HOOKS|UNSTABLE) ;;
+      *) waiting_on="$waiting_on, merge state $merge_state (review decision $decision)" ;;
+    esac
+    if [ -z "$waiting_on" ]; then
+      finish 0 qualifies "PR #$PR_NUMBER qualifies for merging (merge state $merge_state, required checks passed, no unresolved threads, review decision $decision)."
+    fi
+    wait_or_stop "${waiting_on#, }"
     continue
   fi
 
@@ -273,14 +346,12 @@ while :; do
   fi
   if [ "$before" = "$after" ]; then
     stalled=$((stalled + 1))
-    echo "Pass $pass changed nothing on the PR ($stalled of $MAX_STALLED in a row)."
+    echo "Pass $pass: no change on the PR and no new findings ($stalled of $MAX_STALLED in a row)."
   else
     stalled=0
   fi
   if [ "$stalled" -ge "$MAX_STALLED" ]; then
-    echo "Stopping: $MAX_STALLED passes in a row changed nothing. Human action required on PR #$PR_NUMBER"
-    echo "(read the latest '## Shepherd-PR Run' audit comment and any escalation issue it links)."
-    exit 1
+    finish 2 could-not-fix "PR #$PR_NUMBER does not qualify for merging: $MAX_STALLED passes in a row brought no change on the PR and no new findings. Still unfixed:${reasons}. The latest '## Shepherd-PR Run' audit comment on the PR records each pass."
   fi
   # Give CI and GitHub a moment to register what the pass pushed.
   sleep "$POLL"
