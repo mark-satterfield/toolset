@@ -32,6 +32,7 @@ quick-and-easy way to do this."
 | "fork" / "join" nodes (activity) | Work that runs concurrently, and the point where all of it has finished |
 | "merge" node (activity) | Alternative paths coming back together; no waiting |
 | arc42 (vault) | The arc42 architecture and design documents in the `skillspoke-docs` vault |
+| detailed architecture (vault) | Architecture and design too detailed for arc42, under the vault's `docs/tech/architecture/` outside `arc42/` |
 | matrix | The one record of how Epics, PRDs, requirements, features, documents, services, components, resources, stacks and repositories relate ([requirements/matrix.md](../requirements/matrix.md)) |
 | beads | The issue tracker that holds Epics, Stories and Tasks |
 | "(no agent yet)" | A role the owner's design has that no agent file implements today |
@@ -42,11 +43,11 @@ readable when a specialist is renamed, split or added.
 ## 1. One Epic, end to end
 
 **Subject:** the elaboration of one Epic.
-**Scope:** from a ready Epic and its PRD to the Tasks the build works.
+**Scope:** from a ready Epic (its PRD checked for completeness and accuracy, with a WSJF score) to
+the Tasks the build works.
 **Purpose:** the order of the stages and what each stage needs before it starts.
-**Boundary:** PRD creation and validation come before (see
-[The pipelines: PRD creation and PRD validation](pipelines-prd.md)); the build and deploy come
-after (see [build](pipelines-build.md) and [deploy](pipelines-deploy.md)). Each stage is drawn in
+**Boundary:** nothing before the Epic is ready (the owner: "Your scope does not require you to
+think about anything prior to an Epic (PRD) becoming ready."); the build and deploy come after (see [build](pipelines-build.md) and [deploy](pipelines-deploy.md)). Each stage is drawn in
 detail in the sections that follow.
 **Sources:** Order of operations, the owner: "1. Existing Architecture is read and
 understood and compared to the PRD 2. Analysis occurs, and any gap in the existing architecture
@@ -130,6 +131,7 @@ sequenceDiagram
     box Stores
         participant PRD as PRD file (vault)
         participant A42 as arc42 (vault)
+        participant DA as detailed architecture (vault)
         participant MX as matrix
     end
 
@@ -157,7 +159,8 @@ sequenceDiagram
     else
         SA-)WF: the same record, logged
     end
-    SA-)A42: new and changed documents at every level, in-review
+    SA-)A42: new and changed arc42 documents, in-review
+    SA-)DA: new and changed detailed architecture and design documents, in-review
     SA-)MX: new and changed entries and relationships, not approved, not verified
     SA->>RV: the unapproved architecture, design and TRD content of the Epic
     RV-->>SA: findings
@@ -186,8 +189,9 @@ Notes on the diagram:
 - The detailed design is recorded in documents and in the matrix, not left to spec writers. The
   owner: "All of these details that I thought were already in the Architecture documents and
   matrix, and now I'm understanding are postponed decision until spec authoring, still need be
-  documented and stored in the matrix," Where in arc42 the detailed design documents are placed is
-  an open question (Q3).
+  documented and stored in the matrix," Detailed architecture and design that does not qualify
+  for arc42 lives under the vault's `docs/tech/architecture/`, outside `arc42/`, filed through the
+  `filing-clerk`. The owner: "There may be some things in arc42 that you or others may deem to be lower-level or too detailed for arc42. I want you to figure a home under `/docs/tech/architecture` somewhere. Use `filing-clerk`. I want you to help build out and organize (with the `filing-clerk`) the architecture under `/docs/tech/architecture`. This is really where all of our detailed architecture and for anything that doesn't qualify for `arc42`."
 - Documents are chosen and grown by the owner's diagram-and-model-types guidance, not one bespoke
   document per Epic. The owner: "There are diagrams that need to be created and then enhanced or
   updated as each item is built.", "There are diagrams that only pertain to a single component.",
@@ -526,11 +530,10 @@ Decisions in this diagram, each for one reason:
 
 ## Open questions
 
-Questions Q3 to Q13 are the plan's questions for the owner, with the plan's recommendations.
+Questions Q4 to Q13 are the plan's questions for the owner, with the plan's recommendations.
 
 | Question | Where | Recommendation and reason |
 |---|---|---|
-| **Q3.** Where in arc42 are the detailed design documents placed? | Section 2 | By the owner's `architecture-documentation-model.md` and `diagram-and-model-types.md`: a view of one component under its building block in section 5, how components work together in section 6, a crosscutting design in section 8. One home keeps each design fact single-sourced, and the matrix links each document to the elements it describes. |
 | **Q4.** How are specialists chosen? | Sections 2 and 3 | The owner's second example: the architect's result lists the topics needing specialist attention with a reason for each; the workflow sends the architect's result to the specialist for each topic, from a list of topics and specialists the owner approves; the architect may ask a specialist a follow-up directly. The architect's reasoning decides the topics, so no Python decides, and a workflow is observable and runs specialists in parallel. |
 | **Q5.** Where does the record of tools, decisions and the Well-Architected review live? | Section 2 | A review record per Epic, written by the architecture stage, committed with the Epic's elaboration output and linked from the Epic's matrix entry. arc42 holds no decision records, so a log keeps the documents to design facts while every decision and review stays findable. |
 | **Q9.** Who decides where an element lives, once the detailed design has determined the resources? | Section 5 | The architecture decides the repository and stack of each element, and the `polyrepo-steward` does the repository work that follows. Where an element lives follows from the design, and repository work is the steward's. |

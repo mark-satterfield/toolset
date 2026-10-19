@@ -33,7 +33,6 @@ One topic per document. A topic has the same file name in both folders.
 |---|---|---|
 | The matrix | [requirements/matrix.md](requirements/matrix.md) | [design/matrix.md](design/matrix.md) |
 | The pipelines | [requirements/pipelines.md](requirements/pipelines.md) | [design/pipelines.md](design/pipelines.md) (overview and diagrams) |
-| The pipelines: PRD creation and PRD validation | [requirements/pipelines.md](requirements/pipelines.md) | [design/pipelines-prd.md](design/pipelines-prd.md) |
 | The pipelines: elaboration and task decomposition | [requirements/pipelines.md](requirements/pipelines.md), [requirements/matrix.md](requirements/matrix.md) | [design/pipelines-elaboration.md](design/pipelines-elaboration.md) |
 | The pipelines: architecture and matrix states | [requirements/matrix.md](requirements/matrix.md) | [design/pipelines-architecture-states.md](design/pipelines-architecture-states.md) |
 | The pipelines: build | [requirements/pipelines.md](requirements/pipelines.md) | [design/pipelines-build.md](design/pipelines-build.md) |

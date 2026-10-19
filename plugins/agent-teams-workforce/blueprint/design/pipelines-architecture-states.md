@@ -30,7 +30,8 @@ and one for approved." Whether the tooling's existing approval mark is the appro
 
 ## 1. An arc42 document
 
-**Subject:** one arc42 architecture or design document.
+**Subject:** one architecture or design document: an arc42 document, or a detailed architecture
+document under the vault's `docs/tech/architecture/` outside `arc42/`.
 **Scope:** its life across every Epic that touches it.
 **Purpose:** what `effective` and `in-review` mean and what moves a document between them.
 **Boundary:** the content of the document is not drawn.
