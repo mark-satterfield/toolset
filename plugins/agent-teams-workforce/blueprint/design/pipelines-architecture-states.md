@@ -4,9 +4,10 @@ Parent: [The pipelines: overview](pipelines.md)
 
 This document draws when an arc42 document is written, goes `in-review`, becomes `effective` and
 goes back to `in-review`, and when matrix entries and relationships are added or corrected, set
-approved and set verified, across one Epic and across many. Every diagram here is "Basis:
-required", from the owner's messages of 2026-10-19 (Part 1 of the elaboration plan, items 1.8 and
-1.10) and from [requirements/matrix.md](../requirements/matrix.md). The stages that make these
+approved and set verified, across one Epic and across many. Every diagram shows what the
+owner wants, from the owner's messages of 2026-10-19 (Part 1 of the elaboration plan, items 1.8,
+1.10 and 1.13) and from [requirements/matrix.md](../requirements/matrix.md) where it agrees with the
+owner's words. Points the owner has not decided are open questions, listed at the end. The stages that make these
 changes are drawn in [The pipelines: elaboration](pipelines-elaboration.md),
 [build](pipelines-build.md) and [deploy](pipelines-deploy.md).
 
@@ -18,14 +19,14 @@ changes are drawn in [The pipelines: elaboration](pipelines-elaboration.md),
 | `S1 --> S2 : event [guard] / effect` | What moves it from one state to another |
 | `A ->> B` / `B -->> A` (sequence) | A call, and its return |
 | `A -) Store` (sequence) | A write to a store, nothing returned |
-| `note` "assumption" | Not stated by the owner; drawn so the diagram reads |
+| "open - Qn" | Not decided by the owner; listed under "Open questions" at the end |
 | effective, in-review | The state of an arc42 document, in its front matter |
 | approved, verified | The two flags the matrix keeps on its entries and relationships |
 
 Three states are kept apart. The owner: "The approved flag is similar to, but IS NOT the same as
 the `effective` field in arc42." and "The matrix has 2 flag fields that help determine the states
 the information in the matrix. I do not recallk the exact names, but there is one for verified,
-and one for approved." The exact names are a choice for the tooling (plan question 12).
+and one for approved." Whether the tooling's existing approval mark is the approved flag is an open question (Q12).
 
 ## 1. An arc42 document
 
@@ -33,7 +34,7 @@ and one for approved." The exact names are a choice for the tooling (plan questi
 **Scope:** its life across every Epic that touches it.
 **Purpose:** what `effective` and `in-review` mean and what moves a document between them.
 **Boundary:** the content of the document is not drawn.
-**Basis:** required. The owner: "When it is `effective` it means (and please pay attention to
+**Sources:** The owner: "When it is `effective` it means (and please pay attention to
 this) the document has been approved by the architecture agent responsble for approving the
 architecture. It does not mean that architecture document is fixed, or static, or permenant, or
 unchangable. It means, for this exact mement in time, until something else changes it, this is
@@ -58,10 +59,10 @@ Notes on the diagram:
   ([requirements/matrix.md](../requirements/matrix.md) section 3.5, R23).
 - When the matrix is corrected, arc42 is corrected too. The owner: "Any updates or corrections to
   arc42 must also be made."
-- How what a build finds wrong reaches arc42 is not stated by the owner today.
-  [requirements/matrix.md](../requirements/matrix.md) R29 says a build or deploy run reports what
-  it finds wrong; the deploy pipeline as built corrects documents from what was built (see
-  [deploy](pipelines-deploy.md)).
+- What the build finds wrong in the architecture is cleaned up too. The owner: "The architecture
+  process is designed to clean up the matrix is it works, and the same with the build." How a
+  build's finding reaches arc42, and which state the corrected document passes through, is an open
+  question (NEWQ-pipelines-architecture-states-1).
 
 ### Three kinds of document over time
 
@@ -69,7 +70,7 @@ Notes on the diagram:
 **Scope:** three Epics elaborated one after another.
 **Purpose:** that how often a document changes depends on its level, not on a rule.
 **Boundary:** reviews are folded into "approved".
-**Basis:** required. The owner: "A network diagram may not change very often and sit perpetually
+**Sources:** The owner: "A network diagram may not change very often and sit perpetually
 in an `effectve` or approed state, and a diagram for a specific Epic may get generated once, set
 to effective and never touched again." and "But some documents, like a diagram for an entire echo
 system of AWS Services, for example, may get updated every single time an Epic goes through
@@ -100,8 +101,8 @@ sequenceDiagram
     Note over ONE: never touched again, stays effective
 ```
 
-Assumption: the Epics and the order of the writes are illustration; the owner's statements give
-the three kinds of document and how often each changes.
+The three Epics and the order of the writes illustrate the owner's three kinds of document; the
+owner's statements give the kinds and how often each changes.
 
 ## 2. A matrix entry or relationship
 
@@ -109,7 +110,7 @@ the three kinds of document and how often each changes.
 **Scope:** from seeding or first recording to verified, and back when a later Epic changes it.
 **Purpose:** when approved and verified are set, and what clears them.
 **Boundary:** the content of the entry is not drawn.
-**Basis:** required. The owner: "so the initial state of what we seeded in the matrix (using arc42
+**Sources:** The owner: "so the initial state of what we seeded in the matrix (using arc42
 as a source) is not approved.", "Once an Epic flows through elaboration, and validates and fills
 out the architecture and design (lower-level details) for the Epic, and then all of that is
 approved, and when information in the matrix is filled out or corrected for that Epic, then if
@@ -120,7 +121,8 @@ Epic have been built and tested (including CI (CDK), which means deployemen must
 all of the architecture and rellationships for the Epic can be set to verified." and "The linkage
 could have a verified flag. The node could have a verified flag. Neither wold be required for
 every situation." The clearing of approved when a later Epic changes an entry is from
-[requirements/matrix.md](../requirements/matrix.md) R57.
+[requirements/matrix.md](../requirements/matrix.md) R57, and the version example in section 4 shows
+that a later Epic's change leaves the element no longer verified.
 
 ```mermaid
 stateDiagram-v2
@@ -150,13 +152,9 @@ Notes on the diagram:
   "The matrix does not include stories and tasks (it isn't a build tracker), and it doesn't care
   about what has actually been deployed."
 
-Differences from the requirements, in the blueprint itself:
-[requirements/matrix.md](../requirements/matrix.md) section 3.5 and R24 to R25 set verified on a
-stack and its components when one Story's code has been built and tested. The owner sets verified
-for "all of the architecture and rellationships for the Epic" once "all of the tasks for all of
-the stories" of the Epic are built and tested. R57 puts the approved mark on requirements and
-features only; the owner puts approved on the matrix information for the Epic, and says verified
-"is available to just about anything". Plan items 1.1 and 1.8 bring that document in line.
+Whether approved and verified are kept on every kind of entry and link, as the owner's "verified
+flag is available to just about anything" says, follows plan item 1.13: the verified flag is
+available on every entry and every link and required on none.
 
 ## 3. One Epic through the pipelines
 
@@ -164,7 +162,7 @@ features only; the owner puts approved on the matrix information for the Epic, a
 **Scope:** elaboration, the build of every Task and the deploy of every Story of the Epic.
 **Purpose:** which stage makes each state change.
 **Boundary:** the work inside each stage is in its own document.
-**Basis:** required, from the statements quoted in sections 1 and 2.
+**Sources:** the statements quoted in sections 1 and 2.
 
 ```mermaid
 sequenceDiagram
@@ -201,9 +199,9 @@ sequenceDiagram
     end
 ```
 
-Assumption: which step writes the verified flag (drawn as the deploy stage, after the last
-Story) is not stated by the owner; [requirements/matrix.md](../requirements/matrix.md) R25 names
-the build pipeline.
+Which step writes the verified flag, once the last Story of the Epic is deployed and tested, is an
+open question (NEWQ-pipelines-architecture-states-2). The diagram draws it after the last deploy
+because the owner's condition includes "deployemen must also work".
 
 ## 4. Versions, and what a spec covers
 
@@ -212,7 +210,7 @@ the build pipeline.
 **Purpose:** that a spec's work comes from the last verified version, not from one Epic's
 architecture change.
 **Boundary:** the content of each version is not drawn.
-**Basis:** required. The owner: "A spec's delta NEVER was supposed to come from an architecture
+**Sources:** The owner: "A spec's delta NEVER was supposed to come from an architecture
 delta.", "1. v1.0.0 of the architecture for a specific service is developed. A spec needs to get
 the build (meaning the code, IaC, etc) up to the architecture's version for that service (this is
 where the verified flag comes in to play). 2. Let's assunme want to update the architecture for
@@ -245,7 +243,7 @@ sequenceDiagram
     SP->>SVC: what is verified?
     SVC-->>SP: v1.0.0
     SP->>BU: spec - the delta from v1.0.0 to v1.0.1
-    opt not stated by the owner - whether v1.0.1 is built before Epic C
+    opt open - NEWQ-pipelines-architecture-states-4 - whether v1.0.1 is built before Epic C
         BU-)SVC: v1.0.1 verified
     end
     C-)SVC: architecture v1.1.2, approved, not verified
@@ -256,5 +254,19 @@ sequenceDiagram
     SP->>BU: spec - everything since the last verified version, up to v1.1.3
 ```
 
-Assumption: the version numbers are the owner's illustration; the matrix need not record version
-numbers. What it must let a spec find is what was last verified and what has been approved since.
+The version numbers are the owner's illustration ("Think of the everuything in terms of version
+numbers"). How the matrix records what was last verified and what has been approved since is an
+open question (NEWQ-pipelines-architecture-states-3).
+
+## Open questions
+
+Q12 is the plan's question for the owner, with the plan's recommendation. Questions labelled NEWQ
+are new.
+
+| Question | Where | Recommendation and reason |
+|---|---|---|
+| **Q12.** Is the tooling's existing architecture-approval mark the approved flag? | Legend | Yes: one approved flag on the matrix content an Epic's elaboration reaches. The owner named two flags, one for verified and one for approved; a third would be a second record of approval. |
+| **NEWQ-pipelines-architecture-states-1.** How does what a build finds wrong in the architecture reach arc42 and the matrix, and which document state does the correction pass through? | Section 1 | The build records the difference against the element; the architecture stage corrects the document, which goes `in-review` and back to `effective` when approved, and corrects the matrix. The owner: the architecture process "is designed to clean up the matrix ... and the same with the build"; routing the correction through the architecture keeps one approver of architecture. |
+| **NEWQ-pipelines-architecture-states-2.** Which step sets the Epic's architecture and relationships verified once every Story is deployed and tested? | Section 3 | A deterministic step that runs when the last Story of the Epic closes, with no agent judgment. The owner's condition is factual (all Tasks of all Stories built and tested, CI and CDK deployment working), so code can check it; the owner wants "contracs being deterministic in files and code". |
+| **NEWQ-pipelines-architecture-states-3.** How does the matrix record what was last verified for an element and what has been approved since? | Section 4 | The verified flag and the commit it was proved at on the element, and each later approved change linked to the Epic that approved it. A spec then reads the verified point and every approved change after it from the matrix without a scan. |
+| **NEWQ-pipelines-architecture-states-4.** In the owner's version example, is v1.0.1 built before Epic C's change? | Section 4 | Draw both; the rule does not depend on it. The spec covers everything since the last verified version, whichever that is. |
