@@ -47,6 +47,7 @@ stateDiagram-v2
     [*] --> in_review : an Epic's elaboration writes a new document
     in_review --> effective : approved by the architecture agent responsible for approving the architecture
     effective --> in_review : an Epic's elaboration changes it, for any reason
+    effective --> in_review : a build or deploy finds it wrong / architecture-maintainer corrects it
     effective --> effective : read by any pipeline step / approved as of that moment
     in_review --> in_review : review findings / the document is corrected
     state "in-review" as in_review
@@ -60,9 +61,10 @@ Notes on the diagram:
 - When the matrix is corrected, arc42 is corrected too. The owner: "Any updates or corrections to
   arc42 must also be made."
 - What the build finds wrong in the architecture is cleaned up too. The owner: "The architecture
-  process is designed to clean up the matrix is it works, and the same with the build." How a
-  build's finding reaches arc42, and which state the corrected document passes through, is an open
-  question (Q47).
+  process is designed to clean up the matrix is it works, and the same with the build." What the
+  build or deploy finds wrong is recorded against the element and sent to the architecture stage,
+  where `architecture-maintainer` corrects the document (it goes `in-review`, then `effective` when
+  approved) and the matrix, because one approver of architecture keeps one source of truth.
 
 ### Three kinds of document over time
 
@@ -199,9 +201,10 @@ sequenceDiagram
     end
 ```
 
-Which step writes the verified flag, once the last Story of the Epic is deployed and tested, is an
-open question (Q48). The diagram draws it after the last deploy
-because the owner's condition includes "deployemen must also work".
+A deterministic step that runs when the last Story of the Epic closes sets the verified flag, with
+no agent judgment, because the owner's condition is factual (all Tasks of all Stories built and
+tested, CI and CDK deployment working) and the owner wants "contracs being deterministic in files
+and code".
 
 ## 4. Versions, and what a spec covers
 
@@ -243,7 +246,7 @@ sequenceDiagram
     SP->>SVC: what is verified?
     SVC-->>SP: v1.0.0
     SP->>BU: spec - the delta from v1.0.0 to v1.0.1
-    opt open - Q50 - whether v1.0.1 is built before Epic C
+    opt if v1.0.1 is built before Epic C
         BU-)SVC: v1.0.1 verified
     end
     C-)SVC: architecture v1.1.2, approved, not verified
@@ -255,18 +258,15 @@ sequenceDiagram
 ```
 
 The version numbers are the owner's illustration ("Think of the everuything in terms of version
-numbers"). How the matrix records what was last verified and what has been approved since is an
-open question (Q49).
+numbers"). The matrix records, on each element, the verified flag with the commit it was proved at, and links
+each later approved change to the Epic that approved it, so a spec reads the last verified point and
+every approved change after it without a scan. Whether v1.0.1 is built before Epic C does not change
+the rule: the spec covers everything since the last verified version, whichever that is.
 
 ## Open questions
 
-Q12 is the plan's question for the owner, with the plan's recommendation. Questions Q17 and
-above are new.
+Q12 is the plan's question for the owner, with the plan's recommendation.
 
 | Question | Where | Recommendation and reason |
 |---|---|---|
 | **Q12.** Is the tooling's existing architecture-approval mark the approved flag? | Legend | Yes: one approved flag on the matrix content an Epic's elaboration reaches. The owner named two flags, one for verified and one for approved; a third would be a second record of approval. |
-| **Q47.** How does what a build finds wrong in the architecture reach arc42 and the matrix, and which document state does the correction pass through? | Section 1 | The build records the difference against the element; the architecture stage corrects the document, which goes `in-review` and back to `effective` when approved, and corrects the matrix. The owner: the architecture process "is designed to clean up the matrix ... and the same with the build"; routing the correction through the architecture keeps one approver of architecture. |
-| **Q48.** Which step sets the Epic's architecture and relationships verified once every Story is deployed and tested? | Section 3 | A deterministic step that runs when the last Story of the Epic closes, with no agent judgment. The owner's condition is factual (all Tasks of all Stories built and tested, CI and CDK deployment working), so code can check it; the owner wants "contracs being deterministic in files and code". |
-| **Q49.** How does the matrix record what was last verified for an element and what has been approved since? | Section 4 | The verified flag and the commit it was proved at on the element, and each later approved change linked to the Epic that approved it. A spec then reads the verified point and every approved change after it from the matrix without a scan. |
-| **Q50.** In the owner's version example, is v1.0.1 built before Epic C's change? | Section 4 | Draw both; the rule does not depend on it. The spec covers everything since the last verified version, whichever that is. |

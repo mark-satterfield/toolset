@@ -13,7 +13,7 @@ Every diagram shows a pipeline as the owner wants it. The sources, in order: the
 `AGENTS.md` and `.claude/rules/git-conventions.md`, and the blueprint's requirements documents
 where they agree with the owner's words. Where the owner has not said what is wanted, the step is
 drawn as an open question and listed at the end of its document with a recommendation. Questions
-Q1 to Q16 are the owner's questions from the elaboration plan; higher numbers are new.
+Q1 to Q16 are the owner's questions from the elaboration plan; Q17 and Q18 are new.
 
 Each document has its own legend. The common notation:
 
@@ -81,8 +81,8 @@ flowchart TD
 
 Notes on the diagram:
 
-- Who starts PRD creation, PRD validation, elaboration and the build, and in what order Epics and
-  Tasks are taken, are open questions drawn in [pipelines-driver.md](pipelines-driver.md).
+- What `supervisor.py` starts is the owner's open question Q17. The order Epics and Tasks are
+  taken in is drawn in [pipelines-driver.md](pipelines-driver.md).
 - A Bug is not pipeline work; a person triages it into an Epic, a Task or a closure
   ([requirements/pipelines.md](../requirements/pipelines.md), "Bugs").
 - The wait loop exits when the last Story of the Epic is deployed and tested.
@@ -135,5 +135,5 @@ flowchart LR
     DE -->|"Story state"| BD
 ```
 
-Which step writes the verified mark is open question Q48 in
-[pipelines-architecture-states.md](pipelines-architecture-states.md).
+A deterministic step sets the Epic's architecture and relationships verified when the last Story of
+the Epic closes ([pipelines-architecture-states.md](pipelines-architecture-states.md), section 3).
