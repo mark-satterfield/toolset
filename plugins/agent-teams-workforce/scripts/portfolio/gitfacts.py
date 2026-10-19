@@ -25,6 +25,14 @@ Commands:
         when origin/B does not exist. A reused tree is left as it is. Reports the tree, its
         branch, whether it was reused, the default branch, the git-common-dir and what was
         worked around (`blocked`).
+        First, every run cleans up the repository's merged work: `git worktree prune`, then
+        each linked worktree under R/.worktrees/ whose branch's PR GitHub reports MERGED is
+        removed (`git worktree remove`, then `git branch -D`, since a squash-merged branch is
+        never an ancestor of the default branch). Never touched: a tree with uncommitted or
+        untracked changes, the tree being provisioned (branch B or path P), the primary
+        working tree, a detached tree, a branch with no merged PR or with an open one, and a
+        branch with commits beyond the merged PR's head. `cleanup` reports what was removed
+        and every failure; a failure never stops the provisioning.
     hash-files --tree T [FILE ...]
         The git blob hash of each FILE in T (`missing` when it is not a file), and
         `treeDigest`: the SHA-256 of HEAD, the status and the content of every changed or
@@ -93,6 +101,22 @@ class Worktree(TypedDict):
     branch: str | None
 
 
+class RemovedTree(TypedDict):
+    """One merged-PR worktree the cleanup removed, with its branch."""
+
+    worktree: str
+    branch: str
+    pr: int
+    branchDeleted: bool
+
+
+class Cleanup(TypedDict):
+    """What the merged-PR worktree cleanup removed, and what it could not do."""
+
+    removed: list[RemovedTree]
+    failures: list[str]
+
+
 class ProvisionResult(TypedDict):
     """What the `provision` command established."""
 
@@ -103,6 +127,7 @@ class ProvisionResult(TypedDict):
     defaultBranch: str
     gitCommonDir: str | None
     blocked: list[str]
+    cleanup: Cleanup
 
 
 class DigestState(TypedDict):
@@ -566,8 +591,192 @@ def reuse_worktree(repo: str, branch: str, path: str, home: Path, blocked: list[
     return reused_tree
 
 
+def merged_pr(repo: str, branch: str) -> tuple[int, str] | None:
+    """Ask GitHub for the merged pull request whose head is the branch.
+
+    Args:
+        repo: The repository; `gh` infers the GitHub repository from its remotes.
+        branch: The head branch.
+
+    Returns:
+        The merged PR's number and head commit, or None when the branch has no merged PR
+        or also has an open one.
+
+    Raises:
+        GitError: When `gh` is not on PATH or its answer cannot be read.
+
+    """
+    executable: str | None = shutil.which("gh")
+    if executable is None:
+        missing: str = "the gh executable is not on PATH"
+        raise GitError(missing)
+    fields: str = "number,state,headRefOid"
+    argv: list[str] = [executable, "pr", "list", "--head", branch, "--state", "all", "--json", fields]
+    done: subprocess.CompletedProcess[str] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Resolved gh executable and separate argv; shell disabled.
+        argv,
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if done.returncode != 0:
+        msg: str = f"gh pr list --head {branch} in {repo} exited {done.returncode}: {done.stderr.strip()}"
+        raise GitError(msg)
+    prs: object = json.loads(done.stdout or "[]")
+    if not isinstance(prs, list):
+        msg = f"gh pr list --head {branch} printed no list"
+        raise GitError(msg)
+    states: list[dict[str, object]] = [p for p in prs if isinstance(p, dict)]
+    if any(p.get("state") == "OPEN" for p in states):
+        return None
+    merged: dict[str, object] | None = next((p for p in states if p.get("state") == "MERGED"), None)
+    if merged is None:
+        return None
+    number: object = merged.get("number")
+    head: object = merged.get("headRefOid")
+    if not isinstance(number, int) or not isinstance(head, str):
+        return None
+    return number, head
+
+
+def branch_landed(repo: str, branch: str, pr_head: str) -> bool:
+    """Tell whether the local branch holds nothing beyond the merged PR's head commit.
+
+    Args:
+        repo: The repository.
+        branch: The local branch.
+        pr_head: The merged PR's head commit.
+
+    Returns:
+        True when the branch tip is the PR head or one of its ancestors.
+
+    """
+    tip: str | None = out(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")
+    if tip is None:
+        return False
+    if tip == pr_head:
+        return True
+    return git(repo, "merge-base", "--is-ancestor", tip, pr_head, check=False).returncode == 0
+
+
+def removable(repo: str, tree: Worktree, home: Path, keep: set[str]) -> tuple[str, int] | None:
+    """Decide whether one registered worktree is a merged PR's tree that may be removed.
+
+    Args:
+        repo: The repository.
+        tree: The registered worktree.
+        home: The repository's worktrees directory.
+        keep: Branches and real paths never touched (the tree being provisioned).
+
+    Returns:
+        The branch and PR number when the tree may be removed, else None.
+
+    """
+    path: str = tree["worktree"]
+    branch: str | None = tree["branch"]
+    if branch is None or branch in keep or os.path.realpath(path) in keep:
+        return None
+    if not Path(path).is_dir() or Path(path).resolve().parent != home or status_lines(path):
+        return None
+    found: tuple[int, str] | None = merged_pr(repo, branch)
+    if found is None or not branch_landed(repo, branch, found[1]):
+        return None
+    return branch, found[0]
+
+
+def remove_tree(repo: str, path: str, branch: str, pr: int, cleanup: Cleanup) -> None:
+    """Remove one merged-PR worktree, then its local branch, recording the outcome.
+
+    Args:
+        repo: The repository.
+        path: The worktree.
+        branch: Its branch.
+        pr: The merged PR's number.
+        cleanup: Where the outcome is recorded.
+
+    """
+    removed: subprocess.CompletedProcess[str] = git(repo, "worktree", "remove", path, check=False)
+    if removed.returncode != 0:
+        cleanup["failures"].append(failure_message(repo, ("worktree", "remove", path), removed))
+        return
+    deleted: subprocess.CompletedProcess[str] = git(repo, "branch", "-D", branch, check=False)
+    if deleted.returncode != 0:
+        cleanup["failures"].append(failure_message(repo, ("branch", "-D", branch), deleted))
+    cleanup["removed"].append({"worktree": path, "branch": branch, "pr": pr, "branchDeleted": deleted.returncode == 0})
+
+
+def clean_merged_worktrees(repo: str, branch: str, path: str) -> Cleanup:
+    """Remove the repository's linked worktrees whose branch's PR GitHub reports MERGED.
+
+    Only trees under <repo>/.worktrees/ are considered. A tree with uncommitted or untracked
+    changes, the tree being provisioned (its branch or its path), the primary working tree,
+    a detached tree, a branch with no merged PR or with an open PR, and a branch with commits
+    beyond the merged PR's head are left alone. `git worktree prune` runs first. A failure is
+    recorded and never raised: provisioning goes on.
+
+    Args:
+        repo: The repository.
+        branch: The branch being provisioned.
+        path: The tree being provisioned.
+
+    Returns:
+        What was removed and what failed.
+
+    """
+    cleanup: Cleanup = {"removed": [], "failures": []}
+    keep: set[str] = {branch, os.path.realpath(path)}
+    try:
+        trees: list[Worktree] = prune_and_list(repo, cleanup)
+    except (GitError, OSError) as exc:
+        cleanup["failures"].append(str(exc))
+        return cleanup
+    for tree in trees:
+        clean_one(repo, tree, keep, cleanup)
+    return cleanup
+
+
+def prune_and_list(repo: str, cleanup: Cleanup) -> list[Worktree]:
+    """Run `git worktree prune`, recording a failure, and list the registered worktrees.
+
+    Args:
+        repo: The repository.
+        cleanup: Where a prune failure is recorded.
+
+    Returns:
+        The registered worktrees.
+
+    """
+    pruned: subprocess.CompletedProcess[str] = git(repo, "worktree", "prune", check=False)
+    if pruned.returncode != 0:
+        cleanup["failures"].append(failure_message(repo, ("worktree", "prune"), pruned))
+    return registered_worktrees(repo)
+
+
+def clean_one(repo: str, tree: Worktree, keep: set[str], cleanup: Cleanup) -> None:
+    """Remove one worktree when it is a merged PR's tree, recording any failure.
+
+    Args:
+        repo: The repository.
+        tree: The registered worktree.
+        keep: Branches and real paths never touched.
+        cleanup: Where the outcome is recorded.
+
+    """
+    home: Path = Path(repo).resolve() / WORKTREES_DIRNAME
+    try:
+        target: tuple[str, int] | None = removable(repo, tree, home, keep)
+    except (GitError, OSError, ValueError) as exc:
+        cleanup["failures"].append(f"{tree['worktree']}: {exc}")
+        return
+    if target is not None:
+        remove_tree(repo, tree["worktree"], target[0], target[1], cleanup)
+
+
 def cmd_provision(args: argparse.Namespace) -> ProvisionResult:
     """Run the `provision` command.
+
+    Before it reuses or cuts the tree, it removes the repository's merged-PR worktrees
+    (clean_merged_worktrees); a failure there is reported in `cleanup` and never stops it.
 
     Args:
         args: The parsed arguments.
@@ -579,6 +788,7 @@ def cmd_provision(args: argparse.Namespace) -> ProvisionResult:
     repo: str = args.repo
     branch: str = args.branch
     path: str = planned_path(repo, args.name, args.path)
+    cleanup: Cleanup = clean_merged_worktrees(repo, branch, path)
     blocked: list[str] = []
     home: Path = Path(repo).resolve() / WORKTREES_DIRNAME
     default: str = require_default_branch(repo)
@@ -603,6 +813,7 @@ def cmd_provision(args: argparse.Namespace) -> ProvisionResult:
         "defaultBranch": default,
         "gitCommonDir": facts.get("gitCommonDir"),
         "blocked": blocked,
+        "cleanup": cleanup,
     }
 
 
