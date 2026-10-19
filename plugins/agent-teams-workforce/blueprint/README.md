@@ -32,4 +32,15 @@ One topic per document. A topic has the same file name in both folders.
 | Topic | Requirements | Design |
 |---|---|---|
 | The matrix | [requirements/matrix.md](requirements/matrix.md) | [design/matrix.md](design/matrix.md) |
-| The pipelines | [requirements/pipelines.md](requirements/pipelines.md) | |
+| The pipelines | [requirements/pipelines.md](requirements/pipelines.md) | [design/pipelines.md](design/pipelines.md) (overview and diagrams) |
+| The pipelines: PRD creation and PRD validation | [requirements/pipelines.md](requirements/pipelines.md) | [design/pipelines-prd.md](design/pipelines-prd.md) |
+| The pipelines: elaboration | [requirements/pipelines.md](requirements/pipelines.md), [requirements/matrix.md](requirements/matrix.md) | [design/pipelines-elaboration.md](design/pipelines-elaboration.md) (required), [design/pipelines-elaboration-as-built.md](design/pipelines-elaboration-as-built.md) (as built) |
+| The pipelines: architecture and matrix states | [requirements/matrix.md](requirements/matrix.md) | [design/pipelines-architecture-states.md](design/pipelines-architecture-states.md) |
+| The pipelines: build | [requirements/pipelines.md](requirements/pipelines.md) | [design/pipelines-build.md](design/pipelines-build.md) |
+| The pipelines: deploy | [requirements/pipelines.md](requirements/pipelines.md) | [design/pipelines-deploy.md](design/pipelines-deploy.md) |
+| The pipelines: driver and routing | [requirements/pipelines.md](requirements/pipelines.md) | [design/pipelines-driver.md](design/pipelines-driver.md) |
+
+The pipeline topic's design is split into one diagram document per pipeline, all named
+`pipelines-<part>.md` and linked from the parent `design/pipelines.md`, because one document
+holding every pipeline's diagrams would be unreadable. Their requirements stay in the one
+`requirements/pipelines.md` (with `requirements/matrix.md`).
