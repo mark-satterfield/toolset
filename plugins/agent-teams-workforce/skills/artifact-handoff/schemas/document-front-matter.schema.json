@@ -5,7 +5,7 @@
   "description": "The fixed part of the Markdown documents elaboration hands from agent to agent: the YAML front matter a script reads, and the headings a script resolves. What a document must say is judged by the criteria of effective-architecture/review-standard.md (the TRD by the technical-requirement level, the specs by the implementation level), which this file does not restate. The arc42 documents of the effective architecture are not covered here: their catalog front matter is the arc42 skill's documentation model (skills/arc42/references/arc42-section-model.md).",
   "$defs": {
     "Citation": {
-      "description": "One architecture citation: the path of an arc42 document relative to the architecture root, optionally followed by #<heading> as `atw-matrix node document:<path>` lists the heading. Every citation must resolve to a document, and a heading to a heading of it, that the matrix holds.",
+      "description": "One architecture citation: the path of an architecture document (arc42 or detailed) relative to the architecture root, optionally followed by #<heading> as `atw-matrix node document:<path>` lists the heading. Every citation must resolve to a document, and a heading to a heading of it, that the matrix holds.",
       "type": "string",
       "minLength": 1
     },
@@ -15,7 +15,7 @@
       "required": ["decisionIds"],
       "properties": {
         "decisionIds": {
-          "description": "The arc42 documents and headings the TRD's requirements cite.",
+          "description": "The architecture documents and headings the TRD's requirements cite.",
           "type": "array",
           "items": {"$ref": "#/$defs/Citation"}
         }
@@ -27,7 +27,7 @@
       "required": ["decisionIds"],
       "properties": {
         "decisionIds": {
-          "description": "The arc42 documents and headings the document cites.",
+          "description": "The architecture documents and headings the document cites.",
           "type": "array",
           "items": {"$ref": "#/$defs/Citation"}
         }

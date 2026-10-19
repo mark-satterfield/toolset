@@ -130,7 +130,7 @@
       "verifiable": false,
       "required": ["lifecycle", "headings", "hash"],
       "attributes": {
-        "lifecycle": {"description": "Mirrors the document's arc42 front matter.", "enum": ["effective", "in-review", "draft"]},
+        "lifecycle": {"description": "Mirrors the document's front matter.", "enum": ["effective", "in-review", "draft"]},
         "section": {"type": "integer", "minimum": 1, "maximum": 12},
         "viewType": {"type": "string"},
         "scope": {"type": "string"},

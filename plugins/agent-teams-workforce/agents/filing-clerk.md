@@ -174,6 +174,7 @@ Content lives under `docs/` in these top-level homes:
 |---|---|
 | A **domain term / definition** (one concept) | `docs/glossary/` — one document per term, holding the definition only (see *Glossary documents*) |
 | **Architecture**: a chosen technology, pattern, constraint, or structure | the arc42 SAD, `docs/tech/architecture/arc42/` — see the arc42 sub-map |
+| **Detailed architecture**: names, types, keys, fields, routes or schemas, or what matters only to the people changing one component or feature | `docs/tech/architecture/detailed/` (`system/`, `cross-component/`, `components/<repository>/`, `features/<feature>/`), linked from the arc42 view of its subject; the vault's architecture documentation model states the test |
 | Other **technical** matter: cloud infra, cybersecurity, data engineering, DNS/infrastructure, QA/testing, services, software engineering | the matching `docs/tech/<area>/` folder |
 | A **product** requirement, feature, positioning, UX research, brand character | `docs/product/` (ongoing PM/design) or `docs/sdlc/` (a PRD/spec deliverable) |
 | An **SDLC deliverable**: BRD, PRD, spec, template, an MVP-scoped doc | `docs/sdlc/` (e.g. `docs/sdlc/mvp-1/…`) |

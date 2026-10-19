@@ -909,7 +909,7 @@ def _sync_parsers(
         parents=[where, arch],
         help="document entries, their headings and lifecycle, and describedBy, from the vault",
     )
-    documents.add_argument("--paths", nargs="+", help="the files to read; default: every arc42 document")
+    documents.add_argument("--paths", nargs="+", help="the files to read; default: every architecture document")
     documents.add_argument("--bead", help="the Epic the documents were changed for; nothing recorded names it")
     events: argparse.ArgumentParser = commands.add_parser(
         "sync-events",

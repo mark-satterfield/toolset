@@ -1040,6 +1040,7 @@ if (!archPath) return handback(false, 'input', "no archPath supplied (the projec
 const ARC42 = `${archPath}/arc42`
 const CONSTRAINTS = `${ARC42}/02-architecture-constraints`
 const BUILT_DIR = `${archPath}/built`
+const TARGET_DIR = `${archPath}/target`
 const MENU = `${archPath}/reference/diagram-and-model-types.md`
 const MODEL = `${archPath}/reference/architecture-documentation-model.md`
 
@@ -1109,7 +1110,7 @@ const MAINTAIN_SCHEMA = {
 }
 
 const ARCH_WHERE = `THE ARCHITECTURE is at ${archPath}. It is not inside any product repository.
-- \`arc42/\` is the effective version: the approved architecture. \`arc42/02-architecture-constraints/README.md\` holds the owner's constraints.
+- The effective version, the approved architecture, is every view under it outside \`built/\` and \`target/\`: \`arc42/\` at architecture level, and \`detailed/\` for the detail below it (one component, one feature, components working together, the whole system). \`arc42/02-architecture-constraints/README.md\` holds the owner's constraints.
 - Each view's frontmatter names its \`view_type\`, \`scope\`, \`subject\` and every element it \`shows\`: that frontmatter is the catalog. Find the views of an element by searching it (\`subject:\` and the \`shows:\` lists) for the element's name, in every section, at every scope.
 - \`built/<element>/\` records what a build delivered for one element where it differs from the effective version.
 - The architecture documentation model is ${MODEL}; the view types to choose from are ${MENU}.`
@@ -1131,7 +1132,7 @@ async function constraintsGuard(step, label, phaseName, during) {
 const TREE_START = `${SNAP_DIR}/tree-start.json`
 const TREE_COMPARED = `${SNAP_DIR}/tree-compared.json`
 /**
- * Fingerprints every file of arc42/, target/ and built/ with depscore.py arch-snapshot: `save` writes
+ * Fingerprints every file under the architecture directory with depscore.py arch-snapshot: `save` writes
  * the hashes to that file, and each file in `against` (a fingerprint saved earlier) yields the files
  * created, changed and deleted since it, in `diffs`, in that order. Returns the result or { error }.
  */
@@ -1254,11 +1255,11 @@ Return one entry in \`differences\` per difference: the element (the entry's id)
 
 // ---------------------------------------------------------------- Correct
 const SECTION_2_RULE = `Write nothing under ${CONSTRAINTS}: section 2 holds the owner's constraints, and only the owner changes them; the run fails on any change there. A constraint the build conflicts with goes in \`constraintIssues\`, with the constraint, the built view and the reason.`
-const correctTask = (builtFiles) => `Correct the effective version, the folder ${ARC42}, to match what was built, as the architecture documentation model's step 6 describes. The built views are:
+const correctTask = (builtFiles) => `Correct the effective version, every view under ${archPath} outside ${BUILT_DIR}/ and ${TARGET_DIR}/ (\`arc42/\` and \`detailed/\`), to match what was built, as the architecture documentation model's step 6 describes. The built views are:
 ${builtFiles.map((f) => `- ${f}`).join('\n')}
 For each element a built view shows, find every effective view that shows it through the catalog (\`subject\` and \`shows\`), at every scope, and update it to describe the element as built; add a view where the effective version has none for a built element, in the section folder the model names, named for its subject. Keep every touched view's catalog frontmatter true to what it now shows. Edit in place: no changelog narrative, and no superseded content left beside the new. Leave every \`lifecycle_state\` as you find it: the run sets it after review. Leave ${BUILT_DIR}/ as it is: the run removes each built view once the effective version matches it.
 ${SECTION_2_RULE}
-The result names every file you changed, created or deleted as an absolute path under ${ARC42}, in \`matched\` every built view the effective version now matches, and every contradiction with another effective view or open target.`
+The result names every file you changed, created or deleted as an absolute path under ${archPath}, in \`matched\` every built view the effective version now matches, and every contradiction with another effective view or open target.`
 
 const touched = (u) => [...new Set([...listed(u.changedFiles), ...listed(u.createdFiles)])]
 const allTouched = (u) => [...touched(u), ...listed(u.deletedFiles)]
@@ -1361,7 +1362,9 @@ async function stepApprove(step) {
   const conformance = J.latest('conformance', step) || {}
   const toApprove = touched(update)
   if (!toApprove.length) return { artifacts: [valueArtifact('approval', { promoted: 0, unchanged: 0 })] }
-  const approval = await depscore('built:approve', phaseTitle('correct'), `arch-approve --arch-files ${shq(toApprove.join(','))} --reviewed-files ${shq(listed(conformance.reviewedFiles).join(','))} --arch-root ${shq(ARC42)}`)
+  const notEffective = toApprove.filter((f) => !f.startsWith(`${archPath}/`) || [BUILT_DIR, TARGET_DIR].some((d) => f === d || f.startsWith(`${d}/`)) || f.split('/').includes('..'))
+  if (notEffective.length) return failed(null, 'approve', `the correction names files outside the effective version: ${notEffective.join(', ')}`)
+  const approval = await depscore('built:approve', phaseTitle('correct'), `arch-approve --arch-files ${shq(toApprove.join(','))} --reviewed-files ${shq(listed(conformance.reviewedFiles).join(','))} --arch-root ${shq(archPath)}`)
   const n = approval && approval.summary ? approval.summary : null
   const notSet = approval && !approval.error ? [...listed(approval.unreviewed), ...(approval.refused || []).map((x) => x.path), ...(approval.failed || []).map((x) => x.path)] : []
   if (!n || approval.error || notSet.length) {

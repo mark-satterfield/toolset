@@ -30,7 +30,7 @@
     arch-constraints-restore
                          put section 2 back from the copy `arch-constraints --keep` made;
                          no `bd` call
-    arch-snapshot        fingerprint every file of `arc42/`, `target/` and `built/`, so a step
+    arch-snapshot        fingerprint every file under the architecture directory, so a step
                          measures what its sessions wrote; `--save FILE` also writes the
                          result to FILE and `--against FILE` (repeatable) reports the files
                          created, changed and deleted since that saved fingerprint; with either,
@@ -1056,13 +1056,13 @@ def _configure_command_33(sub: _Subcommands, common: argparse.ArgumentParser) ->
     """Register one command family and its arguments."""
     asn: argparse.ArgumentParser = sub.add_parser(
         "arch-snapshot",
-        help="fingerprint every file of arc42/, target/ and built/; writes nothing but `--save`, runs no `bd` command",
+        help="fingerprint every file of the architecture directory; writes nothing but `--save`, runs no `bd` command",
         parents=[common],
     )
     asn.add_argument(
         "--arch-root",
         required=True,
-        help="the architecture directory holding arc42/, target/ and built/",
+        help="the architecture directory",
     )
     asn.add_argument(
         "--save",

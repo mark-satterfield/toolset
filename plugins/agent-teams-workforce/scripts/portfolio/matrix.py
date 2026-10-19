@@ -1,7 +1,7 @@
 """atw-matrix: the one command through which the matrix is read and written.
 
 The matrix is one JSON file of entries and relationships: Epics and their requirements,
-features, constraints, arc42 documents, services, components, infrastructure, events, stacks,
+features, constraints, architecture documents, services, components, infrastructure, events, stacks,
 packages, layers and disagreements, each carrying the side it came from (architecture or
 repository) and, where set, the verified mark. Its shape is
 ``skills/artifact-handoff/schemas/matrix.schema.json`` and its kinds are

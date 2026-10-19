@@ -16,8 +16,9 @@ file approves every view in it.
 owner's constraints) so the architecture step can prove no session wrote there, and with
 `--keep` copies it aside; `depscore.py arch-constraints-restore` runs `restore_constraints`,
 which puts it back from that copy.
-`depscore.py arch-snapshot` runs `snapshot_tree`, which fingerprints every file of `arc42/`,
-`target/` and `built/`, so a step measures what its sessions wrote.
+`depscore.py arch-snapshot` runs `snapshot_tree`, which fingerprints every file under the
+architecture directory (`arc42/`, `detailed/`, `target/`, `built/` and the rest), so a step
+measures what its sessions wrote.
 `depscore.py arch-built-remove` runs `remove_built`, which deletes the `built/<element>/` files
 the effective version has been corrected to match, and commits the removal.
 """
@@ -57,19 +58,15 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 
 # isort: split
-from matrixsync import LIFECYCLE_EFFECTIVE
-from target_contract import (
-    KEY_LIFECYCLE_STATE,
-    TARGET_FOLDER,
-)
+from matrixsync import ARC42_FOLDER, BUILT_FOLDER, LIFECYCLE_EFFECTIVE
+from target_contract import KEY_LIFECYCLE_STATE
 
 STATE_KEY: Final = KEY_LIFECYCLE_STATE
 EFFECTIVE: Final = LIFECYCLE_EFFECTIVE
 FENCE = "---"
 MIN_BUILT_PATH_PARTS = 2
-EFFECTIVE_FOLDER = "arc42"
+EFFECTIVE_FOLDER = ARC42_FOLDER
 CONSTRAINTS_FOLDER = "02-architecture-constraints"
-BUILT_FOLDER = "built"
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -550,14 +547,14 @@ def restore_constraints(arch_root: str, kept: str) -> ConstraintRestore | FileEr
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def snapshot_tree(arch_root: str) -> TreeSnapshot | FileError:
-    """Fingerprint every file of every version: `arc42/`, `target/` and `built/`.
+    """Fingerprint every file under the architecture directory, every version included.
 
     A step that must not write in the architecture, or must write only where it says it did,
     takes one snapshot before its sessions run and one after; the difference is what they
     wrote, measured rather than reported.
 
     Args:
-        arch_root: The architecture directory holding the version folders.
+        arch_root: The architecture directory.
 
     Returns:
         The root, each file's sha256 by path relative to the root, and one digest over all of
@@ -577,13 +574,7 @@ def snapshot_tree(arch_root: str) -> TreeSnapshot | FileError:
         return {"error": "no architecture directory was given"}
     if not root.is_dir():
         return {"error": f"the architecture directory {root} does not exist"}
-    files: list[Path] = sorted(
-        p
-        for name in (EFFECTIVE_FOLDER, TARGET_FOLDER, BUILT_FOLDER)
-        if (root / name).is_dir()
-        for p in (root / name).rglob("*")
-        if p.is_file()
-    )
+    files: list[Path] = sorted(p for p in root.rglob("*") if p.is_file())
     each, digest = _digest(files, root) if files else ({}, "")
     return {
         "root": str(root),

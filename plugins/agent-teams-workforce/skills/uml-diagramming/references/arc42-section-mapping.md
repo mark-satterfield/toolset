@@ -1,7 +1,7 @@
 # Placing UML views in the arc42 sections
 
 The effective architecture is the `arc42/` folder of the architecture directory, one folder per
-section. The architecture documentation model (`reference/architecture-documentation-model.md` in
+section, with the detail below arc42's level in its `detailed/` folder. The architecture documentation model (`reference/architecture-documentation-model.md` in
 the architecture directory) decides where a view goes, and `reference/diagram-and-model-types.md`
 is the list of view types. Read both before placing a view; this file summarises how UML views fit
 them.
@@ -51,7 +51,7 @@ view is updated rather than a second one added beside it.
 
 ## Versions
 
-The documents are in `arc42/`. A document whose `lifecycle_state` is `effective` was reviewed and
+The effective documents are in `arc42/` and `detailed/`. A document whose `lifecycle_state` is `effective` was reviewed and
 approved; one that is `in-review` awaits review, and the matrix records which content is approved.
 A difference the build delivered is drawn in `built/<element>/`. Files
 and folders are named for their subject, never for a PRD, an Epic, a bead id, a date or a pipeline

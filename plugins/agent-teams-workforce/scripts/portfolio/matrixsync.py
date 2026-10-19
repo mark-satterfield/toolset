@@ -1,18 +1,21 @@
-"""Bring the matrix up to date with the vault's arc42 documents and with the Epics' PRDs.
+"""Bring the matrix up to date with the vault's architecture documents and with the Epics' PRDs.
 
 Two operations, both rules with no judgment in them:
 
-- :func:`sync_documents` (``sync-documents``) mirrors the arc42 documents: one ``document`` entry
-  per document that is effective, in review or draft, holding its front matter, its heading texts
-  and its hash; one ``describedBy`` relationship per name in the document's ``shows`` and
-  ``subject`` that is the name or an alias of exactly one entry; and no entry for a document that
-  is gone. It reads every document, or exactly the files the caller names.
+- :func:`sync_documents` (``sync-documents``) mirrors the architecture documents: every Markdown
+  file of the arc42 folder, and every other Markdown file under the architecture root, outside the
+  built and target versions, whose front matter states the catalog (a view type, a scope, a subject
+  or the names it shows). One ``document`` entry per document that is effective, in review or
+  draft, holding its front matter, its heading texts and its hash; one ``describedBy``
+  relationship per name in the document's ``shows`` and ``subject`` that is the name or an alias
+  of exactly one entry; and no entry for a document that is gone. It reads every document, or
+  exactly the files the caller names.
 - :func:`sync_epics` (``sync-epics``) gives every Epic one ``epic`` entry holding its PRD's path
   and hash, and one ``requirement`` entry per ``####`` heading under the PRD's ``## Requirements``
   heading, joined to the Epic by ``hasRequirement``. An Epic with no PRD file gets an entry that
   records no PRD.
 
-Everything both record is on the architecture side: beads, a PRD or an arc42 document states it.
+Everything both record is on the architecture side: beads, a PRD or an architecture document states it.
 
 Neither writes to beads. The one thing this module writes to the vault is the lifecycle line of a
 document's front matter (:func:`set_lifecycle`), for the step that promotes a document; a
@@ -27,7 +30,7 @@ import subprocess  # ruff: ignore[suspicious-subprocess-import] - Runs the resol
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final, Literal, TypedDict
 
 from typeguard import CollectionCheckStrategy, typechecked
@@ -53,6 +56,7 @@ from matrix_contract import (
     relationship_json,
 )
 from matrixstore import Matrix, MatrixRefusedError, make_id, name_key, same_content, slug
+from target_contract import TARGET_FOLDER
 
 if TYPE_CHECKING:
     from contracts import JsonObject
@@ -71,7 +75,11 @@ LIFECYCLE_KEY: Final = "lifecycle_state"
 CODE_FENCES: Final[tuple[str, ...]] = ("```", "~~~")
 MARKDOWN_SUFFIX: Final = ".md"
 ARC42_FOLDER: Final = "arc42"
-"""The folder of the architecture root that holds the arc42 documents."""
+"""The folder of the architecture root that holds the arc42 documents: every Markdown file in it is a document."""
+BUILT_FOLDER: Final = "built"
+"""The folder of the architecture root that holds the built version: what a Story built that differs."""
+VERSION_FOLDERS: Final[frozenset[str]] = frozenset({BUILT_FOLDER, TARGET_FOLDER})
+"""The folders of the architecture root that hold another version than the one the matrix mirrors."""
 PREAMBLE: Final = "(preamble)"
 """The key of the text a document holds before its first heading."""
 EPIC_TYPE: Final = "epic"
@@ -98,7 +106,7 @@ _IDENTIFIER: Final[re.Pattern[str]] = re.compile(r"^([A-Z][A-Z0-9]*(?:-[A-Z0-9]+
 
 @dataclass(frozen=True, slots=True)
 class DocumentRead:
-    """One arc42 document as the vault holds it now."""
+    """One architecture document as the vault holds it now."""
 
     path: str
     """The file, relative to the architecture root, with forward slashes."""
@@ -190,7 +198,7 @@ class DocumentsSynced(TypedDict):
     ambiguous: list[AmbiguousName]
     lifecycleNotStated: list[str]
     leftOut: list[str]
-    """Files looked at that get no entry: outside the arc42 folder, or of a lifecycle the matrix does not hold."""
+    """Files looked at that get no entry: not an architecture document, or of a lifecycle the matrix does not hold."""
 
 
 class EpicWithoutPrd(TypedDict):
@@ -427,7 +435,7 @@ def _section(relative: str) -> int | None:
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def parse_document(relative: str, text: str) -> DocumentRead:
-    """Read what the matrix records of one arc42 document from its text.
+    """Read what the matrix records of one architecture document from its text.
 
     Args:
         relative: The file, relative to the architecture root.
@@ -472,25 +480,59 @@ def parse_document(relative: str, text: str) -> DocumentRead:
     )
 
 
-def _is_document(relative: str) -> bool:
-    """Tell whether a path under the architecture root is an arc42 document.
+def _may_be_document(relative: str) -> bool:
+    """Tell whether a path under the architecture root can be a document the matrix holds.
 
     Returns:
-        True for a Markdown file under the arc42 folder.
+        True for a Markdown file under the architecture root that is outside the folders of the
+        built and target versions.
 
     """
-    return relative.endswith(MARKDOWN_SUFFIX) and relative.startswith(ARC42_FOLDER + "/")
+    given: PurePosixPath = PurePosixPath(relative)
+    return (
+        relative.endswith(MARKDOWN_SUFFIX)
+        and not given.is_absolute()
+        and bool(given.parts)
+        and given.parts[0] not in VERSION_FOLDERS
+    )
+
+
+def _is_document(document: DocumentRead) -> bool:
+    """Tell whether a file read is an architecture document the matrix holds.
+
+    Returns:
+        True for every file under the arc42 folder, and for any other file whose front matter
+        states the catalog: a view type, a scope, a subject or the names it shows.
+
+    """
+    return document.path.startswith(ARC42_FOLDER + "/") or any(
+        (document.view_type, document.scope, document.subject, document.shows),
+    )
+
+
+def _candidates(root: Path) -> list[str]:
+    """List the files under the architecture root that can be documents.
+
+    Returns:
+        Each Markdown file's path relative to the root, outside the built and target versions.
+
+    """
+    return [
+        relative
+        for relative in (relative_path(path, root) for path in root.rglob("*" + MARKDOWN_SUFFIX) if path.is_file())
+        if _may_be_document(relative)
+    ]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def read_documents(arch: Path, paths: Sequence[str] | None = None) -> list[DocumentRead]:
-    """Read arc42 documents from the vault.
+    """Read architecture documents from the vault.
 
     Args:
         arch: The architecture root inside the vault.
         paths: The documents to read, relative to the architecture root; None reads every
-            document. A path that is not a Markdown file under the arc42 folder, or no longer
-            exists, is left out.
+            document. A path that is not an architecture document, or no longer exists, is left
+            out.
 
     Returns:
         The documents read, in path order.
@@ -500,22 +542,20 @@ def read_documents(arch: Path, paths: Sequence[str] | None = None) -> list[Docum
 
     """
     root: Path = arch.expanduser().resolve()
-    wanted: list[str] = (
-        sorted(relative_path(path, root) for path in (root / ARC42_FOLDER).rglob("*" + MARKDOWN_SUFFIX))
-        if paths is None
-        else sorted(set(paths))
-    )
+    wanted: list[str] = sorted(_candidates(root)) if paths is None else sorted(set(paths))
     documents: list[DocumentRead] = []
     relative: str
     for relative in wanted:
-        if not _is_document(relative) or not (root / relative).is_file():
+        if not _may_be_document(relative) or not (root / relative).is_file():
             continue
         try:
             text: str = (root / relative).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as error:
             message: str = f"cannot read the document {root / relative}: {error}"
             raise MatrixError(message) from error
-        documents.append(parse_document(relative, text))
+        document: DocumentRead = parse_document(relative, text)
+        if _is_document(document):
+            documents.append(document)
     return documents
 
 
@@ -633,14 +673,14 @@ def _apply_documents(matrix: Matrix, arch: Path, wanted: Sequence[str]) -> Docum
     }
     path: str
     for path in sorted(set(wanted)):
-        if not _is_document(path):
+        if not _may_be_document(path):
             result["leftOut"].append(path)
             continue
         document: DocumentRead | None = read.get(path)
         key: EntryId = make_id(KIND_DOCUMENT, path)
         existing: Entry | None = matrix.find(key)
         if document is None or document.lifecycle is None:
-            if document is not None:
+            if document is not None or (arch / path).is_file():
                 result["leftOut"].append(path)
             if existing is not None:
                 matrix.remove(key)
@@ -681,13 +721,13 @@ def _named_paths(arch: Path, paths: Sequence[str]) -> list[str]:
 def sync_documents(matrix: Matrix, arch: Path, *, paths: Sequence[str] | None = None) -> DocumentsSynced:
     """Bring the document entries and their ``describedBy`` relationships up to date with the vault.
 
-    Each arc42 document that is effective, in review or draft has one entry on the architecture
+    Each architecture document that is effective, in review or draft has one entry on the architecture
     side holding its front matter, its heading texts and its hash, and is joined by
     ``describedBy`` to each entry its ``shows`` and ``subject`` name. The entry of a document
     that is gone, or is no longer of one of those lifecycles, is removed with its relationships.
 
     With ``paths``, exactly those files are looked at: one that is gone loses its entry, and no
-    other entry changes. Without, every document under the arc42 folder is read and every
+    other entry changes. Without, every document under the architecture root is read and every
     document entry the matrix holds is looked at, so the entry of any document that is gone is
     removed. An entry whose document is as the matrix records it is left as it is. A document
     that cannot be read raises ``MatrixError``, and a path outside the architecture root raises
@@ -712,10 +752,7 @@ def sync_documents(matrix: Matrix, arch: Path, *, paths: Sequence[str] | None = 
         raise MatrixError(message)
     if paths is not None:
         return _apply_documents(matrix, root, _named_paths(root, paths))
-    present: list[str] = [
-        relative_path(path, root) for path in (root / ARC42_FOLDER).rglob("*" + MARKDOWN_SUFFIX) if path.is_file()
-    ]
-    return _apply_documents(matrix, root, sorted({*present, *_document_paths(matrix)}))
+    return _apply_documents(matrix, root, sorted({*_candidates(root), *_document_paths(matrix)}))
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

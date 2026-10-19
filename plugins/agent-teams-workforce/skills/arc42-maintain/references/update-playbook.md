@@ -1,6 +1,6 @@
 # Update playbook — decisions and correction
 
-The effective documents (`arc42/`) change in two ways: by writing the solutions architect's
+The effective documents (`arc42/` and `detailed/`) change in two ways: by writing the solutions architect's
 decisions into them, and by correcting them from what a Story built. Both follow the same loop:
 take each fact, write it in its one home, replace every restatement with a link, check the
 invariants, report.

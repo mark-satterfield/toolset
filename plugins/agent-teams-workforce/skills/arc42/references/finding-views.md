@@ -44,8 +44,8 @@ something are found from its architecture-side entry.
 Each document entry carries the document's `lifecycle`, mirrored from its `lifecycle_state`, and
 its `headings`. An `effective` document has been reviewed and approved. An `in-review` or `draft`
 document is input to check: read it, and do not assume it is complete or correct. The version a
-document belongs to is the folder it lives in: `arc42/` is effective and `built/<element>/` is
-built.
+document belongs to is the folder it lives in: `arc42/` and `detailed/` are effective and
+`built/<element>/` is built.
 
 A design fact has no entry. Its content stays under its arc42 heading, and the matrix holds the
 heading: the `describedBy` relationship from the entry the fact is about names the home document

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # atw-matrix <sub-command> ... — reads and changes the matrix: one JSON file of entries (Epics,
-# requirements, features, constraints, arc42 documents, services, components, infrastructure,
+# requirements, features, constraints, architecture documents, services, components, infrastructure,
 # events, stacks, packages, layers, disagreements) and the relationships between them, each with
 # the side it came from (architecture or repository) and, where set, the verified mark.
 #   reads:   epic, find, node, deps, stacks, layers, impact, related, uses, story-scope,

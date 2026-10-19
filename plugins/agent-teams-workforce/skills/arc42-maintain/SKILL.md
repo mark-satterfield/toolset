@@ -19,7 +19,8 @@ triggers:
 
 # arc42 Maintain — keep the effective documents current
 
-You change the effective arc42 documents, in `arc42/`. They change in two ways only:
+You change the effective documents: the arc42 documents in `arc42/` and, below arc42's level,
+the documents in `detailed/`. They change in two ways only:
 
 - **Decisions.** The solutions architect decided design facts. A write request lists each
   fact with its statement and reason, its one home (document and heading) and the documents

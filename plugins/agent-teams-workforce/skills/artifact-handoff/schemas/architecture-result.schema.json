@@ -5,7 +5,7 @@
   "$ref": "#/$defs/ArchitectureResult",
   "$defs": {
     "NeedState": {
-      "description": "The architect's first judgment of one need against the effective architecture (the effective arc42 as it stands before this Epic). Effective means approved as of now, never complete or correct. `approved`: the architect judges that effective statements meet the need as they stand. `disagreement`: effective statements bear on the need and two of them disagree. `missing`: no effective statement meets the need.",
+      "description": "The architect's first judgment of one need against the effective architecture (the effective architecture, arc42 and detailed, as it stands before this Epic). Effective means approved as of now, never complete or correct. `approved`: the architect judges that effective statements meet the need as they stand. `disagreement`: effective statements bear on the need and two of them disagree. `missing`: no effective statement meets the need.",
       "type": "string",
       "enum": ["approved", "disagreement", "missing"]
     },
@@ -35,7 +35,7 @@
       "enum": ["question", "task"]
     },
     "TrdMode": {
-      "description": "`draft`: write the TRD from the PRD and the approved arc42 material. `update`: apply the listed changes and nothing else.",
+      "description": "`draft`: write the TRD from the PRD and the approved architecture material. `update`: apply the listed changes and nothing else.",
       "type": "string",
       "enum": ["draft", "update"]
     },
@@ -65,7 +65,7 @@
       "required": ["source", "heading"],
       "properties": {
         "source": {
-          "description": "An arc42 path relative to the architecture root, a PRD or TRD path, an AWS documentation URL, code as repository, revision and file:line, or an earlier specialist's answer file.",
+          "description": "An architecture document's path relative to the architecture root, a PRD or TRD path, an AWS documentation URL, code as repository, revision and file:line, or an earlier specialist's answer file.",
           "type": "string",
           "minLength": 1
         },
@@ -97,7 +97,7 @@
       "properties": {
         "bead": {"description": "The Epic id.", "type": "string", "minLength": 1},
         "prdPath": {"description": "The PRD file.", "type": "string", "minLength": 1},
-        "architectureRoot": {"description": "The architecture folder of the vault, which holds `arc42/`, `built/` and `reference/`.", "type": "string", "minLength": 1},
+        "architectureRoot": {"description": "The architecture folder of the vault, which holds `arc42/`, `detailed/`, `built/` and `reference/`.", "type": "string", "minLength": 1},
         "vaultCommit": {"description": "The vault commit the matrix's document rows are synced to.", "type": "string"},
         "matrixCommand": {"description": "The command that reads and writes the matrix.", "type": "string", "minLength": 1},
         "statePath": {"description": "Where the solutions architect writes its state file.", "type": "string", "minLength": 1},
@@ -185,7 +185,7 @@
       "properties": {
         "criterion": {"description": "The criterion id.", "type": "string", "minLength": 1},
         "status": {"$ref": "#/$defs/CriterionStatus"},
-        "satisfiedAt": {"description": "For `satisfied`, each arc42 document and heading, or the TRD path with a requirement id as the heading, that satisfies it; empty for `not-applicable`.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
+        "satisfiedAt": {"description": "For `satisfied`, each architecture document and heading, or the TRD path with a requirement id as the heading, that satisfies it; empty for `not-applicable`.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
         "reason": {"description": "For `not-applicable`, why the criterion does not apply to this PRD; an empty string for `satisfied`.", "type": "string"}
       }
     },
@@ -303,7 +303,7 @@
         "kind": {"$ref": "#/$defs/RequestKind"},
         "request": {"description": "The question, or the task.", "type": "string", "minLength": 1},
         "bounds": {"description": "For a task, exactly what is to be decided and what is not; an empty string for a question.", "type": "string"},
-        "concerns": {"description": "The PRD sections and arc42 headings the request concerns, and nothing wider.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
+        "concerns": {"description": "The PRD sections and architecture headings the request concerns, and nothing wider.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
         "trustedCode": {"description": "The matrix ids of the entries the matrix marks verified. Code of any other entry is a hint only.", "type": "array", "items": {"type": "string"}},
         "answerPath": {"description": "The absolute path the answer is written to, under the context file's `helpersFolder`.", "type": "string", "minLength": 1}
       }
@@ -386,12 +386,12 @@
       }
     },
     "HeadingCitation": {
-      "description": "One heading of an arc42 document: never a whole document.",
+      "description": "One heading of an architecture document: never a whole document.",
       "type": "object",
       "additionalProperties": false,
       "required": ["source", "heading"],
       "properties": {
-        "source": {"description": "The arc42 path relative to the architecture root.", "type": "string", "minLength": 1},
+        "source": {"description": "The architecture document's path relative to the architecture root.", "type": "string", "minLength": 1},
         "heading": {"description": "The heading as `atw-matrix node document:<path>` lists it.", "type": "string", "minLength": 1}
       }
     },
@@ -406,7 +406,7 @@
         "prdPath": {"description": "The PRD file. trd-author reads the requirement headings `atw-matrix epic <epic>` names (each requirement's `name` is its PRD heading), not the whole file.", "type": "string", "minLength": 1},
         "trdPath": {"description": "The absolute path of the TRD file.", "type": "string", "minLength": 1},
         "statePath": {"description": "The absolute path of the architect's state file, whose `needs` name the PRD requirement headings each need comes from.", "type": "string", "minLength": 1},
-        "approvedHeadings": {"description": "For `draft`, each effective arc42 heading that states a standing obligation the design relies on and that no constraint `atw-matrix epic <epic> --constraints` returns records; empty for `update`. A heading whose rules the matrix records as constraints is not listed: the command returns them.", "type": "array", "items": {"$ref": "#/$defs/HeadingCitation"}},
+        "approvedHeadings": {"description": "For `draft`, each effective architecture heading that states a standing obligation the design relies on and that no constraint `atw-matrix epic <epic> --constraints` returns records; empty for `update`. A heading whose rules the matrix records as constraints is not listed: the command returns them.", "type": "array", "items": {"$ref": "#/$defs/HeadingCitation"}},
         "sharedCapabilities": {"description": "For `draft`, each shared capability the design uses, to be written as one requirement of kind `reuse`; empty for `update`.", "type": "array", "items": {"$ref": "#/$defs/SharedUse"}},
         "changes": {"description": "For `update`, the changes to apply; empty for `draft`.", "type": "array", "items": {"$ref": "#/$defs/TrdChange"}},
         "answerPath": {"description": "The absolute path the answer is written to.", "type": "string", "minLength": 1}
@@ -615,7 +615,7 @@
       "properties": {
         "element": {"description": "The matrix id of the element.", "type": "string", "minLength": 1},
         "code": {"description": "Where the code shows it: repository, revision and file:line.", "$ref": "#/$defs/Citation"},
-        "architecture": {"description": "The approved arc42 heading it differs from.", "$ref": "#/$defs/Citation"},
+        "architecture": {"description": "The approved architecture heading it differs from.", "$ref": "#/$defs/Citation"},
         "difference": {"description": "What the code does and what the architecture says, in one or two sentences.", "type": "string", "minLength": 1},
         "document": {"description": "The path, relative to the architecture root, of the built-difference document written for it.", "type": "string", "minLength": 1}
       }

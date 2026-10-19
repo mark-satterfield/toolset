@@ -1,7 +1,7 @@
 # Placing C4 views in the arc42 sections
 
 The effective architecture is the `arc42/` folder of the architecture directory, one folder per
-section. The architecture documentation model (`reference/architecture-documentation-model.md` in
+section, with the detail below arc42's level in its `detailed/` folder. The architecture documentation model (`reference/architecture-documentation-model.md` in
 the architecture directory) decides what each section holds and where a view goes, and
 `reference/diagram-and-model-types.md` is the list of view types. Read both before placing a view;
 this file summarises how C4 views fit them. C4 is a notation for structure; the model says which
@@ -64,7 +64,7 @@ component views.
 
 ## Versions
 
-The documents are in `arc42/`. A document whose `lifecycle_state` is `effective` was reviewed and
+The effective documents are in `arc42/` and `detailed/`. A document whose `lifecycle_state` is `effective` was reviewed and
 approved; one that is `in-review` awaits review, and the matrix mirrors each document's state as
 its `lifecycle`.
 A difference the build delivered is drawn in `built/<element>/`. Files
