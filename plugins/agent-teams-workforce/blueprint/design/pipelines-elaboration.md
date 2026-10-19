@@ -91,7 +91,7 @@ Notes on the diagram:
   first written is an open question (Q13); section 4 shows it.
 - The loop from the reviews back to design ends when the architecture and design are approved.
   How many rounds run, and who rules when findings are not settled, is an open question
-  (NEWQ-pipelines-elaboration-1).
+  (Q41).
 
 ## 2. The architecture stage
 
@@ -170,7 +170,7 @@ Notes on the diagram:
 
 - The review step comes from [requirements/matrix.md](../requirements/matrix.md) R57 (the
   architecture "has been through the solutions architect and the architecture reviews"). Which
-  reviewers take part, and how they are chosen, is an open question (NEWQ-pipelines-elaboration-2):
+  reviewers take part, and how they are chosen, is an open question (Q42):
   every agent needs a reason to be used, the same as the specialists in section 3.
 - How the architect reaches a specialist (directly, through a domain lead, or through the
   workflow) is Q4, drawn in section 3.
@@ -416,7 +416,7 @@ Notes on the diagram:
 
 - "Spec writers" are writers of a spec document, specialists in writing specs; the detailed
   design was done in the architecture stage. Which agents write specs, and how each is chosen, is
-  an open question (NEWQ-pipelines-elaboration-3).
+  an open question (Q43).
 - Task decomposition is drawn in section 8.
 - One Spec and one Story per repository, and Tasks under each Story, are stated by
   [requirements/pipelines.md](../requirements/pipelines.md) and the vault's `docs/sdlc/sdlc.md`.
@@ -491,13 +491,13 @@ a build tracker)".
 
 ```mermaid
 flowchart TD
-    s(["Specs written, one per repository"]) --> rv{"open - NEWQ-pipelines-elaboration-5 - is each Spec reviewed before decomposition?"}
+    s(["Specs written, one per repository"]) --> rv{"open - Q45 - is each Spec reviewed before decomposition?"}
     rv -->|"either answer"| each["For each Spec"]
     each --> story["Spec and its Story created together - one Story bead, one repository, under the Epic"]
     story --> dec["Task decomposition, for example task-decomposer, splits the Story into Tasks"]
-    dec --> size{"open - NEWQ-pipelines-elaboration-4 - how is a Task sized?"}
+    dec --> size{"open - Q44 - how is a Task sized?"}
     size -->|"either answer"| content["Each Task states what it builds with the matrix ids for the stack, components and shared capabilities, the names and decisions recorded upstream or pointers to them, and links to its Spec and to the full architecture and design of its component"]
-    content --> order{"open - NEWQ-pipelines-elaboration-6 - how are build dependencies between Tasks found?"}
+    content --> order{"open - Q46 - how are build dependencies between Tasks found?"}
     order -->|"either answer"| score["Tasks scored and ordered"]
     score --> write["Story and Tasks written to beads. The matrix records neither"]
     write --> more{"Another Spec?"}
@@ -508,7 +508,7 @@ flowchart TD
 ## Open questions
 
 Questions Q3 to Q13 are the plan's questions for the owner, with the plan's recommendations.
-Questions labelled NEWQ are new.
+Questions Q17 and above are new.
 
 | Question | Where | Recommendation and reason |
 |---|---|---|
@@ -518,9 +518,9 @@ Questions labelled NEWQ are new.
 | **Q9.** Who decides where an element lives, once the detailed design has determined the resources? | Section 5 | The architecture decides the repository and stack of each element, and the `polyrepo-steward` does the repository work that follows. Where an element lives follows from the design, and repository work is the steward's. |
 | **Q10.** What does the solutions architect do with a subject no specialist covers? | Section 3 | It designs the subject with its own tools and resources and recommends to the owner a specialist to create or update. The owner: the architect "must use all of its tools and resurces and produce and approve the architecture", and "At the very least I would have likeed to been given the opportunity to update the agent or perhaps create some new agents." |
 | **Q13.** When is the TRD written and updated? | Sections 1 and 4 | Written from the PRD before the architecture, updated after each architecture change that bears on it. The owner: "the TRD probably has be written and then updated if necessary" and "The TRD drives architecture". |
-| **NEWQ-pipelines-elaboration-1.** How many review rounds run before the findings left are ruled on, and who rules? | Section 1 | At most two rounds, then one ruling by a decider agent that did not author the architecture. The owner saw review loops take hours ("A simple request or task could take hours to complete"); a bound with an independent ruling keeps maker and checker separate and ends the loop. |
-| **NEWQ-pipelines-elaboration-2.** Which architecture reviewers take part, and how are they chosen? | Section 2 | The solutions architect names the review subjects its design raises (for example cost, security, failure modes) with a reason for each, the same way as specialists under Q4. "Ever agent needs to have a reason to be used", and a reviewer sent a design with nothing in its subject wastes the time the owner wants back. |
-| **NEWQ-pipelines-elaboration-3.** Which agents write specs, and how is each chosen? | Section 6 | One spec writer per kind of spec content the Story needs (for example an API contract, a data model), chosen from the subjects the approved design records, each writing from the recorded design and designing nothing. The owner: the spec writer "was supposed to be a specialest that could write a spec document". |
-| **NEWQ-pipelines-elaboration-4.** How is a Task sized? | Section 8 | One coherent change in one repository that the build can make and test in one run, sized on the plugin's WSJF job-size scale. A Task that is too large fills an implementer's context, which the owner names as the cause of poor results. |
-| **NEWQ-pipelines-elaboration-5.** Is each Spec reviewed before task decomposition, and by whom? | Section 8 | Yes, once, by one independent reviewer against the approved design it links to, with findings settled by the spec's writer. A spec error found in the build costs a build run; one review is the single independent check the decision rules allow for a high-stakes output. |
-| **NEWQ-pipelines-elaboration-6.** How are build dependencies between Tasks found and recorded? | Section 8 | From the matrix: a Task depends on another when it uses an entry (a stack, a library, an SSM parameter) the other builds, recorded as a dependency edge in beads. The matrix holds those links (plan item 1.13), so no scan is needed. |
+| **Q41.** How many review rounds run before the findings left are ruled on, and who rules? | Section 1 | At most two rounds, then one ruling by a decider agent that did not author the architecture. The owner saw review loops take hours ("A simple request or task could take hours to complete"); a bound with an independent ruling keeps maker and checker separate and ends the loop. |
+| **Q42.** Which architecture reviewers take part, and how are they chosen? | Section 2 | The solutions architect names the review subjects its design raises (for example cost, security, failure modes) with a reason for each, the same way as specialists under Q4. "Ever agent needs to have a reason to be used", and a reviewer sent a design with nothing in its subject wastes the time the owner wants back. |
+| **Q43.** Which agents write specs, and how is each chosen? | Section 6 | One spec writer per kind of spec content the Story needs (for example an API contract, a data model), chosen from the subjects the approved design records, each writing from the recorded design and designing nothing. The owner: the spec writer "was supposed to be a specialest that could write a spec document". |
+| **Q44.** How is a Task sized? | Section 8 | One coherent change in one repository that the build can make and test in one run, sized on the plugin's WSJF job-size scale. A Task that is too large fills an implementer's context, which the owner names as the cause of poor results. |
+| **Q45.** Is each Spec reviewed before task decomposition, and by whom? | Section 8 | Yes, once, by one independent reviewer against the approved design it links to, with findings settled by the spec's writer. A spec error found in the build costs a build run; one review is the single independent check the decision rules allow for a high-stakes output. |
+| **Q46.** How are build dependencies between Tasks found and recorded? | Section 8 | From the matrix: a Task depends on another when it uses an entry (a stack, a library, an SSM parameter) the other builds, recorded as a dependency edge in beads. The matrix holds those links (plan item 1.13), so no scan is needed. |

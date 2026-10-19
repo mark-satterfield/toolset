@@ -37,7 +37,7 @@ One topic per document. A topic has the same file name in both folders.
 | The pipelines: elaboration and task decomposition | [requirements/pipelines.md](requirements/pipelines.md), [requirements/matrix.md](requirements/matrix.md) | [design/pipelines-elaboration.md](design/pipelines-elaboration.md) |
 | The pipelines: architecture and matrix states | [requirements/matrix.md](requirements/matrix.md) | [design/pipelines-architecture-states.md](design/pipelines-architecture-states.md) |
 | The pipelines: build | [requirements/pipelines.md](requirements/pipelines.md) | [design/pipelines-build.md](design/pipelines-build.md) |
-| The pipelines: deploy | [requirements/pipelines.md](requirements/pipelines.md) | [design/pipelines-deploy.md](design/pipelines-deploy.md) |
+| The pipelines: deploy, deploy fix and verification | [requirements/pipelines.md](requirements/pipelines.md) | [design/pipelines-deploy.md](design/pipelines-deploy.md) |
 | The pipelines: driver and routing | [requirements/pipelines.md](requirements/pipelines.md) | [design/pipelines-driver.md](design/pipelines-driver.md) |
 
 The pipeline topic's design is split into one diagram document per pipeline, all named

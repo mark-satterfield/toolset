@@ -60,15 +60,15 @@ elaboration with out building anything."
 flowchart TD
     owner(["Owner"]) -->|"runs"| keeper["keeper.py"]
     owner -->|"runs"| sup["supervisor.py"]
-    sup --> supq{"open - NEWQ-pipelines-driver-1 - what does supervisor.py start?"}
+    sup --> supq{"open - Q17 - what does supervisor.py start?"}
     keeper -->|"deploys each Story whose Tasks are all built"| deploy
     req(["Stakeholder request"]) --> prdc["PRD creation - pipelines-prd.md"]
     prdc -->|"PRD and its Epic, created together"| prdv["PRD validation - pipelines-prd.md"]
     prdv --> ready{"Epic ready for elaboration?"}
     ready -->|"no: findings on the PRD"| fix(["PRD revised - pipelines-prd.md"])
     ready -->|"yes"| elab["Elaboration, once per Epic - pipelines-elaboration.md"]
-    supq -.->|"open - NEWQ-pipelines-driver-1"| elab
-    supq -.->|"open - NEWQ-pipelines-driver-1"| build
+    supq -.->|"open - Q17"| elab
+    supq -.->|"open - Q17"| build
     elab -->|"approved architecture and design, TRD, Specs, Stories and Tasks"| fork1(("fork: each Task"))
     fork1 --> build["Build, once per Task - pipelines-build.md"]
     build -->|"code and tests on the Story's branch, whole suite passing"| join1(("join: every Task of the Story built"))
@@ -135,5 +135,5 @@ flowchart LR
     DE -->|"Story state"| BD
 ```
 
-Which step writes the verified mark is open question NEWQ-pipelines-architecture-states-2 in
+Which step writes the verified mark is open question Q48 in
 [pipelines-architecture-states.md](pipelines-architecture-states.md).

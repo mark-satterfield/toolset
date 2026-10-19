@@ -2,673 +2,704 @@
 
 Parent: [The pipelines: overview](pipelines.md)
 
-The deploy pipeline runs once per Story. It takes in a Story whose Tasks are all built on the
-Story's branch, and produces the Story's repository published and deployed to AWS dev and
-verified, the record of what was built (the effective arc42 documents corrected to match the
-code), and one merged pull request; when the pull request merges, the driver sets the matrix's
-verified mark on what the Story built and closes the Story. The driver
-(`ops/sdlc-automation/storydeploy.py`, composite `story-deploy`, runner `driver` in
-`skills/pipeline-contracts/schemas/composites.json`) runs the steps of the Story's step journal
-itself and dispatches three workflow scripts for the steps that need an agent:
-`workflows/deploy-mechanism.js`, `workflows/story-deploy-fix.js` and
-`workflows/built-version.js`; `workflows/settle.js` commits a fix, and the `shepherd-pr` skill
-works the pull request until it qualifies for merging. The steps are defined in
-`skills/pipeline-contracts/schemas/pipeline-steps.json` (pipeline `deploy`). The requirements are
-`blueprint/requirements/pipelines.md` (the Deploy row, and "The matrix in the build and deploy
-lanes", which makes the Deploy table D1 to D10 of section 4 of `blueprint/design/matrix.md` the
-specification), requirements R24 to R26, R29, R39, R42 and R46 of
-`blueprint/requirements/matrix.md`, and the owner's statements of 2026-10-19 quoted below.
+The deploy pipeline runs once per Story. It takes a Story whose Tasks are all built, with their
+code and tests on the Story's branch in the Story's worktree, and produces the Story's repository
+published (each custom Python library to CodeArtifact) and deployed to AWS dev with CDK, the
+deployment working, and one pull request that GitHub merges once the shepherd has its checks
+passing and its threads resolved. When every Story of an Epic is done, all of the Epic's
+architecture and relationships are set verified in the matrix. This document draws the deploy
+**as the owner wants it**. The sources are the owner's messages of 2026-10-19 (Part 1 of the
+elaboration plan, items 1.8, 1.11 and 1.13, and its questions), the vault's `docs/sdlc/sdlc.md`,
+the SkillSpoke repository's root `AGENTS.md` and `.claude/rules/git-conventions.md`, and
+[requirements/pipelines.md](../requirements/pipelines.md) and
+[requirements/matrix.md](../requirements/matrix.md) where they agree with the owner's words. Where
+the owner has not said what is wanted, the step is drawn as an open question, listed at the end
+with a recommendation. The approved and verified states this pipeline ends in are drawn in
+[The pipelines: architecture and matrix states](pipelines-architecture-states.md), sections 2 to
+4; the build that comes before is [The pipelines: build](pipelines-build.md).
+
+The owner, on what the deploy proves: "Once all of the tasks for all of the stories for and Epic
+have been built and tested (including CI (CDK), which means deployemen must also work), then all
+of the architecture and rellationships for the Epic can be set to verified." and "Verification is
+the only way to prove tht the architecture is likely to work."
 
 ## Legend
 
 | Notation | Meaning |
 |---|---|
-| `->>` (sequence) | a call or a dispatch: the caller starts the work |
-| `-->>` (sequence) | the return of that call |
-| `-)` (sequence) | an asynchronous message, or a write to a store with no reply |
-| `([...])` (activity) | start or end |
-| `{...?}` (activity) | a decision; each outgoing edge is labelled with its guard |
-| `fork` / `join` nodes (activity) | concurrent work starts / ends |
-| `[*]` (state machine) | initial or terminal state; transitions read "event [guard] / effect" |
-| "arc42 (vault)", "matrix", "beads", "vault", "git / GitHub" | the stores, named the same everywhere |
-| note "differs from required" | the as-built behaviour differs from the requirement named |
-| "assumption" | an element neither the requirements nor the code specifies |
+| `A ->> B` (sequence) | A calls or starts B: B does work for A |
+| `B -->> A` (sequence) | B returns its result to A |
+| `A -) Store` (sequence) | A writes to a store; nothing is returned |
+| `alt` / `opt` labelled "open - Qn", or a node "OPEN Qn" | The owner has not decided this. Every branch shown is one the owner named or one listed as a question, and none is a decision. Qn is listed under "Open questions" at the end |
+| `([...])` (activity) | Start or end |
+| `{...?}` (activity) | A decision; every outgoing edge is labelled with its guard |
+| "fork" / "join" nodes (activity) | Work that runs concurrently, and the point where all of it has finished |
+| "merge" node (activity) | Alternative paths coming back together; no waiting |
+| `[*]` and labelled transitions (state machine) | Initial state; event [guard] / effect |
+| `keeper.py` | The driver in `ops/sdlc-automation` that starts the deploy of a Story. Only the owner runs it |
+| beads | The issue tracker that holds the Epic, its Stories and their Tasks |
+| matrix | The one record of how Epics, documents, resources, stacks, SSM parameters and repositories relate ([requirements/matrix.md](../requirements/matrix.md)). It holds no Story and no Task |
+| arc42 (vault) | The arc42 architecture and design documents in the `skillspoke-docs` vault |
+| vault | The `skillspoke-docs` vault outside arc42, for example the record of what was built (`tech/architecture/built/`) |
+| git / GitHub | The Story's repository: its worktree, the Story's branch, the pull request and `main` |
+| AWS dev | The one development AWS account: CodeArtifact and the CloudFormation stacks CDK deploys |
+| "(no agent yet)" | A role the owner's design has that no agent file implements today |
 
-The owner's statements of 2026-10-19 this document draws as required:
+Agents are named by their role. Where a roster agent fits a role, it is named "for example", with
+the subject in its own file that gives it a reason to be used. Which agent is started is reasoning,
+not code (the owner: "What I do not want is python code deciding which specialists to use");
+how it is chosen is plan question 4.
 
-- "Once all of the tasks for all of the stories for and Epic have been built and tested (including CI (CDK), which means deployemen must also work), then all of the architecture and rellationships for the Epic can be set to verified."
-- "The matrix does not include stories and tasks (it isn't a build tracker), and it doesn't care about what has actually been deployed."
-- "I do prefer to spin up agents in headless claude sessions to do work, and then get out."
-- "arc42 is both input and out. The matrix is both input and output."
+## 1. One Story, through deploy
 
-## 1. The Story deploy, step by step
-
-**Subject.** The steps of one Story's deploy journal, in the order they run, with the steps each
-step's result adds.
-**Scope.** One Story, from the dispatch that finds every Task closed to the Story's close.
-**Purpose.** Show the control flow: which steps are planned up front, which a result adds, where
-the fix loop and the waits are, and where the pipeline stops.
-**Boundary.** Outside: how the driver selects the Story (see
-[The pipelines: driver and routing](pipelines-driver.md)), and the inside of the three workflow
-steps (sections 3, 4 and 5).
-**Basis.** As built: `pipeline-steps.json` pipeline `deploy` (`plan`, `inner`, `kinds.*.adds`,
-`limit`, `waits`); `storydeploy.py` `STEPS` and the step functions `_mechanism_step` (line 1164)
-to `_close_step` (line 1508), `_failed_attempt` (line 1125, `MAX_FIX_ATTEMPTS = 3`, line 178),
-`_run_journal` (line 1594). Required, by the parts that cite it: the Deploy row of
-`requirements/pipelines.md`.
-
-```mermaid
-flowchart TD
-  S(["Dispatch: Story has every Task closed"]) --> M["deploy:mechanism<br/>deploy-mechanism.js, polyrepo-steward"]
-  M --> MQ{"mechanism ruled?"}
-  MQ -->|"no ruling, or publishes with no command and no deploy"| STOP1(["Story fails at mechanism, item failure recorded"])
-  MQ -->|"ruled"| W["deploy:workspace<br/>reuse or open .worktrees/STORY-REPO on branch story/STORY"]
-  W --> WQ{"Tasks exist and no Story branch?"}
-  WQ -->|"yes"| STOP2(["Story fails at workspace"])
-  WQ -->|"no"| PQ{"publishes a package?"}
-  PQ -->|"yes: add deploy:publish"| P["deploy:publish<br/>run publishCommand"]
-  PQ -->|"no, deploys: add deploy:synth"| SY
-  PQ -->|"neither"| CA
-  P --> PO{"publish exit 0?"}
-  PO -->|"yes and deploys: add deploy:synth"| SY["deploy:synth<br/>task install, cdk synth"]
-  PO -->|"yes, no CDK"| CA
-  PO -->|"no"| FL
-  SY --> SO{"synth exit 0?"}
-  SO -->|"yes: add deploy:ssm-check"| SSM["deploy:ssm-check<br/>aws ssm get-parameters"]
-  SO -->|"no"| FL
-  SSM --> SQ{"every parameter exists?"}
-  SQ -->|"no"| WAIT1["step stays running, handback waiting-for-ssm<br/>driver probes every 300 s before the next dispatch"]
-  WAIT1 -->|"next dispatch"| SSM
-  SQ -->|"yes: add deploy:deploy"| DP["deploy:deploy<br/>cdk deploy --all"]
-  DP -->|"always: add deploy:verify"| V["deploy:verify<br/>describe-stacks, git status"]
-  V --> VQ{"every stack CREATE_COMPLETE or UPDATE_COMPLETE and tree clean?"}
-  VQ -->|"no"| FL
-  FL{"3 deploy:fix steps already done?"}
-  FL -->|"yes"| STOP3(["step fails, deploy-fix-exhausted"])
-  FL -->|"no: record deployFailure, add deploy:fix then publish when it publishes, then synth"| FX["deploy:fix<br/>story-deploy-fix.js, cdk-stack-author"]
-  FX --> FQ{"fix ok?"}
-  FQ -->|"no-change, or not committed"| STOP4(["deploy:fix fails, Story stops"])
-  FQ -->|"fixed and committed"| AGAIN["the added publish or synth runs again"]
-  AGAIN --> PQ2{"publishes?"}
-  PQ2 -->|"yes"| P
-  PQ2 -->|"no"| SY
-  VQ -->|"yes"| CA["deploy:commits-ahead<br/>git rev-list --count base..HEAD"]
-  CA --> CQ{"commits ahead of the default branch?"}
-  CQ -->|"0"| CL
-  CQ -->|"1 or more: add built-version, pull-request, merge-wait"| BV["deploy:built-version<br/>built-version.js"]
-  BV --> BQ{"built-version ok?"}
-  BQ -->|"no"| STOP5(["deploy:built-version fails"])
-  BQ -->|"yes"| PR["deploy:pull-request<br/>skillspoke-pr, opens the PR, arms auto-merge, hands it to the shepherd"]
-  PR --> MW["deploy:merge-wait<br/>gh pr view state"]
-  MW --> MQ2{"MERGED?"}
-  MQ2 -->|"no"| WAIT2["step stays running, handback pr-open<br/>driver probes every 120 s"]
-  WAIT2 -->|"next dispatch"| MW
-  MQ2 -->|"yes"| CL["deploy:close<br/>verified mark when a PR merged, bd close, remove worktree and branch"]
-  CL --> E(["Story closed"])
-```
-
-Differences from the requirements:
-
-- The Deploy row of `requirements/pipelines.md` takes in "A Story whose Tasks are all built" and
-  produces "one merged pull request". As built, a Story whose branch holds no commit
-  (`commits-ahead` 0) closes with no pull request and no built-version step, and a Story with no
-  Task at all is deployed once its Epic's elaboration is done (`storyorder.startable_without_tasks`,
-  line 116). Neither case is covered by a requirement; both are as built only.
-- A repository that neither publishes nor deploys is not stopped: `mechanism_of` returns a
-  mechanism with both false (`_nothing_to_ship`, line 949), and the Story goes on to
-  commits-ahead, the built-version step, a pull request and the close. Only a repository that
-  publishes with no publish command and does not deploy stops (`_no_mechanism`, line 943). As
-  built only.
-
-## 2. Where the deploy reads and writes the stores
-
-**Subject.** The stores each deploy step reads and writes.
-**Scope.** Every step of section 1, and the shepherd of the pull request.
-**Purpose.** Show where arc42 (vault), the matrix, beads, the vault, git / GitHub, AWS dev and the
-step journal are touched, and set the required matrix reads beside the as-built ones.
-**Boundary.** Outside: the build pipeline's writes to the same Story branch.
-**Basis.** Required: the Deploy table D1 to D10 of `blueprint/design/matrix.md` section 4, made
-required by `requirements/pipelines.md` ("The matrix in the build and deploy lanes"); R29, R39,
-R46. As built: `storydeploy.py`, `deploy-mechanism.js`, `story-deploy-fix.js`, `built-version.js`,
-`scripts/portfolio/depscore.py` `_sync_documents` (line 243) and `_dispatch_arch_built_remove`
-(line 1854), `ops/sdlc-automation/matrixmarks.py` `verified` (line 342).
-
-| Step | git / GitHub | AWS dev | beads | step journal |
-|---|---|---|---|---|
-| deploy:mechanism | the repository's declarations, read by `polyrepo-steward` | none | none | done with `mechanism` |
-| deploy:workspace | `git worktree add`, `rev-parse` | none | none | `worktree`, `branch` |
-| deploy:publish | none | CodeArtifact through `publishCommand` | none | `publishedHead` or `deployFailure` |
-| deploy:synth, deploy:ssm-check | none | SSM `get-parameters` | none | `assembly`, `ssmParameters` |
-| deploy:deploy, deploy:verify | `git status` | `cdk deploy --all`, CloudFormation `describe-stacks` | none | `deployOutput`, `stacks` or `deployFailure` |
-| deploy:fix | a commit on the Story branch | `describe-stack-events`, read only | none | `fix` and the child steps |
-| deploy:built-version | the worktree at HEAD, read | none | none | `built` and the child steps |
-| deploy:pull-request, deploy:merge-wait | push, pull request, `gh pr view` | none | none | `pullRequest`, `pullRequestState` |
-| deploy:close | `gh pr view` merge commit, `worktree remove`, `branch -D`, push of `matrix.json` | none | `bd close` of the Story | `closed` |
-
-```mermaid
-flowchart LR
-  MEC["deploy:mechanism"]
-  DEP["deploy:deploy"]
-  FIX["deploy:fix"]
-  BV["deploy:built-version"]
-  CLS["deploy:close"]
-  MTX[("matrix")]
-  ARC[("arc42 (vault)")]
-  MEC -.->|"required D1, not read as built"| MTX
-  DEP -.->|"required D4, not read as built"| MTX
-  FIX -.->|"required D5, not read as built"| MTX
-  BV -->|"reads built --story, story-scope"| MTX
-  BV -->|"writes built views, corrects, sets effective, removes"| ARC
-  BV ==>|"sync-documents, differs from required D7 and R46"| MTX
-  CLS ==>|"verify --story, commit --bead"| MTX
-```
-
-In the diagram a dotted edge is a matrix read the requirements call for and the code does not make,
-and a thick edge is a write.
-
-Differences from the requirements:
-
-- D1 (Mechanism) requires the stack's `executionUse`, `distributedAs`, `commands.publish` and
-  `commands.deploy` to be read from the matrix, with the steward session run only when one is
-  absent. As built the `polyrepo-steward` session runs on every Story and the matrix is not read
-  (`deploy-mechanism.js` holds no `atw-matrix` call; `storydeploy.mechanism_of`, line 955).
-- D2 (Publish) requires `distributedAs`; as built the publish runs the steward's `publishCommand`.
-- D4 (Deploy) requires the stack's `commands.deploy`; as built the driver runs
-  `cdk deploy --all --require-approval never` (`storydeploy.deploy`, line 551).
-- D5 (Deploy fix) requires `node stack:<id>` and `deps --of` for the failed stacks; as built the
-  fixer's brief carries the failed step, its output and the stack statuses, and no matrix read.
-- D7 (Built correction) and R46 require that the deploy records nothing in the matrix except the
-  verified mark ("A deploy adds no new facts to the matrix"; R29 "changes nothing but the verified
-  mark"). As built `depscore.py arch-approve` and `arch-built-remove`, which the built-version
-  step runs, also bring the matrix's `document` entries of the files they touch up to date
-  (`_sync_documents`, which writes the matrix through `update_matrix`).
-- R30 and R38 require a step to look up what the matrix holds rather than rediscover it; the
-  mechanism ruling rediscovers from the repository's own files what the matrix's stack records
-  would answer.
-
-## 3. deploy:mechanism (`workflows/deploy-mechanism.js`)
-
-**Subject.** The ruling of what the Story's repository publishes and deploys.
-**Scope.** The `deploy:mechanism` step.
-**Purpose.** Show the agent the step starts, what it receives and what it returns.
-**Boundary.** Outside: the publish and deploy commands themselves (section 4).
-**Basis.** As built: `storydeploy.py` `_mechanism_step` (line 1164), `mechanism_of` (line 955),
-`_usable` (line 1001), `_excluded_repositories` (line 924); `deploy-mechanism.js` (the
-`polyrepo-steward` call, line 290; arguments `DeployMechanismArgs` in the `story-deploy-args`
-shared block). Required: D1 of the Deploy table (see section 2).
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant DRV as Driver storydeploy.py
-  participant WF as deploy-mechanism.js headless Workflow session
-  participant PS as polyrepo-steward
-  box rgb(235,240,245) Stores
-    participant GIT as git / GitHub repository files
-    participant MTX as matrix
-    participant JRN as step journal
-  end
-  DRV-)JRN: start deploy:mechanism
-  alt the repository is the control repository or the repository holding the architecture
-    DRV-)JRN: done, mechanism publishes false, deploys false
-  else any other repository
-    DRV->>WF: dispatch deploy-mechanism with story, repoPath
-    WF->>PS: brief - the repository path, rule publishes, publishCommand, deploys, reason, read only
-    PS->>GIT: read AGENTS.md or CLAUDE.md, CI workflows, package manifest, CDK app
-    GIT-->>PS: the declarations
-    PS-->>WF: repository, publishes, publishCommand, deploys, reason
-    WF-->>DRV: handback ok, stage ask, mechanism
-    Note over DRV,MTX: differs from required D1 - the stack's executionUse, distributedAs and commands are not read from the matrix, and the steward runs every time
-    alt no ruling
-      DRV-)JRN: fail deploy:mechanism
-    else publishes with no publishCommand and no deploy
-      DRV-)JRN: fail deploy:mechanism, stage no-deploy-mechanism
-    else publishes with no publishCommand and deploys
-      DRV-)JRN: done, mechanism with publishes set false, deploy only
-    else ruled
-      DRV-)JRN: done, artifact mechanism
-    end
-  end
-```
-
-## 4. Workspace, publish, synth, SSM check, deploy and verify
-
-**Subject.** The steps the driver runs itself, with no agent.
-**Scope.** `deploy:workspace`, `deploy:publish`, `deploy:synth`, `deploy:ssm-check`,
-`deploy:deploy`, `deploy:verify`, and the failure that adds a fix.
-**Purpose.** Show the commands, what each records in the journal, and the two kinds of stop: a
-wait and a fix.
-**Boundary.** Outside: the fix itself (section 5).
-**Basis.** As built: `storydeploy.py` `_workspace_step` (line 1177), `open_worktree` (line 717),
-`_publish_step` (line 1204), `publish` (line 423), `_synth_step` (line 1223), `synth` (line 440,
-`task install` when the Taskfile declares it, then `cdk synth --quiet --output cdk.out`),
-`_ssm_check_step` (line 1256), `ssm_reads` (line 488, parameters of type
-`AWS::SSM::Parameter::Value<...>`), `missing_parameters` (line 513), `_deploy_step` (line 1275),
-`_verify_step` (line 1290), `verify` (line 592), `_failed_attempt` (line 1125), `wait_of`
-(line 1798). Required: the Deploy row of `requirements/pipelines.md` ("published and deployed to
-the development environment and verified").
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant DRV as Driver storydeploy.py
-  box rgb(235,240,245) Stores and services
-    participant GIT as git / GitHub Story repository
-    participant CA as AWS dev CodeArtifact
-    participant SSM as AWS dev SSM Parameter Store
-    participant CFN as AWS dev CloudFormation
-    participant JRN as step journal
-  end
-  DRV->>GIT: existing worktree for the Story, else worktree add .worktrees/STORY-REPO on story/STORY
-  GIT-->>DRV: worktree path, branch
-  DRV-)JRN: done deploy:workspace, artifacts worktree, branch, adds publish or synth
-  opt the mechanism publishes
-    DRV->>CA: run publishCommand in the worktree, 1800 s limit
-    CA-->>DRV: exit status
-    DRV-)JRN: done deploy:publish, publishedHead, adds synth when it deploys
-  end
-  opt the mechanism deploys with CDK
-    DRV->>DRV: task install when declared, cdk synth into cdk.out
-    DRV-)JRN: done deploy:synth, assembly, adds ssm-check
-    DRV->>SSM: get-parameters for every SSM parameter the templates read, per region, 10 at a time
-    SSM-->>DRV: InvalidParameters
-    alt a parameter is missing
-      DRV-->>DRV: handback waiting-for-ssm, the step stays running
-      Note over DRV,SSM: before each later dispatch wait_of probes the parameters again, every 300 s at most
-    else all present
-      DRV-)JRN: done deploy:ssm-check, ssmParameters, adds deploy
-      DRV->>CFN: cdk deploy --all --require-approval never, 7200 s limit
-      CFN-->>DRV: exit status, output tail
-      DRV-)JRN: done deploy:deploy, deployOutput, adds verify
-      DRV->>CFN: describe-stacks for every stack in the assembly
-      CFN-->>DRV: StackStatus, StackStatusReason
-      DRV->>GIT: git status --porcelain --untracked-files=no
-      GIT-->>DRV: uncommitted files
-      alt every stack CREATE_COMPLETE or UPDATE_COMPLETE, and the tree clean
-        DRV-)JRN: done deploy:verify, stacks
-      else fewer than 3 fixes done
-        DRV-)JRN: done with deployFailure, adds deploy:fix with the failure, then publish when it publishes, then synth
-      else 3 fixes done
-        DRV-)JRN: fail the step, deploy-fix-exhausted
-      end
-    end
-  end
-  Note over DRV,JRN: a failed publish or synth takes the same branch as a failed verify, with the publish or synth named as the failed step
-```
-
-Assumptions: none.
-
-Differences from the requirements: none beyond D2 and D4 in section 2. No requirement says how
-"verified" is judged for a deploy; as built it is CloudFormation stack status plus a clean
-worktree. The workflow `workflows/deploy.js` (a `smoke-test-author` suite run against the deployed
-endpoints, then a `cdk-stack-author` deploy) is not declared in `composites.json` and nothing
-dispatches it, so no smoke test runs in the deploy pipeline.
-
-## 5. deploy:fix (`workflows/story-deploy-fix.js`)
-
-**Subject.** The fix of a failed publish, synth, deploy or verification.
-**Scope.** The `deploy:fix` step and its three child steps.
-**Purpose.** Show the agent, what it receives, what is measured rather than taken from its report,
-and how the commit lands on the Story branch.
-**Boundary.** Outside: the redeploy after the fix (section 4 runs again).
-**Basis.** As built: `storydeploy.py` `_fix_step` (line 1338); `story-deploy-fix.js` `stepAuthor`
-(the `cdk-stack-author` call, line 1134), `stepVerify` (the `TREE_PY` git status read and the
-synth test run through `relayrun.py`), `stepCommit` (`settle` with `commitOnly`); `settle.js`
-`commitRun` (the `github-actions-pipeline-implementer` commit session); `pipeline-steps.json`
-`inner["deploy:fix"]`.
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant DRV as Driver storydeploy.py
-  participant WF as story-deploy-fix.js headless Workflow session
-  participant RR as relayrun.py
-  participant CSA as cdk-stack-author
-  participant ST as settle.js commitOnly
-  participant GAI as github-actions-pipeline-implementer
-  box rgb(235,240,245) Stores
-    participant GIT as git / GitHub Story worktree
-    participant JRN as step journal
-  end
-  DRV-)JRN: start deploy:fix
-  DRV->>WF: dispatch with journal path, run, step, story, tree, failed step, output, stacks, pluginRoot, relay
-  WF->>RR: atw-step-journal read
-  RR-->>WF: the journal
-  opt deploy:fix has no child steps
-    WF-)DRV: STEP-JOURNAL add fix-author, fix-verify, fix-commit
-  end
-  WF-)DRV: STEP-JOURNAL start deploy:fix-author
-  WF->>CSA: brief - tree, branch, what failed, stacks, last 12000 characters of output. Find the cause, fix in the tree, run the synth assertion tests, never deploy, commit or push
-  CSA->>GIT: read the code, aws cloudformation describe-stack-events read only, edit
-  CSA-->>WF: cause, changedFiles, testCommand, evidence
-  WF-)DRV: STEP-JOURNAL done fix-author, fixCause, fixTestCommand
-  WF-)DRV: STEP-JOURNAL start deploy:fix-verify
-  WF->>RR: git status --porcelain in the tree
-  RR-->>WF: the changed files
-  alt no file changed
-    WF-)DRV: STEP-JOURNAL fail fix-verify, no-change
-    WF-->>DRV: handback not ok, stage no-change
-  else files changed
-    opt the fixer named a test command
-      WF->>RR: /bin/sh -c testCommand in the tree, 540 s limit
-      RR-->>WF: exit status, tail
-    end
-    WF-)DRV: STEP-JOURNAL done fix-verify, fixChangedFiles, fixTestsPassed
-    WF-)DRV: STEP-JOURNAL start deploy:fix-commit
-    WF->>ST: commit the tree, message fix the deploy of Story STORY - cause
-    ST->>GAI: commit every change, type(scope) message, no --no-verify, no push
-    GAI->>GIT: git add -A, git commit
-    GAI-->>ST: blocked list
-    ST-->>WF: status reported, commit head
-    WF-)DRV: STEP-JOURNAL done fix-commit, fixCommit
-    WF-->>DRV: handback ok, stage fixed, cause, changedFiles, testsPassed, commit
-  end
-  DRV->>DRV: apply every STEP-JOURNAL line with journal_lines.py
-  alt fixed
-    DRV-)JRN: done deploy:fix, artifact fix
-  else not fixed
-    DRV-)JRN: fail deploy:fix, the Story stops
-  end
-```
-
-Differences from the requirements: D5 (section 2). The fix is committed whether the synth
-assertion tests passed or not: `testsPassed` false, or no test command named, does not stop the
-fix (`stepVerify`); the redeploy and verification decide. No requirement covers this; as built
-only.
-
-## 6. deploy:built-version (`workflows/built-version.js`)
-
-The built-version step is drawn twice: the control flow of its child steps (6.1) and the agents,
-stores and commands of each child step (6.2).
-
-### 6.1 The child steps
-
-**Subject.** The child steps of `deploy:built-version` and the correction and review loop.
-**Scope.** One Story's built-version step.
-**Purpose.** Show when a comparison writes nothing, when a correction runs, and how the review
-loop ends.
-**Boundary.** Outside: the agents' prompts (6.2).
-**Basis.** As built: `pipeline-steps.json` `inner["deploy:built-version"]` and the
-`deploy:built-*` kinds; `built-version.js` `stepSnapshot`, `stepCompare`, `stepCorrect`,
-`stepReview` (`MAX_CORRECTIONS = 2`), `stepApprove`, `stepRemove`; `storydeploy.py`
-`_built_version_step` (line 1403), `built_args` (line 795). Required: D6 and D7 of the Deploy
-table.
+**Subject:** the deploy of one Story.
+**Scope:** from a Story whose Tasks are all built to its pull request merged, and, for the last
+Story of an Epic, the Epic's verification.
+**Purpose:** the order of the steps, what each needs before it starts, and where each loop ends.
+**Boundary:** the build of each Task is in [build](pipelines-build.md); each step here is drawn in
+detail in the sections that follow.
+**Sources:** the owner: "keeper is what knows to deploy a story."; the requirements row for Deploy:
+"A Story whose Tasks are all built" producing "The Story's repository published and deployed to
+the development environment and verified, the record of what was built, and one merged pull
+request" ([requirements/pipelines.md](../requirements/pipelines.md)); custom Python libraries,
+[requirements/matrix.md](../requirements/matrix.md) R34: "every custom Python library as a package
+published to CodeArtifact"; not every repository has a stack, the owner: "I want to remind you
+that not all repos have stacks."; verification, the owner, quoted above; the pull request,
+`git-conventions.md`: "The agent that writes a change commits it, pushes the branch, and opens the
+PR with `skillspoke-pr` before it reports." and "PRs merge automatically. Never ask the owner to
+merge, and never merge yourself."
 
 ```mermaid
 flowchart TD
-  A(["deploy:built-version starts, the driver dispatches built-version.js"]) --> SN["deploy:built-snapshot<br/>fingerprint and copy section 2, fingerprint arc42/, target/, built/"]
-  SN --> CMP["deploy:built-compare"]
-  CMP --> Q1{"the Story's Tasks state a stack or an entry of the matrix?"}
-  Q1 -->|"neither"| OK1(["done, nothing compared, stage matches"])
-  Q1 -->|"entries but no stack"| F1(["step fails"])
-  Q1 -->|"a stack"| CC["built-architecture-comparer writes a view per difference in built/ELEMENT/"]
-  CC --> Q2{"section 2 unchanged and every write under built/?"}
-  Q2 -->|"no"| F2(["step fails, section 2 put back"])
-  Q2 -->|"yes"| Q3{"differences recorded?"}
-  Q3 -->|"none"| OK2(["done, stage matches"])
-  Q3 -->|"some, every built view in-review: add correct and review"| COR["deploy:built-correct<br/>architecture-maintainer"]
-  COR --> Q4{"wrote only under arc42/ and outside section 2, and a pass answering findings changed a file?"}
-  Q4 -->|"no"| F3(["step fails"])
-  Q4 -->|"yes"| REV["deploy:built-review<br/>architecture-conformance-reviewer"]
-  REV --> Q5{"conforms, and every corrected file reviewed?"}
-  Q5 -->|"no, fewer than 2 corrections answered findings: add correct and review"| COR
-  Q5 -->|"no, 2 corrections answered findings"| F4(["step fails"])
-  Q5 -->|"yes, section 2 unchanged: add approve and remove"| APP["deploy:built-approve<br/>depscore.py arch-approve sets the corrected files effective"]
-  APP --> REM["deploy:built-remove<br/>depscore.py arch-built-remove deletes matched built views and commits"]
-  REM --> Q6{"a built view left that the effective version does not match?"}
-  Q6 -->|"yes"| F5(["step fails, the view stays in built/"])
-  Q6 -->|"no"| OK3(["done, stage recorded"])
+    start(["keeper.py: a Story whose Tasks are all built"]) --> chk["OPEN Q14 - which checks of upstream steps stay?"]
+    chk --> look["Read from the matrix what the Story's repository publishes and deploys, and the commands"]
+    look --> what{"What does the repository publish and deploy?"}
+    what -->|"a custom Python library"| pub["Publish the package to CodeArtifact - section 2"]
+    what -->|"CDK stacks only"| dep
+    what -->|"neither"| none["OPEN Q68 - what does the deploy do here?"]
+    pub --> pubOk{"Published?"}
+    pubOk -->|"yes, and the repository has stacks"| dep["cdk deploy to AWS dev - section 3"]
+    pubOk -->|"yes, no stacks"| merge2(("merge"))
+    pubOk -->|"no"| fix
+    dep --> works{"Deployment working? OPEN Q66"}
+    works -->|"yes"| merge2
+    works -->|"no"| fix["story-deploy-fix - section 4"]
+    fix --> fixed{"Fixed and committed on the Story's branch?"}
+    fixed -->|"yes"| what
+    fixed -->|"no: attempts spent - OPEN Q70"| blocked(["Story blocked, cause reported"])
+    fixed -->|"the fix needs a design change - OPEN Q71"| back(["Back to the architecture"])
+    none --> merge2
+    merge2 --> built["What was built that differs from arc42 - OPEN Q72 - section 5"]
+    built --> pr["Push the Story's branch and open one pull request with skillspoke-pr from the Story's worktree - section 6"]
+    pr --> shep["The shepherd fixes until checks pass and threads resolve"]
+    shep --> ok{"Checks passing and threads resolved?"}
+    ok -->|"yes"| gh["GitHub auto-merge merges the pull request"]
+    ok -->|"no: the shepherd cannot fix what is left - OPEN Q74"| blocked2(["Story blocked, cause reported"])
+    gh --> doneS["The Story is done - OPEN Q75, Q78"]
+    doneS --> all{"Every Story of the Epic done?"}
+    all -->|"no"| wait(["Other Stories still in build or deploy"])
+    all -->|"yes"| ver["All of the Epic's architecture and relationships set verified in the matrix - section 7"]
+    ver --> fin(["Epic verified"])
 ```
 
-### 6.2 The agents and stores of the built-version step
+Notes on the diagram:
 
-**Subject.** What each built-version child step sends to its agent or command and what comes back.
-**Scope.** The child steps of 6.1.
-**Purpose.** Show where the matrix is read, where arc42 (vault) is written, and what is measured.
-**Boundary.** Outside: the step journal changes, which follow the pattern of section 5.
-**Basis.** As built: `built-version.js` (`matrixCommand`, `depscore`, `treeSnapshot`,
-`constraintsGuard`, and the step functions of 6.1); `depscore.py` `arch-constraints`,
-`arch-snapshot`, `arch-state`, `arch-approve`, `arch-built-remove`, `_sync_documents` (line 243).
-Required: D6 (`built --story`, then `story-scope`), D7, R29, R46.
+- The fix loop returns to the publish and deploy decision and exits when the deployment works, or
+  when the fix stops for one of the two open reasons.
+- A value known only at deploy time, such as the region or the environment, is supplied at
+  deploy time and stops nothing (section 3).
+- The deploy adds no Story and no Task to the matrix. The owner: "The matrix does not include
+  stories and tasks (it isn't a build tracker), and it doesn't care about what has actually been
+  deployed."
+
+## 2. Publish a custom Python library
+
+**Subject:** the publish of the package a Story's repository holds.
+**Scope:** from the Story's built branch to the package version in CodeArtifact.
+**Purpose:** what the publish reads, who runs it and what it writes.
+**Boundary:** the CDK deploy is section 3; a failed publish goes to section 4.
+**Sources:** the owner, on the naming library: "a python library, which should have been
+published to CodeArtifacts."; [requirements/matrix.md](../requirements/matrix.md) R34 ("The matrix
+records every custom Python library as a package published to CodeArtifact") and question Q21
+("What does this stack publish and deploy, and which commands test, publish and deploy it?"),
+which agree with the owner's matrix as the index that saves every step a scan ("so that agents do
+not need the scan a perform complicated searches over and over just to figure out answer to
+simple questions"); checks of upstream steps, the owner: "I don't want every subsequent step in a
+process constantly checking that upstream steps were done right" with the exception "like if B is
+going to be a universal or shared component".
 
 ```mermaid
 sequenceDiagram
-  autonumber
-  participant WF as built-version.js headless Workflow session
-  participant DS as depscore.py through relayrun.py
-  participant AM as atw-matrix through relayrun.py
-  participant BAC as built-architecture-comparer
-  participant MAI as architecture-maintainer
-  participant ACR as architecture-conformance-reviewer
-  box rgb(235,240,245) Stores
-    participant ARC as arc42 (vault)
-    participant MTX as matrix
-    participant GIT as git / GitHub Story worktree
-  end
-  WF->>DS: arch-constraints --keep, arch-snapshot --save tree-start
-  DS->>ARC: hash section 2 and every file of arc42/, target/, built/
-  WF->>AM: built --story STORY
-  AM->>MTX: match the Story's Tasks' matrix_elements ids against entries
-  AM-->>WF: stacks, entries
-  loop each stack the Story built
-    WF->>AM: story-scope --stack STACK --ids ENTRIES
-    AM-->>WF: documents and headings that describe each entry
-  end
-  WF->>BAC: brief - the worktree at HEAD, the stacks and entries with their approved headings, where arc42 and built/ are, the documentation model
-  BAC->>GIT: git grep, git show HEAD
-  BAC->>ARC: read the headings, write one built view per difference, lifecycle_state in-review
-  BAC-->>WF: differences with citations file and line, files written
-  WF->>DS: arch-constraints, arch-snapshot --against tree-start, arch-state of the built views
-  opt differences recorded
-    loop until the review conforms, at most 2 corrections answering findings
-      WF->>MAI: brief - the built views, correct arc42/ to match, nothing in section 2, findings of the last review
-      MAI->>ARC: edit and add effective views
-      MAI-->>WF: changed, created, deleted, matched, constraintIssues, contradictions
-      WF->>DS: arch-snapshot --against the earlier fingerprints
-      WF->>ACR: brief - the built views, the corrected files, the previous findings
-      ACR->>ARC: read
-      ACR-->>WF: conforms, findings, reviewedFiles, matchedBuiltViews
+    autonumber
+    participant K as keeper.py
+    participant DW as Deploy of the Story
+    participant RUN as Publish runner - open Q64
+    box Stores
+        participant BD as beads
+        participant MX as matrix
+        participant G as git / GitHub - the Story's worktree
+        participant AWS as AWS dev - CodeArtifact
     end
-    WF->>DS: arch-approve --arch-files corrected --reviewed-files reviewed
-    DS->>ARC: set lifecycle_state effective
-    DS-)MTX: sync-documents of those files
-    WF->>DS: arch-built-remove --files matched --message
-    DS->>ARC: delete the matched built views and commit the removal
-    DS-)MTX: sync-documents of those files
-    Note over DS,MTX: differs from required D7 and R46 - the deploy records nothing in the matrix but the verified mark
-  end
-  WF-->>WF: handback matches or recorded, counts to the driver
-```
 
-Differences from the requirements: the matrix write of D7 and R46 (section 2). The built-version
-step corrects arc42 and writes no other matrix fact, which matches R29 ("A build or deploy run
-reports what it finds wrong and changes nothing but the verified mark") except for that
-document sync.
-
-## 7. Pull request, shepherd and merge
-
-**Subject.** The Story's one pull request from open to merged.
-**Scope.** `deploy:pull-request` and `deploy:merge-wait`, and the shepherd that runs beside them.
-**Purpose.** Show who opens the pull request, who works it until it qualifies, who merges it, and
-how the driver learns it merged.
-**Boundary.** Outside: the inside of one `fix-pr` pass (`commands/fix-pr.md`).
-**Basis.** As built: `storydeploy.py` `_pull_request_step` (line 1429), `open_pr` (line 643, the
-command `atw.pr_command()`, which is `skillspoke-pr`; exit 3 means the pull request is open and
-auto-merge is not armed), `_merge_wait_step` (line 1460), `wait_of` (line 1798);
-`/Users/msat1971/.local/bin/skillspoke-pr` (CodeRabbit review comment, auto-merge, the shepherd
-hand-off); `ops/shepherd-prs.sh` (lock, `gitutils.py provision`, the headless session,
-`gitutils.py cleanup-merged-pr`); `skills/shepherd-pr/SKILL.md` and `scripts/shepherd-pr.sh`;
-`commands/fix-pr.md`. Required: the Deploy row of `requirements/pipelines.md` ("one merged pull
-request").
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant DRV as Driver storydeploy.py
-  participant SPR as skillspoke-pr
-  participant SH as shepherd-prs.sh
-  participant SK as shepherd-pr skill loop, headless session
-  participant FP as fix-pr pass, headless session
-  box rgb(235,240,245) Stores
-    participant GH as git / GitHub pull request
-    participant JRN as step journal
-  end
-  DRV->>SPR: --title feat(REPO) Story title --body Tasks, stacks deployed and verified, run in the worktree
-  SPR->>GH: push story/STORY, open the PR, comment @coderabbitai full review
-  SPR->>GH: gh pr merge --auto with the method the repository allows
-  SPR-)SH: nohup shepherd-prs.sh PR, detached
-  SPR-->>DRV: PR URL, exit 0, or 3 when auto-merge is not armed
-  DRV-)JRN: done deploy:pull-request, pullRequest
-  SH->>SH: per-PR lock, gitutils.py provision reuses the worktree registered for the branch
-  SH->>SK: one headless claude session runs the shepherd-pr skill
-  loop until the PR qualifies for merging, or 3 passes change nothing, or 7200 s of waiting
-    SK->>GH: read checks, threads, reviews, merge state
-    alt something keeps the PR from qualifying
-      SK->>FP: claude --print /agent-teams-workforce:fix-pr PR in the worktree
-      FP->>GH: fix checks and conflicts, reply, resolve threads, push, audit comment
-    else checks still running or merge state blocked
-      SK->>SK: wait and poll, no session spent
+    K->>BD: the Story and its Tasks
+    BD-->>K: every Task built
+    K->>DW: start the deploy of the Story
+    DW->>MX: what does this repository publish and deploy, and the commands?
+    MX-->>DW: a package, its publish command, and stacks if any
+    opt open - Q14: a shared library is a shared component
+        DW->>G: run the repository's test suite on the Story's branch
+        G-->>DW: passing
     end
-  end
-  SK-->>SH: ending qualifies, merged, closed or could-not-fix
-  GH->>GH: auto-merge merges the qualifying PR
-  SH->>SH: gitutils.py cleanup-merged-pr --worktree --wait
-  DRV-)JRN: start deploy:merge-wait
-  DRV->>GH: gh pr view state
-  alt not MERGED
-    DRV-->>DRV: handback ok, stage pr-open, the step stays running
-    Note over DRV,GH: before each later dispatch wait_of reads the state again, every 120 s at most
-  else MERGED
-    DRV-)JRN: done deploy:merge-wait, pullRequestState MERGED
-  end
+    Note over DW,AWS: open Q65 - published from the Story's branch before the pull request, or after the merge
+    DW->>RUN: the publish command, in the Story's worktree
+    RUN->>AWS: publish the package version
+    alt published
+        AWS-->>RUN: version recorded
+        RUN-->>DW: published, with the version
+    else publish failed
+        AWS-->>RUN: error
+        RUN-->>DW: failed, with the output
+        DW->>DW: story-deploy-fix - section 4
+    end
 ```
 
-Assumptions: none. The shepherd never merges (`Bash(gh pr merge:*)` is denied in every pass);
-GitHub auto-merge merges.
+Notes on the diagram:
 
-## 8. deploy:close and the verified mark
+- The matrix answers what the repository publishes and the command; the deploy does not scan the
+  repository to find out ([requirements/matrix.md](../requirements/matrix.md) R38, the owner on
+  the matrix's purpose).
+- A package version can be deleted and published again, so a version published from a Story's
+  branch can be replaced.
 
-### 8.1 What the close does
+## 3. Deploy to AWS dev with CDK
 
-**Subject.** The close of a Story and the one matrix write of the deploy.
-**Scope.** `deploy:close`.
-**Purpose.** Show where the verified mark is set, on what, and what else the close does.
-**Boundary.** Outside: the Epic, which the deploy never closes.
-**Basis.** As built: `storydeploy.py` `_close_step` (line 1508), `_mark_verified` (line 898),
-`merge_commit` (line 875), `_remove_workspace` (line 1476); `matrixmarks.py` `verified`
-(line 342, role `build-driver` in `ATW_MATRIX_ROLE`); `blueprint/design/matrix.md` 1.4 and 1.5
-(`atw-matrix verify`, `built --story`). Required: R24, R25, R39, R42, R46; the owner statement of
-2026-10-19 on verified, and item 1.8 of the approved naming follow-ups
-(`claude-inbox/naming-followups-2026-10-17.md`, lines 172 to 193).
+**Subject:** the `cdk deploy` of the stacks a Story's repository holds.
+**Scope:** from the published package (when there is one) to every stack deployed in AWS dev and
+the deployment working.
+**Purpose:** where a stack finds another stack's SSM parameter, how values known only at deploy
+time are handled, and what decides that the deployment works.
+**Boundary:** a failed deploy goes to section 4. What the deploy records in the matrix is only
+the verified flag, at the end of the Epic (section 7).
+**Sources:** `AGENTS.md`: "Anything deployed to AWS dev can be torn down and redeployed" and
+"Cross-stack references: do not use CDK/CloudFormation exports or imports to share values between
+stacks. The producing stack stores the value in an SSM Parameter Store parameter; the consuming
+stack reads that parameter's value."; the owner: "Your question should be, "How can stack-B know
+what ssm stack-A is saving (or will saved once deployed)?" The answer for that is, it should look
+in the matrix." and "for each stack, I should be able to see what SSM parameters it would write";
+deploy-time values, the owner: "there may be some information that just simply isn't known until
+deploy time, such as the region or environment where we are deploying. We don't want to stop
+because of that. We need to make sure some of that is accommodated and handled at run time
+(deploy time)."; names, the owner: "I don't want to encourage an agent to start naming things,
+when the names should have already been provided in the task (or spec)."
 
 ```mermaid
 sequenceDiagram
-  autonumber
-  participant DRV as Driver storydeploy.py
-  participant MM as matrixmarks.py
-  participant AM as atw-matrix, role build-driver
-  box rgb(235,240,245) Stores
-    participant GH as git / GitHub
-    participant MTX as matrix
-    participant BDS as beads
-    participant JRN as step journal
-  end
-  DRV-)JRN: start deploy:close
-  opt a pull request was opened
-    DRV->>GH: gh pr view --json mergeCommit
-    GH-->>DRV: merge commit
-    DRV->>MM: verified STORY, merge commit
-    MM->>AM: verify --story STORY --commit SHA
-    AM->>BDS: read the Story's Tasks and their matrix_elements ids
-    AM-)MTX: verified with the commit on each stack and entry the Story built, and on each provedByBuild relationship starting at one
-    AM-->>MM: entries, unmatched
-    MM->>AM: commit --bead STORY
-    AM-)GH: commit and push matrix.json in the control repository
-    Note over DRV,MTX: differs from required - the owner sets verified for all of an Epic's architecture and relationships once all Tasks of all its Stories are built and tested, as built it is per Story at its merge
-  end
-  DRV-)BDS: bd close STORY, reason pull request merged, or verified with no change
-  DRV-)GH: git worktree remove --force, git branch -D story/STORY
-  DRV-)JRN: done deploy:close, closed true
+    autonumber
+    participant DW as Deploy of the Story
+    participant RUN as Deploy runner - open Q64
+    participant CHK as Deployment check - open Q66
+    box Stores
+        participant MX as matrix
+        participant G as git / GitHub - the Story's worktree
+        participant AWS as AWS dev
+    end
+
+    DW->>MX: the Story's stacks, the SSM parameters each writes, and the parameters each reads with the stack that writes them
+    MX-->>DW: stacks, parameter names, writing stacks - open Q15
+    opt open - Q67: a writing stack is not deployed in AWS dev
+        DW->>AWS: is the writing stack deployed?
+        AWS-->>DW: no
+        Note over DW,AWS: the order of deploys across stacks and Stories is open
+    end
+    DW->>RUN: cdk deploy, with the region and environment supplied at deploy time
+    RUN->>G: synthesize the CDK app from the Story's branch, names as the task and spec give them
+    RUN->>AWS: deploy each stack
+    AWS->>AWS: each stack reads the SSM parameters it needs, by the names the matrix gave
+    AWS-)AWS: each stack writes its own SSM parameters
+    alt every stack deployed
+        AWS-->>RUN: stack status
+        RUN-->>DW: deployed
+        DW->>CHK: does the deployment work?
+        CHK->>AWS: checks against AWS dev - open Q66
+        alt working
+            CHK-->>DW: working
+        else not working
+            CHK-->>DW: not working, with the evidence
+            DW->>DW: story-deploy-fix - section 4
+        end
+    else a stack failed
+        AWS-->>RUN: failure events
+        RUN-->>DW: failed, with the output
+        DW->>DW: story-deploy-fix - section 4
+    end
 ```
 
-### 8.2 The verified mark, required and as built
+Notes on the diagram:
 
-**Subject.** When the matrix's verified mark is set.
-**Scope.** The architecture an Epic's elaboration reaches, and the entries one Story's Tasks name.
-**Purpose.** Set the owner's per-Epic rule beside the per-Story mark the code sets.
-**Boundary.** Outside: the approved mark (`architectureApproved`), which the elaboration
-pipeline's promotion sets.
-**Basis.** The first machine is required: the owner statement of 2026-10-19 ("Once all of the
-tasks for all of the stories for and Epic have been built and tested (including CI (CDK), which
-means deployemen must also work), then all of the architecture and rellationships for the Epic can
-be set to verified."), item 1.8 of the naming follow-ups, R24 and R25. The second is as built:
-`storydeploy._close_step`, `matrixmarks.verified`, `design/matrix.md` 1.4.
+- The names of stacks, resources and parameters come from the task and the spec, and the
+  parameter names another stack writes come from the matrix. The deploy creates no name.
+- The region and the environment are supplied when the deploy runs and are not a reason to stop
+  or to report a gap.
+
+## 4. The fix of a failed deploy (story-deploy-fix)
+
+**Subject:** the fix of a Story's failed publish, synth, deploy or deployment check.
+**Scope:** from the failure's output to a fix committed on the Story's branch, or to the fix
+stopping.
+**Purpose:** what the fix is given, what it may change, where it commits, and where the loop
+ends.
+**Boundary:** the redeploy after the fix is sections 2 and 3. Who fixes, how many attempts, and
+whether a design change goes back to elaboration are not stated by the owner and are drawn open.
+**Sources:** the owner, on the build: "The architecture process is designed to clean up the matrix
+is it works, and the same with the build."; on what an implementer sees: "even if it has only the
+specific steps in a task that it needs to perform, it should still have access to the full
+architecture for the component that it is working on"; on trust: "I need more fault-tolerance for
+the pipeline, and need more trust."; on upstream decisions: "the task should be detailed so that
+the build doesn't need to guess or interpret or decide on how to do anything that was already
+concluded upstream in the elaboration (and architecture) pipeline."; `AGENTS.md` tier 1: "TDD
+London School (mock-first) for new code."; `git-conventions.md`: "When a pre-commit hook fails:
+fix **all** findings, restage, retry.", "If findings can't be fixed, **abort with no commit** and
+report." and "`git commit --no-verify` / `git push --no-verify` / `git commit -n` are
+**forbidden**".
+
+```mermaid
+flowchart TD
+    in(["A failed publish, synth, deploy or deployment check, with its output"]) --> who["Start the fixer - OPEN Q69 - for example cdk-stack-author for a CDK failure, chosen by reasoning - OPEN Q4"]
+    who --> ctx["The fixer reads the output, the Task and spec, and the full architecture of the component through the spec's links in arc42 (vault)"]
+    ctx --> cause{"What does the failure need?"}
+    cause -->|"a change within the design the task and spec give"| change["Change the code or CDK in the Story's worktree"]
+    cause -->|"a change to an upstream design decision - OPEN Q71"| design(["Stop the fix: the finding goes back to the architecture"])
+    cause -->|"a value known only at deploy time"| dt["Supply it at deploy time, no code change"]
+    change --> tests["Run the repository's tests, a test the fix proves wrong updated"]
+    tests --> green{"Tests passing?"}
+    green -->|"no"| change
+    green -->|"yes"| commit["Commit on the Story's branch, every quality gate passing, never bypassed"]
+    commit --> gate{"Commit made?"}
+    gate -->|"yes"| redeploy(["Redeploy - sections 2 and 3"])
+    gate -->|"no: findings cannot be fixed"| abort(["Abort with no commit, report"])
+    dt --> redeploy
+    redeploy -.->|"failed again - OPEN Q70: how many attempts"| in
+```
+
+Notes on the diagram:
+
+- The inner loop from "Tests passing?" back to the change ends when the tests pass, or when the
+  fixer gives up and the fix ends with no commit.
+- The outer loop from "Redeploy" back to the start ends when the deployment works, or when the
+  number of attempts (open) is spent.
+- A fix commits on the Story's branch in the Story's worktree. It opens no pull request; the one
+  pull request of the Story is section 6.
+
+## 5. What the deploy finds wrong in the architecture
+
+**Subject:** a difference between what a Story built and deployed, and arc42 and the matrix.
+**Scope:** from the difference found to arc42 and the matrix corrected.
+**Purpose:** that what the build finds wrong is cleaned up, and which parts of the how are open.
+**Boundary:** how arc42 document states change is in
+[architecture and matrix states](pipelines-architecture-states.md), section 1.
+**Sources:** the owner: "The architecture process is designed to clean up the matrix is it works,
+and the same with the build." and "It will not be 100% complete, and it may not be 100% accurate
+in it's current state, but that's ok."; the owner: "Any updates or corrections to arc42 must also
+be made."; `docs/sdlc/sdlc.md`: "**Built** (`built/<subject>/`) - what the build delivered where
+it differs from the effective version, which is then corrected to match."
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant DW as Deploy of the Story
+    participant CMP as Comparer - for example built-architecture-comparer
+    participant AM as architecture-maintainer
+    participant RV as Reviewer - for example architecture-conformance-reviewer
+    box Stores
+        participant G as git / GitHub - the Story's branch
+        participant V as vault - built/
+        participant A42 as arc42 (vault)
+        participant MX as matrix
+    end
+
+    Note over DW,MX: open Q72 - where this runs in the deploy and how it reaches arc42 and the matrix
+    DW->>CMP: the Story's branch and the arc42 documents for what its Tasks build
+    CMP->>G: reads the code and CDK
+    CMP->>A42: reads the effective documents
+    alt no difference
+        CMP-->>DW: nothing to record
+    else a difference
+        CMP-)V: what was built, where it differs from the effective version
+        CMP-->>DW: the differences
+        alt open - Q71: the difference is a design change
+            DW->>DW: back to the architecture
+        else the effective version is corrected to match
+            DW->>AM: correct arc42 from the built record
+            AM-)A42: corrected documents, in-review
+            AM->>RV: check the correction
+            RV-->>AM: conforms
+            AM-)A42: effective
+            DW-)MX: the matrix corrected to match - open Q72
+        end
+    end
+```
+
+Notes on the diagram:
+
+- The comparer's subject in its own file is "Compare the code one Story built with the approved
+  architecture for its elements and record each difference", which gives it a reason to be used
+  here.
+- Whether the correction is approved by the architecture agent responsible for approving the
+  architecture, as an `effective` document must be, is part of Q72.
+
+## 6. The pull request, the shepherd and auto-merge
+
+**Subject:** the one pull request of a Story.
+**Scope:** from the Story's branch, deployed and working, to the pull request merged by GitHub.
+**Purpose:** who opens the pull request, from where, what the shepherd does, and who merges.
+**Boundary:** CI here is the pull request's checks; the CI the owner names in verification is
+these checks passing.
+**Sources:** `git-conventions.md`: "PRs: always `skillspoke-pr` (never `gh pr create`)", "Run
+`skillspoke-pr` inside the branch's worktree.", "It opens the PR with GitHub auto-merge switched
+on and hands it to the shepherd, which fixes until checks pass and threads resolve; GitHub then
+merges the PR.", "PRs merge automatically. Never ask the owner to merge, and never merge
+yourself.", "It never commits on `main` in a primary working tree, never pushes to `main`" and
+"A commit that is not pushed, or a branch with no PR, is unfinished work, not a handoff."; the
+requirements row: "one merged pull request".
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant DW as Deploy of the Story
+    participant PRC as skillspoke-pr, in the Story's worktree
+    participant SH as The shepherd
+    participant GH as GitHub
+    box Stores
+        participant G as git / GitHub - the Story's branch
+        participant BD as beads
+    end
+
+    DW->>G: push the Story's branch
+    DW->>PRC: open the pull request
+    PRC->>GH: one pull request, the Story's branch into main, auto-merge on
+    GH-->>PRC: the pull request URL
+    PRC->>SH: hand the pull request to the shepherd
+    PRC-->>DW: the pull request URL
+    DW-)BD: the Story's pull request URL
+    loop until checks pass and threads resolve
+        SH->>GH: read checks, conflicts, review threads, change requests
+        GH-->>SH: what keeps it from merging
+        SH-)G: fixes committed and pushed on the Story's branch, gates never bypassed
+        SH->>GH: replies, threads resolved
+        opt open - Q73: the fix changes code or CDK
+            SH->>DW: publish and deploy again from the branch head
+        end
+    end
+    alt checks passing and threads resolved
+        GH->>GH: auto-merge merges into main
+        GH-->>DW: merged
+    else open - Q74: the shepherd cannot fix what is left
+        SH-->>DW: what is left, with its cause
+    end
+```
+
+Notes on the diagram:
+
+- The loop exits when the checks pass and the threads are resolved, and GitHub merges; or when
+  the shepherd cannot fix what is left (open).
+- No agent merges and the owner is never asked to merge.
+
+## 7. Verification: the matrix's verified marks
+
+**Subject:** the verified marks of one Epic.
+**Scope:** from the last Story of the Epic done to all of the Epic's architecture and
+relationships set verified.
+**Purpose:** when verified is set, on what, and what it does not touch.
+**Boundary:** the states of an entry over time, and what a later spec reads from the last
+verified version, are in [architecture and matrix states](pipelines-architecture-states.md),
+sections 2 and 4.
+**Sources:** the owner: "Once all of the tasks for all of the stories for and Epic have been built
+and tested (including CI (CDK), which means deployemen must also work), then all of the
+architecture and rellationships for the Epic can be set to verified.", "The verified flag remain
+false or unverified. This means we have an approved, but unverified architecture for that Epic as
+documented in the matrix, but none of has been verofied by building and testing.", "The linkage
+could have a verified flag. The node could have a verified flag. Neither wold be required for
+every situation." and "For an Epic, I should be able to instantly know what AWS resources are
+invalidated and what stacks and repos those AWS resources are in."; `AGENTS.md`: "A Story or Epic
+is never closed because its Tasks are closed, and an open Epic is never a condition for other
+work."
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant K as keeper.py
+    participant VS as Verification step - open Q76
+    box Stores
+        participant BD as beads
+        participant MX as matrix
+    end
+
+    K->>BD: the Epic's Stories
+    BD-->>K: the state of each Story
+    alt every Story done - open Q75: merged, or checks passing
+        K->>VS: verify the Epic
+        VS->>MX: every entry and relationship the Epic reaches
+        MX-->>VS: entries and links, approved, not verified
+        alt open - Q77: a later Epic has changed an entry since this Epic approved it
+            VS-)MX: verified set on the version this Epic approved, the later change stays not verified
+        else unchanged since this Epic approved it
+            VS-)MX: verified set
+        end
+        VS-->>K: the Epic's architecture and relationships verified
+    else any Story not done
+        Note over MX: stays approved, not verified
+    end
+```
+
+Notes on the diagram:
+
+- Verification writes only the matrix. It changes no arc42 document; `effective` is the
+  architecture agent's approval, not a build result.
+- What the Epic reaches is followed through the matrix's links (plan item 1.13): its AWS
+  resources, their stacks and repositories, the SSM parameters the stacks write and read, and the
+  documents related to them.
+- The name of the verified flag is plan question 12.
+
+## 8. The states of a Story through deploy
+
+**Subject:** one Story bead.
+**Scope:** from its last Task built to its pull request merged, and the Epic's verification.
+**Purpose:** every state the deploy moves a Story through, and what moves it.
+**Boundary:** the states of the matrix entries are in
+[architecture and matrix states](pipelines-architecture-states.md), section 2.
+**Sources:** those quoted in sections 1 to 7.
 
 ```mermaid
 stateDiagram-v2
-  direction LR
-  state "Required - one Epic's architecture and relationships" as REQ {
-    [*] --> NotVerified
-    NotVerified --> NotVerified : a Story of the Epic merges [another Task of the Epic is not built and tested]
-    NotVerified --> Verified : last Task of the last Story built and tested [CI and CDK passed, deploy worked] / set verified on all of the Epic's architecture and relationships
-    Verified --> NotVerified : a later change to that architecture [assumption - the owner states no reset]
-  }
-  state "As built - one stack or entry" as BUILT {
-    [*] --> Absent
-    Absent --> Marked : a Story whose Task names it merges / verify --story with the merge commit
-    Marked --> Marked : a later Story naming it merges / commit replaced
-    Absent --> Absent : the Story closes with no pull request / no mark
-  }
+    state "Tasks being built" as building
+    state "every Task built" as built
+    state "publishing" as publishing
+    state "deploying to AWS dev" as deploying
+    state "checking the deployment" as checking
+    state "fixing - story-deploy-fix" as fixing
+    state "built record and corrections - open Q72" as record
+    state "pull request open, shepherd working" as shepherding
+    state "merged" as merged
+    state "blocked - open Q70 and Q74" as blocked
+    state "back to the architecture - open Q71" as design
+
+    [*] --> building
+    building --> built : the last Task built and tested
+    built --> publishing : keeper.py starts the deploy [the repository publishes a package]
+    built --> deploying : keeper.py starts the deploy [stacks only]
+    built --> record : keeper.py starts the deploy [neither - open Q68]
+    publishing --> deploying : published [the repository has stacks]
+    publishing --> record : published [no stacks]
+    publishing --> fixing : publish failed
+    deploying --> checking : every stack deployed
+    deploying --> fixing : a stack failed
+    checking --> record : the deployment works
+    checking --> fixing : the deployment does not work
+    fixing --> publishing : fix committed [the repository publishes a package]
+    fixing --> deploying : fix committed or deploy-time value supplied [stacks only]
+    fixing --> blocked : attempts spent, or no commit possible
+    fixing --> design : the fix needs a design change
+    record --> shepherding : branch pushed, pull request opened with skillspoke-pr
+    record --> design : a difference is a design change
+    shepherding --> shepherding : the shepherd pushes fixes / redeploy open Q73
+    shepherding --> merged : checks pass and threads resolve / GitHub auto-merge
+    shepherding --> blocked : the shepherd cannot fix what is left
+    merged --> [*] : the Story is done / when it is the Epic's last, the Epic is verified
 ```
 
-Differences from the requirements:
+## 9. Where the stores are read and written
 
-- Granularity: the owner requires the mark for all of an Epic's architecture and relationships at
-  once, when all Tasks of all its Stories are built and tested; as built the mark is set per
-  Story, at its merge, on the stacks and entries its own Tasks name (`built --story`) and on the
-  `provedByBuild` relationships that start at them. A Story of an Epic merges and marks its
-  entries while other Stories of the same Epic are unbuilt.
-- Scope: "all of the architecture and rellationships for the Epic" is wider than the Task-named
-  entries; architecture the Epic's elaboration reached that no Task names is never marked, and a
-  relationship without `provedByBuild` is never marked.
-- R25 says "The build pipeline sets the verified mark"; as built the deploy pipeline's
-  `deploy:close` sets it (the role is still named `build-driver`).
-- The owner's second statement ("it doesn't care about what has actually been deployed") holds
-  as built: the mark records the merge commit and no deployed state, and the matrix holds no
-  Story or Task (R40, R42: the Task script reads the beads).
-
-Assumptions: the transition from Verified back to NotVerified in the required machine. The owner's
-statements do not say what happens to the mark when a later Epic changes the architecture;
-`design/matrix.md` 1.4 keeps the mark until the changing Story is verified.
-
-## 9. A deploy step's states in the Story's journal
-
-**Subject.** The status of one step of a Story's deploy journal.
-**Scope.** Every step kind of pipeline `deploy`.
-**Purpose.** Show how a dispatch begins where the last one stopped, how a wait keeps a step
-running, and how a failure is retried.
-**Boundary.** Outside: the journal's container steps, whose status follows their children (see
-[The pipelines: driver and routing](pipelines-driver.md), section 8).
-**Basis.** As built: `skills/pipeline-contracts/schemas/step-journal.schema.json`
-(`stepStatus`: planned, running, done, failed); `orchestrator/core/step_journal.py`
-(`start_step` refuses a done step, `fail_step`, `next_step` returns the first step that is not
-done, `unclosed_steps`); `ops/sdlc-automation/deployjournal.py` `upcoming` (line 367);
-`storydeploy.py` `_run_journal`, `_ssm_check_step`, `_merge_wait_step`, `_failed_attempt`,
-`_stopped`, `_run_step`; `elabmark.py --start-at` (the owner's reset).
+**Subject:** every read and write the deploy makes.
+**Scope:** one Story's deploy, and the Epic's verification.
+**Purpose:** which step touches beads, the matrix, arc42 (vault), the vault, git / GitHub and AWS
+dev, and how.
+**Boundary:** the order of the reads and writes is in sections 2 to 7.
+**Sources:** the owner: "arc42 is both input and out. The matrix is both input and output.", "The
+matrix does not include stories and tasks (it isn't a build tracker), and it doesn't care about
+what has actually been deployed." and "The architecture process is designed to clean up the
+matrix is it works, and the same with the build."; `git-conventions.md` and `AGENTS.md`, quoted
+in sections 3 and 6.
 
 ```mermaid
-stateDiagram-v2
-  [*] --> planned : up-front plan, or added by a result
-  planned --> running : dispatch reaches it / start
-  running --> done : step function succeeded / artifacts, adds
-  running --> done : publish, synth or verify failed [fewer than 3 fixes done] / deployFailure, adds fix and reruns
-  running --> failed : step error or a stop [no-deploy-mechanism, no-change, fix limit, workflow failure] / failure text, item failure recorded
-  running --> running : ssm-check missing parameter, or merge-wait not merged / handback, no change
-  failed --> running : a later dispatch reaches it / start again from its beginning
-  done --> planned : owner runs elabmark --start-at / reset
-  failed --> planned : owner runs elabmark --start-at / reset
-  done --> [*]
+sequenceDiagram
+    autonumber
+    participant KP as keeper.py
+    participant PB as Publish
+    participant DP as cdk deploy and check
+    participant FX as story-deploy-fix
+    participant BR as Built record and corrections
+    participant PR as Pull request and shepherd
+    participant VF as Verification of the Epic
+    box Stores
+        participant BD as beads
+        participant MX as matrix
+        participant A42 as arc42 (vault)
+        participant V as vault - built/
+        participant G as git / GitHub
+        participant AWS as AWS dev
+    end
+
+    KP->>BD: reads the Story and its Tasks
+    PB->>MX: reads what is published and the command
+    PB-)AWS: publishes the package to CodeArtifact
+    DP->>MX: reads stacks, SSM parameter names, writing and reading stacks
+    DP->>G: synthesizes from the Story's branch
+    DP-)AWS: deploys stacks, which read and write SSM parameters
+    FX->>A42: reads the full architecture of the component
+    FX-)G: commits fixes on the Story's branch
+    Note over BR,MX: open Q72
+    BR->>A42: reads effective documents
+    BR-)V: writes what was built where it differs
+    BR-)A42: writes corrections
+    BR-)MX: corrects to match
+    PR-)G: pushes the branch, one pull request, merged by GitHub
+    PR-)BD: records the pull request
+    KP->>BD: reads the Epic's Stories
+    VF-)MX: sets verified on the Epic's entries and relationships
 ```
 
-Differences from the requirements: none; no requirement covers the journal states. As built
-only.
+Notes on the diagram:
+
+- The matrix gets no Story, no Task and no record of what is deployed. Its only writes from this
+  pipeline are the corrections the build finds (open Q72) and the verified
+  marks.
+- AWS dev can be torn down and redeployed; what is deployed there is never a source of matrix
+  facts.
+
+## 10. The agents and roles the deploy starts
+
+**Subject:** every role that does work in the deploy.
+**Scope:** one Story's deploy and the Epic's verification.
+**Purpose:** each role, whether an agent or a script fills it, and the subject that gives a named
+agent a reason to be used.
+**Boundary:** how a specialist is chosen is plan question 4.
+**Sources:** the owner: "Ever agent needs to have a reason to be used.", "I also do not want a
+pipeline that blindly sends everything to ever agent", "I do prefer to spin up agents in headless
+claude sessions to do work, and then get out." and "i'm a huge fan of the contracs being
+deterministic in files and code"; `git-conventions.md` on the shepherd; the owner: "keeper is what
+knows to deploy a story."
+
+| Role | Who fills it | Reason it is used |
+|---|---|---|
+| Starts the deploy of a Story, and the Epic's verification | `keeper.py` (the owner: "keeper is what knows to deploy a story"); verification is open Q76 | Knows the Story's Tasks are all built |
+| Runs the publish command and `cdk deploy` | Open Q64: a script or an agent | The commands come from the matrix |
+| Decides that the deployment works | Open Q66; for example `smoke-test-author` where tests against the deployed endpoints are wanted | Its subject: "post-deployment smoke tests verifying the feature's critical paths against live endpoints" |
+| Fixes a failed deploy | Open Q69; for example `cdk-stack-author` for a CDK failure | Its subject: "AWS CDK stacks in Python matching the approved architecture", with synth validation |
+| Records what was built where it differs | Open Q72; for example `built-architecture-comparer` | Its subject: "Compare the code one Story built with the approved architecture for its elements and record each difference" |
+| Corrects arc42 from the built record | `architecture-maintainer` | The arc42 writer |
+| Checks that correction | For example `architecture-conformance-reviewer` | Its subject: "Check a correction of the effective architecture documents from what a Story built" |
+| Takes back a design change the deploy finds | `aws-solutions-architect`, open Q71 | The owner: "The solutions architect is responsible for all architecture" |
+| Opens the pull request | `skillspoke-pr`, run by the deploy in the Story's worktree | `git-conventions.md` |
+| Gets the pull request to merge | The shepherd | `git-conventions.md`: "fixes until checks pass and threads resolve" |
+| Merges | GitHub auto-merge | `git-conventions.md`: "Never ask the owner to merge, and never merge yourself." |
+
+## Open questions
+
+Q1 to Q16 are the owner's questions from the elaboration plan; Q17 and above are new.
+
+- **Q4. How are specialists chosen?** Appears in the legend and section 4 (the fixer).
+  Recommendation, as the plan gives it: the step that has the reasoning names the subjects that
+  need a specialist, with the reason for each, and the workflow sends the work to the specialist
+  for each named subject, from a list of subjects and specialists the owner approves. Here, the
+  failure's output and the deploy step that failed name the subject. Reason: the owner: "What I do
+  not want is python code deciding which specialists to use" and "Ever agent needs to have a
+  reason to be used."
+- **Q12. Is `architectureApproved` the approved flag?** Appears in section 7 (the flag names).
+  Recommendation, as the plan gives it: yes, one approved flag and one verified flag. Reason: the
+  owner named two flags.
+- **Q14. Which checks of upstream steps stay in the build and deploy?** Appears in sections 1
+  and 2. Recommendation: the deploy checks nothing the build already did, except that the test
+  suite of a shared library runs once more before its package is published. Reason: the owner's
+  rule and its exception, "like if B is going to be a universal or shared component"; a published
+  library is used by every repository that depends on it.
+- **Q15. How is an SSM parameter recorded in the matrix?** Appears in section 3. Recommendation,
+  as the plan gives it: as its own entry, linked from the stack that writes it and to each stack
+  that reads it. Reason: the deploy then reads the parameter name and the writing stack by
+  following links.
+- **Q64. Does a script or an agent run the publish command and `cdk
+  deploy`?** Appears in sections 2, 3 and 10. Recommendation: a script runs the commands the
+  matrix names and reports exit status and output; an agent is started only for the fix. Reason:
+  running a named command needs no reasoning, the owner prefers deterministic contracts "in files
+  and code", and every agent needs a reason to be used.
+- **Q65. Is a package published from the Story's branch before the pull
+  request, or from `main` after the merge?** Appears in section 2. Recommendation: from the
+  Story's branch, before the pull request, and again from the branch head if the shepherd changes
+  the library. Reason: the owner's verification needs the deployment working, which for a stack
+  that uses the library needs the version published; a package version can be deleted and
+  published again.
+- **Q66. What proves "the deployment working"?** Appears in sections 1, 3
+  and 10. Recommendation: every stack reaches `CREATE_COMPLETE` or `UPDATE_COMPLETE`, and the
+  post-deployment tests the spec names for the Story's critical paths pass against AWS dev.
+  Reason: the owner: "deployemen must also work"; a completed stack proves the resources exist,
+  and the Well-Architected Operational Excellence pillar calls for testing a deployment, not only
+  applying it.
+- **Q67. In what order are stacks and Stories deployed when stack-B reads a
+  parameter stack-A writes, and what happens when stack-A is not deployed in AWS dev?** Appears
+  in section 3. Recommendation: `keeper.py` orders Story deploys by the matrix's links between a
+  writing stack and its reading stacks, and deploys a writing stack that is not in AWS dev from its
+  repository's `main` before the reading stack. Reason: the owner places the parameter's name in
+  the matrix, and AWS dev "can be torn down and redeployed", so a missing stack is normal there
+  and not a fault of the Story.
+- **Q68. What does the deploy do for a Story whose repository neither
+  publishes a package nor deploys a stack?** Appears in sections 1 and 8. Recommendation: go
+  straight to the built record and the pull request, with the pull request's checks as the CI.
+  Reason: the owner: "not all repos have stacks"; there is nothing to publish or deploy, and the
+  Story still needs its one merged pull request.
+- **Q69. Who fixes a failed deploy?** Appears in sections 4 and 10.
+  Recommendation: the specialist for the failing subject, chosen as Q4 decides (for example
+  `cdk-stack-author` for a synth or CDK deploy failure), given the failure's output, the Task and
+  spec, and the links to the full architecture of the component. Reason: the owner wants
+  specialists with "Specific instructions and skills and expertise and tools, small context", and
+  every implementer to have "access to the full architecture for the component that it is working
+  on".
+- **Q70. How many fix attempts are made before the fix stops, and what
+  happens then?** Appears in sections 1, 4 and 8. Recommendation: three attempts per Story deploy;
+  then the Story is marked blocked in beads with the cause and the last output, and `keeper.py`
+  reports it to the owner. Reason: the owner: a pipeline that "dosn't take 2 hours to run through
+  a single Epic"; a bound keeps one failing Story from consuming the run, and a blocked Story with
+  its cause is the record the owner acts on.
+- **Q71. Does a fix, or a built difference, that changes the design go back
+  to elaboration?** Appears in sections 1, 4, 5, 8 and 10. Recommendation: yes; the fix stops, and
+  the finding goes to `aws-solutions-architect` for the Epic, whose approved change then reaches
+  the Story's Tasks as elaboration does. Reason: the owner: "The solutions architect is
+  responsible for all architecture", and the build must not "decide on how to do anything that
+  was already concluded upstream".
+- **Q72. How does what the build or deploy finds wrong in the architecture
+  reach arc42 and the matrix, and where in the deploy does it run?** Appears in sections 1, 5, 8,
+  9 and 10. Recommendation: after the deployment works and before the pull request, a comparer
+  writes each difference to `built/<subject>/` in the vault, `architecture-maintainer` corrects the
+  effective documents, the architecture agent responsible for approving the architecture approves
+  the correction (so `effective` keeps its meaning), and the matching matrix entries are corrected
+  in the same step. Reason: `docs/sdlc/sdlc.md` gives the built record "which is then corrected to
+  match"; the owner: "The architecture process is designed to clean up the matrix is it works, and
+  the same with the build." and "Any updates or corrections to arc42 must also be made."
+- **Q73. Does a shepherd's change re-run the publish and the deploy?**
+  Appears in sections 6 and 8. Recommendation: yes, when the change touches code, a package or
+  CDK; not for a change to tests, comments or documentation only. Reason: verified must mean that
+  what merged is what was deployed and worked.
+- **Q74. What happens when the shepherd cannot get the pull request to
+  merge?** Appears in sections 1, 6 and 8. Recommendation: the pull request stays open, the Story
+  is marked blocked in beads with what is left and its cause, and `keeper.py` reports it to the
+  owner. Reason: `git-conventions.md` forbids merging by hand and bypassing gates, so the only
+  honest end is a reported block.
+- **Q75. Is a Story done for the Epic's verification when its pull request's
+  checks pass, or when it merges?** Appears in sections 1 and 7. Recommendation: when it merges.
+  Reason: GitHub merges only once checks pass and threads resolve, and `main` is what later Stories
+  and Epics build on, so a merged Story is the one whose CI and CDK are proved.
+- **Q76. What notices that every Story of the Epic is done, and what sets
+  verified?** Appears in sections 7 and 10. Recommendation: `keeper.py` notices it from beads
+  after a Story merges, and a script sets verified on every entry and relationship the Epic
+  reaches, with no agent judgment. Reason: `keeper.py` already knows each Story's state; the
+  condition is the owner's and needs no reasoning; drawn this way it matches
+  [architecture and matrix states](pipelines-architecture-states.md), section 3.
+- **Q77. What is set verified when a later Epic has changed an entry since
+  this Epic approved it?** Appears in section 7. Recommendation: verified is set on the version
+  this Epic approved, and the later change stays not verified. Reason: the build proved the
+  version it built; the owner's versions example
+  ([architecture and matrix states](pipelines-architecture-states.md), section 4) needs the last
+  verified version to be known.
+- **Q78. Who closes the Story bead, and when?** Appears in section 1.
+  Recommendation: the deploy closes the Story when its pull request merges; the Epic is not closed
+  by verification. Reason: `AGENTS.md`: "A Story or Epic is never closed because its Tasks are
+  closed"; a Story closes on its own work, the merged deploy, and Epic closure is not stated by
+  the owner.

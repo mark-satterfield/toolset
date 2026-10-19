@@ -2,879 +2,673 @@
 
 Parent: [The pipelines: overview](pipelines.md)
 
-The build pipeline runs once per Task. It takes in a Task with its build contract, on its
-Story's branch, and produces the Task's code and tests committed to the Story's branch with the
-repository's whole test suite passing (`blueprint/requirements/pipelines.md`, "What the pipelines
-are"). The driver in `ops/sdlc-automation` routes the Task (`routing.py` `route_build`, the
-executable twin of `workflows/route-build.js`), claims it, opens its step journal and dispatches
-the composite `task-to-deploy` (`workflows/task-to-deploy.js`). That workflow runs the steps of
-the journal (`skills/pipeline-contracts/schemas/pipeline-steps.json`, pipeline `build`) and, for
-them, the workflows `workspace.js`, `infra-intent.js`, `suite-run.js`, `tdd-red.js`,
-`tdd-green.js`, `tdd-refactor.js`, `documentation.js` and `settle.js`. The requirements live in
-`blueprint/requirements/pipelines.md`, `blueprint/requirements/matrix.md` (R24 to R26, R39 to R42,
-R46) and the Build table of section 4 of `blueprint/design/matrix.md`, which
-`requirements/pipelines.md` makes the specification of the build lane's use of the matrix; the
-owner's statements of 2026-10-19 that apply are quoted where they are used.
+The build runs once per Task. It takes a Task from beads, under its Story, and produces the
+Task's code and tests committed on its Story's branch, in the Story's worktree, with the
+repository's whole test suite passing ([requirements/pipelines.md](../requirements/pipelines.md),
+"What the pipelines are", Build row). This document draws the build **as the owner wants it**.
+The sources are the owner's messages of 2026-10-19 (Part 1 of the elaboration plan, items 1.10,
+1.11 and 1.13, with the owner's qualifiers), the SkillSpoke repository's root `AGENTS.md` ("Code
+quality", tier 1) and `.claude/rules/git-conventions.md`, the vault's `docs/sdlc/sdlc.md`, and
+[requirements/pipelines.md](../requirements/pipelines.md) and
+[requirements/matrix.md](../requirements/matrix.md) where they agree with the owner's words. The
+Tasks come from elaboration, section 6 of [The pipelines: elaboration](pipelines-elaboration.md);
+the Story's deploy, and the Epic's verified flag, come after, in
+[The pipelines: deploy](pipelines-deploy.md). Where the owner has not said what is wanted, the
+step is drawn as an open question, listed at the end with a recommendation.
+
+The owner, on what the build is given: "Since Day 1, my requirement has been that as much as
+possible should be written into the specs and tasks, so that the build has little to no decisions
+to make. Everything that can be passed on to the build and determined in advance, should be." and
+"the task should be detailed so that the build doesn't need to guess or interpret or decide on how
+to do anything that was already concluded upstream in the elaboration (and architecture) pipeline.
+And when I say task, I also mean spec."
 
 ## Legend
 
 | Notation | Meaning |
 |---|---|
-| `([...])` | Start or end of an activity diagram |
-| `{...?}` | Decision; every outgoing edge carries its guard |
-| `fork` / `join` | Concurrent work starts / ends |
-| `merge` | Paths rejoin |
-| `->>` | A call or a dispatch: the caller starts the work |
-| `-->>` | The return of that call |
-| `-)` | An asynchronous message, or a write to a store with no reply |
-| `loop`, `alt`, `opt` | Repetition with its exit condition, alternatives, an optional part |
-| `box` | A store: arc42 (vault), the matrix, beads, the vault, git / GitHub |
-| "differs from required" | A note where the code does something other than what is required |
-| "assumption" | An element neither source specifies |
-| State `event [guard] / effect` | A state machine transition |
+| `A ->> B` (sequence) | A calls or starts B: B does work for A |
+| `B -->> A` (sequence) | B returns its result to A |
+| `A -) Store` (sequence) | A writes to a store; nothing is returned |
+| `alt` / `opt` or a node labelled "open - Qn" | The owner has not decided this; every branch shown is an option, not a decision. Each is listed under "Open questions" at the end |
+| `([...])` (activity) | Start or end |
+| `{...?}` (activity) | A decision; every outgoing edge is labelled with its guard |
+| "merge" node (activity) | Alternative paths coming back together; no waiting |
+| `[*]` and `S1 --> S2 : event [guard]` (state machine) | Initial state, and what moves a Task from one state to another |
+| arc42 (vault) | The arc42 architecture and design documents in the `skillspoke-docs` vault |
+| Spec files (vault) | The Spec documents in the vault (`sdlc/mvp-1/specs/`, vault `docs/sdlc/sdlc.md`) |
+| matrix | The one record of how Epics, PRDs, documents, services, components, resources, stacks and repositories relate. It records no Story and no Task |
+| beads | The issue tracker that holds Epics, Stories and Tasks |
+| git / GitHub | The Story's repository, its worktree and its feature branch |
+| "for example `agent`" | A roster agent whose own file gives it a reason to be used for that role; which agent is used is reasoning, never code |
 
-Store names used everywhere: **arc42 (vault)** (the architecture documents in the
-`skillspoke-docs` vault), **vault** (the other vault documents, for example the Spec), **matrix**
-(`atw-matrix`), **beads** (`bd`), **git / GitHub**. Two working files also appear: the **step
-journal** (one file per bead, written by the driver) and the **relay directory** (the files every
-deterministic command writes for this Task).
+The roles in the diagrams are named in plain words. A roster agent is named only "for example",
+with the subject in its own file that gives it a reason to be used. The owner: "Ever agent needs to
+have a reason to be used.", "What I do not want is python code deciding which specialists to use"
+and "I also do not want a pipeline that blindly sends everything to ever agent". Every agent the
+build starts writes or changes code or tests, so every one runs on Opus or better. The owner: "If
+it's touching code, it needs to be done with Opus or better. Perid." Each agent runs as its own
+headless session and ends when its work is done. The owner: "I do prefer to spin up agents in
+headless claude sessions to do work, and then get out." and "There can be nested subagents."
 
-## 1. The build as required
+## 1. One Task through the build
 
-**Subject:** what the build receives, what it reads, what it writes, and what it produces.
-**Scope:** one Task, from ready to committed.
-**Purpose:** the requirement every as-built diagram below is compared with.
-**Boundary:** elaboration (which writes the Task) and the Story's deploy (which publishes, deploys,
-corrects arc42 from what was built and sets the verified mark) are outside.
-**Basis:** required. `requirements/pipelines.md` "What the pipelines are" and "Bugs" (a build that
-finds a defect fixes it in that run) and "The matrix in the build and deploy lanes";
-`requirements/matrix.md` R24, R25, R26, R39, R40, R41, R42, R46; `design/matrix.md` section 4,
-Build table rows B1 to B7 and section 1.4; the owner's statements of 2026-10-19 in the conventions
-(quoted in the notes). The order of B2 to B6 is as the Build table lists them (assumption: the
-table names the steps, not their order, beyond B1 first and B7 last).
-
-```mermaid
-flowchart TD
-    S(["Ready Task with its build contract, on its Story's branch"])
-    T["The Task states in full what it builds - the matrix ids of its stack, components and shared capabilities (R41) - and carries the decisions made upstream, or pointers to them (Spec, arc42 views)"]
-    B1["B1 Workspace - read the stack id the Task states, then matrix node stack for its repository"]
-    D1{"Task states a stack?"}
-    D2{"Infrastructure Task?"}
-    B2["B2 Infrastructure intent - matrix node stack with what it holds, deps --of - provision what the matrix states"]
-    B3["B3 Implementers and Green - shared capability ids the Task states, matrix node for each provider and its stack"]
-    B4["B4 Regression - matrix impact --id for each entry the Task states"]
-    B5["B5 Reuse audit - matrix check-reuse --ids --worktree"]
-    B6["B6 Suite run - the stack's commands.test, a resolving session only when it is empty"]
-    B7["B7 Commit to the Story's branch and close the Task - no matrix mark"]
-    E(["Task's code and tests committed to the Story's branch, whole suite passing"])
-    F(["Step fails"])
-    S --> T --> B1 --> D1
-    D1 -->|"no: fails the step"| F
-    D1 -->|yes| D2
-    D2 -->|"yes"| B2 --> B3
-    D2 -->|"no"| B3
-    B3 --> B4 --> B5 --> B6 --> B7 --> E
-```
-
-Notes on the required build:
-
-- The matrix is read in every step that needs what it holds, and the build records nothing in it
-  (R39, R46, `design/matrix.md` section 4 "the build and deploy steps read the matrix and record
-  nothing in it except the verified mark at D8"). The verified mark is set by the driver when the
-  Story's pull request merges (D8, `design/matrix.md` 1.4), outside the build of one Task.
-- A build step that finds the code different from what the matrix states reports it in its
-  result and the step journal, and changes nothing in the matrix (R29, section 4).
-- The build trusts upstream: "the task should be detailed so that the build doesn't need to guess
-  or interpret or decide on how to do anything that was already concluded upstream", with
-  pointers (file paths, URLs) in place of copies; names come from the task or spec, and the
-  `resource-naming` skill stays only "as a backuo" (owner, 2026-10-19).
-- Values known only at deploy time do not stop the build: "there may be some information that
-  just simply isn't known until deploy time, such as the region or environment ... We don't want
-  to stop because of that", and "I don't want every subsequent step in a process constantly
-  checking that upstream steps were done right" (owner, 2026-10-19).
-- Every implementer has the full architecture of the component it works on, through the Spec's
-  links to the architecture and design documents (owner, 2026-10-19).
-- "Ever agent needs to have a reason to be used", and specialists are chosen by reasoning, not by
-  code: "What I do not want is python code deciding which specialists to use" and "I also do not
-  want a pipeline that blindly sends everything to ever agent" (owner, 2026-10-19).
-
-## 2. The driver's build lane
-
-**Subject:** how the driver turns a ready Task into a `task-to-deploy` dispatch and settles its
-outcome in beads.
-**Scope:** one dispatch of one Task.
-**Purpose:** show where beads is read and written around the workflow.
-**Boundary:** the workflow's own steps are in sections 3 to 5; the deploy lane is outside.
-**Basis:** as built. `ops/sdlc-automation/routing.py` `route_build` (lines 340 to 441) and
-`workflows/route-build.js` `decide()`; `ops/sdlc-automation/lane.py` `_claim_build` (1113),
-`_with_step_journal` (1230), `_unlanded` (1130), `_settle_build` (1155);
-`ops/sdlc-automation/buildinput.py` `contract()` (the build contract through the
-`beads-contract` CLI, `skills/beads-contract/SKILL.md` "contract"); `journallines.py` (the
-`STEP-JOURNAL` lines the workflow logs are applied to the journal file).
+**Subject:** the build of one Task.
+**Scope:** from a Task ready in beads, under its Story, to its code and tests committed on its
+Story's branch with the whole suite passing.
+**Purpose:** the order of the steps, the guard on each decision, and where each step is drawn in
+detail.
+**Boundary:** elaboration, which writes the Task, comes before; the Story's deploy, its pull
+request and the Epic's verified flag come after, in [deploy](pipelines-deploy.md).
+**Sources:** Scope: [requirements/pipelines.md](../requirements/pipelines.md), Build row. The
+worktree: `.claude/rules/git-conventions.md` ("`main` branch only — all branch work happens in
+worktrees. Never branch in the main working tree." and "For tier 1, all implementation happens in a
+worktree agent."). TDD: root `AGENTS.md` ("TDD London School (mock-first) for new code" and
+"Spec-first OpenAPI: the spec exists before handler code"). Gates: `git-conventions.md` ("When a
+pre-commit hook fails: fix **all** findings, restage, retry." and "If findings can't be fixed,
+**abort with no commit** and report."). Closing: root `AGENTS.md` ("A Task closes when it
+completes, including passing all tests."). Trust: the owner, "Your default is fault-intolerant. I
+need more fault-tolerance for the pipeline, and need more trust.", with the exception "like if B is
+going to be a universal or shared component" (Q14).
 
 ```mermaid
 flowchart TD
-    S(["Driver tick picks a ready bead"])
-    R{"route_build - type and labels"}
-    SK(["SKIP with a reason - bug, label human, Epic, Story, feature, unknown type"])
-    C["Read the build contract - beads-contract contract, criteria from the Task or its Story or Epic"]
-    CL["beads - claim the Task, start its Story"]
-    J["Open the step journal - plan pipeline build when it has none"]
-    DSP["Dispatch task-to-deploy with bead, journal path and run, relay, infraVocabulary, pluginRoot"]
-    AP["Apply each STEP-JOURNAL line to the journal file as it is logged - start, done with artifacts and added steps, fail with cause"]
-    O{"Outcome ok?"}
-    U{"Story worktree clean?"}
-    MD["beads - set audit metadata"]
-    CLS["beads - close the Task"]
-    NC["Record a build-write failure - built but not closed"]
-    ST["beads - set build state and stop metadata"]
-    REL["beads - release the Task"]
-    E1(["Task closed"])
-    E2(["Task released - a later dispatch starts at the first step not done"])
-    S --> R
-    R -->|"skip"| SK
-    R -->|"work: a task, or a type or label in the infrastructure vocabulary"| C --> CL --> J --> DSP --> AP --> O
-    O -->|"yes"| U
-    U -->|"yes"| MD --> CLS --> E1
-    U -->|"no: uncommitted changes or no Story branch"| NC --> ST
-    O -->|"no"| ST
-    ST --> REL --> E2
+    start(["Task ready in beads, under its Story"]) --> wt["The Story's worktree, on the Story's feature branch, created or reused. Never main - section 2"]
+    wt --> read["The Task, its spec, the linked architecture and design, and the matrix ids it states are read - section 2"]
+    read --> shared{"Does the Task build a universal or shared component?"}
+    shared -->|"no: trust what upstream decided"| m0(("merge"))
+    shared -->|"yes"| chk["open - Q14 - which checks of the upstream input stay"]
+    chk --> m0
+    m0 --> base{"open - Q52 - does the whole suite pass before any change?"}
+    base -->|"yes"| red
+    base -->|"no"| pre["open - Q52 - what is done with a suite that already fails"]
+    pre --> red
+    red["Red: failing tests first, mock-first for new code - section 3"] --> redok{"Does every new test fail for the intended reason?"}
+    redok -->|"no: a test passes, or fails for another reason"| red
+    redok -->|"yes: Red holds"| green["Green: the minimum code that makes the tests pass - section 4"]
+    green --> gok{"Does the whole suite pass?"}
+    gok -->|"no, and rounds are left - open Q56"| green
+    gok -->|"no, and the rounds are spent - open Q56"| stopped(["Task stopped, no commit - open Q56"])
+    gok -->|"yes: green"| refac["Refactor: behaviour unchanged - section 5"]
+    refac --> rok{"Is the whole suite still green?"}
+    rok -->|"yes"| m1(("merge"))
+    rok -->|"no"| undo["open - Q58 - the refactor is undone"]
+    undo --> m1
+    m1 --> integ["Integration testing - open Q59 - section 6"]
+    integ --> iok{"Do the integration tests pass?"}
+    iok -->|"no - open Q59"| green
+    iok -->|"yes"| docs["Documentation - open Q60"]
+    docs --> gates["Quality gates: lint, format, strict types, pre-commit - section 7"]
+    gates --> gk{"Do all gates pass?"}
+    gk -->|"no, the findings can be fixed"| fix["Fix all findings, restage, retry"]
+    fix --> gates
+    gk -->|"no, the findings cannot be fixed - open Q61"| abort(["Abort with no commit, and report"])
+    gk -->|"yes"| commit["Commit on the Story's branch in its worktree - open Q62"]
+    commit --> closed(["Task closed in beads: built, whole suite passing. The Story's deploy follows when all its Tasks are built"])
 ```
 
-Notes:
+Notes on the diagram:
 
-- The router decides from type and labels alone; a Task missing its Story or Epic is still routed,
-  and `task-to-deploy` refuses one with no Story at its workspace step (section 3).
-- `workflows/ROUTING.md` "Type / label to composite" rule 5 lists type `task` as SKIP, while
-  `route-build.js` and `routing.py` route a Task to `task-to-deploy`. The two as-built sources
-  disagree; the code routes.
+- The loop back to Red exits when every new test fails for the intended reason. The loop back to
+  Green exits when the whole suite passes, or when the rounds are spent (open
+  Q56). The gate loop exits when every gate passes, or when a finding cannot be
+  fixed.
+- Which steps are scripts and which are agents (the worktree, the suite runs, the commit) is open
+  (Q51). Every agent has a reason to be used; a step that needs no reasoning
+  gives no agent a reason.
+- The build writes no verified flag. Verified is set for the Epic once all the Tasks of all its
+  Stories are built and tested, including CI (CDK), which means deployment must also work. The
+  owner: "Once all of the tasks for all of the stories for and Epic have been built and tested
+  (including CI (CDK), which means deployemen must also work), then all of the architecture and
+  rellationships for the Epic can be set to verified." That is drawn in
+  [deploy](pipelines-deploy.md) and in
+  [architecture and matrix states](pipelines-architecture-states.md).
 
-## 3. The step journal of a build: workspace to Red
+## 2. The worktree, and what the build reads
 
-**Subject:** the control flow of `task-to-deploy` from the dispatch to a Red that holds.
-**Scope:** the steps `build:workspace`, `build:design-source`, `build:infra-intent`,
-`build:regression-assess`, `build:regression-review`, `build:regression-validate`,
-`build:baseline`, `build:red-write`, `build:red-check`.
-**Purpose:** show every step, what adds the conditional steps, and each loop's exits. Part two is
-section 4, part three section 5.
-**Boundary:** what each step dispatches is in the sequence diagrams of sections 7 to 11.
-**Basis:** as built. `skills/pipeline-contracts/schemas/pipeline-steps.json` `pipelines.build`
-(`plan` and each kind's `adds` and `limit`); `workflows/task-to-deploy.js` `stepWorkspace` (1666),
-`stepDesignSource` (1697), `stepInfraIntent` (1726), `regressionAssess` (1738),
-`regressionReview` (1752), `stepRegressionValidate` (1765), `stepBaseline` (1786),
-`stepRedWrite` (1807), `stepRedCheck` (1821), `MAX_RED_CHECKS` (1051).
-
-```mermaid
-flowchart TD
-    S(["Dispatched with journal path and run"])
-    RJ["Read the journal - atw-step-journal read"]
-    DJ{"Journal read?"}
-    NX["Begin at the first step not done"]
-    W["build:workspace - workspace.js keyed by the Story"]
-    DW{"repoPath and Story present, worktree established?"}
-    AD{"web-ui Task with design source bundle or cds?"}
-    DS["build:design-source - depscore.py cds-bundles"]
-    AI{"type or label in the infrastructure vocabulary?"}
-    II["build:infra-intent - infra-intent.js"]
-    RA["build:regression-assess - regression-impact-assessor writes plan.json"]
-    RR["build:regression-review - regression-coverage-reviewer writes plan-review.json"]
-    RV["build:regression-validate - regression.py validate"]
-    BL["build:baseline - suite-run.js resolves and runs the suite"]
-    DB{"repository declares a test command?"}
-    PL["tdd-red.js plan - names the test agents for the contract's surfaces"]
-    RW["build:red-write - one step per test agent, one after another"]
-    RC["build:red-check - suite-run.js, then judge Red"]
-    DR{"Red holds - a new test fails in Red's files, no load failure, no new failure elsewhere?"}
-    D4{"fourth Red check?"}
-    DP{"suite fails exactly as at the check before?"}
-    G(["Part two - build:select-implementers"])
-    F(["Step fails - journal records the cause, run stops"])
-    S --> RJ --> DJ
-    DJ -->|"no: journal or input failure"| F
-    DJ -->|"yes"| NX --> W --> DW
-    DW -->|"no: input or workspace failure"| F
-    DW -->|"yes"| AD
-    AD -->|"yes: adds design-source"| DS --> AI
-    AD -->|"no"| AI
-    AI -->|"yes: adds infra-intent"| II --> RA
-    AI -->|"no"| RA
-    RA --> RR --> RV --> BL --> DB
-    DB -->|"no: baseline failure, requiredHumanActions"| F
-    DB -->|"yes"| PL --> RW --> RC --> DR
-    DR -->|"yes: records redRun and testPrint"| G
-    DR -->|"no"| D4
-    D4 -->|"yes: red-unsatisfied"| F
-    D4 -->|"no"| DP
-    DP -->|"yes: no-progress"| F
-    DP -->|"no: adds red-write per test agent and red-check"| RW
-```
-
-Differences from the requirements:
-
-- B1: the workspace takes the repository from the Task's `repoPath`, not from the matrix
-  (`node stack:<id>` for `repository`), and fails a Task with no `repoPath` or no Story with
-  "re-elaborate the Task's Story", not a Task that states no stack
-  (`task-to-deploy.js` 1668 to 1679).
-- B4: no step reads `atw-matrix impact --id`. The regression-impact-assessor is told to "Discover
-  affected requirements from actual sources" including prior PRDs (`regressionBrief`, 1350): the
-  rediscovery by reading that R30 and R38 name as the failure the matrix removes.
-- The regression scope is reviewed and validated before any test is written (regression-review,
-  regression-validate), which re-checks requirement sources elaboration already bound to the
-  Task; the owner does not want "every subsequent step ... constantly checking that upstream steps
-  were done right".
-- The test agents are named by a lookup table in code from the contract's surfaces
-  (`tdd-red.js` `SURFACE_WRITERS`, 243), with `tdd-unit-test-generator` always included: code, not
-  reasoning, decides which specialists run.
-
-## 4. The step journal of a build: Green and the reuse audit
-
-**Subject:** the control flow from the implementer selection to a green suite that passed the
-reuse audit.
-**Scope:** `build:select-implementers`, `build:implement`, `build:green-check`,
-`build:test-ruling`, `build:reuse-audit`, and the rounds the audits add.
-**Purpose:** show the Green loop, its exits, and how an audit sends work back once.
-**Boundary:** the cds audit's own decision is in section 5; it sends work back into this same
-loop.
-**Basis:** as built. `pipeline-steps.json` kinds `build:select-implementers`, `build:implement`,
-`build:green-check` (its `limit`), `build:test-ruling`, `build:reuse-audit` (its `limit`);
-`task-to-deploy.js` `stepSelectImplementers` (1889), `stepImplement` (1912), `stepGreenCheck`
-(1926), `stepTestRuling` (1983), `stepReuseAudit` (2149), `judgeReuse` (2124), `greenBoundary`
-(1621), `MAX_GREEN_CHECKS` (1052).
-
-```mermaid
-flowchart TD
-    S(["From part one - Red holds"])
-    SI["build:select-implementers - atw-matrix uses --ids, then tdd-green.js select"]
-    DI{"Task states matrix ids and a valid selection returned?"}
-    IM["build:implement - one step per implementer, in order"]
-    GC["build:green-check - fingerprint Red's test files, run the suite"]
-    DT{"an implementer changed a Red test file with no ruling since?"}
-    DG{"suite exits 0?"}
-    DA{"answering an audit and upstreamMissing named?"}
-    DU{"upstreamMissing named?"}
-    DQ{"testIssues named?"}
-    TR["build:test-ruling - tdd-red.js update mode, tdd-unit-test-generator"]
-    DD{"one valid ruling per named test?"}
-    DN{"no file changed and the same failures as the check before?"}
-    D8{"eighth check since the round opened?"}
-    WH{"which step opened this round?"}
-    RU["build:reuse-audit - atw-matrix check-reuse, shared-capability-reviewer on what it cannot rule"]
-    DV{"violations?"}
-    DF{"first reuse audit?"}
-    CA(["Part three - build:cds-audit, its second audit"])
-    RS(["Part three - build:refactor-snapshot"])
-    F(["Step fails - journal records the cause, run stops"])
-    S --> SI --> DI
-    DI -->|"no: green"| F
-    DI -->|"yes: adds implement per implementer and green-check"| IM --> GC --> DT
-    DT -->|"yes: green-modified-tests"| F
-    DT -->|"no"| DG
-    DG -->|"yes"| DA
-    DA -->|"yes: blocked-upstream"| F
-    DA -->|"no"| WH
-    DG -->|"no"| DU
-    DU -->|"yes: blocked-upstream"| F
-    DU -->|"no"| DQ
-    DQ -->|"yes: adds test-ruling and green-check"| TR --> DD
-    DD -->|"no: red-decisions-incomplete"| F
-    DD -->|"yes"| GC
-    DQ -->|"no"| DN
-    DN -->|"yes: no-progress"| F
-    DN -->|"no"| D8
-    D8 -->|"yes: green"| F
-    D8 -->|"no: adds implement per implementer and green-check"| IM
-    WH -->|"select-implementers"| RU
-    WH -->|"reuse-audit - its second audit follows"| RU
-    WH -->|"cds-audit - its second audit follows"| CA
-    RU --> DV
-    DV -->|"no"| RS
-    DV -->|"yes"| DF
-    DF -->|"yes: adds implement per implementer, green-check, reuse-audit"| IM
-    DF -->|"no: reuse-violation"| F
-```
-
-Differences from the requirements:
-
-- B3: an infrastructure Task's implementer is fixed in code as `cdk-stack-author` unless the caller
-  names one (`task-to-deploy.js` 1901): code decides the specialist.
-- B3: the implementers the build can run are told to name resources. `cdk-stack-author.md` lines
-  50 and 65 and `api-gateway-cdk-implementer.md` lines 51 and 71 put naming in "Allowed
-  Decisions" and say "Name every resource with the resource-naming skill"; the same instruction is
-  in `appsync-cdk-implementer.md` 60, `chassis-extension-implementer.md` 64,
-  `cognito-lambda-trigger-implementer.md` 59, `dynamodb-access-layer-implementer.md` 67,
-  `event-driven-consumer-implementer.md` 65, `event-api-client-implementer.md` 59,
-  `kinesis-stream-implementer.md` 57, `mcp-server-implementer.md` 62,
-  `power-tools-configuration-implementer.md` 58, `postgresql-access-layer-implementer.md` 70 and
-  `s3-data-lake-implementer.md` 57. The owner: names "should have already been provided in the
-  task (or spec)" and the skill stays only as a backup.
-- B3 reads `atw-matrix uses --ids` with the Task's ids and hands the providers' names, kinds and
-  repositories on; it runs no separate `node` per provider (Q6). The `uses` result carries the
-  provider's stack repository, so the facts the row names reach the implementers.
-- A Task that states no matrix id fails `build:select-implementers` and `build:reuse-audit`. The
-  requirement fails a Task that states no stack at B1; as built the check sits at B3 and B5.
-- B5 matches: `check-reuse --ids <ids> --worktree <path>`, and the reviewer's rulings stay in the
-  step's result (`reuseAudit`).
-
-## 5. The step journal of a build: refactor to commit
-
-**Subject:** the control flow from the refactor to the commit on the Story's branch.
-**Scope:** `build:refactor-snapshot`, `build:refactor`, `build:refactor-check`,
-`build:refactor-restore`, `build:cds-audit`, `build:docs-audit`, `build:docs-write`,
-`build:final-suite`, `build:regression-map`, `build:regression-map-review`,
-`build:regression-verify`, `build:commit`.
-**Purpose:** show the undo path of the refactor, the cds audit's single send-back, and the gates
-before the commit.
-**Boundary:** the Task's close is the driver's (section 2).
-**Basis:** as built. `pipeline-steps.json` kinds listed in the scope; `task-to-deploy.js`
-`stepRefactorSnapshot` (2000), `stepRefactor` (2008), `stepRefactorCheck` (2022),
-`stepRefactorRestore` (2042), `stepCdsAudit` (2053), `stepDocsAudit` (2179), `stepDocsWrite`
-(2190), `stepFinalSuite` (2201), `stepRegressionVerify` (1774), `stepCommit` (2210); the step
-journal's `together` (the `build:docs-write` steps run concurrently).
-
-```mermaid
-flowchart TD
-    S(["From part two - green and the reuse audit clean"])
-    SN["build:refactor-snapshot - gitutils.py snapshot"]
-    RF["build:refactor - tdd-refactor.js, code-refactoring-specialist through GitNexus"]
-    DGX{"refactor returned, no GitNexus blocker?"}
-    RC["build:refactor-check - suite-run.js"]
-    DG{"suite exits 0?"}
-    DRS{"tree already restored?"}
-    RR["build:refactor-restore - gitutils.py restore to the snapshot"]
-    DUI{"web-ui Task with design source bundle or cds?"}
-    CA["build:cds-audit - audit-app.py for a bundle, cds-live-auditor otherwise"]
-    DV{"violations?"}
-    DF{"first cds audit?"}
-    DGP{"cds gaps?"}
-    BACK(["Part two - implement per implementer and green-check, then cds-audit again"])
-    DA["build:docs-audit - documentation-currency-auditor"]
-    DS{"stale documents?"}
-    FK["fork"]
-    DW["build:docs-write - one step per documentation agent assigned"]
-    JN["join"]
-    FS["build:final-suite - suite-run.js"]
-    DFS{"suite exits 0?"}
-    RM["build:regression-map - regression-impact-assessor writes mapped.json"]
-    RMR["build:regression-map-review - regression-coverage-reviewer"]
-    RVF["build:regression-verify - regression.py verify runs the mapped tests"]
-    DVF{"evidence verified?"}
-    CM["build:commit - settle.js commitOnly"]
-    DC{"committed on the Story branch?"}
-    E(["Committed - handback ok, stage committed"])
-    F(["Step fails - journal records the cause, run stops"])
-    S --> SN --> RF --> DGX
-    DGX -->|"no: refactor"| F
-    DGX -->|"yes"| RC --> DG
-    DG -->|"no"| DRS
-    DRS -->|"yes: refactor"| F
-    DRS -->|"no: adds refactor-restore and refactor-check"| RR --> RC
-    DG -->|"yes"| DUI
-    DUI -->|"yes: adds cds-audit"| CA --> DV
-    DUI -->|"no"| DA
-    DV -->|"yes"| DF
-    DF -->|"yes: adds the implementers' round and cds-audit"| BACK
-    DF -->|"no: cds-audit"| F
-    DV -->|"no"| DGP
-    DGP -->|"yes: blocked-upstream"| F
-    DGP -->|"no"| DA
-    DA --> DS
-    DS -->|"yes: adds docs-write per agent"| FK --> DW --> JN --> FS
-    DS -->|"no"| FS
-    FS --> DFS
-    DFS -->|"no: commit, nothing committed"| F
-    DFS -->|"yes"| RM --> RMR --> RVF --> DVF
-    DVF -->|"no: regression-coverage"| F
-    DVF -->|"yes"| CM --> DC
-    DC -->|"no"| F
-    DC -->|"yes"| E
-```
-
-## 6. How a deterministic command runs
-
-**Subject:** the checked relay every script step uses: `gitutils.py`, `atw-matrix`,
-`regression.py`, `depscore.py`, `atw-step-journal` and the suite command.
-**Scope:** one command.
-**Purpose:** the sequence diagrams below draw each such call as one arrow; this is what the arrow
-is.
-**Boundary:** what each command does.
-**Basis:** as built. `task-to-deploy.js` `relayKit` (159 to 673: `registeredCommand`, `exec`,
-`run`), `gitutils` (1195), `matrixCommand` (1206, role `build-workflow`); `agents/workflow-command-runner.md`.
+**Subject:** the start of the build of one Task.
+**Scope:** from the Task id reaching the build to every agent of the build having what it needs.
+**Purpose:** which store is read for what, where the worktree comes from, and what the build does
+not re-decide.
+**Boundary:** what each agent does with what it reads is drawn in sections 3 to 7.
+**Sources:** The owner: "all details do not need to be copied into the tasks and specs (file
+paths, URLs, etc. can be used to point to the more detailed information)", "even if it has only
+the specific steps in a task that it needs to perform, it should still have access to the full
+architecture for the component that it is working on. This is why the specs needs to have links
+the that architecture (and design) documents.", "I don't want to encourage an agent to start
+naming things, when the names should have already been provided in the task (or spec).", "there
+may be some information that just simply isn't known until deploy time, such as the region or
+environment where we are deploying. We don't want to stop because of that. We need to make sure
+some of that is accommodated and handled at run time (deploy time).", "I don't want every
+subsequent step in a process constantly checking that upstream steps were done right." On the
+matrix: "Your question should be, "How can stack-B know what ssm stack-A is saving (or will saved
+once deployed)?" The answer for that is, it should look in the matrix.", "The matrix does not
+include stories and tasks (it isn't a build tracker), and it doesn't care about what has actually
+been deployed.", and "The architecture process is designed to clean up the matrix is it works, and
+the same with the build." [requirements/matrix.md](../requirements/matrix.md) R41: "A Task states
+in full what it builds, using the matrix's ids for the stack, the components and the shared
+capabilities." R26: "The pipeline uses everything in the matrix, verified or not." Worktree:
+`.claude/rules/git-conventions.md` (tier 1 work in a worktree on a feature branch, never on
+`main`). One Story per repository: vault `docs/sdlc/sdlc.md`.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant WF as task-to-deploy.js step
-    participant WCR as workflow-command-runner (sonnet)
-    participant RR as relayrun.py
-    participant CMD as the command
-    participant RD as relay directory
-    WF->>WCR: run exactly this one command line, argv checksum-guarded
-    WCR->>RR: python3 relayrun.py ... --argv-sha256 ...
-    RR->>CMD: run the argv once in the tree
-    CMD-->>RR: exit status and output
-    RR-)RD: write the relay file for the step
-    RR-->>WCR: one RELAY64v1 line, checksum, exit status
-    WCR-->>WF: the line copied as opaque text
-    alt copy hashes to the checksum
-        WF->>WF: use the keys asked for
-    else damaged copy or unknown outcome
-        WF->>RD: read the relay file bound to that command line
-        Note over WF,RD: the command never runs twice
+    participant DR as Driver
+    participant WF as Build workflow
+    participant AG as Agents of the build, sections 3 to 7
+    box Stores
+        participant BD as beads
+        participant G as git / GitHub
+        participant MX as matrix
+        participant SP as Spec files (vault)
+        participant A42 as arc42 (vault)
+    end
+
+    DR->>WF: the Task id
+    WF->>BD: reads the Task and its Story
+    BD-->>WF: what it builds with matrix ids, criteria, pointers, repository and branch
+    alt open - Q51 - the Story's worktree exists
+        WF->>G: reuses the Story's worktree as it is
+    else the first Task of the Story to build
+        WF-)G: the Story's worktree, on the Story's feature branch from main. Never main itself
+    end
+    WF->>MX: reads each id the Task states, with its links
+    MX-->>WF: stack, repository, SSM parameters (Q15), shared capabilities, documents
+    WF-)G: the build brief in the worktree: the Task, its pointers, the matrix ids and the document paths
+    Note over WF,AG: trusts upstream. Names come from the Task or spec.<br/>Deploy-time values such as region or environment wait for deploy
+    opt open - Q14 - the Task builds a universal or shared component
+        WF->>MX: the checks of the upstream input that stay
+    end
+    WF->>AG: the path of the build brief
+    AG->>SP: reads the spec, its acceptance criteria and its OpenAPI document where the component has an API
+    AG->>A42: reads the full architecture and design of its component, by the links in the spec
+    opt open - Q63 - a step of the build finds a matrix fact wrong
+        AG-)MX: the fact corrected
     end
 ```
 
-## 7. Workspace, design source and provisioning intent
+Notes on the diagram:
 
-**Subject:** the first steps: the Story's worktree, the design source of a web-ui Task, the
-provisioning intent of an infrastructure Task.
-**Scope:** `build:workspace`, `build:design-source`, `build:infra-intent`.
-**Purpose:** what each agent receives and produces, and where git and the matrix are touched.
-**Boundary:** the routing and claim before it (section 2).
-**Basis:** as built. `task-to-deploy.js` `stepWorkspace`, `selectDesign` (1533),
-`stepDesignSource`, `stepInfraIntent`; `workflows/workspace.js` (provision 805, independent
-verification 817); `workflows/infra-intent.js` (prompt and schema, 172 to 232).
+- The workflow copies no document into the brief; each agent reads what it needs by the pointers.
+  The owner: "file paths, URLs, etc. can be used to point to the more detailed information".
+- The matrix is read, not re-derived. The build looks up a name, a stack, an SSM parameter or a
+  document there instead of scanning ([requirements/matrix.md](../requirements/matrix.md) R30:
+  "A pipeline step looks up what exists."). How an SSM parameter is recorded in the matrix is plan
+  question 15.
+- The matrix records no Task. The build records nothing about the Task in the matrix.
+- Whether the build corrects a matrix fact it finds wrong is open (Q63): the
+  owner says the build cleans up the matrix as it works, and
+  [requirements/matrix.md](../requirements/matrix.md) R29 says a build run "reports what it finds
+  wrong and changes nothing but the verified mark". The owner's words win where they differ, so
+  the option is drawn and the question is listed.
+
+## 3. Red: failing tests first
+
+**Subject:** the Red step of one Task.
+**Scope:** from the build brief to failing tests that encode the Task's acceptance criteria.
+**Purpose:** who writes the tests, what each reads and writes, and how Red is confirmed.
+**Boundary:** production code is Green's (section 4).
+**Sources:** Root `AGENTS.md`: "TDD London School (mock-first) for new code." and "Spec-first
+OpenAPI: the spec exists before handler code." The owner: "Ever agent needs to have a reason to be
+used." and "I also do not want a pipeline that blindly sends everything to ever agent, whether it
+applies or not". On contracts: "i'm a huge fan of the contracs being deterministic in files and
+code, and for agents, a skill can contain both schemas and een the code to read and write and
+verify the schemas." How the test writers are chosen is not stated by the owner
+(Q53).
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant TTD as task-to-deploy.js
-    participant WS as workspace.js
-    participant II as infra-intent.js
-    participant CID as cdk-infrastructure-designer
-    box beads
-    participant BD as Task bead
+    participant WF as Build workflow
+    participant TS as Test selection
+    participant TW as Test writers, one per kind of test the Task needs
+    participant SR as Suite run
+    box Stores
+        participant G as git / GitHub (worktree)
+        participant SP as Spec files (vault)
+        participant A42 as arc42 (vault)
+        participant MX as matrix
     end
-    box git / GitHub
-    participant GIT as repository and worktree
+
+    alt open - Q53 - the Task names the kinds of test it needs
+        Note over WF,TS: the kinds are read from the Task
+    else a reasoning agent chooses, for example test-design-lead
+        WF->>TS: the build brief
+        TS-->>WF: each kind of test needed, its writer, and the reason
     end
-    box matrix
-    participant MX as atw-matrix
+    loop each test writer chosen
+        WF->>TW: the build brief, and the kind of test
+        Note over TW: for example tdd-unit-test-generator - unit tests from acceptance criteria<br/>or consumer-driven-contract-test-writer - API and event contract tests
+        TW->>SP: reads the acceptance criteria and the OpenAPI document
+        TW->>A42: reads the architecture and design of the component
+        TW->>MX: reads the collaborators of the component, to mock them
+        TW-)G: failing tests, mock-first for new code. No production code
+        TW-->>WF: result file: the tests and the criterion each encodes
     end
-    Note over TTD,BD: the bead argument is the build contract the driver read from beads
-    TTD->>TTD: repoPath and Story present?
-    Note right of TTD: differs from required - B1 reads the repository from matrix node stack
-    TTD->>WS: repoPath, beadId the Story, branchPrefix story
-    WS->>GIT: gitutils.py provision - reuse the Story's tree or cut repo/.worktrees/story-...
-    GIT-->>WS: tree, branch, defaultBranch
-    WS->>GIT: gitutils.py facts - separate run verifies a linked worktree on that branch
-    GIT-->>WS: facts
-    WS-->>TTD: ok, repoPath the worktree, branch, defaultBranch
-    TTD-)TTD: record worktree, branch, defaultBranch
-    opt web-ui Task with design source bundle or cds
-        TTD->>TTD: depscore.py cds-bundles - newest bundle supplied for the Task's artifact
-        TTD-)TTD: record design - designSource, bundle, buildSpecs
+    WF->>SR: runs the new tests and the whole suite
+    SR-->>WF: which tests fail, and why
+    alt every new test fails for the intended reason
+        Note over WF: Red holds - Green follows
+    else a new test passes, or fails for another reason
+        WF->>TW: that test, and what the run printed
+        TW-)G: the test corrected
+        Note over WF,TW: run again. Exits when every new test fails for the intended reason
     end
-    opt type or label in the infrastructure vocabulary
-        TTD->>II: change - id, title, description, worktree
-        II->>CID: produce CDK-expressible provisioning intent, name every stack and resource with resource-naming
-        Note right of CID: differs from required - B2 reads node stack and deps --of and provisions what the matrix states, the build names nothing upstream named
-        CID-->>II: resources, stacks, crossStackRefs, affectedStacks, rationale
-        II-->>TTD: provisioningIntent, affectedStacks
-        TTD-)TTD: record provisioning
-    end
-    Note over MX: no matrix call in these steps
 ```
 
-## 8. Regression scope, mapping and verification
+Notes on the diagram:
 
-**Subject:** the cumulative regression artifacts written before Red and finished before the
-commit.
-**Scope:** `build:regression-assess`, `-review`, `-validate`, and later `build:regression-map`,
-`-map-review`, `-verify`.
-**Purpose:** what the assessor and the reviewer receive and write, and what the script checks.
-**Boundary:** the tests themselves are written in Red.
-**Basis:** as built. `task-to-deploy.js` `REGRESSION_FILES` (1321), `regressionInvoke` (1329),
-`author` (1340), `regressionBrief` (1348), `regressionReviewBrief` (1352), `regressionAssess`,
-`regressionReview`, `stepRegressionValidate`, `stepRegressionVerify`; `scripts/portfolio/regression.py`
-modes `prepare`, `validate`, `verify`.
+- A test writer is used for a kind of test the Task needs and for no other. For example, a Task
+  that adds a handler behind an API Gateway REST API needs unit tests and contract tests; a Task
+  that changes the wording on a web page needs neither contract tests nor end-to-end API tests.
+- Each result file follows a contract held in a skill with its schema and the code that reads,
+  writes and checks it (the owner, above).
+
+## 4. Green: the minimum code
+
+**Subject:** the Green step of one Task.
+**Scope:** from failing tests to the whole suite passing.
+**Purpose:** who writes the production code, what each implementer has, and the tier 1
+obligations of the implementing step.
+**Boundary:** restructuring is Refactor's (section 5); the gates are section 7.
+**Sources:** The owner: "I don't care what kind of software engineering agent is writing the
+code, even if it has only the specific steps in a task that it needs to perform, it should still
+have access to the full architecture for the component that it is working on.", "I'm not sure why
+the cdk-stack-author and api-gateway-cdk-implementer needs the skill or to name anything. The
+tasks that build pipeline read, should already have all names in it, right?", "Maybe leaving the
+skill in place can ba a backuo, but I don't want to encourage an agent to start naming things, when
+the names should have already been provided in the task (or spec).", "I wouldn't expect a missing
+name.", "What I do not want is python code deciding which specialists to use, because pythin
+doesn't have the reasoning to make that determination." Root `AGENTS.md`, "Code quality", tier 1
+(the obligations in the table below), "Operating rules and architecture defaults" 3, 4, 5, 9 and
+10, and GitNexus ("MUST run impact analysis before editing any symbol."). How implementers are
+chosen (Q55), how many rounds before giving up (Q56), a test
+that contradicts the spec (Q54) and a decision missing upstream
+(Q57) are not stated by the owner.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant TTD as task-to-deploy.js
-    participant REG as regression.py
-    participant RIA as regression-impact-assessor
-    participant RCR as regression-coverage-reviewer
-    participant RD as relay directory regression
-    box vault
-    participant VS as Spec and PRDs
+    participant WF as Build workflow
+    participant IS as Implementer selection
+    participant IM as Implementers, in build order
+    participant GN as GitNexus
+    participant SR as Suite run
+    box Stores
+        participant G as git / GitHub (worktree)
+        participant SP as Spec files (vault)
+        participant A42 as arc42 (vault)
+        participant MX as matrix
     end
-    box git / GitHub
-    participant WT as worktree
+
+    alt open - Q55 - the Task names what it needs
+        Note over WF,IS: the implementers' subjects are read from the Task
+    else a reasoning agent chooses, for example implementation-lead
+        WF->>IS: the build brief and the failing tests
+        IS-->>WF: the implementers for the Task, in build order, with reasons
     end
-    TTD->>REG: prepare --plan plan.json --ledger worktree/.agent-workforce/regression.json --source each Spec path
-    REG-)RD: previous.json - requirements and mappings recorded before this Task
-    TTD->>RIA: contract, previous.json, produce the impact scope before Red
-    RIA->>VS: read the Spec, prior PRDs, connected contracts
-    RIA->>WT: read code and existing tests
-    Note right of RIA: differs from required - B4 reads matrix impact --id for each entry the Task states
-    RIA-)RD: plan.json candidate, accepted against REGRESSION_SCHEMA
-    TTD->>RCR: review plan.json against sources, code, tests and previous.json
-    RCR-)RD: plan-review.json - approved, findings, evidence
-    TTD->>REG: validate --plan plan.json --review plan-review.json
-    REG-->>TTD: ok, requiredKinds
-    alt not ok
-        TTD-)TTD: fail regression-plan
+    loop each implementer, in build order
+        WF->>IM: the build brief, the failing tests, the shared capabilities by matrix id
+        Note over IM: for example chassis-extension-implementer - Lambda handlers as chassis extensions<br/>or cdk-stack-author - CDK stacks in Python matching the approved architecture
+        IM->>A42: reads the full architecture and design of its component
+        IM->>SP: reads the spec and its OpenAPI document
+        IM->>MX: reads names, stack, SSM parameters, shared capabilities
+        IM->>GN: impact analysis before editing each symbol
+        IM-)G: the minimum code that passes the tests, names as given
+        IM-->>WF: result file: files changed, tests contradicting the spec, missing decisions
     end
-    Note over TTD,WT: Red, Green, refactor, audits, docs and the final suite run here
-    TTD->>REG: prepare --approved-plan plan.json
-    TTD->>RIA: keep the scope unchanged, finalize mappings and runs from the saved tests
-    RIA-)RD: mapped.json
-    TTD->>RCR: check each mapping and replacement keeps the old assertions
-    RCR-)RD: mapped-review.json
-    TTD->>REG: verify --plan mapped.json --review mapped-review.json --approved-plan plan.json
-    REG->>WT: run each mapped command, read its JUnit report
-    REG-->>TTD: ok and the evidence
-    TTD-)TTD: record regressionEvidence, or fail regression-coverage
+    WF->>SR: runs the whole suite
+    SR-->>WF: pass, or the failing tests
+    alt the whole suite passes
+        Note over WF: Green - Refactor follows
+    else tests fail, and rounds are left - open Q56
+        WF->>IM: the failing tests, for another round
+    else an implementer names a test that contradicts the spec - open Q54
+        Note over WF,IM: the test is ruled on against the spec, then Green again
+    else an implementer found a decision missing upstream, not a deploy-time value - open Q57
+        Note over WF,IM: what the build does with it
+    else the rounds are spent - open Q56
+        Note over WF,IM: Task stopped, no commit
+    end
 ```
 
-## 9. Baseline and Red
+### The obligations of the implementing step
 
-**Subject:** resolving the suite command, the baseline run, and the Red loop.
-**Scope:** `build:baseline`, `build:red-write`, `build:red-check`, and the ruling on named tests
-(`build:test-ruling`), which uses the same workflow.
-**Purpose:** how test writers are chosen, what they receive, and how Red is judged by the run,
-not by the agents' reports.
-**Boundary:** Green (section 10).
-**Basis:** as built. `task-to-deploy.js` `suite` (1309), `stepBaseline`, `stepRedWrite`,
-`stepRedCheck`, `stepTestRuling`, `contractAt` (1247); `workflows/suite-run.js` (`resolvePrompt`
-821, `test-command-resolver` 851, the run 880, `test-failure-parser` 906); `workflows/tdd-red.js`
-(`SURFACE_WRITERS` 243, `plan` 263, `authorPrompt`, `updatePrompt`, writers in sequence 351).
+Every implementer meets these in the code it writes. They are tier 1 obligations from the
+SkillSpoke repository's root `AGENTS.md`; the build does not decide them again.
+
+| Obligation | Source (root `AGENTS.md`) |
+|---|---|
+| Concurrency guards, timeouts, backoff, idempotency, incremental processing, explicit error handling, resource cleanup | "Code quality", tier 1 |
+| Latest stable versions, no deprecated patterns, no clever solutions unless asked | "Code quality", tier 1 |
+| Files under 500 lines; typed interfaces for public APIs; validation at system boundaries | "Code quality", tier 1 |
+| Spec-first OpenAPI: the spec exists before handler code | "Code quality", tier 1 |
+| TDD London School (mock-first) for new code: no production code without a failing test | "Code quality", tier 1 |
+| Lambdas on `aws-lambda-powertools` only (FastAPI, Flask and Django banned) | "Operating rules", 3 |
+| API Gateway REST API v1 only (HTTP API v2 banned) | "Operating rules", 4 |
+| No cross-service source imports (`skill_spoke.common`, `skill_spoke.services.<other>`) | "Operating rules", 5 |
+| Each service owns its tables, unless an owner instruction overrides it for a stated scope | "Operating rules", 9 |
+| Cross-stack values through an SSM parameter the producing stack writes and the consuming stack reads, never CDK exports or imports; the parameter's name is read from the matrix | "Operating rules", 10, and the owner ("it should look in the matrix") |
+| Data-driven and configurable; paths through the project's environment variables; no person's name in code | "No hardcoding" |
+| Impact analysis before editing any symbol | "GitNexus", "Always Do" |
+| Names written as the Task or spec gives them; values known only at deploy time resolved at deploy time | The owner, quoted above |
+
+Notes on the diagram:
+
+- The `resource-naming` skill stays as a backup. The owner: "No. We aren't deleting the
+  `resource-naming` skill." Nothing in an implementer's brief or file encourages it to name what
+  the Task or spec already names.
+- An implementer may start further agents for its work. The owner: "There can be nested
+  subagents."
+
+## 5. Refactor: behaviour unchanged
+
+**Subject:** the Refactor step of one Task.
+**Scope:** from Green to the same behaviour in clearer code, with the whole suite green.
+**Purpose:** who refactors, what it may change, and what keeps behaviour unchanged.
+**Boundary:** only the code the Task changed is in scope.
+**Sources:** Root `AGENTS.md`: "TDD London School (mock-first) for new code." (red, green,
+refactor), and GitNexus: "MUST run impact analysis before editing any symbol." and "NEVER rename
+symbols with find-and-replace — use `gitnexus_rename` which understands the call graph." The
+owner: "Ever agent needs to have a reason to be used." When the refactor runs, and what happens
+when it breaks the suite, is not stated by the owner (Q58).
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant TTD as task-to-deploy.js
-    participant SR as suite-run.js
-    participant TCR as test-command-resolver
-    participant TFP as test-failure-parser
-    participant RED as tdd-red.js
-    participant TW as test writer
-    box git / GitHub
-    participant WT as worktree
+    participant WF as Build workflow
+    participant RF as Refactoring specialist
+    participant GN as GitNexus
+    participant SR as Suite run
+    box Stores
+        participant G as git / GitHub (worktree)
+        participant A42 as arc42 (vault)
     end
-    box vault
-    participant VS as Spec
+
+    opt open - Q58 - the tree before the refactor is recorded, so it can be put back
+        WF-)G: the tree recorded
     end
-    box arc42 (vault)
-    participant AV as architecture views
+    WF->>RF: the files Green changed, the build brief
+    Note over RF: for example code-refactoring-specialist<br/>restructures code without changing behaviour
+    RF->>A42: reads the architecture and design of the component
+    loop each symbol it changes
+        RF->>GN: impact analysis before the change
+        GN-->>RF: callers and affected flows
+        RF-)G: the change, a rename only through gitnexus_rename
     end
-    TTD->>SR: repoPath the worktree, no command yet
-    SR->>TCR: find the test command in AGENTS.md, CLAUDE.md or Taskfile test
-    Note right of TCR: differs from required - B6 reads the stack's commands.test, a session only when it is empty
-    TCR-->>SR: command, or none
-    SR->>WT: run the command once through relayrun.py
-    opt exit is not 0
-        SR->>TFP: read the relay file, name the failures
-        TFP-->>SR: failing - kind test or load, file, test, line
+    RF-->>WF: its result file: what it changed and why, or nothing to refactor
+    WF->>SR: runs the whole suite
+    SR-->>WF: pass, or the failing tests
+    alt the whole suite is still green
+        Note over WF: Refactor done - integration testing follows
+    else the suite is not green - open Q58
+        WF-)G: the tree put back as Green left it
     end
-    SR-->>TTD: exitCode, summary, failing, tail, command
-    TTD-)TTD: record suiteCommand and baseline
-    TTD->>RED: contract, plan true
-    RED-->>TTD: testAgents - tdd-unit-test-generator plus one per surface from SURFACE_WRITERS
-    Note right of RED: differs from required - code, not reasoning, picks the test specialists
-    loop until Red holds, at most four checks, or a check repeats the one before
-        loop each test agent, one after another
-            TTD->>RED: contract, testAgent, feedback from the last check, prior test files
-            RED->>TW: write failing tests for the acceptance criteria, test code only
-            TW->>VS: read the Spec sections named
-            TW->>AV: read the architecture views the Task is designed against
-            TW->>WT: add tests, run them narrowed
-            TW-->>RED: testFiles, redConfirmed, evidence
-            RED-->>TTD: testFiles, redConfirmed
+```
+
+## 6. Integration testing
+
+**Subject:** the integration testing of one Task.
+**Scope:** from the refactored code to integration tests passing.
+**Purpose:** where integration testing sits in the build, and the options for what it covers.
+**Boundary:** the deploy of the Story to AWS dev and its smoke tests are in
+[deploy](pipelines-deploy.md).
+**Sources:** The build ends with "the repository's whole test suite passing"
+([requirements/pipelines.md](../requirements/pipelines.md), Build row). The owner: "Not onnly are most
+connections or dependencies netween things not through events, the most are probably because of
+imports or API calls." and "Ever agent needs to have a reason to be used." What integration testing
+covers in the build is not stated by the owner (Q59).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant WF as Build workflow
+    participant IW as Integration test writer
+    participant SR as Suite run
+    box Stores
+        participant G as git / GitHub (worktree)
+        participant SP as Spec files (vault)
+        participant A42 as arc42 (vault)
+        participant MX as matrix
+    end
+
+    alt open - Q59 - the component's connections within the repository, with no deployment
+        WF->>IW: the build brief, the changed files
+    else against the component's real collaborators in AWS dev
+        WF->>IW: the build brief, and where the collaborators run
+    else none in the build: integration is tested when the Story deploys
+        Note over WF: integration testing is skipped here
+    end
+    IW->>MX: reads what the component connects to: imports, API calls, the SSM parameters it reads, what it runs in
+    IW->>SP: reads the contracts of those connections
+    IW->>A42: reads how the components work together
+    IW-)G: integration tests
+    Note over IW: for example aws-integration-test-writer<br/>the delivery path the architecture describes, hop by hop
+    IW-->>WF: its result file: the tests and the connection each covers
+    WF->>SR: runs the integration tests and the whole suite
+    SR-->>WF: pass, or the failing tests
+    alt all pass
+        Note over WF: documentation and the gates follow
+    else failures - open Q59
+        Note over WF,IW: the code is fixed in Green, and the suite runs again
+    end
+```
+
+## 7. Quality gates, documentation and the commit
+
+**Subject:** the end of the build of one Task.
+**Scope:** from integration tests passing to the Task's commit on its Story's branch and the Task
+closed in beads.
+**Purpose:** the gates, how a failed gate is handled, and what is written where.
+**Boundary:** the push of the Story's branch for its pull request, the deploy and the verified flag
+are in [deploy](pipelines-deploy.md), except where Q62 says otherwise.
+**Sources:** `.claude/rules/git-conventions.md`: "`git commit --no-verify` / `git push --no-verify`
+/ `git commit -n` are **forbidden**, always", "When a pre-commit hook fails: fix **all** findings,
+restage, retry. Hook auto-fixes left in the working tree are part of the change — stage them", "If
+findings can't be fixed, **abort with no commit** and report. A missing commit is recoverable; a
+bypassed gate lands unlinted code on main.", "Loosening lint config (`per-file-ignores`, `noqa`)
+is an owner decision, not a recovery tactic.", "Commit format: `type(scope): description`", "No
+`Co-Authored-By` headers in commits", "Commit early, commit often." and "tier 1 commits on its
+feature branch in its worktree". Root `AGENTS.md`: "MUST run `gitnexus_detect_changes()` before
+committing" and "A Task closes when it completes, including passing all tests." The owner: "The
+matrix does not include stories and tasks (it isn't a build tracker)". When documentation is
+updated (Q60), how many gate fixes before aborting and to whom an abort is
+reported (Q61), and commits and the push (Q62) are not
+stated by the owner.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant WF as Build workflow
+    participant DW as Documentation writers
+    participant LF as Lint and style fixer
+    participant GN as GitNexus
+    box Stores
+        participant G as git / GitHub (worktree)
+        participant BD as beads
+        participant MX as matrix
+    end
+
+    opt open - Q60 - documentation is updated in the build, per Task
+        WF->>DW: the changed files
+        Note over DW: for example documentation-currency-auditor<br/>names stale docs and the writer that owns each
+        DW-)G: the repository's documents the change left stale, updated
+    end
+    WF->>G: runs lint, format, strict type checks and the pre-commit hooks
+    G-->>WF: pass, or the findings
+    alt every gate passes
+        Note over WF: the commit follows
+    else findings that can be fixed
+        loop open - Q61 - until every gate passes
+            WF->>LF: all the findings
+            Note over LF: for example code-style-and-linting-enforcer
+            LF-)G: every finding fixed. Hook auto-fixes staged as part of the change
+            WF->>G: the gates run again
         end
-        TTD->>SR: the recorded command
-        SR->>WT: run the whole suite
-        SR-->>TTD: the run
-        TTD->>TTD: judge Red against the baseline failures
-        TTD->>WT: gitutils.py hash-files - fingerprint Red's test files when Red holds
+    else findings that cannot be fixed - open Q61
+        Note over WF,LF: abort with no commit, and report.<br/>Never --no-verify. Loosening lint config is the owner's decision
     end
+    WF->>GN: detect changes before committing
+    GN-->>WF: the symbols and flows the change affects, only the expected ones
+    WF-)G: the commit on the Story's branch, in its worktree: type(scope): description, no Co-Authored-By
+    opt open - Q62 - the Story's branch is pushed
+        WF-)G: the branch pushed
+    end
+    WF-)BD: the Task closed - built, whole suite passing
+    Note over WF,MX: nothing about the Task is written to the matrix, and no verified flag
 ```
 
-## 10. Green: implementer selection, implementation and the test ruling
+## 8. A Task through the build
 
-**Subject:** how implementers are chosen and run, how the suite judges them, and how a test an
-implementer disputes is ruled on.
-**Scope:** `build:select-implementers`, `build:implement`, `build:green-check`,
-`build:test-ruling`.
-**Purpose:** what each implementer receives (contract, shared capabilities, Spec and arc42
-pointers, feedback) and produces, and where the matrix is read.
-**Boundary:** the audits (section 11).
-**Basis:** as built. `task-to-deploy.js` `stepSelectImplementers`, `capabilityBrief` (1868),
-`greenFeedbackAt` (1632), `baselineNoteAt` (1625), `stepImplement`, `stepGreenCheck`,
-`stepTestRuling`, `checkTestDecisions` (1131); `workflows/tdd-green.js` (`IMPLEMENTER_ROSTER`,
-the `implementation-lead` selection, `reuseBlock`, `GREEN_SCHEMA`); `agents/implementation-lead.md`.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant TTD as task-to-deploy.js
-    participant GR as tdd-green.js
-    participant IL as implementation-lead
-    participant IMP as implementer
-    participant RED as tdd-red.js
-    participant UTG as tdd-unit-test-generator
-    participant SR as suite-run.js
-    box matrix
-    participant MX as atw-matrix
-    end
-    box vault
-    participant VS as Spec
-    end
-    box arc42 (vault)
-    participant AV as architecture views
-    end
-    box git / GitHub
-    participant WT as worktree
-    end
-    TTD->>MX: uses --ids the Task's matrix_elements, role build-workflow
-    MX-->>TTD: capabilities - feature, provides, providers with stack repository
-    TTD->>GR: contract with sharedCapabilities, red, select true, implementer cdk-stack-author for an infrastructure Task
-    alt no implementer named
-        GR->>IL: select the fewest implementers from the roster, in build order
-        IL->>VS: read the Spec documents
-        IL->>AV: read the architecture views
-        IL-->>GR: implementers, rationale
-    end
-    GR-->>TTD: implementers
-    TTD-)TTD: record implementers and sharedCapabilities
-    loop until the suite exits 0, at most eight checks per round
-        loop each implementer, in order
-            TTD->>GR: contract, red, implementers, only this one, feedback
-            GR->>IMP: SHARED CAPABILITIES THIS TASK MUST USE, Task, Spec and arc42 pointers, Red evidence, baseline repair scope, make the failing tests pass, do not change tests
-            IMP->>VS: read the Spec sections
-            IMP->>AV: read the architecture views
-            IMP->>WT: change production code, run the suite
-            IMP-->>GR: changedFiles, testIssues, upstreamMissing, evidence
-            GR-->>TTD: changedFiles, testIssues, upstreamMissing
-        end
-        TTD->>WT: gitutils.py hash-files - did a Red test file change?
-        TTD->>SR: the recorded command
-        SR->>WT: run the whole suite
-        SR-->>TTD: the run
-        opt not green and testIssues named
-            TTD->>RED: contract, testIssues, test files, the last run
-            RED->>UTG: rule on each named test - update, delete or keep, citing the contract
-            UTG->>WT: change test code only
-            UTG-->>RED: decisions, testFiles
-            RED-->>TTD: decisions
-            TTD->>TTD: one valid ruling per named test, else fail red-decisions-incomplete
-        end
-    end
-    Note over TTD,MX: the build records nothing in the matrix - upstreamMissing stays in the step journal
-```
-
-## 11. Audits: reuse, refactor and cds
-
-**Subject:** the checks that follow Green and may send work back once.
-**Scope:** `build:reuse-audit`, `build:refactor-snapshot`, `build:refactor`,
-`build:refactor-check`, `build:refactor-restore`, `build:cds-audit`.
-**Purpose:** the matrix read of B5, the GitNexus-only refactor and its undo, and the cds audit
-for a web-ui Task.
-**Boundary:** the rounds they add re-enter section 10.
-**Basis:** as built. `task-to-deploy.js` `stepReuseAudit`, `judgeReuse`, `REUSE_JUDGMENT_SCHEMA`,
-`stepRefactorSnapshot`, `stepRefactor`, `stepRefactorCheck`, `stepRefactorRestore`,
-`stepCdsAudit`, `auditCds` (1453, `RUN_CDS_AUDIT_PY`), `auditCdsLive` (1590);
-`workflows/tdd-refactor.js` (snapshot 834, the specialist's prompt 849 to 900, blocker and revert
-handling, `gitutils.py changed` 957).
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant TTD as task-to-deploy.js
-    participant SCR as shared-capability-reviewer
-    participant RFW as tdd-refactor.js
-    participant CRS as code-refactoring-specialist
-    participant CLA as cds-live-auditor
-    participant SR as suite-run.js
-    box matrix
-    participant MX as atw-matrix
-    end
-    box git / GitHub
-    participant WT as worktree
-    end
-    TTD->>MX: check-reuse --ids the Task's ids --worktree
-    MX-->>TTD: violations, judgment, unchecked, clean
-    opt definitions the check cannot rule on
-        TTD->>SCR: each definition with the capability and provides entry
-        SCR->>WT: read the definitions
-        SCR-->>TTD: duplicate or not-duplicate, with a reason
-    end
-    TTD-)TTD: record reuseAudit - violations go back to the implementers once
-    TTD->>WT: gitutils.py snapshot - record the tree id
-    TTD->>RFW: contract, changedFiles, snapshotTree
-    RFW->>CRS: refactor the changed files without changing behavior, GitNexus impact, rename, detect_changes
-    CRS->>WT: refactor, run the suite
-    CRS-->>RFW: testsGreen, reverted, evidence, blastRadius, detectChanges, gitnexusBlocker
-    alt GitNexus blocker or reverted
-        RFW->>WT: gitutils.py restore to the snapshot
-    else refactored
-        RFW->>WT: gitutils.py changed since the snapshot
-    end
-    RFW-->>TTD: changedFiles, restored
-    TTD->>SR: run the whole suite
-    SR-->>TTD: the run
-    alt red after the refactor
-        TTD->>RFW: restoreTo the snapshot
-        RFW->>WT: gitutils.py restore
-        TTD->>SR: run the whole suite again
-    end
-    opt web-ui Task with design source bundle or cds
-        alt a cds bundle
-            TTD->>WT: audit-app.py --repo --bundle, digest checked
-        else no bundle
-            TTD->>CLA: audit the changed UI files against the live design system
-            CLA-->>TTD: findings ruled violation, allowed or cds-gap
-        end
-        TTD-)TTD: record cdsAudit - violations back to the implementers once, a gap fails blocked-upstream
-    end
-```
-
-## 12. Documentation, the final suite and the commit
-
-**Subject:** the documentation audit and updates, the final suite run, and the commit on the
-Story's branch; then the driver's close.
-**Scope:** `build:docs-audit`, `build:docs-write`, `build:final-suite`, `build:commit`, and the
-driver's `_settle_build`.
-**Purpose:** who is chosen to write documents and how, and where git and beads are written.
-**Boundary:** the regression mapping between the final suite and the commit (section 8).
-**Basis:** as built. `task-to-deploy.js` `stepDocsAudit`, `stepDocsWrite`, `allChangedAt` (2177),
-`stepFinalSuite`, `stepCommit`, `handback` (2270); `workflows/documentation.js` (`WRITERS`,
-the auditor's prompt, `writerForPath`, `assignment` mode); `workflows/settle.js` `commitRun`
-(commit agent `github-actions-pipeline-implementer`); `ops/sdlc-automation/lane.py`
-`_settle_build`.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant DRV as driver lane.py
-    participant TTD as task-to-deploy.js
-    participant DOC as documentation.js
-    participant DCA as documentation-currency-auditor
-    participant DWR as documentation writer
-    participant SR as suite-run.js
-    participant ST as settle.js
-    participant GAP as github-actions-pipeline-implementer
-    box git / GitHub
-    participant WT as worktree and Story branch
-    end
-    box beads
-    participant BD as Task bead
-    end
-    TTD->>DOC: contract, every file the implementers and the refactor changed, auditOnly
-    alt only tests and fixtures changed
-        DOC-->>TTD: no stale documents
-    else
-        DOC->>DCA: which READMEs, API docs, changelog, user guides are stale, assign each to a writer of the roster
-        DCA->>WT: read the documents and the change
-        DCA-->>DOC: staleDocs, assignments
-        DOC->>DOC: a stale document left unassigned goes to a writer by its path
-        Note right of DOC: differs from required - code picks the writer for an unassigned document
-        DOC-->>TTD: staleDocs, assignments
-    end
-    par one per documentation agent assigned
-        TTD->>DOC: assignment - agent and its documents
-        DOC->>DWR: update these documents to match the change
-        DWR->>WT: edit the documents
-        DWR-->>DOC: updatedDocs
-        DOC-->>TTD: updatedDocs
-    end
-    TTD->>SR: run the whole suite a final time
-    SR-->>TTD: the run - nothing is committed unless it exits 0
-    TTD->>ST: worktree, commitOnly, branch, defaultBranch, message the Task id and title
-    ST->>WT: gitutils.py facts before
-    ST->>GAP: commit every change, type(scope) message, no --no-verify, fix hook findings or report blocked
-    GAP->>WT: git add -A and commit on the Story branch
-    GAP-->>ST: blocked
-    ST->>WT: gitutils.py facts after - HEAD moved, same branch
-    ST-->>TTD: status reported, commit
-    TTD-->>DRV: ok, stage committed, commit, suite command and summary
-    DRV->>WT: git status of the Story worktree - clean?
-    DRV-)BD: set audit metadata, close the Task
-    Note over DRV,BD: no push and no pull request here - the Story's deploy opens one
-```
-
-## 13. A step of the step journal
-
-**Subject:** the states one journal step passes through, in the workflow's copy and in the file.
-**Scope:** any step of pipeline `build`.
-**Purpose:** show restart: a run begins at the first step that is not done, and a step that ran
-before starts again from its beginning.
-**Boundary:** the order of the steps (sections 3 to 5).
-**Basis:** as built. `skills/pipeline-contracts/schemas/step-journal.schema.json`
-`definitions/stepStatus` (planned, running, done, failed); the `step-journal` shared block in
-`task-to-deploy.js` (674 to 948: `next`, `start`, `done`, `fail`, `run`, `together`);
-`ops/sdlc-automation/journalstart.py` `start_at` (`invalidate_from`).
+**Subject:** one Task bead.
+**Scope:** from ready to closed, stopped or aborted.
+**Purpose:** the states a Task passes through in the build, and what moves it.
+**Boundary:** the Task's life before the build (written in elaboration) and the Story's deploy are
+not drawn.
+**Sources:** Root `AGENTS.md`: "A Task closes when it completes, including passing all tests." and
+"TDD London School (mock-first) for new code." `.claude/rules/git-conventions.md` (worktree, gates,
+abort with no commit). [requirements/pipelines.md](../requirements/pipelines.md): the Tasks under
+each Story are "scored and ordered", and the build produces "The Task's code and tests committed to
+the Story's branch, with the repository's whole test suite passing". The states of a Task that
+stops or aborts are not stated by the owner (Q56, Q61).
 
 ```mermaid
 stateDiagram-v2
-    [*] --> planned: in the up-front plan / or added by an earlier step's result
-    planned --> running: next() picks it [first step not done] / start - artifacts cleared, STEP-JOURNAL start
-    running --> done: step function returns artifacts and add / STEP-JOURNAL done, added steps placed right after it
-    running --> failed: step function returns fail, throws, or the run is interrupted / STEP-JOURNAL fail with stage and message
-    failed --> running: a later dispatch [it is the first step not done] / start again from its beginning
-    running --> running: a later dispatch after a stopped run [status still running] / start again, artifacts of the unfinished run dropped
-    done --> planned: start_at named this step or an earlier one / invalidate_from resets it and every step after it
-    done --> [*]: the run reaches the end of the journal
+    [*] --> Ready : written by elaboration, scored and ordered under its Story
+    Ready --> InWorktree : the build starts / the Story's worktree created or reused
+    InWorktree --> Red : failing tests written [every new test fails for the intended reason]
+    Red --> Red : a test corrected [a new test passes, or fails for another reason]
+    Red --> Green : minimum code [the whole suite passes]
+    Green --> Green : another round [suite not green, rounds left - Q56]
+    Green --> Stopped : rounds spent, or a decision missing upstream [Q56, Q57]
+    Green --> Refactored : refactor [the whole suite still green]
+    Refactored --> IntegrationTested : integration tests written and run [all pass - Q59]
+    IntegrationTested --> Green : an integration failure [the code fixed in Green - Q59]
+    IntegrationTested --> Gated : lint, format, strict types and pre-commit [all pass, after every finding is fixed]
+    IntegrationTested --> Aborted : a gate finding cannot be fixed / no commit, reported [Q61]
+    Gated --> Committed : commit on the Story's branch / type(scope): description
+    Committed --> Closed : the Task closed in beads
+    Closed --> [*]
+    Stopped --> [*]
+    Aborted --> [*]
+    state "In the Story's worktree" as InWorktree
+    state "Integration tested" as IntegrationTested
 ```
-
-## Agents the build dispatches, and how each is chosen
-
-Basis: as built (the files cited in sections 6 to 12).
-
-| Agent | Step | Chosen by |
-|---|---|---|
-| `workflow-command-runner` | every script step | always, for each command (section 6) |
-| `cdk-infrastructure-designer` | `build:infra-intent` | code: an infrastructure type or label |
-| `regression-impact-assessor`, `regression-coverage-reviewer` | the six regression steps | always |
-| `test-command-resolver`, `test-failure-parser` | every suite run | the resolver when no command is recorded, the parser when the suite exits non-zero |
-| `tdd-unit-test-generator` and the surface test writers | `build:red-write`, `build:test-ruling` | code: `SURFACE_WRITERS` from the contract's surfaces, the unit writer always |
-| `implementation-lead` | `build:select-implementers` | always, unless the caller or code names the implementer |
-| the implementers of `IMPLEMENTER_ROSTER` | `build:implement` | `implementation-lead`, or `cdk-stack-author` fixed for an infrastructure Task |
-| `shared-capability-reviewer` | `build:reuse-audit` | definitions `atw-matrix check-reuse` cannot rule on |
-| `code-refactoring-specialist` | `build:refactor` | always |
-| `cds-live-auditor` | `build:cds-audit` | a web-ui Task with design source cds and no bundle |
-| `documentation-currency-auditor` | `build:docs-audit` | unless only tests and fixtures changed |
-| `api-documentation-writer`, `readme-writer`, `changelog-writer`, `user-guide-writer` | `build:docs-write` | the auditor, or `writerForPath` for a document it left unassigned |
-| `github-actions-pipeline-implementer` | `build:commit` | always, when the tree has changes |
-
-Not dispatched by the build as built: `workflows/adversarial.js` (its testers and
-`adversarial-critique-adjudicator`) and `workflows/gate-enforce.js` (`phase-gate-enforcer`); no
-workflow in the build lane names either. `agents/test-coverage-gap-reviewer.md` says the
-`tdd-red` workflow dispatches it, and `workflows/tdd-red.js` does not.
 
 ## Stores read and written by the build
 
-Basis: as built, compared with required (`design/matrix.md` section 4, Build table).
-
 | Store | Read | Written |
 |---|---|---|
-| beads | the build contract (driver, `beads-contract contract`) | the driver claims the Task, starts the Story, closes or releases the Task and sets build metadata |
-| matrix | `uses --ids` (B3) and `check-reuse` (B5), role `build-workflow` | nothing, as required |
-| arc42 (vault) | the architecture views the Task's `decisionIds` name, by the test writers, `implementation-lead` and the implementers | nothing |
-| vault | the Spec documents and sections, and prior PRDs by the regression agents | nothing |
-| git / GitHub | the worktree, through `gitutils.py` and the agents | the Story's worktree and branch (created or reused), the code, tests and documents, one commit per Task; no push |
+| beads | The Task and its Story: what the Task builds, the matrix ids, acceptance criteria, pointers, the Story's repository and branch | The Task closed when built with the whole suite passing |
+| matrix | Every id the Task states, with its links: stack, repository, SSM parameters written and read, shared capabilities, collaborators, related documents | Nothing about the Task and no verified flag. A matrix fact found wrong is open (Q63) |
+| Spec files (vault) | The spec, its acceptance criteria, its OpenAPI document | Nothing |
+| arc42 (vault) | The full architecture and design of the component, by the spec's links | Nothing |
+| git / GitHub | The Story's worktree and branch | Tests, code, the repository's documents (Q60), the commit on the Story's branch (Q62) |
 
-## Differences from the requirements, in one list
+## Open questions
 
-1. B1: repository from `repoPath`, not `atw-matrix node stack:<id>`; the refusal names a missing
-   `repoPath` or Story, not a missing stack (sections 3 and 7).
-2. B2: `infra-intent.js` reads no matrix and has `cdk-infrastructure-designer` design resources and
-   stacks again and name them with the `resource-naming` skill, re-deciding what upstream decided
-   (section 7).
-3. B3: thirteen implementer definitions tell the implementer to name resources, two of them with
-   naming among their "Allowed Decisions" (section 4).
-4. B4: the regression scope is rediscovered from sources, not read with `impact --id` (sections 3
-   and 8).
-5. B6: the suite command is resolved from `AGENTS.md`, `CLAUDE.md` or the Taskfile by a session,
-   not read from the stack's `commands.test` (section 9).
-6. Specialists chosen by code: the test writers (`SURFACE_WRITERS`), the implementer of an
-   infrastructure Task (`cdk-stack-author`), and the writer of an unassigned document
-   (`writerForPath`) (sections 3, 4 and 12).
-7. Re-checks of upstream: the regression scope review and validation re-check the requirement
-   sources elaboration bound to the Task, and the missing-id refusals sit at B3 and B5 rather than
-   at B1 (sections 3 and 4).
-
-## Assumptions
-
-- Section 1: the order of B2 to B6 is the order the Build table lists them.
+- **Q14. Which checks of upstream steps stay in the build and deploy?** (plan, item 1.11)
+  Appears in sections 1 and 2. Recommendation (the plan's): keep a check only where the step that
+  consumes the output is a universal or shared component, and remove the rest. Reason: that is the
+  exception the owner named ("like if B is going to be a universal or shared component"), and the
+  owner otherwise wants trust ("I need more fault-tolerance for the pipeline, and need more
+  trust.").
+- **Q15. How is an SSM parameter recorded in the matrix?** (plan, item 1.13) Appears in sections 2
+  and 4, where the build reads the parameters a stack writes and reads. Recommendation (the
+  plan's): as its own entry, named, linked from the stack that writes it and to each stack that
+  reads it. Reason: an implementer then finds another stack's parameter by following links, which
+  is the owner's answer to "How can stack-B know what ssm stack-A is saving".
+- **Q51. Which build steps are scripts and which are agents: creating or reusing
+  the Story's worktree, the suite runs, the build brief and the commit?** Appears in sections 1, 2
+  and 7. Recommendation: scripts in the build workflow, with agents only for writing tests,
+  writing code, refactoring, fixing gate findings and documentation. Reason: these steps need no
+  reasoning, so no agent has a reason to be used for them ("Ever agent needs to have a reason to be
+  used."), and the owner prefers contracts "deterministic in files and code"; a script is also
+  faster, which the owner's time concern ("dosn't take 2 hours to run through a single Epic")
+  favours.
+- **Q52. Is the whole suite run before any change, and what is done when it
+  already fails?** Appears in section 1. Recommendation: run it once at the start; a failure in the
+  Task's repository is fixed in that run, within the Task's worktree, before Red. Reason: the build
+  must end with "the repository's whole test suite passing", which a failure that was there before
+  would block, and [requirements/pipelines.md](../requirements/pipelines.md) states "A build that
+  finds a defect fixes it in that run."
+- **Q53. How are the test writers chosen for a Task?** Appears in section 3.
+  Recommendation: the Task names the kinds of test it needs, decided in elaboration, and the build
+  starts the test writer whose own file covers each kind; a reasoning agent chooses only where the
+  Task names none. Reason: the owner wants the build to have "little to no decisions to make", no
+  Python choosing agents, and no agent without a reason to be used; the kinds of test follow from
+  the design, which elaboration settles.
+- **Q54. What happens when an implementer finds that a test contradicts the
+  spec?** Appears in section 4. Recommendation: the implementer changes no test; it names the test
+  and the spec passage in its result, the test writer that wrote it rules against the spec
+  (update, delete or keep the test), and Green runs again. Reason: the spec is what upstream
+  decided, so it is the authority, and keeping test writing and code writing in separate agents
+  keeps each to its focused scope, the reason the owner gives for specialists.
+- **Q55. How are the implementers chosen for a Task?** Appears in section 4.
+  Recommendation: as Q53: the Task names the subjects it builds (for example a
+  Lambda handler, a CDK stack, a DynamoDB access layer), and the build starts the implementer whose
+  own file covers each, in build order; a reasoning agent, for example `implementation-lead`
+  (whose file gives it the job of selecting the implementers whose specialties cover a Task),
+  chooses only where the Task names none. Reason: the owner's "What I do not want is python code
+  deciding which specialists to use" and "Ever agent needs to have a reason to be used.", and
+  elaboration has already decided what the Task builds.
+- **Q56. How many Green rounds before the build gives up, and what happens to
+  the Task then?** Appears in sections 1, 4 and 8. Recommendation: three rounds, each given the
+  failing tests and what the run printed; then the Task stops with no commit, its bead marked
+  blocked with the failing tests and the cause, and the other Tasks of other Stories go on.
+  Reason: a bound keeps one Task from running for hours (the owner: "dosn't take 2 hours"), a
+  blocked bead with its cause is the record a person or a later run acts on, and nothing is
+  committed that fails the suite.
+- **Q57. What does the build do when it needs a decision that upstream did not
+  record, and that is not a deploy-time value?** Appears in sections 4 and 8. Recommendation: the
+  agent first follows the Task's pointers (the spec, arc42, the matrix); if none holds the
+  decision, it does not invent it, and the Task stops with the missing decision recorded on its
+  bead for elaboration to settle. Reason: the owner does not expect a missing name ("I wouldn't
+  expect a missing name.") and does not want agents naming or re-deciding what upstream settles;
+  stopping only on a real gap, and never on a deploy-time value, keeps the trust the owner asks
+  for.
+- **Q58. When does the refactor run, and what happens when it breaks the
+  suite?** Appears in sections 1 and 5. Recommendation: it runs for every Task on the code Green
+  changed, and returns "nothing to refactor" when nothing needs it; the tree is recorded before it
+  and put back as Green left it when the suite is not green afterwards. Reason: refactor is part of
+  the TDD cycle root `AGENTS.md` requires, a recorded tree makes "behaviour unchanged" certain
+  without a reviewer, and no extra review agent is added for caution.
+- **Q59. What does integration testing cover in the build, and how is an
+  integration failure handled?** Appears in sections 1, 6 and 8. Recommendation: in the build, the
+  component's connections that need no deployment (imports, calls to other modules, the contracts
+  of the APIs it calls, mocked at the network edge); tests against real collaborators run when the
+  Story deploys to AWS dev. A failure goes back to Green, within the same round limit as
+  Q56. Reason: the deploy to AWS dev is per Story
+  ([requirements/pipelines.md](../requirements/pipelines.md), Deploy row), so a Task cannot rely
+  on its Story's stacks being deployed; the owner notes most connections are "imports or API
+  calls", which in-repository tests cover.
+- **Q60. When is documentation updated?** Appears in sections 1 and 7.
+  Recommendation: in the build, per Task, for the documents inside the repository the change
+  leaves stale (for example its README and API documents), committed with the code; arc42 is not
+  written by the build. Reason: one commit then carries the code and the documents that describe
+  it, and the build is not where architecture changes, since "The architecture and design comes
+  before the build."
+- **Q61. How many times are gate findings fixed before the build aborts, and
+  to whom is an abort reported?** Appears in sections 1, 7 and 8. Recommendation: two fix
+  attempts; then abort with no commit, and record the findings that could not be fixed on the
+  Task's bead, which is marked blocked. Reason: `git-conventions.md` requires fixing all findings
+  and aborting with no commit when they cannot be fixed, and the bead is where a person or a later
+  run finds the cause; the bound keeps the time short.
+- **Q62. Is a Task's work committed once or at checkpoints, and is the Story's
+  branch pushed at the end of the build?** Appears in sections 1, 7 and the stores table.
+  Recommendation: checkpoint commits after each step that leaves the tree working (Green,
+  Refactor, integration), each passing the gates, and the branch pushed after the Task's last
+  commit; the Story's one pull request is opened at its deploy. Reason: `git-conventions.md` says
+  "Commit early, commit often", "every agent commits after each change that works" and "There is
+  no profile in which finished work stops at a local commit; a push is the end state", while
+  [requirements/pipelines.md](../requirements/pipelines.md) gives the Story one pull request at
+  deploy.
+- **Q63. Does the build correct a matrix fact it finds wrong, or only report
+  it?** Appears in section 2 and the stores table. Recommendation: the build corrects the fact in
+  the same run, leaving it not approved so the next elaboration that reaches it reviews it, and
+  records nothing about the Task. Reason: the owner says "The architecture process is designed to
+  clean up the matrix is it works, and the same with the build.", and
+  [requirements/matrix.md](../requirements/matrix.md) R39 says a fact recorded "only later, or
+  elsewhere, is found again by scanning"; R29, which says the build only reports, differs from the
+  owner's words, so the owner decides.
