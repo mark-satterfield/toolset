@@ -191,7 +191,7 @@ gh api graphql --paginate -f query='
 ' -f owner="$OWNER" -f repo="$REPO" -F number="$PR_NUMBER"
 ```
 
-**Filter:** `isResolved == false`
+**Filter:** `isResolved == false` for the threads this pass triages. Keep the resolved threads too, with their replies: they are the already-addressed threads that 3.4 step 3 compares each open thread against to find repeats.
 
 #### 2.3 Classify by Source
 
@@ -326,6 +326,8 @@ For each unresolved thread — and each work item from 2.4 (a changes-requested 
 
 3. Identify relationships to other threads in the PR. Specifically: the same root cause flagged by multiple sources, multiple threads on the same file or function, and human reviewer threads that overlap with bot threads on the same code. For each relationship, record which thread is the **primary** (its disposition drives the action) and which are **linked** (will be dispositioned consistently with the primary, with replies that reference the primary's resolution). Human reviewer threads take precedence over bot threads when they overlap.
 
+   Also decide whether the thread **repeats an already-addressed thread**: a resolved thread on this PR that raised the same finding about the same code and was already answered, by a fix or by a reasoned decision not to change it (for example, CodeRabbit raises again a finding an earlier pass rejected as wrong or as not to be changed). A thread that raises the finding against code the earlier fix did not cover, or adds a new argument or new evidence, is not a repeat. A repeat takes the disposition the earlier thread was given; its reply links the earlier thread and says the finding was already answered there. Record each repeat, with the earlier thread it repeats, per **3.6 Record Repeats for the Loop**.
+
 4. Restate the reviewer's underlying intent in your own words and record it. This becomes the basis for evaluating whether a candidate disposition actually addresses the concern, rather than the surface phrasing.
 
 5. Apply *Confidence Gating* (3.3) to determine whether the Merge Warden can disposition this autonomously. Record the confidence level and the reasoning.
@@ -383,6 +385,24 @@ Use the content value matching the disposition decided in 3.4:
 | `hooray`   | 🎉 | Clarifying question pending (question posted, thread resolved, next iteration picks up the response) |
 
 **No thread may leave Phase 3 without a recorded disposition and a matching reaction.**
+
+#### 3.6 Record Repeats for the Loop
+
+The `shepherd-pr` loop ends a PR as one it cannot fix when passes in a row change nothing: the open threads that are not repeats of an already-addressed thread, and the failing checks by name, are the same as at the previous pass. A thread is addressed when it is fixed in code, or when it is answered with a reasoned decline (the suggestion would be wrong to implement, or should not change) and resolved: a decline needs no commit, and resolving the thread is progress all the same. When a reviewer, CodeRabbit included, raises the same finding again after it was fixed or declined, that thread is a repeat of an addressed thread, not new. Whether a thread is a repeat is the pass's judgment (3.4 step 3); the loop reads it from a file and compares deterministically.
+
+When `SHEPHERD_REPEATS_FILE` is set in the environment (the loop sets it for every pass and creates the file empty), write one line per open thread judged a repeat, including every thread that repeats a suggestion an earlier pass declined, before Phase 4:
+
+```text
+<thread node id><TAB><node id of the earlier thread it repeats><TAB><one-line reason>
+```
+
+The node ids are the GraphQL `id` values from 2.2 (`PRRT_...`). Write only threads judged repeats; leave the file empty when there are none. When `SHEPHERD_REPEATS_FILE` is not set (a pass run by hand), skip this step.
+
+```bash
+if [ -n "${SHEPHERD_REPEATS_FILE:-}" ]; then
+  printf '%s\t%s\t%s\n' "$THREAD_ID" "$EARLIER_THREAD_ID" "$REASON" >> "$SHEPHERD_REPEATS_FILE"
+fi
+```
 
 ---
 
@@ -729,6 +749,7 @@ gh pr comment "$PR_NUMBER" --repo "$OWNER/$REPO" --body "$AUDIT_BODY"
 **Threads attempted:** N
 **Threads resolved:** N
 **Threads left open:** N (with reasons)
+**Repeats of already-addressed threads (3.6):** each thread, and the earlier thread it repeats — or none
 **CodeRabbit consultations:** N (<breakdown by outcome>)
 **CodeRabbit resolve sweep (4.8):** posted / skipped (no CR threads touched)
 **Change requests dismissed (4.1 step 3):** review id, reviewer, message — or none, and for each `CHANGES_REQUESTED` review left standing, the open thread or the error that kept it
@@ -771,6 +792,7 @@ Before ending the pass, verify:
 - [ ] Every failing check was reproduced with the command its workflow runs, and fixed (or escalated with evidence)
 - [ ] No lint/type config was loosened, no test was weakened, skipped or deleted, no workflow was edited, no hook was bypassed, nothing was merged
 - [ ] Every unresolved thread has a decision record from Phase 3
+- [ ] Every thread judged a repeat of an already-addressed thread is written to `SHEPHERD_REPEATS_FILE` with the earlier thread it repeats (when the variable is set)
 - [ ] Every thread has a reaction matching its disposition
 - [ ] Every thread has a reply comment posted (zero silent threads)
 - [ ] Every CodeRabbit thread containing a `🤖 Prompt for AI Agents` block has an evidence reply

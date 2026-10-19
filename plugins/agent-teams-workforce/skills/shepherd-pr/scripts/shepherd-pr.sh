@@ -10,10 +10,19 @@
 #   qualifies for merging       -> ends, exit 0
 #   checks running, or nothing  -> wait, poll again
 #   the shepherd can act on
-#   no change and no new        -> ends, exit 2, naming what is still unfixed
-#   findings for MAX_STALLED
-#   passes, or not qualified
-#   past MAX_WAIT
+#   nothing new for MAX_STALLED -> ends, exit 2, naming what is still unfixed
+#   passes in a row, or not
+#   qualified past MAX_WAIT
+#
+# "Nothing new" for a pass: the open review threads that are not repeats of
+# a thread already addressed (the pass records its repeats in
+# $SHEPHERD_REPEATS_FILE), and the names of the failing checks, are the same
+# as when the previous pass started. A thread fixed in code, or answered with
+# a reasoned decline and resolved, is addressed and leaves the set: that is
+# progress even with no commit. A finding raised again after it was
+# addressed is a repeat, not new. A fix that makes a different check fail,
+# or a genuinely new thread, is new. The head commit, the review decision and
+# the merge state are not part of it.
 #
 # "Qualifies for merging" is GitHub's own merge requirement facts: nothing
 # below is left to fix, no review decision of CHANGES_REQUESTED, no unresolved
@@ -41,15 +50,16 @@
 #
 # Environment:
 #   SHEPHERD_POLL_SECONDS         seconds between GitHub reads while waiting (60)
-#   SHEPHERD_MAX_STALLED_PASSES   passes in a row with no change on the PR and
-#                                 no new findings before the shepherd ends as
-#                                 unable to fix the PR (3)
+#   SHEPHERD_MAX_STALLED_PASSES   passes in a row with nothing new (see above)
+#                                 before the shepherd ends as unable to fix the
+#                                 PR (3)
 #   SHEPHERD_MAX_WAIT_SECONDS     seconds the loop may wait, since its last pass,
 #                                 for a PR that does not qualify for merging and
 #                                 has nothing the shepherd can act on, before it
 #                                 ends as unable to fix the PR (7200; below
 #                                 shepherd-prs.sh's 4 h per-PR timeout)
-#   SHEPHERD_LOG_DIR              where loop.log, pass-<n>.jsonl and ending are
+#   SHEPHERD_LOG_DIR              where loop.log, pass-<n>.jsonl, the repeat
+#                                 records repeats-pass-<n>.tsv and ending are
 #                                 written
 #                                 (${CLAUDE_CONFIG_DIR:-~/.claude}/shepherd-pr/<owner>-<repo>-<pr>)
 #
@@ -103,11 +113,12 @@ echo "Shepherding PR #$PR_NUMBER in $OWNER/$REPO from $WORKDIR"
 echo "Plugin: $PLUGIN_ROOT  Logs: $LOG_DIR"
 
 # Review threads across EVERY page, and the changes-requested reviews. Prints
-# "<unresolved> <dismissable>": the unresolved threads, and the
+# "<unresolved> <dismissable> <open-thread-ids>": the unresolved threads, the
 # CHANGES_REQUESTED reviews none of whose threads is still open (each pass
-# dismisses those). A value is ERROR when its query is unreadable.
+# dismisses those), and the node ids of the unresolved threads as ",id,id,".
+# A value is ERROR when its query is unreadable.
 thread_state() {
-  local cursor_arg=(-F cursor=null) page count has_next cursor ids open_ids="," total=0
+  local cursor_arg=(-F cursor=null) page count has_next cursor ids tids open_ids="," open_tids="," total=0
   local requested id dismissable=0
   while :; do
     # shellcheck disable=SC2016  # GraphQL variables, bound via -f/-F
@@ -118,6 +129,7 @@ thread_state() {
             reviewThreads(first:100, after:$cursor) {
               pageInfo { hasNextPage endCursor }
               nodes {
+                id
                 isResolved
                 comments(first:1) { nodes { pullRequestReview { databaseId } } }
               }
@@ -128,14 +140,15 @@ thread_state() {
     ' -f owner="$OWNER" -f repo="$REPO" -F number="$PR_NUMBER" "${cursor_arg[@]}" \
       --jq '.data.repository.pullRequest.reviewThreads
             | [.nodes[] | select(.isResolved == false)] as $open
-            | "\($open | length) \(.pageInfo.hasNextPage) \(.pageInfo.endCursor) ,\([$open[].comments.nodes[0].pullRequestReview.databaseId // empty | tostring] | join(",")),"') \
-      || { echo "ERROR ERROR"; return 0; }
-    read -r count has_next cursor ids <<<"$page"
+            | "\($open | length) \(.pageInfo.hasNextPage) \(.pageInfo.endCursor) ,\([$open[].comments.nodes[0].pullRequestReview.databaseId // empty | tostring] | join(",")), ,\([$open[].id] | join(",")),"') \
+      || { echo "ERROR ERROR ERROR"; return 0; }
+    read -r count has_next cursor ids tids <<<"$page"
     case "$count" in
-      ''|*[!0-9]*) echo "ERROR ERROR"; return 0 ;;
+      ''|*[!0-9]*) echo "ERROR ERROR ERROR"; return 0 ;;
     esac
     total=$((total + count))
     open_ids="$open_ids${ids#,}"
+    open_tids="$open_tids${tids#,}"
     [ "$has_next" = "true" ] || break
     cursor_arg=(-f cursor="$cursor")
   done
@@ -151,14 +164,42 @@ thread_state() {
     }
   ' -f owner="$OWNER" -f repo="$REPO" -F number="$PR_NUMBER" \
     --jq '[.data.repository.pullRequest.reviews.nodes[].databaseId | tostring] | join(" ")') \
-    || { echo "$total ERROR"; return 0; }
+    || { echo "$total ERROR $open_tids"; return 0; }
   for id in $requested; do
     case "$open_ids" in
       *",$id,"*) ;;
       *) dismissable=$((dismissable + 1)) ;;
     esac
   done
-  echo "$total $dismissable"
+  echo "$total $dismissable $open_tids"
+}
+
+# The names of the checks failing (fail or cancel), sorted, one per line;
+# ERROR when the checks cannot be read.
+failing_check_names() {
+  gh pr checks "$PR_NUMBER" --repo "$OWNER/$REPO" --json name,bucket \
+    --jq '[.[] | select(.bucket == "fail" or .bucket == "cancel") | .name] | unique | .[]' \
+    || echo ERROR
+}
+
+# The node ids in a ",id,id," list ($1) that are not in the first column of
+# the repeat record $2: the open threads that are not repeats of a thread
+# already addressed. Printed sorted, comma-separated.
+non_repeat_threads() {
+  local current="$1" record="$2" id first repeat kept=()
+  local IFS=,
+  for id in $current; do
+    [ -n "$id" ] || continue
+    repeat=no
+    if [ -s "$record" ]; then
+      while IFS=$'\t' read -r first _; do
+        [ "$first" = "$id" ] && repeat=yes
+      done < "$record"
+    fi
+    [ "$repeat" = yes ] || kept+=("$id")
+  done
+  [ "${#kept[@]}" -gt 0 ] || return 0
+  printf '%s\n' "${kept[@]}" | sort | paste -sd, -
 }
 
 # Check state: PASS, FAIL <n>, PENDING <n>, or ERROR <why>. Only PASS is passing.
@@ -269,20 +310,22 @@ wait_or_stop() {
 stalled=0
 pass=0
 waited=0
+prev_threads=""
+prev_failing=""
 while :; do
   if ! facts=$(pr_facts); then
     echo "$(date -u +%FT%TZ) could not read the PR; retrying in ${POLL}s"
     wait_or_stop "the PR could not be read"
     continue
   fi
-  IFS=$'\t' read -r state merge_state decision head_oid new_activity <<<"$facts"
+  IFS=$'\t' read -r state merge_state decision _ new_activity <<<"$facts"
 
   case "$state" in
     MERGED) finish 0 merged "PR #$PR_NUMBER is MERGED." ;;
     CLOSED) finish 0 closed "PR #$PR_NUMBER is CLOSED." ;;
   esac
 
-  read -r unresolved dismissable <<<"$(thread_state)"
+  read -r unresolved dismissable open_threads <<<"$(thread_state)"
   checks=$(ci_state)
   echo "$(date -u +%FT%TZ) state=$state merge=$merge_state review=$decision threads=$unresolved resolved-change-requests=$dismissable checks=$checks new-activity=$new_activity"
 
@@ -324,13 +367,15 @@ while :; do
 
   pass=$((pass + 1))
   waited=0
-  before="$head_oid|$unresolved $dismissable|$decision|$merge_state|$checks|$new_activity"
+  start_failing=$(failing_check_names)
+  repeats_file="$LOG_DIR/repeats-pass-$pass.tsv"
+  : > "$repeats_file"
   echo "--- pass $pass:$reasons ---"
   prompt="/${FIX_COMMAND} ${PR_NUMBER} ${OWNER}/${REPO} \"${WORKDIR}\""
   pass_log="$LOG_DIR/pass-$(date -u +%Y%m%dT%H%M%SZ)-$pass.jsonl"
   rc=0
   (cd "$WORKDIR" && printf '%s' "$prompt" \
-    | env -u CLAUDECODE SHEPHERD_PR_PASS=1 CI=1 TERM=dumb NO_COLOR=1 \
+    | env -u CLAUDECODE SHEPHERD_PR_PASS=1 SHEPHERD_REPEATS_FILE="$repeats_file" CI=1 TERM=dumb NO_COLOR=1 \
         claude --print --plugin-dir "$PLUGIN_ROOT" --permission-mode bypassPermissions \
           --output-format stream-json --verbose \
           --settings '{"permissions":{"deny":["Bash(gh pr merge:*)","Bash(gh pr merge)"]}}' \
@@ -338,20 +383,29 @@ while :; do
   echo "--- pass $pass ended (exit $rc) ---"
   pass_summary "$pass_log"
 
-  if after_facts=$(pr_facts); then
-    IFS=$'\t' read -r _s a_merge a_decision a_head a_new <<<"$after_facts"
-    after="$a_head|$(thread_state)|$a_decision|$a_merge|$(ci_state)|$a_new"
-  else
-    after="unreadable"
-  fi
-  if [ "$before" = "$after" ]; then
+  # Nothing changed since the previous pass: the open threads that are not
+  # repeats of an already-addressed thread, and the failing checks by name,
+  # are the same as when the previous pass started. A thread the previous
+  # pass fixed, or answered with a reasoned decline, is resolved and leaves
+  # the set, so that pass counts as progress even without a commit.
+  repeats=0
+  [ -s "$repeats_file" ] && repeats=$(grep -c . "$repeats_file")
+  start_threads=$(non_repeat_threads "$open_threads" "$repeats_file")
+  failing_list=$(printf '%s' "$start_failing" | paste -sd, -)
+  prev_failing_list=$(printf '%s' "$prev_failing" | paste -sd, -)
+  if [ "$pass" -eq 1 ] || [ "$open_threads" = "ERROR" ] || [ "$start_failing" = "ERROR" ]; then
+    stalled=0
+  elif [ "$start_threads" = "$prev_threads" ] && [ "$start_failing" = "$prev_failing" ]; then
     stalled=$((stalled + 1))
-    echo "Pass $pass: no change on the PR and no new findings ($stalled of $MAX_STALLED in a row)."
+    echo "Pass $pass: nothing changed since the previous pass: the same open threads apart from $repeats repeat(s) of threads already addressed (${start_threads:-none}), and the same checks fail (${failing_list:-none}) ($stalled of $MAX_STALLED in a row)."
   else
     stalled=0
+    echo "Pass $pass: changed since the previous pass: open non-repeat threads ${prev_threads:-none} -> ${start_threads:-none}; failing checks ${prev_failing_list:-none} -> ${failing_list:-none}."
   fi
+  prev_threads="$start_threads"
+  prev_failing="$start_failing"
   if [ "$stalled" -ge "$MAX_STALLED" ]; then
-    finish 2 could-not-fix "PR #$PR_NUMBER does not qualify for merging: $MAX_STALLED passes in a row brought no change on the PR and no new findings. Still unfixed:${reasons}. The latest '## Shepherd-PR Run' audit comment on the PR records each pass."
+    finish 2 could-not-fix "PR #$PR_NUMBER does not qualify for merging: $MAX_STALLED passes in a row found nothing changed (the same open threads apart from repeats of threads already addressed, and the same checks failing: ${failing_list:-none}); the passes made every fix they could and decided the rest cannot or should not change. Still unfixed:${reasons}. The latest '## Shepherd-PR Run' audit comment on the PR records each pass."
   fi
   # Give CI and GitHub a moment to register what the pass pushed.
   sleep "$POLL"

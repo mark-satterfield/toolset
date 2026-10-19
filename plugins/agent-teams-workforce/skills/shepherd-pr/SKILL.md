@@ -13,7 +13,7 @@ capabilities:
   - Work through a PR until GitHub's merge requirement facts show it qualifies for merging
   - Start one headless fix pass whenever GitHub shows something keeping it from qualifying
   - Wait on running checks without spending a session
-  - End, naming what is still unfixed, when passes bring no change and no new findings or the wait limit runs out
+  - End, naming what is still unfixed, when passes in a row change nothing (the same open non-repeat threads and the same failing checks) or the wait limit runs out
 ---
 
 # PR Shepherd Skill
@@ -68,9 +68,18 @@ What the loop does, every iteration, deciding only from GitHub's own state:
 | a failing or cancelled check, an unresolved review thread, a `CHANGES_REQUESTED` review newer than the last pass, a review decision of `CHANGES_REQUESTED` with a changes-requested review none of whose threads is still open (the pass dismisses it), a reviewer question or comment, a CodeRabbit reply or a review body (CodeRabbit's outside-diff findings live there) newer than the last pass, a merge conflict (`DIRTY`) or a branch behind its base (`BEHIND`) | starts ONE headless pass session (`/agent-teams-workforce:fix-pr`) |
 | nothing to fix, and the PR qualifies for merging: no review decision of `CHANGES_REQUESTED`, no unresolved review thread, every required check passed (`gh pr checks --required`; a repository that requires none passes), and `mergeStateStatus` is `CLEAN`, `HAS_HOOKS` or `UNSTABLE` | prints `PR #N qualifies for merging` and ends, exit 0 — it does not wait for the merge |
 | nothing to fix, but the PR does not qualify yet: required checks still running, `mergeStateStatus` `BLOCKED`, `UNKNOWN` or `DRAFT`, or a read GitHub could not answer | waits and polls again — no session is spent; after `SHEPHERD_MAX_WAIT_SECONDS` (default 7200) of waiting since the last pass it ends, exit 2, saying what it is still waiting on |
-| `SHEPHERD_MAX_STALLED_PASSES` (default 3) passes in a row with no change on the PR and no new findings | ends, exit 2, naming what is still unfixed |
+| `SHEPHERD_MAX_STALLED_PASSES` (default 3) passes in a row that changed nothing (below) | ends, exit 2, naming what is still unfixed |
 
 `BEHIND` appears only when the repository requires the branch to be current, so the loop rebases a branch behind its base exactly when GitHub's requirements call for it.
+
+### When a pass changed nothing
+
+A pass has either made the changes it can, or decided that what is left cannot or should not change. When the next pass essentially repeats the same thing, nothing changed. Precisely, a pass changed nothing when, at the start of the next pass, both of these are the same as at its own start:
+
+- **Threads:** the set of open review threads that are not repeats of an already-addressed thread. A thread is addressed when it is fixed in code, or answered with a reasoned decline (the suggestion would be wrong to implement, or should not change) and resolved; a decline needs no commit, and because resolving the thread takes it out of the set, that pass counts as progress. A thread that raises again a finding already fixed or declined (CodeRabbit repeating a finding the pass answered as wrong or not to be changed) is a repeat, not new.
+- **Checks:** the names of the failing checks (unit tests, lint, static analysis and every other check, each by name, not one combined CI state). The checks that passed still pass and the checks that failed still fail. A fix that makes a different check fail is new.
+
+The head commit, the review decision and the merge state are not part of the comparison. Whether a thread is a repeat is judgment, so each pass records the threads it judged repeats, each with the earlier thread it repeats, in `repeats-pass-<n>.tsv` in `SHEPHERD_LOG_DIR` (the loop hands the path to the pass as `SHEPHERD_REPEATS_FILE`; see `/agent-teams-workforce:fix-pr` 3.6). The loop then compares deterministically.
 
 ### Guards
 
