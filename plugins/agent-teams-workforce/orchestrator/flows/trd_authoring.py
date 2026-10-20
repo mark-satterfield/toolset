@@ -26,7 +26,7 @@ import beads_contract
 import strictschema
 import yaml
 from bead_metadata import KEY_ARTIFACT_TRD_PATH, KEY_ARTIFACT_TRD_SHA256
-from driver_surface_types import CONTROL_REPO_ENV
+from driver_surface_types import CONTROL_REPO_ENV, PROJECT_ROOT_ENV
 from jsonschema import ValidationError
 from matrix_contract import KIND_CONSTRAINT, KIND_DOCUMENT, Entry, EntryId, MatrixError
 from matrixstore import Matrix, make_id, matrix_path, name_key, read_matrix, slug
@@ -249,7 +249,7 @@ def _mark_trd(context: RunContext, tools: Tools, output: Path) -> str:
 
     """
     digest: str = hashlib.sha256(output.read_bytes()).hexdigest()
-    relative: str = str(output.resolve().relative_to(env_path("SKILLSPOKE_ROOT")))
+    relative: str = str(output.resolve().relative_to(env_path(PROJECT_ROOT_ENV)))
     control: Path = env_path(CONTROL_REPO_ENV)
 
     def mark() -> None:

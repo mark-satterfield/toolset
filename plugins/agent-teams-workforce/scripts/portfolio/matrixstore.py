@@ -81,14 +81,12 @@ DEFAULT_LOCK_WAIT: Final = 60.0
 LOCK_POLL: Final = 0.05
 FILE_MODE: Final = 0o644
 """The mode of a matrix file: it is committed to the control repository and read by every session."""
-CONTROL_REPO_FALLBACK_ENV: Final = "SKILLSPOKE_CC"
-"""The project's own variable for the control repository, read when the driver's is not set."""
 ID_SEPARATOR: Final = ":"
 STACK_SEPARATOR: Final = "/"
 """What follows the stack name in the id of an entry whose id names the stack that holds it."""
 SLUG_SEPARATOR: Final = "-"
 ATTR_EXTERNAL_SOURCE: Final = "externalSource"
-"""The event attribute that names the system outside SkillSpoke that publishes it."""
+"""The event attribute that names the system outside the project that publishes it."""
 ATTR_RESOURCE_TYPE: Final = "resourceType"
 RESOURCE_EVENTBRIDGE_RULE: Final = "eventbridge-rule"
 """The resource type of an EventBridge rule: it belongs to one bus, matches events and routes them to targets."""
@@ -688,7 +686,7 @@ class Matrix:
         published: bool = bool(self.publishers(event.id))
         if external and published:
             problems.append(
-                f"{event.id}: it states {ATTR_EXTERNAL_SOURCE} and a SkillSpoke service or component publishes it; "
+                f"{event.id}: it states {ATTR_EXTERNAL_SOURCE} and a service or component of the project publishes it; "
                 f"state one or the other",
             )
         if not external and not published:
@@ -1157,9 +1155,9 @@ def matrix_path(explicit: str | None, environ: Mapping[str, str]) -> Path:
     stated: str = environ.get(MATRIX_ENV, "").strip()
     if stated:
         return Path(stated).expanduser()
-    control: str = environ.get(CONTROL_REPO_ENV, "").strip() or environ.get(CONTROL_REPO_FALLBACK_ENV, "").strip()
+    control: str = environ.get(CONTROL_REPO_ENV, "").strip()
     if not control:
-        message: str = f"give --matrix, or set {MATRIX_ENV}, {CONTROL_REPO_ENV} or {CONTROL_REPO_FALLBACK_ENV}"
+        message: str = f"give --matrix, or set {MATRIX_ENV} or {CONTROL_REPO_ENV}"
         raise MatrixError(message)
     return Path(control).expanduser().joinpath(*DEFAULT_MATRIX_PARTS)
 

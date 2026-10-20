@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://skillspoke.ai/schemas/agent-teams-workforce/target-report.schema.json",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/target-report.schema.json",
   "title": "Architecture target and delta report",
   "description": "The one definition of the architecture target report (<epic work>/architecture/target.json, written from archstate.write_target), its dry-run or seed check file (target-check.json), the delta report (delta-items.json and closure-roots.json, written from archstate.delta_items) and the target names report (archstate.target_names). Validate a document against one $defs entry: TargetResult, DeltaResult or TargetNames. target_contract.py is generated from this file by generate_target_contract.py.",
   "x-files": {

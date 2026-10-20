@@ -61,7 +61,6 @@ from matrixquery import (
 )
 from matrixreview import review_scope
 from matrixstore import (
-    CONTROL_REPO_FALLBACK_ENV,
     DEFAULT_LOCK_WAIT,
     Matrix,
     MatrixRefusedError,
@@ -483,7 +482,7 @@ def _parser() -> argparse.ArgumentParser:
     sources: dict[str, argparse.ArgumentParser] = {
         "control": _source(
             "--control",
-            f"the control repository bd runs in; default: {CONTROL_REPO_ENV}, else {CONTROL_REPO_FALLBACK_ENV}",
+            f"the control repository bd runs in; default: {CONTROL_REPO_ENV}",
         ),
         "arch": _source("--arch", f"the architecture root in the vault; default: {ARCH_PATH_ENV}"),
         "prds": _source("--prd-dir", f"the folder of the vault the PRD files are under; default: {PRD_DIR_ENV}"),

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "d52c828f19f2aea236023ddb9d215b1a757231a24aaab08f537e4420fed655c8"
+SCHEMA_SHA256: Final[str] = "d02dce999fed1a02e65974f8ba3abfe14c226c0841d672c3edbcb096c1f9d938"
 #: The schema this module was generated from.
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "driver-surface.schema.json"
 
@@ -25,8 +25,8 @@ PROJECT_ROOT_ENV: Final[str] = "ATW_PROJECT_ROOT"
 PRD_EPIC_SYNC_ENV: Final[str] = "ATW_PRD_EPIC_SYNC"
 #: Path of the PRD-to-Epic verify script.
 PRD_EPIC_VERIFY_ENV: Final[str] = "ATW_PRD_EPIC_VERIFY"
-#: Absolute path of the control repository (SKILLSPOKE_CC, else the driver's repository root). The
-#: driver modules live under it at DRIVER_DIR_PARTS.
+#: Absolute path of the control repository (the project's control repository, else the driver's
+#: repository root). The driver modules live under it at DRIVER_DIR_PARTS.
 CONTROL_REPO_ENV: Final[str] = "ATW_CONTROL_REPO"
 #: The architecture root; set only when the driver knows one. Readers use args.archPath first and fall
 #: back to it.

@@ -71,8 +71,8 @@ The order is fixed, and only the stacks of what the Stories build are reached:
 1. The items are built (`story_builds`).
 2. A stack that names no repository is given the name the naming command gives it
    (`repository_name`: `name convert <stack name> --from cdk-stack --to repository`, run with
-   list arguments, not through a shell; for `stack:skillSpoke-sms-service` it is
-   `SkillSpoke-sms-service`, never the raw stack name), written on the stack as its `repository`
+   list arguments, not through a shell; for example, for `stack:acme-sms-service` it is
+   `Acme-sms-service`, never the raw stack name), written on the stack as its `repository`
    on the architecture side in one matrix change, so the stack and the created repository carry
    one name.
 3. The items are grouped by repository (`repository_stacks`), and `_ruling` looks each name up in

@@ -102,7 +102,7 @@ def central_lock(wait: float) -> Generator[None]:
 
     """
     path = Path(
-        os.environ.get("CENTRAL_BEADS_LOCK") or str(Path(tempfile.gettempdir()) / "skillspoke-central-beads.lock"),
+        os.environ.get("CENTRAL_BEADS_LOCK") or str(Path(tempfile.gettempdir()) / "central-beads.lock"),
     )
     deadline = time.monotonic() + wait
     while True:

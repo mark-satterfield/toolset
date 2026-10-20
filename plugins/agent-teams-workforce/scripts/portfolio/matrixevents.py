@@ -17,7 +17,7 @@ match it in one change:
 
 A catalog key holding a ``{placeholder}`` names a family of event types (``{domain}.ai-usage.reported``):
 it adds no event, and the events whose type fits it are catalogued as they stand. An event that
-states ``externalSource`` is published outside SkillSpoke, which the catalog does not list, so it
+states ``externalSource`` is published outside the project, which the catalog does not list, so it
 is left as it is. Repository-side events state what code shows and are not touched.
 """
 
@@ -87,7 +87,7 @@ class EventsSynced(TypedDict):
     familyEvents: list[EntryId]
     """Events kept because their type fits a catalog family such as ``{domain}.ai-usage.reported``."""
     external: list[EntryId]
-    """Events published outside SkillSpoke, which the catalog does not list; left as they are."""
+    """Events published outside the project, which the catalog does not list; left as they are."""
     unmappedProducers: list[str]
     """Producer names that are the name or alias of no one architecture-side service or component."""
 

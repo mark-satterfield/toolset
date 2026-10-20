@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "matrix.schema.json",
-  "title": "SkillSpoke matrix",
+  "title": "Matrix",
   "description": "The generic shape of the matrix file: entries by id, and relationships, each stored once for each side that states it. Every entry and every relationship carries side, which shows which of the two sides the fact came from. What kinds of entry and relationship exist, and the attributes each kind carries beside the members stated here, is declared in matrix-kinds.json. matrix_contract.py is generated from both files; scripts/portfolio/matrixstore.py is the only reader and writer of a matrix file.",
   "x-matrixEnv": "ATW_MATRIX",
   "x-roleEnv": "ATW_MATRIX_ROLE",

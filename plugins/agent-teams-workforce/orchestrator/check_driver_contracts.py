@@ -135,14 +135,14 @@ def main() -> int:
     parser.add_argument(
         "--control-root",
         type=Path,
-        default=os.environ.get(CONTROL_REPO_ENV) or os.environ.get("SKILLSPOKE_CC"),
-        help=f"Control checkout (defaults to {CONTROL_REPO_ENV}, then SKILLSPOKE_CC)",
+        default=os.environ.get(CONTROL_REPO_ENV),
+        help=f"Control checkout (defaults to {CONTROL_REPO_ENV})",
     )
     parser.add_argument("--plugin-root", type=Path, default=Path(__file__).resolve().parents[1])
     args: argparse.Namespace = parser.parse_args()
     if args.control_root is None:
         parser.error(
-            f"set {CONTROL_REPO_ENV} or SKILLSPOKE_CC, or pass --control-root for the real control checkout",
+            f"set {CONTROL_REPO_ENV}, or pass --control-root for the real control checkout",
         )
     try:
         return check_contracts(check_type(args.control_root, Path), check_type(args.plugin_root, Path))

@@ -68,7 +68,6 @@ from matrixseed import (
     seed_stacks,
 )
 from matrixstore import (
-    CONTROL_REPO_FALLBACK_ENV,
     Matrix,
     MatrixRefusedError,
     read_matrix,
@@ -112,7 +111,7 @@ ENTRY_TABLE: Final[AttributeTable] = "entryKinds"
 RELATIONSHIP_TABLE: Final[AttributeTable] = "relationshipKinds"
 STANDS_PARTS: Final = 2
 """How many values ``settle --stands`` takes: the document and the heading."""
-CONTROL_VARIABLES: Final[tuple[str, ...]] = (CONTROL_REPO_ENV, CONTROL_REPO_FALLBACK_ENV)
+CONTROL_VARIABLES: Final[tuple[str, ...]] = (CONTROL_REPO_ENV,)
 COMMAND_APPROVAL: Final = "approval"
 """The attributes no command line states: the step that promotes reviewed architecture sets them."""
 _CAMEL: Final[re.Pattern[str]] = re.compile(r"(?<=[a-z0-9])([A-Z])")

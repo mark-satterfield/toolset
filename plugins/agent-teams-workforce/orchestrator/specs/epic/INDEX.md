@@ -12,7 +12,7 @@ Path placeholders:
   `<arch-work>` = `<work>/architecture/`.
 - `<arch>` = the value of the `ARCH_PATH_ENV` driver environment variable, defined by the
   `pipeline-contracts` skill (`<plugin>/skills/pipeline-contracts/schemas/driver-surface.schema.json`):
-  the architecture folder of the `skillspoke-docs` vault.
+  the architecture folder of the project's documentation vault.
 - `<slug>` = a span repository's artifact slug.
 - `<workDir>` = the work directory of an owner-run flow (`wsjf-scoring`,
   `dependency-assessment`, `task-dependency-assessment`, `prd-creation`); `<artifacts.dir>` = the

@@ -1,5 +1,5 @@
 {
-  "title": "SkillSpoke matrix kinds registry",
+  "title": "Matrix kinds registry",
   "description": "What kinds of entry and relationship the matrix holds. A new kind is one declaration here. matrix.schema.json validates the generic shape of the matrix file; every entry and relationship is validated against the kind declared here. Each attribute is a JSON Schema fragment; a fragment may reference #/$defs/<name> of this file, #/$defs/entryId (the id of an entry, which rename and remove follow). In an entry kind's required list, purpose means the common purpose member must not be empty; an entry kind's requiredOne lists attributes of which an entry carries exactly one. Every entry and relationship carries side (matrix.schema.json $defs/side); a kind that declares side is always recorded with that side. An entry kind that declares repositoryIdPattern has two id forms: an entry on the side that is the authority matches idPattern, and an entry on the other side matches repositoryIdPattern, whose rest is the name of the stack that holds it, a slash and the slug of its name. Any entry may link to any other: a relationship kind names no entry kinds. A relationship kind declared here carries its reverse name, attributes, key, side, family and limit; any other relationship kind of the kind-name form (matrix.schema.json $defs/kindName) is accepted too, with no attributes, reported from its end under its name followed by Reverse. Every entry and relationship may carry the approved and the verified flag (matrix.schema.json $defs/Approved, $defs/Verified), and none must. matrix_contract.py is generated from this file and matrix.schema.json.",
   "operatorRole": "operator",
   "roles": ["operator", "script", "solutions-architect", "repository-steward", "decider", "build-driver", "build-workflow"],
@@ -168,7 +168,7 @@
       "description": "An event is a fact with a meaning: its name (the event type), the services or components that publish it (publishes), and its purpose. On the architecture side its purpose and its publishers mirror the event catalog in arc42 section 6 (atw-matrix sync-events): the purpose is the catalog's description of the event. An event has no homeIn: its stack is its publisher's architecture-side stack.",
       "required": [],
       "attributes": {
-        "externalSource": {"type": "string", "minLength": 1, "description": "The system outside SkillSpoke that publishes the event (for example Stripe); only for an event no SkillSpoke service or component publishes."}
+        "externalSource": {"type": "string", "minLength": 1, "description": "The system outside the project that publishes the event (for example Stripe); only for an event no service or component of the project publishes."}
       }
     },
     "stack": {

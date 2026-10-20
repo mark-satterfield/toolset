@@ -19,7 +19,7 @@ from typing import Final
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
 import hierarchy
 import strictschema
-from driver_surface_types import CONTROL_REPO_ENV
+from driver_surface_types import CONTROL_REPO_ENV, PROJECT_ROOT_ENV
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core import step_journal
@@ -364,7 +364,7 @@ def project_root() -> Path:
     """Name the project root bead metadata records file paths relative to.
 
     Returns:
-        The path the ``SKILLSPOKE_ROOT`` variable holds.
+        The path the driver surface's project root variable holds.
 
     """
-    return env_path("SKILLSPOKE_ROOT")
+    return env_path(PROJECT_ROOT_ENV)

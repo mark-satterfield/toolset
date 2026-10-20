@@ -56,7 +56,7 @@
         "ATW_PROJECT_ROOT": {"type": "string", "minLength": 1, "description": "Absolute path of the project root.", "x-constant": "PROJECT_ROOT_ENV"},
         "ATW_PRD_EPIC_SYNC": {"type": "string", "minLength": 1, "description": "Path of the PRD-to-Epic sync script.", "x-constant": "PRD_EPIC_SYNC_ENV"},
         "ATW_PRD_EPIC_VERIFY": {"type": "string", "minLength": 1, "description": "Path of the PRD-to-Epic verify script.", "x-constant": "PRD_EPIC_VERIFY_ENV"},
-        "ATW_CONTROL_REPO": {"type": "string", "minLength": 1, "description": "Absolute path of the control repository (SKILLSPOKE_CC, else the driver's repository root). The driver modules live under it at DRIVER_DIR_PARTS.", "x-constant": "CONTROL_REPO_ENV"},
+        "ATW_CONTROL_REPO": {"type": "string", "minLength": 1, "description": "Absolute path of the control repository (the project's control repository, else the driver's repository root). The driver modules live under it at DRIVER_DIR_PARTS.", "x-constant": "CONTROL_REPO_ENV"},
         "ATW_ARCH_PATH": {"type": "string", "minLength": 1, "description": "The architecture root; set only when the driver knows one. Readers use args.archPath first and fall back to it.", "x-constant": "ARCH_PATH_ENV"},
         "ATW_DESIGN_PACKAGES_DIR": {"type": "string", "minLength": 1, "description": "The owner's cds design packages directory; optional.", "x-constant": "DESIGN_PACKAGES_ENV"},
         "ATW_PRD_DIR": {"type": "string", "minLength": 1, "description": "The first PRD root; optional.", "x-constant": "PRD_DIR_ENV"},
