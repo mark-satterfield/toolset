@@ -31,12 +31,10 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-qa",
-        "agent-teams-workforce:artifact-handoff"
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:effective-architecture"
       ],
-      "mcpServers": [
-        "aws-mcp"
-      ]
+      "mcpServers": []
     },
     {
       "name": "accessibility-validator",
@@ -899,7 +897,6 @@
         "agent-teams-workforce:database-schema-designer",
         "agent-teams-workforce:artifact-handoff",
         "agent-teams-workforce:effective-architecture",
-        "aws-core:aws-database",
         "agent-teams-workforce:aurora-postgresql",
         "agent-teams-workforce:design-postgres-tables",
         "agent-teams-workforce:pgvector-semantic-search",
@@ -1098,15 +1095,16 @@
     },
     {
       "name": "dynamodb-schema-access-pattern-reviewer",
-      "description": "Validates DynamoDB access patterns in the spec are implementable and performant given key design, indexes, and capacity estimates. Use for Spec Authoring work requiring access-pattern validation, key/index review, and performance risk detection.",
+      "description": "Reviews the DynamoDB stores of one repository's data-model spec: whether each access pattern it states can be served by the keys and indexes it states, at the stated capacity, without a scan or client-side filtering, and whether each store has the key attributes, indexes, access patterns and expiry attribute the detailed design records. Returns findings the data-model author can correct without interpretation; changes nothing.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:dynamodb",
-        "aws-core:aws-database"
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:dynamodb"
       ],
       "mcpServers": [
-        "awslabs-dynamodb-mcp-server"
+        "awslabs-dynamodb-mcp-server",
+        "aws-mcp"
       ]
     },
     {
@@ -2084,14 +2082,13 @@
     },
     {
       "name": "review-dispute-decider",
-      "description": "Rules on each spec review finding that the author of the document disputes — the finding stands or the document stands — and states the directive the author applies; generates no spec content or analysis. Use for Spec Authoring work requiring decision adjudication, deadlock resolution, and rationale recording.",
+      "description": "Rules on a review dispute between a maker and its reviewer, from the evidence the two sides wrote: each spec review finding a specification document's author disputes (the finding stands, with the directive the author applies, or the document stands), and a PRD draft the prd-writer and the prd-alignment-verifier could not converge on (accept or reject); writes no document content and no analysis of its own.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-architect",
-        "agent-teams-workforce:cove-prompt-design",
         "agent-teams-workforce:artifact-handoff",
-        "agent-teams-workforce:effective-architecture"
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:prd-writer"
       ],
       "mcpServers": [
         "aws-mcp"
@@ -2252,7 +2249,7 @@
     },
     {
       "name": "spec-reviewer",
-      "description": "The independent reviewer session for Spec Authoring: reviews one repository's contracts document, data-model document and acceptance criteria against the specs-and-Tasks criteria (I1 to I7) of the review standard, once, and returns findings a document's author can correct without interpretation.",
+      "description": "Reviews one repository's three specification documents (the API, event and error contracts, the data model, and the acceptance criteria) against the specs-and-Tasks criteria I1 to I7 of the review standard, once, and returns findings a document's author can correct without interpretation; changes nothing.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -2260,6 +2257,7 @@
         "agent-teams-workforce:skillspoke-events",
         "agent-teams-workforce:artifact-handoff",
         "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:dynamodb",
         "agent-teams-workforce:aurora-postgresql",
         "agent-teams-workforce:design-postgres-tables"
       ],
@@ -2444,6 +2442,17 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-architect"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "ui-design-source-selector",
+      "description": "Choose the design source of each UI item a frontend repository's Story builds, from the cds bundles the owner supplied and the configured Configurable Design System (cds) - a supplied bundle, the live design system, or no design change; designs nothing.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:artifact-handoff",
+        "cds:apply-design-system",
+        "cds:audit-against-system"
       ],
       "mcpServers": []
     },

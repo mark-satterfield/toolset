@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/ui-bundles.schema.json",
   "title": "UI bundles",
-  "description": "The UI bundles the owner supplied in the design packages directory (<work>/spec-<slug>.bundles.json): cdsbundles.list_bundles' result, written by the step `cdsbundles.list_bundles` (orchestrator/flows/spec_authoring.py) and validated against this file. The api-specification-author choosing UI design sources is handed it as `ui bundles`; an empty `bundles` means every UI item is designed with CDS.",
+  "description": "The UI bundles the owner supplied in the design packages directory (<work>/spec-<slug>.bundles.json): cdsbundles.list_bundles' result, written by the step `cdsbundles.list_bundles` (orchestrator/flows/spec_authoring.py) and validated against this file. The ui-design-source-selector is handed it as `ui bundles`; an empty `bundles` means every UI item is designed with CDS.",
   "type": "object",
   "additionalProperties": false,
   "required": ["packagesDir", "bundles", "superseded", "ignored"],
