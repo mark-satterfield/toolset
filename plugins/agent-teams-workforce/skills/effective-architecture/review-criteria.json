@@ -1,6 +1,6 @@
 {
   "title": "Architecture and TRD criteria",
-  "introduction": "One list. The solutions architect develops the architecture, its detailed design and the TRD to it, and the spec authors develop the specs to it. Reviewers review against it and against nothing else. Each criterion has a level and a home document, and is satisfied by its home document.",
+  "introduction": "One list. The solutions architect develops the architecture, its detailed design and the TRD to it, and reviews and approves them against it; the spec authors develop the specs to it, and the spec review reviews them against it. Nothing is reviewed against anything else. Each criterion has a level and a home document, and is satisfied by its home document.",
   "levels": [
     {
       "id": "all",
@@ -8,6 +8,7 @@
       "heading": "How to work (all levels)",
       "note": null,
       "responsible": [],
+      "reviewer": null,
       "reviewPoint": null
     },
     {
@@ -18,6 +19,7 @@
       "responsible": [
         "aws-solutions-architect"
       ],
+      "reviewer": "aws-solutions-architect",
       "reviewPoint": "architecture"
     },
     {
@@ -28,17 +30,19 @@
       "responsible": [
         "aws-solutions-architect"
       ],
+      "reviewer": "aws-solutions-architect",
       "reviewPoint": "architecture"
     },
     {
       "id": "implementation",
       "idPrefix": "I",
       "heading": "The specs and the Tasks",
-      "note": "These are not reviewed in the architecture review. A spec and a Task carry what their work builds from the architecture and design documents, by link or as stated there; they decide no design.",
+      "note": "These are not part of the architecture. A spec and a Task carry what their work builds from the architecture and design documents, by link or as stated there; they decide no design.",
       "responsible": [
         "api-specification-author",
         "data-model-specification-author"
       ],
+      "reviewer": "openapi-contract-reviewer",
       "reviewPoint": "specs"
     }
   ],
@@ -87,6 +91,11 @@
       "id": "P9",
       "level": "all",
       "text": "A review covers only content that is not yet approved. Approved content is reference: it is reported only when an unapproved item cannot be correct unless an approved statement is wrong. A re-check covers only the corrected items."
+    },
+    {
+      "id": "P10",
+      "level": "all",
+      "text": "No architecture decision is made by instinct. Every AWS resource the design defines is reviewed with the AWS tools (the AWS MCP servers and the aws-core skills) against AWS best practice and security best practice, the design has a Well-Architected review, and every decision between two or more options states the options considered and the reason for the choice; each is recorded in the Epic's review log, to the log-architecture-review skill's schema."
     },
     {
       "id": "A1",
@@ -285,158 +294,6 @@
       "level": "implementation",
       "home": "specs",
       "text": "A Task can name the repository, stack, handler, table, route, event and the shared capabilities it must use without inventing a design."
-    }
-  ],
-  "reviewerGroups": [
-    {
-      "id": "ownership-boundary",
-      "reviewer": "architecture-boundary-guardian",
-      "criteria": [
-        "A1",
-        "A2",
-        "A3",
-        "A4",
-        "A6",
-        "A7",
-        "A8",
-        "A9",
-        "A10",
-        "A11",
-        "A12",
-        "A13",
-        "A14",
-        "A15",
-        "A16",
-        "A17",
-        "A18",
-        "A19",
-        "A20"
-      ],
-      "appliesWhen": {
-        "scope": [
-          "heading"
-        ],
-        "result": []
-      }
-    },
-    {
-      "id": "runtime-failure",
-      "reviewer": "failure-mode-analyst",
-      "criteria": [
-        "A5"
-      ],
-      "appliesWhen": {
-        "scope": [
-          "scenario-fact"
-        ],
-        "result": [
-          "failureBehaviours"
-        ]
-      }
-    },
-    {
-      "id": "pattern",
-      "reviewer": "architecture-pattern-challenger",
-      "criteria": [
-        "A2",
-        "A9"
-      ],
-      "appliesWhen": {
-        "scope": [],
-        "result": [
-          "newPatterns"
-        ]
-      }
-    },
-    {
-      "id": "tradeoff",
-      "reviewer": "architecture-tradeoff-skeptic",
-      "criteria": [
-        "P4"
-      ],
-      "appliesWhen": {
-        "scope": [],
-        "result": [
-          "choices"
-        ]
-      }
-    },
-    {
-      "id": "operations",
-      "reviewer": "operational-readiness-reviewer",
-      "criteria": [
-        "T2",
-        "A6"
-      ],
-      "appliesWhen": {
-        "scope": [],
-        "result": [
-          "newRuntimeResources"
-        ]
-      }
-    },
-    {
-      "id": "cost-new",
-      "reviewer": "cost-architecture-reviewer",
-      "criteria": [
-        "T2"
-      ],
-      "appliesWhen": {
-        "scope": [],
-        "result": [
-          "newBillableResources"
-        ]
-      }
-    },
-    {
-      "id": "cost-changed",
-      "reviewer": "cost-impact-reviewer",
-      "criteria": [
-        "T2"
-      ],
-      "appliesWhen": {
-        "scope": [],
-        "result": [
-          "changedBillableLimits"
-        ]
-      }
-    },
-    {
-      "id": "trd",
-      "reviewer": "trd-validator",
-      "criteria": [
-        "T1",
-        "T2",
-        "T3",
-        "T4",
-        "T5",
-        "T6"
-      ],
-      "appliesWhen": {
-        "scope": [
-          "trd-requirement"
-        ],
-        "result": []
-      }
-    },
-    {
-      "id": "specs",
-      "reviewer": "openapi-contract-reviewer",
-      "criteria": [
-        "I1",
-        "I2",
-        "I3",
-        "I4",
-        "I5",
-        "I6",
-        "I7"
-      ],
-      "appliesWhen": {
-        "scope": [
-          "spec-document"
-        ],
-        "result": []
-      }
     }
   ]
 }

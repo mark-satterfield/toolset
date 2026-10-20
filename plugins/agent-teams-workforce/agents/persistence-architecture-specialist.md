@@ -1,13 +1,30 @@
 ---
 name: persistence-architecture-specialist
 description: Answer a question or do a bounded piece of design for the solutions architect on which block owns each store, what it holds, consistency and data lifecycle.
-tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
-  mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
-  mcp__awslabs-dynamodb-mcp-server__dynamodb_data_modeling, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation,
+tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation,
+  mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill,
+  mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
+  mcp__awslabs-dynamodb-mcp-server__dynamodb_data_modeling,
+  mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation,
   mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, Skill, mcp__mcp-graphrag-server,
   mcp__pg-aiguide__search_docs, mcp__awslabs-postgres-mcp-server__connect_to_database,
-  mcp__awslabs-postgres-mcp-server__is_database_connected, mcp__awslabs-postgres-mcp-server__get_database_connection_info,
-  mcp__awslabs-postgres-mcp-server__get_table_schema, mcp__awslabs-postgres-mcp-server__run_query, mcp__awslabs-amazon-neptune-mcp-server__get_graph_status, mcp__awslabs-amazon-neptune-mcp-server__get_graph_schema, mcp__awslabs-amazon-neptune-mcp-server__run_opencypher_query, mcp__awslabs-amazon-neptune-mcp-server__run_gremlin_query, mcp__gitnexus__query, mcp__gitnexus__context, mcp__gitnexus__impact, mcp__gitnexus__detect_changes, mcp__gitnexus__trace, mcp__gitnexus__explain, mcp__gitnexus__api_impact, mcp__gitnexus__route_map, mcp__gitnexus__tool_map, mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query, mcp__gitnexus__cypher, mcp__gitnexus__check, mcp__gitnexus__list_repos, mcp__gitnexus__group_list
+  mcp__awslabs-postgres-mcp-server__is_database_connected,
+  mcp__awslabs-postgres-mcp-server__get_database_connection_info,
+  mcp__awslabs-postgres-mcp-server__get_table_schema, mcp__awslabs-postgres-mcp-server__run_query,
+  mcp__awslabs-amazon-neptune-mcp-server__get_graph_status,
+  mcp__awslabs-amazon-neptune-mcp-server__get_graph_schema,
+  mcp__awslabs-amazon-neptune-mcp-server__run_opencypher_query,
+  mcp__awslabs-amazon-neptune-mcp-server__run_gremlin_query, mcp__gitnexus__query, mcp__gitnexus__context,
+  mcp__gitnexus__impact, mcp__gitnexus__detect_changes, mcp__gitnexus__trace, mcp__gitnexus__explain,
+  mcp__gitnexus__api_impact, mcp__gitnexus__route_map, mcp__gitnexus__tool_map, mcp__gitnexus__shape_check,
+  mcp__gitnexus__pdg_query, mcp__gitnexus__cypher, mcp__gitnexus__check, mcp__gitnexus__list_repos,
+  mcp__gitnexus__group_list, mcp__plugin_aws-agents_awsknowledge__aws___search_documentation,
+  mcp__plugin_aws-agents_awsknowledge__aws___read_documentation,
+  mcp__plugin_aws-agents_awsknowledge__aws___retrieve_skill,
+  mcp__plugin_aws-agents_awsknowledge__aws___list_regions,
+  mcp__plugin_aws-agents_awsknowledge__aws___get_regional_availability,
+  mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_converter,
+  mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator
 disallowedTools: AskUserQuestion, Edit, Agent, NotebookEdit
 mcpServers:
 - aws-mcp
@@ -29,6 +46,10 @@ skills:
 - agent-teams-workforce:aurora-postgresql
 - agent-teams-workforce:design-postgres-tables
 - agent-teams-workforce:graphrag-lookup
+- aws-core:aws-well-architected-review
+- aws-core:aws-security
+- aws-core:aws-billing-and-cost-management
+- aws-core:aws-storage
 effort: medium
 isolation: worktree
 color: cyan

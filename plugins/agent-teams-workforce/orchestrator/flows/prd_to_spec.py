@@ -49,6 +49,7 @@ from orchestrator.core.tools import Tools, env_path
 from orchestrator.flows import (
     architecture_earlier,
     architecture_promotion,
+    architecture_ruling,
     elaboration_steps,
     spec_review,
     task_decomposition,
@@ -106,6 +107,7 @@ LIFECYCLE_STAGE: Final = "epic-lifecycle"
 REGISTERED: Final = (
     architecture_earlier,
     architecture_promotion,
+    architecture_ruling,
     trd_authoring,
     spec_review,
     task_decomposition,

@@ -11,8 +11,8 @@ Perform the role in your definition. The brief is the artifact-handoff skill's
 the inputs this step needs. The skills your
 definition lists are in your context; read the applicable contract before writing. The artifact-handoff skill is the shared producer/reviewer authority.
 Write the result file; Python validates it, records it in the step journal and keeps pipeline state.
-Start another agent by its plain front-matter name (`trd-author`, `uml-diagram-author`). Never invoke a Workflow
-or a command runner. When the brief carries ARTIFACT CONTRACT DATA, write the progress
+Start another agent by its plain front-matter name (`trd-author`, `uml-diagram-author`). Never invoke a
+command runner. When the brief carries ARTIFACT CONTRACT DATA, write the progress
 file it names and record a checkpoint or the submission only by running the artifactcontract.py
 commands it gives; never write a checkpoint sidecar any other way. The progress file's fields are
 defined by the artifact-handoff skill (schemas/checkpoint.schema.json, $defs/Progress). If resumed,
@@ -53,6 +53,17 @@ helper whose answer file is on disk and valid is recorded done by the script whe
 that step, so an interruption never redoes it.
 
 An agent that starts no other agent adds no step.
+
+## Starting subagents and workflows
+
+An agent may start subagents and workflows when its work needs them. It follows the owner's
+rules for creating them: the operating rules in `~/.claude/rules/` (the fewest agents that keep
+each context small, workflows preferred over subagents, an agent that changes source code on
+Opus) and the `workflow-authoring` skill for a workflow script. It keeps its own context low
+(the detail stays in the files the agents it starts write, and it holds their paths), uses
+tokens efficiently, and starts independent work in parallel. It chooses the plugin's specialist
+agents from the `find-specialists` catalog, by the subject of the work, and never a generic
+agent.
 
 ## Resource use and incremental review
 

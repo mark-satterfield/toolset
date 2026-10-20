@@ -3,34 +3,42 @@
 # Architecture and TRD criteria
 
 One list. The solutions architect develops the architecture, its detailed design and the TRD
-to it, and the spec authors develop the specs to it. Reviewers review against it and against
-nothing else. Each criterion has a level and a home document, and is satisfied by its home
-document.
+to it, and reviews and approves them against it; the spec authors develop the specs to it,
+and the spec review reviews them against it. Nothing is reviewed against anything else. Each
+criterion has a level and a home document, and is satisfied by its home document.
 
 ## How to work (all levels)
 
-P1. The acceptance basis is the PRD's business outcomes, settled owner decisions, the
-    section 2 constraints and the documentation model's obligations.
-P2. A mechanism named in a PRD is a design input, not a business requirement.
-P3. The solutions architect decides technical gaps with cited evidence, asking a specialist
-    when the gap needs one. Only business requirements that no design can meet together, or
-    a conflict with section 2, reach the owner.
-P4. AWS behaviour is established from AWS documentation through the AWS MCP Server. State
-    assumptions, tradeoffs and regional applicability. Never invent scale.
-P5. Cite an arc42 statement by path and heading, guidance by URL, and code by repository,
-    revision and file:line. Code that no pipeline built is a hint and is never evidence that
-    arc42 is wrong; only code the matrix marks built or deployed is expected to match.
-P6. One design fact lives in one home. Every other document links to it.
-P7. Never write section 2. Only architecture-maintainer writes arc42 and the detailed
-    architecture. A script promotes.
-P8. A finding names the criterion id, the item, the observation with its path and heading,
-    and a bounded correction with a condition that shows it is done. A preference is not a
-    finding. Something no criterion requires is not a finding.
-P9. A review covers only content that is not yet approved. Approved content is reference: it
-    is reported only when an unapproved item cannot be correct unless an approved statement
-    is wrong. A re-check covers only the corrected items.
+P1.  The acceptance basis is the PRD's business outcomes, settled owner decisions, the
+     section 2 constraints and the documentation model's obligations.
+P2.  A mechanism named in a PRD is a design input, not a business requirement.
+P3.  The solutions architect decides technical gaps with cited evidence, asking a specialist
+     when the gap needs one. Only business requirements that no design can meet together, or
+     a conflict with section 2, reach the owner.
+P4.  AWS behaviour is established from AWS documentation through the AWS MCP Server. State
+     assumptions, tradeoffs and regional applicability. Never invent scale.
+P5.  Cite an arc42 statement by path and heading, guidance by URL, and code by repository,
+     revision and file:line. Code that no pipeline built is a hint and is never evidence
+     that arc42 is wrong; only code the matrix marks built or deployed is expected to match.
+P6.  One design fact lives in one home. Every other document links to it.
+P7.  Never write section 2. Only architecture-maintainer writes arc42 and the detailed
+     architecture. A script promotes.
+P8.  A finding names the criterion id, the item, the observation with its path and heading,
+     and a bounded correction with a condition that shows it is done. A preference is not a
+     finding. Something no criterion requires is not a finding.
+P9.  A review covers only content that is not yet approved. Approved content is reference:
+     it is reported only when an unapproved item cannot be correct unless an approved
+     statement is wrong. A re-check covers only the corrected items.
+P10. No architecture decision is made by instinct. Every AWS resource the design defines is
+     reviewed with the AWS tools (the AWS MCP servers and the aws-core skills) against AWS
+     best practice and security best practice, the design has a Well-Architected review, and
+     every decision between two or more options states the options considered and the reason
+     for the choice; each is recorded in the Epic's review log, to the
+     log-architecture-review skill's schema.
 
 ## Architecture and design: arc42 and the detailed architecture
+
+Reviewed and approved by `aws-solutions-architect`.
 
 A1.  Anyone who specifies or builds the work can name, from the architecture and design
      documents, the building block, its repository and stack, the owner of each store, each
@@ -87,6 +95,8 @@ A20. Where the work needs it, a component's internal structure (its classes or m
 
 ## Technical-requirement level: the TRD
 
+Reviewed and approved by `aws-solutions-architect`.
+
 T1. Every requirement has a stable id, a kind, a statement with a checkable value, a source
     and the element it applies to.
 T2. Where the design has the element, the TRD carries its obligations: availability,
@@ -103,9 +113,10 @@ T6. A requirement says what, with a value. It does not say how, and it holds no 
 
 ## The specs and the Tasks
 
-These are not reviewed in the architecture review. A spec and a Task carry what their work
-builds from the architecture and design documents, by link or as stated there; they decide
-no design.
+Reviewed and approved by `openapi-contract-reviewer`.
+
+These are not part of the architecture. A spec and a Task carry what their work builds from
+the architecture and design documents, by link or as stated there; they decide no design.
 
 I1. Each route has its method, path, authorizer, request and response fields and status
     codes as the detailed design records them.

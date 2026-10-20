@@ -84,6 +84,16 @@
             "path": {"description": "The PRD's path in the vault.", "type": "string", "minLength": 1},
             "hash": {"type": "string"}
           }
+        },
+        "reviewLog": {
+          "description": "The Epic's architecture review log (the log-architecture-review skill), which the promotion step files in the vault beside the architecture and links here when it sets the Epic's architecture effective.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "hash"],
+          "properties": {
+            "path": {"description": "The review log's path in the vault.", "type": "string", "minLength": 1},
+            "hash": {"description": "The SHA-256 of the log's content when it was filed.", "type": "string", "minLength": 1}
+          }
         }
       }
     },

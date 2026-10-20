@@ -79,7 +79,7 @@ Layout:
 |---|---|
 | `<orch>/run.py` | argument parsing, the flow registry, handback writing, signal handling, the top-level handler of section 6.7 |
 | `<orch>/core/` | the step journal (`step_journal.py`) and its runner (`journal_run.py`, `journal_steps.py`, `journal_changes.py`), the registry of step code (`journal_registry.py`), the session runner and launcher (`agents.py`, `agent_context.py`, `agent_process.py`, `frontmatter.py`), the tools layer for `bd`, git, `gh`, `polyrepo.py` and `cdk` (`tools.py`, `tool_locks.py`), the section 2 guard (`constraints.py`), the event writer (`events.py`), the handback contract and classification (`handback_contract.py`, `handback.py`), the run record (`manifest.py`) and the driver modules the plugin loads (`driver_contracts.py`) |
-| `<orch>/flows/` | the steps of the Epic's journal: `prd_to_spec.py` (the dispatch and the open-run step), `architecture.py`, `architecture_check.py`, `architecture_review.py`, `architecture_promotion.py`, `architecture_earlier.py`, `architecture_files.py`, `trd_authoring.py`, `repo_scoping.py`, `repo_placement.py`, `spec_authoring.py`, `spec_authoring_ui.py`, `spec_review.py`, `task_decomposition.py`, `task_edges.py`, `elaboration_steps.py`, `elaboration_files.py`, `elaboration_support.py`, `elaboration_result.py` |
+| `<orch>/flows/` | the steps of the Epic's journal: `prd_to_spec.py` (the dispatch and the open-run step), `architecture.py`, `architecture_check.py`, `architecture_ruling.py`, `architecture_promotion.py`, `architecture_earlier.py`, `architecture_files.py`, `trd_authoring.py`, `repo_scoping.py`, `repo_placement.py`, `spec_authoring.py`, `spec_authoring_ui.py`, `spec_review.py`, `task_decomposition.py`, `task_edges.py`, `elaboration_steps.py`, `elaboration_files.py`, `elaboration_support.py`, `elaboration_result.py` |
 | `<orch>/port_journal.py` | builds the step journal of a bead that has saved run data and no journal; the driver's `journalport.py` calls it |
 | `<orch>/specs/`, `<orch>/measurements/`, `<orch>/DESIGN.md` | documents |
 
@@ -122,7 +122,7 @@ The outermost steps of an Epic's journal are Open the run, Architecture, TRD, Sp
 Tasks, Task edges, Score the Tasks, Apply the done rule, Story edges and Mark the Epic elaborated
 (`flows/prd_to_spec.py` `outermost_steps`). A step with child steps is never run itself. Steps
 found at run time are added by the step that finds them: the open-run step plans the architect's
-step and the check after it, the check plans the reviewers and the promotion, the span step plans
+step and the check after it, the check plans the promotion, the span step plans
 one container per repository with its first step, that first step plans the repository's spec
 steps, and the Story bead write plans the repository's container under Tasks.
 
@@ -221,7 +221,7 @@ exactly:
 1. the bead id;
 2. the input file paths (absolute), each with a label: either the name of the journal artifact
    that holds the file, or the label the agent's definition names (for example `prd`, `criteria`,
-   `context`, `review scope`, `findings`, `step journal`);
+   `context`, `findings`, `step journal`);
 3. the output file path (absolute);
 4. a one-line expected outcome;
 5. for a journal step, `request` (what is asked: the builder's text, or the step's description)
@@ -238,16 +238,19 @@ input.
 
 `<plugin>/skills/effective-architecture/review-criteria.json` holds every criterion as data: its id,
 its level (architecture, technical requirement or implementation), its home document and its text;
-the agents responsible for each level; and, for each reviewer group, its reviewer, the criteria it
-covers and the rule that selects it (`appliesWhen`: kinds of unapproved content, and the names of
-review signals in the architect's result). `review-standard.md` beside it is written from that
-file by `skills/artifact-handoff/scripts/review_criteria.py`.
+and, for each level, the agents responsible for it and the agent that reviews and approves it.
+`review-standard.md` beside it is written from that file by
+`skills/artifact-handoff/scripts/review_criteria.py`.
 
-`aws-solutions-architect` develops the architecture and the TRD to exactly these criteria and
-answers each architecture and technical-requirement criterion in its result. The reviewers apply
-exactly these and no others, each to the items its group covers. A criterion is satisfied by the
-document that is its home. No brief carries any
-part of the criteria: agents read them in `effective-architecture/review-standard.md`.
+`aws-solutions-architect` develops the architecture and the TRD to exactly these criteria, answers
+each architecture and technical-requirement criterion in its result, and reviews and approves its
+own architecture against them; nothing else reviews it. Criterion P10 requires that no decision is
+made by instinct: every AWS resource the design defines is reviewed with the AWS tools, the design
+has a Well-Architected review, and every decision between two or more options states the options
+and the reason. The architect records all of it in the Epic's review log, whose contract is the
+`log-architecture-review` skill (`schemas/review-log.schema.json`, written and checked by
+`scripts/review_log.py`). A criterion is satisfied by the document that is its home. No brief
+carries any part of the criteria: agents read them in `effective-architecture/review-standard.md`.
 
 ### 2.5 Where the contracts and schemas live
 
@@ -256,7 +259,7 @@ Every file an agent produces or consumes has one JSON Schema in
 reads it through a module generated from it: `scripts/architecture_work_contract.py` (from
 `architecture-result.schema.json`, which defines every shape of the architecture team's files
 once; each file has a wrapper schema that refers to its definition), `scripts/matrix_contract.py`
-(from `matrix.schema.json`, including the review scope a reviewer is handed), and the other
+(from `matrix.schema.json`), and the other
 generated contracts the `artifact-handoff` skill lists. An agent of the architecture team finds
 the schemas through the `effective-architecture` skill; the spec and Task agents through
 `artifact-handoff`. A contract only code produces and consumes is one typed Python module, named in
@@ -268,7 +271,7 @@ the register. No schema text is placed in a prompt.
 
 Nothing but the step journal decides whether a step runs: no file hash, timestamp, changed
 document or freshness check. A step's output is recorded as an artifact of the step right after it
-is written (a file by path, or a value such as a reviewer's findings); later steps are handed
+is written (a file by path, or a value such as a count of findings); later steps are handed
 those artifacts from the journal. A missing file is found only when a step reads it, and is then
 that step's failure. An earlier start is made by invalidating a step (`atw-step-journal
 invalidate`), which resets it and every step after it; only the owner asks for it.
@@ -337,7 +340,7 @@ per repository, each read from the journal.
 
 ### 4.3 Verdict events
 
-No step of the elaboration emits a verdict event. What a reviewer found, what the lead routed and
+No step of the elaboration emits a verdict event. What the check step found, what the lead routed and
 what the decider ruled are artifacts of their journal steps.
 
 ### 4.4 Handback and run record (QUESTIONS 22)
@@ -510,8 +513,7 @@ records the model in `run.json`; it passes no effort.
 | Any agent the `find-specialists` catalog lists that has no row here (for example `persistence-architecture-specialist`, `c4-diagram-author`, `polyrepo-steward`) | its own, if any | by the architect in its own session, by the name it chose from the catalog; by the script when the architect names it in its result's `requests`, when it was left running, or when the lead asks it for an opinion |
 | `trd-author` | | by the architect in its own session; by the script when left running |
 | `architecture-maintainer` | | by the architect in its own session; by the script when left running |
-| `architecture-boundary-guardian`, `failure-mode-analyst`, `architecture-pattern-challenger`, `architecture-tradeoff-skeptic`, `operational-readiness-reviewer`, `cost-architecture-reviewer`, `cost-impact-reviewer`, `trd-validator` | `architecture-reviewer` | by the script, when the rule of its reviewer group selects it; again for a re-check the lead plans |
-| `architecture-team-lead` | `architecture-lead` | by the script, only when a review raised something or the architect's result is unsettled |
+| `architecture-team-lead` | `architecture-lead` | by the script, only when the architect's result is unsettled |
 | `architecture-decider` | `decider` | by the script, only for a step the lead plans |
 | `api-specification-author`, `data-model-specification-author`, `acceptance-criteria-writer` | | by the script, in a repository's container under Specs and Stories: the UI sources step (the contracts author, frontend repositories), the step that writes its document, and a correction or a revision the review plans |
 | `openapi-contract-reviewer` | | by the script, once per repository, after the three documents |
@@ -717,7 +719,7 @@ that are running finish.
 One orchestrator process per Epic dispatch; the driver's lanes keep their slots. Steps run in the
 journal's walk order. The one exception: consecutive sibling steps that each have an agent, have no
 child steps and name only done steps in their inputs run as concurrent sessions
-(`journal_run.concurrent_group`). That is how the reviewers of one review run together, and the
+(`journal_run.concurrent_group`). That is how the
 contracts author and the data-model author of one repository. Repositories run one after another,
 each in its own container of steps.
 
@@ -853,9 +855,8 @@ specification is `<plugin>/blueprint/design/matrix.md`.
 
 - **Lifecycle.** A document entry mirrors the `lifecycle_state` of its arc42 file. The check step
   reads the documents an Epic reaches that are not effective (`review-scope`) and records nothing;
-  the promotion step sets the reviewed documents to `lifecycle_state: effective`, mirrors that in
-  the matrix (`sync-documents --paths`), and commits and pushes them in the vault. Reviewers see
-  only the documents in review.
+  the promotion step sets the approved documents to `lifecycle_state: effective`, mirrors that in
+  the matrix (`sync-documents --paths`), and commits and pushes them in the vault.
 - **The approved and verified flags.** `blueprint/requirements/pipelines.md` (the Elaboration
   pipeline) and `blueprint/requirements/matrix.md` state what each flag means and when it is set.
 - **One home per entry.** An entry has at most one `homeIn` on each side; the command refuses a
@@ -869,33 +870,37 @@ specification is `<plugin>/blueprint/design/matrix.md`.
 ### 11.1 Architecture
 
 The Architecture container holds, in order: the architect's step; the check step; then either a
-correction by the architect and a new check, or the lead and a new check, or the reviewers and the
-promotion step, with the lead's step between them when a review raised something.
+correction by the architect and a new check, or the lead and a new check, or the promotion step.
+The architect reviews and approves its own architecture against the criteria; nothing else
+reviews it.
 
 - **The check step** (`flows/architecture_check.py`) judges nothing; every branch is a rule over
-  the matrix, the criteria file and the architect's result. It writes `architecture/checks/<step id>/check.json`. A problem
-  plans one correction by the architect and a new check, at most 3 times; after that the step
-  fails. With no problem it reads what is in review, writes `review-scope.json` and `unlinked.json`,
-  records nothing in the matrix, and, when the
-  result's conclusion is `unsettled` and no lead has run, plans the lead and a new check. Otherwise
-  it selects the reviewers by the `appliesWhen` rules, writes each its own narrowed scope, and
-  plans one step per reviewer and the promotion after them. A rule that selects no reviewer fails
-  the step.
-- **A review** (`flows/architecture_review.py`) records its file, the findings inside the
-  reviewer's scope and the number dropped as outside it. The first review that holds a finding or
-  a request for alternatives plans one step for the lead after the last reviewer.
-- **The lead** writes its routing and adds the steps it calls for under its own step: a correction
-  by the architect with a re-check by the reviewer that raised the finding, a specialist's opinion,
-  a competing design, or the decider. A routing that rejects every item adds no step.
-- **The decider** is handed one question file and writes one ruling, and settles each disagreement
-  the question cites in the matrix (`atw-matrix settle`); the step that accepts the ruling reads
-  each back and fails when `stands` is unset. A ruling that raises an owner concern fails the step
-  at stage `requires-human-action`.
-- **The promotion step** (`flows/architecture_promotion.py`) refuses while a review raised
-  something and no lead records that every item is resolved. It sets the documents of the review
-  scope to effective, mirrors that in the matrix, removes each settled disagreement whose losing
-  statement was corrected, commits and pushes the documents in the vault, and commits and pushes
-  the matrix. A document it cannot set effective fails the step, naming each with the reason.
+  the matrix, the criteria file, the architect's result and the Epic's review log. It writes
+  `architecture/checks/<step id>/check.json`. A problem plans one correction by the architect and
+  a new check, at most 3 times; after that the step fails. A problem is a matrix defect, an
+  architecture or technical-requirement criterion with no answer, or a problem of the review log
+  at the context's `reviewLogPath` as the `log-architecture-review` skill's check reports it: a
+  missing or malformed log, a decision without two options, its choice or its reason, an AWS
+  resource the design adds or changes (an `addedOrChangedElements` entry whose matrix entry has a
+  `resourceType`) with no review entry, and a design with an AWS resource and no Well-Architected
+  review. With no problem it reads what is in review, writes `review-scope.json` and
+  `unlinked.json`, records nothing in the matrix, and, when the result's conclusion is
+  `unsettled` and no lead has run, plans the lead and a new check. Otherwise it plans the
+  promotion step.
+- **The lead** (`flows/architecture_ruling.py`) writes its routing of the unsettled matters and
+  adds the steps it calls for under its own step: a correction by the architect, a specialist's
+  opinion, a competing design, or the decider. A routing that rejects every matter adds no step.
+- **The decider** (`flows/architecture_ruling.py`) is handed one question file and writes one
+  ruling, and settles each disagreement the question cites in the matrix (`atw-matrix settle`);
+  the step that accepts the ruling reads each back and fails when `stands` is unset. A ruling that
+  raises an owner concern fails the step at stage `requires-human-action`.
+- **The promotion step** (`flows/architecture_promotion.py`) sets the documents of the review
+  scope to effective, files the review log in the vault at
+  `<architectureRoot>/review-logs/<epic id>.json`, mirrors the documents in the matrix and links
+  the log from the Epic's entry (attribute `reviewLog`: its path in the vault and its SHA-256),
+  removes each settled disagreement whose losing statement was corrected, commits and pushes the
+  documents and the log in the vault, and commits and pushes the matrix. A document it cannot set
+  effective fails the step, naming each with the reason.
 
 ### 11.2 Repository span
 

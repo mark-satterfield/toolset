@@ -111,6 +111,7 @@ def check_contracts(control_root: Path, plugin_root: Path) -> int:
             str(pipeline_scripts),
             str(plugin_root / "skills" / "resource-naming" / "scripts"),
             str(plugin_root / "skills" / "find-specialists" / "scripts"),
+            str(plugin_root / "skills" / "log-architecture-review" / "scripts"),
         ),
     )
     temporary: str

@@ -125,7 +125,6 @@ TRD_REQUEST_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "trd-request.schema.json"
 TRD_ANSWER_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "trd-answer.schema.json"
 WRITE_REQUEST_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "write-request.schema.json"
 WRITE_RESULT_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "write-result.schema.json"
-SCOPE_REVIEW_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "scope-review.schema.json"
 LEAD_ROUTING_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "lead-routing.schema.json"
 ARCHITECTURE_QUESTION_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "architecture-question.schema.json"
 ARCHITECTURE_RULING_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "architecture-ruling.schema.json"
@@ -160,6 +159,7 @@ class ArchitectureContext(TypedDict):
     matrixCommand: str
     statePath: str
     resultPath: str
+    reviewLogPath: str
     trdPath: str
     helpersFolder: str
 
@@ -244,14 +244,6 @@ class UnsettledMatter(TypedDict):
     positions: list[Position]
 
 
-class Choice(TypedDict):
-    """Typed form of #/$defs/Choice in architecture-result.schema.json."""
-
-    fact: str
-    alternatives: list[str]
-    reason: str
-
-
 class CostEvidence(TypedDict):
     """Typed form of #/$defs/CostEvidence in architecture-result.schema.json."""
 
@@ -259,17 +251,6 @@ class CostEvidence(TypedDict):
     assumptions: str
     unitMath: str
     sources: list[Citation]
-
-
-class ReviewSignals(TypedDict):
-    """Typed form of #/$defs/ReviewSignals in architecture-result.schema.json."""
-
-    failureBehaviours: list[str]
-    newRuntimeResources: list[str]
-    newBillableResources: list[str]
-    changedBillableLimits: list[str]
-    choices: list[Choice]
-    newPatterns: list[str]
 
 
 class SpecialistRecommendation(TypedDict):
@@ -312,7 +293,6 @@ class ArchitectureResult(TypedDict):
     settledDisagreements: list[str]
     criteria: list[CriterionAnswer]
     unsettled: list[UnsettledMatter]
-    reviewSignals: ReviewSignals
     costEvidence: list[CostEvidence]
     specialistRecommendations: list[SpecialistRecommendation]
     requests: list[AgentRequest]
@@ -465,45 +445,6 @@ class WriteResult(TypedDict):
     linksAdded: list[Citation]
     restatementsRemoved: list[Citation]
     notApplied: list[UnappliedEntry]
-    summary: str
-
-
-class ScopeFinding(TypedDict):
-    """Typed form of #/$defs/ScopeFinding in architecture-result.schema.json."""
-
-    id: str
-    criterion: str
-    item: str
-    observation: str
-    location: Citation
-    correction: str
-    doneWhen: str
-
-
-class DependsOnApproved(TypedDict):
-    """Typed form of #/$defs/DependsOnApproved in architecture-result.schema.json."""
-
-    item: str
-    unapproved: Citation
-    approved: Citation
-    why: str
-
-
-class AlternativeRequest(TypedDict):
-    """Typed form of #/$defs/AlternativeRequest in architecture-result.schema.json."""
-
-    item: str
-    option: str
-    why: str
-
-
-class ScopeReview(TypedDict):
-    """Typed form of #/$defs/ScopeReview in architecture-result.schema.json."""
-
-    passed: list[str]
-    findings: list[ScopeFinding]
-    dependsOnApproved: list[DependsOnApproved]
-    alternativesRequested: list[AlternativeRequest]
     summary: str
 
 
@@ -906,33 +847,6 @@ def validate_write_result(value: object, where: str = "WriteResult") -> WriteRes
         return value
     problems: str = "; ".join(schema_problems(value, "WriteResult"))
     message: str = f"{where} does not satisfy WriteResult: {problems}"
-    raise ArchitectureWorkError(message)
-
-
-def is_scope_review(value: object) -> TypeIs[ScopeReview]:
-    """Tell whether a value satisfies the ScopeReview definition.
-
-    Returns:
-        True when the schema accepts the value.
-
-    """
-    return not schema_problems(value, "ScopeReview")
-
-
-def validate_scope_review(value: object, where: str = "ScopeReview") -> ScopeReview:
-    """Validate a decoded ScopeReview document.
-
-    Returns:
-        The value, typed.
-
-    Raises:
-        ArchitectureWorkError: The value does not satisfy the ScopeReview definition.
-
-    """
-    if is_scope_review(value):
-        return value
-    problems: str = "; ".join(schema_problems(value, "ScopeReview"))
-    message: str = f"{where} does not satisfy ScopeReview: {problems}"
     raise ArchitectureWorkError(message)
 
 

@@ -99,12 +99,17 @@
         "agent-teams-workforce:api-design-reviewer",
         "agent-teams-workforce:effective-architecture",
         "aws-core:aws-serverless",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-well-architected-review",
+        "aws-core:aws-security",
+        "aws-core:aws-billing-and-cost-management",
+        "aws-core:aws-auth"
       ],
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus"
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -313,7 +318,7 @@
     },
     {
       "name": "architecture-team-lead",
-      "description": "Route what a review found or what the solutions architect could not settle, so that the team settles it with the least further work.",
+      "description": "Route what the solutions architect could not settle, so that the team settles it with the least further work.",
       "skills": [
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:subagent-contract",
@@ -400,7 +405,7 @@
     },
     {
       "name": "aws-solutions-architect",
-      "description": "Hold single responsibility for the architecture a PRD needs, from the first read of the PRD until the architecture and the TRD are ready for review.",
+      "description": "Hold single responsibility for the architecture a PRD needs, from the first read of the PRD until the architecture and the TRD are designed, reviewed and approved, with the review log that proves how.",
       "skills": [
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:subagent-contract",
@@ -410,14 +415,20 @@
         "agent-teams-workforce:aws-serverless-eda",
         "agent-teams-workforce:senior-security",
         "agent-teams-workforce:graphrag-lookup",
-        "aws-core:aws-serverless"
+        "aws-core:aws-serverless",
+        "aws-core:aws-well-architected-review",
+        "aws-core:aws-security",
+        "aws-core:aws-billing-and-cost-management",
+        "agent-teams-workforce:log-architecture-review",
+        "aws-core:aws-database"
       ],
       "mcpServers": [
         "aws-mcp",
         "awslabs-dynamodb-mcp-server",
         "mcp-graphrag-server",
         "pg-aiguide",
-        "gitnexus"
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -531,12 +542,18 @@
         "aws-core:aws-cdk",
         "agent-teams-workforce:aurora-postgresql",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:cdk-coding"
+        "agent-teams-workforce:cdk-coding",
+        "aws-core:aws-well-architected-review",
+        "aws-core:aws-security",
+        "aws-core:aws-billing-and-cost-management",
+        "aws-core:aws-cloudformation",
+        "aws-core:aws-networking"
       ],
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus"
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -1254,12 +1271,16 @@
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:skillspoke-events",
         "aws-core:aws-messaging-and-streaming",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-well-architected-review",
+        "aws-core:aws-security",
+        "aws-core:aws-billing-and-cost-management"
       ],
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus"
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -1389,12 +1410,17 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:api-design-reviewer",
         "agent-teams-workforce:effective-architecture",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-well-architected-review",
+        "aws-core:aws-security",
+        "aws-core:aws-billing-and-cost-management",
+        "aws-core:aws-serverless"
       ],
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus"
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -1472,12 +1498,16 @@
         "agent-teams-workforce:effective-architecture",
         "aws-core:aws-serverless",
         "aws-core:aws-messaging-and-streaming",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-well-architected-review",
+        "aws-core:aws-security",
+        "aws-core:aws-billing-and-cost-management"
       ],
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus"
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -1778,7 +1808,11 @@
         "aws-core:aws-database",
         "agent-teams-workforce:aurora-postgresql",
         "agent-teams-workforce:design-postgres-tables",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-well-architected-review",
+        "aws-core:aws-security",
+        "aws-core:aws-billing-and-cost-management",
+        "aws-core:aws-storage"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -1787,7 +1821,8 @@
         "pg-aiguide",
         "awslabs-postgres-mcp-server",
         "awslabs-amazon-neptune-mcp-server",
-        "gitnexus"
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -2122,12 +2157,17 @@
         "agent-teams-workforce:effective-architecture",
         "aws-core:aws-iam",
         "aws-core:aws-auth",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-well-architected-review",
+        "aws-core:aws-security",
+        "aws-core:aws-billing-and-cost-management",
+        "aws-core:aws-secrets-manager"
       ],
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus"
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -2399,16 +2439,6 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-architect"
-      ],
-      "mcpServers": []
-    },
-    {
-      "name": "trd-validator",
-      "description": "Review the unapproved TRD requirements of one Epic against the technical-requirement criteria.",
-      "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:effective-architecture"
       ],
       "mcpServers": []
     },

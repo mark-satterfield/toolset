@@ -1,18 +1,21 @@
-"""The script step that promotes reviewed architecture: lifecycle, the matrix's mirror of it, and the commits.
+"""The script step that promotes approved architecture: lifecycle, the matrix's mirror of it, and the commits.
 
-It promotes by rule: when no review returned a finding, or the lead recorded that every item is
-resolved. It sets the documents in review for the Epic effective in their front matter, brings
-their matrix entries up to date so that each mirrors its lifecycle, removes each disagreement a
-document maintainer of this run corrected the losing statement of, sets the approved flag on the
-matrix content the Epic reaches, commits and pushes the vault
-when a document changed, and commits and pushes the matrix file. Anything else is a failure with
-a structured cause.
+It follows the check step that passed the architect's result and its review log: the architect
+reviews and approves its own architecture. It sets the documents in review for the Epic effective
+in their front matter, files the Epic's review log in the vault beside the architecture, brings
+the documents' matrix entries up to date so that each mirrors its lifecycle, links the review log
+from the Epic's matrix entry, removes each disagreement a document maintainer of this run
+corrected the losing statement of, sets the approved flag on the matrix content the Epic reaches,
+commits and pushes the vault, and commits and pushes the matrix file. Anything else is a failure
+with a structured cause.
 """
 
 from __future__ import annotations
 
+import hashlib
+import shutil
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -22,6 +25,7 @@ from matrix_contract import KIND_DISAGREEMENT, KIND_DOCUMENT, ROLE_SCRIPT
 from matrixreview import review_scope
 from matrixstore import as_entry_id, make_id, read_matrix, update_matrix
 from matrixsync import LIFECYCLE_EFFECTIVE, relative_path, set_lifecycle, sync_documents, vault_root
+from matrixtraverse import epic_id
 from matrixwrite import approve, commit
 from step_journal_contract import STATUS_DONE
 
@@ -35,26 +39,22 @@ from orchestrator.flows.architecture_files import (
     LABEL_REQUEST,
     LABEL_SCOPE,
     PROMOTE,
-    ROLE_LEAD,
     WRITE_REQUEST,
     WRITTEN,
     ArchitectureContext,
     ArchitectureStepError,
-    agents_with_role,
     checked_file,
     document_path,
-    lead_resolved,
     matrix_file,
     read_context,
     read_result,
 )
-from orchestrator.flows.architecture_review import ALTERNATIVES, FINDINGS
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from architecture_work_contract import WriteRequest, WriteResult
-    from matrix_contract import EntryId
+    from matrix_contract import Entry, EntryId
     from matrixreview import ReviewScope
     from matrixstore import Matrix
     from matrixwrite import ApproveResult, CommitResult
@@ -69,6 +69,10 @@ BRANCH: Final = "main"
 REMOTE: Final = "origin"
 ATTR_LIFECYCLE: Final = "lifecycle"
 ATTR_STANDS: Final = "stands"
+ATTR_REVIEW_LOG: Final = "reviewLog"
+"""The Epic entry's attribute that links its review log (``matrix-kinds.json``)."""
+REVIEW_LOGS: Final = "review-logs"
+"""The folder under the architecture root that holds each Epic's review log, as ``<epic id>.json``."""
 
 
 @dataclass(frozen=True)
@@ -83,16 +87,52 @@ class Promoted:
     """The disagreements removed: settled, and the losing statement corrected in this run."""
     approved: tuple[EntryId, ...]
     """The entries the Epic reaches, which now carry the approved flag with the relationships between them."""
+    review_log: str
+    """The Epic's review log, by its path under the architecture root."""
 
 
-def _promote(bead: str, arch: Path, corrected: Sequence[str], added_or_changed: Sequence[str]) -> Promoted:
-    """Set effective what is in review for the Epic, and mirror it in the matrix.
+def _file_review_log(bead: str, arch: Path, log: Path) -> tuple[str, str]:
+    """Copy the Epic's review log into the vault, beside the architecture.
+
+    Returns:
+        The log's path under the architecture root, and the SHA-256 of its content.
+
+    Raises:
+        FileNotFoundError: The review log the check step passed is gone.
+
+    """
+    if not log.is_file():
+        message: str = f"the review log {log} does not exist"
+        raise FileNotFoundError(message)
+    relative: str = f"{REVIEW_LOGS}/{bead}.json"
+    target: Path = arch / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(log, target)
+    return relative, hashlib.sha256(target.read_bytes()).hexdigest()
+
+
+def _link_review_log(matrix: Matrix, bead: str, vault: Path, target: Path, digest: str) -> None:
+    """Record the review log's path in the vault and its hash on the Epic's matrix entry."""
+    epic: Entry = matrix.entry(epic_id(bead))
+    linked: dict[str, JsonValue] = {"path": relative_path(target, vault), "hash": digest}
+    matrix.put(replace(epic, attributes={**epic.attributes, ATTR_REVIEW_LOG: linked}))
+
+
+def _promote(
+    bead: str,
+    arch: Path,
+    corrected: Sequence[str],
+    added_or_changed: Sequence[str],
+    log: Path,
+) -> Promoted:
+    """Set effective what is in review for the Epic, file its review log, and mirror both in the matrix.
 
     Each document ``atw-matrix review-scope`` returns for the Epic, with the documents that
-    describe what the architect's result adds or changes, is set effective in its front matter;
-    then, in one matrix change, the entries of those documents are brought up to date as
-    ``atw-matrix sync-documents --paths`` does, each disagreement named that the matrix holds
-    with a ruling is removed, and the matrix content the Epic reaches gets the approved flag
+    describe what the architect's result adds or changes, is set effective in its front matter,
+    and the review log is copied into the vault; then, in one matrix change, the entries of those
+    documents are brought up to date as ``atw-matrix sync-documents --paths`` does, the Epic's
+    entry links the review log, each disagreement named that the matrix holds with a ruling is
+    removed, and the matrix content the Epic reaches gets the approved flag
     (``matrixwrite.approve``, as the script role).
 
     Args:
@@ -101,10 +141,11 @@ def _promote(bead: str, arch: Path, corrected: Sequence[str], added_or_changed: 
         corrected: The ids of the disagreements whose losing statement a document maintainer of
             this run corrected.
         added_or_changed: The ids the architect's result lists under ``addedOrChangedElements``.
+        log: The Epic's review log, at the architecture context's ``reviewLogPath``.
 
     Returns:
         The documents set effective, those the matrix does not show as effective afterwards, the
-        disagreements removed, and the entries now approved.
+        disagreements removed, the entries now approved, and where the review log was filed.
 
     """
     path: Path = matrix_file()
@@ -114,10 +155,14 @@ def _promote(bead: str, arch: Path, corrected: Sequence[str], added_or_changed: 
     relative: str
     for relative in documents:
         set_lifecycle(vault, relative_path(arch / relative, vault), LIFECYCLE_EFFECTIVE)
+    filed: str
+    digest: str
+    filed, digest = _file_review_log(bead, arch, log)
 
     def change(matrix: Matrix) -> tuple[list[EntryId], ApproveResult]:
         if documents:
             sync_documents(matrix, arch, paths=documents)
+        _link_review_log(matrix, bead, vault, arch / filed, digest)
         removed: list[EntryId] = []
         stated: str
         for stated in dict.fromkeys(corrected):
@@ -141,6 +186,7 @@ def _promote(bead: str, arch: Path, corrected: Sequence[str], added_or_changed: 
         tuple(not_effective),
         tuple(removed),
         tuple(approved["entries"]),
+        filed,
     )
 
 
@@ -175,23 +221,6 @@ def _commit_vault(run: StepRun, vault: Path, paths: list[str], message: str) -> 
         run.tools.git(vault, ["push", REMOTE, BRANCH], stage=PROMOTE)
         made = run.tools.command(["git", "rev-parse", "HEAD"], stage=PROMOTE, cwd=vault).stdout.strip()
     return made
-
-
-def _require_resolved(run: StepRun) -> None:
-    """Refuse to promote while a finding or a request for alternatives is not resolved.
-
-    Raises:
-        ArchitectureStepError: A review raised something and no lead before this step records
-            that every item is resolved.
-
-    """
-    raised: bool = any(run.inputs.values(FINDINGS)) or any(run.inputs.values(ALTERNATIVES))
-    lead: str = agents_with_role(run.tools.plugin, ROLE_LEAD)[0]
-    if raised and lead_resolved(run, lead) is not True:
-        raise ArchitectureStepError(
-            run,
-            "a review returned a finding or asked for alternatives, and no lead records that every item is resolved",
-        )
 
 
 def _scope_documents(run: StepRun) -> list[str]:
@@ -266,7 +295,7 @@ def _corrected(run: StepRun) -> list[str]:
 
 @script_step(PROMOTE)
 def promote(run: StepRun) -> Completion:
-    """Set the reviewed documents effective, mirror them in the matrix, and commit both.
+    """Set the approved documents effective, file the review log, mirror both in the matrix, and commit.
 
     Returns:
         The file of what was promoted, and the vault commit and the matrix commit when one was
@@ -277,7 +306,6 @@ def promote(run: StepRun) -> Completion:
             file of what was promoted names each.
 
     """
-    _require_resolved(run)
     context: ArchitectureContext = read_context(run)
     arch: Path = Path(context["architectureRoot"])
     added_or_changed: list[str] = read_result(run, context)["addedOrChangedElements"]
@@ -288,6 +316,7 @@ def promote(run: StepRun) -> Completion:
         arch,
         _corrected(run),
         added_or_changed,
+        Path(context["reviewLogPath"]),
     )
     path: Path = run.context.work / ARCHITECTURE_FOLDER / "promoted.json"
     record: dict[str, JsonValue] = {
@@ -295,20 +324,20 @@ def promote(run: StepRun) -> Completion:
         "notEffective": [*promoted.not_effective],
         "removedDisagreements": [*promoted.removed],
         "approved": [*promoted.approved],
+        "reviewLog": promoted.review_log,
     }
     write_json(path, record)
     artifacts: list[Artifact] = [file_artifact(PROMOTED, path)]
-    documents: list[str] = sorted({*promoted.documents, *_scope_documents(run)})
-    if documents:
-        vault: Path = run.tools.portfolio(PROMOTE, vault_root, arch)
-        made: str | None = _commit_vault(
-            run,
-            vault,
-            [relative_path(arch / relative, vault) for relative in documents],
-            f"docs(architecture): set the reviewed architecture of {run.bead} effective",
-        )
-        if made is not None:
-            artifacts.append(value_artifact(VAULT_COMMIT, made))
+    documents: list[str] = sorted({*promoted.documents, *_scope_documents(run), promoted.review_log})
+    vault: Path = run.tools.portfolio(PROMOTE, vault_root, arch)
+    made: str | None = _commit_vault(
+        run,
+        vault,
+        [relative_path(arch / relative, vault) for relative in documents],
+        f"docs(architecture): set the approved architecture of {run.bead} effective, with its review log",
+    )
+    if made is not None:
+        artifacts.append(value_artifact(VAULT_COMMIT, made))
     recorded: CommitResult = run.tools.portfolio(PROMOTE, commit, matrix_file(), str(run.bead))
     if recorded["committed"] or recorded["pushed"]:
         artifacts.append(value_artifact(MATRIX_COMMIT, recorded["head"]))

@@ -83,7 +83,7 @@ documents give no value for an obligation the design needs, take the value from 
 documentation and the stated scale, and cite what it rests on.
 
 Write to the technical-requirement criteria of `effective-architecture/review-standard.md`, the
-same text trd-validator reviews the TRD against. The TRD's fixed form is
+same text the solutions architect reviews and approves the TRD against. The TRD's fixed form is
 `document-front-matter.schema.json#/$defs/TrdDocument` in the artifact-handoff skill's schemas.
 Keep `decisionIds` in the front matter: the arc42 paths, with headings, that the requirements
 cite. Write the TRD file at the request's `trdPath` and the answer, to

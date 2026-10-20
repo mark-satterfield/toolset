@@ -33,14 +33,13 @@ from matrixstore import ID_SEPARATOR, make_id, matrix_path
 
 from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
-from orchestrator.core.frontmatter import split_front_matter
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.models import StepError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable
 
-    from step_journal_contract import Artifact, Journal, Step, StepId
+    from step_journal_contract import Artifact, Step
 
     from orchestrator.core.io import JsonValue
     from orchestrator.core.journal_steps import StepRun
@@ -88,7 +87,6 @@ WRITTEN: Final = "what was written"
 """The artifacts a document maintainer's step holds: what it was asked to write, and its result."""
 
 ARTIFACT_CONCLUSION: Final = "conclusion"
-ARTIFACT_REVIEW: Final = "review"
 ARTIFACT_CHECK: Final = "check result"
 ARTIFACT_RESOLVED: Final = "every item is resolved"
 ARTIFACT_TRD: Final = "TRD"
@@ -103,10 +101,8 @@ MAINTAINER: Final = "architecture-maintainer"
 """The agents of the architecture team's fixed steps, by name. The agents the architect or the lead
 chooses for a subject are named in their own files (``architecture-result.schema.json``
 ``requests``; ``lead-routing.schema.json``), never here."""
-ROLE_LEAD: Final = "architecture-lead"
-ROLE_REVIEWER: Final = "architecture-reviewer"
-"""The roles ``agents_with_role`` reads: the architecture reviewers' seat, which the review criteria
-file's reviewer groups fill, and the lead's."""
+REVIEW_LOG_FILE: Final = "review-log.json"
+"""The name of the Epic's review log, beside the architect's result (``log-architecture-review``)."""
 
 PLUGIN: Final[Path] = Path(__file__).resolve().parents[2]
 HUMAN_ACTION_STAGE: Final = "requires-human-action"
@@ -129,6 +125,7 @@ def new_context(bead: str, prd: Path, arch: Path, work: Path, vault_commit: str)
         "matrixCommand": MATRIX_COMMAND,
         "statePath": str(folder / "state.json"),
         "resultPath": str(folder / "result.json"),
+        "reviewLogPath": str(folder / REVIEW_LOG_FILE),
         "trdPath": str(work / "trd.md"),
         "helpersFolder": str(folder / "helpers"),
     }
@@ -295,30 +292,6 @@ def output_check(validate: Callable[[object, str], object]) -> Callable[[Path], 
     return check
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def agents_with_role(plugin: Path, role: str) -> tuple[str, ...]:
-    """Name the agents of a plugin whose definition states one role.
-
-    Returns:
-        The agent names, sorted.
-
-    Raises:
-        ValueError: No definition of the plugin states the role.
-
-    """
-    found: list[str] = []
-    path: Path
-    for path in sorted((plugin / "agents").glob("*.md")):
-        fields: dict[str, object]
-        fields, _ = split_front_matter(path.read_text(encoding="utf-8"), f"agent {path.stem}")
-        if fields.get("role") == role:
-            found.append(path.stem)
-    if not found:
-        message: str = f"no agent definition under {plugin / 'agents'} has the role {role!r}"
-        raise ValueError(message)
-    return tuple(found)
-
-
 def is_finish(run: StepRun) -> bool:
     """Tell whether a step is the "Finish" step of the agent whose step contains it.
 
@@ -356,24 +329,6 @@ def lead_resolved(run: StepRun, lead: str) -> bool | None:
         for held in below["artifacts"]
     )
     return step["status"] == "done" and recorded
-
-
-def planned_params(journal: Journal, step_id: StepId) -> Mapping[str, JsonValue]:
-    """Read the parameters the step that planned a step handed it.
-
-    Returns:
-        The value of the artifact ``for <step id>`` wherever the journal holds it; an empty
-        mapping when no step planned it with parameters.
-
-    """
-    name: str = step_journal.planned_for_name(step_id)
-    step: Step
-    held: Artifact
-    for step in step_journal.steps_in_order(journal):
-        for held in step["artifacts"]:
-            if held["name"] == name and held["kind"] == "value" and isinstance(held["value"], dict):
-                return held["value"]
-    return {}
 
 
 __all__ = [

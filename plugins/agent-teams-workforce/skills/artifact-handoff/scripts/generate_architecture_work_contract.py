@@ -59,7 +59,6 @@ DOCUMENTS: Final[tuple[tuple[str, str, str, str], ...]] = (
     ("trd_answer", "TrdAnswer", "trd-answer.schema.json", "trd-author's answer"),
     ("write_request", "WriteRequest", "write-request.schema.json", "A write request to architecture-maintainer"),
     ("write_result", "WriteResult", "write-result.schema.json", "architecture-maintainer's write result"),
-    ("scope_review", "ScopeReview", "scope-review.schema.json", "A reviewer's result for the unapproved content"),
     ("lead_routing", "LeadRouting", "lead-routing.schema.json", "architecture-team-lead's routing"),
     ("architecture_question", "UnsettledMatter", "architecture-question.schema.json", "The question for the decider"),
     ("architecture_ruling", "ArchitectureRuling", "architecture-ruling.schema.json", "architecture-decider's ruling"),

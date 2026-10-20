@@ -78,7 +78,6 @@ from orchestrator.flows.architecture_files import (
     ARCHITECTURE,
     ARTIFACT_CHECK,
     ARTIFACT_CONCLUSION,
-    ARTIFACT_REVIEW,
     ARTIFACT_SPECIALIST_RECOMMENDATIONS,
     ARTIFACT_TRD,
     LABEL_ANSWER,
@@ -131,7 +130,7 @@ if TYPE_CHECKING:
     from orchestrator.core.io import JsonValue
 
 ARCHITECT_DESCRIPTION: Final = "Decide what the architecture should be for this PRD"
-ARCHITECT_PURPOSE: Final = "One agent is responsible for the architecture this PRD needs until it is ready for review"
+ARCHITECT_PURPOSE: Final = "One agent is responsible for the architecture this PRD needs, and reviews and approves it"
 ARCHITECT_REF: Final = "architect"
 NO_SOURCE: Final = "obligations with no source"
 NO_FEATURE: Final = "requirements with no feature"
@@ -228,12 +227,12 @@ def _handed_files(run: StepRun, context: ArchitectureContext, prd: Path) -> tupl
     definition names for the Epic, so what it reads is the matrix as it is at that moment.
 
     Returns:
-        The PRD, the context file and the state path; then each review and
-        each mechanical check result the step is handed, as findings; then each specialist's
-        answer and each ruling the step is handed.
+        The PRD, the context file and the state path; then each mechanical check result the
+        step is handed, as findings; then each specialist's answer and each ruling the step is
+        handed.
 
     """
-    findings: list[Path] = [*run.inputs.files(ARTIFACT_REVIEW), *run.inputs.files(ARTIFACT_CHECK)]
+    findings: list[Path] = list(run.inputs.files(ARTIFACT_CHECK))
     return (
         (LABEL_PRD, prd),
         (LABEL_CONTEXT, journal_file(run, LABEL_CONTEXT)),
@@ -854,7 +853,7 @@ def _sync(arch: Path, paths: Sequence[str]) -> DocumentsSynced:
     """Set the named documents in review, then bring their entries up to date.
 
     Each named document that exists is set ``in-review`` in its front matter
-    (``matrixsync.set_lifecycle``), so the check, the review and the promotion of this run reach
+    (``matrixsync.set_lifecycle``), so the check and the promotion of this run reach
     it; then the entries are synced as ``atw-matrix sync-documents --paths`` does. A named
     document that is gone is not set; the sync removes its entry.
 

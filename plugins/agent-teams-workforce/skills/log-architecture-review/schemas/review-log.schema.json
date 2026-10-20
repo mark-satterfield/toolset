@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/log-architecture-review/schemas/review-log.schema.json",
+  "title": "Architecture review log",
+  "description": "The proof, for one Epic, that the architecture was not designed by instinct: which AWS tools, MCP servers, skills and specialists reviewed each AWS resource the design defines, the best practices and security best practices each follows and where each is stated, the Well-Architected review of the design, and every decision between two or more options with the options considered and the reason for the choice. The solutions architect writes it beside its result, at the architecture context's `reviewLogPath`, with `scripts/review_log.py`. Consumed by: the check step (orchestrator/flows/architecture_check.py), which fails the architect's result when the log is missing or malformed, when a decision lacks its options or its reason, when an AWS resource the design adds or changes has no entry, or when a design with an AWS resource has no Well-Architected review; and the promotion step (orchestrator/flows/architecture_promotion.py), which commits the log in the vault with the Epic's architecture and links it from the Epic's matrix entry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["bead", "resources", "wellArchitected", "decisions"],
+  "properties": {
+    "bead": {"description": "The Epic id.", "type": "string", "minLength": 1},
+    "resources": {
+      "description": "One entry for each AWS resource the design adds or changes: each entry of the result's `addedOrChangedElements` whose matrix entry has a `resourceType`. An entry for a resource the design only uses is allowed.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/ResourceReview"}
+    },
+    "wellArchitected": {
+      "description": "The Well-Architected review of the design. Null only when the design defines no AWS resource.",
+      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/WellArchitectedReview"}]
+    },
+    "decisions": {
+      "description": "Every decision between two or more options this Epic's design made.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/Decision"}
+    }
+  },
+  "$defs": {
+    "ToolKind": {
+      "description": "`mcp-tool`: a tool of an MCP server, by its full tool name (for example `mcp__aws-mcp__aws___search_documentation`). `skill`: a skill, by its plugin-qualified name (for example `aws-core:aws-security`). `agent`: a specialist agent of the find-specialists catalog, by its name, whose answer file states the tools it used.",
+      "type": "string",
+      "enum": ["mcp-tool", "skill", "agent"]
+    },
+    "ToolUse": {
+      "description": "One use of a tool, a skill or a specialist on one resource.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name", "asked", "outcome", "sources"],
+      "properties": {
+        "kind": {"$ref": "#/$defs/ToolKind"},
+        "name": {"description": "The tool's full name, the skill's plugin-qualified name or the agent's name.", "type": "string", "minLength": 1},
+        "asked": {"description": "What it was asked, or what was checked with it.", "type": "string", "minLength": 1},
+        "outcome": {"description": "What it returned, and what that changed in the design or confirmed.", "type": "string", "minLength": 1},
+        "sources": {"description": "The URLs, documents and headings, or answer files it rests on.", "type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "Practice": {
+      "description": "One best practice the resource's design follows.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["practice", "source", "applied"],
+      "properties": {
+        "practice": {"description": "The practice, in one sentence.", "type": "string", "minLength": 1},
+        "source": {"description": "Where it is stated: an AWS documentation URL, a Well-Architected best practice id, a skill, or an architecture document and heading.", "type": "string", "minLength": 1},
+        "applied": {"description": "How the design follows it.", "type": "string", "minLength": 1}
+      }
+    },
+    "ResourceReview": {
+      "description": "The review of one AWS resource of the design.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["element", "resourceType", "reviewedWith", "bestPractices", "securityPractices"],
+      "properties": {
+        "element": {"description": "The matrix id of the resource's entry.", "type": "string", "minLength": 1},
+        "resourceType": {"description": "The entry's `resourceType`, as the matrix holds it.", "type": "string", "minLength": 1},
+        "reviewedWith": {"description": "Each AWS tool, MCP server tool, skill and specialist that reviewed the resource.", "type": "array", "minItems": 1, "items": {"$ref": "#/$defs/ToolUse"}},
+        "bestPractices": {"description": "The AWS and industry best practices the resource's design follows.", "type": "array", "minItems": 1, "items": {"$ref": "#/$defs/Practice"}},
+        "securityPractices": {"description": "The security best practices the resource's design follows: access, encryption, network exposure, secrets, logging.", "type": "array", "minItems": 1, "items": {"$ref": "#/$defs/Practice"}}
+      }
+    },
+    "Pillar": {
+      "type": "string",
+      "enum": ["operational-excellence", "security", "reliability", "performance-efficiency", "cost-optimization", "sustainability"]
+    },
+    "PillarReview": {
+      "description": "The review of the design against one pillar of the AWS Well-Architected Framework.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pillar", "assessment", "risks", "actions"],
+      "properties": {
+        "pillar": {"$ref": "#/$defs/Pillar"},
+        "assessment": {"description": "How the design meets the pillar, citing the best practice ids it was reviewed against.", "type": "string", "minLength": 1},
+        "risks": {"description": "The risks the review found; empty when none.", "type": "array", "items": {"type": "string", "minLength": 1}},
+        "actions": {"description": "What the design changed for each risk, or why a risk is accepted.", "type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "WellArchitectedReview": {
+      "description": "The Well-Architected review of the design, one entry per pillar, each pillar once.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reviewedWith", "pillars", "summary"],
+      "properties": {
+        "reviewedWith": {"description": "The tools, skills and specialists that carried out the review, for example the `aws-core:aws-well-architected-review` skill.", "type": "array", "minItems": 1, "items": {"$ref": "#/$defs/ToolUse"}},
+        "pillars": {"type": "array", "minItems": 6, "maxItems": 6, "items": {"$ref": "#/$defs/PillarReview"}},
+        "summary": {"type": "string", "minLength": 1}
+      }
+    },
+    "Option": {
+      "description": "One option a decision considered.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["option", "tradeoffs"],
+      "properties": {
+        "option": {"description": "The option, named so that `chosen` can name it.", "type": "string", "minLength": 1},
+        "tradeoffs": {"description": "What the option gains and what it costs.", "type": "string", "minLength": 1}
+      }
+    },
+    "Decision": {
+      "description": "One decision between two or more options.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "question", "elements", "options", "chosen", "reason", "sources"],
+      "properties": {
+        "id": {"description": "D1, D2 and so on, unique in the log.", "type": "string", "pattern": "^D[1-9][0-9]*$"},
+        "question": {"description": "What had to be decided.", "type": "string", "minLength": 1},
+        "elements": {"description": "The matrix ids of the entries the decision concerns; empty when it concerns none.", "type": "array", "items": {"type": "string", "minLength": 1}},
+        "options": {"description": "The options considered, the chosen one among them.", "type": "array", "minItems": 2, "items": {"$ref": "#/$defs/Option"}},
+        "chosen": {"description": "The `option` of the chosen option, exactly.", "type": "string", "minLength": 1},
+        "reason": {"description": "Why the chosen option was chosen over each other option.", "type": "string", "minLength": 1},
+        "sources": {"description": "The evidence the reason rests on: AWS documentation URLs, Well-Architected best practice ids, skills, specialists' answer files, architecture documents and headings.", "type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    }
+  }
+}

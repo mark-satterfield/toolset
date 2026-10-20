@@ -31,6 +31,8 @@ The owner: "That's our plugin. That's our plugin.  Why the helldoes it say "an a
 
 The owner: "Yeah. Let's be clear about this. I do prefer to spin up agents in headless claude sessions to do work, and then get out." and "I know a subagent can start a workflow with subagents, etc.  There can be nested subagents."
 
+The owner, 2026-10-19, on subagents: "I want a subagent to be able to create subagents and workflows if it needs to. Follow my rules for creating workflows and subagents. The goal is to keep context low, and use tokens efficiently. Run parall work if you can. And use our subagents. Not generic agents."
+
 #### What architecture covers
 
 The owner:
@@ -132,6 +134,8 @@ The owner:
 - "If the architecture defines some architecure the includes  AWS resources, then I need to know it was blessed or reviewed with the AWS tools."
 - "I need to inow that all best practive, security best practices were followed, and I would recommend how decisions were made, how we know best practices or whether it was reviewed for AWS well-architected principles be documented in arc42 or at least logged."
 - "Is there any indication that the solutions architect used the the mws-mcp or any other skills or tools?"
+
+The owner, 2026-10-19, on architecture review: "The solutions architect is the reviewer. I do not want to introduce new reviewers in for architecture. I already took out reviewers. That was adding zero value and spent mullions of tokens. The reviers complained more about incorrect json contracst that anything else. But, what I do want is some sort of proof that best practices and well-architected principles and security practces were consulted and followed. I want every decision between 2 options to have a reason. I don't want architecture going off instinct." and "We can drop trd-validator."
 
 #### The approved, verified and effective states
 

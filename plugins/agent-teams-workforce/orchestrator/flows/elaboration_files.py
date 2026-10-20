@@ -118,7 +118,6 @@ STORY_DOCUMENT_SCHEMA: Final = "story-document.schema.json"
 UI_BUNDLES_SCHEMA: Final = "ui-bundles.schema.json"
 CLOSURE_EDGES_SCHEMA: Final = "closure-edges.schema.json"
 LISTING_SCHEMA: Final = "task-dependency-listing.schema.json"
-REVIEWER_SCOPE_SCHEMA: Final = "reviewer-scope.schema.json"
 """The contract files of the files the steps write for agents, by file name under :data:`SCHEMAS`."""
 
 

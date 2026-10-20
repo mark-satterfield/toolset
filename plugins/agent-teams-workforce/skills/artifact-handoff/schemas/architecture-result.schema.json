@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Architecture work",
-  "description": "The files the architecture team of one Epic hands to each other and to the script: the solutions architect's state and result, the requests it writes for the agents it starts and their answers, a reviewer's result for the unapproved content, the lead's routing, the question put to the decider and its ruling, and the comparison of what a Story built. The root is the architect's result; each other file has its own schema file that refers to its definition here. A matrix id is the id of an entry as atw-matrix prints it. The review scope a reviewer is handed is what atw-matrix review-scope prints for the Epic, narrowed to the reviewer's criteria.",
+  "description": "The files the architecture team of one Epic hands to each other and to the script: the solutions architect's state and result, the requests it writes for the agents it starts and their answers, the lead's routing, the question put to the decider and its ruling, and the comparison of what a Story built. The root is the architect's result; each other file has its own schema file that refers to its definition here. A matrix id is the id of an entry as atw-matrix prints it.",
   "$ref": "#/$defs/ArchitectureResult",
   "$defs": {
     "NeedState": {
@@ -15,7 +15,7 @@
       "enum": ["effective-architecture-meets-every-need", "work-remains"]
     },
     "Conclusion": {
-      "description": "What the architect concluded. Every conclusion goes through the architecture check and the review. `no-change-needed`: the architect judged that the Epic needs nothing added, changed or removed in the approved architecture, and `criteria` cites the effective documents and headings that meet it; the review checks that judgment. `changes-designed`: the architect designed, changed, removed or settled something for the Epic. `unsettled`: at least one matter is listed in `unsettled`.",
+      "description": "What the architect concluded. Every conclusion goes through the architecture check; the architect reviews and approves its own architecture against the criteria, and nothing else reviews it. `no-change-needed`: the architect judged that the Epic needs nothing added, changed or removed in the approved architecture, and `criteria` cites the effective documents and headings that meet it. `changes-designed`: the architect designed, changed, removed or settled something for the Epic. `unsettled`: at least one matter is listed in `unsettled`.",
       "type": "string",
       "enum": ["no-change-needed", "changes-designed", "unsettled"]
     },
@@ -49,7 +49,7 @@
       "enum": ["obligation", "reuse"]
     },
     "Routing": {
-      "description": "What the lead decides for one item. `reject`: the finding goes no further. `correct`: the architect corrects it and the reviewer that raised it re-checks. `opinion`: one specialist is asked, and the answer goes to the architect with the correction. `competing-design`: the architect designs the other position of one matter. `decider`: the decider rules.",
+      "description": "What the lead decides for one item. `reject`: the matter goes no further. `correct`: the architect corrects it. `opinion`: one specialist is asked, and the answer goes to the architect with the correction. `competing-design`: the architect designs the other position of one matter. `decider`: the decider rules.",
       "type": "string",
       "enum": ["reject", "correct", "opinion", "competing-design", "decider"]
     },
@@ -93,7 +93,7 @@
       "description": "The context file of one Epic's architecture work. The open-run step of the elaboration writes it; every step of the architecture part is handed it, and the solutions architect's brief names it as `context`. It names every path the script chose, so that no agent and no step derives one.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["bead", "prdPath", "architectureRoot", "vaultCommit", "matrixCommand", "statePath", "resultPath", "trdPath", "helpersFolder"],
+      "required": ["bead", "prdPath", "architectureRoot", "vaultCommit", "matrixCommand", "statePath", "resultPath", "reviewLogPath", "trdPath", "helpersFolder"],
       "properties": {
         "bead": {"description": "The Epic id.", "type": "string", "minLength": 1},
         "prdPath": {"description": "The PRD file.", "type": "string", "minLength": 1},
@@ -102,12 +102,13 @@
         "matrixCommand": {"description": "The command that reads and writes the matrix.", "type": "string", "minLength": 1},
         "statePath": {"description": "Where the solutions architect writes its state file.", "type": "string", "minLength": 1},
         "resultPath": {"description": "Where the solutions architect writes its result file.", "type": "string", "minLength": 1},
+        "reviewLogPath": {"description": "Where the solutions architect writes the Epic's review log, beside its result, to the log-architecture-review skill's `review-log.schema.json`. Consumed by: the check step (orchestrator/flows/architecture_check.py), which fails the result on a log that is missing, malformed, has a decision without its options and reason, or leaves an AWS resource of the design without a review entry; and the promotion step (orchestrator/flows/architecture_promotion.py), which commits the log with the Epic's architecture in the vault and links it from the Epic's matrix entry.", "type": "string", "minLength": 1},
         "trdPath": {"description": "Where the TRD of this Epic is written and kept; every TRD request names this path.", "type": "string", "minLength": 1},
         "helpersFolder": {"description": "The folder for the request files the solutions architect writes and the answer files it names in them.", "type": "string", "minLength": 1}
       }
     },
     "CheckResult": {
-      "description": "What the check step of the architecture part found before review: every defect a script can find in the matrix, in the documents it indexes and in the solutions architect's result. The script writes it; when `valid` is false the solutions architect is handed it as `findings` and corrects each problem.",
+      "description": "What the check step of the architecture part found before promotion: every defect a script can find in the matrix, in the documents it indexes, in the solutions architect's result and in its review log. The script writes it; when `valid` is false the solutions architect is handed it as `findings` and corrects each problem.",
       "type": "object",
       "additionalProperties": false,
       "required": ["valid", "problems", "unansweredCriteria", "corrections"],
@@ -213,17 +214,6 @@
         "positions": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/Position"}}
       }
     },
-    "Choice": {
-      "description": "A decision the architect made between alternatives that each had a cost.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["fact", "alternatives", "reason"],
-      "properties": {
-        "fact": {"description": "The matrix id of the fact that states what was chosen.", "type": "string", "minLength": 1},
-        "alternatives": {"description": "The alternatives that were not chosen.", "type": "array", "items": {"type": "string"}},
-        "reason": {"type": "string", "minLength": 1}
-      }
-    },
     "CostEvidence": {
       "description": "The unit math behind one cost constraint in the TRD.",
       "type": "object",
@@ -234,20 +224,6 @@
         "assumptions": {"description": "The stated usage the estimate rests on.", "type": "string", "minLength": 1},
         "unitMath": {"description": "The arithmetic, with the fixed monthly floor kept apart from usage cost.", "type": "string", "minLength": 1},
         "sources": {"type": "array", "items": {"$ref": "#/$defs/Citation"}}
-      }
-    },
-    "ReviewSignals": {
-      "description": "The facts about this run's design that the reviewer groups of effective-architecture/review-criteria.json name in `appliesWhen.result`. A script selects reviewers from them; an empty list selects none.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["newRuntimeResources", "newBillableResources", "changedBillableLimits", "choices", "newPatterns", "failureBehaviours"],
-      "properties": {
-        "failureBehaviours": {"description": "The matrix ids of the facts this run decided that state retry, dead-letter, idempotent or recovery behaviour.", "type": "array", "items": {"type": "string"}},
-        "newRuntimeResources": {"description": "The matrix ids of elements this run added that run in AWS.", "type": "array", "items": {"type": "string"}},
-        "newBillableResources": {"description": "The matrix ids of elements this run added that AWS bills for and the approved design did not already hold.", "type": "array", "items": {"type": "string"}},
-        "changedBillableLimits": {"description": "The TRD requirement ids whose limit or volume on an existing billable element this run changed.", "type": "array", "items": {"type": "string"}},
-        "choices": {"type": "array", "items": {"$ref": "#/$defs/Choice"}},
-        "newPatterns": {"description": "The matrix ids of each new service, new shared capability, and element of a resource type the matrix had not held.", "type": "array", "items": {"type": "string"}}
       }
     },
     "RecommendationAction": {
@@ -292,10 +268,10 @@
       }
     },
     "ArchitectureResult": {
-      "description": "The solutions architect's result for one Epic, at the context file's `resultPath`. The architect writes it as the work goes, so that a session that stops loses nothing: the members settled so far, written as soon as the state file is written and rewritten in place each time a part settles (a fact and its home, a settlement, a feature, a criterion answer). The file satisfies this schema when the architect finishes; until then it is the partial result a `Finish` step, or a session started again, continues from. The script reads `conclusion`, starts the agent each entry of `requests` names with its request, checks every criterion answer, and selects reviewers from `reviewSignals`; what is unapproved comes from the matrix, not from this file. For a `no-change-needed` conclusion the reviewers are also handed the effective documents `criteria` cites. Every conclusion goes to review; none ends the architecture work by itself.",
+      "description": "The solutions architect's result for one Epic, at the context file's `resultPath`. The architect writes it as the work goes, so that a session that stops loses nothing: the members settled so far, written as soon as the state file is written and rewritten in place each time a part settles (a fact and its home, a settlement, a feature, a criterion answer). The file satisfies this schema when the architect finishes; until then it is the partial result a `Finish` step, or a session started again, continues from. The script reads `conclusion`, starts the agent each entry of `requests` names with its request, checks every criterion answer and the review log at the context file's `reviewLogPath`; what is unapproved comes from the matrix, not from this file. The architect reviews and approves its own architecture against the criteria; the promotion step then sets it effective.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["bead", "conclusion", "features", "noFeature", "addedOrChangedElements", "sharedCapabilities", "facts", "settledDisagreements", "criteria", "unsettled", "reviewSignals", "costEvidence", "specialistRecommendations", "requests"],
+      "required": ["bead", "conclusion", "features", "noFeature", "addedOrChangedElements", "sharedCapabilities", "facts", "settledDisagreements", "criteria", "unsettled", "costEvidence", "specialistRecommendations", "requests"],
       "properties": {
         "bead": {"description": "The Epic id.", "type": "string", "minLength": 1},
         "conclusion": {"$ref": "#/$defs/Conclusion"},
@@ -307,7 +283,6 @@
         "settledDisagreements": {"description": "The matrix ids of the disagreements this run settled; what the losing statement must change goes in the write request.", "type": "array", "items": {"type": "string"}},
         "criteria": {"description": "One answer for every criterion whose level is architecture or technical-requirement. A criterion with neither a place it is satisfied nor a reason it does not apply is unfinished work.", "type": "array", "items": {"$ref": "#/$defs/CriterionAnswer"}},
         "unsettled": {"description": "Empty unless `conclusion` is `unsettled`.", "type": "array", "items": {"$ref": "#/$defs/UnsettledMatter"}},
-        "reviewSignals": {"$ref": "#/$defs/ReviewSignals"},
         "costEvidence": {"type": "array", "items": {"$ref": "#/$defs/CostEvidence"}},
         "specialistRecommendations": {"description": "Each recommendation to the owner to create or update a specialist agent; empty when the specialists covered every subject.", "type": "array", "items": {"$ref": "#/$defs/SpecialistRecommendation"}},
         "requests": {"description": "The work the architect has agents do outside its own session, one entry per request; empty when it needs none. Consumed by: the step of orchestrator/flows/architecture.py that accepts the result, which plans below that step one step for each request whose answer file is not yet a valid answer, started as the agent the entry names and handed its request, then the architect's `Finish` step, handed every answer. The script decides nothing about which agent runs. A question or a quick piece of work the architect asks in its own session is not listed here.", "type": "array", "items": {"$ref": "#/$defs/AgentRequest"}}
@@ -512,65 +487,14 @@
         "summary": {"type": "string", "minLength": 1}
       }
     },
-    "ScopeFinding": {
-      "description": "One defect in one unapproved item, measured against one criterion at the item's own level.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "criterion", "item", "observation", "location", "correction", "doneWhen"],
-      "properties": {
-        "id": {"description": "F1, F2 and so on, unique in the review.", "type": "string", "pattern": "^F[1-9][0-9]*$"},
-        "criterion": {"description": "The id of the criterion the item does not meet.", "type": "string", "minLength": 1},
-        "item": {"description": "The item of the review scope: a document's matrix id or path, a document path and heading joined by `#`, or a TRD requirement id.", "type": "string", "minLength": 1},
-        "observation": {"description": "What the item says or lacks, stated as a fact a reader can check.", "type": "string", "minLength": 1},
-        "location": {"$ref": "#/$defs/Citation"},
-        "correction": {"description": "The bounded change that removes the defect.", "type": "string", "minLength": 1},
-        "doneWhen": {"description": "The condition that shows the correction is made.", "type": "string", "minLength": 1}
-      }
-    },
-    "DependsOnApproved": {
-      "description": "An unapproved item that cannot be correct unless an approved statement is wrong.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["item", "unapproved", "approved", "why"],
-      "properties": {
-        "item": {"type": "string", "minLength": 1},
-        "unapproved": {"$ref": "#/$defs/Citation"},
-        "approved": {"$ref": "#/$defs/Citation"},
-        "why": {"type": "string", "minLength": 1}
-      }
-    },
-    "AlternativeRequest": {
-      "description": "A request for a competing design of one item.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["item", "option", "why"],
-      "properties": {
-        "item": {"type": "string", "minLength": 1},
-        "option": {"description": "The option that was not considered.", "type": "string", "minLength": 1},
-        "why": {"description": "Why it could plainly be better.", "type": "string", "minLength": 1}
-      }
-    },
-    "ScopeReview": {
-      "description": "One reviewer's result for the unapproved items its criteria apply to. Every item of its scope is in `passed` or has a finding, a `dependsOnApproved` report or an alternative request.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["passed", "findings", "dependsOnApproved", "alternativesRequested", "summary"],
-      "properties": {
-        "passed": {"description": "The items that meet every criterion that applies to them.", "type": "array", "items": {"type": "string"}},
-        "findings": {"type": "array", "items": {"$ref": "#/$defs/ScopeFinding"}},
-        "dependsOnApproved": {"type": "array", "items": {"$ref": "#/$defs/DependsOnApproved"}},
-        "alternativesRequested": {"type": "array", "items": {"$ref": "#/$defs/AlternativeRequest"}},
-        "summary": {"type": "string", "minLength": 1}
-      }
-    },
     "RoutedItem": {
-      "description": "The lead's decision for one finding, alternative request or unsettled matter.",
+      "description": "The lead's decision for one unsettled matter.",
       "type": "object",
       "additionalProperties": false,
       "required": ["item", "raisedBy", "routing", "reason", "steps"],
       "properties": {
-        "item": {"description": "The finding id, the item of the alternative request, or the id of the unsettled matter.", "type": "string", "minLength": 1},
-        "raisedBy": {"description": "The reviewer that raised it, or `aws-solutions-architect` for an unsettled matter.", "type": "string", "minLength": 1},
+        "item": {"description": "The id of the unsettled matter.", "type": "string", "minLength": 1},
+        "raisedBy": {"description": "The agent that raised it: `aws-solutions-architect`.", "type": "string", "minLength": 1},
         "routing": {"$ref": "#/$defs/Routing"},
         "reason": {"description": "One sentence.", "type": "string", "minLength": 1},
         "steps": {"description": "The ids of the journal steps the lead added for it; empty for `reject`.", "type": "array", "items": {"type": "string"}}

@@ -16,20 +16,10 @@ import sys
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, Literal, TypeIs
-
-if TYPE_CHECKING:
-    from collections.abc import Collection
+from typing import Final, Literal, TypeIs
 
 type Level = Literal["all", "architecture", "technical-requirement", "implementation"]
 type Home = Literal["architecture", "trd", "specs"]
-type ScopeKind = Literal["heading", "scenario-fact", "trd-requirement", "spec-document"]
-"""A kind of unapproved content a reviewer group is selected for.
-
-``heading``: an arc42 heading that was added or changed. ``scenario-fact``: a design fact of
-kind ``scenario``. ``trd-requirement``: a TRD requirement that is new or changed.
-``spec-document``: a specification document of a repository.
-"""
 
 LEVEL_ALL: Final[Literal["all"]] = "all"
 LEVEL_ARCHITECTURE: Final[Literal["architecture"]] = "architecture"
@@ -42,19 +32,18 @@ LEVELS: Final[tuple[Level, ...]] = (
     LEVEL_IMPLEMENTATION,
 )
 HOMES: Final[tuple[Home, ...]] = ("architecture", "trd", "specs")
-SCOPE_KINDS: Final[tuple[ScopeKind, ...]] = ("heading", "scenario-fact", "trd-requirement", "spec-document")
 
 SKILL_DIR: Final[Path] = Path(__file__).resolve().parents[2] / "effective-architecture"
 CRITERIA_PATH: Final[Path] = SKILL_DIR / "review-criteria.json"
 STANDARD_PATH: Final[Path] = SKILL_DIR / "review-standard.md"
 STANDARD_WIDTH: Final[int] = 92
 
-_DOCUMENT_KEYS: Final[frozenset[str]] = frozenset({"title", "introduction", "levels", "criteria", "reviewerGroups"})
-_LEVEL_KEYS: Final[frozenset[str]] = frozenset({"id", "idPrefix", "heading", "note", "responsible", "reviewPoint"})
+_DOCUMENT_KEYS: Final[frozenset[str]] = frozenset({"title", "introduction", "levels", "criteria"})
+_LEVEL_KEYS: Final[frozenset[str]] = frozenset(
+    {"id", "idPrefix", "heading", "note", "responsible", "reviewer", "reviewPoint"},
+)
 _RULE_KEYS: Final[frozenset[str]] = frozenset({"id", "level", "text"})
 _CRITERION_KEYS: Final[frozenset[str]] = _RULE_KEYS | {"home"}
-_GROUP_KEYS: Final[frozenset[str]] = frozenset({"id", "reviewer", "criteria", "appliesWhen"})
-_CONDITION_KEYS: Final[frozenset[str]] = frozenset({"scope", "result"})
 
 
 class ReviewCriteriaError(ValueError):
@@ -63,13 +52,14 @@ class ReviewCriteriaError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class LevelSection:
-    """One level: its heading in the standard, who writes to it and where it is reviewed."""
+    """One level: its heading in the standard, who writes to it, who reviews and approves it, and where."""
 
     id: Level
     id_prefix: str
     heading: str
     note: str | None
     responsible: tuple[str, ...]
+    reviewer: str | None
     review_point: str | None
 
 
@@ -88,52 +78,6 @@ class Criterion:
 
 
 @dataclass(frozen=True, slots=True)
-class AppliesWhen:
-    """When a reviewer group is selected: the rule a script applies, with no judgment.
-
-    The group is selected when the unapproved content holds an item of one of the ``scope``
-    kinds, or when one of the lists named in ``result`` is not empty in ``reviewSignals`` of the
-    solutions architect's result (``ReviewSignals`` in architecture-result.schema.json).
-    """
-
-    scope: tuple[ScopeKind, ...]
-    result: tuple[str, ...]
-
-    def selects(self, scope_kinds: Collection[ScopeKind], result_signals: Collection[str]) -> bool:
-        """Apply the rule to one run.
-
-        Args:
-            scope_kinds: The kinds of unapproved content the run holds.
-            result_signals: The names of the ``reviewSignals`` lists that are not empty.
-
-        Returns:
-            True when the group's reviewer reviews this run.
-
-        Raises:
-            TypeError: An argument is a string and not a collection of names.
-
-        """
-        if isinstance(scope_kinds, str) or isinstance(result_signals, str):
-            message: str = "selects requires two collections of names"
-            raise TypeError(message)
-        return any(kind in scope_kinds for kind in self.scope) or any(name in result_signals for name in self.result)
-
-
-@dataclass(frozen=True, slots=True)
-class ReviewerGroup:
-    """The criteria one reviewer covers, and when that reviewer is selected.
-
-    A criterion may be in more than one group: each group's reviewer reviews it for its own
-    specialty.
-    """
-
-    id: str
-    reviewer: str
-    criteria: tuple[str, ...]
-    applies_when: AppliesWhen
-
-
-@dataclass(frozen=True, slots=True)
 class Criteria:
     """The whole criteria file."""
 
@@ -141,7 +85,6 @@ class Criteria:
     introduction: str
     levels: tuple[LevelSection, ...]
     criteria: tuple[Criterion, ...]
-    groups: tuple[ReviewerGroup, ...]
 
     def at_level(self, level: Level) -> tuple[Criterion, ...]:
         """List the criteria of one level, in file order.
@@ -162,11 +105,11 @@ class Criteria:
         """Name every agent the criteria file gives the criteria to.
 
         Returns:
-            The agents responsible for a level and the reviewers of every group.
+            The agents responsible for a level and the agent that reviews and approves each level.
 
         """
         responsible: set[str] = {name for section in self.levels for name in section.responsible}
-        return frozenset(responsible | {group.reviewer for group in self.groups})
+        return frozenset(responsible | {section.reviewer for section in self.levels if section.reviewer is not None})
 
 
 def _is_level(value: object) -> TypeIs[Level]:
@@ -261,7 +204,7 @@ def _level_section(value: object, where: str) -> LevelSection:
 
     Raises:
         ReviewCriteriaError: The entry is malformed, or a level other than ``all`` names no
-            responsible agent or review point, or ``all`` names one.
+            responsible agent, reviewer or review point, or ``all`` names one.
 
     """
     entry: dict[str, object] = _closed(value, where, _LEVEL_KEYS)
@@ -271,6 +214,7 @@ def _level_section(value: object, where: str) -> LevelSection:
         raise ReviewCriteriaError(message)
     note: object = entry["note"]
     review_point: object = entry["reviewPoint"]
+    reviewer: object = entry["reviewer"]
     responsible: tuple[str, ...] = _names(entry["responsible"], f"{where}.responsible")
     section: LevelSection = LevelSection(
         id=level,
@@ -278,12 +222,15 @@ def _level_section(value: object, where: str) -> LevelSection:
         heading=_line(entry["heading"], f"{where}.heading"),
         note=None if note is None else _line(note, f"{where}.note"),
         responsible=responsible,
+        reviewer=None if reviewer is None else _line(reviewer, f"{where}.reviewer"),
         review_point=None if review_point is None else _line(review_point, f"{where}.reviewPoint"),
     )
-    documented: bool = bool(section.responsible) and section.review_point is not None
-    unassigned: bool = not section.responsible and section.review_point is None
+    documented: bool = bool(section.responsible) and section.reviewer is not None and section.review_point is not None
+    unassigned: bool = not section.responsible and section.reviewer is None and section.review_point is None
     if (level == LEVEL_ALL and not unassigned) or (level != LEVEL_ALL and not documented):
-        message = f"{where}: every level but {LEVEL_ALL!r} names its responsible agents and its review point"
+        message = (
+            f"{where}: every level but {LEVEL_ALL!r} names its responsible agents, its reviewer and its review point"
+        )
         raise ReviewCriteriaError(message)
     return section
 
@@ -315,60 +262,6 @@ def _criterion(value: object, where: str) -> Criterion:
         level=level,
         home=home if _is_home(home) else None,
         text=_line(entry["text"], f"{where}.text"),
-    )
-
-
-def _is_scope_kind(value: object) -> TypeIs[ScopeKind]:
-    return isinstance(value, str) and value in SCOPE_KINDS
-
-
-def _applies_when(value: object, where: str) -> AppliesWhen:
-    """Read the rule that selects one reviewer group.
-
-    Returns:
-        The rule.
-
-    Raises:
-        ReviewCriteriaError: The entry is malformed, names an unknown kind of unapproved content,
-            or states no condition.
-
-    """
-    entry: dict[str, object] = _closed(value, where, _CONDITION_KEYS)
-    scope: tuple[ScopeKind, ...] = tuple(
-        kind for kind in _names(entry["scope"], f"{where}.scope") if _is_scope_kind(kind)
-    )
-    result: tuple[str, ...] = _names(entry["result"], f"{where}.result")
-    if len(scope) != len(_items(entry["scope"], f"{where}.scope")):
-        message: str = f"{where}.scope: every entry is one of {list(SCOPE_KINDS)}"
-        raise ReviewCriteriaError(message)
-    if not scope and not result:
-        message = f"{where}: a group states at least one condition that selects it"
-        raise ReviewCriteriaError(message)
-    return AppliesWhen(scope=scope, result=result)
-
-
-def _group(value: object, where: str) -> ReviewerGroup:
-    """Read one reviewer group.
-
-    A malformed selection rule fails with the ReviewCriteriaError of ``_applies_when``.
-
-    Returns:
-        The group.
-
-    Raises:
-        ReviewCriteriaError: The entry is malformed or covers no criterion.
-
-    """
-    entry: dict[str, object] = _closed(value, where, _GROUP_KEYS)
-    criteria: tuple[str, ...] = _names(entry["criteria"], f"{where}.criteria")
-    if not criteria:
-        message: str = f"{where}.criteria: a group covers at least one criterion"
-        raise ReviewCriteriaError(message)
-    return ReviewerGroup(
-        id=_line(entry["id"], f"{where}.id"),
-        reviewer=_line(entry["reviewer"], f"{where}.reviewer"),
-        criteria=criteria,
-        applies_when=_applies_when(entry["appliesWhen"], f"{where}.appliesWhen"),
     )
 
 
@@ -416,30 +309,6 @@ def _check_criteria(levels: tuple[LevelSection, ...], criteria: tuple[Criterion,
         raise ReviewCriteriaError(message)
 
 
-def _check_groups(criteria: tuple[Criterion, ...], groups: tuple[ReviewerGroup, ...]) -> None:
-    """Require every group to name real criteria and every document criterion to have a reviewer.
-
-    Raises:
-        ReviewCriteriaError: Two groups share an id, a group names an unknown criterion, or a
-            criterion below the level ``all`` is in no group.
-
-    """
-    identifiers: list[str] = [group.id for group in groups]
-    if len(set(identifiers)) != len(identifiers):
-        message: str = "reviewerGroups: two groups share an id"
-        raise ReviewCriteriaError(message)
-    known: set[str] = {entry.id for entry in criteria}
-    covered: set[str] = {identifier for group in groups for identifier in group.criteria}
-    unknown: set[str] = covered - known
-    if unknown:
-        message = f"reviewerGroups: unknown criteria {sorted(unknown)}"
-        raise ReviewCriteriaError(message)
-    unreviewed: list[str] = [entry.id for entry in criteria if entry.level != LEVEL_ALL and entry.id not in covered]
-    if unreviewed:
-        message = f"reviewerGroups: no group reviews {unreviewed}"
-        raise ReviewCriteriaError(message)
-
-
 def parse_criteria(value: object) -> Criteria:
     """Validate a decoded criteria file and narrow it.
 
@@ -460,19 +329,13 @@ def parse_criteria(value: object) -> Criteria:
     criteria: tuple[Criterion, ...] = tuple(
         _criterion(item, f"criteria[{index}]") for index, item in enumerate(_items(document["criteria"], "criteria"))
     )
-    groups: tuple[ReviewerGroup, ...] = tuple(
-        _group(item, f"reviewerGroups[{index}]")
-        for index, item in enumerate(_items(document["reviewerGroups"], "reviewerGroups"))
-    )
     _check_levels(levels)
     _check_criteria(levels, criteria)
-    _check_groups(criteria, groups)
     return Criteria(
         title=_line(document["title"], "title"),
         introduction=_line(document["introduction"], "introduction"),
         levels=levels,
         criteria=criteria,
-        groups=groups,
     )
 
 
@@ -525,6 +388,8 @@ def render_standard(criteria: Criteria) -> str:
         members: tuple[Criterion, ...] = criteria.at_level(section.id)
         label_width: int = max(len(entry.id) for entry in members) + 2
         blocks.append(f"## {section.heading}")
+        if section.reviewer is not None:
+            blocks.append(f"Reviewed and approved by `{section.reviewer}`.")
         if section.note is not None:
             blocks.append(textwrap.fill(section.note, width=STANDARD_WIDTH))
         blocks.append(
