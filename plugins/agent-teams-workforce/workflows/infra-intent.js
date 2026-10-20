@@ -1,7 +1,7 @@
 export const meta = {
   name: 'infra-intent',
   description:
-    'Leaf mini — Infrastructure provisioning intent. The cdk-infrastructure-designer authors concrete, CDK-expressible provisioning intent for a change. Returns { ok, ready, provisioningIntent, affectedStacks }.',
+    'Leaf mini — Infrastructure provisioning intent. The cdk-infrastructure-designer turns the infrastructure the architecture already records for a change (reached through the spec, the architecture views, the matrix ids and the TRD the caller names) into concrete, CDK-expressible provisioning intent, with every name and decision as recorded; it decides only a pure build detail nothing upstream records, and leaves values known only at deploy time to the deploy. Returns { ok, ready, provisioningIntent, affectedStacks }.',
   phases: [{ title: 'Provisioning intent', detail: 'cdk-infrastructure-designer authors the intent' }],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -165,10 +165,22 @@ async function settleAgent(prompt, opts) {
   }
 }
 
-// args: { change: { id?, title?, description?, repoPath? }, feedback?: string }
+// args: { change: { id?, title?, description?, repoPath? },
+//         upstream?: { specPaths?, specSections?, decisionIds?, matrixIds?, trdPath? } (where the architecture records
+//           this change: the spec documents and sections, the architecture views, the matrix ids the Task states, the TRD),
+//         feedback?: string }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const change = a.change || {}
 const repo = change.repoPath || '(repo path not provided)'
+const up = a.upstream && typeof a.upstream === 'object' ? a.upstream : {}
+const strings = (v) => (Array.isArray(v) ? v : []).map((x) => String(x || '').trim()).filter(Boolean)
+const upstreamLines = [
+  strings(up.specPaths).length ? `Spec documents: ${strings(up.specPaths).join(', ')}` : '',
+  strings(up.specSections).length ? `Spec sections defining this work: ${strings(up.specSections).join(', ')}` : '',
+  strings(up.decisionIds).length ? `Architecture views this work is designed against (paths relative to the arc42 folder): ${strings(up.decisionIds).join(', ')}` : '',
+  strings(up.matrixIds).length ? `Matrix ids this Task states (atw-matrix node <id> reads each, with its links: its stack, repository, SSM parameters and documents): ${strings(up.matrixIds).join(', ')}` : '',
+  String(up.trdPath || '').trim() ? `The Epic's TRD, a source of information for the decisions this work makes: ${String(up.trdPath).trim()}` : '',
+].filter(Boolean)
 
 phase('Provisioning intent')
 
@@ -177,16 +189,17 @@ const intent = await settleAgent(
 
 ${change.id ? `Change ${change.id}: ` : ''}${change.title || '(untitled change)'}
 ${change.description || ''}
-${a.feedback ? `\nFeedback to address:\n${a.feedback}` : ''}
+${upstreamLines.length ? `\nWhere the architecture records this change:\n${upstreamLines.map((x) => `- ${x}`).join('\n')}\n` : ''}${a.feedback ? `\nFeedback to address:\n${a.feedback}` : ''}
+
+The architecture has already designed this infrastructure. Read it through the documents and matrix ids above and express it as it is recorded: the resources, their stacks, their names, the values stacks share and their sizing. Decide only a pure build detail nothing above records, on the decision basis, and say in the rationale which details you decided. A value known only at deploy time, such as the account, the region or the environment, is resolved at deploy time and is not part of the intent.
 
 Deliver CDK-expressible provisioning intent:
 - resources: each AWS resource to provision, with the CDK-expressible properties. Every s3.Bucket sets versioning enabled and SSE-S3 (S3_MANAGED) encryption. No public exposure and no over-broad IAM.
 - stacks: the CDK stacks the resources belong to.
-- crossStackRefs: cross-stack references, by the mechanism the owner's constraints in arc42 section 2 name.
+- crossStackRefs: cross-stack references, by the mechanism the owner's constraints in arc42 section 2 name, with the parameter names the matrix records.
 - affectedStacks: the stacks created or modified by this intent (names).
-Name every stack and resource with the resource-naming skill (the project's naming command, which 'printenv ATW_NAMING_COMMAND' prints: 'name build <kind> ...' or 'name convert ...'; verify with 'name check <name> --kind <kind>'), never by hand.
-- rationale: why this shape, tied to the change.
-Size every resource for the load the change and the project state; prefer per-request pricing over provisioned always-on capacity unless that load requires it.`,
+- rationale: why this shape, tied to the change and to the architecture documents it expresses.
+Every stack and resource carries the name the architecture, the matrix or the spec gives it.`,
   {
     label: 'intent:author',
     phase: 'Provisioning intent',

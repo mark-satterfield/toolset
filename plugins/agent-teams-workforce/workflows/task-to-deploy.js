@@ -1351,7 +1351,7 @@ async function author(file, schema, agentType, prompt) {
 }
 const regressionBrief = (contract, previous, final) => `Task contract (source references are authoritative): ${JSON.stringify(contract)}
 Previous cumulative requirements/mappings: ${previous}. Repository: ${contract.repoPath}.
-Read current product requirement sources and connected component/consumer contracts, including prior PRDs. Discover affected requirements from actual sources; prior ledger is a starting point, not completeness proof. Cite searched sources and concrete component bindings. List the absolute physical source files actually read in sourceFiles (including vault note backing files), separately from section references; the helper fingerprints their bytes. Missing or unreadable sources block. Explicitly assess unit, contract, integration and nonfunctional layers. Mark impacted only for requirements this change can affect, with impactReason evidence; retain unrelated prior requirements/mappings with impacted=false, not an unnecessary fleet rerun. Include previously retained requirements; never drop or weaken prior mappings without accepted source supersession. Greenfield means positively evidenced no prior obligations, not a missing ledger. Cross-repository tests use their actual repository paths; do not create or reinterpret Epic dependency edges. Missing source or report capability is a blocker.
+Read current product requirement sources and connected component/consumer contracts, including prior PRDs. Take the prior ledger as complete for what it records and discover from actual sources the requirements this change affects beyond it; search past the prior ledger for what it already records only where the Task changes a universal or shared component (a shared library, layer, chassis or service other repositories or components consume). Cite searched sources and concrete component bindings. List the absolute physical source files actually read in sourceFiles (including vault note backing files), separately from section references; the helper fingerprints their bytes. Missing or unreadable sources block. Explicitly assess unit, contract, integration and nonfunctional layers. Mark impacted only for requirements this change can affect, with impactReason evidence; retain unrelated prior requirements/mappings with impacted=false, not an unnecessary fleet rerun. Include previously retained requirements; never drop or weaken prior mappings without accepted source supersession. Greenfield means positively evidenced no prior obligations, not a missing ledger. Cross-repository tests use their actual repository paths; do not create or reinterpret Epic dependency edges. Missing source or report capability is a blocker.
 ${final ? `Read approved scope ${contract.regressionPlanPath}; keep components/discovery/requirements/sourceFiles exactly unchanged. Finalize only mappings/runs from actual saved test files. Stable test IDs use JUnit classname::name. A legitimate rename/consolidation uses replacements with requirementId,kind,oldTestId,newTestIds,reason; retain equivalent assertion coverage, never invent requirement supersession for a test rename. Every required layer needs concrete tests and an executable command producing a fresh JUnit XML report under its repo/.agent-workforce/reports/. Do not run tests yourself. Do not change any tests/source.` : 'Produce the impact scope before Red. Mappings/runs may be empty for tests still to be authored. Preserve known existing test identities. Do not edit product files or tests.'}`
 const regressionReviewBrief = (plan, previous, final) => `Independently review ${plan} against actual current product sources, code/tests and previous ${previous}. Verify discovery includes affected existing PRDs and cross-repository contracts. Check every layer applicability, no unapproved supersession or test weakening/removal. ${final ? 'Independently verify every test replacement preserves the old requirement/assertion semantics. Check concrete tests actually assert the obligations and commands collect the mapped tests; a green subset is insufficient.' : 'Check planned regression boundaries are complete before test authoring.'} Never approve based only on assessor prose. Return findings for missing evidence. Read source references directly; write only review candidate/checkpoint.`
 
@@ -1729,8 +1729,17 @@ async function stepDesignSource(step) {
 
 async function stepInfraIntent(step) {
   enterPhase('infra-intent')
+  const contract = contractAt(step)
+  const docs = contract.spec && typeof contract.spec === 'object' ? contract.spec : {}
   const intent = await settleWorkflow('agent-teams-workforce:infra-intent', {
     change: { id: bead.id, title: bead.title, description: bead.description, repoPath: treeAt(step) },
+    upstream: {
+      specPaths: [...new Set([docs.specPath, ...(Array.isArray(docs.specPaths) ? docs.specPaths : [])].filter((x) => typeof x === 'string' && x.trim()))],
+      specSections: Array.isArray(docs.specSections) ? docs.specSections : [],
+      decisionIds: contract.decisionIds,
+      matrixIds: statedIds,
+      trdPath: contract.trdPath || null,
+    },
   })
   if (!intent || !intent.provisioningIntent) {
     return failed(stageOf('infra-intent', intent), `infra-intent: ${(intent && intent.reason) || 'no provisioning intent was produced'}`)
@@ -1892,8 +1901,8 @@ const implementerSteps = (implementers, brief, purpose) => [
 
 async function stepSelectImplementers(step) {
   enterPhase('green')
-  if (!statedIds.length) return failed('green', `green: ${bead.id} states no id of the matrix in its matrix_elements key, so the shared capabilities it must use cannot be read`)
-  const uses = await matrixCommand('shared-capabilities', ['uses', '--ids', ...statedIds], ['capabilities'])
+  // A Task that states no matrix id names no shared capability to read, and the build goes on without one.
+  const uses = statedIds.length ? await matrixCommand('shared-capabilities', ['uses', '--ids', ...statedIds], ['capabilities']) : { out: { capabilities: [] } }
   if (uses.error || !Array.isArray(uses.out.capabilities)) {
     return failed('green', `green: the shared capabilities ${bead.id} must use could not be read with atw-matrix uses: ${uses.error || 'it printed no capabilities list'}`)
   }
@@ -2153,7 +2162,10 @@ Return one ruling per item, with its file, line, capability (feature) and provid
 async function stepReuseAudit(step) {
   enterPhase('reuse-audit')
   const first = !J.earlier(['build:reuse-audit'], step).length
-  if (!statedIds.length) return failed('reuse-audit', `reuse-audit: ${bead.id} states no id of the matrix in its matrix_elements key, so atw-matrix check-reuse has nothing to check the changed files against`)
+  if (!statedIds.length) {
+    log(`Reuse Audit: ${bead.id} states no matrix id, so it uses no shared capability to check the changed files against`)
+    return { artifacts: [valueArtifact('reuseAudit', { clean: true, violations: [], judgment: [], unchecked: [] })] }
+  }
   const checked = await matrixCommand('reuse-audit', ['check-reuse', '--ids', ...statedIds, '--worktree', treeAt(step)], ['violations', 'judgment', 'unchecked', 'clean'])
   if (checked.error || !Array.isArray(checked.out.violations) || typeof checked.out.clean !== 'boolean') {
     return failed('reuse-audit', `reuse-audit: atw-matrix check-reuse ${first ? 'after Green' : 'after the implementers answered it'} could not rule: ${checked.error || 'it printed no violations list'}`)

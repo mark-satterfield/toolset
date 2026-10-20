@@ -93,8 +93,9 @@ and `typescript-coding` for a TypeScript app, and follow both skills. This skill
   in the same app, and the caller decides which.
 - Let CloudFormation generate physical names unless a name is required by something outside the app. A hard-coded
   physical name blocks any change that needs replacement (the new resource cannot take the old name while the old
-  one exists) and collides across environments. When a physical name is required, generate it with the project's
-  naming tool or skill when one exists (for example `resource-naming`), never by hand.
+  one exists) and collides across environments. When a physical name is required, write the one the architecture, the task or its spec
+  gives; where none of them records it, build it with the project's naming tool or skill when one exists (for
+  example `resource-naming`), never by hand.
 - When the project has a shared construct library (a wrapped function, API or table with the project's defaults
   already applied), build from it instead of from the raw construct. The reason: the library already carries the
   decisions this skill describes, and a second copy drifts.
@@ -309,7 +310,10 @@ to successful AWS CDK deployments").
   reading files outside the repository inside constructs. Configuration enters through the entry point (context or a
   configuration file in the repository) and reaches constructs as props.
 - Give every stack an explicit environment (`env=Environment(account=..., region=...)`) from the entry point's
-  configuration. An environment-agnostic stack cannot use lookups and resolves some properties differently.
+  configuration. An environment-agnostic stack cannot use lookups and resolves some properties differently. The
+  account and region are values known only at deploy time: the entry point takes them from the deploy (for example
+  `CDK_DEFAULT_ACCOUNT` and `CDK_DEFAULT_REGION`, which the CDK CLI sets from the profile it deploys with), never
+  from a literal in the code.
 
 ## Values shared between stacks
 

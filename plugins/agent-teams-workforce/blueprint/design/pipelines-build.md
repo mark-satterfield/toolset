@@ -77,7 +77,7 @@ often."). Defects: [requirements/pipelines.md](../requirements/pipelines.md) ("A
 a defect fixes it in that run."). Closing: root `AGENTS.md` ("A Task closes when it completes,
 including passing all tests."). Trust: the owner, "Your default is fault-intolerant. I need more
 fault-tolerance for the pipeline, and need more trust.", with the exception "like if B is going to
-be a universal or shared component" (Q14).
+be a universal or shared component".
 
 ```mermaid
 flowchart TD
@@ -85,7 +85,7 @@ flowchart TD
     wt --> read["The Task, its spec, the linked architecture and design, and the matrix ids it states are read - section 2"]
     read --> shared{"Does the Task build a universal or shared component?"}
     shared -->|"no: trust what upstream decided"| m0(("merge"))
-    shared -->|"yes"| chk["open - Q14 - which checks of the upstream input stay"]
+    shared -->|"yes"| chk["The checks that stay: the regression scope searched past the prior ledger, the reuse audit, the cds audit"]
     chk --> m0
     m0 --> base["Script: the whole suite run once before any change, its result recorded"]
     base --> bok{"Does the whole suite pass before any change?"}
@@ -135,6 +135,17 @@ Notes on the diagram:
   recorded in the commit message. A decision that changes architecture or design is reported to the
   architecture stage and the Task is released, because later steps trust earlier ones and design
   belongs upstream.
+- A step checks an upstream step's work only where the step that consumes the output is a
+  universal or shared component, the exception the owner named ("like if B is going to be a
+  universal or shared component"). Three checks stay: the regression scope is searched past the
+  prior ledger when the Task changes a shared library, layer, chassis or service; the reuse audit
+  checks the changed files against the shared capabilities the Task states it uses; and a web-ui
+  Task's changed files are audited against the cds design system. Every other check is removed: a
+  Task that states no matrix id uses no shared capability and builds on, the prior regression
+  ledger is taken as complete for what it records, and no implementer or test writer stops because
+  it judges an upstream artifact missing, ambiguous or contradictory. A gap is a pure build detail
+  decided on the decision basis, or a decision that changes architecture or design, which goes to
+  the architecture stage.
 - The loop back to Red exits when every new test fails for the intended reason. The gate loop
   exits when every gate passes, or after the third fix round, when the build aborts with no commit,
   because a gate is never bypassed.
@@ -202,8 +213,8 @@ sequenceDiagram
     MX-->>WF: stack, repository, SSM parameters (Q15), shared capabilities, documents
     WF-)G: the build brief in the worktree: the Task, its pointers, the matrix ids and the document paths
     Note over WF,AG: trusts upstream. Names come from the Task or spec.<br/>Deploy-time values such as region or environment wait for deploy
-    opt open - Q14 - the Task builds a universal or shared component
-        WF->>MX: the checks of the upstream input that stay
+    opt the Task changes or uses a universal or shared component
+        WF->>MX: the checks that stay - the shared capabilities the reuse audit checks against
     end
     WF->>AG: the path of the build brief
     AG->>SP: reads the spec, its acceptance criteria and its OpenAPI document where the component has an API
@@ -226,6 +237,13 @@ Notes on the diagram:
   "A pipeline step looks up what exists."). How an SSM parameter is recorded in the matrix is plan
   question 15.
 - The matrix records no Task. The build records nothing about the Task in the matrix.
+- An infrastructure Task's provisioning intent is the infrastructure the architecture records,
+  expressed for CDK: `cdk-infrastructure-designer` is handed the spec, the architecture views, the
+  matrix ids the Task states and the TRD, keeps every name and decision as recorded, and decides
+  only a pure build detail none of them records.
+- Names reach the build as the Task, the spec, the architecture and the matrix give them. Values
+  known only at deploy time, such as the account, the region or the environment, are resolved at
+  deploy time and never stop the build.
 - A matrix fact the build finds wrong is recorded against the element and sent to the architecture
   stage, where `architecture-maintainer` corrects the document and the matrix; the build itself
   changes nothing in the matrix, because the architecture stage is the one corrector and approver
@@ -617,12 +635,6 @@ stateDiagram-v2
 
 ## Open questions
 
-- **Q14. Which checks of upstream steps stay in the build and deploy?** (plan, item 1.11)
-  Appears in sections 1 and 2. Recommendation (the plan's): keep a check only where the step that
-  consumes the output is a universal or shared component, and remove the rest. Reason: that is the
-  exception the owner named ("like if B is going to be a universal or shared component"), and the
-  owner otherwise wants trust ("I need more fault-tolerance for the pipeline, and need more
-  trust.").
 - **Q15. How is an SSM parameter recorded in the matrix?** (plan, item 1.13) Appears in sections 2
   and 4, where the build reads the parameters a stack writes and reads. Recommendation (the
   plan's): as its own entry, named, linked from the stack that writes it and to each stack that

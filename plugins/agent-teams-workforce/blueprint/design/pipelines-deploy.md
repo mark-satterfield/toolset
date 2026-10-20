@@ -75,8 +75,7 @@ merge, and never merge yourself."
 
 ```mermaid
 flowchart TD
-    start(["keeper.py runs supervisor.py, whose deploy lane takes a Story whose Tasks are all built"]) --> chk["OPEN Q14 - which checks of upstream steps stay?"]
-    chk --> look["Read from the matrix what the Story's repository publishes and deploys, and the commands"]
+    start(["keeper.py runs supervisor.py, whose deploy lane takes a Story whose Tasks are all built"]) --> look["Read from the matrix what the Story's repository publishes and deploys, and the commands"]
     look --> what{"What does the repository publish and deploy?"}
     what -->|"a custom Python library"| pub["A script publishes a pre-release version from the Story's branch to CodeArtifact - section 2"]
     what -->|"CDK stacks only"| dep
@@ -126,6 +125,12 @@ Notes on the diagram:
   states.
 - A value known only at deploy time, such as the region or the environment, is supplied at
   deploy time and stops nothing (section 3).
+- The deploy checks nothing the build already did. The one check that stays is the test suite of
+  a shared library, run once more before its package is published (section 2), because a
+  published library is used by every repository that depends on it: the owner's exception, "like
+  if B is going to be a universal or shared component". Every other check of an upstream step is
+  removed, because the owner wants trust: "I need more fault-tolerance for the pipeline, and need
+  more trust."
 - The deploy adds no Story and no Task to the matrix. The owner: "The matrix does not include
   stories and tasks (it isn't a build tracker), and it doesn't care about what has actually been
   deployed."
@@ -166,7 +171,7 @@ sequenceDiagram
     K->>DW: start the deploy of the Story
     DW->>MX: what does this repository publish and deploy, and the commands?
     MX-->>DW: a package, its publish command, and stacks if any
-    opt open - Q14: a shared library is a shared component
+    opt the package is a shared library - a shared component, the one check of the build's work that stays
         DW->>G: run the repository's test suite on the Story's branch
         G-->>DW: passing
     end
@@ -684,11 +689,6 @@ Q1 to Q16 are the owner's questions from the elaboration plan.
   failure's output and the deploy step that failed name the subject. Reason: the owner: "What I do
   not want is python code deciding which specialists to use" and "Ever agent needs to have a
   reason to be used."
-- **Q14. Which checks of upstream steps stay in the build and deploy?** Appears in sections 1
-  and 2. Recommendation: the deploy checks nothing the build already did, except that the test
-  suite of a shared library runs once more before its package is published. Reason: the owner's
-  rule and its exception, "like if B is going to be a universal or shared component"; a published
-  library is used by every repository that depends on it.
 - **Q15. How is an SSM parameter recorded in the matrix?** Appears in section 3. Recommendation,
   as the plan gives it: as its own entry, linked from the stack that writes it and to each stack
   that reads it. Reason: the deploy then reads the parameter name and the writing stack by

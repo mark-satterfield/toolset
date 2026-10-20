@@ -727,8 +727,6 @@ if (!repo) {
 const pinTree = `PIN YOURSELF TO THIS TREE. Your working directory is NOT the repository this work is in — you may be running in an isolation worktree of a different one — so a relative path, a bare \`git\` command or an unqualified test run reads, edits or runs the WRONG copy. Every file you read, write or run is under this absolute path; run shell commands as \`cd "${repo}" && …\` and git as \`git -C "${repo}" …\`, and report file paths relative to it:
 ${repo}`
 const changeLabel = c.bead ? `${c.bead.id} ${c.bead.title}` : 'feature'
-const DEV_ACCOUNT = '616930583457'
-const DEV_REGION = 'us-east-1'
 
 phase('Deploy-readiness')
 
@@ -773,7 +771,7 @@ if (!smoke) {
 const smokeTestFiles = (Array.isArray(smoke.smokeTestFiles) ? smoke.smokeTestFiles : []).map((f) => String(f || '').trim()).filter(Boolean)
 
 const rollout = await settleAgent(
-  `Deploy this change to the DEV environment (AWS account ${DEV_ACCOUNT}, ${DEV_REGION}).
+  `Deploy this change to the DEV environment with the dev AWS profile (\`--profile dev\`): the account and region are the profile's, resolved at deploy time; write none of them into the code.
 
 ${pinTree}
 

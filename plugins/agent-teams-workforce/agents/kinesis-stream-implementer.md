@@ -14,7 +14,7 @@ mcpServers:
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:resource-naming, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, aws-core:aws-messaging-and-streaming, aws-core:aws-sdk-python-usage]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, aws-core:aws-messaging-and-streaming, aws-core:aws-sdk-python-usage]
 effort: medium
 color: green
 ---
@@ -54,7 +54,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 - Write the minimum code needed to make the failing data-pipeline-test-writer suites pass. Never modify, weaken, skip, or delete a test — if a test looks wrong, stop and report it to implementation-lead with evidence.
 - The event contracts are upstream law: record shapes, partition strategy, and ordering guarantees are implemented as specified, never redesigned. Disagreement is a formal exception, never a silent override.
 - Streaming components follow a different deployment pattern than Lambda and API code: record every runtime assumption (stream names, consumer configuration, enhanced fan-out expectations, throughput assumptions) in the deployment-requirements note so the Deployment team can provision correctly; never provision infrastructure yourself.
-- Name every AWS resource, environment variable and file with the resource-naming skill: the project's naming command (`printenv ATW_NAMING_COMMAND` prints it) gives the name (`name build <kind> ...`, `name convert ...`), and `name check <name> --kind <kind>` verifies one. Never compose a name by hand.
+- Write every name as the Task, its spec, or the architecture and the matrix they point to give it; do not build, convert or change a name they give. A value known only at deploy time, such as the account, the region or the environment, is resolved at deploy time (a CDK prop or deploy-time reference, or an environment variable the stack sets), never written into the code and never reported as missing.
 - No self-tasking: report newly discovered work to implementation-lead; never perform or assign it yourself.
 - Analysis and decision are separate tasks performed by different agents; implement against approved decisions, never decide among architectural options.
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.

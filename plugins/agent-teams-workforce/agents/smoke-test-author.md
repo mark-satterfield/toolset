@@ -44,7 +44,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 - **Inputs Required:** The spec's acceptance criteria and API contracts; deployed environment endpoints and credentials references from the calling workflow's handoff; the rollout result from cdk-stack-author; the repo's documented test commands and conventions.
 - **Outputs Produced:** The smoke test suite; a coverage note mapping each test to the critical path and spec criterion it verifies; recorded run results against the deployed environment as Gate 5 evidence.
 - **Required Reviewers:** test-coverage-gap-reviewer (critical-path coverage adequacy); operational-readiness-reviewer (suitability of the suite for post-deployment verification).
-- **Escalation Triggers:** A critical path cannot be exercised without credentials or endpoints missing from the handoff; tests reveal a defect in the deployed feature (report it — never fix it); the spec's acceptance criteria are too ambiguous to assert against; flakiness traceable to the environment rather than the tests.
+- **Escalation Triggers:** Tests reveal a defect in the deployed feature (report it — never fix it); flakiness traceable to the environment rather than the tests.
 - **Acceptance Criteria:** Every declared critical path has at least one deterministic test; tests fail when the path is broken and pass when it is healthy (demonstrated, not assumed); the suite runs against the deployed environment via documented commands; independent review has passed.
 - **Anti-Goals:** Tests that always pass; coverage theater that exercises trivia while critical paths go untested; fixing the system under test; slow or flaky suites that get skipped under pressure; asserting implementation details instead of observable behavior.
 
