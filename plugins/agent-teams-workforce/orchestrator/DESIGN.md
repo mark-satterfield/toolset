@@ -246,7 +246,7 @@ file by `skills/artifact-handoff/scripts/review_criteria.py`.
 `aws-solutions-architect` develops the architecture and the TRD to exactly these criteria and
 answers each architecture and technical-requirement criterion in its result. The reviewers apply
 exactly these and no others, each to the items its group covers. A criterion is satisfied by the
-document that is its home; nobody asks a document for detail below its level. No brief carries any
+document that is its home. No brief carries any
 part of the criteria: agents read them in `effective-architecture/review-standard.md`.
 
 ### 2.5 Where the contracts and schemas live
@@ -502,8 +502,7 @@ so there is no repository to cut a worktree of.
 
 Model and effort are the definition's front matter (`model`, `effort`), which Claude Code applies
 when it loads the agent. The launcher passes `--model` (for the Fable fallback, section 5.5) and
-records the model in `run.json`; it passes no effort. The flow names agents by the `role` their
-definitions state, never by name, so the roster of a role is the set of definitions that state it.
+records the model in `run.json`; it passes no effort.
 
 | Agent | Role | Launched |
 |---|---|---|
@@ -859,11 +858,8 @@ specification is `<plugin>/blueprint/design/matrix.md`.
   the promotion step sets the reviewed documents to `lifecycle_state: effective`, mirrors that in
   the matrix (`sync-documents --paths`), and commits and pushes them in the vault. Reviewers see
   only the documents in review.
-- **The verified mark.** The matrix has one code mark, `verified`, with the merge commit, on a
-  stack, the entries in it and the relationships the code makes real. The driver sets it when a
-  Story's pull request has merged (`verify --story --commit`); no agent and no elaboration step
-  sets it. The verified mark decides nothing about what is built: the repository span of an Epic
-  is what its architecture adds or changes (`11.2`).
+- **The approved and verified flags.** `blueprint/requirements/pipelines.md` (the Elaboration
+  pipeline) and `blueprint/requirements/matrix.md` state what each flag means and when it is set.
 - **One home per entry.** An entry has at most one `homeIn` on each side; the command refuses a
   second.
 - **Roles.** The role of the session (`ATW_MATRIX_ROLE`) decides which commands it may run.
@@ -906,17 +902,13 @@ promotion step, with the lead's step between them when a review raised something
 ### 11.2 Repository span
 
 The step `atw-matrix epic --closure` (`flows/repo_scoping.py`; the script key keeps its old name)
-reads what the Stories build from the architect's result: the services, components,
-infrastructure and events it lists under `addedOrChangedElements`, each event with its
-architecture-side publishers (an event is built as part of the service that publishes it). A
-Story is one repository's share of that. The matrix is used only for each entry's
-architecture-side stack (`authority_holder`) and that stack's repository; a stack that names no
-repository is given the one the naming rules give it. Everything else the Epic reaches is
-context for the Tasks, never work. No agent places anything. Each `story_build_problems` sentence,
+reads what the Stories build. An event is built as part of the service that publishes it. A
+Story is one repository's share of that. Each entry's architecture-side stack (`authority_holder`)
+and that stack's repository come from the matrix; a stack that names no repository is given the
+one the naming rules give it. No agent places anything. Each `story_build_problems` sentence,
 a repository that may hold no product entry (the control repository, the architecture folder), and a missing repository whose stacks have more than one type or more than
 one app each fail the step. It writes `span-elements.json` and `repo-scoping.json` and plans one
-container per repository, each with its first step `spec_authoring.context`. An architecture
-that adds or changes nothing to build fails the step.
+container per repository, each with its first step `spec_authoring.context`.
 
 ### 11.3 Repository creation (QUESTIONS 9; the verifier's finding 16)
 

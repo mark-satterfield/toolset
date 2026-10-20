@@ -13,7 +13,10 @@ It covers two things that work as one system:
 
 A session reads the blueprint document for an area before it changes that area. A change
 that alters what an area must do, or how it does it, updates the document in the same
-change. The blueprint states what is required now. Git holds how it got there.
+change. A user-level PreToolUse hook (`~/.claude/hooks/pre-tool-use/blueprint-pointer.sh`)
+names the documents for the area to every session that edits a file under the plugin;
+`blueprint/areas.json` says which documents cover which area, and changes when an area or a
+document is added, renamed or removed. The blueprint states what is required now. Git holds how it got there.
 
 Where a blueprint document and the code or data differ, the document states the requirement
 and the code or data is what changes.
@@ -24,6 +27,7 @@ and the code or data is what changes.
 |---|---|
 | `blueprint/requirements/<topic>.md` | What one topic must do and why. No field names, file formats, command names or code structure. |
 | `blueprint/design/<topic>.md` | How one topic meets its requirements: structures, formats, commands, the steps that read and write. |
+| `blueprint/areas.json` | Which documents state the requirements and design of each area of the plugin, by path pattern. |
 
 One topic per document. A topic has the same file name in both folders.
 

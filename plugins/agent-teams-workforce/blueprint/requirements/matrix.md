@@ -62,7 +62,7 @@ Each question below is answered from the matrix alone, without reading documents
 | Q11 | What type of stack is this? | One type, from the stack's name. |
 | Q12 | Which repositories are relevant to this Epic? | The set of repositories, each with the stacks that make it relevant and the features that lead to them. |
 | Q13 | Which links of this Epic have nothing recorded at the other end? | Requirements with no feature, features with no covering document, described services, components and infrastructure with no stack, stacks with no repository, and things arc42 describes with no corresponding thing in a repository. |
-| Q14 | Which of this is proved by a build? | For each piece of information, verified or not verified. |
+| Q14 | Which of this is approved, and which is proved by a build? | For each piece of information, approved or not approved, and verified or not verified. |
 | Q15 | Which of the project's own stacks, libraries, layers, services and infrastructure depend on this stack, service, component, library, layer or piece of infrastructure, and how? | A list of the things that depend on it, each with the stack that holds it and the kind of the relationship, followed to any depth. |
 | Q16 | Which layers exist, what packages does each contain, and which Lambdas use each? | A list of layers, each with its packages and the Lambdas that use it. |
 | Q17 | Which app does this stack belong to, and which stacks belong to this app? | One app for a stack; the list of stacks for an app. |
@@ -199,22 +199,33 @@ Packages and layers relate as follows:
 So libraries and layers relate many-to-many. A layer is recorded as its own thing, which
 contains packages and is used by Lambdas.
 
-### 3.5 Two kinds of trust
+### 3.5 Effective, approved and verified
 
 **Architecture.** An arc42 document that is effective is approved and can be trusted as of
 the moment it is read. That says nothing about whether it covers the PRD in hand: the same
 document may need additions or changes as the next feature is designed.
 
-**Implementation.** The matrix has one code mark: verified. It is set when a Story's code
-has been built and tested and has passed, including its CI/CD and its CDK. It is recorded on
-the stack and its components, with the commit. This is the whole definition. No deployed
-mark and no merged mark exists. Whether something is currently deployed is not recorded and
-has no bearing on verified: the environment is a development environment where stacks are
-deployed and torn down freely.
+**Approved.** The matrix has an approved flag. It is similar to, but is not the same as,
+arc42's `effective`. What was seeded into the matrix from arc42 is not approved: the seeded
+architecture is high-level, and missing details and mistakes are expected in it. Once an
+Epic's elaboration has validated and filled out the architecture and design (the lower-level
+details) for the Epic, all of that is approved, and the matrix is filled out or corrected for
+that Epic, the matrix content the Epic reaches is set to approved. The corrections to arc42
+are made with it.
 
-A relationship that the Story's code makes real is verified with the stack or component it
-starts from. "This service uses the chassis" is a relationship, and it is planned until a
-build proves it.
+**Verified.** The matrix has a verified flag. While an Epic's architecture is approved and
+not yet built and tested, it stays not verified. Once all of the Tasks for all of the Stories
+of an Epic have been built and tested, including CI/CD and CDK, which means its deployment
+must also work, all of the architecture and relationships for the Epic are set to verified.
+Verification is the only way to prove that the architecture is likely to work. The verified
+flag is available on every entry and every relationship, and required on none. No deployed
+mark and no merged mark exists. Whether something is currently deployed is not recorded: the
+environment is a development environment where stacks are deployed and torn down freely.
+
+An Epic can change the architecture at any point, and many Epics can go through elaboration
+with nothing built, so approved and verified apply to every Epic, not only to what was
+seeded. A relationship the code makes real is planned until a build proves it. "This service
+uses the chassis" is a relationship.
 
 Everything in the matrix is used, verified or not. Verified never decides whether an entry
 or a relationship is read, linked to, designed against or built on. The mark changes what
@@ -231,9 +242,10 @@ the pipeline assumes, and it never blocks a step:
 
 | Point | What happens | Who records |
 |---|---|---|
-| Seeded | The matrix starts with what is known today, on two sides kept apart (section 4.1): every open Epic in beads with its PRD; every requirement of each of those PRDs with the feature or features that serve it, and every capability the effective arc42 documents provide that no requirement names, as a feature; every effective arc42 document with every service, component and piece of infrastructure it describes and the stack the document says each is in; every known repository, the stacks it contains and what is in each stack today; the purpose of each stack; and every link between these that can be established now. Nothing is seeded as verified. | The seeding work, once, before the first pipeline run uses the matrix, from beads, the PRDs, the effective arc42 documents and the repositories. arc42 is the authority for how the product is to be built. The repositories are the source for which stacks and repositories exist and for what is in each stack today, which is recorded as what is there, not verified, a hint (R43, R45, R47 to R51). |
+| Seeded | The matrix starts with what is known today, on two sides kept apart (section 4.1): every open Epic in beads with its PRD; every requirement of each of those PRDs with the feature or features that serve it, and every capability the effective arc42 documents provide that no requirement names, as a feature; every effective arc42 document with every service, component and piece of infrastructure it describes and the stack the document says each is in; every known repository, the stacks it contains and what is in each stack today; the purpose of each stack; and every link between these that can be established now. Nothing is seeded as approved or verified. | The seeding work, once, before the first pipeline run uses the matrix, from beads, the PRDs, the effective arc42 documents and the repositories. arc42 is the authority for how the product is to be built. The repositories are the source for which stacks and repositories exist and for what is in each stack today, which is recorded as what is there, not verified, a hint (R43, R45, R47 to R51). |
 | Filled in and corrected | As elaboration runs: the features derived from the Epic's requirements and from the architecture; which existing features and documents cover them; what the architect designs; each new or changed architecture document, mapped to the feature it supports; corrections to anything the run finds wrong. | The elaboration pipeline (`prd-to-spec`): the architect for features, design and their links; the `polyrepo-steward` for a stack's repository. |
-| Confirmed | A stack and its components are marked verified, with the commit, once a Story's code has been built and tested and has passed, including its CI/CD and its CDK. | The build pipeline (`task-to-deploy` and the driver in `ops/sdlc-automation`), with no judgment by an agent. |
+| Approved | The matrix content an Epic reaches is set to approved once the Epic's architecture and design are approved and the matrix and arc42 are filled out or corrected for that Epic. | The elaboration pipeline (`prd-to-spec`), when the Epic's architecture and design are approved. |
+| Confirmed | The architecture and relationships of an Epic are set to verified once all of the Tasks for all of the Stories of the Epic have been built and tested, including CI/CD and CDK, with its deployment working. | The build pipeline (`task-to-deploy` and the driver in `ops/sdlc-automation`), with no judgment by an agent. |
 | Kept current | When a stack, repository, feature or document is renamed, deprecated or removed, the matrix is updated in the same piece of work. | Whoever does that work. |
 
 ### 4.1 Seeding
@@ -278,8 +290,9 @@ for that Epic (Q13). Nothing is invented to fill it.
 - Both sides are needed and both are recorded. Every fact in the matrix shows which side it
   came from.
 
-**Verified.** Verified means all tests pass, including the CDK tests and any CI/CD (section
-3.5). No build is verified today, so nothing is seeded as verified.
+**Approved and verified.** Nothing is seeded as approved (section 3.5). Verified means all
+tests pass, including the CDK tests and any CI/CD (section 3.5). No build is verified today,
+so nothing is seeded as verified.
 
 **When.** All of this is in the matrix before the first pipeline run uses it.
 
@@ -403,15 +416,16 @@ for that Epic (Q13). Nothing is invented to fill it.
 - **R23.** The matrix keeps "this document is approved" separate from "this document covers
   this requirement", because an effective document can be trusted and still not cover the
   PRD in hand.
-- **R24.** The matrix has one code mark, verified, and records it on the stack and its
-  components, with the commit. Each is marked separately from every other, and a
-  relationship the code makes real is verified with the stack or component it starts from.
-  A verified entry or relationship describes something that exists: the pipeline counts on
-  it existing and trusts its code. An entry or relationship that is not verified describes
-  what is designed or planned and is theoretical until a build proves it.
-- **R25.** The build pipeline sets the verified mark only when a Story's code has been built
-  and tested and has passed, and that always includes its CI/CD and its CDK. Nothing else
-  sets it. No deployed mark and no merged mark exists. No elaboration step reads code to
+- **R24.** The matrix has two flags, approved and verified (section 3.5). Approved is
+  similar to, but is not the same as, arc42's `effective`. The verified flag is available on
+  every entry and every relationship and required on none. A verified entry or relationship
+  describes something that exists: the pipeline counts on it existing and trusts its code. An
+  entry or relationship that is not verified describes what is designed or planned and is
+  theoretical until a build proves it.
+- **R25.** The build pipeline sets the verified flag on the architecture and relationships
+  of an Epic only when all of the Tasks for all of the Stories of the Epic have been built and
+  tested, and that always includes CI/CD and CDK, which means deployment must also work.
+  Nothing else sets it. No deployed mark and no merged mark exists. No elaboration step reads code to
   decide whether something is built. Whether something is currently deployed is not recorded
   and has no bearing on verified.
 - **R26.** The pipeline uses everything in the matrix, verified or not. Verified never
@@ -485,7 +499,7 @@ for that Epic (Q13). Nothing is invented to fill it.
   components and the shared capabilities. Elaboration reads the matrix to write that into
   the Task, and may reference architecture documents and other detail the matrix led it to.
 - **R42.** Three things are answered by a script that reads open Task beads and matches
-  their ids against the matrix, not by entries in the matrix: which entries a Story built
+  their ids against the matrix, not by entries in the matrix: which entries an Epic's Stories built
   (for the verified mark); which open work from other Epics touches an entry; which open
   Tasks a change affects.
 
@@ -537,8 +551,8 @@ for that Epic (Q13). Nothing is invented to fill it.
 - **R50.** Seeding records both sides, because both are needed. Every fact in the matrix
   shows which side it came from, the architecture side or the repository side, and a lookup
   returns the side with the fact.
-- **R51.** Nothing is seeded as verified. Verified means all tests pass, including the CDK
-  tests and any CI/CD, and no build is verified today.
+- **R51.** Nothing is seeded as approved or verified. Verified means all tests pass,
+  including the CDK tests and any CI/CD, and no build is verified today.
 
 ### The architect and the matrix
 
@@ -570,12 +584,10 @@ for that Epic (Q13). Nothing is invented to fill it.
 
 ### Architecture approval
 
-- **R57.** The matrix records, per requirement and per feature, an architecture-approved
-  mark that says the architecture for it has been through the solutions architect and the
-  architecture reviews and is complete, correct and good. Once it is set, the architecture
-  of that requirement or feature can be trusted. It is separate from verified (R24), which
-  says what was built passed its tests. It is set only by the script step that runs after
-  the architecture reviews pass for an Epic (the promotion), for the requirements of that
-  Epic and the features that serve them. When a later Epic's architecture changes a feature
-  or the documents that describe it, the mark on that feature is cleared until that Epic's
-  review passes. No session sets it by hand. Nothing is marked today.
+- **R57.** The approved flag (R24) is the one record of approval in the matrix: no second
+  approval mark exists beside it. It is set on the matrix content an Epic's elaboration
+  reaches once the Epic's architecture and design are approved and the matrix and arc42 are
+  filled out or corrected for that Epic. It is separate from verified, which says what was
+  built for the Epic passed its tests with its deployment working. When a later Epic's
+  architecture changes that content, the flag is cleared until that Epic's architecture and
+  design are approved. No session sets it by hand. Nothing is approved today.

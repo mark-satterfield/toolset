@@ -28,6 +28,16 @@ Full statement and the failure that motivated it: Rule 12 in `plugins/agent-team
 
 Only the owner runs `keeper.py` and `supervisor.py`; their real runs are the test of the pipeline. No session or agent runs them, pre-tests them, or rehearses them: no dry runs, no runs on scratch copies, no apply:false or replay runs, no stub-dispatcher runs, and no dispatching workflows or plugin commands as a test. A pipeline run is long and expensive, so a successful run must make real project progress. Allowed: fast unit tests with real testing value, and existing suites as regression checks. The pipelines are local single-user tooling to build the product, not the product: they need to work, not be perfect.
 
+## The `agent-teams-workforce` blueprint
+
+The requirements and design of the `agent-teams-workforce` plugin and its pipelines are in
+`plugins/agent-teams-workforce/blueprint/`; `blueprint/README.md` says how it is used. Before
+changing an area of the plugin, read the blueprint documents for that area
+(`blueprint/areas.json` names them, and a PreToolUse hook names them when a file under the
+plugin is edited). A change that alters what an area must do, or how it does it, updates
+those documents in the same change. The owner's requirements of the Elaboration pipeline are
+quoted in `blueprint/requirements/pipelines.md`.
+
 ## Plugins
 
 These 15 plugins are registered in `.claude-plugin/marketplace.json`. Note that a few **marketplace names differ from their directory names** (left column ≠ path).

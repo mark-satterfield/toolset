@@ -1,0 +1,87 @@
+{
+  "description": "Which blueprint documents state the requirements and design of each area of the plugin. Paths are relative to the plugin root and use glob patterns; the first area whose pattern matches a changed file names its documents. A user-level PreToolUse hook (~/.claude/hooks/pre-tool-use/blueprint-pointer.sh) reads this file and names the documents to every session that edits a file under the plugin.",
+  "areas": [
+    {
+      "name": "the blueprint",
+      "paths": ["blueprint/*", "blueprint/**/*"],
+      "documents": ["blueprint/README.md"]
+    },
+    {
+      "name": "the matrix",
+      "paths": [
+        "bin/atw-matrix",
+        "scripts/portfolio/matrix*.py",
+        "skills/artifact-handoff/schemas/matrix*.json",
+        "skills/artifact-handoff/scripts/matrix_contract.py",
+        "skills/artifact-handoff/scripts/generate_matrix_contract.py"
+      ],
+      "documents": ["blueprint/requirements/matrix.md", "blueprint/design/matrix.md"]
+    },
+    {
+      "name": "the architecture and matrix states",
+      "paths": ["scripts/portfolio/archstate.py", "orchestrator/flows/architecture_promotion.py"],
+      "documents": [
+        "blueprint/requirements/pipelines.md",
+        "blueprint/requirements/matrix.md",
+        "blueprint/design/pipelines-architecture-states.md"
+      ]
+    },
+    {
+      "name": "the build pipeline",
+      "paths": [
+        "workflows/task-to-deploy.js",
+        "workflows/route-build.js",
+        "workflows/workspace.js",
+        "workflows/suite-run.js",
+        "workflows/tdd-*.js",
+        "workflows/infra-intent.js",
+        "workflows/adversarial.js",
+        "workflows/documentation.js",
+        "workflows/gate-enforce.js"
+      ],
+      "documents": ["blueprint/requirements/pipelines.md", "blueprint/design/pipelines-build.md"]
+    },
+    {
+      "name": "the deploy pipeline",
+      "paths": [
+        "workflows/deploy.js",
+        "workflows/deploy-mechanism.js",
+        "workflows/story-deploy-fix.js",
+        "workflows/built-version.js",
+        "workflows/settle.js"
+      ],
+      "documents": ["blueprint/requirements/pipelines.md", "blueprint/design/pipelines-deploy.md"]
+    },
+    {
+      "name": "the driver and routing",
+      "paths": ["workflows/route-elaboration.js", "workflows/ROUTING.md", "skills/pipeline-contracts/*", "skills/pipeline-contracts/**/*", "commands/*"],
+      "documents": ["blueprint/requirements/pipelines.md", "blueprint/design/pipelines-driver.md"]
+    },
+    {
+      "name": "the elaboration pipeline",
+      "paths": [
+        "orchestrator/*",
+        "orchestrator/**/*",
+        "workflows/prd-*.js",
+        "workflows/dependency-assessment.js",
+        "workflows/task-dependency-assessment.js",
+        "workflows/wsjf-scoring.js",
+        "skills/effective-architecture/*",
+        "skills/effective-architecture/**/*",
+        "skills/arc42*/*",
+        "skills/arc42*/**/*"
+      ],
+      "documents": ["blueprint/requirements/pipelines.md", "blueprint/design/pipelines-elaboration.md"]
+    },
+    {
+      "name": "the pipelines' agents, skills, workflows and scripts",
+      "paths": ["agents/*", "skills/*", "skills/**/*", "workflows/*", "scripts/*", "scripts/**/*", "bin/*", "hooks/*", "hooks/**/*"],
+      "documents": ["blueprint/requirements/pipelines.md", "blueprint/design/pipelines.md"]
+    },
+    {
+      "name": "the plugin",
+      "paths": ["*", "**/*"],
+      "documents": ["blueprint/README.md"]
+    }
+  ]
+}
