@@ -1,6 +1,6 @@
 # AWS CDK Patterns and Best Practices
 
-This reference provides patterns, anti-patterns, and best practices for AWS CDK development in SkillSpoke's stack: CDK in Python through `shared-cdk-lib`, one CDK app per service with one stack per environment holding every resource the service owns, Python Lambdas on `aws-lambda-powertools`, API Gateway REST API v1 spec-first in OpenAPI, and values that cross stacks only through SSM Parameter Store. Load `cdk-coding` for the rules a CDK change must pass.
+This reference provides patterns, anti-patterns, and best practices for AWS CDK development of serverless services. The examples use CDK in Python, Python Lambdas on `aws-lambda-powertools`, API Gateway REST APIs and SSM Parameter Store for values that cross stacks; the project's own choices (language, app and stack layout, shared construct library, API type, how values cross stacks) are in its architecture constraints and project instructions, and win where they differ. Load `cdk-coding` for the rules a CDK change must pass.
 
 ## Table of Contents
 
@@ -35,7 +35,7 @@ api = apigateway.SpecRestApi(
 
 ### Custom Constructs
 
-Create reusable constructs for repeated patterns, and use the one `shared-cdk-lib` already provides where it has one:
+Create reusable constructs for repeated patterns, and use the one the project's shared construct library already provides where it has one:
 
 ```python
 from aws_cdk import aws_dynamodb as dynamodb, aws_lambda as lambda_
@@ -139,7 +139,7 @@ fn = lambda_.Function(
 
 ### Lambda Layers
 
-Share code across functions only through a layer or a published package; services never import another service's source. Prefer the shared libraries as published packages (`shared-chassis-lib`, `shared-runtime-lib`) over a hand-built layer.
+Share code across functions only through a layer or a published package; services never import another service's source. Prefer the project's shared libraries as published packages over a hand-built layer.
 
 ```python
 layer = lambda_.LayerVersion(
@@ -181,7 +181,7 @@ def test_stack_function_count() -> None:
 
 ## Cost Optimization
 
-SkillSpoke is at alpha scale (one dev account, at most five users). Per-request pricing (Lambda, DynamoDB on-demand) costs cents a month at this scale; provisioned always-on capacity (an ElastiCache node, an idle RDS instance, a NAT Gateway, provisioned concurrency, DynamoDB provisioned capacity) carries a monthly floor that low usage does not reduce. Choose provisioned capacity only for a stated, measured need, and record the cost comparison.
+At low or unmeasured usage, per-request pricing (Lambda, DynamoDB on-demand) costs little; provisioned always-on capacity (an ElastiCache node, an idle RDS instance, a NAT Gateway, provisioned concurrency, DynamoDB provisioned capacity) carries a monthly floor that low usage does not reduce. Choose provisioned capacity only for a stated, measured need, and record the cost comparison.
 
 ### Right-Sizing Lambda
 
@@ -277,9 +277,9 @@ api_url = ssm.StringParameter.value_for_string_parameter(self, api_url_parameter
 - **Name** every resource with the resource-naming skill (the naming command's `name build`)
 - **Write** CDK in Python, one app per service with one stack per environment
 - **Build** REST APIs from the OpenAPI specification (`SpecRestApi`)
-- **Use** high-level constructs (L2/L3, `shared-cdk-lib`) over low-level (L1)
+- **Use** high-level constructs (L2/L3, including the project's shared construct library) over low-level (L1)
 - **Prefer** grant methods for IAM permissions
 - **Bundle** Python dependencies with `Code.from_asset` and the runtime's bundling image
 - **Share** values between stacks through SSM Parameter Store, never exports
-- **Default** to per-request pricing at alpha scale
+- **Default** to per-request pricing at low or unmeasured usage
 - **Test** stacks with assertions

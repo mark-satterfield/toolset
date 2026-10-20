@@ -1,26 +1,25 @@
 ---
 name: "aws-solution-architect"
-description: Design AWS architectures for SkillSpoke using serverless, event-driven patterns, expressed as CDK in Python. Use when asked to design serverless architecture, choose AWS services, estimate or optimize AWS costs, set up CI/CD, or plan infrastructure as code. Covers Lambda, API Gateway REST API v1, DynamoDB, Aurora PostgreSQL Serverless v2, EventBridge, Step Functions, Cognito, and cost optimization at alpha scale.
+description: Design AWS architectures using serverless, event-driven patterns, expressed as CDK. Use when asked to design serverless architecture, choose AWS services, estimate or optimize AWS costs, set up CI/CD, or plan infrastructure as code. Covers Lambda, API Gateway REST API v1, DynamoDB, Aurora PostgreSQL Serverless v2, EventBridge, Step Functions, Cognito, and cost optimization at low usage.
 ---
 
 # AWS Solution Architect
 
-Design scalable, cost-effective AWS architectures for SkillSpoke, with the infrastructure written as CDK in Python.
+Design scalable, cost-effective AWS architectures, with the infrastructure written as CDK in the language the project's architecture names.
 
-## SkillSpoke's stack
+## The project's stack
 
-Confirm against the architecture constraints (arc42 section 2) and the solution strategy (arc42 section 4) in the `skillspoke-docs` vault before relying on these; where they differ, the vault wins.
+Establish the project's stack from its architecture constraints and solution strategy (the project instructions locate them) before you design anything; where this skill differs from them, they win. Settle each of these from them, and ask rather than assume when one is not stated:
 
-- **Compute:** AWS Lambda, Python, `aws-lambda-powertools` through `shared-chassis-lib`. Django, Flask and FastAPI are banned. Agents run on Amazon Bedrock AgentCore Runtime.
-- **APIs:** API Gateway REST API v1, spec-first in OpenAPI; HTTP API v2 is not used. Live push uses the API Gateway WebSocket API.
-- **Infrastructure:** AWS CDK in Python through `shared-cdk-lib`. A service is one CDK app with one stack per environment holding every resource it owns. Values cross stacks only through SSM Parameter Store, never CloudFormation exports and imports. No raw CloudFormation templates, SAM templates or Terraform.
-- **Persistence:** chosen per data set and owned per service: DynamoDB (on-demand), Aurora PostgreSQL Serverless v2 through the RDS Data API (with pgvector; see the `aurora-postgresql` skill), or versioned S3. Services do not share tables by default.
-- **Integration:** SkillSpoke events go through the central event API of the events service onto the single EventBridge bus; the stack of a rule's target owns the rule (see the `skillspoke-events` skill). Synchronous REST only where a user-facing read needs another context's data immediately.
-- **Identity:** Amazon Cognito, one user pool per trust domain; service-to-service calls use OAuth2 client credentials.
-- **Email:** Amazon SES. **AI:** Amazon Bedrock. **Observability:** CloudWatch, X-Ray and ADOT, plus SkillSpoke observability events.
-- **Network:** everything that can sit inside the environment VPC does, reached through VPC endpoints; the only internet path is the egress tier of the Egress Boundary service.
+- **Compute:** the Lambda runtime and libraries (for example Python on `aws-lambda-powertools` through a shared chassis library), any framework the project excludes, and where agents run (for example Amazon Bedrock AgentCore Runtime).
+- **APIs:** the API types allowed (for example API Gateway REST APIs spec-first in OpenAPI, with live push on the WebSocket API).
+- **Infrastructure:** the IaC tool and language (for example AWS CDK in Python through a shared construct library), the app and stack layout per service and environment, and how values cross stacks (for example SSM Parameter Store rather than CloudFormation exports and imports).
+- **Persistence:** the stores the project uses (for example DynamoDB on-demand, Aurora PostgreSQL Serverless v2 through the RDS Data API with pgvector — see the `aurora-postgresql` skill — or versioned S3), who owns each store, and whether services may share one.
+- **Integration:** the project's event standard, which the project instructions name (load it before you design anything that produces, routes or receives an event), and when synchronous calls between services are allowed.
+- **Identity, email, AI and observability:** for example Amazon Cognito, Amazon SES, Amazon Bedrock, and CloudWatch, X-Ray and ADOT.
+- **Network:** what sits inside the VPC, how it reaches AWS services (for example VPC endpoints), and the one internet egress path, if the project has one.
 - **Names:** every resource name comes from the project's naming command (the `resource-naming` skill).
-- **Scale:** alpha (one dev account, at most five users). Prefer per-request pricing (Lambda, DynamoDB on-demand, Aurora Serverless v2 able to scale to 0 ACUs) over always-on capacity (ECS services, provisioned RDS instances, ElastiCache nodes, NAT Gateways) unless a stated need justifies the monthly floor.
+- **Scale:** the usage the design is sized for. At low or unmeasured usage, prefer per-request pricing (Lambda, DynamoDB on-demand, Aurora Serverless v2 able to scale to 0 ACUs) over always-on capacity (ECS services, provisioned RDS instances, ElastiCache nodes, NAT Gateways) unless a stated need justifies the monthly floor.
 
 ---
 
@@ -40,20 +39,20 @@ Collect the specifications from the Epic, its PRD and the effective architecture
 
 ### Step 2: Design Architecture
 
-Choose the pattern from SkillSpoke's stack:
+Choose the pattern from the project's stack. For example, for a serverless stack:
 - **Serverless API:** API Gateway REST API v1 (from the OpenAPI specification) + Python Lambda + DynamoDB or Aurora PostgreSQL Serverless v2
-- **Event-Driven Service:** a routing rule on the SkillSpoke bus + SQS + Python Lambda, with Step Functions or Lambda durable functions for orchestration inside the service
-- **Web front end:** Next.js on the CDS design system behind CloudFront and AWS WAF
+- **Event-Driven Service:** a routing rule on the project's event bus + SQS + Python Lambda, with Step Functions or Lambda durable functions for orchestration inside the service
+- **Web front end:** a web app (for example Next.js on the project's design system) behind CloudFront and AWS WAF
 
-`scripts/architecture_designer.py` can list generic patterns from a requirements file. It also offers patterns outside SkillSpoke's stack (ECS Fargate three-tier, AppSync GraphQL, ElastiCache); treat those as not applicable unless the owner has stated a need for them.
+`scripts/architecture_designer.py` can list generic patterns from a requirements file. It also offers patterns that may be outside the project's stack (ECS Fargate three-tier, AppSync GraphQL, ElastiCache); treat those as not applicable unless the project's architecture or a stated need calls for them.
 
-See `references/architecture_patterns.md` for detailed pattern specifications; its CloudFormation and TypeScript examples show the shape of each pattern, and SkillSpoke writes the same resources in Python CDK.
+See `references/architecture_patterns.md` for detailed pattern specifications; its CloudFormation and TypeScript examples show the shape of each pattern; write the same resources in the project's CDK language.
 
 **Validation checkpoint:** Confirm the design meets the architecture constraints and the requirement before Step 3.
 
-### Step 3: Write the Infrastructure as CDK in Python
+### Step 3: Write the Infrastructure as CDK
 
-Write the service's stack in Python CDK with the `aws-cdk-development` and `cdk-coding` skills, using the constructs `shared-cdk-lib` provides. A minimal service core:
+Write the service's stack in CDK with the `aws-cdk-development` and `cdk-coding` skills, using the constructs the project's shared construct library provides where it has them. A minimal service core in Python:
 
 ```python
 from aws_cdk import Stack, aws_apigateway as apigateway, aws_dynamodb as dynamodb, aws_lambda as lambda_
@@ -92,7 +91,7 @@ class ServiceStack(Stack):
         )
 ```
 
-`ServiceNames` stands for the names the naming command produced. `scripts/serverless_stack.py` generates a raw CloudFormation/SAM template; SkillSpoke does not deploy raw CloudFormation, so do not use its output as infrastructure.
+`ServiceNames` stands for the names the naming command produced. `scripts/serverless_stack.py` generates a raw CloudFormation/SAM template; a project that writes its infrastructure as CDK does not deploy raw CloudFormation, so do not use its output as its infrastructure.
 
 ### Step 4: Review Costs
 
@@ -108,7 +107,7 @@ Output includes:
 - Idle resource removal
 - Potential monthly savings
 
-Savings Plans and reserved capacity apply only to steady, committed usage; they are not a default at alpha scale.
+Savings Plans and reserved capacity apply only to steady, committed usage; they are not a default at low or unmeasured usage.
 
 ### Step 5: Deploy
 
@@ -153,11 +152,11 @@ python scripts/architecture_designer.py --input requirements.json --output desig
 ```
 
 **Input:** JSON with app type, scale, budget, compliance needs
-**Output:** Recommended pattern, service stack, cost estimate, pros/cons. Patterns outside SkillSpoke's stack are not applicable without a stated need.
+**Output:** Recommended pattern, service stack, cost estimate, pros/cons. Patterns outside the project's stack are not applicable without a stated need.
 
 ### serverless_stack.py
 
-Generates a generic raw CloudFormation/SAM template. Not used for SkillSpoke infrastructure, which is CDK in Python.
+Generates a generic raw CloudFormation/SAM template. Not used for a project whose infrastructure is CDK.
 
 ### cost_optimizer.py
 
@@ -182,8 +181,8 @@ Provide these details for architecture design:
 
 | Requirement | Description | Example |
 |-------------|-------------|---------|
-| Capability | What is being built and its bounded context | Job-search results publishing |
-| Expected load | Stated users and requests/sec | Alpha: at most five users |
+| Capability | What is being built and its bounded context | Order history publishing |
+| Expected load | Stated users and requests/sec | At most five users |
 | Budget | Monthly AWS limit | Stated by the owner |
 | Compliance | Regulatory and personal-data needs | GDPR |
 | Availability | Uptime requirements | 99.9% SLA, 1hr RPO |
@@ -200,7 +199,7 @@ Provide these details for architecture design:
 
 ### Infrastructure as Code
 
-- **CDK in Python** through `shared-cdk-lib`, with names from the naming command
+- **CDK** in the project's language, through its shared construct library where it has one, with names from the naming command
 
 ### Cost Analysis
 
@@ -213,6 +212,6 @@ Provide these details for architecture design:
 
 | Document | Contents |
 |----------|----------|
-| `references/architecture_patterns.md` | Generic patterns: serverless, microservices, three-tier, data processing, GraphQL, multi-region. Only the serverless and event-driven patterns fit SkillSpoke's stack; the examples are CloudFormation and TypeScript, and SkillSpoke writes them in Python CDK |
-| `references/service_selection.md` | Decision matrices for compute, database, storage, messaging; SkillSpoke's choices are fixed in the stack above |
+| `references/architecture_patterns.md` | Generic patterns: serverless, microservices, three-tier, data processing, GraphQL, multi-region. Use only the patterns that fit the project's stack; the examples are CloudFormation and TypeScript, written in the project's CDK language when used |
+| `references/service_selection.md` | Decision matrices for compute, database, storage, messaging; the project's choices, where its architecture fixes them, win |
 | `references/best_practices.md` | Serverless design, cost optimization, security hardening, scalability |

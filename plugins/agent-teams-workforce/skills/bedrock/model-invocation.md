@@ -1,6 +1,6 @@
 # Bedrock Model Invocation Patterns
 
-Advanced patterns for invoking foundation models. Prefer the Converse API (below) for text models; the provider-specific `invoke_model` bodies in the next section are for features Converse does not expose and for embeddings. The model IDs are examples: models are retired and replaced, so look up the current ID and inference profile on the model's card in the Bedrock User Guide (https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards.html) and keep it in configuration. Amazon Titan Text and Stability AI models shown here may no longer be offered; the current Amazon text and image models are the Nova family. In SkillSpoke, service code calls a model only through `skillSpoke-ai-lib`.
+Advanced patterns for invoking foundation models. Prefer the Converse API (below) for text models; the provider-specific `invoke_model` bodies in the next section are for features Converse does not expose and for embeddings. The model IDs are examples: models are retired and replaced, so look up the current ID and inference profile on the model's card in the Bedrock User Guide (https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards.html) and keep it in configuration. Amazon Titan Text and Stability AI models shown here may no longer be offered; the current Amazon text and image models are the Nova family. Where the project names one shared library for model calls, service code calls a model only through it.
 
 ## Model-Specific Invocation
 
@@ -361,11 +361,11 @@ def invoke(model_id: str, body: dict) -> dict:
 
 ## Provisioned Throughput
 
-Provisioned Throughput is billed per model unit per hour for the commitment term, whatever the traffic. It is not a default for SkillSpoke at alpha scale (one dev account, at most five users): use on-demand inference through an inference profile, and choose Provisioned Throughput only for a stated, measured need, recording the cost comparison. Check the model's card for whether it supports Provisioned Throughput; it is created for a base model ID (not an inference profile), and the provisioned model's ARN is then passed as `modelId`.
+Provisioned Throughput is billed per model unit per hour for the commitment term, whatever the traffic. It is not a default at low or unmeasured volume: use on-demand inference through an inference profile, and choose Provisioned Throughput only for a stated, measured need, recording the cost comparison. Check the model's card for whether it supports Provisioned Throughput; it is created for a base model ID (not an inference profile), and the provisioned model's ARN is then passed as `modelId`.
 
 ## VPC Endpoint
 
-SkillSpoke reaches Bedrock from inside the environment VPC through an interface VPC endpoint, defined in Python CDK. Read the VPC from the SSM parameters the networking stack publishes rather than creating one.
+Code that runs inside a VPC reaches Bedrock through an interface VPC endpoint defined in the project's CDK. Use the VPC the project's networking stack provides (for example through the SSM parameters it publishes) rather than creating one; the project's architecture names how stacks share it.
 
 ```python
 from aws_cdk import aws_ec2 as ec2

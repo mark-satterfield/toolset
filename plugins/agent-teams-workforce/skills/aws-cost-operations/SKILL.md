@@ -142,7 +142,7 @@ Use this skill when:
 
 ### Container and Kubernetes Monitoring
 
-SkillSpoke runs on Lambda and is observed with CloudWatch, X-Ray, ADOT and SkillSpoke observability events; it runs no container workloads and uses no Prometheus. This section applies only to a workload on ECS or EKS outside SkillSpoke.
+This section applies to a workload that runs on ECS or EKS. A serverless workload on Lambda is observed with CloudWatch, X-Ray and ADOT instead; which applies is in the project's architecture.
 
 **For containerized workloads**:
 1. Use **AWS Managed Prometheus MCP** for metrics

@@ -326,12 +326,12 @@ aws iam list-attached-role-policies \
 **Causes:**
 - Missing VPC endpoint for an AWS service
 - Security group blocking outbound
-- A call to an internet destination that does not go through the Egress Boundary service
+- A call to an internet destination with no path out of the VPC (no NAT Gateway, or not through the egress path the project's architecture provides)
 
 **Solutions:**
-- Add the VPC endpoint for the AWS service (SkillSpoke reaches AWS services from the VPC through VPC endpoints)
+- Add the VPC endpoint for the AWS service
 - Check security group rules
-- Send an internet call through the Egress Boundary service, the only internet path SkillSpoke allows, for an allow-listed destination; do not add a NAT Gateway to a service
+- Send an internet call through the egress path the project's architecture provides; do not add a NAT Gateway to a service the architecture does not give one
 
 ## References
 

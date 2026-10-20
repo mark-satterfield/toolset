@@ -529,7 +529,7 @@ new stepfunctions.StateMachine(this, 'OrderSaga', {
 
 ### Idempotency
 
-**Always make event handlers idempotent.** Never check for a record and then write it as two calls: two concurrent deliveries both see no record and both process the event. In SkillSpoke, idempotency uses the Powertools idempotency utility with its DynamoDB persistence layer through the chassis: it claims the key with a conditional write before the work runs, marks the record complete with the result afterwards, and lets a failed attempt be retried. Each service that needs it owns an on-demand idempotency table with TTL in its own stack. It applies only to operations that create or change something, and the stored result stays small (an ID, a status, or an S3 reference for large content).
+**Always make event handlers idempotent.** Never check for a record and then write it as two calls: two concurrent deliveries both see no record and both process the event. With Powertools, idempotency uses the idempotency utility with its DynamoDB persistence layer (through the project's shared chassis, where it has one): it claims the key with a conditional write before the work runs, marks the record complete with the result afterwards, and lets a failed attempt be retried. Each service that needs it owns an on-demand idempotency table with TTL in its own stack. It applies only to operations that create or change something, and the stored result stays small (an ID, a status, or an S3 reference for large content).
 
 ```python
 import os

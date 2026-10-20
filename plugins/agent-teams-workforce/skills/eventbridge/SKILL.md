@@ -9,7 +9,7 @@ doc_source: https://docs.aws.amazon.com/eventbridge/latest/userguide/
 
 Amazon EventBridge is a serverless event bus that connects applications using events. Route events from AWS services, custom applications, and SaaS partners.
 
-**SkillSpoke uses one bus, `skillSpoke-events`, owned by `shared-events-infra`.** A SkillSpoke service never creates its own event bus and never calls `PutEvents` itself: it publishes a SkillSpoke event through the central event API of `shared-events-service`, which builds, validates and puts the standard event on the bus. A routing rule and its targets, retry policy and DLQ belong to the stack of the target, defined in Python CDK with names from the naming command, reading the bus name and ARN from the SSM parameters `shared-events-infra` publishes. SkillSpoke does not use EventBridge archive or replay. Load the `skillspoke-events` skill for any SkillSpoke event. The CLI and boto3 examples below (custom buses, direct `put_events`) show the EventBridge API itself, for exploring and for systems outside SkillSpoke; EventBridge Scheduler and AWS service events (for example S3 or SES events on the default bus) are used directly.
+**A project's own event standard governs its events.** Before you design, specify, review or implement anything that produces, routes or receives an event, load the project's event standard, which the project instructions name. It states which buses exist and who owns them, whether a service may call `PutEvents` itself or publishes through a central event API, which stack owns a routing rule with its targets, retry policy and DLQ, how stacks read the bus name and ARN, and whether archive and replay are used. Names come from the naming command. The CLI and boto3 examples below (custom buses, direct `put_events`) show the EventBridge API itself; use them as the project's event standard allows. EventBridge Scheduler and AWS service events (for example S3 or SES events on the default bus) are used directly.
 
 ## Table of Contents
 
@@ -273,7 +273,7 @@ aws events put-rule \
 - **Use DLQs** for failed deliveries
 - **Implement idempotency** in consumers
 - **Monitor failed invocations**
-- **Archive and replay** can support recovery elsewhere; SkillSpoke does not use them, and recovers from each target's DLQ
+- **Archive and replay** can support recovery; whether a project uses them, or recovers from each target's DLQ instead, is in its event standard
 
 ### Security
 

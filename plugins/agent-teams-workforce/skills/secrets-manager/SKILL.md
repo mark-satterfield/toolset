@@ -9,7 +9,7 @@ doc_source: https://docs.aws.amazon.com/secretsmanager/latest/userguide/
 
 AWS Secrets Manager helps protect access to applications, services, and IT resources. Store, retrieve, and automatically rotate credentials, API keys, and other secrets.
 
-**You (the agent) never read a secret value**: no `get-secret-value` or `batch-get-secret-value` call through the CLI, the SDK, an MCP tool or any other means; see `aws-core:aws-secrets-manager`. **The code you write reads secrets at runtime.** In a SkillSpoke Lambda that is the Powertools Parameters utility (`parameters.get_secret`), which caches the value between invocations.
+**You (the agent) never read a secret value**: no `get-secret-value` or `batch-get-secret-value` call through the CLI, the SDK, an MCP tool or any other means; see `aws-core:aws-secrets-manager`. **The code you write reads secrets at runtime.** In a Python Lambda on Powertools that is the Parameters utility (`parameters.get_secret`), which caches the value between invocations.
 
 ## Table of Contents
 
@@ -49,9 +49,9 @@ Automatic credential rotation using Lambda functions. Built-in support for:
 
 ### Create a Secret
 
-Never type a secret value on a command line or into code: a command-line argument is visible to other processes and lands in shell history, and a value in code lands in git. Let Secrets Manager generate the value, or pass it from a file that is never committed. SkillSpoke secrets are created in the owning service's Python CDK stack, with the name from the project's naming command (the `resource-naming` skill); the CLI and boto3 forms below are for a secret that exists outside any stack.
+Never type a secret value on a command line or into code: a command-line argument is visible to other processes and lands in shell history, and a value in code lands in git. Let Secrets Manager generate the value, or pass it from a file that is never committed. Where a project defines its infrastructure in CDK, a secret is created in the owning service's CDK stack, with the name from the project's naming command (the `resource-naming` skill); the CLI and boto3 forms below are for a secret that exists outside any stack.
 
-**CDK (Python), the SkillSpoke way:**
+**CDK (Python):**
 
 ```python
 import json
@@ -64,7 +64,7 @@ secret = secretsmanager.Secret(
     secret_name=secret_name,  # from the naming command
     description="Credentials for the partner API",
     generate_secret_string=secretsmanager.SecretStringGenerator(
-        secret_string_template=json.dumps({"username": "skillspoke"}),
+        secret_string_template=json.dumps({"username": "app"}),
         generate_string_key="password",
         password_length=32,
         exclude_characters='"@/\\',
@@ -112,12 +112,12 @@ password = secrets.get_random_password(PasswordLength=32, ExcludeCharacters='"@/
 secrets.create_secret(
     Name=secret_name,  # from the naming command
     Description="Partner API credentials",
-    SecretString=json.dumps({"username": "skillspoke", "password": password}),
+    SecretString=json.dumps({"username": "app", "password": password}),
 )
 ```
 ### Retrieve a Secret at Runtime (Lambda)
 
-Application code in a SkillSpoke Lambda reads a secret with Powertools Parameters. The value is cached in the execution environment for `max_age` seconds, so the handler does not call Secrets Manager on every invocation, and a rotated value is picked up when the cache expires.
+Application code in a Python Lambda on Powertools reads a secret with Powertools Parameters. The value is cached in the execution environment for `max_age` seconds, so the handler does not call Secrets Manager on every invocation, and a rotated value is picked up when the cache expires.
 
 ```python
 from typing import Any

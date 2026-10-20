@@ -116,7 +116,7 @@ Deep-dive reference documentation for Runtime internals, deployment, OAuth integ
 
 - **OAuth Integration**: [`references/agentcore-oauth-integration.md`](references/agentcore-oauth-integration.md) - Three-layer OAuth architecture (Inbound JWT, Outbound Credential Provider, Gateway OAuth), Cognito configuration, supported IdPs, end-to-end CDK examples
 - **Runtime Core Mechanisms**: [`references/agentcore-runtime-core.md`](references/agentcore-runtime-core.md) - Container contract, MicroVM Session model, Agent lifecycle (per-request vs per-session), tool integration (MCP/HTTP), startup flow
-- **Runtime Deployment & Operations**: [`references/agentcore-runtime-deploy.md`](references/agentcore-runtime-deploy.md) - CDK deployment (L1/L2 constructs), multi-Runtime architecture, security model, observability (OTel/CloudWatch), BedrockAgentCoreApp vs FastAPI comparison. SkillSpoke bans FastAPI: SkillSpoke agents on AgentCore Runtime use `BedrockAgentCoreApp` from the `bedrock-agentcore` SDK; the FastAPI material is background only
+- **Runtime Deployment & Operations**: [`references/agentcore-runtime-deploy.md`](references/agentcore-runtime-deploy.md) - CDK deployment (L1/L2 constructs), multi-Runtime architecture, security model, observability (OTel/CloudWatch), BedrockAgentCoreApp vs FastAPI comparison. Where the project's constraints exclude FastAPI, an agent on AgentCore Runtime uses `BedrockAgentCoreApp` from the `bedrock-agentcore` SDK and the FastAPI material is background only
 - **Runtime Protocol Reference**: [`references/agentcore-runtime-protocols.md`](references/agentcore-runtime-protocols.md) - HTTP, MCP, A2A, AG-UI protocol specifications with container contracts, endpoint specs, and selection guide
 
 ### Runnable Script Templates
@@ -126,7 +126,7 @@ Production-ready templates in [`scripts/`](scripts/) for common deployment patte
 | Script | Protocol | Description |
 |--------|----------|-------------|
 | [`Dockerfile.runtime-template`](scripts/Dockerfile.runtime-template) | — | ARM64 multi-stage Docker build for AgentCore Runtime |
-| [`runtime-fastapi-template.py`](scripts/runtime-fastapi-template.py) | HTTP | FastAPI Runtime with SSE streaming and MCPClient. Not for SkillSpoke, which bans FastAPI; build the HTTP runtime with `BedrockAgentCoreApp` instead |
+| [`runtime-fastapi-template.py`](scripts/runtime-fastapi-template.py) | HTTP | FastAPI Runtime with SSE streaming and MCPClient. Not for a project whose constraints exclude FastAPI; there, build the HTTP runtime with `BedrockAgentCoreApp` instead |
 | [`mcp-server-template.py`](scripts/mcp-server-template.py) | MCP | MCP Server with Streamable HTTP transport |
 | [`a2a-server-template.py`](scripts/a2a-server-template.py) | A2A | A2A Server with Agent Card discovery |
 | [`agui-server-template.py`](scripts/agui-server-template.py) | AG-UI | AG-UI Server with standard AG-UI event stream |

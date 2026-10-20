@@ -1,6 +1,6 @@
 ---
 name: aws-cdk-development
-description: AWS Cloud Development Kit (CDK) expert for building cloud infrastructure; SkillSpoke writes CDK in Python. Use when creating CDK stacks, defining CDK constructs, implementing infrastructure as code, or when the user mentions CDK, CloudFormation, IaC, cdk synth, cdk deploy, or wants to define AWS infrastructure programmatically. Covers CDK app structure, construct patterns, stack composition, and deployment workflows.
+description: AWS Cloud Development Kit (CDK) expert for building cloud infrastructure, in Python or TypeScript. Use when creating CDK stacks, defining CDK constructs, implementing infrastructure as code, or when the user mentions CDK, CloudFormation, IaC, cdk synth, cdk deploy, or wants to define AWS infrastructure programmatically. Covers CDK app structure, construct patterns, stack composition, and deployment workflows.
 context: fork
 skills:
   - aws-mcp-setup
@@ -60,7 +60,7 @@ Name stacks and resources by the physical-name rule in `cdk-coding` (under "Stru
 
 ### Lambda Function Development
 
-SkillSpoke infrastructure is CDK in Python, and every service Lambda is Python on `aws-lambda-powertools` through `shared-chassis-lib`. Use the constructs `shared-cdk-lib` provides where it has one for the job. Otherwise use the stable `aws_lambda.Function` from `aws-cdk-lib` and bundle the dependencies with `Code.from_asset` and the runtime's bundling image. `@aws-cdk/aws-lambda-python-alpha` (`PythonFunction`) is an experimental alpha module outside `aws-cdk-lib`, with no stability guarantee; do not use it.
+The project's CDK language, its Lambda runtime and libraries, and any shared construct library it provides are in its architecture constraints and project instructions. Use the construct a project's shared construct library provides where it has one for the job. Otherwise, for a Python Lambda, use the stable `aws_lambda.Function` from `aws-cdk-lib` and bundle the dependencies with `Code.from_asset` and the runtime's bundling image. `@aws-cdk/aws-lambda-python-alpha` (`PythonFunction`) is an experimental alpha module outside `aws-cdk-lib`, with no stability guarantee; do not use it.
 
 ```python
 from aws_cdk import BundlingOptions, aws_lambda as lambda_

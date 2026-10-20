@@ -42,15 +42,15 @@ Amazon DynamoDB is a fully managed NoSQL database service providing fast, predic
 | **On-Demand** (default) | Pay per request, scales to zero cost when idle; AWS's default and recommended mode for most workloads |
 | **Provisioned** | Steady traffic with predictable growth that can be forecast reliably; billed per provisioned capacity hour whether used or not |
 
-**SkillSpoke default: on-demand.** SkillSpoke is at alpha scale (one dev account, at most five users), where on-demand requests cost cents a month and provisioned capacity is a floor billed every hour. AWS documents that on-demand costs less for workloads with average provisioned-capacity utilization below 35%, and often above it when the workload has quiet periods and occasional peaks (https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/CostOptimization_TableCapacityMode.html). Choose provisioned capacity (with auto-scaling, and reserved capacity where it applies) only when a table has a measured, steady load that keeps utilization well above that level, and record the cost comparison in your result.
+**Default: on-demand.** At low or unmeasured usage, on-demand requests cost little and provisioned capacity is a floor billed every hour. AWS documents that on-demand costs less for workloads with average provisioned-capacity utilization below 35%, and often above it when the workload has quiet periods and occasional peaks (https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/CostOptimization_TableCapacityMode.html). Choose provisioned capacity (with auto-scaling, and reserved capacity where it applies) only when a table has a measured, steady load that keeps utilization well above that level, and record the cost comparison in your result.
 
-Each SkillSpoke service owns its tables, in its own stack; tables are not shared between services by default. Tables are defined in the service's Python CDK app (`dynamodb.TableV2` with `billing=dynamodb.Billing.on_demand()`), and every table name comes from the project's naming command (the `resource-naming` skill). The CLI and boto3 `create_table` calls below are for exploring and testing, never for creating a SkillSpoke table.
+Who owns each table, and whether tables may be shared between services, is in the project's architecture constraints. Where a project defines its infrastructure in CDK, a table is defined in the owning service's CDK app (in Python, `dynamodb.TableV2` with `billing=dynamodb.Billing.on_demand()`), and every table name comes from the project's naming command (the `resource-naming` skill). The CLI and boto3 `create_table` calls below are for exploring and testing, never for creating a table a stack should own.
 
 ## Common Patterns
 
 ### Create a Table
 
-**AWS CLI (exploration only; SkillSpoke tables are created by CDK):**
+**AWS CLI (exploration only; a project's tables are created by its stacks):**
 
 ```bash
 aws dynamodb create-table \
@@ -248,7 +248,7 @@ table.update_item(
 - **Distribute partition keys evenly** — avoid hot partitions
 - **Use batch operations** to reduce API calls
 - **Use projections** to reduce data transfer
-- **DAX only for a measured need.** DynamoDB Accelerator is a cluster of nodes in a VPC billed per node-hour from launch to termination, whatever the traffic (https://aws.amazon.com/dynamodbaccelerator/pricing/), and its item cache is eventually consistent. Consider it only when a read-heavy access pattern has a measured latency requirement below DynamoDB's single-digit milliseconds, or a measured read volume whose on-demand read cost exceeds the cluster's hourly cost; record that comparison. Neither holds at SkillSpoke's alpha scale, so the default is no DAX.
+- **DAX only for a measured need.** DynamoDB Accelerator is a cluster of nodes in a VPC billed per node-hour from launch to termination, whatever the traffic (https://aws.amazon.com/dynamodbaccelerator/pricing/), and its item cache is eventually consistent. Consider it only when a read-heavy access pattern has a measured latency requirement below DynamoDB's single-digit milliseconds, or a measured read volume whose on-demand read cost exceeds the cluster's hourly cost; record that comparison. Where neither holds, the default is no DAX.
 
 ### Cost Optimization
 

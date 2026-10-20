@@ -9,7 +9,7 @@ doc_source: https://docs.aws.amazon.com/apigateway/latest/developerguide/
 
 Amazon API Gateway is a fully managed service for creating, publishing, and securing APIs at any scale.
 
-**SkillSpoke uses REST APIs (API Gateway v1, the `apigateway` API) only. HTTP APIs (v2, `apigatewayv2`) are banned** by SkillSpoke standing rule 4. Every API, authorizer, CLI call and CDK construct in this skill is the REST API kind; a WebSocket API is used only where a requirement names it.
+**This skill covers REST APIs (API Gateway v1, the `apigateway` API).** Which API types a project allows (for example REST only, with HTTP APIs, `apigatewayv2`, excluded) is the project's architecture constraint, stated in its project instructions; follow it. Every API, authorizer, CLI call and CDK construct in this skill is the REST API kind; a WebSocket API is used only where a requirement names it.
 
 ## Table of Contents
 
@@ -26,7 +26,7 @@ Amazon API Gateway is a fully managed service for creating, publishing, and secu
 
 | Type | Description | Use Case |
 |------|-------------|----------|
-| **REST API** | Full-featured: Cognito user pools authorizers, usage plans, WAF, request validation | Every SkillSpoke API |
+| **REST API** | Full-featured: Cognito user pools authorizers, usage plans, WAF, request validation | The default for a request-response API |
 | **WebSocket API** | Bidirectional communication | Only where a requirement names real-time bidirectional traffic |
 
 ### Key Components
@@ -93,7 +93,7 @@ aws apigateway create-deployment \
 
 ### Lambda Handler for API Gateway
 
-SkillSpoke Lambdas use `aws-lambda-powertools` only. The REST API proxy event (payload format 1.0) is resolved with `APIGatewayRestResolver`:
+With `aws-lambda-powertools`, the REST API proxy event (payload format 1.0) is resolved with `APIGatewayRestResolver`:
 
 ```python
 from aws_lambda_powertools.event_handler import APIGatewayRestResolver
@@ -181,7 +181,7 @@ aws apigateway create-authorizer \
 
 ### Performance
 
-- **Enable stage caching only for a stated latency need**: the API Gateway cache is billed per hour while it is enabled, whether or not it serves requests, so at alpha scale it is opt-in, not a default
+- **Enable stage caching only for a stated latency need**: the API Gateway cache is billed per hour while it is enabled, whether or not it serves requests, so at low usage it is opt-in, not a default
 - **Use regional endpoints** unless global distribution needed
 - **Implement pagination** for list endpoints
 

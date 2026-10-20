@@ -1,6 +1,6 @@
 ---
 name: aws-serverless-eda
-description: AWS serverless and event-driven architecture expert based on the Well-Architected Framework, applied to SkillSpoke's stack (Python Lambdas on aws-lambda-powertools, API Gateway REST API v1, DynamoDB, CDK in Python, SkillSpoke events through the events service onto EventBridge). Use when building serverless APIs, Lambda functions, REST APIs, microservices, or async workflows. Covers Lambda, API Gateway REST API v1 and the WebSocket API, DynamoDB, Step Functions, EventBridge, SQS, SNS, and serverless patterns. Essential when user mentions serverless, Lambda, API Gateway, event-driven, async processing, queues, pub/sub, or wants to build scalable serverless applications with AWS best practices.
+description: AWS serverless and event-driven architecture expert based on the Well-Architected Framework, with Python Lambdas on aws-lambda-powertools, API Gateway REST APIs, DynamoDB, CDK and EventBridge. Use when building serverless APIs, Lambda functions, REST APIs, microservices, or async workflows. Covers Lambda, API Gateway REST API v1 and the WebSocket API, DynamoDB, Step Functions, EventBridge, SQS, SNS, and serverless patterns. Essential when user mentions serverless, Lambda, API Gateway, event-driven, async processing, queues, pub/sub, or wants to build scalable serverless applications with AWS best practices.
 context: fork
 skills:
   - aws-mcp-setup
@@ -23,14 +23,15 @@ allowed-tools:
 
 # AWS Serverless & Event-Driven Architecture
 
-This skill provides guidance for building serverless applications and event-driven architectures on AWS based on Well-Architected Framework principles, in SkillSpoke's stack:
+This skill provides guidance for building serverless applications and event-driven architectures on AWS based on Well-Architected Framework principles. The project's own choices are in its architecture constraints and project instructions, and win where they differ from this skill; look up in them, before you design:
 
-- Every service Lambda is Python on `aws-lambda-powertools`, through `shared-chassis-lib`. Django, Flask and FastAPI are banned.
-- APIs are API Gateway REST API v1, spec-first in OpenAPI; HTTP API v2 is not used. Live push uses the API Gateway WebSocket API (the `apigatewayv2` CLI covers WebSocket APIs; it is never used to create an HTTP API).
-- Infrastructure is CDK in Python, one CDK app per service with one stack per environment holding every resource the service owns. Values cross stacks only through SSM Parameter Store, never CloudFormation exports and imports.
-- SkillSpoke events are published only through the central event API of the events service, which puts them on the single bus; a routing rule is owned by the stack of its target. Load the `skillspoke-events` skill for anything that produces, routes or receives a SkillSpoke event.
-- Every name comes from the project's naming command (the `resource-naming` skill).
-- Alpha scale (one dev account, at most five users): per-request pricing (Lambda, DynamoDB on-demand) over always-on capacity unless a stated need justifies it.
+- The Lambda runtime and libraries (for example Python on `aws-lambda-powertools` through a shared chassis library), and any web framework the project excludes.
+- The API types allowed (for example API Gateway REST APIs, spec-first in OpenAPI, with HTTP APIs excluded and live push on the WebSocket API).
+- The infrastructure language and layout (for example CDK in Python, one CDK app per service with one stack per environment), and how values cross stacks (for example SSM Parameter Store rather than CloudFormation exports and imports).
+- The project's event standard, which the project instructions name: load it before you design, specify, review or implement anything that produces, routes or receives an event.
+- The usage the design is sized for. At low or unmeasured usage, prefer per-request pricing (Lambda, DynamoDB on-demand) over always-on capacity unless a stated need justifies it.
+
+Every name comes from the project's naming command (the `resource-naming` skill).
 
 ## AWS Documentation Requirement
 
@@ -41,7 +42,7 @@ Always verify AWS facts using MCP tools (`mcp__aws-mcp__*` or `mcp__*awsdocs*__*
 This skill leverages the CDK MCP server (provided via `aws-cdk-development` dependency) and AWS Documentation MCP for serverless guidance.
 
 > **Note**: The following AWS MCP servers are available separately via the Full AWS MCP Server (see `aws-mcp-setup` skill) and are not bundled with this plugin:
-> - AWS Serverless MCP — SAM CLI local testing (SkillSpoke deploys with CDK, not `sam deploy`)
+> - AWS Serverless MCP — SAM CLI local testing (a project that deploys with CDK does not use `sam deploy`)
 > - AWS Lambda Tool MCP — Direct Lambda invocation
 > - AWS Step Functions MCP — Workflow orchestration
 > - Amazon SNS/SQS MCP — Messaging and queue management
@@ -108,7 +109,7 @@ table = dynamodb.TableV2(
 )
 ```
 
-Provisioned capacity with auto-scaling is cheaper only for steady, predictable traffic high enough to keep the provisioned units busy; at SkillSpoke's alpha scale it is a monthly floor that low usage does not reduce. Choose it only for a stated, measured need (see the `dynamodb` skill).
+Provisioned capacity with auto-scaling is cheaper only for steady, predictable traffic high enough to keep the provisioned units busy; at low usage it is a monthly floor that the usage does not reduce. Choose it only for a stated, measured need (see the `dynamodb` skill).
 
 ### 3. Share Nothing
 
@@ -155,7 +156,7 @@ Choose on the workload (https://docs.aws.amazon.com/lambda/latest/dg/durable-ste
 - **Lambda durable functions** when the workflow is code-first and tightly coupled with the business logic of a Lambda function, with fine-grained steps, retries and checkpoints inside that function.
 - **Step Functions** when the workflow orchestrates across AWS services (native integrations with no Lambda in between), needs a visual or auditable definition, or spans several services or teams.
 
-Coordination between SkillSpoke services is by events, not a central state machine: a state machine orchestrates work inside one service, and rollback across services uses compensating events.
+Where the project's architecture coordinates services by events rather than a central state machine, a state machine orchestrates work inside one service, and rollback across services uses compensating events.
 
 Record which one you chose and why in your result.
 
@@ -197,7 +198,7 @@ bucket.add_event_notification(
 )
 ```
 
-Between services, a SkillSpoke event is published through the central event API (never with a direct `PutEvents` from the producer), and the stack that owns the target owns the routing rule on the bus, with the target's retry policy and DLQ. The bus name and ARN are read from the SSM parameters `shared-events-infra` publishes. The `skillspoke-events` skill holds the rule, its event pattern and the target's obligations.
+Between services, an event is published, routed and received as the project's event standard states (which the project instructions name): whether a producer calls `PutEvents` itself or publishes through a central event API, which stack owns a routing rule with its target's retry policy and DLQ, and how stacks read the bus name and ARN.
 
 **Benefits**:
 - Loose coupling between services
@@ -253,7 +254,7 @@ For detailed implementation patterns with full code examples, see the reference 
 
 ### Event-Driven Architecture Patterns
 **File**: `references/eda-patterns.md`
-- Event Router with EventBridge (rule-based routing; SkillSpoke events go through the events service onto the one bus)
+- Event Router with EventBridge (rule-based routing; the project's event standard says how events reach the bus)
 - Queue-Based Processing with SQS (standard/FIFO, DLQ, Lambda consumers)
 - Pub/Sub Fan-Out with SNS + SQS (multi-consumer, filtering)
 - Saga Pattern with Step Functions (distributed transactions, compensating actions)
@@ -267,7 +268,7 @@ For detailed implementation patterns with full code examples, see the reference 
 - Scheduled Jobs with EventBridge Scheduler (cron/rate schedules)
 - Webhook Processing (signature validation, async queue forwarding)
 
-The reference files hold some TypeScript examples; SkillSpoke writes the same constructs in Python CDK and the handlers in Python.
+The reference files hold some TypeScript examples; write the same constructs in the CDK language and handler language the project's architecture names.
 
 > **Important**: How CDK code names resources (`rest_api_name`, `function_name`, `table_name`, `queue_name`, state machine and stack names, SSM parameter names) is the physical-name rule of the `cdk-coding` skill. When `printenv ATW_NAMING_COMMAND` prints nothing, say so in your result and leave the name unmade.
 
@@ -341,7 +342,7 @@ lambda_.Function(
 )
 ```
 
-Packaging Python dependencies and the shared constructs every stack uses come from `shared-cdk-lib`; see the `aws-cdk-development` and `cdk-coding` skills.
+Package Python dependencies and use the shared constructs the project's shared construct library provides, where it has one; see the `aws-cdk-development` and `cdk-coding` skills.
 
 ## Using MCP Servers Effectively
 

@@ -1,6 +1,6 @@
 ---
 name: cloudformation
-description: AWS CloudFormation stack management for the stacks CDK synthesizes. Use when reading synthesized templates, troubleshooting stack deployments, using change sets, or managing drift. SkillSpoke writes infrastructure as CDK in Python, not raw templates.
+description: AWS CloudFormation stack management for the stacks CDK synthesizes. Use when reading synthesized templates, troubleshooting stack deployments, using change sets, or managing drift. Where a project writes its infrastructure as CDK, this skill covers the templates CDK synthesizes.
 last_updated: "2026-01-07"
 doc_source: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/
 ---
@@ -9,7 +9,7 @@ doc_source: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/
 
 AWS CloudFormation provisions and manages AWS resources using templates. Define infrastructure as code, version control it, and deploy consistently across environments.
 
-**In SkillSpoke, infrastructure is written as CDK in Python, never as raw CloudFormation or SAM templates** (`aws-cdk-development`, `cdk-coding`). CDK synthesizes the templates and deploys them as CloudFormation stacks, so this skill applies to reading a synthesized template, troubleshooting a failed deploy, change sets, drift, and stack status. The template examples below show what a synthesized template contains; do not hand-write them as SkillSpoke infrastructure. A service is one CDK app with one stack per environment; values cross stacks only through SSM Parameter Store; every name comes from the naming command (`resource-naming`).
+**Where a project writes its infrastructure as CDK** (`aws-cdk-development`, `cdk-coding`), CDK synthesizes the templates and deploys them as CloudFormation stacks, so this skill applies to reading a synthesized template, troubleshooting a failed deploy, change sets, drift, and stack status. The template examples below show what a synthesized template contains; do not hand-write them as the infrastructure of such a project. How the project divides its apps and stacks, how values cross stacks, and how resources are named are in its architecture constraints and project instructions; every name comes from the naming command (`resource-naming`).
 
 ## Table of Contents
 
@@ -320,7 +320,7 @@ aws cloudformation update-termination-protection \
 
 ### Organization
 
-- **One stack per service per environment** in SkillSpoke, organized with constructs inside it, not split into nested stacks
+- **Constructs inside a stack before nested stacks**: organize a stack with constructs rather than splitting it into nested stacks, within the stack layout the project's architecture states
 - **Create reusable modules**
 - **Version control templates**
 - **Use consistent naming conventions**

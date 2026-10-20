@@ -27,7 +27,7 @@ Pre-trained models available through Bedrock (from the Bedrock User Guide's mode
 - **Nova** (Amazon): Nova 2 Lite, Nova Pro, Lite and Micro for text, Nova Canvas for images, Nova Multimodal Embeddings
 - **Titan Text Embeddings V2** (Amazon) and **Cohere Embed v4**: text embeddings
 
-In SkillSpoke, all inference runs on Amazon Bedrock in the SkillSpoke account, and service code calls a model only through `skillSpoke-ai-lib`, the one way to call a model; the patterns below are what that library and its callers rest on.
+Where a project routes every model call through one shared library of its own (its project instructions name it), service code calls a model only through that library; the patterns below are what such a library and its callers rest on.
 
 ### Model Access
 
@@ -199,7 +199,7 @@ aws bedrock list-foundation-models \
 - **Use streaming**: For better user experience with long outputs
 - **Connection pooling**: Reuse boto3 clients
 - **Regional deployment**: Use closest region to reduce latency
-- **Provisioned throughput**: Only for a measured, consistent high-volume workload; it is an hourly commitment billed whatever the traffic, so at SkillSpoke's alpha scale on-demand inference is the default
+- **Provisioned throughput**: Only for a measured, consistent high-volume workload; it is an hourly commitment billed whatever the traffic, so at low or unmeasured volume on-demand inference is the default
 
 ### Security
 

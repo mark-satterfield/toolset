@@ -1,34 +1,31 @@
 ---
 name: aurora-postgresql
 description: >-
-  SkillSpoke's one authority on PostgreSQL: Aurora PostgreSQL Serverless v2 reached through the
-  RDS Data API. Use whenever you design, specify, review, implement, test or provision anything
-  that stores data in PostgreSQL: relational schemas, the Python Data API access layer,
-  migrations, pgvector similarity search, graph-shaped data and the choice between PostgreSQL
-  and a graph database, database security, performance and operations. It states where
-  SkillSpoke and AWS differ from generic PostgreSQL guidance, and it overrides that guidance,
-  including the `design-postgres-tables`, `pgvector-semantic-search` and
-  `database-schema-designer` skills, where they disagree.
+  Aurora PostgreSQL Serverless v2 reached through the RDS Data API. Use whenever you design,
+  specify, review, implement, test or provision anything that stores data in Aurora PostgreSQL
+  through the Data API: relational schemas, the Python Data API access layer, migrations,
+  pgvector similarity search, graph-shaped data and the choice between PostgreSQL and a graph
+  database, database security, performance and operations. It states where Aurora and the Data
+  API differ from generic PostgreSQL guidance, and it overrides that guidance, including the
+  `design-postgres-tables`, `pgvector-semantic-search` and `database-schema-designer` skills,
+  where they disagree.
 user-invocable: false
 ---
 
-# Aurora PostgreSQL in SkillSpoke
+# Aurora PostgreSQL through the RDS Data API
 
-The source of every architecture decision is the effective arc42 architecture in the
-`skillspoke-docs` vault, under `docs/tech/architecture/arc42/`. This skill points to it and
-restates none of its decisions. Read the view that covers your task before you decide anything
-this skill does not state.
+The source of every architecture decision is the project's effective architecture, which the
+project instructions locate. This skill restates none of its decisions. Before you decide
+anything this skill does not state, read the architecture views that cover your task:
 
-| View | Holds |
+| Look up in the project's architecture | Why |
 |---|---|
-| `08-crosscutting-concepts/persistence-per-data-set.md` | Which data set lives in PostgreSQL, its owning service, and the PostgreSQL topology (one cluster per owning service, Data API only, why Aurora) |
-| `07-deployment-view/environments-and-accounts.md` | Capacity, availability, backups and deletion protection per environment |
-| `07-deployment-view/network.md` | The `rds-data` interface endpoint and the security groups |
-| `05-building-block-view/shared-components.md` | `PlatformPostgresCluster` in `shared-cdk-lib`; the Data API client, outbox writer and `OutboxRelay` in `skillSpoke-dataAccess-lib` |
-| `08-crosscutting-concepts/powertools-and-chassis.md` | What the chassis and `skillSpoke-dataAccess-lib` give every PostgreSQL handler |
-| `08-crosscutting-concepts/concurrency-control.md` | Contended writes and atomic unique creation |
-| `08-crosscutting-concepts/migration-and-backfill.md` | How data migrations and backfills run |
-| `08-crosscutting-concepts/service-isolation.md` | Store ownership; no service reads another service's database |
+| Which data set lives in PostgreSQL, its owning service, and the PostgreSQL topology | Where the store sits and who may reach it |
+| Capacity, availability, backups and deletion protection per environment | The values the cluster construct is given |
+| The network path to the Data API (the `rds-data` interface endpoint) and the security groups | How a Lambda reaches the cluster |
+| The shared construct that builds a cluster, and the shared data-access library (Data API client, retry while a paused cluster resumes, outbox writer and relay), where the project has them | What you use instead of writing your own |
+| Concurrency control, migration and backfill, and store ownership between services | The patterns a change must follow |
+| The project's event standard, which the project instructions name | How a state change publishes its event |
 
 Generic guidance this skill builds on, read as reference and overridden here where it differs:
 `design-postgres-tables` (table design) and `pgvector-semantic-search` (pgvector), both from
@@ -39,20 +36,22 @@ server (`search_docs`). For an AWS fact, use the AWS documentation (`aws-mcp`
 planning, retrieve the `amazon-aurora-postgresql` AWS skill with `aws___retrieve_skill`, and
 apply its numbers through CDK only.
 
-## 1. Platform facts
+## 1. Aurora and Data API facts
 
-- **Engine and shape.** Aurora PostgreSQL Serverless v2, one cluster per owning service in that
-  service's own stack, built with `PlatformPostgresCluster` from `shared-cdk-lib`. A service
-  never reads or writes another service's database; it calls that service's API or consumes its
+- **Engine and shape.** Aurora PostgreSQL Serverless v2. Where the project's architecture gives
+  each owning service its own cluster, the cluster is in that service's own stack, built with the
+  construct the project's shared construct library provides where it has one. A service never
+  reads or writes another service's database; it calls that service's API or consumes its
   events.
 - **Access.** Lambdas reach the cluster only through the RDS Data API (`rds-data`), over the
   `rds-data` interface endpoint. No connection pool, no RDS Proxy, no direct wire-protocol
   connection from application code. Generic pooling advice (pg-pool, PgBouncer, RDS Proxy) does
   not apply.
-- **Scale to zero.** In `dev` the minimum capacity is 0 ACU with automatic pause; a paused
-  writer resumes on the first Data API request, which takes less than 15 seconds. In `qa` and
-  `prod` the minimum is 0.5 ACU with a reader in a second AZ. Every call that wakes a paused
-  cluster bills ACUs until it pauses again.
+- **Scale to zero.** A minimum capacity of 0 ACU enables automatic pause; a paused writer
+  resumes on the first Data API request, which takes less than 15 seconds. An environment that
+  needs a warm writer or a reader in a second AZ sets a higher minimum; the minimum per
+  environment is the project's architecture. Every call that wakes a paused cluster bills ACUs
+  until it pauses again.
 - **Data API limits** (AWS documentation, `data-api.limitations.html`, `data-api-timeouts.html`,
   `BeginTransaction`): queries run on the writer only; a response larger than 1 MiB is
   terminated; a call that does not finish in 45 seconds is cancelled unless
@@ -60,19 +59,19 @@ apply its numbers through CDK only.
   that uses its id, and after 24 hours in any case; array parameters are not supported; the
   `schema` parameter is not supported; Aurora PostgreSQL 14 and later needs `scram-sha-256`
   passwords.
-- **Engine versions and extensions.** Use the latest Aurora PostgreSQL major version that
-  `PlatformPostgresCluster` supports. Before relying on an extension or an extension version,
+- **Engine versions and extensions.** Use the latest Aurora PostgreSQL major version that the
+  project's cluster construct supports. Before relying on an extension or an extension version,
   check the Aurora PostgreSQL extension table for that engine version
-  (`AuroraPostgreSQLReleaseNotes/AuroraPostgreSQL.Extensions.html`). In use: `vector`
-  (pgvector 0.8.x on current minors), `pg_trgm`, and PostGIS where a service needs it.
-  `ltree` and `pgrouting` are available. **Not available on Aurora:** pgvectorscale,
+  (`AuroraPostgreSQLReleaseNotes/AuroraPostgreSQL.Extensions.html`). Available and covered
+  here: `vector` (pgvector 0.8.x on current minors), `pg_trgm`, PostGIS, `ltree` and
+  `pgrouting`. **Not available on Aurora:** pgvectorscale,
   pg_textsearch, TimescaleDB, Apache AGE. Any guidance that depends on them does not apply.
 
 ## 2. The Data API access layer (Python)
 
-The Data API client, its retry while a paused cluster resumes, the transactional outbox
-writer and the `OutboxRelay` handler are in `skillSpoke-dataAccess-lib`. Use them; never write
-a second client, retry loop or outbox. The rules below are what code built on that library
+Where the project has a shared data-access library (the Data API client, its retry while a
+paused cluster resumes, a transactional outbox writer and its relay), use it; never write a
+second client, retry loop or outbox. The rules below are what code built on such a library
 must do, and what the library itself must do.
 
 - **Typed parameters, always.** Every value goes in `parameters` as a named `SqlParameter`
@@ -101,9 +100,9 @@ must do, and what the library itself must do.
 - **Batches.** `BatchExecuteStatement` runs one statement for many parameter sets; inside a
   transaction it is all-or-nothing.
 - **Publishing events.** A state change that announces an event writes its outbox row in the
-  same transaction as the change, through the library's outbox writer
-  (`skillspoke-events` skill, "Publish after commit").
-- **Retries and timeouts.** Retry `DatabaseResumingException` (in the library) and the
+  same transaction as the change, through the shared outbox writer where there is one, as the
+  project's event standard (which the project instructions name) requires of a publisher.
+- **Retries and timeouts.** Retry `DatabaseResumingException` (in the shared client) and the
   throttling and 5xx errors the AWS SDK's standard retry mode covers, with jittered
   exponential backoff and a capped attempt count; never retry a `DatabaseErrorException`
   caused by the SQL itself. Set the SDK read timeout above the 45-second Data API timeout
@@ -118,12 +117,12 @@ must do, and what the library itself must do.
   describes.
 - **Clients and configuration.** Create the `rds-data` client once at module level
   (`python-coding`, Design). The cluster ARN, the secret ARN and the database name come from
-  SSM Parameter Store parameters the owning stack writes, read through the chassis; never
-  hardcode them. Name every parameter and variable with the `resource-naming` skill.
+  configuration the owning stack writes (for example SSM Parameter Store parameters), read the
+  way the project's architecture states; never hardcode them. Name every parameter and variable with the `resource-naming` skill.
 
 ## 3. Relational schema design
 
-`design-postgres-tables` is the reference for types, constraints and indexes. SkillSpoke adds
+`design-postgres-tables` is the reference for types, constraints and indexes. This skill adds
 or overrides:
 
 - **Keys.** Use `bigint GENERATED ALWAYS AS IDENTITY` for keys that never leave the service.
@@ -134,7 +133,7 @@ or overrides:
   strings, `jsonb` only for genuinely optional attributes, `NOT NULL` wherever the data
   requires it. Index every foreign key column yourself.
 - **Normalize to 3NF**; denormalize only for a measured read problem.
-- **Temporal facts.** Data whose history matters (the company and normalized datasets) is an
+- **Temporal facts.** Data whose history matters is an
   effective-dated fact model: each fact row has `valid_from`/`valid_to` (a `tstzrange` with
   an exclusion constraint where overlaps must be impossible), a source and an observed time;
   current values are a view or a partial index on the open range, never an overwrite.
@@ -144,11 +143,11 @@ or overrides:
 - **Fuzzy matching.** `pg_trgm` with a GIN (`gin_trgm_ops`) index for alias, name and
   duplicate matching; full-text search with a `tsvector` generated column, a GIN index, and an
   explicit text search configuration in both the column and the query.
-- **Multi-tenancy.** Tables shared by many seekers carry the seeker's id, and every query
-  filters on it. Where several tenants share a table and a missed filter would leak data,
+- **Multi-tenancy.** Tables shared by many tenants (for example many users) carry the tenant's
+  id, and every query filters on it. Where several tenants share a table and a missed filter would leak data,
   enable row-level security with the tenant id set by `SET LOCAL` inside the transaction.
 - **Partitioning** only for tables expected to grow very large or to be pruned by range; at
-  alpha scale most tables need none.
+  low volume most tables need none.
 
 ## 4. Migrations
 
@@ -173,7 +172,7 @@ or overrides:
 
 ## 5. Vector search (pgvector 0.8.x)
 
-`pgvector-semantic-search` is the reference. SkillSpoke adds or overrides:
+`pgvector-semantic-search` is the reference. This skill adds or overrides:
 
 - **Type and dimension.** Store embeddings as `halfvec(N)`, with `N` the exact output
   dimension of the embedding model in use; `halfvec` indexes up to 4,000 dimensions and
@@ -222,15 +221,15 @@ reasons in the decision, and record it as the architecture records any store dec
 - graph algorithms over the whole graph or large parts of it: centrality, community
   detection, similarity by shared neighbourhood, shortest paths at scale;
 - GraphRAG: retrieval that combines graph traversal with vector similarity, for example
-  following the entities and relationships extracted from a seeker's imported documents
-  (resumes, CVs and other documents) and ranking them by embedding similarity;
+  following the entities and relationships extracted from a user's imported documents and
+  ranking them by embedding similarity;
 - a graph query language (openCypher, Gremlin, SPARQL) is the natural expression of the
   queries, or the graph is shared by several consumers through the owning service's API.
 
 **Facts to weigh, not verdicts:**
 
 - PostgreSQL adds no store and no cost: the graph lives in the cluster the service already has,
-  which scales to zero in `dev`.
+  which can scale to zero.
 - Amazon Neptune is the AWS graph database; Neptune Analytics adds graph algorithms and vector
   search. Neptune has a monthly floor and does not scale to zero, provisioned or serverless.
   Confirm current prices with the AWS pricing tools before stating a figure.
@@ -265,11 +264,11 @@ reasons in the decision, and record it as the architecture records any store dec
 - Autovacuum stays on; watch dead tuples and bloat on update-heavy tables, and separate hot
   columns into their own table when updates churn wide rows.
 - Watch `ServerlessDatabaseCapacity`, `ACUUtilization` and resume events in CloudWatch, and
-  Performance Insights where it is enabled. A workload that keeps a `dev` cluster awake costs
+  Performance Insights where it is enabled. A workload that keeps a paused-capable cluster awake costs
   ACU hours; schedule-driven jobs should not poll a paused cluster.
-- Capacity ranges, backups and deletion protection per environment are the architecture's
-  (`environments-and-accounts.md`); they change only through `PlatformPostgresCluster`
-  settings in CDK, never by a direct AWS call.
+- Capacity ranges, backups and deletion protection per environment are the architecture's;
+  they change only through the cluster construct's settings in CDK, never by a direct AWS
+  call.
 
 ## 9. Testing
 
@@ -279,13 +278,13 @@ reasons in the decision, and record it as the architecture records any store dec
 - **SQL tests** run the migrations and the queries against a local PostgreSQL with the same
   major version and extensions (for example the `pgvector/pgvector` container image), through
   an adapter that sends the same SQL and parameters the Data API would.
-- **Integration tests** run against the service's `dev` cluster through the Data API, with data
+- **Integration tests** run against the service's development cluster through the Data API, with data
   the test creates and removes itself; expect the first call to wake a paused cluster.
 
 ## Inspecting a live database
 
 The read-only `awslabs-postgres-mcp-server` (when it is configured for the session) runs
-`SELECT`, `EXPLAIN` and schema queries against a `dev` cluster through the Data API, as a
+`SELECT`, `EXPLAIN` and schema queries against a development cluster through the Data API, as a
 read-only database role. Use it to inspect an existing schema or a query plan. It never
 changes a schema or data, and never creates a cluster; those happen only through migrations
 and CDK. When its tools are not available or it cannot connect, say so and work from the

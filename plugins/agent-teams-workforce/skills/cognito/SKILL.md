@@ -74,10 +74,10 @@ aws cognito-idp create-user-pool \
 
 Choose the client type by where the code runs (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-client-apps.html):
 
-- **Public client** (browser or mobile app, which cannot keep a secret): no client secret, authorization code grant with PKCE. **The SkillSpoke web client is a public client.**
+- **Public client** (browser or mobile app, which cannot keep a secret): no client secret, authorization code grant with PKCE. A web or mobile front end is a public client.
 - **Confidential client** (server-side code that can keep a secret): client secret, and every call sends `SECRET_HASH`.
 
-Public client (SkillSpoke web and mobile):
+Public client (web and mobile):
 
 ```bash
 aws cognito-idp create-user-pool-client \
