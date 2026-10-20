@@ -257,9 +257,10 @@
     },
     {
       "name": "architecture-diagram-author",
-      "description": "Draw one architecture diagram of a settled design for the solutions architect.",
+      "description": "Draw one architecture diagram of a design the solutions architect has settled, of any view type the documentation model lists (C4, UML, context map, data flow, deployment and the others), and return it with its home, view type and the elements it shows.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:architecture-diagramming",
         "agent-teams-workforce:c4-diagramming",
         "agent-teams-workforce:uml-diagramming",
@@ -532,9 +533,10 @@
     },
     {
       "name": "c4-diagram-author",
-      "description": "Draw one C4 diagram of a settled design for the solutions architect.",
+      "description": "Draw one C4 diagram (system context, container, component or deployment) of a design the solutions architect has settled, and return it with its home, view type and the elements it shows.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:architecture-diagramming",
         "agent-teams-workforce:c4-diagramming",
         "agent-teams-workforce:effective-architecture"
@@ -2448,9 +2450,10 @@
     },
     {
       "name": "uml-diagram-author",
-      "description": "Draw one UML diagram of a settled design for the solutions architect.",
+      "description": "Draw one UML diagram (sequence, state, activity, class, component or deployment) of a design the solutions architect has settled, and return it with its home, view type and the elements it shows.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:architecture-diagramming",
         "agent-teams-workforce:uml-diagramming",
         "agent-teams-workforce:effective-architecture"
