@@ -149,46 +149,75 @@ this same way, one after another. The Epic's assessment is the only judgment of 
 it decides every edge to or from that Epic, including each one an earlier assessment of
 another Epic set.
 
-1. Read the Epic's full PRD, at the path `atw-matrix epic <beads id>` returns as `prd`.
+The matrix is read with `atw-matrix`; a read needs no role, and every command prints one JSON
+object. `atw-matrix epic <beads id>` returns an Epic's PRD path (`prd`, relative to the vault
+root), its requirements, each named by its PRD heading, and the features each is served by.
+When the assessment is handed a context file (artifact-handoff's
+`schemas/dependency-assessment.schema.json`, `#/$defs/EpicContext`), that file is the material
+it starts from: its descriptions say what each member holds, its `prdPath` values are absolute,
+and its `standing` and `withdrawn` lists are the edges on the Epic.
+
+1. Read the Epic's full PRD, at the context's `epic.prdPath` or the path `atw-matrix epic
+   <beads id>` returns as `prd`. When the matrix names no PRD for the Epic, say so in the
+   reasoning and write no edge file.
 2. Answer the foundation checklist: for each of the nine layers, "drives", "rests on" or
    "not touched", with the requirement that decides the answer. No layer is skipped, and
    every answer goes in the written reasoning. Then name every other architecture decision
-   the Epic's requirements should drive or that it rests on.
+   the Epic's requirements should drive or that it rests on. An Epic is a PRD, a WHAT, and
+   its architecture does not exist yet: this takes intuition about what the architecture
+   could be.
 3. Check each layer and decision against the effective architecture, and drop every one it
    already settles. Find what states each one with `atw-matrix find --kinds
-   document,constraint,feature`, then `atw-matrix node`. A document settles a decision only
-   when the matrix returns it with `lifecycle: effective` — take that value for every
-   document you rely on, and treat a document in any other state as absent.
-4. Find the related Epics through the matrix. `atw-matrix related --epic <beads id>`
-   returns the Epics that reach a feature, document, stack, service, component or
-   infrastructure this Epic reaches, each with what is shared and through which
-   relationship. For an Epic no feature serves yet, and for a layer or decision `related`
-   does not reach, `atw-matrix find --kinds requirement,feature --text "<the layer or
-   decision in words>"` returns the requirements and features that match: a requirement's
-   id names its Epic, and a feature is returned with the Epics it serves. For each layer
-   the Epic rests on, the related Epics are those whose requirements drive that layer; for
-   each layer it drives, every Epic that rests on it. The matrix names the candidates; it
-   does not say which way an edge runs.
+   document,constraint,feature --text "<the decision in words>"`, then `atw-matrix node <id>`
+   for each match that bears on it (see "Only an `effective` document settles anything").
+   Record, for each decision you keep, the document id and heading you consulted, the
+   `lifecycle` the matrix returned for it and why it leaves the decision open, or that the
+   lookup returned nothing: that record goes on every edge as `archCheck`, and an edge without
+   one is refused. As the effective architecture grows this becomes the answer for most
+   decisions: the check is the step's purpose, not a formality.
+4. Find the related Epics through the matrix: the context's `related` and `similar`, or
+   `atw-matrix related --epic <beads id>` without a context, which returns the Epics that
+   reach a feature, document, stack, service, component or infrastructure this Epic reaches,
+   each with what is shared and through which relationship. For an Epic no feature serves
+   yet, and for a layer or decision those do not reach, `atw-matrix find --kinds
+   requirement,feature --text "<the layer or decision in words>"` returns the requirements and
+   features that match: a requirement's id names its Epic, and a feature is returned with the
+   Epics it serves. For each layer the Epic rests on, the related Epics are those whose
+   requirements drive that layer; for each layer it drives, every Epic that rests on it. The
+   matrix names the candidates; it does not say which way an edge runs.
 5. For every related Epic, and the Epic at the other end of every edge standing on the Epic,
    read the requirements that bear on the layer or decision in question: `atw-matrix epic
-   <its id>` names its requirements by their PRD headings and returns its PRD path; read
-   those headings and no other part. No other PRD is opened.
+   <its id>` names its requirements by their PRD headings. Read those headings and no other
+   part, in the file at the `prdPath` the context gives or, for an Epic it does not list, at
+   that `prd` path under the vault root. No other PRD is opened and no folder of PRDs is
+   searched.
 6. Apply the test in both directions: an edge from another Epic to this one where an
    architecture decision this Epic rests on should be designed from that Epic's
    requirements first, and an edge from this Epic to another where an architecture decision
-   that Epic rests on should be designed from this Epic's requirements first.
+   that Epic rests on should be designed from this Epic's requirements first. Say the reason
+   in one line, naming the decision and whose requirements should drive it.
 7. Account for every owned edge standing on the Epic: keep it in the edge file, or withdraw
-   it with a reason that answers the reason recorded for it. An edge drawn by hand is never
-   withdrawn and appears in neither list.
-8. Write the edge file and the reasoning, and validate the file until it passes.
+   it with a reason that answers the reason recorded for it. An edge drawn by hand
+   (`owned: false`) is never withdrawn and appears in neither list. An edge an earlier
+   assessment withdrew is set again only with `answers`, why that recorded reason is wrong on
+   the architecture; one you cannot answer is not set, and the earlier judgment stands.
+8. Write the edge file and the reasoning (see "The edge file"), then check the file with the
+   validation command (`depscore.py validate --edges <file> --epic <id>`) and revise it until
+   it passes, keeping to the test: an edge that fails the test is dropped, never kept to
+   satisfy the validator. A cycle you cannot remove by dropping one of your own edges that
+   fails the test, one through an edge with `owned: false`, is reported in the reasoning with
+   the failed validation and its findings, not forced.
+
+Applying the edges and recording the matrix rows is not part of the assessment: the assessing
+agent writes nothing to the tracker or the matrix.
 
 ### What the matrix records from an assessment
 
 For each decision judged, the assessment names the matrix entry the Epic drives or rests
 on: a feature id, or a document id with its heading. The dispatching workflow records each
 as a `drives` or `restsOn` relationship from the Epic, with `side: architecture`; the
-assessing agent runs no `put` and no `link`. A decision no matrix entry states is named
-with none, and nothing is recorded for it. The Epic-to-Epic edge is a beads `tracks` edge
+assessing agent runs no `put` and no `link`. A decision no matrix entry states gets no row
+in the edge file; the reasoning names it, and nothing is recorded for it. The Epic-to-Epic edge is a beads `tracks` edge
 and is never a matrix relationship.
 
 ## The worked example
@@ -212,9 +241,9 @@ the recorded reason names a runtime call, which is a Task dependency".
 
 Alongside the file, write the reasoning in prose: the foundation checklist with an answer
 for every layer, the other decisions named, the architecture check on each, the Epics found
-related and the requirement headings read, and the test applied to each edge and each
-withdrawal. The
-edges are the residue of that reasoning, and the reasoning is what the next assessment
+related and the requirement headings read, the test applied to each edge and each
+withdrawal, the validation findings, and every edge you were unsure of with what would
+settle it. The edges are the residue of that reasoning, and the reasoning is what the next assessment
 revises.
 
 ## Checks before handing it over
@@ -222,7 +251,7 @@ revises.
 - Every id is an open Epic the matrix holds (`atw-matrix epic <id>`).
 - Every edge touches the assessed Epic.
 - Every owned standing edge is kept or withdrawn, and every edge and withdrawal carries a
-  reason.
+  reason; every edge carries its `archCheck`.
 - No cycle. A cycle is a wrong edge, not a tie to break — find whose requirements should
   actually drive the decision.
 - No edge onto a closed Epic, and none out of one.

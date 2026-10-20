@@ -1150,7 +1150,7 @@
     },
     {
       "name": "epic-dependency-assessor",
-      "description": "Assesses the architecture dependencies of ONE Epic. An Epic is a PRD, and an edge between two Epics is an architecture dependency: it exists wherever an architecture decision one Epic rests on should be designed from another Epic's requirements first and the effective architecture does not already settle it. Reads the Epic's full PRD, answers the foundation-layer checklist (drives, rests on or not touched for each of nine layers) and names the other architecture decisions it drives and rests on, checks each against the effective architecture, finds the related Epics through the matrix, reads the requirements of each that bear on a decision, and applies the edge test in both directions, drawing an edge it is unsure of at low confidence. Emits every edge to or from the Epic with a reason and a confidence, accounts for every owned edge standing on it — kept, or withdrawn with a reason — and validates the file before reporting.",
+      "description": "Proposes and validates the architecture-dependency edges to and from ONE Epic, by the edge test of the epic-sequencing skill, and accounts for every owned edge standing on it; orders nothing, scores nothing and applies nothing.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:epic-sequencing",
@@ -2299,14 +2299,13 @@
         "agent-teams-workforce:wsjf"
       ],
       "mcpServers": [
-        "aws-mcp",
         "mcp-graphrag-server",
         "gitnexus"
       ]
     },
     {
       "name": "task-dependency-mapper",
-      "description": "Identify justified build dependencies between Tasks of different Stories.",
+      "description": "Maps the build dependencies between Tasks: an edge wherever one Task cannot be built until another is, because it consumes something the other provides. Proposes the cross-Story edges among the Tasks of one Epic's Stories, or every edge to or from one Task created outside elaboration; writes no edge itself.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -2315,7 +2314,6 @@
         "agent-teams-workforce:graphrag-lookup"
       ],
       "mcpServers": [
-        "aws-mcp",
         "gitnexus"
       ]
     },
@@ -2553,11 +2551,10 @@
     },
     {
       "name": "wsjf-scorer",
-      "description": "Judges Epic or Task WSJF inputs against the caller-selected rubric, using authoritative requirements and existing-work evidence. Supplies scores and uncertainty; deterministic scripts compute rankings and persist metadata.",
+      "description": "Judges the WSJF inputs of work items under the wsjf skill's rubric: for an Epic its user-business value, time criticality and their confidence from its PRD, and its job size estimate while it is not sized from its Tasks; for the Tasks of an Epic their job sizes. Writes the judgments; computes no RR-OE and no WSJF, and writes nothing to a bead.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-strategist",
         "agent-teams-workforce:wsjf",
         "agent-teams-workforce:beads-contract",
         "agent-teams-workforce:artifact-handoff"

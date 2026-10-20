@@ -198,7 +198,9 @@ another's input.
      count as failed.
    - In every other case step 5 runs.
 5. `agent` **Judge**: `wsjf-scorer`, effort `medium` (the JS sets it), model `sonnet` (agent
-   frontmatter). The brief names the judge-input file and its contract, and ends with the
+   frontmatter). The brief names the judge-input file and its contract, the items, the
+   `atw-matrix` command and, for Tasks, the fingerprint read; how each level is judged is the
+   agent's definition and the `wsjf` skill. It ends with the
    artifact contract data: the candidate path, the contract file path, the progress file path,
    the input revision and the `artifactcontract.py` commands bound to them.
    - **Epic** (one session per Epic id): reads the PRD file its entry names as `prdPath`, its entry and the
@@ -318,8 +320,8 @@ Agents the workflow dispatches:
   every Task's WSJF after the Tasks and their edges exist (never "Epic closed").
 - 7.11 Deterministic over agentic: planning, fingerprints, validation, arithmetic and writes are
   code; only value and size judgments are agent work.
-- 7.14 Briefs: the judging brief gives the rubric, the files and the expected output, no expected
-  score.
+- 7.14 Briefs: the judging brief gives the level, the files and the expected output, no expected
+  score; the rubric is the `wsjf` skill.
 
 ## 10. Open items
 

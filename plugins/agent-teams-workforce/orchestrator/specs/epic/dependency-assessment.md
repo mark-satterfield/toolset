@@ -180,13 +180,12 @@ command printed.
    - When that checkpoint's status is `blocked`, the run stops with the checkpoint's reason and
      its remaining items (`ARTIFACT_BLOCKED`).
    - In every other case step 5 runs.
-5. `agent` **Assess**: `epic-dependency-assessor`. The brief names `context.json` and its contract, and the
-   `atw-matrix` reads the session makes, carries the `priorFailure` text when given,
-   and states THE TEST and the nine foundation layers (network and egress; identity and
-   authorization; data stores and data residency; event platform; API shape; chassis and
-   runtime; configuration and secrets; observability; environments), the eight-step order, that
-   a related Epic is read only at the requirement headings that bear on a decision, and that
-   the session runs no command that writes to beads or the matrix. It ends with the artifact
+5. `agent` **Assess**: `epic-dependency-assessor`. The brief carries data only: `context.json`
+   and its contract, the `atw-matrix` command, the candidate and reasoning files, the validation
+   command, and the `priorFailure` text when given. The edge test, the nine foundation layers,
+   the eight-step order, that a related Epic is read only at the requirement headings that bear
+   on a decision, and that the session runs no command that writes to beads or the matrix are
+   in the agent's definition and its `epic-sequencing` skill. It ends with the artifact
    contract data: the candidate path, the contract file path, the progress file path, the input
    revision and the `artifactcontract.py` commands (`validate`, `checkpoint`, `complete`,
    `submit`, `status`) bound to them. The session writes `candidates/edges.json` and `reasoning.md`, checks the
@@ -303,7 +302,8 @@ Agents the workflow dispatches:
 - 7.9 Who gets asked: only a cycle through the owner's hand-made edge reaches the owner.
 - 7.11 Deterministic over agentic: the matrix reads, fingerprints, validation and the diff are code;
   only the edge judgment is agent work.
-- 7.14 Briefs: the brief states THE TEST and the files; it names no expected edge.
+- 7.14 Briefs: the brief states the files and commands; the test is the agent's and its skill's;
+  it names no expected edge.
 - 7.2: `apply: false` (`--propose`) is the owner's option; no session uses it as a rehearsal.
 
 ## 10. Open items

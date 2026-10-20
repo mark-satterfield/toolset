@@ -931,33 +931,22 @@ const contextError = contextFailure ? `${contextFailure.step}: ${contextFailure.
 // jsonartifact.py validates the candidate against it.
 const EDGE_CONTRACT = 'skills/artifact-handoff/schemas/task-edge-proposal.schema.json'
 const CONTEXT_CONTRACT = 'skills/artifact-handoff/schemas/dependency-assessment.schema.json#/$defs/TaskContext'
-const THE_TEST = `THE TEST. An edge from A to B says B cannot be built until A is built, because B consumes something A provides — an API, a table, an IAM grant, a deployed resource. A producer of an event never depends on a routing rule or its target, and a routing rule or its target never depends on a producer: both depend only on the central event API and the bus. Sharing a domain, a vocabulary, a repository or an Epic is not an edge. Both ends are Tasks: no end is a Story or an Epic. When in doubt an edge is left out, because a false edge serializes work that could run in parallel.`
 const priorBlock = typeof a.priorFailure === 'string' && a.priorFailure.trim()
   ? `THE PREVIOUS ASSESSMENT OF THIS ITEM FAILED, on this same content: ${a.priorFailure.trim().slice(0, 2000)}\nWork out why before you start, and do not repeat it.\n\n`
   : ''
 const inputBinding = contextError ? null : await relayKit.artifactRevision(settleAgent, { label: 'assess:inputs', phase: 'Assess', runner: RUNNER, files: [contextFile], relayFile: file('relay/assessment-inputs.json'), context: { target, scope } })
 if (inputBinding && !inputBinding.ok) return dispatchOutcome({ ok: false, stage: 'Assess', reason: inputBinding.error })
 const inputRevision = inputBinding ? inputBinding.revision : ''
-const assessPrompt = `${priorBlock}Assess the build dependencies of ONE Task, ${target}, which was created outside elaboration. ${target} is new or has changed.
+const assessPrompt = `${priorBlock}Assess the build dependencies of ONE Task, ${target}, which was created outside elaboration and is new or has changed.
 
-${THE_TEST}
+- Context file: ${contextFile}, to \`${CONTEXT_CONTRACT}\` (path from the plugin root \`${PLUGIN}\`).
+- Read a Task: \`${BEADS} contract <id>\`.
+- Matrix: \`${MATRIX} <command>\`.
+- Candidate edge file: ${candidateFile}, to \`${EDGE_CONTRACT}\`.
+- Reasoning file: ${reasoningFile}.
+- Validation: \`set -o pipefail; ${cmd('validate', `--edges ${shq(candidateFile)} ${scope}`)} | tee ${shq(selfCheckFile)}\`
 
-The workflow has already written ${contextFile}, the material you start from. Its contract is \`${CONTEXT_CONTRACT}\` (path from the plugin root \`${PLUGIN}\`); the descriptions there say what each member holds.
-
-Read a Task with \`${BEADS} contract <id>\`, which prints its title, its description, the build contract it carries and the matrix ids it states. Read the matrix with \`${MATRIX} <command>\`: a read needs no role, and every command prints one JSON object.
-
-Work in this order:
-1. Read ${target}.
-2. Name what it consumes and what it provides. When the context's \`task.elements\` is empty, ${target} states no matrix id: find its stack with \`${MATRIX} find --kinds stack --text "<what ${target} builds, in words>"\` and \`${MATRIX} node stack:<id>\`, which returns what the stack holds, name the stack, the entries ${target} builds and the shared capabilities it uses by their matrix ids, and read for that stack what the context would have held: \`${MATRIX} work --id <stack id>\`, \`${MATRIX} deps --of <stack id>\` and \`${MATRIX} deps --on <stack id>\`.
-3. Find the related Tasks from the matrix, not by searching: the open Tasks in each stack's \`work\`, and the open Tasks that name a stack ${target}'s stack depends on or that depends on it — \`${MATRIX} work --id <that stack's id>\` for each stack in \`dependsOn\` and \`dependents\`. Among them, the related Tasks are those that provide what ${target} consumes or consume what it provides. Read no Task these lookups did not return.
-4. Read in full every related Task, and the Task at the other end of every standing edge.
-5. Apply the test in both directions: an edge from another Task to ${target} where ${target} consumes what that Task provides, and an edge from ${target} to another Task where that Task consumes what ${target} provides.
-6. Write ${candidateFile} to its contract, named below (\`${EDGE_CONTRACT}\`); the descriptions there define every member, which edges and withdrawals it holds and when \`elements\` names ids. An edge the context's \`withdrawn\` list covers that you cannot answer is not set: the earlier judgment stands. The workflow writes \`elements\` to ${target}; nothing you return is written into the matrix, and you run no \`put\`, no \`link\` and no write to a bead. Write the reasoning, per edge and per withdrawal, to ${reasoningFile}.
-7. Validate: \`set -o pipefail; ${cmd('validate', `--edges ${shq(candidateFile)} ${scope}`)} | tee ${shq(selfCheckFile)}\` — revise the file until \`ok\` is true, keeping to THE TEST: an edge that fails the test is dropped, never kept to satisfy the validator; an owned standing edge you drop goes in \`withdrawn\` with a reason. It refuses an edge that does not touch ${target}, an edge whose ends are not both open Tasks, a missing reason, an edge an earlier assessment withdrew that carries no \`answers\`, an owned standing edge left unaccounted, a withdrawal of an edge that is not an owned standing edge, and a cycle against every other Task edge. A cycle you cannot remove by dropping one of your own edges that fails the test — one through an edge with \`owned: false\` — is reported, not forced: record the failed validation, its findings and the cycle in the reasoning document.
-
-Do not run apply-edges or any other command that writes to the tracker or the matrix: the workflow validates the proposal you return, applies it and writes \`elements\` itself.
-
-Record your validation findings, every related item read and any uncertainty in ${reasoningFile}. Return only the authored candidate reference.${relayKit.artifactBrief(candidateFile, EDGE_CONTRACT, inputRevision, RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`
+Return only the authored candidate reference.${relayKit.artifactBrief(candidateFile, EDGE_CONTRACT, inputRevision, RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`
 
 const assess = () => settleAgent(assessPrompt, {
       label: `task-dependency-mapper:${target}`,
