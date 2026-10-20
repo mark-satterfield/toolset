@@ -9,9 +9,16 @@ artifacts of the steps its inputs name, and records what it writes right after w
 
 What a repository's Story is handed about the architecture is a set of pointers into the matrix:
 the context file (``spec-context.schema.json``) names each stack the Story builds in with the
-entries it builds there, the commands that print what the matrix holds for them, and the
-documents and headings ``atw-matrix story-scope`` names; an author reads those headings and no
-directory of the architecture.
+entries it builds there, the commands that print what the matrix holds for them, the documents
+and headings ``atw-matrix story-scope`` names, and every architecture and design document of the
+component the Story builds (``atw-matrix documents``). The authors write specs: every design
+detail was decided during architecture and is in those documents and the matrix.
+
+What a spec covers for each entry comes from its verified state (``buildScope``), never from an
+architecture delta: where the build is verified at the version before this Epic's change, the
+spec covers that change alone; otherwise it covers all the work that brings the build up to the
+entry's approved architecture. Every spec document ends with the links to the architecture and
+design documents of the component it covers, written by :func:`story_document`.
 """
 
 from __future__ import annotations
@@ -28,7 +35,7 @@ import beadwrite
 import cdsbundles
 import hierarchy
 import specui
-from matrixquery import story_scope
+from matrixquery import documents_view, story_scope
 from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix
 from recon_contract import KEY_MOCKS_DIR
 from target_contract import KEY_ELEMENT, KEY_ID, KEY_MATRIX_ID, KEY_PUBLISHED_BY, KEY_TRIGGER
@@ -108,7 +115,7 @@ from step_journal_contract import BEAD_TYPE_STORY, BeadId
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from matrix_contract import Entry, EntryId
+    from matrix_contract import Entry, EntryId, Verified
     from matrixquery import Described, StoryScope
     from step_journal_contract import Artifact, Step, StepPlan
 
@@ -128,12 +135,22 @@ DOCUMENT_OF: Final[dict[str, str]] = {
 }
 """The spec document each author writes, by artifact name."""
 SUFFIX: Final[dict[str, str]] = {SPEC: ".md", DATA_MODEL: ".data-model.md", CRITERIA: ".criteria.md"}
-CONTRACTS_OUTCOME: Final = "API, event and error contracts for what this repository's Story builds."
-DATA_MODEL_OUTCOME: Final = "Data model specification for what this repository's Story builds."
+CONTRACTS_OUTCOME: Final = "The spec of the API, event and error contracts this repository's Story builds."
+DATA_MODEL_OUTCOME: Final = "The spec of the data this repository's Story builds."
 CRITERIA_OUTCOME: Final = "Acceptance criteria and definition of done for the saved specifications."
 UI_SCHEMA: Final = "skills/artifact-handoff/schemas/spec-ui.schema.json"
 CONTEXT_PURPOSE: Final = "The items this repository builds and the steps that specify them are known"
 TASKS_PURPOSE: Final = "The Story has Tasks that name what to build"
+SCOPE_DELTA: Final = "delta"
+SCOPE_FULL: Final = "full"
+"""What a spec covers for one entry: this Epic's change alone, or all the work that brings the build
+up to the entry's approved architecture."""
+KEY_BUILD_SCOPE: Final = "buildScope"
+KEY_COMPONENT_DOCUMENTS: Final = "componentDocuments"
+LINKS_HEADING: Final = "## Architecture and design documents"
+"""The last section of every spec document: the links to the documents of the component it covers."""
+DOCUMENT_ENTRY_KINDS: Final[frozenset[str]] = frozenset({"document"})
+"""The kinds of the matrix entries that are architecture and design documents (arc42 and ``detailed/``)."""
 STORY_KEY_PREFIX: Final = "S"
 """The prefix of a Story's key: the span keys its Stories ``S<n>`` in the order it names their repositories."""
 
@@ -381,6 +398,76 @@ def _scope_documents(arch: Path, scopes: Sequence[StoryScope]) -> list[JsonValue
     return rows
 
 
+def entry_scope(matrix: Matrix, epic: str, entry_id: EntryId) -> dict[str, JsonValue]:
+    """Decide what a spec covers for one entry the Story builds, from its verified state.
+
+    Args:
+        matrix: The matrix.
+        epic: The Epic the spec is written for.
+        entry_id: The entry.
+
+    Returns:
+        The entry, its verified commit (None when not verified) and its scope: ``delta`` when the
+        build is verified at the version before this Epic's change (the flag names no change, or
+        names this Epic's), so the spec covers this Epic's change alone; ``full`` when it is not
+        verified, or an approved change of another Epic is still not built, so the spec covers all
+        the work that brings the build up to the entry's approved architecture.
+
+    """
+    found: Entry | None = matrix.find(entry_id)
+    verified: Verified | None = None if found is None else found.verified
+    current: bool = verified is not None and verified.changed_by in {None, epic}
+    return {
+        "entry": entry_id,
+        "verified": None if verified is None else verified.commit,
+        "scope": SCOPE_DELTA if current else SCOPE_FULL,
+    }
+
+
+def component_documents(arch: Path, matrix: Matrix, ids: Sequence[EntryId]) -> list[JsonValue]:
+    """List every architecture and design document of the component a Story builds.
+
+    Args:
+        arch: The architecture root.
+        matrix: The matrix.
+        ids: The stacks the Story builds in and the entries it builds there.
+
+    Returns:
+        Each document any of them, or anything that belongs to them, is joined to
+        (``atw-matrix documents``), once, in id order, with its file under the architecture root.
+
+    """
+    found: dict[str, None] = {}
+    entry_id: EntryId
+    for entry_id in ids:
+        view: dict[str, JsonValue] = json_object(documents_view(matrix, entry_id))
+        found.update(
+            dict.fromkeys(
+                check_type(document["id"], str)
+                for document in objects(view["documents"])
+                if document["kind"] in DOCUMENT_ENTRY_KINDS
+            ),
+        )
+    return [{"document": identifier, "path": str(arch / identifier.partition(":")[2])} for identifier in sorted(found)]
+
+
+def link_documents(path: Path, documents: Sequence[Mapping[str, JsonValue]]) -> None:
+    """End a spec document with the links to the architecture and design documents of its component.
+
+    A section written earlier is replaced, so a rerun writes it once.
+
+    Args:
+        path: The spec document.
+        documents: The component's documents, as the repository context lists them.
+
+    """
+    text: str = path.read_text(encoding="utf-8")
+    kept: str = text.split(f"\n{LINKS_HEADING}\n", 1)[0].rstrip()
+    links: list[str] = [f"- [{document['document']}]({document['path']})" for document in documents]
+    body: list[str] = links or ["- The matrix records no architecture or design document for this component."]
+    path.write_text("\n".join((kept, "", LINKS_HEADING, "", *body, "")), encoding="utf-8")
+
+
 def items_by_story(every_build: Mapping[str, JsonValue]) -> dict[str, list[JsonValue]]:
     """Group what every Story of the Epic builds by the Story's key.
 
@@ -424,7 +511,9 @@ def context(run: StepRun) -> Completion:
     The context file (``spec-context.schema.json``) holds pointers, never a copy of what the
     matrix or the architect's result holds: each stack the Story builds in with the entries it
     builds there, for the author's own ``atw-matrix story-scope`` and ``atw-matrix uses``; the
-    documents and headings those story scopes name; what the Story depends on outside what it
+    documents and headings those story scopes name; what the spec covers for each entry
+    (:func:`entry_scope`); every architecture and design document of the component
+    (:func:`component_documents`); what the Story depends on outside what it
     builds (``repo_scoping.build_context``), as ids with their stack and repository; and the
     paths of the PRD and of the architect's result, whose ``facts`` name the documents that hold
     the design the authors carry.
@@ -455,6 +544,9 @@ def context(run: StepRun) -> Completion:
     depended: BuildContext = run.tools.portfolio(SPEC_CONTEXT, story_context, matrix, items, every_build)
     prd: Path = Path(check_type(json_object(run.context.args[dispatch.KEY_PRD])[dispatch.PRD_PATH], str)).resolve()
     stacked: list[JsonValue] = [{"stack": stack, "entries": list(built)} for stack, built in stacks.items()]
+    entries: list[EntryId] = list(dict.fromkeys(entry for built in stacks.values() for entry in built))
+    scoped: list[JsonValue] = [entry_scope(matrix, str(run.bead), entry) for entry in entries]
+    component: list[JsonValue] = component_documents(architecture_root(run), matrix, [*stacks, *entries])
     dependencies: list[JsonValue] = [json_object(dependency) for dependency in depended["dependsOn"]]
     path: Path = write_contract(
         run.context.work / f"spec-{held.slug}.context.json",
@@ -466,6 +558,8 @@ def context(run: StepRun) -> Completion:
             "items": items,
             KEY_STACKS: stacked,
             "documents": _scope_documents(architecture_root(run), scopes),
+            KEY_BUILD_SCOPE: scoped,
+            KEY_COMPONENT_DOCUMENTS: component,
             "dependsOn": dependencies,
             "prd": str(prd),
             "architectureResult": str(Path(read_context(run)["resultPath"]).resolve()),
@@ -621,6 +715,9 @@ def built_line(item: Mapping[str, JsonValue], names: Mapping[str, str], matrix: 
 def story_document(run: StepRun) -> Completion:
     """Write the Story document of one repository from its reviewed spec documents.
 
+    Each spec document first gets its last section, the links to the architecture and design
+    documents of the component it covers (:func:`link_documents`), once every correction is made.
+
     Returns:
         The Story document and the architecture citations its Story carries.
 
@@ -629,6 +726,10 @@ def story_document(run: StepRun) -> Completion:
     dispatch: DispatchArguments = dispatch_arguments()
     matrix: Matrix = run.tools.portfolio(STORY_DOCUMENT_STEP, read_matrix, matrix_path(None, os.environ))
     documents: list[Path] = [run.inputs.file(name) for name in (SPEC, DATA_MODEL, CRITERIA)]
+    held_context: dict[str, JsonValue] = json_object(strict_json(run.inputs.file(CONTEXT)))
+    component: list[dict[str, JsonValue]] = objects(held_context[KEY_COMPONENT_DOCUMENTS])
+    for written in documents:
+        link_documents(written, component)
     citations: list[str] = list(
         dict.fromkeys(
             value.strip()
@@ -638,7 +739,7 @@ def story_document(run: StepRun) -> Completion:
         ),
     )
     prd: dict[str, JsonValue] = json_object(run.context.args[dispatch.KEY_PRD])
-    items: list[dict[str, JsonValue]] = objects(strict_json(run.inputs.file(CONTEXT))["items"])
+    items: list[dict[str, JsonValue]] = objects(held_context["items"])
     names: dict[str, str] = {check_type(item[KEY_ID], str): check_type(item[KEY_ELEMENT], str) for item in items}
     lines: list[str] = [
         f"Repository: {held.path}",
@@ -648,6 +749,9 @@ def story_document(run: StepRun) -> Completion:
         "",
         "Specifications:",
         *(f"- {path}" for path in documents),
+        "",
+        "Architecture and design documents:",
+        *(f"- {document['path']}" for document in component),
     ]
     decisions: list[JsonValue] = list(citations)
     path: Path = write_contract(

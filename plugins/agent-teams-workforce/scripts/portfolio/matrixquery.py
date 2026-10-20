@@ -651,7 +651,10 @@ def _brief(matrix: Matrix, entry_id: EntryId) -> View:
     if entry.approved is not None:
         view["approved"] = {"epic": entry.approved.epic}
     if entry.verified is not None:
-        view["verified"] = {"commit": entry.verified.commit}
+        verified: View = {"commit": entry.verified.commit}
+        if entry.verified.changed_by is not None:
+            verified["changedBy"] = entry.verified.changed_by
+        view["verified"] = verified
     return view
 
 

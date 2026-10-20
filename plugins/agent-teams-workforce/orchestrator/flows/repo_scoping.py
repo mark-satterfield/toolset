@@ -1,7 +1,10 @@
 """Read what the Epic's Stories build from the architect's result, and create a repository it needs and lacks.
 
 What a Story builds is what the Epic's architecture adds or changes: every architecture-side
-element the architect's result lists under ``addedOrChangedElements``, and nothing more. An
+element the architect's result lists under ``addedOrChangedElements``, and nothing more. An Epic
+whose architecture changes nothing still has work, such as the wording of a page: its Stories
+build in what realizes the features its requirements are served by (``atw-matrix epic
+--realizers``), with no architecture change. An
 element is built in the stack the architecture side places it in
 (``matrixtraverse.authority_holder``). An event has no home: it is built in each stack that
 holds one of its producers, as one item per stack, and that item carries the event's
@@ -47,6 +50,7 @@ from matrix_contract import (
     RelationshipKind,
     family_kinds,
 )
+from matrixquery import RealizersView, realizers_view
 from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix, update_matrix
 from matrixtraverse import (
     ATTR_APP,
@@ -985,21 +989,57 @@ def _owner(tools: Tools) -> str:
     return owners.pop()
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def unchanged_work(matrix: Matrix, bead: str) -> list[str]:
+    """Name where an Epic whose architecture changes nothing does its work.
+
+    Args:
+        matrix: The matrix.
+        bead: The Epic.
+
+    Returns:
+        The ids of what realizes each feature the Epic's requirements are served by directly (not
+        a feature reached only because another is supported by it), that the architecture side
+        places in a stack, each once, in the order found.
+
+    """
+    view: RealizersView = realizers_view(matrix, bead)
+    placed: set[EntryId] = {found["id"] for found in view["entries"] if found["stack"] is not None}
+    return list(
+        dict.fromkeys(
+            entry_id
+            for feature in view["features"]
+            if not feature["supporting"]
+            for entry_id in feature["realizedBy"]
+            if entry_id in placed
+        ),
+    )
+
+
 def _read_story_builds(run: StepRun) -> tuple[Matrix, list[DeltaItem]]:
     """Read what the Epic's Stories build, and name the repository of each stack that names none.
+
+    What the Stories build is what the architect's result adds or changes; when it adds or
+    changes nothing, it is where the Epic's work lands (:func:`unchanged_work`).
 
     Returns:
         The matrix as it is after the names are recorded, and the items (:func:`story_builds`).
 
     Raises:
-        StepError: The architecture adds or changes nothing to build.
+        StepError: Neither the architecture nor the features the Epic's requirements are served
+            by name anything a Story builds in.
 
     """
     added: list[str] = read_result(run, read_context(run))["addedOrChangedElements"]
     matrix: Matrix = run.tools.portfolio(SPAN, read_matrix, matrix_path(None, os.environ))
-    items: list[DeltaItem] = run.tools.portfolio(SPAN, story_builds, matrix, run.bead, added)
+    built: list[str] = added or run.tools.portfolio(SPAN, unchanged_work, matrix, run.bead)
+    items: list[DeltaItem] = run.tools.portfolio(SPAN, story_builds, matrix, run.bead, built)
     if not items:
-        raise StepError(SPAN, OTHER_CAUSE, (f"the architecture adds or changes nothing to build for {run.bead}",))
+        message: str = (
+            f"the architecture adds or changes nothing for {run.bead}, and nothing in a stack realizes the "
+            "features its requirements are served by"
+        )
+        raise StepError(SPAN, OTHER_CAUSE, (message,))
     run.tools.portfolio(SPAN, _record_repository_names, items)
     return run.tools.portfolio(SPAN, read_matrix, matrix_path(None, os.environ)), items
 
@@ -1009,9 +1049,11 @@ def span(run: StepRun) -> Completion:
     """Read what the Epic's Stories build from the architect's result and plan one spec step per repository.
 
     What the Stories build is the architect's ``addedOrChangedElements`` and nothing more
-    (:func:`story_builds`). Nothing is recorded in the matrix but the name of the
-    repository of a stack the Stories build in that names none (from the naming command), and the
-    name of a repository that was created under another name than the one its stacks stated.
+    (:func:`story_builds`), or, for an Epic whose architecture changes nothing, what realizes the
+    features its requirements are served by (:func:`unchanged_work`). Nothing is recorded in the
+    matrix but the name of the repository of a stack the Stories build in that names none (from the
+    naming command), and the name of a repository that was created under another name than the one
+    its stacks stated.
 
     Returns:
         The span file, the elements file, the repository paths, and the creation record when a

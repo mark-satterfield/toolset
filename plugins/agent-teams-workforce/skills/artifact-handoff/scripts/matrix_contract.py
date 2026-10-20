@@ -256,6 +256,8 @@ class Verified:
 
     commit: str
     """The merge commit of the Story whose merge completed the Epic."""
+    changed_by: str | None = None
+    """The Epic whose approved architecture changed this after the commit was verified; None when none has."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -963,7 +965,11 @@ def _verified(value: JsonValue, where: str) -> Verified | None:
     if not isinstance(value, dict):
         message: str = f"{where}: verified is not an object"
         raise MatrixError(message)
-    return Verified(commit=_string(value.get("commit"), f"{where}: verified.commit"))
+    changed: JsonValue = value.get("changedBy")
+    return Verified(
+        commit=_string(value.get("commit"), f"{where}: verified.commit"),
+        changed_by=None if changed is None else _string(changed, f"{where}: verified.changedBy"),
+    )
 
 
 def _approved(value: JsonValue, where: str) -> Approved | None:
@@ -1102,7 +1108,10 @@ def _verified_json(verified: Verified) -> dict[str, JsonValue]:
         The ``verified`` member.
 
     """
-    return {"commit": verified.commit}
+    rendered: dict[str, JsonValue] = {"commit": verified.commit}
+    if verified.changed_by is not None:
+        rendered["changedBy"] = verified.changed_by
+    return rendered
 
 
 def _approved_json(approved: Approved) -> dict[str, JsonValue]:

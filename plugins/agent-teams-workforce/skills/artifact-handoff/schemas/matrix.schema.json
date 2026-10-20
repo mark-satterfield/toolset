@@ -52,12 +52,13 @@
       }
     },
     "Verified": {
-      "description": "The verified flag: every Task of every Story of an Epic that built this was built and tested, including its CI/CD and CDK, with its deployment working. Absent means not verified; nothing seeded is verified.",
+      "description": "The verified flag: every Task of every Story of an Epic that built this was built and tested, including its CI/CD and CDK, with its deployment working. Absent means not verified; nothing seeded is verified. An approved architecture change made before the previous approved change was built clears it.",
       "type": "object",
       "additionalProperties": false,
       "required": ["commit"],
       "properties": {
-        "commit": {"description": "The merge commit of the Story whose merge completed the Epic.", "type": "string", "minLength": 1}
+        "commit": {"description": "The merge commit of the Story whose merge completed the Epic.", "type": "string", "minLength": 1},
+        "changedBy": {"description": "The beads id of the Epic whose approved architecture changed this after the commit was verified: the build is verified at the version before that Epic's change, and that change is not built yet. Absent when no approved change has been made since the commit. A second Epic's approved change before the first is built clears the verified flag.", "type": "string", "minLength": 1}
       }
     },
     "Entry": {

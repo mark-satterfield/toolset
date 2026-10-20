@@ -12,7 +12,11 @@ first step of the outermost step "Specs and Stories"; its script key is still
 - The architect's result: `architecture_files.read_result(run, read_context(run))`, the file
   `<work>/architecture/result.json` that `<work>/architecture/context.json` names as
   `resultPath`. The one field read is `addedOrChangedElements`: the matrix ids of every element
-  the design adds or changes for the Epic. The TRD is not read here; its requirements reach
+  the design adds or changes for the Epic. When it is empty, the Epic's architecture changes
+  nothing, and the Stories build in what realizes each feature the Epic's requirements are served
+  by directly, as `atw-matrix epic --realizers` returns it, where the architecture side places it
+  in a stack (`repo_scoping.unchanged_work`): an Epic that only changes the wording of a page
+  still has a spec. The TRD is not read here; its requirements reach
   every Story because the spec authors and reviewers are handed the TRD file.
 - The matrix (`atw-matrix`'s file), used only to find the stacks each item is built in
   (`repo_scoping.placements`) and each stack's repository, the documents that describe it
@@ -58,7 +62,7 @@ of `story_build_entries` that the matrix lacks, that is not on the architecture 
 event whose purpose (its description) is empty, or that is built in no stack (for an event: none of
 its architecture-side producers is homed in a stack). The architect's step refuses such a result (`architecture.md`); the span raises the
 same problems again as a backstop. The step also fails when the architecture adds or changes
-nothing to build ("the architecture adds or changes nothing to build for <bead>"), and when a
+nothing and nothing in a stack realizes the features the Epic's requirements are served by, and when a
 repository may hold no product entry (the control repository, the architecture folder).
 
 ## The span and a missing repository

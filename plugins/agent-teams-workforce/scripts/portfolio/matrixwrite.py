@@ -62,6 +62,7 @@ from matrix_contract import (
     RelationshipKind,
     Role,
     Side,
+    Verified,
     entry_json,
     relationship_json,
 )
@@ -632,6 +633,46 @@ def settle(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] -
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def verified_after_change[T: (Entry, Relationship)](item: T, epic: str) -> Verified | None:
+    """Settle the verified flag of an entry or a relationship an Epic's approved architecture changed.
+
+    The flag says the build matches a version of the architecture. An approved change keeps it
+    and names the Epic that made the change (``changedBy``): the version before the change is
+    built, so that Epic's Stories build the change alone. A change approved for another Epic
+    while that change is still not built clears it: the version before this change was never
+    built, so the item is no longer verified. Setting the flag after a build (``matrixcode``)
+    writes it again without ``changedBy``.
+
+    Args:
+        item: The entry or relationship as held, carrying no approved flag because it changed
+            since it was last approved, or was never approved.
+        epic: The beads id of the Epic whose architecture is being approved.
+
+    Returns:
+        The verified flag the item carries once the change is approved.
+
+    """
+    held: Verified | None = item.verified
+    if held is None:
+        return None
+    if held.changed_by is None:
+        return replace(held, changed_by=epic)
+    return held if held.changed_by == epic else None
+
+
+def _approved[T: (Entry, Relationship)](item: T, flag: Approved) -> T:
+    """Give an entry or a relationship an Epic's approved flag.
+
+    Returns:
+        The item with the flag; one that was changed since its last approval, or never
+        approved, also has its verified flag settled (:func:`verified_after_change`).
+
+    """
+    if item.approved is not None:
+        return replace(item, approved=flag)
+    return replace(item, approved=flag, verified=verified_after_change(item, flag.epic))
+
+
 def approve(matrix: Matrix, bead: str, role: Role) -> ApproveResult:
     """Set the approved flag on the matrix content an Epic's elaboration reaches.
 
@@ -640,8 +681,10 @@ def approve(matrix: Matrix, bead: str, role: Role) -> ApproveResult:
     that the matrix and arc42 are filled out or corrected for the Epic first. The content is
     ``matrixtraverse.approval_scope``: the Epic, its requirements and every architecture-side
     entry it reaches, with the architecture-side relationships between them. The flag names the
-    Epic. An entry or relationship that already carries the Epic's flag is left as it is. An Epic
-    the matrix does not hold raises ``MatrixError``.
+    Epic. An entry or relationship that already carries the Epic's flag is left as it is. One
+    that carries no approved flag was changed since it was last approved (or never was), and its
+    verified flag is settled for that change (:func:`verified_after_change`). An Epic the matrix
+    does not hold raises ``MatrixError``.
 
     Args:
         matrix: The matrix, changed in place.
@@ -670,13 +713,13 @@ def approve(matrix: Matrix, bead: str, role: Role) -> ApproveResult:
     unmarked: list[Relationship] = [held for held in scope.relationships if held.approved != flag]
     relationship: Relationship
     for relationship in unmarked:
-        matrix.link(replace(relationship, approved=flag))
+        matrix.link(_approved(relationship, flag))
     marked: list[EntryId] = []
     entry_id: EntryId
     for entry_id in scope.entries:
         entry: Entry = matrix.entry(entry_id)
         if entry.approved != flag:
-            matrix.put(replace(entry, approved=flag))
+            matrix.put(_approved(entry, flag))
             marked.append(entry_id)
     return {
         "epic": epic,

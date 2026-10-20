@@ -488,6 +488,12 @@ Notes on the diagram:
   `data-model-specification-author`), named from the subjects the approved design records, and
   writes from the recorded design without designing, because the owner's spec writer "was supposed
   to be a specialest that could write a spec document".
+- The workflow's reads are `spec_authoring.entry_scope` (the spec context's `buildScope`:
+  `delta` or `full` from each entry's verified flag), `spec_authoring.component_documents`
+  (`atw-matrix documents`, whose links `spec_authoring.link_documents` puts at the end of every
+  spec document), and, for an Epic with no architecture change, `repo_scoping.unchanged_work`
+  (what realizes the features the Epic's requirements are served by, from `atw-matrix epic
+  --realizers`).
 - Task decomposition is drawn in section 8.
 - One Spec and one Story per repository, and Tasks under each Story, are stated by
   [requirements/pipelines.md](../requirements/pipelines.md) and the vault's `docs/sdlc/sdlc.md`.

@@ -2,17 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/spec-context.schema.json",
   "title": "Spec context",
-  "description": "One repository's spec context file (<work>/spec-<slug>.context.json), handed to its spec authors, its spec reviewer and its task decomposer as `repository context`. The step `spec_authoring.context` (orchestrator/flows/spec_authoring.py) writes it and validates it against this file. It holds facts and pointers only: what the architecture says about the Story's stacks is read from the matrix by the commands each member names, and from the architecture document headings `documents` names, never copied here.",
+  "description": "One repository's spec context file (<work>/spec-<slug>.context.json), handed to its spec authors, its spec reviewer and its task decomposer as `repository context`. The step `spec_authoring.context` (orchestrator/flows/spec_authoring.py) writes it and validates it against this file. It holds facts and pointers only: what the architecture says about the Story's stacks is read from the matrix by the commands each member names, and from the architecture and design documents `documents` and `componentDocuments` name, never copied here. Every design detail a spec needs was decided during architecture and is in those documents and the matrix; a spec states the build work and decides none of it.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["epic", "repoPath", "slug", "frontend", "items", "stacks", "documents", "dependsOn", "prd", "architectureResult", "designSystem"],
+  "required": ["epic", "repoPath", "slug", "frontend", "items", "stacks", "documents", "buildScope", "componentDocuments", "dependsOn", "prd", "architectureResult", "designSystem"],
   "properties": {
     "epic": {"description": "The Epic's bead id.", "type": "string", "minLength": 1},
     "repoPath": {"description": "The repository's absolute path.", "type": "string", "minLength": 1},
     "slug": {"description": "The repository's slug, as the work files name it.", "type": "string", "minLength": 1},
     "frontend": {"description": "Whether the repository is a frontend repository, whose UI items get design sources.", "type": "boolean"},
     "items": {
-      "description": "What this repository's Story builds: the span's items placed in this repository (target-report.schema.json, DeltaItem, with the repository's slug). An event item carries the event's description, its trigger and its producers (`publishedBy`).",
+      "description": "Where this repository's Story builds: the span's items placed in this repository (target-report.schema.json, DeltaItem, with the repository's slug), each an element the Epic's architecture adds or changes or, for an Epic whose architecture changes nothing, an element that realizes a feature the Epic's requirements are served by. What the spec covers for each is in `buildScope`. An event item carries the event's description, its trigger and its producers (`publishedBy`).",
       "type": "array",
       "minItems": 1,
       "items": {"type": "object"}
@@ -36,6 +36,33 @@
         }
       }
     },
+    "buildScope": {
+      "description": "What the spec covers for each entry the Story builds, decided from the entry's verified state in the matrix, never from an architecture delta. `delta`: the build is verified at the version before this Epic's change, so the spec covers this Epic's change alone (for an Epic whose architecture changes nothing, the Epic's own work, such as the wording of a page). `full`: the entry is not verified, or another Epic's approved change to it is still not built, so the spec covers all the work that brings the build up to the entry's approved architecture.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["entry", "verified", "scope"],
+        "properties": {
+          "entry": {"description": "The entry's matrix id.", "type": "string", "minLength": 1},
+          "verified": {"description": "The commit the entry's verified flag names; null when it is not verified.", "type": ["string", "null"]},
+          "scope": {"enum": ["delta", "full"]}
+        }
+      }
+    },
+    "componentDocuments": {
+      "description": "Every architecture and design document (arc42 and the detailed architecture under `detailed/`) of the component the Story builds: each document `atw-matrix documents --id` joins to a stack the Story builds in or an entry it builds, with its file. The step that writes the Story document ends every spec document with links to these, so whoever builds from the spec has the full architecture of the component.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["document", "path"],
+        "properties": {
+          "document": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1}
+        }
+      }
+    },
     "dependsOn": {
       "description": "Each dependency relationship from something the Story builds to something it does not build: context, never work.",
       "type": "array",
@@ -47,7 +74,7 @@
       "minLength": 1
     },
     "architectureResult": {
-      "description": "The solutions architect's result (architecture-result.schema.json). Its `facts` name the home document and heading of each design fact the architecture decided, in arc42 or in the detailed architecture under `detailed/`; the spec carries that design and decides none of it.",
+      "description": "The solutions architect's result (architecture-result.schema.json). Its `facts` name the home document and heading of each design fact this Epic's architecture decided, in arc42 or in the detailed architecture under `detailed/`: for an entry whose scope is `delta`, these facts are the change the spec covers.",
       "type": "string",
       "minLength": 1
     },

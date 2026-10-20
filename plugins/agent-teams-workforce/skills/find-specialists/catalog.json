@@ -147,7 +147,7 @@
     },
     {
       "name": "api-specification-author",
-      "description": "Specify API, event, error and UI contracts for what one repository's Story builds.",
+      "description": "Write the spec of the API, event, error and UI contracts one repository's Story builds, from the recorded architecture and design; designs nothing.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -913,7 +913,7 @@
     },
     {
       "name": "data-model-specification-author",
-      "description": "Specify data ownership and access patterns for what one repository's Story builds.",
+      "description": "Write the spec of the data one repository's Story builds, from the recorded architecture and design; designs nothing.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",

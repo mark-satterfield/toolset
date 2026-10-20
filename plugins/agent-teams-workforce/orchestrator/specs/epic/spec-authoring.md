@@ -25,7 +25,7 @@ whose name matches the frontend template.
 | 7 | Add the UI design sources to the contracts (frontend) | script `specui.spec_ui_append` | `spec`, `ui sources` | the section `## UI design sources` of `spec-<slug>.md` | file `spec` |
 | 8 | Write the acceptance criteria | agent `acceptance-criteria-writer` | `TRD`, `span`, `elements`, `spec`, `data model`, `repository context` | `spec-<slug>.criteria.md` | file `criteria` |
 | 9 | Review the specification documents | agent `openapi-contract-reviewer` | `spec`, `data model`, `criteria`, `TRD`, `repository context` | `spec-<slug>.review.json` | see "The review" |
-| 10 | Write the Story document | script `spec_authoring.story_document` | `spec`, `data model`, `criteria`, `repository context` | `story-<slug>.json` | file `story document`, value `decision ids` |
+| 10 | Write the Story document | script `spec_authoring.story_document` | `spec`, `data model`, `criteria`, `repository context` | the section `## Architecture and design documents` at the end of each of the three spec documents; `story-<slug>.json` | file `story document`, value `decision ids` |
 | 11 | Write the Story bead | script `beadwrite.write_story` | `story document`, the three spec documents, `span`, `elements` | the Story bead; the Story's journal | value `story`, value `story write`, value `decision ids`; plans the repository's container under Tasks |
 
 Steps 5 and 6 are consecutive agent steps whose inputs are done, so their sessions run together.
@@ -35,6 +35,21 @@ which says what each member holds. It holds facts and pointers: the items of wha
 builds, and for the rest the paths and `atw-matrix` commands the authors read themselves (the PRD
 and the architect's result by path, the stacks the Story builds in for `atw-matrix story-scope`
 and `atw-matrix uses`). `dependsOn` is context, never work.
+
+The authors write specs and design nothing: every detail a spec states (endpoints, payload and
+data schemas, keys, parameter names) was decided during architecture and is in arc42, in the
+detailed architecture under `detailed/` or in the matrix. What a spec covers for each entry the
+Story builds is the context's `buildScope`, read from the entry's verified flag
+(`spec_authoring.entry_scope`), never from an architecture delta: `delta` when the build is
+verified at the version before this Epic's change (the flag names no later change, or this
+Epic's), and the spec covers that change alone; `full` when the entry is not verified, or
+another Epic's approved change to it is still not built, and the spec covers all the work that
+brings the build up to the entry's approved architecture. `componentDocuments` lists every
+architecture and design document `atw-matrix documents` joins to the stacks and entries the
+Story builds (`spec_authoring.component_documents`); step 10, after every correction, ends each
+of the three spec documents with a link to each (`spec_authoring.link_documents`, which replaces
+the section on a rerun) and lists them in the Story document, so whoever builds from the spec has
+the full architecture of the component.
 
 The contracts and the data model must have the front matter of
 `document-front-matter.schema.json#/$defs/SpecDocument`, whose `decisionIds` each resolve to a file

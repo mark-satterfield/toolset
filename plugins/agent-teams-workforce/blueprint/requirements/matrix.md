@@ -225,7 +225,9 @@ are made with it.
 not yet built and tested, it stays not verified. Once all of the Tasks for all of the Stories
 of an Epic have been built and tested, including CI/CD and CDK, which means its deployment
 must also work, all of the architecture and relationships for the Epic are set to verified.
-Verification is the only way to prove that the architecture is likely to work. The verified
+Verification is the only way to prove that the architecture is likely to work. When an
+architecture is changed again before its previous version is built, it is no longer verified
+(the owner's version example under "The spec" in [pipelines.md](pipelines.md)). The verified
 flag is available on every entry and every relationship, and required on none. No deployed
 mark and no merged mark exists. Whether something is currently deployed is not recorded: the
 environment is a development environment where stacks are deployed and torn down freely.
