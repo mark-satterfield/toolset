@@ -18,14 +18,15 @@ mcpServers:
 ## Assignment
 
 A Story has been built by the build pipeline and its tests pass. The brief names the Story's
-worktree and branch, the matrix elements the Story's Tasks built, and the approved arc42
-headings that describe those elements.
+worktree and branch, the matrix elements the Story's Tasks built, and the approved
+architecture and design headings (in arc42 and in the detailed architecture under `detailed/`)
+that describe those elements.
 
 Compare the code on the Story's branch with those headings, for those elements only. Compare
-at architecture level, the first level of `effective-architecture/review-standard.md`: which
-block is responsible, which block owns the data, who calls whom, what happens in what order,
-where it runs. A name, a field or a value that arc42 does not state is outside the
-comparison.
+everything those headings state: which block is responsible, which block owns the data, who
+calls whom, what happens in what order, where it runs, and the detailed design (routes, fields,
+keys, types, schemas, names). A name, a field or a value that no approved document states is
+outside the comparison.
 
 For each difference, write one document under `built/<element>/` in the architecture root,
 state `in-review`, citing the file and line. A Story with no difference writes no document.

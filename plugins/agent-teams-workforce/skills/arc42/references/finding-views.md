@@ -47,13 +47,15 @@ document is input to check: read it, and do not assume it is complete or correct
 document belongs to is the folder it lives in: `arc42/` and `detailed/` are effective and
 `built/<element>/` is built.
 
-A design fact has no entry. Its content stays under its arc42 heading, and the matrix holds the
-heading: the `describedBy` relationship from the entry the fact is about names the home document
-and heading.
+A design fact has no entry. Its content stays under its heading in an arc42 or `detailed/`
+document, and the matrix holds the heading: the `describedBy` relationship from the entry the fact
+is about names the home document and heading.
 
-The matrix reads each document's catalog front matter (`view_type`, `scope`, `subject`, `shows`,
+The matrix reads each view's catalog front matter (`view_type`, `scope`, `subject`, `shows`,
 `lifecycle_state`) and its headings when `atw-matrix sync-documents` runs, and records
-`describedBy` to the entry each name in `shows` and `subject` names. A document written or
+`describedBy` to the entry each name in `shows` and `subject` names. A standard or policy has no
+`shows`: the matrix holds it and its headings, and a reader reaches it by its link from the
+documents that apply it or by `atw-matrix find --kinds document --text "<words>"`. A document written or
 changed since the last sync is in the matrix after the next one.
 
 ## What each reader reads

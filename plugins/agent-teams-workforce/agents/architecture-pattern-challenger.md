@@ -48,13 +48,15 @@ several groups cover is reviewed by each for its own specialty, which the paragr
 states. Each criterion has a level. Review each item against the
 criteria at its own level and in its own home:
 
-- an arc42 heading against architecture-level criteria;
+- a heading of an arc42 or detailed architecture document against the architecture and design
+  criteria;
 - a TRD requirement against technical-requirement-level criteria.
 
-A criterion is satisfied when the document that is its home satisfies it. A value, a name, a
-field, a key, a parameter and a schema belong to the TRD or the specs, and their absence from
-an arc42 document is correct. Detail below architecture level that an approved document
-already holds stays as it is.
+A criterion is satisfied when the document that is its home satisfies it. A limit, a timeout
+or a retry count is the TRD's; a name, a field, a key, a type, a parameter and a schema are
+the detailed design's, under `detailed/`, and their absence from an arc42 document is correct
+when the detailed design holds them. Detail that an approved arc42 document already holds
+stays as it is.
 
 The architect's result says, for each criterion, where it is satisfied or why it does not
 apply. Check those answers as they stand.

@@ -4,8 +4,14 @@ arc42 is a free, open template for software architecture documentation. Under th
 architecture documentation model (the MODEL, `reference/architecture-documentation-model.md` under
 the architecture root), the arc42 sections hold three kinds of content: the owner's constraints
 (section 2), the enterprise-level strategy (section 4), and the architecture itself (sections 3, 5,
-6, 7 and 8). This file states what each section holds; the MODEL is the authority, and where the two
-differ the MODEL is right and this file is corrected.
+6, 7 and 8). The architecture below arc42's level, the detailed design, lives beside it in
+`detailed/`. This file states what each section and each folder holds; the MODEL is the authority,
+and where the two differ the MODEL is right and this file is corrected.
+
+All of the architecture and design is done during architecture: from the network and the system
+context to the classes, object and data models, columns, keys and types, interfaces and names of
+one component. Nothing is left for the specs to decide. The only distinction is where each document
+is stored: the documents that belong in arc42 go there, and the rest go in `detailed/`.
 
 ## Layout
 
@@ -15,7 +21,22 @@ section, views are organised by the subject they describe (`05-building-block-vi
 `05-building-block-view/<domain>/<service>/...`), and files and folders are named for their subject,
 never for a PRD, an Epic, a bead id, a date or a pipeline gate. There is no section 9.
 
-The built version uses the same section layout inside `built/<element>/`.
+The detailed architecture is under `detailed/`, beside `arc42/`, in four folders, each with a
+`README.md` that states what belongs there and lists its documents:
+
+| Folder | Holds | `scope` |
+|---|---|---|
+| `detailed/system/` | Whole-system views below arc42's level: the diagram of the entire AWS ecosystem, detailed network topology, a whole-system data model | system |
+| `detailed/cross-component/` | How a set of components works together, short of the whole system: the detail of an integration, a shared contract, a domain's internal structure | cross-component, domain |
+| `detailed/components/<component>/` | One component in detail: class and object models, data models with attributes, columns, keys and types, interface and payload schemas, route tables, names, internal diagrams. `<component>` is the repository name, or the component's glossary name for a part inside a repository | service, component |
+| `detailed/features/<feature>/` | One feature in detail: the views that span the components the feature uses, named for the feature as the glossary names it | feature |
+
+Not everything is a service or an API. A component is any repository or any part of one: a
+service, a library, a web or mobile application, infrastructure. A feature is a capability that
+spans components. A document's place follows its scope and level of detail, never how often it
+changes or whether it is approved.
+
+The built version uses the same layout inside `built/<element>/`.
 
 ## The sections
 
@@ -55,7 +76,8 @@ service's stacks in its subject folder.
 Patterns used across many services (for example idempotency, an event envelope, structured
 logging), one file per concept, each with its structure and its behaviour. A pattern described here is followed by the next
 design unless that design states a reason to change it; it is a design fact with its reason, and
-only section 2 holds the owner's constraints.
+only section 2 holds the owner's constraints. Section 8 also holds the standards and policies
+that apply across services (see "Document classes" below).
 
 ### 10. Quality Requirements
 The quality scenarios the architecture is designed to meet, each with a stimulus and a measurable
@@ -84,21 +106,41 @@ heading. Which section is the home follows from what the fact is:
   scenarios and their failures. It links to a rule; the rule itself is stated in its home.
 - Section 7 holds deployment: where each block runs and which stack holds each resource.
 - Section 8 holds crosscutting concepts: the rule as a design fact with its reason, for example
-  "Because of X, the address is verified by Y".
+  "Because of X, the address is verified by Y"; and the standards and policies that apply across
+  services.
+- `detailed/` holds the detailed design: the classes, object and data models, keys, types,
+  interface and payload schemas, routes and names of one component, the detail of components
+  working together, of one feature, or of the whole system.
 
-## Level of detail
+## Where a fact goes: arc42 or `detailed/`
 
-Every section stays at architecture level: the why and the mechanism. A statement belongs here when
-it stays true if the code is rewritten or a table's keys are renamed. A limit, a lifetime, a
-retention period, a timeout or a retry count is a requirement of the TRD. A route method or path, a
-field name, a key or index name, a parameter name, a metric or alarm name and a schema are written
-in the specs. A document has a single purpose and holds only facts that belong to its subject.
+A statement belongs in arc42 when it stays true if the code is rewritten or a table's keys are
+renamed. The detailed design of one component, one feature, components working together or the
+whole system belongs in its document under `detailed/`, which the arc42 view of its subject links
+to; arc42 states the responsibility and links to the detail, and does not restate it. A limit, a
+lifetime, a retention period, a timeout or a retry count is a requirement of the TRD, which the
+detailed design applies. A document has a single purpose and holds only facts that belong to its
+subject.
 
-## Views and scopes
+## Document classes: views, and standards and policies
 
-A view is one way of looking at one subject at one scope (system, domain, service, component,
-concept): a diagram written as Mermaid in Markdown and the prose around it. The MODEL's view table
-says which views a scope usually needs and which section each belongs in; the MENU
-(`reference/diagram-and-model-types.md`) is the list of view types. Every view carries the catalog
-frontmatter (`view_type`, `scope`, `subject`, `shows`, `lifecycle_state`) described in
-`finding-views.md`.
+An architecture document is of one of two classes. The front matter of each is defined in the
+artifact-handoff skill's `schemas/document-front-matter.schema.json`.
+
+- **A view** (`$defs/ArchitectureView`) is one way of looking at one subject at one scope (system,
+  domain, cross-component, service, component, feature, concept): a diagram written as Mermaid in
+  Markdown and the prose around it. The MODEL's view table says which views a scope usually needs
+  and where each belongs; the MENU (`reference/diagram-and-model-types.md`) is the list of view
+  types. The views a subject needs depend on what it is: a library, a web application, a piece of
+  infrastructure and a service each need different ones, and one document per Epic or per
+  checklist item is never the shape. A view is created once for its subject and scope, and is
+  enhanced or updated as each later design and build touches it. Every view carries the catalog
+  front matter (`view_type`, `scope`, `subject`, `shows`, `lifecycle_state`, `purpose`) described
+  in `finding-views.md`.
+- **A standard or a policy** (`$defs/ArchitectureStandard`, `document_class: standard` or
+  `document_class: policy`) states the requirements every element of its scope meets and how
+  compliance is judged, for example the storage properties every S3 bucket carries. It is not a
+  view: it has no diagram, no `view_type`, no `scope` and no `shows`. It holds requirements only,
+  never an implementation: no construct, library, class or code that meets them. It usually lives
+  in section 8; one that governs only the detail of a component lives in that component's folder
+  under `detailed/`.

@@ -958,7 +958,7 @@ elaboration is done.
   single-repository container and nothing reads its prose to decide anything, so no session writes
   it.
 - **One review per repository.** `openapi-contract-reviewer` checks the three documents against the
-  implementation-level criteria. A finding goes once to the author of the document it names; a
+  specs-and-Tasks criteria. A finding goes once to the author of the document it names; a
   disputed finding goes to `spec-decider`; an upheld finding goes back to that author. Each of these
   sessions is its own journal step, planned by the step whose result calls for it
   (`specs/epic/spec-authoring.md`).

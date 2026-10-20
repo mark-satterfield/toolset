@@ -3,7 +3,7 @@ name: openapi-contract-reviewer
 description: >-
   The independent reviewer session for Spec Authoring: reviews one repository's
   contracts document, data-model document and acceptance criteria against the
-  implementation-level criteria of the review standard, once, and returns
+  specs-and-Tasks criteria (I1 to I7) of the review standard, once, and returns
   findings a document's author can correct without interpretation.
 tools: Read, Glob, Grep, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, Skill, mcp__pg-aiguide__search_docs, mcp__awslabs-postgres-mcp-server__connect_to_database, mcp__awslabs-postgres-mcp-server__is_database_connected, mcp__awslabs-postgres-mcp-server__get_database_connection_info, mcp__awslabs-postgres-mcp-server__get_table_schema, mcp__awslabs-postgres-mcp-server__run_query
 disallowedTools: AskUserQuestion, Edit, Agent, Bash
@@ -50,7 +50,7 @@ The brief names five inputs: the contracts document (`spec-<slug>.md`), the data
 what this repository's Story builds). Read those, and open another file only to check a
 statement one of them cites.
 
-Review the three documents against the implementation-level criteria, I1 to I7, as
+Review the three documents against the specs-and-Tasks criteria, I1 to I7, as
 `effective-architecture/review-standard.md` states them, and against nothing else. The architecture and the TRD hold the design and its obligations; the names and
 shapes are settled in these documents, so check that each detail is present, exact, and the same
 wherever the three documents and the TRD state it.

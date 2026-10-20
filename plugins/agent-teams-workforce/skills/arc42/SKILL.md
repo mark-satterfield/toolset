@@ -40,7 +40,9 @@ sub-skills follow it and carry no copy of it, so that the model has one home. Th
 ## Resolve the architecture root
 
 Before any dispatch, establish the **architecture root**: the folder that holds `reference/`,
-`arc42/` and `built/`.
+`arc42/`, `detailed/` and `built/`. The effective architecture is `arc42/` and, below arc42's
+level, `detailed/` (the detailed design of components, features, components working together and
+the whole system); all of it is designed during architecture.
 
 1. Take the path the caller gives. Otherwise take the path the project's environment sets for its
    architecture (in this plugin's workflows, the architecture-root variable `ARCH_PATH_ENV` that the
@@ -60,7 +62,7 @@ write.
 
 | Entry signal | Dispatch to |
 |---|---|
-| Write a new architecture document for a subject that has none | `arc42-author` |
+| Write a new architecture document (in `arc42/` or `detailed/`) for a subject that has none | `arc42-author` |
 | Write the solutions architect's decisions into the effective documents, or correct them from what was built | `arc42-maintain` |
 | Verify, audit, lint or check the architecture against the MODEL | `arc42-verify` |
 | Find the views that show an element, in any version | Answer from the catalog (`references/finding-views.md`); no sub-skill |
@@ -105,7 +107,8 @@ then load that sub-skill's `SKILL.md` and execute it.
 
 ## References
 
-- `references/arc42-section-model.md` — what each arc42 section holds under the MODEL.
+- `references/arc42-section-model.md` — what each arc42 section and each `detailed/` folder holds
+  under the MODEL, and the two document classes: views, and standards and policies.
 - `references/living-document-rules.md` — every version describes itself as it is; no history, no
   open items, no decisions written as rules.
 - `references/finding-views.md` — how a phase finds the views that show an element, through the

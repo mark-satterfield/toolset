@@ -46,8 +46,9 @@ constraint excludes.
 ## 4. The catalog matches the views
 
 **Invariant.** Every view's `view_type` is a type from the MENU, `scope` is one of system, domain,
-service, component or concept, `subject` is the one thing it describes, and `shows` lists every
-element in its diagram and no element that is not.
+cross-component, service, component, feature or concept, `subject` is the one thing it describes,
+and `shows` lists every element in its diagram and no element that is not. A standard or policy
+carries `document_class: standard` or `policy` and no `view_type`, `scope`, `shows` or diagram.
 
 **Why.** Every phase finds views through the catalog. A view whose frontmatter is wrong is a view the
 next integration misses.
@@ -78,7 +79,8 @@ gone.
 **Why.** A reader of any view reads what the design is.
 
 **Violation signal.** "Previously", "we used to", "changed from", "MUST", "TBD", "open question",
-"referred to the owner".
+"referred to the owner". A requirement ("must") is in place only in a standard or policy, which states
+requirements and no implementation.
 
 **Repair.** Delete it, and restate any current fact it carries as a description of the design.
 

@@ -28,14 +28,14 @@ Draw UML sequence, state, activity or class views required by this change from s
 The solutions architect is responsible for the architecture. It starts you to draw one
 diagram of a design it has settled. The request file you are given, to
 `specialist-request.schema.json`, has `kind` `task` and states which diagram, of which
-elements, for which arc42 document and heading.
+elements, for which architecture document (in arc42 or the detailed architecture) and heading.
 
-Draw exactly that diagram, from the arc42 headings the request names. Show only what those
+Draw exactly that diagram, from the architecture document headings the request names. Show only what those
 headings state: a diagram adds no design. Use the element names the documents use. Check that
 it renders and is readable, as the architecture-diagramming skill says.
 
 Write only the answer file, to `specialist-answer.schema.json`: the diagram as Mermaid source
 in `diagrams`, with the document and heading it belongs under, its view type and the elements
-it shows. `architecture-maintainer` places it in the document. End your session with the answer file's path as your only final message: the answer is in the file, and the architect reads it there. Work at the architecture level
-of `effective-architecture/review-standard.md`: a diagram holds no field, key, parameter or
-schema detail.
+it shows. `architecture-maintainer` places it in the document. End your session with the answer file's path as your only final message: the answer is in the file, and the architect reads it there. A diagram holds
+the detail its view type and scope call for: a context or container view no field or key, a
+class or data model view of one component its attributes, keys and types.

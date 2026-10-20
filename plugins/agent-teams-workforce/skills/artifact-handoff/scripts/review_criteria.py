@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Collection
 
 type Level = Literal["all", "architecture", "technical-requirement", "implementation"]
-type Home = Literal["arc42", "trd", "specs"]
+type Home = Literal["architecture", "trd", "specs"]
 type ScopeKind = Literal["heading", "scenario-fact", "trd-requirement", "spec-document"]
 """A kind of unapproved content a reviewer group is selected for.
 
@@ -41,7 +41,7 @@ LEVELS: Final[tuple[Level, ...]] = (
     LEVEL_TECHNICAL_REQUIREMENT,
     LEVEL_IMPLEMENTATION,
 )
-HOMES: Final[tuple[Home, ...]] = ("arc42", "trd", "specs")
+HOMES: Final[tuple[Home, ...]] = ("architecture", "trd", "specs")
 SCOPE_KINDS: Final[tuple[ScopeKind, ...]] = ("heading", "scenario-fact", "trd-requirement", "spec-document")
 
 SKILL_DIR: Final[Path] = Path(__file__).resolve().parents[2] / "effective-architecture"

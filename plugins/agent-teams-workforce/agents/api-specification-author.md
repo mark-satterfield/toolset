@@ -55,10 +55,13 @@ Python appends the normalized UI-source section. Distinct
 outputs use distinct fact-only assignments; never infer an unassigned writable companion.
 
 Write to criteria I1 to I7 of the review standard, effective-architecture/review-standard.md. The
-architecture and the TRD do not hold these details; you settle them here. Your repository
+architecture and design documents hold these details: the detailed design under `detailed/` and
+the arc42 views were decided during architecture, and you carry them, deciding none. A detail
+the Story needs that no approved document states is a gap in the design: state in the document
+which element's design lacks it, and do not settle it. Your repository
 context file is written to `spec-context.schema.json`, which states what each member holds: it
-points to what you read and copies none of it. Start from `notesForSpecs` in the architect's
-result the context names, which holds the details the solutions architect already knew. For
+points to what you read and copies none of it. Start from the `facts` of the architect's
+result the context names, each with the document and heading that holds it. For
 each stack it names, run `atw-matrix story-scope --stack <stack> --ids <entries>` for the
 constraints that bind what the Story builds and `atw-matrix uses --ids <entries>` for the shared
 capabilities it must use; read the documents and headings `documents` names, and only those,

@@ -15,6 +15,10 @@ entries; a section 8 concept written as a list of rules.
 
 - **Severity:** `FAIL`.
 - **Evidence:** quote the sentence and give its path.
+- **Exception:** a standard or policy (`document_class: standard` or `policy`) states
+  requirements; "must" in it is its content, not a finding. A standard or policy that names an
+  implementation (a construct, a library, a class or code that meets its requirements) is a `FAIL`
+  with the quoted line.
 
 ## 2. Inline version metadata
 
@@ -60,7 +64,7 @@ or folder named for a PRD or Epic.
 The effective version describes the approved design. A proposed change is written once the
 solutions architect has decided it.
 
-**Flag, in `arc42/`:** "we will eventually", "in the future we plan to", "a future version will",
+**Flag, in `arc42/` and `detailed/`:** "we will eventually", "in the future we plan to", "a future version will",
 "we intend to migrate", "planned".
 
 - **Severity:** `WARN`; `FAIL` when a view's substance is a plan rather than a design.

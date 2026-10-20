@@ -1,6 +1,6 @@
 {
   "title": "Architecture and TRD criteria",
-  "introduction": "One list. The solutions architect develops the architecture and the TRD to it, and the spec authors develop the specs to it. Reviewers review against it and against nothing else. Each criterion has a level and a home. A criterion is satisfied by its home document. Nobody asks a document for detail below its level.",
+  "introduction": "One list. The solutions architect develops the architecture, its detailed design and the TRD to it, and the spec authors develop the specs to it. Reviewers review against it and against nothing else. Each criterion has a level and a home document, and is satisfied by its home document.",
   "levels": [
     {
       "id": "all",
@@ -13,9 +13,11 @@
     {
       "id": "architecture",
       "idPrefix": "A",
-      "heading": "Architecture level: arc42 sections 3 to 8",
+      "heading": "Architecture and design: arc42 and the detailed architecture",
       "note": null,
-      "responsible": ["aws-solutions-architect"],
+      "responsible": [
+        "aws-solutions-architect"
+      ],
       "reviewPoint": "architecture"
     },
     {
@@ -23,15 +25,20 @@
       "idPrefix": "T",
       "heading": "Technical-requirement level: the TRD",
       "note": null,
-      "responsible": ["aws-solutions-architect"],
+      "responsible": [
+        "aws-solutions-architect"
+      ],
       "reviewPoint": "architecture"
     },
     {
       "id": "implementation",
       "idPrefix": "I",
-      "heading": "Implementation level: the specs and the Tasks",
-      "note": "These are not reviewed in the architecture review. They are listed here so that everyone can see where each detail lives.",
-      "responsible": ["api-specification-author", "data-model-specification-author"],
+      "heading": "The specs and the Tasks",
+      "note": "These are not reviewed in the architecture review. A spec and a Task carry what their work builds from the architecture and design documents, by link or as stated there; they decide no design.",
+      "responsible": [
+        "api-specification-author",
+        "data-model-specification-author"
+      ],
       "reviewPoint": "specs"
     }
   ],
@@ -69,7 +76,7 @@
     {
       "id": "P7",
       "level": "all",
-      "text": "Never write section 2. Only architecture-maintainer writes arc42. A script promotes."
+      "text": "Never write section 2. Only architecture-maintainer writes arc42 and the detailed architecture. A script promotes."
     },
     {
       "id": "P8",
@@ -84,86 +91,122 @@
     {
       "id": "A1",
       "level": "architecture",
-      "home": "arc42",
-      "text": "A spec author can name the building block, its repository and stack, the owner of each store, each interface and its caller, and each event type and its publisher without inventing a design."
+      "home": "architecture",
+      "text": "Anyone who specifies or builds the work can name, from the architecture and design documents, the building block, its repository and stack, the owner of each store, each interface and its caller, and each event type and its publisher without inventing a design."
     },
     {
       "id": "A2",
       "level": "architecture",
-      "home": "arc42",
+      "home": "architecture",
       "text": "Section 5 names each building block the PRD needs, what it is responsible for and what it owns. Each store has one owning block and a statement of what it holds."
     },
     {
       "id": "A3",
       "level": "architecture",
-      "home": "arc42",
+      "home": "architecture",
       "text": "Each interface is named with the block that exposes it and who may call it. Trust boundaries are explicit: who may call each boundary and what each runtime may call."
     },
     {
       "id": "A4",
       "level": "architecture",
-      "home": "arc42",
+      "home": "architecture",
       "text": "Each event type is named in the event catalog with its producers and description, and each routing rule names the event types it matches (or all), its targets and the stack that owns it."
     },
     {
       "id": "A5",
       "level": "architecture",
-      "home": "arc42",
+      "home": "architecture",
       "text": "Section 6 shows, for each important scenario and each failure the PRD's outcomes depend on, which building blocks interact and in what order. Retry, dead-letter and idempotent behaviour are stated as behaviour."
     },
     {
       "id": "A6",
       "level": "architecture",
-      "home": "arc42",
+      "home": "architecture",
       "text": "Section 7 says where each block runs and which stack holds each resource. Values shared between stacks are named as shared, by the mechanism section 2 fixes."
     },
     {
       "id": "A7",
       "level": "architecture",
-      "home": "arc42",
+      "home": "architecture",
       "text": "Each rule that applies across blocks is a design fact in section 8 with its reason, in the form \"Because of X, the address is verified by Y\"."
     },
     {
       "id": "A8",
       "level": "architecture",
-      "home": "arc42",
+      "home": "architecture",
       "text": "No fact is stated in two documents. Section 6 links to a rule; it does not restate it."
     },
     {
       "id": "A9",
       "level": "architecture",
-      "home": "arc42",
+      "home": "architecture",
       "text": "Every behaviour a shared service, component, layer or library provides is taken from it, by the shared-home rule of arc42 section 4 (04-solution-strategy). Each shared home's section 5 document states under \"Provides\" what consumers obtain from it and must not implement."
     },
     {
       "id": "A10",
       "level": "architecture",
-      "home": "arc42",
-      "text": "The front matter of each document records repository, view_type, scope, subject, shows and lifecycle_state."
+      "home": "architecture",
+      "text": "The front matter of each document records the catalog keys the documentation model states for its document class: a view records view_type, scope, subject, shows and lifecycle_state; a standard or policy records document_class: standard or document_class: policy and lifecycle_state, and has no view_type, scope or shows."
     },
     {
       "id": "A11",
       "level": "architecture",
-      "home": "arc42",
+      "home": "architecture",
       "text": "Names of blocks, stores, interfaces and event types agree across documents."
     },
     {
       "id": "A12",
       "level": "architecture",
-      "home": "arc42",
-      "text": "Every document stays at architecture level and within its single purpose: no route method or path, field name, key or index name, parameter name, metric or alarm name, or schema, and no fact outside the document's subject."
+      "home": "architecture",
+      "text": "Each document holds the facts of its one subject, in the place the architecture documentation model gives them: in arc42 when the statement stays true if the code is rewritten, otherwise in its document under detailed/ (one component, one feature, components working together, or the whole system), linked from the arc42 view of its subject."
     },
     {
       "id": "A13",
       "level": "architecture",
-      "home": "arc42",
+      "home": "architecture",
       "text": "The design meets each PRD outcome it concerns and no section 2 constraint is broken."
     },
     {
       "id": "A14",
       "level": "architecture",
-      "home": "arc42",
+      "home": "architecture",
       "text": "Each diagram renders, is readable, and agrees with the text beside it."
+    },
+    {
+      "id": "A15",
+      "level": "architecture",
+      "home": "architecture",
+      "text": "Where the design has an interface, each route has its method, path, authorizer, request and response fields and status codes in the detailed design of the component that exposes it."
+    },
+    {
+      "id": "A16",
+      "level": "architecture",
+      "home": "architecture",
+      "text": "Where the design has a store, it has its key attribute names, indexes, access patterns and expiry attribute, and its logical or physical data model, in the detailed design of the component that owns it."
+    },
+    {
+      "id": "A17",
+      "level": "architecture",
+      "home": "architecture",
+      "text": "Where the design publishes an event, its publishing service and the values passed to the shared-events-service API are in the detailed design of the publishing component."
+    },
+    {
+      "id": "A18",
+      "level": "architecture",
+      "home": "architecture",
+      "text": "Configuration names, SSM parameter names, and log, metric and alarm names the design introduces are in the detailed design of the component that uses them, each generated with the project's naming command."
+    },
+    {
+      "id": "A19",
+      "level": "architecture",
+      "home": "architecture",
+      "text": "Idempotency key fields and timeout settings are in the detailed design of the component that applies them; a timeout is the value its TRD requirement states."
+    },
+    {
+      "id": "A20",
+      "level": "architecture",
+      "home": "architecture",
+      "text": "Where the work needs it, a component's internal structure (its classes or modules, object and data models with their attributes and types, and the lifecycle of its entities) is drawn in its detailed design, in the view types the documentation model's list names for it."
     },
     {
       "id": "T1",
@@ -199,37 +242,37 @@
       "id": "T6",
       "level": "technical-requirement",
       "home": "trd",
-      "text": "A requirement says what, with a value. It does not say how, and it holds no name or shape that belongs to a spec."
+      "text": "A requirement says what, with a value. It does not say how, and it holds no name or shape that belongs to the architecture and design documents."
     },
     {
       "id": "I1",
       "level": "implementation",
       "home": "specs",
-      "text": "Each route has its method, path, authorizer, request and response fields and status codes."
+      "text": "Each route has its method, path, authorizer, request and response fields and status codes as the detailed design records them."
     },
     {
       "id": "I2",
       "level": "implementation",
       "home": "specs",
-      "text": "Each store has its key attribute names, indexes, access patterns and expiry attribute."
+      "text": "Each store has its key attribute names, indexes, access patterns and expiry attribute as the detailed design records them."
     },
     {
       "id": "I3",
       "level": "implementation",
       "home": "specs",
-      "text": "Each event names its publishing service and has the values passed to the shared-events-service API."
+      "text": "Each event names its publishing service and has the values passed to the shared-events-service API as the detailed design records them."
     },
     {
       "id": "I4",
       "level": "implementation",
       "home": "specs",
-      "text": "Configuration names, SSM parameter names, and log, metric and alarm names are present and are generated with the project's naming command."
+      "text": "Configuration names, SSM parameter names, and log, metric and alarm names are present as the detailed design records them."
     },
     {
       "id": "I5",
       "level": "implementation",
       "home": "specs",
-      "text": "Idempotency key fields and timeout settings are stated."
+      "text": "Idempotency key fields and timeout settings are stated as the detailed design records them."
     },
     {
       "id": "I6",
@@ -248,56 +291,152 @@
     {
       "id": "ownership-boundary",
       "reviewer": "architecture-boundary-guardian",
-      "criteria": ["A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9", "A10", "A11", "A12", "A13", "A14"],
-      "appliesWhen": {"scope": ["heading"], "result": []}
+      "criteria": [
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A6",
+        "A7",
+        "A8",
+        "A9",
+        "A10",
+        "A11",
+        "A12",
+        "A13",
+        "A14",
+        "A15",
+        "A16",
+        "A17",
+        "A18",
+        "A19",
+        "A20"
+      ],
+      "appliesWhen": {
+        "scope": [
+          "heading"
+        ],
+        "result": []
+      }
     },
     {
       "id": "runtime-failure",
       "reviewer": "failure-mode-analyst",
-      "criteria": ["A5"],
-      "appliesWhen": {"scope": ["scenario-fact"], "result": ["failureBehaviours"]}
+      "criteria": [
+        "A5"
+      ],
+      "appliesWhen": {
+        "scope": [
+          "scenario-fact"
+        ],
+        "result": [
+          "failureBehaviours"
+        ]
+      }
     },
     {
       "id": "pattern",
       "reviewer": "architecture-pattern-challenger",
-      "criteria": ["A2", "A9"],
-      "appliesWhen": {"scope": [], "result": ["newPatterns"]}
+      "criteria": [
+        "A2",
+        "A9"
+      ],
+      "appliesWhen": {
+        "scope": [],
+        "result": [
+          "newPatterns"
+        ]
+      }
     },
     {
       "id": "tradeoff",
       "reviewer": "architecture-tradeoff-skeptic",
-      "criteria": ["P4"],
-      "appliesWhen": {"scope": [], "result": ["choices"]}
+      "criteria": [
+        "P4"
+      ],
+      "appliesWhen": {
+        "scope": [],
+        "result": [
+          "choices"
+        ]
+      }
     },
     {
       "id": "operations",
       "reviewer": "operational-readiness-reviewer",
-      "criteria": ["T2", "A6"],
-      "appliesWhen": {"scope": [], "result": ["newRuntimeResources"]}
+      "criteria": [
+        "T2",
+        "A6"
+      ],
+      "appliesWhen": {
+        "scope": [],
+        "result": [
+          "newRuntimeResources"
+        ]
+      }
     },
     {
       "id": "cost-new",
       "reviewer": "cost-architecture-reviewer",
-      "criteria": ["T2"],
-      "appliesWhen": {"scope": [], "result": ["newBillableResources"]}
+      "criteria": [
+        "T2"
+      ],
+      "appliesWhen": {
+        "scope": [],
+        "result": [
+          "newBillableResources"
+        ]
+      }
     },
     {
       "id": "cost-changed",
       "reviewer": "cost-impact-reviewer",
-      "criteria": ["T2"],
-      "appliesWhen": {"scope": [], "result": ["changedBillableLimits"]}
+      "criteria": [
+        "T2"
+      ],
+      "appliesWhen": {
+        "scope": [],
+        "result": [
+          "changedBillableLimits"
+        ]
+      }
     },
     {
       "id": "trd",
       "reviewer": "trd-validator",
-      "criteria": ["T1", "T2", "T3", "T4", "T5", "T6"],
-      "appliesWhen": {"scope": ["trd-requirement"], "result": []}
+      "criteria": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T6"
+      ],
+      "appliesWhen": {
+        "scope": [
+          "trd-requirement"
+        ],
+        "result": []
+      }
     },
     {
       "id": "specs",
       "reviewer": "openapi-contract-reviewer",
-      "criteria": ["I1", "I2", "I3", "I4", "I5", "I6", "I7"],
-      "appliesWhen": {"scope": ["spec-document"], "result": []}
+      "criteria": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5",
+        "I6",
+        "I7"
+      ],
+      "appliesWhen": {
+        "scope": [
+          "spec-document"
+        ],
+        "result": []
+      }
     }
   ]
 }

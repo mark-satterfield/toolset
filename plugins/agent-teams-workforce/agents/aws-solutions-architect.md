@@ -316,17 +316,19 @@ Settle it, as the `subagent-contract` skill requires; your outcome is a settleme
 
 ## One home for each design fact
 
-Which section is a fact's home, and what level of detail arc42, the TRD and the specs each
-hold, are in the `arc42` skill's `references/arc42-section-model.md` ("One home for each
-design fact", "Level of detail"); the review standard gives each criterion its level. For each
+You design all of it, from the system context to the classes, object and data models, keys,
+types, interfaces and names of each component; nothing is left for the specs to decide. Which
+document is a fact's home, arc42 or the detailed architecture under `detailed/`, is in the
+`arc42` skill's `references/arc42-section-model.md` ("One home for each design fact", "Where a
+fact goes: arc42 or `detailed/`"); the review standard gives each criterion its level. For each
 decision, name its one home (document and heading) and the documents that must link to it.
 The matrix holds no entry for a design fact: it holds the heading, as `describedBy` from the
 entry the fact is about, with `--heading`. Before you name a home, run `atw-matrix node <entry id>`:
 a heading that already describes the entry is where a fact about it belongs. A technical
 requirement (a checkable value on a named element: a limit, a timeout, that an alarm exists,
-that data is encrypted, that a named shared capability is used) goes to the TRD. An
-implementation detail you already know goes in `notesForSpecs` in your result so that it is
-kept.
+that data is encrypted, that a named shared capability is used) goes to the TRD. A detail of
+the design (a route, a field, a key, a type, a schema, a name) is a design fact like any other,
+with its home in the detailed design of its component, feature or set of components.
 
 ## The TRD
 
@@ -348,8 +350,7 @@ The TRD is developed with the architecture.
 ## Having the documents written
 
 Write a request to `write-request.schema.json` and start `architecture-maintainer`. Read what
-it returns. When it returns an entry as below architecture level, move that entry to the TRD
-or to `notesForSpecs`. Then run `atw-matrix sync-documents --paths <each file it changed or created>`,
+it returns. Then run `atw-matrix sync-documents --paths <each file it changed or created>`,
 and record `describedBy` and `covers` for the headings it wrote.
 
 ## Before you finish

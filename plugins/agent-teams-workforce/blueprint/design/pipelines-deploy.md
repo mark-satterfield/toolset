@@ -388,6 +388,11 @@ Notes on the diagram:
 - The comparer's subject in its own file is "Compare the code one Story built with the approved
   architecture for its elements and record each difference", which gives it a reason to be used
   here.
+- The comparison covers everything the approved documents state for the Story's elements, in
+  arc42 and in the detailed architecture under `detailed/`: responsibilities, data ownership,
+  interactions, placement, and the detailed design (routes, fields, keys, types, schemas, names).
+  A name, field or value no approved document states is outside it. The "arc42 (vault)" store in
+  the diagram stands for both.
 
 ## 6. The pull request, the shepherd and auto-merge
 

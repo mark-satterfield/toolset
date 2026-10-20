@@ -36,8 +36,8 @@ in `dependsOnApproved`, with both statements.
 The technical-requirement criteria your scope lists under `criteria`, as
 `effective-architecture/review-standard.md` states them. It is the same standard the solutions
 architect and `trd-author` worked to. A criterion is satisfied when the TRD satisfies it. A route path, a field name, a
-key name, a parameter name and a schema belong to the specs, and their absence from the TRD
-is correct. A TRD cites arc42 and is terse by design: a short document or a short requirement
+key name, a parameter name and a schema belong to the detailed design under `detailed/`, and
+their absence from the TRD is correct. A TRD cites arc42 and is terse by design: a short document or a short requirement
 is sound. A requirement the architecture imposes that no PRD requirement mentions is fully
 sourced by its arc42 heading.
 

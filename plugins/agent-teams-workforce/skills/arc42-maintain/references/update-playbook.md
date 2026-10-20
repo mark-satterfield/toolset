@@ -24,7 +24,7 @@ invariants, report.
                  |
                  v
    report: headings changed and created, links added, restatements removed,
-           entries below architecture level, what could not be applied
+           what could not be applied
 ```
 
 ## Writing decisions
@@ -40,18 +40,22 @@ also list restatements to replace with links, settled disagreements to apply and
    - Section 6: which building blocks interact, in what order, for the scenario and its failures.
      It links to a rule; the rule is stated in its home.
    - Section 7: where it runs and which stack holds each resource.
-   - Section 8: the rule as a design fact with its reason.
+   - Section 8: the rule as a design fact with its reason; a standard or policy as its
+     requirements, with no implementation.
+   - `detailed/`: the detailed design of one component, one feature, components working together
+     or the whole system, in the views the MENU names for it, linked from the arc42 view of its
+     subject.
 2. **Replace restatements with links.** In every other document the request names, and in every
    document the matrix lists as describing the same entry (`atw-matrix node <entry id>` names
    each under `describedBy`, with its heading), a restatement of the fact becomes a link to the
    home heading.
 3. **Apply settled disagreements.** The statement that stands stays; each statement that lost is
    replaced by a link to it.
-4. **Keep the level.** A request entry that is a route path, a field name, a key or index name, a
-   parameter name, a metric or alarm name, or a schema is returned as below architecture level,
-   unwritten.
-5. **Create a document only for a home path that does not exist**, with the catalog front matter
-   and a file name that names its subject.
+4. **Write the detail where the MODEL places it.** A fact below arc42's level is written in its
+   document under `detailed/`, linked from the arc42 view of its subject. No entry is returned
+   for being too detailed.
+5. **Create a document only for a home path that does not exist**, with the front matter of its
+   class (a view, or a standard or policy) and a file name that names its subject.
 6. **Place and update diagrams.** Place each diagram the request carries under its heading; update
    or redraw a diagram when a fact changes what it shows.
 7. **Section 2 is not written.** A fact that conflicts with a constraint is reported and left

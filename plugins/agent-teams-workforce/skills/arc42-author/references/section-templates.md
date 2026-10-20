@@ -1,6 +1,6 @@
 # Section templates — what each section's views hold
 
-For each arc42 section: where its views live, which views it usually needs at each scope, and what
+For each arc42 section, and for the detailed architecture under `detailed/`: where its views live, which views it usually needs at each scope, and what
 makes a view complete. The view types come from the MENU (`reference/diagram-and-model-types.md`
 under the architecture root); the table of scopes and views is the MODEL's, and this file follows
 it. The views a subject needs depend on what it is: the lists below are where to start, not a
@@ -55,11 +55,12 @@ The architectural style and the few approaches everything else follows, about on
 | System | container diagram; integration diagram; N-tier (layers) diagram | `README.md` or its directly linked overview, as the MODEL permits |
 | Domain | context map and domain model; container view of its services; integration | `<domain>/README.md` |
 | Service | component diagram; logical and physical data model or ERD | `<domain>/<service>/...` |
-| Component | class, module or package diagram; physical data model; state machine | `<domain>/<service>/<component>...` |
+| Component | class, module or package diagram; physical data model; state machine | `<domain>/<service>/<component>...`; `detailed/components/<component>/` when the view lists attributes, columns, keys, types or schemas |
 
 Complete when: every box has one stated responsibility, every element in a service's views also
-appears in the container view of its domain and the system, and every data store shows its keys and
-access patterns in its data model.
+appears in the container view of its domain and the system, and every data store has a data model
+whose keys, attributes and access patterns are in the detailed design of the component that owns
+it, linked from here.
 
 ---
 
@@ -120,17 +121,55 @@ thing by the same word.
 
 ---
 
-## Catalog frontmatter skeleton
+## The detailed architecture — `detailed/`
+
+The detailed design, done during architecture with everything else, is stored here: everything
+below arc42's level. Each document is linked from the arc42 view of its subject and links back.
+
+| Folder | Views | `scope` |
+|---|---|---|
+| `system/` | the diagram of the entire AWS ecosystem; detailed network topology; a whole-system data model | system |
+| `cross-component/` | integration or data flow in detail; the detail of a shared contract; a domain's internal structure | cross-component, domain |
+| `components/<component>/` | class, object, module or package diagram; logical and physical data model or ERD with attributes, columns, keys and types; interface and payload schemas; route tables; the names the component uses; state machines | service, component |
+| `features/<feature>/` | the sequence, activity or state machine views that span the feature's components | feature |
+
+A component is any repository or part of one: a service, a library, a web or mobile application,
+infrastructure. Some views are created once and enhanced as each later design and build touches
+them (the ecosystem diagram); others pertain to one component or one feature.
+
+Complete when: whoever specifies or builds the work can read every route, field, key, type, schema
+and name it needs from these documents without deciding any of them.
+
+---
+
+## Catalog frontmatter skeleton (a view)
 
 ```yaml
 ---
 view_type: component diagram       # a type from the MENU
-scope: service                     # system | domain | service | component | concept
+scope: service                     # system | domain | cross-component | service | component | feature | concept
 subject: <service>                 # the one thing this view describes
 shows:                             # every element that appears in the view
   - <component-a>
   - <component-b>
 lifecycle_state: in-review         # in-review until an architecture review approves it
+purpose: <one sentence: why the document exists and who acts on it>
+---
+```
+
+## Front matter skeleton (a standard or policy)
+
+A standard or policy is not a view: no `view_type`, `scope`, `shows` or diagram. Its body holds
+the scope it governs and its requirements, and states no construct, library, class or code that
+implements them.
+
+```yaml
+---
+document_class: standard           # standard | policy
+lifecycle_state: in-review
+authority: canonical
+provenance: internal
+purpose: <one sentence: what it governs and who applies it>
 ---
 ```
 

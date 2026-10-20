@@ -2,11 +2,13 @@
 name: arc42-author
 description: >-
   Writes the architecture documents of a subject that has none, to the
-  project's architecture documentation model: a new service, component or
-  concept, or the first documents of a new architecture in the arc42 section
-  folders. Each document is a diagram (Mermaid) and the prose around it, at the
-  scope it describes, with the catalog front matter. It writes no constraints,
-  no decision records and no section 9. Use when the user asks to write, scaffold
+  project's architecture documentation model: a new service, component,
+  feature or concept, in the arc42 section folders or in the detailed
+  architecture (detailed/), or the first documents of a new architecture. A
+  view is a diagram (Mermaid) and the prose around it, at the scope it
+  describes, with the catalog front matter; a standard or policy states
+  requirements only, with no diagram. It writes no constraints, no decision
+  records and no section 9. Use when the user asks to write, scaffold
   or start the architecture documents of a subject that has none.
 triggers:
   - add the documents for a new service
@@ -25,7 +27,9 @@ triggers:
 
 You write architecture documents for a subject the architecture does not yet describe:
 
-- **The documents of a new subject** in `arc42/`: a new service, component or concept.
+- **The documents of a new subject** in `arc42/` and, for its detailed design, in `detailed/`: a
+  new service, library, application, piece of infrastructure, other component, feature or
+  concept. Not everything is a service or an API.
 - **A new architecture** in `arc42/`, when the project has none.
 
 A change to a subject that already has documents is `arc42-maintain`: it writes decided design
@@ -64,23 +68,38 @@ a design is right.
    `atw-matrix find --text "<subject>"`) names under `describedBy` each document and heading that
    describes it. When the matrix names documents for the subject, the work is `arc42-maintain`.
 3. **Choose the documents the subject needs.** The MODEL's table of documents by scope is where to
-   start, and the MENU says which type answers which reader question. Write only the documents the
-   design supports.
-4. **Write each document as a diagram and its prose.** The diagram (Mermaid, fenced in the file)
+   start, and the MENU says which type answers which reader question. What the subject is decides
+   the views: a library, a web application, a piece of infrastructure and a service need different
+   ones, and a component, a feature and a set of components working together each have views of
+   their own. Reuse and extend an existing view that answers the question instead of writing a
+   second one; never write one bespoke document per Epic or per checklist item. Write only the
+   documents the design supports.
+4. **Write each view as a diagram and its prose.** The diagram (Mermaid, fenced in the file)
    shows structure and flow. The prose states what the document is for, what the diagram cannot
-   show (reasons, limits) and where the neighbouring documents are. Each document goes in the
-   section folder the MODEL names, inside the subject's folder, and is named for its subject.
+   show (reasons, limits) and where the neighbouring documents are. Each document goes where the
+   MODEL places it, inside the subject's folder, and is named for its subject: in the arc42
+   section folder, or under `detailed/` (`system/`, `cross-component/`,
+   `components/<component>/`, `features/<feature>/`) for the detailed design.
+   A standard or policy is written as requirements only, with no diagram (step 7).
 5. **State each design fact in one home.** Section 5 holds what a building block is responsible
    for, what it owns and its interfaces by name; section 6 holds which blocks interact, in what
-   order; section 7 holds where each block runs; section 8 holds a rule with its reason. A document
-   that needs a fact whose home is elsewhere links to that heading
-   (`../arc42/references/arc42-section-model.md`).
-6. **Keep to architecture level.** A route path, a field name, a key or index name, a parameter
-   name, a metric or alarm name and a schema belong to the TRD or the specs, not to an arc42
-   document.
-7. **Add the catalog front matter** to every document: `view_type` (a type from the MENU), `scope`,
-   `subject`, `shows` (every element in the document, by the name the matrix holds for its
-   entry, which is its glossary name or its stack name) and `lifecycle_state: in-review`. Keep
+   order; section 7 holds where each block runs; section 8 holds a rule with its reason. The
+   detailed design (classes, object and data models with attributes, columns, keys and types,
+   interface and payload schemas, routes, names) is stated in its document under `detailed/`,
+   linked from the arc42 view of its subject. A document that needs a fact whose home is elsewhere
+   links to that heading (`../arc42/references/arc42-section-model.md`).
+6. **Place each fact where the MODEL places it.** A statement that stays true if the code is
+   rewritten goes in arc42; the detail goes under `detailed/`. A limit, timeout or retry count is a
+   TRD requirement, which the detailed design applies. Nothing is left for the specs to decide.
+7. **Add the front matter of the document's class**, as the artifact-handoff skill's
+   `schemas/document-front-matter.schema.json` defines it. A view (`$defs/ArchitectureView`):
+   `view_type` (a type from the MENU), `scope` (system, domain, cross-component, service,
+   component, feature or concept), `subject`, `shows` (every element in the document, by the name
+   the matrix holds for its entry, which is its glossary name or its stack name),
+   `lifecycle_state: in-review` and `purpose`. A standard or policy
+   (`$defs/ArchitectureStandard`): `document_class: standard` or `policy`, `lifecycle_state:
+   in-review`, `authority`, `provenance` and `purpose`, and no `view_type`, `scope` or `shows`; it
+   holds requirements only, never a construct, library, class or code that implements them. Keep
    any classification fields the project uses beside them. `atw-matrix sync-documents` reads
    this front matter and the headings, and records the document as describing each entry that
    `shows` and `subject` name, so a name the matrix does not hold joins the document to nothing.

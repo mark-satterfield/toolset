@@ -20,6 +20,16 @@ the description of how the system does something everywhere it does it.
 - **The prose a reader needs** — the reasons, the limits, what the diagrams cannot show, and links to
   the service views that apply it.
 
+## Standards and policies
+
+Section 8 also holds standards and policies (`document_class: standard` or `policy`): the
+requirements every element of a scope meets and how compliance is judged, for example the storage
+properties every S3 bucket carries. A standard or policy is not a concept and not a view: it has no
+diagram, no `view_type`, no `scope` and no `shows` (front matter: the artifact-handoff skill's
+`schemas/document-front-matter.schema.json#/$defs/ArchitectureStandard`). It holds requirements
+only. It names no construct, library, class or code that meets them; how a component meets them is
+that component's detailed design under `detailed/`, which links to the standard.
+
 ## Concepts to consider
 
 Domain model, persistence, identity and authorisation, error handling, logging and observability,

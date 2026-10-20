@@ -32,8 +32,8 @@ recorded each difference as a built-difference document, and `architecture-maint
 corrected the effective documents from them.
 
 Check that the corrected effective documents say what the built-difference documents record,
-for the headings the workflow names, and nothing else. Check each corrected heading at
-architecture level, the first level of `effective-architecture/review-standard.md`, and check
+for the headings the workflow names, and nothing else. Check each corrected heading against
+the architecture and design criteria of `effective-architecture/review-standard.md`, and check
 that section 2 is as it was. Write the result to the shape artifact-handoff's
 `schemas/built-conformance.schema.json` defines. The maintainer repairs what you find, and a
 script promotes and commits.

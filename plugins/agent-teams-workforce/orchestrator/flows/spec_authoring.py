@@ -426,8 +426,8 @@ def context(run: StepRun) -> Completion:
     builds there, for the author's own ``atw-matrix story-scope`` and ``atw-matrix uses``; the
     documents and headings those story scopes name; what the Story depends on outside what it
     builds (``repo_scoping.build_context``), as ids with their stack and repository; and the
-    paths of the PRD and of the architect's result, whose ``notesForSpecs`` the authors start
-    from.
+    paths of the PRD and of the architect's result, whose ``facts`` name the documents that hold
+    the design the authors carry.
 
     Returns:
         The repository and its context file as artifacts, with the repository's other steps

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/spec-context.schema.json",
   "title": "Spec context",
-  "description": "One repository's spec context file (<work>/spec-<slug>.context.json), handed to its spec authors, its spec reviewer and its task decomposer as `repository context`. The step `spec_authoring.context` (orchestrator/flows/spec_authoring.py) writes it and validates it against this file. It holds facts and pointers only: what the architecture says about the Story's stacks is read from the matrix by the commands each member names, and from the arc42 headings `documents` names, never copied here.",
+  "description": "One repository's spec context file (<work>/spec-<slug>.context.json), handed to its spec authors, its spec reviewer and its task decomposer as `repository context`. The step `spec_authoring.context` (orchestrator/flows/spec_authoring.py) writes it and validates it against this file. It holds facts and pointers only: what the architecture says about the Story's stacks is read from the matrix by the commands each member names, and from the architecture document headings `documents` names, never copied here.",
   "type": "object",
   "additionalProperties": false,
   "required": ["epic", "repoPath", "slug", "frontend", "items", "stacks", "documents", "dependsOn", "prd", "architectureResult", "designSystem"],
@@ -23,7 +23,7 @@
       "items": {"$ref": "#/$defs/StackEntries"}
     },
     "documents": {
-      "description": "The arc42 documents the story scopes of `stacks` name, each with its id, its file and the headings to read (none when a scope names the document as a whole). Read these headings and only these; cite a document by the path and heading given here.",
+      "description": "The architecture documents (arc42 and the detailed architecture) the story scopes of `stacks` name, each with its id, its file and the headings to read (none when a scope names the document as a whole). Read these headings and only these; cite a document by the path and heading given here.",
       "type": "array",
       "items": {
         "type": "object",
@@ -47,7 +47,7 @@
       "minLength": 1
     },
     "architectureResult": {
-      "description": "The solutions architect's result (architecture-result.schema.json). Its `notesForSpecs` holds the details the architect already knew for the specs; start from those.",
+      "description": "The solutions architect's result (architecture-result.schema.json). Its `facts` name the home document and heading of each design fact the architecture decided, in arc42 or in the detailed architecture under `detailed/`; the spec carries that design and decides none of it.",
       "type": "string",
       "minLength": 1
     },

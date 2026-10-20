@@ -2,11 +2,12 @@
 name: arc42-verify
 description: >-
   Verifies the architecture documentation against the project's architecture
-  documentation model: the arc42 folder layout, the catalog front matter on
-  every document, documents named for their subjects, one home for each design
-  fact, no content below architecture level, no rules outside section 2, no
-  history, decision records or open items, and no documents contradicting each
-  other. Checks the effective documents or the built documents. This is a
+  documentation model: the arc42 and detailed/ folder layout, the front matter
+  of each document's class (a view, or a standard or policy), documents named
+  for their subjects, one home for each design fact, each fact placed in arc42
+  or detailed/ as the model places it, no rules outside section 2 and the
+  standards and policies, no history, decision records or open items, and no
+  documents contradicting each other. Checks the effective documents or the built documents. This is a
   test-category skill: it reports findings as a structured verdict and fixes
   nothing. Use when the user asks to verify, validate, lint, QA or audit the
   architecture, asks whether the catalog is complete or the documents are
@@ -38,7 +39,7 @@ business requirements, is for the owner.
   list of diagram and model types (the MENU) at `reference/diagram-and-model-types.md`. A rule the
   MODEL, the section model or the criteria file does not establish is not a finding.
 - `../arc42/references/` — the section model (which states the one home of each kind of design
-  fact and the level of detail), the living-document rules and how to find documents.
+  fact, where a fact goes, arc42 or `detailed/`, and the two document classes), the living-document rules and how to find documents.
 - `../effective-architecture/review-criteria.json` — the criteria and the level of each.
 - All three files in `references/` — the assertions you make.
 
@@ -46,16 +47,17 @@ business requirements, is for the owner.
 
 | Family | What it asserts | Reference |
 |---|---|---|
-| **Layout and naming** | Every section is a folder with a `README.md`; no section 9; documents sit in the section the MODEL names; files and folders are named for their subjects, never for a PRD, Epic, bead id, date or pipeline gate; built documents use the same layout under `built/<element>/` | `references/verification-checklist.md` |
-| **Catalog** | Every document carries `view_type` (a MENU type), `scope`, `subject`, `shows` and `lifecycle_state`, with valid values, and `shows` matches what the document's diagram shows | `references/verification-checklist.md` |
-| **Content hygiene** | No rules outside section 2; no history, changelog, decision records or ADRs; no open items; no requirements; no repository names; section 4 is enterprise-level strategy of about one page | `references/living-doc-antipatterns.md` |
+| **Layout and naming** | Every section is a folder with a `README.md`; no section 9; every `detailed/` folder has a `README.md`; documents sit where the MODEL places them; files and folders are named for their subjects, never for a PRD, Epic, bead id, date or pipeline gate; built documents use the same layout under `built/<element>/` | `references/verification-checklist.md` |
+| **Catalog** | Every view carries `view_type` (a MENU type), `scope`, `subject`, `shows`, `lifecycle_state` and `purpose`, with valid values, and `shows` matches what the document's diagram shows; every standard or policy carries `document_class: standard` or `policy` and `lifecycle_state`, and no `view_type`, `scope`, `shows` or diagram | `references/verification-checklist.md` |
+| **Content hygiene** | No rules outside section 2; no history, changelog, decision records or ADRs; no open items; no product requirements; a standard or policy states requirements and no implementation; no repository names; section 4 is enterprise-level strategy of about one page | `references/living-doc-antipatterns.md` |
 | **One home per fact** | Each design fact about an entry the documents in scope describe is stated under one heading the matrix names for that entry and nowhere else; another document that needs it links to that heading | this file |
-| **Level of detail** | No arc42 document holds content below architecture level | this file |
+| **Placement** | Each fact is in arc42 or under `detailed/` as the MODEL places it, and each `detailed/` document is linked from the arc42 view of its subject | this file |
 | **Consistency** | No two documents contradict each other; applicable subjects have the coverage the MODEL requires; no document conflicts with a section 2 constraint; navigation and links satisfy the MODEL | `references/view-consistency-checks.md` |
 
 ### One home per fact
 
-The matrix holds no entry for a design fact. A fact's content stays under its arc42 heading, and
+The matrix holds no entry for a design fact. A fact's content stays under its heading in an arc42
+or `detailed/` document, and
 the matrix holds the heading: a `describedBy` relationship from the entry the fact is about to the
 document, with the heading. For the documents in scope:
 
@@ -74,20 +76,30 @@ document, with the heading. For the documents in scope:
    `atw-matrix node disagreement:<id>` returns the disagreeing statements with the ruling once
    one is made. A disagreement with no ruling is a `FAIL` under Consistency, with both paths.
 
-### Level of detail
+### Placement
 
-Each criterion in `review-criteria.json` has a level: architecture (arc42), technical requirement
-(the TRD) or implementation (the specs and Tasks). An arc42 document holds the architecture level
-only: which block is responsible, which block owns the data, who may call whom, what happens in
-what order, where it runs, and the rule with its reason. Each of the following in an arc42
-document is a `FAIL` with the quoted line: a route method and path, a field name, a key or index
-attribute name, a parameter name, a metric or alarm name, a payload schema. A value with a unit (a
-limit, a lifetime, a timeout, a retry count) is a `WARN`: its home is the TRD.
+All of the architecture and design is architecture; the only question is where each document is
+stored. Apply the MODEL's rule: a statement belongs in arc42 when it stays true if the code is
+rewritten, and the detailed design of one component, one feature, components working together or
+the whole system belongs in its document under `detailed/`, linked from the arc42 view of its
+subject, which states the responsibility and does not restate the detail.
+
+- Detail stated in an arc42 document whose home the MODEL places under `detailed/` is a `WARN`
+  with the quoted line and the `detailed/` folder it belongs in. It is placement, not an error of
+  content: the detail is kept, and moved.
+- A `detailed/` document that no arc42 view of its subject links to, or that does not link to its
+  parent, is a `FAIL` under this family.
+- A value with a unit (a limit, a lifetime, a timeout, a retry count) that no TRD requirement
+  states is a `WARN`: its home is the TRD, which the detailed design applies.
+- A standard or policy that names an implementation (a construct, a library, a class or code that
+  meets its requirements) is a `FAIL` with the quoted line: that belongs in the detailed design of
+  the component that meets it.
 
 ## How to run the verification
 
 1. **Resolve the scope.** Take the architecture root the router resolved and the version the
-   caller names (`arc42/` or `built/<element>/`). With no version named, verify `arc42/`. When the
+   caller names (the effective version, `arc42/` and `detailed/`, or `built/<element>/`). With no
+   version named, verify the effective version. When the
    root cannot be resolved, ask one question. State whether this is a bounded review of named
    documents or a whole-project assessment; a sample is never a whole-project verdict.
 2. **Load the rules** from the MODEL, the MENU, the criteria file and the references above. For
@@ -106,7 +118,7 @@ limit, a lifetime, a timeout, a retry count) is a `WARN`: its home is the TRD.
 resolve root and version
   -> load MODEL, MENU, criteria and references
   -> layout and naming -> catalog -> content hygiene
-  -> one home per fact -> level of detail -> consistency
+  -> one home per fact -> placement -> consistency
   -> emit structured verdict
 ```
 
@@ -140,8 +152,8 @@ One home per fact
          evidence: home 08-crosscutting-concepts/address-proof.md#Proof;
                    06-runtime-view/sign-up.md says "the sign-up handler verifies the address"
 
-Level of detail
-  [FAIL] 05-building-block-view/settings/README.md — a key attribute name
+Placement
+  [WARN] 05-building-block-view/settings/README.md — detail whose home is detailed/components/SkillSpoke-settings-service/
          evidence: "partition key userId, sort key settingName"
 
 Consistency

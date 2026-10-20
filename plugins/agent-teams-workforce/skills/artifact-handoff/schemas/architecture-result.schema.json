@@ -171,10 +171,10 @@
       "required": ["id", "statement", "reason", "home", "linkedFrom"],
       "properties": {
         "id": {"description": "The id of the fact, unique in the file.", "type": "string", "minLength": 1},
-        "statement": {"description": "The fact, at architecture level, in the form its arc42 section requires.", "type": "string", "minLength": 1},
+        "statement": {"description": "The fact, in the form its home document requires: an arc42 section's form, or the detailed design of one component, one feature, components working together or the whole system.", "type": "string", "minLength": 1},
         "reason": {"description": "Why the design is so.", "type": "string", "minLength": 1},
-        "home": {"description": "The one arc42 document and heading that states the fact.", "$ref": "#/$defs/Citation"},
-        "linkedFrom": {"description": "The arc42 paths of the documents that link to the home and do not restate the fact.", "type": "array", "items": {"type": "string"}}
+        "home": {"description": "The one architecture document and heading that states the fact: a document under `arc42/`, or under `detailed/` for detail the architecture documentation model places there.", "$ref": "#/$defs/Citation"},
+        "linkedFrom": {"description": "The paths, relative to the architecture root, of the documents that link to the home and do not restate the fact.", "type": "array", "items": {"type": "string"}}
       }
     },
     "CriterionAnswer": {
@@ -187,17 +187,6 @@
         "status": {"$ref": "#/$defs/CriterionStatus"},
         "satisfiedAt": {"description": "For `satisfied`, each architecture document and heading, or the TRD path with a requirement id as the heading, that satisfies it; empty for `not-applicable`.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
         "reason": {"description": "For `not-applicable`, why the criterion does not apply to this PRD; an empty string for `satisfied`.", "type": "string"}
-      }
-    },
-    "SpecNote": {
-      "description": "One detail below architecture and technical-requirement level that is already known, kept for the spec authors.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["element", "detail", "source"],
-      "properties": {
-        "element": {"description": "The matrix id of the element the detail concerns.", "type": "string", "minLength": 1},
-        "detail": {"description": "The route, field, key, parameter, name or schema detail.", "type": "string", "minLength": 1},
-        "source": {"description": "Where the detail comes from: a path and heading, a URL, or `design` for something decided in this run.", "type": "string", "minLength": 1}
       }
     },
     "Position": {
@@ -273,10 +262,10 @@
       }
     },
     "ArchitectureResult": {
-      "description": "The solutions architect's result for one Epic, at the context file's `resultPath`. The architect writes it as the work goes, so that a session that stops loses nothing: the members settled so far, written as soon as the state file is written and rewritten in place each time a part settles (a fact and its home, a settlement, a feature, a criterion answer, a note for the specs). The file satisfies this schema when the architect finishes; until then it is the partial result a `Finish` step, or a session started again, continues from. The script reads `conclusion`, checks every criterion answer, and selects reviewers from `reviewSignals`; what is unapproved comes from the matrix, not from this file. For a `no-change-needed` conclusion the reviewers are also handed the effective documents `criteria` cites. Every conclusion goes to review; none ends the architecture work by itself.",
+      "description": "The solutions architect's result for one Epic, at the context file's `resultPath`. The architect writes it as the work goes, so that a session that stops loses nothing: the members settled so far, written as soon as the state file is written and rewritten in place each time a part settles (a fact and its home, a settlement, a feature, a criterion answer). The file satisfies this schema when the architect finishes; until then it is the partial result a `Finish` step, or a session started again, continues from. The script reads `conclusion`, checks every criterion answer, and selects reviewers from `reviewSignals`; what is unapproved comes from the matrix, not from this file. For a `no-change-needed` conclusion the reviewers are also handed the effective documents `criteria` cites. Every conclusion goes to review; none ends the architecture work by itself.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["bead", "conclusion", "features", "noFeature", "addedOrChangedElements", "sharedCapabilities", "facts", "settledDisagreements", "criteria", "notesForSpecs", "unsettled", "reviewSignals", "costEvidence", "specialistGaps"],
+      "required": ["bead", "conclusion", "features", "noFeature", "addedOrChangedElements", "sharedCapabilities", "facts", "settledDisagreements", "criteria", "unsettled", "reviewSignals", "costEvidence", "specialistGaps"],
       "properties": {
         "bead": {"description": "The Epic id.", "type": "string", "minLength": 1},
         "conclusion": {"$ref": "#/$defs/Conclusion"},
@@ -287,7 +276,6 @@
         "facts": {"description": "The design facts this run decided.", "type": "array", "items": {"$ref": "#/$defs/FactEntry"}},
         "settledDisagreements": {"description": "The matrix ids of the disagreements this run settled; what the losing statement must change goes in the write request.", "type": "array", "items": {"type": "string"}},
         "criteria": {"description": "One answer for every criterion whose level is architecture or technical-requirement. A criterion with neither a place it is satisfied nor a reason it does not apply is unfinished work.", "type": "array", "items": {"$ref": "#/$defs/CriterionAnswer"}},
-        "notesForSpecs": {"description": "Implementation-level details already known (route method and path, field, key and index names, parameter, metric and alarm names, payload schemas), kept for the spec authors.", "type": "array", "items": {"$ref": "#/$defs/SpecNote"}},
         "unsettled": {"description": "Empty unless `conclusion` is `unsettled`.", "type": "array", "items": {"$ref": "#/$defs/UnsettledMatter"}},
         "reviewSignals": {"$ref": "#/$defs/ReviewSignals"},
         "costEvidence": {"type": "array", "items": {"$ref": "#/$defs/CostEvidence"}},
@@ -331,11 +319,11 @@
       "description": "One decision a bounded task returns, for the architect to accept or change.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["statement", "reason", "section", "sources"],
+      "required": ["statement", "reason", "belongsIn", "sources"],
       "properties": {
-        "statement": {"description": "One sentence, at architecture level.", "type": "string", "minLength": 1},
+        "statement": {"description": "One sentence.", "type": "string", "minLength": 1},
         "reason": {"type": "string", "minLength": 1},
-        "section": {"description": "The arc42 section the fact belongs in: 3, 4, 5, 6, 7 or 8.", "type": "string", "pattern": "^[3-8]$"},
+        "belongsIn": {"description": "Where the fact belongs, by the architecture documentation model: the arc42 section, 3 to 8, or the folder of the detailed architecture that holds it: `detailed/system`, `detailed/cross-component`, `detailed/components/<component>` or `detailed/features/<feature>`.", "type": "string", "pattern": "^([3-8]|detailed/(system|cross-component|components/[^/]+|features/[^/]+))$"},
         "sources": {"type": "array", "items": {"$ref": "#/$defs/Citation"}}
       }
     },
@@ -345,7 +333,7 @@
       "additionalProperties": false,
       "required": ["home", "viewType", "mermaid", "shows"],
       "properties": {
-        "home": {"description": "The arc42 document and heading the diagram belongs under.", "$ref": "#/$defs/Citation"},
+        "home": {"description": "The architecture document (under `arc42/` or `detailed/`) and heading the diagram belongs under.", "$ref": "#/$defs/Citation"},
         "viewType": {"description": "The view type, from the documentation model's list of view types.", "type": "string", "minLength": 1},
         "mermaid": {"description": "The Mermaid source, without the code fence.", "type": "string", "minLength": 1},
         "shows": {"description": "The names of the elements the diagram shows.", "type": "array", "items": {"type": "string"}}
@@ -355,7 +343,7 @@
       "description": "A design specialist's or diagram author's answer to one request.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "answer", "reasons", "assumptions", "alternatives", "needs", "notesForSpecs"],
+      "required": ["kind", "answer", "reasons", "assumptions", "alternatives", "needs"],
       "if": {"properties": {"kind": {"const": "task"}}},
       "then": {"required": ["decisions", "diagrams"]},
       "else": {"properties": {"decisions": false, "diagrams": false}},
@@ -367,8 +355,7 @@
         "alternatives": {"description": "The alternatives considered; empty unless the request asks for them.", "type": "array", "items": {"type": "string"}},
         "needs": {"type": "array", "items": {"$ref": "#/$defs/NeededSpecialty"}},
         "decisions": {"description": "For a task, the decisions as design facts; absent for a question.", "type": "array", "items": {"$ref": "#/$defs/DesignFact"}},
-        "diagrams": {"description": "For a diagram task, the diagrams drawn; empty for any other task; absent for a question.", "type": "array", "items": {"$ref": "#/$defs/Diagram"}},
-        "notesForSpecs": {"type": "array", "items": {"$ref": "#/$defs/SpecNote"}}
+        "diagrams": {"description": "For a diagram task, the diagrams drawn; empty for any other task; absent for a question.", "type": "array", "items": {"$ref": "#/$defs/Diagram"}}
       }
     },
     "TrdChange": {
@@ -472,7 +459,7 @@
       }
     },
     "WriteRequest": {
-      "description": "What the solutions architect asks architecture-maintainer to write into arc42; one request where one can hold everything.",
+      "description": "What the solutions architect asks architecture-maintainer to write into the architecture documents, arc42 and the detailed architecture; one request where one can hold everything.",
       "type": "object",
       "additionalProperties": false,
       "required": ["bead", "facts", "restatements", "settlements", "diagrams", "resultPath"],
@@ -504,7 +491,7 @@
         "headingsCreated": {"type": "array", "items": {"$ref": "#/$defs/Citation"}},
         "linksAdded": {"description": "Each place a link to a home heading was added.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
         "restatementsRemoved": {"type": "array", "items": {"$ref": "#/$defs/Citation"}},
-        "belowArchitectureLevel": {"description": "Entries not written because they are below architecture level, for the architect to move to the TRD or to notesForSpecs.", "type": "array", "items": {"$ref": "#/$defs/UnappliedEntry"}},
+        "belowArchitectureLevel": {"description": "Always empty: an entry too detailed for arc42 is written into its document under `detailed/`.", "type": "array", "items": {"$ref": "#/$defs/UnappliedEntry"}},
         "notApplied": {"description": "Entries that could not be applied for any other reason.", "type": "array", "items": {"$ref": "#/$defs/UnappliedEntry"}},
         "summary": {"type": "string", "minLength": 1}
       }
@@ -608,14 +595,14 @@
       }
     },
     "BuiltDifference": {
-      "description": "One difference, at architecture level, between code a Story built and the approved architecture.",
+      "description": "One difference between code a Story built and the approved architecture and design.",
       "type": "object",
       "additionalProperties": false,
       "required": ["element", "code", "architecture", "difference", "document"],
       "properties": {
         "element": {"description": "The matrix id of the element.", "type": "string", "minLength": 1},
         "code": {"description": "Where the code shows it: repository, revision and file:line.", "$ref": "#/$defs/Citation"},
-        "architecture": {"description": "The approved architecture heading it differs from.", "$ref": "#/$defs/Citation"},
+        "architecture": {"description": "The approved architecture or design heading it differs from.", "$ref": "#/$defs/Citation"},
         "difference": {"description": "What the code does and what the architecture says, in one or two sentences.", "type": "string", "minLength": 1},
         "document": {"description": "The path, relative to the architecture root, of the built-difference document written for it.", "type": "string", "minLength": 1}
       }

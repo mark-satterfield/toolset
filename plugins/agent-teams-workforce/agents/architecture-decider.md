@@ -51,4 +51,6 @@ or when the only workable design conflicts with section 2. A technical choice st
 team.
 
 The criteria and their levels are in `effective-architecture/review-standard.md`: a position
-that asks an arc42 document for detail below architecture level loses on that point.
+that asks an arc42 document for detail the documentation model places in the detailed
+architecture under `detailed/` loses on that point, and the detail goes in its `detailed/`
+document.

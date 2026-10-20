@@ -50,9 +50,9 @@ The Story document lists what the Story builds, one line per item: an event as
 
 ## The review
 
-One reviewer session per repository checks the three documents against the implementation-level
+One reviewer session per repository checks the three documents against the specs-and-Tasks
 criteria of `skills/effective-architecture/review-standard.md`; no criteria file is handed. The step
-keeps a finding only when its criterion id is an implementation-level id of
+keeps a finding only when its criterion id is an id of the specs-and-Tasks level (`implementation`) of
 `skills/effective-architecture/review-criteria.json`. What follows is planned by the
 step whose result calls for it, one step at a time, after that step:
 

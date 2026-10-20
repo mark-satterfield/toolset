@@ -2,34 +2,155 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/document-front-matter.schema.json",
   "title": "Elaboration Markdown documents",
-  "description": "The fixed part of the Markdown documents elaboration hands from agent to agent: the YAML front matter a script reads, and the headings a script resolves. What a document must say is judged by the criteria of effective-architecture/review-standard.md (the TRD by the technical-requirement level, the specs by the implementation level), which this file does not restate. The arc42 documents of the effective architecture are not covered here: their catalog front matter is the arc42 skill's documentation model (skills/arc42/references/arc42-section-model.md).",
+  "description": "The fixed part of the Markdown documents elaboration hands from agent to agent: the YAML front matter a script reads, and the headings a script resolves. What a document must say is judged by the criteria of effective-architecture/review-standard.md (the architecture documents by the architecture and design level, the TRD by the technical-requirement level, the specs by the specs-and-Tasks level), which this file does not restate. The architecture documents, under `arc42/` and `detailed/` of the architecture root, are of one of two classes: a view (`ArchitectureView`) or a standard or policy (`ArchitectureStandard`). Where each document goes is the architecture documentation model's (`reference/architecture-documentation-model.md` under the architecture root, read through skills/arc42/references/arc42-section-model.md).",
   "$defs": {
     "Citation": {
       "description": "One architecture citation: the path of an architecture document (arc42 or detailed) relative to the architecture root, optionally followed by #<heading> as `atw-matrix node document:<path>` lists the heading. Every citation must resolve to a document, and a heading to a heading of it, that the matrix holds.",
       "type": "string",
       "minLength": 1
     },
+    "ArchitectureView": {
+      "description": "The front matter of an architecture view: one way of looking at one subject at one scope, a diagram (Mermaid) and the prose around it, under `arc42/` or `detailed/`. Written by architecture-maintainer through the arc42-author and arc42-maintain skills; read by `atw-matrix sync-documents` (scripts/portfolio/matrixsync.py), which records the document as describing each entry `subject` and `shows` name, and checked by the arc42-verify skill. Classification keys the project uses (`document_class`, `authority`, `provenance`) may stand beside these.",
+      "type": "object",
+      "required": [
+        "view_type",
+        "scope",
+        "subject",
+        "shows",
+        "lifecycle_state",
+        "purpose"
+      ],
+      "properties": {
+        "view_type": {
+          "description": "A type from the list of view types, `reference/diagram-and-model-types.md` under the architecture root. A type that names a diagram promises a diagram of that kind in the document.",
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "description": "The scope the view describes, as the architecture documentation model names the scopes.",
+          "enum": [
+            "system",
+            "domain",
+            "cross-component",
+            "service",
+            "component",
+            "feature",
+            "concept"
+          ]
+        },
+        "subject": {
+          "description": "The one thing the view describes, named as the glossary or its stack name names it; never a repository, PRD, Epic, bead id or date.",
+          "type": "string",
+          "minLength": 1
+        },
+        "shows": {
+          "description": "Every element the view depicts, by the name the matrix holds for its entry.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "lifecycle_state": {
+          "enum": [
+            "in-review",
+            "effective"
+          ]
+        },
+        "purpose": {
+          "description": "One sentence: why the document exists and who acts on it.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ArchitectureStandard": {
+      "description": "The front matter of a standard or a policy under `arc42/` (usually section 8) or `detailed/`: the requirements every element of its scope meets, and how compliance is judged. It is not a view: it carries no diagram, no `view_type`, no `scope` and no `shows`, and it holds requirements only, never an implementation (no construct, library, class or code). Written by architecture-maintainer through the arc42-author and arc42-maintain skills; recorded by `atw-matrix sync-documents` (scripts/portfolio/matrixsync.py) with its headings; checked by the arc42-verify skill.",
+      "type": "object",
+      "required": [
+        "document_class",
+        "lifecycle_state",
+        "authority",
+        "provenance",
+        "purpose"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "view_type"
+            ]
+          },
+          {
+            "required": [
+              "scope"
+            ]
+          },
+          {
+            "required": [
+              "shows"
+            ]
+          }
+        ]
+      },
+      "properties": {
+        "document_class": {
+          "enum": [
+            "standard",
+            "policy"
+          ]
+        },
+        "lifecycle_state": {
+          "enum": [
+            "in-review",
+            "effective"
+          ]
+        },
+        "authority": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provenance": {
+          "type": "string",
+          "minLength": 1
+        },
+        "purpose": {
+          "description": "One sentence: what the standard or policy governs and who applies it.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "TrdDocument": {
       "description": "The front matter of the Epic's TRD (<work>/trd.md), written by trd-author. Each requirement is a heading whose text is exactly its id (for example `#### TR-01`), and under it the members of architecture-result.schema.json#/$defs/TrdRequirement. A matrix constraint that records the requirement points at that heading by the Epic and the id (matrix-kinds.json, `$defs/trdRequirement`); the step `trd.confirm` (orchestrator/flows/trd_authoring.py) fails when a citation does not resolve or a pointer names an id the TRD has no heading for.",
       "type": "object",
-      "required": ["decisionIds"],
+      "required": [
+        "decisionIds"
+      ],
       "properties": {
         "decisionIds": {
           "description": "The architecture documents and headings the TRD's requirements cite.",
           "type": "array",
-          "items": {"$ref": "#/$defs/Citation"}
+          "items": {
+            "$ref": "#/$defs/Citation"
+          }
         }
       }
     },
     "SpecDocument": {
       "description": "The front matter of one repository's contracts document (<work>/spec-<slug>.md, written by api-specification-author) and data-model document (<work>/spec-<slug>.data-model.md, written by data-model-specification-author). The step `spec_authoring.story_document` (orchestrator/flows/spec_authoring.py) carries the citations of both onto the Story document and the Story bead.",
       "type": "object",
-      "required": ["decisionIds"],
+      "required": [
+        "decisionIds"
+      ],
       "properties": {
         "decisionIds": {
           "description": "The architecture documents and headings the document cites.",
           "type": "array",
-          "items": {"$ref": "#/$defs/Citation"}
+          "items": {
+            "$ref": "#/$defs/Citation"
+          }
         }
       }
     }

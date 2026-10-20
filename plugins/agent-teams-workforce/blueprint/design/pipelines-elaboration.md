@@ -205,6 +205,23 @@ Notes on the diagram:
   documented and stored in the matrix," Detailed architecture and design that does not qualify
   for arc42 lives under the vault's `docs/tech/architecture/`, outside `arc42/`, filed through the
   `filing-clerk`. The owner: "There may be some things in arc42 that you or others may deem to be lower-level or too detailed for arc42. I want you to figure a home under `/docs/tech/architecture` somewhere. Use `filing-clerk`. I want you to help build out and organize (with the `filing-clerk`) the architecture under `/docs/tech/architecture`. This is really where all of our detailed architecture and for anything that doesn't qualify for `arc42`."
+- How the tooling records the detailed design: the review standard
+  (`skills/effective-architecture/review-criteria.json`) has no level below architecture. Its
+  architecture and design level is homed in arc42 and the detailed architecture under
+  `detailed/`, and holds the detailed design criteria (routes, store keys and data models, event
+  values, names, idempotency keys and timeouts, a component's classes and object models) that
+  the solutions architect answers and the architecture reviewers check. Specialists return each
+  decision with where it belongs (an arc42 section or a `detailed/` folder), the architect's
+  result names each fact's home document, and `architecture-maintainer` writes it there; `atw-matrix
+  sync-documents` records the documents. There is no free-text channel of details for the spec
+  authors: the specs-and-Tasks criteria carry the design "as the detailed design records them".
+- Architecture documents are of two classes, defined in
+  `skills/artifact-handoff/schemas/document-front-matter.schema.json`: a view
+  (`ArchitectureView`: `view_type`, `scope`, `subject`, `shows`, a diagram and its prose) and a
+  standard or policy (`ArchitectureStandard`: `document_class: standard` or `policy`, no diagram,
+  no `view_type`, `scope` or `shows`, requirements only and no implementation), for example
+  `arc42/08-crosscutting-concepts/s3-storage-standard.md` in the vault. The scopes are the
+  documentation model's: system, domain, cross-component, service, component, feature, concept.
 - Documents are chosen and grown by the owner's diagram-and-model-types guidance, not one bespoke
   document per Epic. The owner: "There are diagrams that need to be created and then enhanced or
   updated as each item is built.", "There are diagrams that only pertain to a single component.",

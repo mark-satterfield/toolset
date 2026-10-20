@@ -1,12 +1,12 @@
 ---
 name: arc42-maintain
 description: >-
-  Maintains the effective arc42 documents to the project's architecture
-  documentation model. It writes the solutions architect's decisions into the
+  Maintains the effective architecture documents, arc42 and the detailed
+  architecture (detailed/), to the project's architecture documentation model. It writes the solutions architect's decisions into the
   documents, each design fact in its one home with links from every other
   document that needs it, and corrects the documents from what a Story built.
   It writes nothing in section 2, which is the owner's. Use when the user asks
-  to write decided design facts into arc42, bring the architecture up to date
+  to write decided design facts into arc42 or the detailed architecture, bring the architecture up to date
   with what was built, or replace a restated fact with a link to its home.
 triggers:
   - write the decisions into arc42
@@ -34,8 +34,9 @@ The design is the solutions architect's. A fact that is not in the request is no
 
 - The MODEL at `reference/architecture-documentation-model.md` under the architecture root, and the
   MENU at `reference/diagram-and-model-types.md`.
-- `../arc42/references/arc42-section-model.md` — what each section holds, the one home of each
-  design fact and the level of detail — and `../arc42/references/living-document-rules.md`.
+- `../arc42/references/arc42-section-model.md` — what each section and each `detailed/` folder
+  holds, the one home of each design fact, where a fact goes (arc42 or `detailed/`) and the two
+  document classes — and `../arc42/references/living-document-rules.md`.
 - `references/consistency-rules.md` — what holds across documents after every pass.
 
 ## The procedure
@@ -48,18 +49,22 @@ The design is the solutions architect's. A fact that is not in the request is no
    a link to the home heading. A fact is stated in one place.
 3. **Apply settled disagreements.** The statement that stands stays; each statement that lost is
    replaced by a link to it.
-4. **Keep the level.** A request entry that is a route path, a field name, a key or index name, a
-   parameter name, a metric or alarm name, or a schema is returned as below architecture level,
-   unwritten.
-5. **Create a document only for a home path that does not exist**, with the catalog frontmatter
-   (`view_type`, `scope`, `subject`, `shows`, `lifecycle_state`) and a file name that names its
-   subject.
+4. **Write the detail where the MODEL places it.** A fact the MODEL places below arc42's level
+   (a class or object model, a data model with its attributes, columns, keys and types, an
+   interface or payload schema, a route, a name) is written in its document under `detailed/`,
+   and the arc42 view of its subject links to it. No entry is returned for being too detailed.
+5. **Create a document only for a home path that does not exist**, with the front matter of its
+   class (the artifact-handoff skill's `schemas/document-front-matter.schema.json`): a view's
+   catalog front matter (`view_type`, `scope`, `subject`, `shows`, `lifecycle_state`, `purpose`),
+   or for a standard or policy `document_class: standard` or `policy` with no `view_type`,
+   `scope`, `shows` or diagram; and a file name that names its subject. Extend an existing view of
+   the same subject and scope rather than create a second one.
 6. **Place and update diagrams.** Place each diagram the request carries; update or redraw a
    diagram when a fact changes what it shows; check that it renders and reads well.
 7. **Keep the catalog true and check the invariants** in `references/consistency-rules.md` across
    every document you touched and every document that links to them.
-8. **Report**: each heading changed or created, each link added, each restatement removed, the
-   entries below architecture level, and what could not be applied with the reason. The files you
+8. **Report**: each heading changed or created, each link added, each restatement removed, and
+   what could not be applied with the reason. The files you
    changed stay `in-review`; a script moves them to `effective` after review. You record nothing
    in the matrix: a script step runs `atw-matrix sync-documents --paths` on the files you report,
    which mirrors each document, its headings and what its `shows` names. A correction from built

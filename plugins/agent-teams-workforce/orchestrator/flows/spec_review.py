@@ -1,6 +1,6 @@
 """The review of one repository's specification documents, each session a step of the journal.
 
-One reviewer session reads the documents against the implementation-level criteria. Its step
+One reviewer session reads the documents against the specs-and-Tasks criteria. Its step
 plans what its result calls for: a finding goes once to the author of the document it names, in
 the order the documents are written, each as its own step. A step that ends plans the next: the
 next document with a finding, a document derived from one that changed, and, when an author

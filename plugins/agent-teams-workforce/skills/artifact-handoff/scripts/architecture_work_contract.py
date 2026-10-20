@@ -219,14 +219,6 @@ class CriterionAnswer(TypedDict):
     reason: str
 
 
-class SpecNote(TypedDict):
-    """Typed form of #/$defs/SpecNote in architecture-result.schema.json."""
-
-    element: str
-    detail: str
-    source: str
-
-
 class Position(TypedDict):
     """Typed form of #/$defs/Position in architecture-result.schema.json."""
 
@@ -293,7 +285,6 @@ class ArchitectureResult(TypedDict):
     facts: list[FactEntry]
     settledDisagreements: list[str]
     criteria: list[CriterionAnswer]
-    notesForSpecs: list[SpecNote]
     unsettled: list[UnsettledMatter]
     reviewSignals: ReviewSignals
     costEvidence: list[CostEvidence]
@@ -330,7 +321,7 @@ class DesignFact(TypedDict):
 
     statement: str
     reason: str
-    section: str
+    belongsIn: str
     sources: list[Citation]
 
 
@@ -354,7 +345,6 @@ class SpecialistAnswer(TypedDict):
     needs: list[NeededSpecialty]
     decisions: NotRequired[list[DesignFact]]
     diagrams: NotRequired[list[Diagram]]
-    notesForSpecs: list[SpecNote]
 
 
 class TrdChange(TypedDict):

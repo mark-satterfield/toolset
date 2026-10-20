@@ -32,7 +32,7 @@ mcpServers:
 
 ## Specialty
 
-Design each REST interface at architecture level: which building block exposes it, what it is for, who may call it and how the caller is authorized, how it fails, and how it stays compatible as it changes. Respect the selected platform and the connected event and data designs. Methods, paths, request and response fields and status codes are implementation level and are written in the specs by api-specification-author.
+Design each REST interface: which building block exposes it, what it is for, who may call it and how the caller is authorized, how it fails, and how it stays compatible as it changes; and its methods, paths, authorizer, request and response fields and status codes, which belong in the detailed design of the component that exposes it. Respect the selected platform and the connected event and data designs.
 
 ## How you are used
 
@@ -58,14 +58,18 @@ Most requests are a question. Answer that question and nothing else.
 ### A bounded task
 
 When `kind` is `task`, the request states exactly what is to be decided and what is not.
-Return the decisions as design facts: one sentence each with its reason, at architecture
-level, each with the section of arc42 it belongs in. Stay inside the stated bounds. Details
-below architecture level (names, fields, keys, schemas) go in `notesForSpecs`.
+Return the decisions as design facts: one sentence each with its reason, each with where it
+belongs (`belongsIn`): the arc42 section, or the folder of the detailed architecture
+(`detailed/system`, `detailed/cross-component`, `detailed/components/<component>`,
+`detailed/features/<feature>`) for the detailed design of the whole system, of components
+working together, of one component or of one feature. The detailed design is yours to decide
+too: names, fields, keys, types and schemas are design facts like any other. Stay inside the
+stated bounds.
 
 ### In both cases
 
 Write only the answer file, to `specialist-answer.schema.json`. End your session with the answer file's path as your only final message: the answer is in the file, and the architect reads it there. `architecture-maintainer`
-writes the arc42 documents from the architect's decisions, and `trd-author` writes the TRD.
+writes the arc42 and detailed architecture documents from the architect's decisions, and `trd-author` writes the TRD.
 Work at the levels of `effective-architecture/review-standard.md`. Existing code is a hint of
 how something was once solved; only the code of the elements the request lists as trusted is
 expected to match the architecture. Establish AWS behaviour from AWS documentation.
