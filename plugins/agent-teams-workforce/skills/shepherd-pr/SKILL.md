@@ -1,7 +1,7 @@
 ---
 name: shepherd-pr
 version: 4.0.0
-description: Shepherd a PR until it qualifies for merging — work through everything on it that keeps it from qualifying (failing lint, type, test and other required checks; merge conflicts and a branch behind its base; unresolved review threads; CodeRabbit changes-requested reviews; reviewer questions) with confidence gating and a defensible audit trail. Invoking the skill runs its own loop (scripts/shepherd-pr.sh); each pass is one headless session running the /agent-teams-workforce:fix-pr command. The shepherd ends when the PR qualifies for merging, or when it cannot fix what is left; merging and closing are not its job.
+description: Shepherd a PR until it qualifies for merging — work through everything on it that keeps it from qualifying, with confidence gating and a defensible audit trail. Invoking the skill runs its own loop (scripts/shepherd-pr.sh); each pass is one headless session running the /agent-teams-workforce:fix-pr command. The shepherd ends when the PR qualifies for merging, or when it cannot fix what is left; merging and closing are not its job.
 category: github
 tags: [pr-review, coderabbit, bot-feedback, thread-resolution, ci-triage, merge-warden]
 author: Claude Code Flow
@@ -18,7 +18,7 @@ capabilities:
 
 # PR Shepherd Skill
 
-> **Shepherd PR Reviews:** Work through the issues on a PR until it qualifies for merging. Whenever GitHub shows something that keeps it from qualifying, start one pass that triages every open thread, decides a disposition, executes it, fixes CI, and leaves behind a defensible audit trail. The shepherd's job ends when the PR qualifies for merging, or when it cannot fix what is left. Merging and closing are not its job: whether a PR is merged by auto-merge or by a person is the owner's choice, and the shepherd neither waits for nor watches it.
+> **Shepherd PR Reviews:** Work through the issues on a PR until it qualifies for merging. Whenever GitHub shows something that keeps it from qualifying, start one pass that triages every open thread, decides a disposition, executes it, fixes whatever keeps the PR from qualifying under the rule in `/agent-teams-workforce:fix-pr` ("What a pass fixes"), and leaves behind a defensible audit trail. The shepherd's job ends when the PR qualifies for merging, or when it cannot fix what is left. Merging and closing are not its job: whether a PR is merged by auto-merge or by a person is the owner's choice, and the shepherd neither waits for nor watches it.
 
 ## Invocation Model
 
