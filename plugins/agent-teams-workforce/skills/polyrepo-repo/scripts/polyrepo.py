@@ -19,7 +19,7 @@ pushes, creates or renames the GitHub repo so local and GitHub move together. Th
 no `owns`, `purpose`, `purpose_head`, `role` or `remote_url`; its next write drops them.
 
 Settings come from `.polyrepo/config.yaml`, found in this order: `--config`, `$POLYREPO_CONFIG`,
-the nearest `.polyrepo/config.yaml` above the working directory, `$SKILLSPOKE_CC/.polyrepo/`.
+the nearest `.polyrepo/config.yaml` above the working directory, `$ATW_CONTROL_REPO/.polyrepo/`.
 The repository root is the environment variable the config names in `root_env`.
 
 Usage:
@@ -852,9 +852,9 @@ def find_config(explicit: str | None) -> Path:
         candidates.append(Path(os.environ["POLYREPO_CONFIG"]))
     here = Path.cwd().resolve()
     candidates.extend(d / ".polyrepo" / "config.yaml" for d in (here, *here.parents))
-    if os.environ.get("SKILLSPOKE_CC"):
+    if os.environ.get(CONTROL_REPO_ENV):
         candidates.append(
-            Path(os.environ["SKILLSPOKE_CC"]) / ".polyrepo" / "config.yaml",
+            Path(os.environ[CONTROL_REPO_ENV]) / ".polyrepo" / "config.yaml",
         )
     for c in candidates:
         if c.is_file():
@@ -3686,7 +3686,7 @@ def _service_name(cfg: Config, name: str) -> str:
     """Return the template's service_name: the repo name without its project prefix.
 
     The prefix is the project token the naming command reads in a repository of a project, so
-    every project (SkillSpoke-, shared-, marketing-, employer-) is stripped the same way, and the
+    every project (for example acme-, shared-, marketing-) is stripped the same way, and the
     camelCase domain keeps its case because the templates' validators require it.
 
     Returns:
@@ -5412,7 +5412,6 @@ def _run_names_only(
 # the names a rename covers besides the repository (name_sweep.py has the rules)
 
 PR_COMMAND_ENV = "ATW_PR_COMMAND"
-PR_COMMAND_DEFAULT = "~/.local/bin/skillspoke-pr"
 PR_TIMEOUT = 900
 CHECK_TASKS = ("lint", "typecheck", "test")
 APPLY_WORKERS = 4
@@ -5498,16 +5497,32 @@ def _sweep_git(repo: Path, args: Sequence[str]) -> tuple[int, str, str]:
     return cp.returncode, cp.stdout, cp.stderr
 
 
-def _rename_settings(cfg: Config) -> tuple[list[str], Path]:
-    """Read the paths a sweep never edits from the config's `rename` section, and the PR command from `$ATW_PR_COMMAND`.
+def _rename_settings(cfg: Config) -> list[str]:
+    """Read the paths a sweep never edits from the config's `rename` section.
 
     Returns:
-        (fnmatch patterns of repository paths, the PR command).
+        The fnmatch patterns of repository paths.
 
     """
     section = _map(cfg.raw.get("rename") or {}, "config rename")
-    excludes = _strs(section.get("sweep_exclude") or [], "rename.sweep_exclude")
-    return excludes, Path(os.environ.get(PR_COMMAND_ENV) or PR_COMMAND_DEFAULT).expanduser()
+    return _strs(section.get("sweep_exclude") or [], "rename.sweep_exclude")
+
+
+def _pr_command() -> Path:
+    """Read the project's PR command from `$ATW_PR_COMMAND`.
+
+    Returns:
+        The PR command's path, with `~` expanded.
+
+    Raises:
+        PolyrepoError: when `$ATW_PR_COMMAND` is unset or empty.
+
+    """
+    value = os.environ.get(PR_COMMAND_ENV)
+    if not value:
+        msg = f"{PR_COMMAND_ENV} is not set: set it to the command that opens the project's pull requests"
+        raise PolyrepoError(msg)
+    return Path(value).expanduser()
 
 
 def _names_subjects(st: State, pairs: list[tuple[str, str]], *, dry_run: bool) -> tuple[list[_Subject], list[Rule]]:
@@ -5558,7 +5573,7 @@ def _names_plan(
 
     """
     subjects, rules = _names_subjects(st, pairs, dry_run=dry_run)
-    excludes, _ = _rename_settings(st.cfg)
+    excludes = _rename_settings(st.cfg)
     given = {n for pair in pairs for n in pair}
     paths: dict[str, Path] = {s.new: s.path for s in subjects}
     for name, r in st.local.items():
@@ -5675,7 +5690,7 @@ def _names_documents_plan(cfg: Config, subjects: list[_Subject]) -> _Documents |
     changes = [c for s in subjects for c in s.changes]
     repository_of = {change_label(c): s.new for s in subjects for c in s.changes}
     rules = build_document_rules(changes, repository_of)
-    excludes, _ = _rename_settings(cfg)
+    excludes = _rename_settings(cfg)
     found = sweep_repo(_sweep_git, SweepTarget("documents", root, paths), rules, excludes, write=False) if rules else []
     return _Documents(root, paths, found)
 
@@ -5759,7 +5774,7 @@ def _repository_documents(cfg: Config, old: str, new: str) -> _Documents | None:
     root, paths = settings
     change = NameChange("repository", old, new)
     rules = build_document_rules([change], {change_label(change): new})
-    excludes, _ = _rename_settings(cfg)
+    excludes = _rename_settings(cfg)
     return _Documents(
         root,
         paths,
@@ -5904,7 +5919,7 @@ def _names_apply(cfg: Config, plan: _NamesPlan, args: argparse.Namespace) -> lis
         One row per repository: its status, pull request URL, worktree and any error.
 
     """
-    settings = _rename_settings(cfg)
+    settings = (_rename_settings(cfg), _pr_command())
     order = sorted(plan.edits, key=lambda n: (n in plan.waits_on, n not in plan.holders(), n.lower()))
     with concurrent.futures.ThreadPoolExecutor(max_workers=APPLY_WORKERS) as ex:
         return list(ex.map(lambda name: _apply_repo(cfg, plan, name, settings, args), order))
@@ -8834,14 +8849,15 @@ def _template_type_findings(cfg: Config) -> list[DoctorFinding]:
 
 
 ORGANIZATION_RECORD = "organization-structure.md"
-ORGANIZATION_VARIABLE = re.compile(r"^- (SKILLSPOKE_[A-Z_]+):.*?set as \"?([^\"\s]+)\"?")
+ORGANIZATION_VARIABLE = re.compile(r"^- ([A-Z][A-Z0-9_]*):.*?set as \"?([^\"\s]+)\"?")
 
 
 def _organization_findings(cfg: Config) -> list[DoctorFinding]:
     """Check each environment variable value the steward's organization record states against the environment.
 
     The record `organization-structure.md` is the owner's text and the steward's own record. The
-    values it states for the `SKILLSPOKE_*` variables are a copy of the shell environment, whose
+    values it states for the project's environment variables (each line `- NAME: ... set as VALUE`)
+    are a copy of the shell environment, whose
     values are the live ones; each stated value, with its variables expanded, must equal the
     variable's value.
 

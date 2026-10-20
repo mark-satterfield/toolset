@@ -102,7 +102,7 @@ def run_naming(args: Sequence[str], environ: Mapping[str, str] | None = None) ->
     """Run the naming command once with `--json` and read its answer.
 
     Args:
-        args: The command's arguments, for example `["name", "repository-names", "SkillSpoke-auth-service"]`.
+        args: The command's arguments, for example `["name", "repository-names", "acme-auth-service"]`.
         environ: The environment to read the command from; the process environment when None.
 
     Returns:

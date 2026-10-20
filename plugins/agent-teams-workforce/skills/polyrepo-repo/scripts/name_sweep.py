@@ -490,7 +490,7 @@ def _distribution_rules(change: NameChange, holder: str) -> list[Rule]:
 def _is_generic(change: NameChange) -> bool:
     """Tell whether the old package name is a common word that real code and prose also use.
 
-    A name that starts with the project folder of the new package (`skillspoke_text`,
+    A name that starts with the project folder of the new package (`acme_text`,
     `shared.text`) is distinctive. Any other name is generic, an underscore included:
     `career_profile` and `job_boards` are also variable names, file names and prose, so they are
     replaced only where they are an import, a dotted path, a `src/` path and the like.
