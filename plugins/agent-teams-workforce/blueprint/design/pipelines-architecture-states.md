@@ -153,8 +153,9 @@ Notes on the diagram:
 - In "changed by a later Epic", the last verified version stays known. That is what a spec reads
   (section 4). An approved change to a verified element keeps its verified flag and names the
   Epic that made the change (`changedBy`); an approved change by another Epic before that change is
-  built clears the flag, because the version before it was never built
-  ([design/matrix.md](matrix.md) decision 9).
+  built clears the flag, because the version before it was never built. A build verified while
+  an element carries another Epic's approved change it did not build leaves the element not
+  verified ([design/matrix.md](matrix.md) decision 9).
 - The matrix does not record Stories or Tasks, and does not record what is deployed. The owner:
   "The matrix does not include stories and tasks (it isn't a build tracker), and it doesn't care
   about what has actually been deployed."
@@ -268,6 +269,8 @@ and, once an Epic's approved change is made after that commit, `changedBy`, the 
 When Epic C's change is approved, v1.0.1 (or v1.0.0) is verified, so the flag stays with
 `changedBy` C and Epic C's spec covers C's change alone. When Epic D's change is approved, the flag
 names C's change, which is not built, so the flag is cleared: the service is no longer verified,
-and Epic D's spec covers all the work that brings the build up to v1.1.3. The spec step reads
+and Epic D's spec covers all the work that brings the build up to v1.1.3. Should Epic C's build
+be verified before Epic D's, the service stays not verified, because D's approved change is not
+built, and the next spec for it covers all the work. The spec step reads
 this from the flag of each element it builds (`spec_authoring.entry_scope`, the spec context's
 `buildScope`): `delta` while the flag names no change or the spec's own Epic, `full` otherwise.

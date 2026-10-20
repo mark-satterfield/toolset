@@ -3,8 +3,7 @@
 What a Story builds is what the Epic's architecture adds or changes: every architecture-side
 element the architect's result lists under ``addedOrChangedElements``, and nothing more. An Epic
 whose architecture changes nothing still has work, such as the wording of a page: its Stories
-build in what realizes the features its requirements are served by (``atw-matrix epic
---realizers``), with no architecture change. An
+build in the existing elements the architect's result names under ``unchangedWorkElements``. An
 element is built in the stack the architecture side places it in
 (``matrixtraverse.authority_holder``). An event has no home: it is built in each stack that
 holds one of its producers, as one item per stack, and that item carries the event's
@@ -50,7 +49,6 @@ from matrix_contract import (
     RelationshipKind,
     family_kinds,
 )
-from matrixquery import RealizersView, realizers_view
 from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix, update_matrix
 from matrixtraverse import (
     ATTR_APP,
@@ -100,6 +98,7 @@ from orchestrator.flows.elaboration_support import REPO_SCOPING_PHASE, enter_pha
 from orchestrator.flows.repo_placement import forbidden
 
 if TYPE_CHECKING:
+    from architecture_work_contract import ArchitectureResult
     from step_journal_contract import StepPlan
 
 SPAN: Final = "atw-matrix epic --closure"
@@ -118,7 +117,10 @@ KEY_GITHUB: Final = "github"
 KEY_URL: Final = "url"
 """An inventory record's GitHub listing, and the repository's URL in it."""
 EVIDENCE_RESULT: Final = "architecture result"
-"""The evidence of every item: the architect's result lists it under addedOrChangedElements."""
+"""The evidence of every item: the architect's result lists it under addedOrChangedElements or unchangedWorkElements."""
+FIELD_ADDED_OR_CHANGED: Final = "addedOrChangedElements"
+FIELD_UNCHANGED_WORK: Final = "unchangedWorkElements"
+"""The fields of the architect's result that name what the Epic's Stories build."""
 NO_BUILD_NEED: Final[frozenset[str]] = frozenset({REL_PUBLISHES, REL_MATCHES, "consumes", "routes"})
 """The dependency relationships that make no build need another: an event's producers, its rules and its targets."""
 BUILD_DEPENDENCY_KINDS: Final[frozenset[RelationshipKind]] = frozenset(
@@ -356,7 +358,7 @@ def _stated_id(stated: str) -> EntryId | None:
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def story_build_entries(added_or_changed: Sequence[str]) -> list[EntryId]:
-    """List what the Epic's Stories build: what the architecture adds or changes.
+    """List what the Epic's Stories build: what the architecture adds or changes, or where unchanged work lands.
 
     Only what the architect's result states is built. An event's producers are not added: the
     event is built in each stack that holds one of them (:func:`placements`), and its item names
@@ -441,13 +443,19 @@ def _build_problem(matrix: Matrix, entry_id: EntryId) -> str | None:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def story_build_problems(matrix: Matrix, bead: str, added_or_changed: Sequence[str]) -> list[str]:
+def story_build_problems(
+    matrix: Matrix,
+    bead: str,
+    added_or_changed: Sequence[str],
+    field: str = FIELD_ADDED_OR_CHANGED,
+) -> list[str]:
     """Check what the architecture says the Epic's Stories build.
 
     Args:
         matrix: The matrix.
         bead: The Epic, named in the sentences.
-        added_or_changed: The ids the architect's result lists under ``addedOrChangedElements``.
+        added_or_changed: The ids the architect's result lists under ``field``.
+        field: The field of the architect's result the ids come from, named in the sentences.
 
     Returns:
         One sentence per text that is not an entry id, and per entry of
@@ -457,7 +465,7 @@ def story_build_problems(matrix: Matrix, bead: str, added_or_changed: Sequence[s
 
     """
     unread: list[str] = [
-        f"{bead}: addedOrChangedElements names {text!r}, which is not a matrix id"
+        f"{bead}: {field} names {text!r}, which is not a matrix id"
         for text in added_or_changed
         if _stated_id(text) is None
     ]
@@ -604,13 +612,19 @@ def _event_facts(matrix: Matrix, placed: Placed, ids: Mapping[EntryId, Sequence[
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def story_builds(matrix: Matrix, bead: str, added_or_changed: Sequence[str]) -> list[DeltaItem]:
+def story_builds(
+    matrix: Matrix,
+    bead: str,
+    added_or_changed: Sequence[str],
+    field: str = FIELD_ADDED_OR_CHANGED,
+) -> list[DeltaItem]:
     """List what the Epic's Stories build, in the shape the spec and Task steps read.
 
     Args:
         matrix: The matrix.
         bead: The Epic.
-        added_or_changed: The ids the architect's result lists under ``addedOrChangedElements``.
+        added_or_changed: The ids the architect's result lists under ``field``.
+        field: The field of the architect's result the ids come from (:func:`story_build_problems`).
 
     Returns:
         One item per entry of :func:`story_build_entries` and stack it is built in
@@ -624,7 +638,7 @@ def story_builds(matrix: Matrix, bead: str, added_or_changed: Sequence[str]) -> 
         StepError: :func:`story_build_problems` reports a problem; the evidence names each.
 
     """
-    problems: list[str] = story_build_problems(matrix, bead, added_or_changed)
+    problems: list[str] = story_build_problems(matrix, bead, added_or_changed, field)
     if problems:
         raise StepError(SPAN, OTHER_CAUSE, tuple(problems))
     placed: list[Placed] = [
@@ -989,55 +1003,30 @@ def _owner(tools: Tools) -> str:
     return owners.pop()
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def unchanged_work(matrix: Matrix, bead: str) -> list[str]:
-    """Name where an Epic whose architecture changes nothing does its work.
-
-    Args:
-        matrix: The matrix.
-        bead: The Epic.
-
-    Returns:
-        The ids of what realizes each feature the Epic's requirements are served by directly (not
-        a feature reached only because another is supported by it), that the architecture side
-        places in a stack, each once, in the order found.
-
-    """
-    view: RealizersView = realizers_view(matrix, bead)
-    placed: set[EntryId] = {found["id"] for found in view["entries"] if found["stack"] is not None}
-    return list(
-        dict.fromkeys(
-            entry_id
-            for feature in view["features"]
-            if not feature["supporting"]
-            for entry_id in feature["realizedBy"]
-            if entry_id in placed
-        ),
-    )
-
-
 def _read_story_builds(run: StepRun) -> tuple[Matrix, list[DeltaItem]]:
     """Read what the Epic's Stories build, and name the repository of each stack that names none.
 
     What the Stories build is what the architect's result adds or changes; when it adds or
-    changes nothing, it is where the Epic's work lands (:func:`unchanged_work`).
+    changes nothing, the existing elements the result names as where the Epic's work lands
+    (``unchangedWorkElements``).
 
     Returns:
         The matrix as it is after the names are recorded, and the items (:func:`story_builds`).
 
     Raises:
-        StepError: Neither the architecture nor the features the Epic's requirements are served
-            by name anything a Story builds in.
+        StepError: The architect's result names nothing a Story builds in.
 
     """
-    added: list[str] = read_result(run, read_context(run))["addedOrChangedElements"]
+    result: ArchitectureResult = read_result(run, read_context(run))
+    added: list[str] = result[FIELD_ADDED_OR_CHANGED]
+    field: str = FIELD_ADDED_OR_CHANGED if added else FIELD_UNCHANGED_WORK
+    built: list[str] = added or result[FIELD_UNCHANGED_WORK]
     matrix: Matrix = run.tools.portfolio(SPAN, read_matrix, matrix_path(None, os.environ))
-    built: list[str] = added or run.tools.portfolio(SPAN, unchanged_work, matrix, run.bead)
-    items: list[DeltaItem] = run.tools.portfolio(SPAN, story_builds, matrix, run.bead, built)
+    items: list[DeltaItem] = run.tools.portfolio(SPAN, story_builds, matrix, run.bead, built, field)
     if not items:
         message: str = (
-            f"the architecture adds or changes nothing for {run.bead}, and nothing in a stack realizes the "
-            "features its requirements are served by"
+            f"the architect's result for {run.bead} names nothing a Story builds in: "
+            f"{FIELD_ADDED_OR_CHANGED} and {FIELD_UNCHANGED_WORK} are both empty"
         )
         raise StepError(SPAN, OTHER_CAUSE, (message,))
     run.tools.portfolio(SPAN, _record_repository_names, items)
@@ -1049,8 +1038,8 @@ def span(run: StepRun) -> Completion:
     """Read what the Epic's Stories build from the architect's result and plan one spec step per repository.
 
     What the Stories build is the architect's ``addedOrChangedElements`` and nothing more
-    (:func:`story_builds`), or, for an Epic whose architecture changes nothing, what realizes the
-    features its requirements are served by (:func:`unchanged_work`). Nothing is recorded in the
+    (:func:`story_builds`), or, for an Epic whose architecture changes nothing, the existing
+    elements the result names as where the Epic's work lands (``unchangedWorkElements``). Nothing is recorded in the
     matrix but the name of the repository of a stack the Stories build in that names none (from the
     naming command), and the name of a repository that was created under another name than the one
     its stacks stated.

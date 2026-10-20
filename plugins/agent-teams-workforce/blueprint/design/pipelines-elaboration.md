@@ -491,9 +491,10 @@ Notes on the diagram:
 - The workflow's reads are `spec_authoring.entry_scope` (the spec context's `buildScope`:
   `delta` or `full` from each entry's verified flag), `spec_authoring.component_documents`
   (`atw-matrix documents`, whose links `spec_authoring.link_documents` puts at the end of every
-  spec document), and, for an Epic with no architecture change, `repo_scoping.unchanged_work`
-  (what realizes the features the Epic's requirements are served by, from `atw-matrix epic
-  --realizers`).
+  spec document), and, for an Epic with no architecture change, the existing elements the
+  solutions architect names in its result as where the Epic's work lands
+  (`unchangedWorkElements`, which the span step in `repo_scoping` reads). Which elements those
+  are is the architect's design decision; no script picks them.
 - Task decomposition is drawn in section 8.
 - One Spec and one Story per repository, and Tasks under each Story, are stated by
   [requirements/pipelines.md](../requirements/pipelines.md) and the vault's `docs/sdlc/sdlc.md`.

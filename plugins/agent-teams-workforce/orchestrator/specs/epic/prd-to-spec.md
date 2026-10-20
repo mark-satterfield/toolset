@@ -41,7 +41,7 @@ The next dispatch runs from that step.
 | 1 | Open the run | script `prd_to_spec.open_run` | the architect's step and the check under Architecture |
 | 2 | Architecture | container | its steps are planned by step 1 and by the steps under it (`architecture.md`) |
 | 3 | TRD | script `trd.confirm` | nothing (`trd-authoring.md`) |
-| 4 | Specs and Stories | container, created with the span step `atw-matrix epic --closure` | the span step reads what the Epic's architecture adds or changes (the architect's `addedOrChangedElements`) and plans one container per repository a Story builds in (`repo-scoping.md`, `spec-authoring.md`) |
+| 4 | Specs and Stories | container, created with the span step `atw-matrix epic --closure` | the span step reads what the Epic's architecture adds or changes (the architect's `addedOrChangedElements`), or, when it adds and changes nothing, where the architect says the Epic's work lands (`unchangedWorkElements`), and plans one container per repository a Story builds in (`repo-scoping.md`, `spec-authoring.md`) |
 | 5 | Tasks | container | each Story bead write plans one container for its repository (`task-decomposition.md`) |
 | 6 | Task edges | container, created with step `beadwrite.closure_task_edges` | that step plans the listing, the mapper's step and the edge write |
 | 7 | Score the Tasks | script `elaboration.score` | nothing |

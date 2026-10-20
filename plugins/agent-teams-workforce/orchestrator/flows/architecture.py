@@ -109,7 +109,7 @@ from orchestrator.flows.architecture_files import (
     output_check,
     read_context,
 )
-from orchestrator.flows.repo_scoping import story_build_problems
+from orchestrator.flows.repo_scoping import FIELD_ADDED_OR_CHANGED, FIELD_UNCHANGED_WORK, story_build_problems
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -417,8 +417,10 @@ def _result_problems(bead: str, result: ArchitectureResult) -> list[str]:
     """Find what the matrix could not hold of an architecture result, without writing the matrix.
 
     What the Epic's Stories build is checked against the matrix as it is
-    (``repo_scoping.story_build_problems``); then the design is recorded in an in-memory copy of
-    the matrix, which is never written, and compared with what ``epic`` returns from that copy.
+    (``repo_scoping.story_build_problems``): the result's ``addedOrChangedElements``, or, when
+    the design adds and changes nothing, its ``unchangedWorkElements``, which must then name where
+    the Epic's work lands. Then the design is recorded in an in-memory copy of the matrix, which is
+    never written, and compared with what ``epic`` returns from that copy.
 
     Returns:
         One sentence per problem: the story-build problems, then what the recording and the
@@ -426,7 +428,18 @@ def _result_problems(bead: str, result: ArchitectureResult) -> list[str]:
 
     """
     matrix: Matrix = read_matrix(matrix_file())
-    unbuildable: list[str] = story_build_problems(matrix, bead, result["addedOrChangedElements"])
+    unbuildable: list[str]
+    if result[FIELD_ADDED_OR_CHANGED]:
+        unbuildable = story_build_problems(matrix, bead, result[FIELD_ADDED_OR_CHANGED])
+    elif result[FIELD_UNCHANGED_WORK]:
+        unbuildable = story_build_problems(matrix, bead, result[FIELD_UNCHANGED_WORK], FIELD_UNCHANGED_WORK)
+    else:
+        nothing: str = (
+            f"{bead}: {FIELD_ADDED_OR_CHANGED} is empty, so the design adds and changes nothing, and "
+            f"{FIELD_UNCHANGED_WORK} is empty too: name under {FIELD_UNCHANGED_WORK} the existing elements "
+            "where the Epic's work lands"
+        )
+        unbuildable = [nothing]
     recorded: Recorded = _compared(matrix, bead, _record_design(matrix, bead, result))
     return [*unbuildable, *recorded.problems]
 

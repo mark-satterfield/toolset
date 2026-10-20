@@ -905,7 +905,9 @@ reviews it.
 ### 11.2 Repository span
 
 The step `atw-matrix epic --closure` (`flows/repo_scoping.py`; the script key keeps its old name)
-reads what the Stories build. An event is built as part of the service that publishes it. A
+reads what the Stories build: the architect's `addedOrChangedElements`, or, when the design adds
+and changes nothing, the existing elements it names under `unchangedWorkElements` as where the
+Epic's work lands; both empty fails the step. An event is built as part of the service that publishes it. A
 Story is one repository's share of that. Each entry's architecture-side stack (`authority_holder`)
 and that stack's repository come from the matrix; a stack that names no repository is given the
 one the naming rules give it. No agent places anything. Each `story_build_problems` sentence,

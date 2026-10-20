@@ -288,6 +288,7 @@ class ArchitectureResult(TypedDict):
     features: list[FeatureEntry]
     noFeature: list[NoFeature]
     addedOrChangedElements: list[str]
+    unchangedWorkElements: list[str]
     sharedCapabilities: list[SharedUse]
     facts: list[FactEntry]
     settledDisagreements: list[str]

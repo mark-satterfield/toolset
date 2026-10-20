@@ -12,6 +12,8 @@ nothing and reports what is still open. Absent means not verified; no other valu
 The flag is recorded on each stack and entry the Epic's Stories built, as the Task script's
 ``built`` read returns them for each Story (``matrixtasks.built``), and on each relationship a
 build proves that starts at one of them. :func:`verify` takes no stack, entry or repository name.
+One of them that carries another Epic's approved change, which this build did not build, is left
+not verified (:func:`unbuilt_change`), so that the next spec for it covers all the work.
 
 No session writes the flag. The driver records it through ``atw-matrix verify``, which runs
 :func:`record_verified`.
@@ -21,7 +23,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Final, TypedDict
+from typing import Final, NamedTuple, TypedDict
 
 from typeguard import CollectionCheckStrategy, typechecked
 
@@ -59,10 +61,56 @@ class EpicVerified(TypedDict):
     """Each stack and entry the Epic's Stories built, which now carries the flag; empty when not complete."""
     relationships: list[dict[str, JsonValue]]
     """Each relationship that starts at one of them, with the flag."""
+    unbuiltEntries: list[EntryId]
+    """Each stack and entry the Epic's Stories built that carries another Epic's unbuilt change, left not verified."""
+    unbuiltRelationships: list[dict[str, JsonValue]]
+    """Each relationship that starts at an entry built and carries another Epic's unbuilt change, left not verified."""
     changed: int
-    """How many entries and relationships took the flag or had its commit replaced."""
+    """How many entries and relationships took the flag, had its commit replaced or had it cleared."""
     unmatched: list[str]
     """The ids the Epic's Tasks carry that are the id of no entry, so nothing was marked for them."""
+
+
+class Verification(NamedTuple):
+    """What :func:`verify` set and left not verified."""
+
+    entries: list[EntryId]
+    """The stacks and entries that carry the flag at the commit."""
+    relationships: list[dict[str, JsonValue]]
+    """The relationships that carry the flag at the commit."""
+    unbuilt_entries: list[EntryId]
+    """The stacks and entries left not verified (:func:`unbuilt_change`)."""
+    unbuilt_relationships: list[dict[str, JsonValue]]
+    """The relationships left not verified (:func:`unbuilt_change`)."""
+    changed: int
+    """How many entries and relationships the call changed."""
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def unbuilt_change(item: Entry | Relationship, epic: str) -> bool:
+    """Say whether an entry or a relationship an Epic built carries another Epic's approved, unbuilt change.
+
+    It does when its verified flag names another Epic in ``changedBy``: that Epic's change was
+    approved after the commit the flag holds and is not yet built. It does too when it carries no
+    verified flag and carries another Epic's approved flag: that Epic's approval came after this
+    Epic's, or this Epic's approval never reached it, and with no flag the matrix cannot show that
+    the approval changed nothing. A verified flag with no ``changedBy``, or naming this Epic,
+    under another Epic's approved flag means that Epic approved it unchanged, since a change
+    clears the approved flag and ``matrixwrite.approve`` then names the changing Epic. When this
+    returns True the build does not match the approved version, so the item is not verified and
+    the next spec for it covers all the work.
+
+    Args:
+        item: The entry or relationship as held.
+        epic: The beads id of the Epic whose Stories built it.
+
+    Returns:
+        True when another Epic's approved change is not built in it.
+
+    """
+    changed_elsewhere: bool = item.verified is not None and item.verified.changed_by not in {None, epic}
+    approved_elsewhere: bool = item.verified is None and item.approved is not None and item.approved.epic != epic
+    return changed_elsewhere or approved_elsewhere
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -70,23 +118,27 @@ def verify(
     matrix: Matrix,
     reads: Sequence[BuiltRead],
     commit: str,
-) -> tuple[list[EntryId], list[dict[str, JsonValue]], int]:
+    epic: str,
+) -> Verification:
     """Set the verified flag on what an Epic's Stories built.
 
     Each stack and entry the ``built`` reads return takes the flag with the commit, and so does
     every relationship, of any kind and either side, that starts at one of them: the
     architecture and relationships of the Epic are verified together. A flag already there has
-    its commit replaced. Nothing else changes: an entry a read lists as not built, and an id
+    its commit replaced and loses ``changedBy``. An entry or relationship that carries another
+    Epic's approved, unbuilt change (:func:`unbuilt_change`) is left not verified instead: a flag
+    it carries is cleared. Nothing else changes: an entry a read lists as not built, and an id
     that matches no entry, are left as they are.
 
     Args:
         matrix: The matrix, changed in place.
         reads: What each Story of the Epic built (``matrixtasks.built``).
         commit: The merge commit of the Story whose merge completed the Epic.
+        epic: The beads id of the Epic.
 
     Returns:
-        The entries and relationships that carry the flag at the commit, and how many of them
-        the call changed.
+        What carries the flag at the commit, what was left not verified, and how many entries
+        and relationships the call changed.
 
     Raises:
         MatrixRefusedError: No commit is given.
@@ -98,22 +150,25 @@ def verify(
         raise MatrixRefusedError(message)
     mark: Verified = Verified(commit=sha)
     rows: list[BuiltEntry] = [row for read in reads for row in (*read["stacks"], *read["entries"])]
-    marked: list[EntryId] = sorted({row["id"] for row in rows})
-    proved: list[dict[str, JsonValue]] = []
+    found: Verification = Verification([], [], [], [], 0)
     changed: int = 0
     entry_id: EntryId
-    for entry_id in marked:
+    for entry_id in sorted({row["id"] for row in rows}):
         entry: Entry = matrix.entry(entry_id)
-        if entry.verified != mark:
-            matrix.put(replace(entry, verified=mark))
+        flag: Verified | None = None if unbuilt_change(entry, epic) else mark
+        (found.entries if flag else found.unbuilt_entries).append(entry_id)
+        if entry.verified != flag:
+            matrix.put(replace(entry, verified=flag))
             changed += 1
         relationship: Relationship
         for relationship in matrix.outgoing(entry_id):
-            if relationship.verified != mark:
-                matrix.link(replace(relationship, verified=mark))
+            held: Verified | None = None if unbuilt_change(relationship, epic) else mark
+            settled: Relationship = replace(relationship, verified=held)
+            (found.relationships if held else found.unbuilt_relationships).append(relationship_json(settled))
+            if relationship.verified != held:
+                matrix.link(settled)
                 changed += 1
-            proved.append(relationship_json(replace(relationship, verified=mark)))
-    return marked, proved, changed
+    return found._replace(changed=changed)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -144,7 +199,8 @@ def record_verified(
     The Epic, its Stories and every Task are read from beads before the lock is taken. The merge
     completes the Epic when every Task of the Epic is closed and every Story of the Epic other
     than this one is closed. Then what every Story of the Epic built is matched against the matrix
-    under the lock and takes the flag. Otherwise nothing is written and the open Stories and Tasks
+    under the lock and takes the flag, except what carries another Epic's approved, unbuilt
+    change, which is left not verified (:func:`verify`). Otherwise nothing is written and the open Stories and Tasks
     are returned. A role that may not run ``verify``, beads that cannot be read, or a matrix that
     is missing or does not conform raises ``MatrixError``; the file is then left as it was.
 
@@ -183,6 +239,8 @@ def record_verified(
         "openTasks": open_tasks,
         "entries": [],
         "relationships": [],
+        "unbuiltEntries": [],
+        "unbuiltRelationships": [],
         "changed": 0,
         "unmatched": [],
     }
@@ -191,13 +249,15 @@ def record_verified(
 
     def change(matrix: Matrix) -> EpicVerified:
         reads: list[BuiltRead] = [built(matrix, mine, held) for held in sorted(work.stories)]
-        entries, relationships, changed = verify(matrix, reads, commit)
+        found: Verification = verify(matrix, reads, commit, work.epic)
         unmatched: list[str] = sorted({row["id"] for read in reads for row in read["unmatched"]})
         return {
             **result,
-            "entries": entries,
-            "relationships": relationships,
-            "changed": changed,
+            "entries": found.entries,
+            "relationships": found.relationships,
+            "unbuiltEntries": found.unbuilt_entries,
+            "unbuiltRelationships": found.unbuilt_relationships,
+            "changed": found.changed,
             "unmatched": unmatched,
         }
 
