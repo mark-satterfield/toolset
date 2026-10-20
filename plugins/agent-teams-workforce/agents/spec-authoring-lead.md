@@ -58,7 +58,7 @@ This lead is the face of the following team; each member and what it does:
 - **prd-alignment-verifier** — Verifies traceability from each PRD requirement to spec section to acceptance criteria, flagging missing coverage and scope creep.
 - **acceptance-criteria-reviewer** — Validates acceptance criteria are testable, complete, and unambiguous — derivable into tests without interpretation.
 - **spec-reviewer** — Reviews one repository's contracts, data model and acceptance criteria against the specs-and-Tasks criteria I1 to I7.
-- **event-schema-reviewer** — Validates event contracts against the SkillSpoke standard event and each event's payload schema — event type names, passed values, publishing conditions, consumer obligations, retry/DLQ behavior.
+- **event-schema-reviewer** — Validates event contracts against the project's standard event and each event's payload schema — event type names, passed values, publishing conditions, consumer obligations, retry/DLQ behavior.
 - **graphql-schema-reviewer** — Reviews a spec's GraphQL contracts against the recorded design and AppSync's patterns.
 - **dynamodb-schema-access-pattern-reviewer** — Reviews the DynamoDB access patterns of a data-model spec: whether each can be served by the keys and indexes it states.
 - **review-dispute-decider** — Rules on each review finding a document's author disputes.

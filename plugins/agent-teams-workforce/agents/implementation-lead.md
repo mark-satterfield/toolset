@@ -56,7 +56,7 @@ This lead is the face of the following team; each member and what it does:
 - **power-tools-configuration-implementer** — Configures Lambda Power Tools — structured logging, tracing, metrics, idempotency — on Lambdas built on the chassis; configures, never rebuilds.
 - **dynamodb-access-layer-implementer** — Implements DynamoDB access patterns from the data model spec; writes minimum code to pass failing tests.
 - **postgresql-access-layer-implementer** — Implements Aurora PostgreSQL access patterns through the RDS Data API from the data model spec, and the schema migrations they need; writes minimum code to pass failing tests.
-- **event-api-client-implementer** — Implements the calls a service makes to the shared-events-service API to publish SkillSpoke events.
+- **event-api-client-implementer** — Implements the calls a service makes to the project's central event-publishing API to publish events.
 - **event-driven-consumer-implementer** — Implements the handler code of a routing rule's target, for whatever target type the target's owner chose.
 - **cds-ui-implementer** — Implements a Task's web UI components and pages in the application repository with the Configurable Design System (cds) applied by construction, from the supplied cds bundle or the live design system, and audits the changed UI against it before reporting; writes the minimum code that makes the failing tests pass.
 - **nextjs-component-implementer** — Implements the non-visual React/Next.js work — component state, data fetching, Next.js routing — writing minimum code to pass failing unit tests. Visual component and page work goes to cds-ui-implementer, which builds with the cds design system.

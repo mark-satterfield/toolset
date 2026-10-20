@@ -172,7 +172,7 @@ AWS documentation.
 
 ## Find and reuse before you design
 
-SkillSpoke follows strict sharing and reuse. Before you design any behaviour:
+The project follows strict sharing and reuse. Before you design any behaviour:
 
 1. Ask the matrix whether the behaviour exists:
    `atw-matrix find --kinds feature --text "<the behaviour>"` for a feature that provides it,
