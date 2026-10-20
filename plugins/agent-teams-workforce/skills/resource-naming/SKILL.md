@@ -26,8 +26,11 @@ this skill only says how to call it.
 
 Run `printenv ATW_NAMING_COMMAND`. It prints the command (a name on `PATH` or an absolute
 path); run that command by what it printed, with the arguments below, as one Bash call. When
-it prints nothing, no naming command is configured: no name can be made or checked. Say so in
-your result and leave the name unmade; never compose one by hand instead.
+it prints nothing, your session started without the project's profile: run `"$SHELL" -l -c
+'printenv ATW_NAMING_COMMAND'`, which reads it from the login shell the project exports it from.
+When that prints nothing either, no naming command is configured: no name can be made or
+checked. Say so in your result and leave the name unmade; never compose one by hand instead.
+The plugin's scripts (`polyrepo.py`, the elaboration steps) read it the same way themselves.
 
 ## The rule
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - runs the configured naming command with list argv and no shell
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
@@ -29,6 +30,10 @@ NAMING_COMMAND_ENV: Final = "ATW_NAMING_COMMAND"
 """The environment variable that names the project's naming command."""
 NAMING_TIMEOUT: Final = 60
 """Seconds one call of the naming command may take."""
+LOGIN_SHELL_TIMEOUT: Final = 30
+"""Seconds the user's login shell may take to print the variable."""
+LOGIN_SHELL_MARK: Final = "__atw_naming_command__="
+"""The prefix of the line the login shell prints the variable on, apart from any profile output."""
 EXIT_DONE: Final = 0
 EXIT_REFUSED: Final = 1
 """The naming command's exit codes for a produced value or valid name, and for a refusal."""
@@ -40,6 +45,8 @@ ROLE_TYPE: Final = "type"
 """The token that says what kind of component a repository holds."""
 ROLE_PROJECT: Final = "project"
 """The token that names the project a repository belongs to."""
+ROLE_DOMAIN: Final = "domain"
+"""The token that names the domain of a repository."""
 ROLE_ORIGINAL_NAME: Final = "originalName"
 """The token of a deprecated repository name that holds the name it was made from."""
 
@@ -75,11 +82,44 @@ class RepositoryNames:
     python_distribution: str
 
 
+def _login_shell_value() -> str:
+    """Read the naming command variable from the user's login shell.
+
+    A session started before the project's shell profile set the variable, or from a shell that
+    did not load the profile, lacks it; the profile the project exports it from still has it.
+
+    Returns:
+        The value the login shell holds; empty when it holds none or cannot be run.
+
+    """
+    shell = os.environ.get("SHELL", "").strip()
+    if not shell:
+        return ""
+    script = f'printf "\\n{LOGIN_SHELL_MARK}%s\\n" "${NAMING_COMMAND_ENV}"'
+    try:
+        cp = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - list argv, the script is a constant
+            [shell, "-l", "-c", script],
+            capture_output=True,
+            text=True,
+            timeout=LOGIN_SHELL_TIMEOUT,
+            check=False,
+            stdin=subprocess.DEVNULL,
+        )
+    except OSError, subprocess.TimeoutExpired:
+        return ""
+    found = [ln.removeprefix(LOGIN_SHELL_MARK) for ln in cp.stdout.splitlines() if ln.startswith(LOGIN_SHELL_MARK)]
+    return found[-1].strip() if found else ""
+
+
 def naming_command(environ: Mapping[str, str] | None = None) -> str:
     """Return the naming command the project configured.
 
+    The process environment is read first; when it lacks `$ATW_NAMING_COMMAND`, the user's login
+    shell is asked for it (the project exports it from its shell profile), and the value found is
+    put into the process environment so every child process inherits it.
+
     Args:
-        environ: The environment to read; the process environment when None.
+        environ: The environment to read; the process environment, then the login shell, when None.
 
     Returns:
         The command `$ATW_NAMING_COMMAND` names.
@@ -89,11 +129,36 @@ def naming_command(environ: Mapping[str, str] | None = None) -> str:
 
     """
     command = (os.environ if environ is None else environ).get(NAMING_COMMAND_ENV, "").strip()
+    if not command and environ is None:
+        command = _login_shell_value()
+        if command:
+            os.environ[NAMING_COMMAND_ENV] = command
     if not command:
         msg = (
-            f"no naming command is configured: ${NAMING_COMMAND_ENV} is not set; set it to the command "
-            "that runs the project's resource-naming command line"
+            f"no naming command is configured: ${NAMING_COMMAND_ENV} is set neither in this process's "
+            "environment nor in the login shell's; set it to the command that runs the project's "
+            "resource-naming command line"
         )
+        raise NamingCommandError(msg)
+    return command
+
+
+def require_naming_command(environ: Mapping[str, str] | None = None) -> str:
+    """Return the naming command, checked to be an executable this process can run.
+
+    Args:
+        environ: The environment to read; the process environment, then the login shell, when None.
+
+    Returns:
+        The command `$ATW_NAMING_COMMAND` names.
+
+    Raises:
+        NamingCommandError: No naming command is configured, or it is no executable on `PATH`.
+
+    """
+    command = naming_command(environ)
+    if shutil.which(command) is None:
+        msg = f"the naming command {command!r} (${NAMING_COMMAND_ENV}) is not an executable on PATH"
         raise NamingCommandError(msg)
     return command
 
@@ -325,3 +390,33 @@ def repository_names(name: str, environ: Mapping[str, str] | None = None) -> Rep
         package,
         distribution,
     )
+
+
+def convert_repository(
+    name: str,
+    kind: str,
+    tokens: Mapping[str, str] | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> str:
+    """Convert a repository name to the name of another kind, with the tokens that kind adds.
+
+    Args:
+        name: The repository name.
+        kind: The kind of name wanted, for example `api-gateway-rest-api`.
+        tokens: The tokens the kind needs that the repository name does not hold, by role.
+        environ: The environment to read the command from.
+
+    Returns:
+        The name the naming command converts it to.
+
+    Raises:
+        NamingCommandError: The command refused to convert it.
+
+    """
+    extra = [arg for role, value in (tokens or {}).items() for arg in ("--with", f"{role}={value}")]
+    answer = run_naming(["name", "convert", name, "--from", KIND_REPOSITORY, "--to", kind, *extra], environ)
+    value = produced(answer)
+    if value is None:
+        msg = f"the naming command gives {name} no {kind} name: {violations_text(answer.document)}"
+        raise NamingCommandError(msg)
+    return value

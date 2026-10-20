@@ -59,7 +59,15 @@ from matrixtraverse import (
     stack_type,
 )
 from matrixwrite import put
-from naming_command import NamingAnswer, NamingCommandError, produced, run_naming, violations_text
+from naming_command import (
+    NamingAnswer,
+    NamingCommandError,
+    check_repository,
+    produced,
+    require_naming_command,
+    run_naming,
+    violations_text,
+)
 from placement_contract import (
     KEY_ITEM_IDS,
     KEY_MISSING_REPOS,
@@ -199,6 +207,28 @@ def inventory(tools: Tools, name: str | None = None) -> dict[str, JsonValue]:
     return value
 
 
+def _naming_preflight(missing: Sequence[MissingRepo]) -> str | None:
+    """Check, before any repository is created, that the naming command accepts every name to create.
+
+    Returns:
+        The owner fact that stops creation: each refused name with the naming command's violations;
+        None when every name is accepted.
+
+    """
+    refused: list[str] = []
+    for repo in missing:
+        check = check_repository(repo[KEY_NAME])
+        if not check.valid:
+            refused.append(f"{check.name} ({check.problem})")
+    if not refused:
+        return None
+    return (
+        "The naming command refuses the repository names the matrix's stacks state: "
+        + "; ".join(refused)
+        + ". Correct each stack's repository attribute to a name the naming command gives."
+    )
+
+
 def _preflight(tools: Tools, owner: str) -> str | None:
     signed_in = tools.command(["gh", "auth", "status"], stage=CREATION_STAGE, check=False)
     if signed_in.exit:
@@ -299,7 +329,8 @@ def create_repositories(
         work: The Epic's work directory, where the creation record is written.
 
     Returns:
-        Measured creation results or an explicit owner authentication requirement.
+        Measured creation results, or the owner fact that stopped creation: a repository name the
+        naming command refuses (checked for every name before any is created) or missing GitHub access.
 
     Raises:
         StepError: A deterministic repository operation fails.
@@ -310,6 +341,14 @@ def create_repositories(
     """
     created: list[dict[str, JsonValue]] = []
     failures: list[dict[str, JsonValue]] = []
+    refused: str | None = _naming_preflight(ruling[KEY_MISSING_REPOS])
+    if refused:
+        result_refused: dict[str, JsonValue] = json_object({
+            "created": created,
+            "failures": [{"error": refused, "ownerFact": True}],
+        })
+        write_json(work / "repo-creation.json", result_refused)
+        return result_refused
     preflight_done = False
     for missing in ruling[KEY_MISSING_REPOS]:
         facts: dict[str, JsonValue] = {
@@ -1059,12 +1098,17 @@ def span(run: StepRun) -> Completion:
         repository had to be created; with the spec steps planned after this step.
 
     Raises:
-        StepError: The architecture adds or changes nothing to build, what it lists cannot be
+        StepError: The naming command is not configured or cannot run (checked before any other
+            work), the architecture adds or changes nothing to build, what it lists cannot be
             built (:func:`story_build_problems`), or a repository can be created only after the
-            owner acts.
+            owner acts (a name the naming command refuses, or GitHub access).
 
     """
     enter_phase(run.context, run.agents.emit, REPO_SCOPING_PHASE, SPAN)
+    try:
+        require_naming_command()
+    except NamingCommandError as error:
+        raise StepError(HUMAN_ACTION_STAGE, OTHER_CAUSE, (str(error),)) from error
     matrix: Matrix
     items: list[DeltaItem]
     matrix, items = _read_story_builds(run)
