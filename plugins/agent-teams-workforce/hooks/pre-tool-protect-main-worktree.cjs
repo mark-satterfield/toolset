@@ -5,12 +5,12 @@
  * PreToolUse hook: no product file is edited in the primary working tree of a product repository.
  *
  * The folder layout decides which repositories are product repositories. Every git repository
- * under $SKILLSPOKE_APPS is product work: it takes a worktree and a pull request. The one
- * exception is the command-and-control repository at $SKILLSPOKE_CC, which sits under
- * $SKILLSPOKE_APPS but holds the tooling that builds the product, committed on main. AGENTS.md,
+ * under $ATW_REPOS_ROOT is product work: it takes a worktree and a pull request. The one
+ * exception is the command-and-control repository at $ATW_CONTROL_REPO, which may sit under
+ * $ATW_REPOS_ROOT but holds the tooling that builds the product, committed on main. AGENTS.md,
  * CLAUDE.md and .claude/ are tooling wherever they sit, so they are never blocked.
  *
- * When $SKILLSPOKE_APPS or $SKILLSPOKE_CC is unset, the guard allows the write and prints one
+ * When $ATW_REPOS_ROOT or $ATW_CONTROL_REPO is unset, the guard allows the write and prints one
  * warning line, so a missing variable never blocks tooling work.
  *
  * The guard binds subagents as well as the session the owner talks to: an implementer
@@ -19,8 +19,8 @@
  * Decision order:
  *   1. unparseable hook input                                  -> exit 2 (fail closed)
  *   2. non-edit tool, or no target path                        -> exit 0
- *   3. $SKILLSPOKE_APPS or $SKILLSPOKE_CC unset                -> exit 0, one warning line
- *   4. target in no git repository below $SKILLSPOKE_APPS       -> exit 0
+ *   3. $ATW_REPOS_ROOT or $ATW_CONTROL_REPO unset              -> exit 0, one warning line
+ *   4. target in no git repository below $ATW_REPOS_ROOT        -> exit 0
  *   5. target in the command-and-control repository           -> exit 0
  *   6. target under the repository's .worktrees/               -> exit 0
  *   7. target in a linked worktree                             -> exit 0
@@ -33,8 +33,8 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
-const APPS_ENV = 'SKILLSPOKE_APPS';
-const CONTROL_REPO_ENV = 'SKILLSPOKE_CC';
+const APPS_ENV = 'ATW_REPOS_ROOT';
+const CONTROL_REPO_ENV = 'ATW_CONTROL_REPO';
 const WORKTREE_DIR = '.worktrees';
 const TIER2_FILES = new Set(['AGENTS.md', 'CLAUDE.md']);
 const TIER2_DIR = '.claude';
@@ -158,7 +158,7 @@ function main() {
     `File: ${target}`,
     `Repo: ${repoRoot} (under $${APPS_ENV}, primary working tree)`,
     '',
-    `Every repository under $${APPS_ENV} except the command-and-control repository ($${CONTROL_REPO_ENV}) takes its product work in a worktree and a pull request opened with skillspoke-pr (AGENTS.md, CLAUDE.md and .claude/ are tooling and are not blocked). Create or reuse a worktree and work there:`,
+    `Every repository under $${APPS_ENV} except the command-and-control repository ($${CONTROL_REPO_ENV}) takes its product work in a worktree and a pull request opened with the project's PR command ($ATW_PR_COMMAND) (AGENTS.md, CLAUDE.md and .claude/ are tooling and are not blocked). Create or reuse a worktree and work there:`,
     '',
     `  python3 ${path.join(__dirname, '..', 'scripts', 'portfolio', 'gitutils.py')} provision --repo ${repoRoot} --branch <type>/<bead-id> --name <bead-id>-${repoName}`,
     '',
