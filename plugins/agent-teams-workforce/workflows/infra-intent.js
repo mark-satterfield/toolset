@@ -191,15 +191,7 @@ ${change.id ? `Change ${change.id}: ` : ''}${change.title || '(untitled change)'
 ${change.description || ''}
 ${upstreamLines.length ? `\nWhere the architecture records this change:\n${upstreamLines.map((x) => `- ${x}`).join('\n')}\n` : ''}${a.feedback ? `\nFeedback to address:\n${a.feedback}` : ''}
 
-The architecture has already designed this infrastructure. Read it through the documents and matrix ids above and express it as it is recorded: the resources, their stacks, their names, the values stacks share and their sizing. Decide only a pure build detail nothing above records, on the decision basis, and say in the rationale which details you decided. A value known only at deploy time, such as the account, the region or the environment, is resolved at deploy time and is not part of the intent.
-
-Deliver CDK-expressible provisioning intent:
-- resources: each AWS resource to provision, with the CDK-expressible properties. Every s3.Bucket sets versioning enabled and SSE-S3 (S3_MANAGED) encryption. No public exposure and no over-broad IAM.
-- stacks: the CDK stacks the resources belong to.
-- crossStackRefs: cross-stack references, by the mechanism the owner's constraints in arc42 section 2 name, with the parameter names the matrix records.
-- affectedStacks: the stacks created or modified by this intent (names).
-- rationale: why this shape, tied to the change and to the architecture documents it expresses.
-Every stack and resource carries the name the architecture, the matrix or the spec gives it.`,
+Return the provisioning intent: resources, stacks, crossStackRefs, affectedStacks and rationale.`,
   {
     label: 'intent:author',
     phase: 'Provisioning intent',
