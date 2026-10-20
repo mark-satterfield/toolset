@@ -59,19 +59,21 @@ requured, but there still needs to be a spec".
 
 ```mermaid
 flowchart TD
-    start(["Ready Epic and its PRD"]) --> readPRD["The solutions architect normally reads the PRD for the Epic"]
+    start(["Ready Epic and its PRD"]) --> trdInit["TRD initial write, one of the very first steps: NFRs, many pre-written in arc42, and the human-written Epic-specific guidance - section 4"]
+    trdInit --> readPRD["The solutions architect normally reads the PRD for the Epic"]
     readPRD --> resources["Uses arc42 documents and the matrix as resources"]
     resources --> lookup{"Does the matrix hold anything for this Epic?"}
     lookup -->|"no: the normal case"| design
     lookup -->|"yes: seeded, not approved and not verified"| diligence["Due diligence: review everything and see if there are gaps"]
     diligence --> design
-    design["Analysis and design at every level, high level to detailed design, with specialists and the AWS tools - section 2"]
-    design <-->|"drive each other"| trd["TRD written, then updated if necessary - section 4"]
-    design --> record["Record how decisions were made, best practices, security and Well-Architected review - section 2"]
+    design["Higher-level architecture, the architecture that goes in arc42, with specialists and the AWS tools - section 2"]
+    design --> trdUpdate["TRD architecture update: technical or architecture decisions that impact the detailed design - section 4"]
+    trdUpdate --> detailed["Detailed design, reading the TRD, with specialists and the AWS tools - section 2"]
+    detailed --> record["Record how decisions were made, best practices, security and Well-Architected review - section 2"]
     record --> repos["Repositories and stacks for every resource and component - section 5"]
     repos --> review["Architecture reviews"]
     review --> ok{"Architecture and design approved?"}
-    ok -->|"no: findings - the architect settles each, disputed ones ruled once by architecture-decider"| design
+    ok -->|"no: findings - the architect settles each, disputed ones ruled once by architecture-decider"| detailed
     ok -->|"yes"| writes["arc42 documents set effective. Matrix filled out or corrected for the Epic and set approved, verified stays false"]
     writes --> archChange{"Did the Epic need an architecture change?"}
     archChange -->|"yes"| spec["Specs written from what is not yet verified - section 6"]
@@ -79,7 +81,7 @@ flowchart TD
     spec --> merge1(("merge"))
     specNo --> merge1
     merge1 --> stories["Stories and Tasks in beads, carrying the decisions or pointers to them - section 8"]
-    stories --> done(["Build pipeline"])
+    stories --> done(["Build pipeline, which reads the TRD for its decisions"])
 ```
 
 Notes on the diagram:
@@ -88,8 +90,10 @@ Notes on the diagram:
   then it would use both the arc42 documents, and the matrix as a resource to try to build out
   the architecture for the PRD." The diagram does not say the architect always reads the PRD
   first.
-- The owner, on the TRD: it "probably has be written and then updated if necessary". When it is
-  first written is an open question (Q13); section 4 shows it.
+- The owner, on the TRD: "I think the TRD actually gets written and updated in a few phases." The
+  initial write is "one of the very first steps"; the update comes "Once the architecture docs are
+  completed (this would be the higher-level architecture that would be in `arc42` that isn't
+  considered detail or design)". Section 4 shows both.
 - The reviews run once. The architect settles each finding, and a finding the architect disputes
   goes once to `architecture-decider`, whose ruling stands; there are no further rounds, because
   the owner saw review loops make "A simple request or task ... take hours to complete".
@@ -101,7 +105,7 @@ Notes on the diagram:
 design, recorded in arc42 and in the matrix.
 **Purpose:** who takes part, what each is given and returns, which tools are used, and where
 arc42 and the matrix are read and written.
-**Boundary:** how specialists are chosen is section 3; the TRD exchange is section 4;
+**Boundary:** how specialists are chosen is section 3; the two TRD phases are section 4;
 repositories are section 5; document and flag states over time are in
 [architecture and matrix states](pipelines-architecture-states.md).
 **Sources:** The owner: "The solutions architect is responsible for all architecture for
@@ -143,16 +147,25 @@ sequenceDiagram
     SA->>MX: looks up what is known for the Epic, as a resource
     MX-->>SA: nothing (normal) or seeded entries, not approved and not verified
     Note over SA: compares existing architecture to the PRD. Seeded entries get due diligence - section 3
-    loop until the architecture and design cover the PRD at every level
-        SA->>SP: a request on one subject, with what the architect knows
+    Note over SA,TRD: the TRD initial write came first - section 4
+    loop until the higher-level architecture, the architecture that goes in arc42, covers the PRD
+        SA->>SP: a request on one subject, with what the architect knows and the TRD
         Note over SP: a specialist may start further agents or a workflow. There can be nested subagents
         SP->>AWS: AWS documentation, best practices, cost analysis
         AWS-->>SP: guidance and figures
-        SP-->>SA: design of that subject, from high level to detailed
+        SP-->>SA: higher-level architecture of that subject
+        SA->>AWS: blesses or reviews every AWS resource the architecture defines
+        AWS-->>SA: review result, cost
+    end
+    SA->>TRD: the higher-level architecture is complete. TRD architecture update - section 4
+    TRD-->>SA: the updated TRD, with the decisions that impact the detailed design
+    loop until the detailed design covers the PRD
+        SA->>SP: a request on one subject, with the updated TRD
+        SP->>AWS: AWS documentation, best practices, cost analysis
+        AWS-->>SP: guidance and figures
+        SP-->>SA: detailed design of that subject, read from the TRD
         SA->>AWS: blesses or reviews every AWS resource the design defines
         AWS-->>SA: review result, cost
-        SA->>TRD: architecture facts that bear on the TRD, such as standards and constraints
-        TRD-->>SA: TRD requirements that drive the architecture
     end
     alt open - Q5 - where the record lives
         SA-)A42: record - how decisions were made, best practices, security best practices, Well-Architected review
@@ -283,46 +296,53 @@ each with the subject that is its reason to be used:
 A subject with no specialist today (the owner's examples: an SQS specialist, a lead for Data
 Persistence and Storage) is a gap in the roster, not a gap in the architecture.
 
-## 4. The TRD and the architecture drive each other
+## 4. The TRD is written, then updated, during architecture
 
-**Subject:** the exchange between the architecture and the TRD.
-**Scope:** inside the architecture stage.
-**Purpose:** that each feeds the other, and that the TRD is updated when the architecture bears on
-it.
-**Boundary:** TRD validation detail is not drawn.
-**Sources:** The owner: "the TRD probably has be written and then updated if necessary.
-The TRD drives architecture, some information in the architecture (like standards and contraints)
-aslo drives the TRD." When the TRD is first written and when it is updated is an open question
-(Q13).
+**Subject:** the two phases of the TRD in the architecture stage, and who reads it.
+**Scope:** inside the architecture stage, and the TRD as read by detailed design and the build.
+**Purpose:** that the TRD is written as one of the very first steps, updated once the
+higher-level architecture is complete, and read by detailed design and by the build.
+**Boundary:** TRD validation detail is not drawn. The owner's future separate TRD input document
+is not drawn as a store: the owner said "do not focus on this now"; its place is the initial
+write, where "we would pull in that human-written Epic-epecific guidence".
+**Sources:** The owner: "I think the TRD actually gets written and updated in a few phases."
+On the initial write: "While a Product Requirements Document (PRD) focuses on what the product
+should do (functional requirements), a TRD focuses on reuirements not considered functional. NFRs
+act as the quality constraints and operational boundaries that the technical architecture must
+support. Since many of these are already pre-written in the arc42, they can be easily added to a
+TRD as one of the very first steps. Note: This is also where we would pull in that human-written
+Epic-epecific guidence." On the update: "Once the architecture docs are completed (this would be
+the higher-level architecture that would be in `arc42` that isn't considered detail or design),
+the TRD would be updated again to reflect technical or architecture decisions made that would
+impact the detailed design." On its use: "I'm doing all of this assuming that we are using the
+TRD as a source of information that impacts any detailed design and build decisions."
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant SA as aws-solutions-architect
     participant TRD as trd-author
+    participant B as Build pipeline
     box Stores
-        participant PRD as PRD file (vault)
         participant A42 as arc42 (vault)
+        participant G as Epic-specific guidance, human-written
         participant T as TRD file (vault)
     end
 
-    alt open - Q13 - when the TRD is first written
-        SA->>TRD: write the TRD early, from the PRD and the existing architecture
-    else
-        SA->>TRD: write the TRD once a first architecture exists
-    end
-    TRD->>PRD: reads the requirements
-    TRD->>A42: reads standards and constraints
-    TRD-)T: TRD written
-    TRD-->>SA: technical requirements
-    loop while architecture or TRD changes something the other rests on
-        Note over SA: the TRD drives the architecture
-        SA->>A42: designs to the technical requirements
-        SA->>TRD: new or changed standards and constraints in the architecture
-        TRD-)T: TRD updated if necessary
-        TRD-->>SA: changed technical requirements, or none
-    end
-    Note over SA,TRD: exit when neither changes the other
+    Note over SA,TRD: TRD - Initial write<br/>one of the very first steps
+    SA->>TRD: write the TRD for the Epic
+    TRD->>A42: reads the NFRs, many already pre-written in arc42
+    TRD->>G: pulls in the human-written Epic-specific guidance
+    TRD-)T: TRD written - requirements not considered functional
+    TRD-->>SA: the TRD
+    Note over SA,TRD: the higher-level architecture,<br/>the architecture that goes in arc42 - section 2
+    Note over SA,TRD: TRD Architecture Update, once the<br/>higher-level architecture is complete
+    SA->>TRD: the completed higher-level architecture
+    TRD->>A42: reads the technical or architecture decisions made
+    TRD-)T: TRD updated with the decisions that impact the detailed design
+    TRD-->>SA: the updated TRD
+    SA->>T: detailed design reads the TRD - section 2
+    B->>T: build decisions read the TRD
 ```
 
 ## 5. Repositories and stacks, after the detailed design
@@ -419,7 +439,7 @@ sequenceDiagram
     TD-)BD: Stories and Tasks, each stating what it builds with the matrix ids, and pointers to the detail
     TD-->>WF: Task ids
     WF->>B: Tasks
-    Note over B: trusts what upstream decided. Does not re-decide names or decisions recorded upstream. Values known only at deploy time, such as region or environment, are handled at deploy time
+    Note over B: reads the TRD as a source of information for build decisions. Trusts what upstream decided. Does not re-decide names or decisions recorded upstream. Values known only at deploy time, such as region or environment, are handled at deploy time
 ```
 
 Notes on the diagram:
@@ -530,7 +550,7 @@ Decisions in this diagram, each for one reason:
 
 ## Open questions
 
-Questions Q4 to Q13 are the plan's questions for the owner, with the plan's recommendations.
+Questions Q4 to Q10 are the plan's questions for the owner, with the plan's recommendations.
 
 | Question | Where | Recommendation and reason |
 |---|---|---|
@@ -538,4 +558,3 @@ Questions Q4 to Q13 are the plan's questions for the owner, with the plan's reco
 | **Q5.** Where does the record of tools, decisions and the Well-Architected review live? | Section 2 | A review record per Epic, written by the architecture stage, committed with the Epic's elaboration output and linked from the Epic's matrix entry. arc42 holds no decision records, so a log keeps the documents to design facts while every decision and review stays findable. |
 | **Q9.** Who decides where an element lives, once the detailed design has determined the resources? | Section 5 | The architecture decides the repository and stack of each element, and the `polyrepo-steward` does the repository work that follows. Where an element lives follows from the design, and repository work is the steward's. |
 | **Q10.** What does the solutions architect do with a subject no specialist covers? | Section 3 | It designs the subject with its own tools and resources and recommends to the owner a specialist to create or update. The owner: the architect "must use all of its tools and resurces and produce and approve the architecture", and "At the very least I would have likeed to been given the opportunity to update the agent or perhaps create some new agents." |
-| **Q13.** When is the TRD written and updated? | Sections 1 and 4 | Written from the PRD before the architecture, updated after each architecture change that bears on it. The owner: "the TRD probably has be written and then updated if necessary" and "The TRD drives architecture". |
