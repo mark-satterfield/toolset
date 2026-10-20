@@ -68,7 +68,6 @@ from matrixseed import (
     seed_stacks,
 )
 from matrixstore import (
-    ATTR_ARCHITECTURE_APPROVED,
     CONTROL_REPO_FALLBACK_ENV,
     Matrix,
     MatrixRefusedError,
@@ -115,7 +114,6 @@ STANDS_PARTS: Final = 2
 """How many values ``settle --stands`` takes: the document and the heading."""
 CONTROL_VARIABLES: Final[tuple[str, ...]] = (CONTROL_REPO_ENV, CONTROL_REPO_FALLBACK_ENV)
 COMMAND_APPROVAL: Final = "approval"
-SCRIPT_SET_ATTRIBUTES: Final[frozenset[str]] = frozenset({ATTR_ARCHITECTURE_APPROVED})
 """The attributes no command line states: the step that promotes reviewed architecture sets them."""
 _CAMEL: Final[re.Pattern[str]] = re.compile(r"(?<=[a-z0-9])([A-Z])")
 
@@ -239,7 +237,7 @@ def attribute_options(table: AttributeTable) -> dict[str, AttributeOption]:
         options.update({
             attribute: _attribute_option(attribute, spec, definitions)
             for attribute, spec in attributes.items()
-            if attribute not in options and attribute not in SCRIPT_SET_ATTRIBUTES
+            if attribute not in options
         })
     return options
 
@@ -680,7 +678,8 @@ def _run_verify(call: Call) -> Outcome:
     """Run ``verify``.
 
     Returns:
-        The entries and relationships that carry the verified mark at the commit.
+        Whether the Story's merge completed its Epic and, when it did, the entries and
+        relationships of the Epic that carry the verified flag at the commit.
 
     """
     return Outcome(
@@ -734,8 +733,8 @@ def _run_approval(call: Call) -> Outcome:
     """Run ``approval``.
 
     Returns:
-        The Epic's requirements and the features that serve them, split into those that carry
-        the architecture-approved mark and those that do not.
+        The matrix content the Epic reaches, split into what carries the approved flag and what
+        does not.
 
     """
     return Outcome(approval_view(read_matrix(call.matrix()), call.required("epic")))
@@ -954,12 +953,12 @@ def _build_parsers(
     where: argparse.ArgumentParser,
     sources: Mapping[str, argparse.ArgumentParser],
 ) -> None:
-    """Add the verified mark, the Task script's reads, the approval lookup and the reuse check."""
+    """Add the verified flag, the Task script's reads, the approval lookup and the reuse check."""
     control: argparse.ArgumentParser = sources["control"]
     verified: argparse.ArgumentParser = commands.add_parser(
         COMMAND_VERIFY,
         parents=[where, control],
-        help="set the verified mark on what a Story built",
+        help="set the verified flag on what an Epic's Stories built, once the merge of this Story completes the Epic",
     )
     verified.add_argument("--story", required=True, help="the Story's beads id")
     verified.add_argument("--commit", required=True, help="the merge commit of the Story's pull request")
@@ -985,7 +984,7 @@ def _build_parsers(
     approval: argparse.ArgumentParser = commands.add_parser(
         COMMAND_APPROVAL,
         parents=[where],
-        help="an Epic's requirements and features, approved and not approved by the architecture reviews",
+        help="the matrix content an Epic reaches, approved and not approved",
     )
     approval.add_argument("--epic", required=True, help="the Epic's beads id")
     reuse: argparse.ArgumentParser = commands.add_parser(

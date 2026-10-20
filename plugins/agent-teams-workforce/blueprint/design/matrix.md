@@ -33,7 +33,7 @@ The registry declares:
 
 - for each entry kind: its id pattern, its attributes with their types and allowed values,
   which attributes are required, and `verifiable` (whether the kind carries the verified
-  mark);
+  flag);
 - for each relationship kind: its name, its reverse name, the entry kinds it starts from and
   ends at, its attributes, its `key` attributes (what distinguishes two relationships of one
   kind between the same two entries), its `family` and `provedByBuild`;
@@ -49,8 +49,8 @@ change to them.
 ### 1.2 Entries
 
 Every entry has `id`, `kind`, `name`, `aliases` (other names it is known by) and `purpose`
-(one or two sentences that identify it). An entry of a verifiable kind may carry `verified`
-(section 1.4).
+(one or two sentences that identify it). Any entry may carry `approved`, and an entry of a
+verifiable kind may carry `verified` (section 1.4).
 
 Every entry and every relationship carries `side`, which shows which of the two sides the
 fact came from (requirements section 4.1, R43, R45, R50). It is one common field with no
@@ -80,8 +80,8 @@ holds.
 | Kind | What one is | Id | Attributes beyond the common ones |
 |---|---|---|---|
 | `epic` | One Epic with its PRD. | `epic:<beads id>` | `prd` (`path` in the vault, `hash`). |
-| `requirement` | One requirement of a PRD: one `####` heading under `## Requirements`. | `requirement:<epic beads id>/<key>`; the key is the identifier that opens the heading (`CHAT-001`), else the slug of the heading. | `group` (the `###` heading above it), `hash` (of the requirement's own text), `architectureApproved` (section 1.4.1). `name` is the heading text. |
-| `feature` | One discrete capability of the product, stated as something it can do ("send an email"), recorded once and unique (requirements section 3.1.1). | `feature:<slug>` | `provides`: for a shared capability, a list of `id`, `behaviour`, `consumersMust`, `interface` (`kind`, `name`), `useSignals`, `duplicateSignals`; `architectureApproved` (section 1.4.1). |
+| `requirement` | One requirement of a PRD: one `####` heading under `## Requirements`. | `requirement:<epic beads id>/<key>`; the key is the identifier that opens the heading (`CHAT-001`), else the slug of the heading. | `group` (the `###` heading above it), `hash` (of the requirement's own text). `name` is the heading text. |
+| `feature` | One discrete capability of the product, stated as something it can do ("send an email"), recorded once and unique (requirements section 3.1.1). | `feature:<slug>` | `provides`: for a shared capability, a list of `id`, `behaviour`, `consumersMust`, `interface` (`kind`, `name`), `useSignals`, `duplicateSignals`. |
 | `constraint` | One technical requirement or constraint. | `constraint:<slug>` | `statement`; `selector` when the rule applies to every entry of a class. A selector is a set of attribute values (any of `app`, `stackType`, `resourceType`, `executionUse`) that names every entry having those values. |
 | `document` | One arc42 document. | `document:<path under the architecture root>` | `lifecycle` (`effective`, `in-review`, `draft`), `section`, `viewType`, `scope`, `subject`, `headings` (the heading texts), `hash`. |
 | `service` | One service the architecture describes. | `service:<slug>` | `executionUse`. |
@@ -109,7 +109,7 @@ Notes on the kinds:
 ### 1.3 Relationships
 
 A relationship has `kind`, `from`, `to`, the attributes its kind declares, `side`
-(section 1.2), and optionally `verified`. It is stored once for each side that
+(section 1.2), and optionally `approved` and `verified` (section 1.4). It is stored once for each side that
 states it and indexed from both ends: `atw-matrix node <id>`
 returns the relationships that start at the entry under the kind's name and those that end
 at it under the reverse name.
@@ -158,63 +158,86 @@ layers and the Lambdas that use them, the infrastructure of each resource type i
 and every dependency that crosses a stack boundary. arc42 is the authority for all of it.
 The repository side is what is in each stack today: the code, packages, layers and
 CDK-defined infrastructure. It is recorded for every stack, with `side: repository` and no
-verified mark, as a hint. It never replaces or contradicts an architecture-side fact, and a
+verified flag, as a hint. It never replaces or contradicts an architecture-side fact, and a
 difference between the two sides is not a finding and is recorded nowhere. Seeding records
 both sides (section 3), and elaboration records what the architect designs or reads
 (section 4). No command reads a synthesized CDK assembly, and no build or deploy step adds an
 entry or a relationship.
 
-### 1.4 The verified mark
+### 1.4 The approved and verified flags
 
-The matrix has one code mark, `verified`, as requirements section 3.5 and requirements R24
-to R26 define it. It holds one field, `commit`. No deployed mark and no merged mark exists.
+The matrix has two flags, `approved` and `verified`, as requirements section 3.5 and R24 to
+R26 and R57 define them. Each is a common member of an entry and of a relationship in
+`skills/artifact-handoff/schemas/matrix.schema.json` (`$defs/Approved`, `$defs/Verified`),
+not an attribute of a kind, and `Entry.approved`, `Entry.verified`, `Relationship.approved`
+and `Relationship.verified` in the generated `matrix_contract.py`. Absent means not approved
+and not verified. Nothing is seeded with either: a seed result that states one is refused
+(`matrixseed._attributes`). No deployed mark and no merged mark exists.
 
-- It is set when a Story's code has been built and tested and has passed, including its
-  CI/CD and its CDK. The driver sets it when GitHub reports the Story's pull request merged,
-  and `commit` is the merge commit. Continuous integration and the CDK checks have passed by
-  then, and the commit recorded exists on `main`.
-- It is recorded on each stack and entry the Story built, as the Task script's `built` read
-  returns them (section 1.5), and on each relationship with `provedByBuild` that starts at
-  one of them.
+arc42's `effective` is a third thing. A document's `lifecycle` mirrors its front matter
+(requirement R22), and `effective` there means the architecture agent responsible for
+approving the architecture has approved the document as of now. The approved flag is
+similar to it and is not the same: what was seeded from effective arc42 documents is not
+approved.
+
+### 1.4.1 The approved flag
+
+`approved` holds one member, `epic`: the beads id of the Epic whose architecture and design
+were approved. It says the architecture and design of that Epic are approved and the matrix
+and arc42 are filled out or corrected for it.
+
+- **What it covers.** The matrix content the Epic's elaboration reaches,
+  `matrixtraverse.approval_scope(matrix, epic)`: the Epic, its requirements, and what
+  `epic_reach` reaches from them that the architecture side states (the features, the
+  documents that describe them or what they reach, the entries reached, their stacks and
+  the far end of every dependency), with every architecture-side relationship that joins
+  two of those. Repository-side facts are hints and are not approved.
+- **Who sets it.** Only `matrixwrite.approve(matrix, bead, role)`, which refuses every role
+  but `script` (`APPROVING_ROLE`). The promotion step (`orchestrator/flows/architecture_promotion.py`
+  `_promote`) runs it once the Epic's reviews pass, in the same matrix change that brings the
+  promoted documents' entries up to date and removes the settled disagreements, so the
+  matrix and arc42 are corrected first. `put` and `link` take attributes only, and no
+  `atw-matrix` option states a flag. No session sets it.
+- **When it clears.** `Matrix.put` and `Matrix.link` clear it on an entry or relationship
+  replaced by one that differs in anything but its flags, and keep it when nothing else
+  differs (so `sync-epics` leaves an unchanged requirement approved, and setting `verified`
+  leaves `approved` as it is). When a document's text changes (its `hash` or `headings`,
+  other than by the move of a document that was not effective to effective, which is the
+  promotion's own lifecycle change), every entry the architecture side says the document
+  describes (`describedBy`) loses it. An architecture-side relationship added, changed or
+  removed clears it on the entry it starts from. It returns when an Epic that reaches the
+  content has its architecture and design approved again.
+- **Where it shows.** Every read that returns an entry or a relationship returns it where
+  set; `summary` counts it by kind (`approvedByKind`, `approvedRelationshipsByKind`);
+  `approval --epic` lists the entries the Epic reaches, approved (with the Epic that
+  approved each, under `approved`) and not approved (`notApproved`), with the count of the
+  relationships between them and of those approved.
+
+### 1.4.2 The verified flag
+
+`verified` holds one member, `commit`. It says every Task of every Story of an Epic that
+built the entry or relationship was built and tested, including CI/CD and CDK, with the
+deployment working.
+
+- **When it is set.** The driver runs `atw-matrix verify --story <beads id> --commit <sha>`,
+  as the role `build-driver`, when GitHub reports a Story's pull request merged: the Story's
+  Tasks have closed and its deploy to AWS dev was verified, and the Story has not yet closed.
+  `matrixcode.record_verified` reads the Story's Epic, its Stories and every Task in one read
+  of beads (`matrixtasks.epic_work`). The merge completes the Epic when every Task of the
+  Epic is closed and every other Story of the Epic is closed; then the flag is set, and
+  `commit` is that Story's merge commit. Otherwise nothing is written, and the command
+  returns `complete: false` with `openStories` and `openTasks`.
+- **What it covers.** Each stack and entry any Story of the Epic built, as the Task script's
+  `built` read returns them for each Story (section 1.5), and each relationship with
+  `provedByBuild` that starts at one of them.
 - For a stack with no CDK app, the publish of its package to CodeArtifact stands where the
-  CDK deploy does.
-- A Story that closes with no pull request sets no mark: no code changed and no CI/CD ran.
-- Absent means not verified. No other value exists.
-- When verified code is changed by a later Story, the mark stays, with its commit, until
-  that Story is verified and replaces the commit. Entries and relationships the Story adds
-  are not verified until then.
-
-One command sets it: `atw-matrix verify --story <beads id> --commit <sha>`, run by the role
-`build-driver`. It takes the stacks and entries from the `built` read and takes no stack,
-element or repository name. It adds, changes and removes no entry and no relationship: the
-mark is the only thing the build pipeline writes in the matrix (requirement R46).
-
-### 1.4.1 The architecture-approved mark
-
-Requirement R57. `architectureApproved` is an attribute the kinds registry declares on
-`requirement` and `feature` (`$defs/architectureApproval`), with one member, `epic`: the beads
-id of the Epic whose architecture reviews passed. Absent means not approved. It says the
-architecture is complete, correct and good and can be trusted; it is separate from
-`verified` (section 1.4), which says what was built passed its tests. Nothing is marked
-today.
-
-- **Who sets it.** Only `matrixwrite.approve(matrix, bead, role)`, which refuses every role but
-  `script` (`APPROVING_ROLE`). The promotion step (`orchestrator/flows/architecture_promotion.py`
-  `_promote`) runs it once the reviews pass, in the same matrix change that brings the
-  promoted documents' entries up to date: on the Epic's requirements (`hasRequirement`) and
-  the features that serve them (`servedBy`), as `Matrix.approval_scope` names them. `put`
-  refuses the attribute, and `atw-matrix put` has no option for it. No command sets it.
-- **When it clears.** `Matrix.put` clears it when an approved entry is replaced by one that
-  differs in anything but the mark, and keeps it when nothing else differs (so `sync-epics`
-  leaves an unchanged requirement approved). When a document's text changes (its `hash` or
-  `headings`, other than by the move of a document that was not effective to effective, which
-  is the promotion's own lifecycle change), every entry the architecture side says the
-  document describes (`describedBy`) loses the mark. An architecture-side relationship added,
-  changed or removed clears the mark of the entry it starts from. The mark returns when the
-  changing Epic's reviews pass and its promotion sets it.
-- **Where it shows.** `epic` and `node` return it on each requirement and feature that carries
-  it; `summary` counts it by kind (`approvedByKind`); `approval --epic` lists the Epic's
-  requirements and features, approved (with the Epic that approved each) and not approved.
+  CDK deploy does. A Story that closes with no pull request runs no `verify`.
+- When verified code is changed by a later Epic, the flag stays, with its commit, until that
+  Epic is verified and replaces the commit. Entries and relationships the later Epic adds are
+  not verified until then.
+- `verify` takes no stack, element or repository name. It adds, changes and removes no entry
+  and no relationship: the flag is the only thing the build pipeline writes in the matrix
+  (requirement R46).
 
 ### 1.5 Stories and Tasks
 
@@ -232,15 +255,15 @@ ids against the matrix's entries and stores nothing. It runs as three `atw-matri
 
 | Command | Task beads read | Returns |
 |---|---|---|
-| `built --story <beads id>` | The Story's Tasks. | The stacks and entries the Story built, for the verified mark. An id that matches no entry is listed under `unmatched`. |
+| `built --story <beads id>` | The Story's Tasks. | The stacks and entries the Story built, for the verified flag. An id that matches no entry is listed under `unmatched`. |
 | `work --id <entry id>` | The open Tasks of every Epic. | The open Tasks that name the entry or, for a stack, an entry the stack holds, each with its Story and Epic. `--not-epic <beads id>` leaves out that Epic's own Tasks, which gives the open work from other Epics. |
 | `affected --id <entry id>` | The open Tasks of every Epic. | The open Tasks a change to the entry affects: those that name the entry or anything `impact --id` returns for it (Q19). |
 
 ### 1.6 What the matrix leaves out
 
 - Past states: no retired, deprecated, archived or deferred entry, no status value, no
-  change stamp, no review send-back, no approval record beyond the architecture-approved mark
-  as it stands now (section 1.4.1). Git holds history; the step journal holds the run.
+  change stamp, no review send-back, no approval record beyond the approved flag as it stands
+  now (section 1.4.1). Git holds history; the step journal holds the run.
 - An approval decision on a document: a document's `lifecycle` mirrors its arc42 front matter.
 - Design content: a design fact stays under its arc42 heading; the matrix holds the heading.
 - Words: no entry exists for a word that appears in a document.
@@ -252,7 +275,7 @@ ids against the matrix's entries and stores nothing. It runs as three `atw-matri
 ## 2. How each lookup is answered
 
 Every command prints one JSON object. Each returned entry and relationship carries `kind`,
-`side` and, where set, `verified`. A traversal follows the
+`side` and, where set, `approved` and `verified`. A traversal follows the
 relationships of both sides, so a result shows what arc42 states and what is in a repository
 today, each marked with its side.
 
@@ -272,7 +295,7 @@ today, each marked with its side.
 | Q12 | `epic <id> --closure` | epic → requirements → features, with `supportedBy` to any depth. From each feature, the entries reached by `realizedBy` and those reached by `describedBy` → document → `describes`. From each entry, `homeIn` → stack, and `correspondsTo` → what is in a repository for it. Then Q9 from those stacks. Group stacks by `repository`. Each repository is returned with its stacks and the features that lead to each. |
 | Q13 | `epic <id> --unlinked` | The links of the Epic with nothing recorded at the other end: `noFeature` (Q2), `noDocument` (Q4), `noSource` (Q5), `noStack` (architecture-side entries reached in Q12 with no holder: no architecture-side `homeIn`; an event is not among them, because its stack is its publisher's), `noRepository` (stacks reached in Q12 with no `repository`) and `noCounterpart` (architecture-side entries reached in Q12 with no `correspondsTo`). |
 | Q12/Q13 holders | `Matrix.home(id, side=)`, `matrixtraverse.authority_holder`, `matrixtraverse.holder` | `Matrix.home` reads the architecture side by default and has no fallback; `side=None` reads the architecture side and then the repository side, and only readers that report what the repositories hold pass it. `Matrix.publisher_stacks(event)` maps the event's architecture-side publishers to their architecture-side homes: the one place an event's stack is decided. `authority_holder` is the stack a step that decides what is built reads: for an event, the one publisher stack (none when there are none or several); for any other kind, the architecture-side home. `holder` is the reporting reader: the architecture-side home, then the repository side, then the stack an id names; for an event, `authority_holder`. |
-| Q14 | any read | `verified` present with its commit, or absent, on each entry and relationship returned. |
+| Q14 | any read | `approved` present with its Epic, or absent, and `verified` present with its commit, or absent, on each entry and relationship returned. |
 | Q15 | `deps --on <id>` | From the entry (for a stack, also every entry it `holds`), follow the dependency family inward to any depth, with the same result shape as Q9. |
 | Q16 | `layers` | Each `layer` → `contains` → packages, and → `layerUsedBy` → components. |
 | Q17 | `node stack:<id>`; `stacks --app <app>` | The stack's `app`; the stacks whose `app` equals the value. |
@@ -284,7 +307,7 @@ today, each marked with its side.
 | Q24 | `stacks --repository <name>` | The stacks whose `repository` equals the name. |
 | Q25 | `summary --unlinked` | `noArchitecture`: over the whole matrix, the entries with `side: repository`, of the kinds `correspondsTo` may end at (component, infrastructure, layer, stack), that no `correspondsTo` ends at. It is the other direction of Q13's `noCounterpart`. |
 | Q26 | `epic <id> --realizers` | For each feature Q12 reaches, the ends of its `realizedBy` relationships and every service, component, infrastructure, event or layer whose architecture-side `describedBy` names a document heading that `covers` one of the Epic's requirements by way of the feature. Each realizer is returned once with its architecture-side stack (`authority_holder`), that stack's `repository`, its `resourceType` when it has one and, for an event, its publishers; `noStack` lists the realizers with no such stack. |
-| Approval | `approval --epic <id>` | epic → `hasRequirement` → requirements → `servedBy` → features. Each is returned under `approvedRequirements` or `approvedFeatures` (with `approvedBy`, the Epic the mark names) when it carries `architectureApproved`, otherwise under `notApprovedRequirements` or `notApprovedFeatures` (section 1.4.1). |
+| Approval | `approval --epic <id>` | `matrixtraverse.approval_scope`: the Epic, its requirements and every architecture-side entry Q12 reaches, with the architecture-side relationships between them. Each entry is returned under `approved` (with `kind`, `name` and `approvedBy`, the Epic the flag names) when it carries `approved`, otherwise under `notApproved`; `relationships` and `approvedRelationships` count the relationships (section 1.4.1). |
 
 Three further reads serve single steps. `uses --ids <entry ids>` returns the shared
 capabilities the work that builds those entries must use (entries → `realizes` → features →
@@ -388,7 +411,7 @@ committed and pushed with `atw-matrix commit --bead <id>` at the end of E9, D8, 
 steward operation and seeding.
 
 Elaboration, assessment and repository work record facts. Elaboration and assessment record with `side: architecture`, and repository work with `side: repository` (section 1.2). The build and deploy steps read
-the matrix and record nothing in it except the verified mark at D8 (requirement R46). A
+the matrix and record nothing in it except the verified flag at D8 (requirement R46). A
 build or deploy step that finds the code different from what the matrix states reports the
 difference in its result and the step journal; the built comparison (D6, D7) corrects the
 arc42 documents, the next run's E1 mirrors them, and the architect records what they state
@@ -406,7 +429,7 @@ arc42 documents, the next run's E1 mirrors them, and the architect records what 
 | E6 TRD and Spec filed | `trd_authoring.py` `confirm()`, `_mark_trd()`, `document()`; `ops/sdlc-automation/lane.py` `_file_artifacts`, `_vault_metadata` | `document()` checks each cited path and heading with `node document:<path>`. | Nothing. The TRD and Spec paths and digests stay on the Epic and Story beads. |
 | E7 Architecture check | `architecture_check.py` `check()`, `_open_review()` | `check`; `review-scope --epic` (Q4, Q18); `epic <id> --unlinked` (Q13). | Nothing. |
 | E8 Review and ruling | `architecture_review.py` `reviewer()`, `lead()`, `decider()`; `agents/architecture-decider.md`; `agents/architecture-team-lead.md` | The reviewer scope file narrowed from `review-scope`. | `settle --id <disagreement> --stands <document> <heading> --rule <rule>`. The accept step reads the disagreement back and fails the step when `stands` is unset. A review send-back is in the step journal only. |
-| E9 Promotion | `architecture_promotion.py` `promote()`, `_approve()`; `depscore.py` `arch-approve` | `review-scope --epic`. | The documents are set effective in their front matter, then `sync-documents --paths` mirrors `lifecycle`. `remove` for each disagreement settled in this run whose losing statement is corrected. `commit --bead` commits and pushes. |
+| E9 Promotion | `architecture_promotion.py` `promote()`, `_promote()`; `matrixwrite.approve`; `depscore.py` `arch-approve` | `review-scope --epic`. | The documents are set effective in their front matter, then `sync-documents --paths` mirrors `lifecycle`. `remove` for each disagreement settled in this run whose losing statement is corrected. Then, in the same matrix change, the approved flag on the matrix content the Epic reaches (section 1.4.1). `commit --bead` commits and pushes. |
 | E10 Repository scoping | `repo_scoping.py` `span()`, `story_builds()`, `story_build_problems()`, `repository_name()`, `_ruling()`, `shared_capabilities()` | The architect's result (`addedOrChangedElements`); per entry its `authority_holder` and that stack's `repository`, its `describedBy`, an event's architecture-side publishers, and the architecture-side dependency relationships between the entries; the stack type (Q11); the naming rules for a stack with no `repository`; `uses`. | The `repository` the naming rules give a stack a Story builds in that names none (architecture side). The step fails on each `story_build_problems` sentence. |
 | M1 Event checks | `matrixstore.Matrix._event_problems()` in `problems()` (`atw-matrix check` and every write); `matrixwrite._side_kept`, `matrixwrite.unlink` | Each architecture-side event. | Nothing. A problem for an architecture-side event that states `externalSource` and has an architecture-side publisher; that has neither; or whose publishers are homed in more than one stack, unless one is in a stack whose `executionUse` is `imported` (skipped until the owner rules). A repository-side put that states `externalSource` on an architecture-side event is refused, and unlinking the last architecture-side publisher of an event with no `externalSource` is refused. |
 | E11 Repository creation | `repo_scoping.py` `create_repositories()`, `_create()` | The stack's `repository` (Q10) and `purpose` (Q7); `polyrepo inventory --name` for the clone path. | `put stack --repository` when the created repository's name differs from the one recorded. `polyrepo create` records the rest (S1). |
@@ -437,7 +460,7 @@ those lanes only as far as slices 29 and 31 of section 6 state.
 | B4 Regression | `workflows/task-to-deploy.js` `regressionBrief`, `regressionReviewBrief`; `agents/regression-impact-assessor.md`; `skills/cumulative-regression/SKILL.md` | `impact --id` for each entry the Task states (Q19, Q15). | Nothing. The per-repository `regression.json` holds test mappings and execution evidence only. |
 | B5 Reuse audit | `stepReuseAudit`, `judgeReuse` | `check-reuse --ids <ids> --worktree <path>` with the shared capability ids the Task states. | Nothing. A signal the reviewer rules wrong is in the step's result. |
 | B6 Suite run | `workflows/suite-run.js` `resolvePrompt` | The stack's `commands.test` (Q21). The resolving session runs only when it is empty. | Nothing. |
-| B7 Commit and Task close | `stepCommit`; `ops/sdlc-automation/lane.py` `_settle_build` | none | Nothing. No mark precedes the Story's verification. |
+| B7 Commit and Task close | `stepCommit`; `ops/sdlc-automation/lane.py` `_settle_build` | none | Nothing. No flag is set before the Epic is verified. |
 
 ### Deploy (the driver's `storydeploy.py` and its workflows)
 
@@ -450,8 +473,8 @@ those lanes only as far as slices 29 and 31 of section 6 state.
 | D5 Deploy fix | `storydeploy.py` `_fix_step`; `workflows/story-deploy-fix.js` | `node stack:<id>` and `deps --of` for the failed stacks (Q9). | Nothing. |
 | D6 Built comparison | `workflows/built-version.js` `stepCompare`; `agents/built-architecture-comparer.md`; `storydeploy.py` `_built_subject`, `built_args` | `built --story <id>`, then `story-scope` for those entries: the documents and headings that describe each (Q18). | Nothing. A difference is a file under `built/<subject>/` until D7 corrects the documents in the same run. |
 | D7 Built correction | `workflows/built-version.js` correct, conformance and approve steps; `agents/architecture-maintainer.md`; `skills/arc42-maintain/SKILL.md` step 8; `storydeploy.py` `_built_version_step` | `node <entry>` for every document that describes a changed entry (Q18). | Nothing. The corrected documents are effective in the vault; the next run's E1 `sync-documents` mirrors them. |
-| D8 Merge and close | `storydeploy.py` `_merge_wait_step`, `_close_step`; `ops/sdlc-automation/matrixmarks.py`; `scripts/portfolio/matrixcode.py` | none | `verify --story <id> --commit <merge commit>`, then `commit --bead`. The close step is done only when both calls succeed. |
-| D9 Close with no pull request | `storydeploy.py` `_close_step` | none | Nothing; no mark. |
+| D8 Merge and close | `storydeploy.py` `_merge_wait_step`, `_close_step`; `ops/sdlc-automation/matrixmarks.py`; `scripts/portfolio/matrixcode.py` | none | `verify --story <id> --commit <merge commit>`, then `commit --bead`. `verify` sets the verified flag on what the Epic's Stories built only when this merge completes the Epic (section 1.4.2), and otherwise records nothing. The close step is done only when both calls succeed. |
+| D9 Close with no pull request | `storydeploy.py` `_close_step` | none | Nothing; no flag. |
 | D10 Driver dispatch and dashboard | `ops/sdlc-automation/workitems.py`, `reposcope.py`, `storyorder.py`, `decisions.py` | `epic <id>` for the PRD (Q1); the stack id a Story's Tasks state, then `node stack:<id>` for the repository (Q10); `epic <id> --closure` for the repository view (Q12). | Nothing. |
 
 ### Repository work (`polyrepo-steward`, `skills/polyrepo-repo/scripts/polyrepo.py`)
@@ -471,7 +494,7 @@ those lanes only as far as slices 29 and 31 of section 6 state.
 
 | Step | Where | Reads | Records |
 |---|---|---|---|
-| I1 Shared instruction text | `skills/subagent-contract/SKILL.md`, `agents/aws-solutions-architect.md`, `agents/built-architecture-comparer.md`, `agents/polyrepo-steward.md`, `skills/polyrepo-repo/SKILL.md`, and the preamble bundled into each `workflows/*.js` | The text states the one mark as section 1.4 does, from one shared block under `scripts/shared-blocks`. | Nothing; no agent sets the mark. |
+| I1 Shared instruction text | `skills/subagent-contract/SKILL.md`, `agents/aws-solutions-architect.md`, `agents/built-architecture-comparer.md`, `agents/polyrepo-steward.md`, `skills/polyrepo-repo/SKILL.md`, and the preamble bundled into each `workflows/*.js` | The text states the approved and verified flags as section 1.4 does. | Nothing; no agent sets a flag. |
 
 ## 5. Replacement list
 
@@ -626,14 +649,18 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
    the document it comes from and what it applies to, and one constraint applies to many
    things. A `selector` covers a rule that binds a whole class: Q5 has to return such a rule
    for a stack an Epic adds, which has no relationship to the rule yet.
-9. **A verified mark when verified code changes.** The mark stays until the next verified
-   Story replaces its commit. The code still exists; clearing the mark would tell the
+9. **A verified flag when verified code changes.** The flag stays until the next verified
+   Epic replaces its commit. The code still exists; clearing the flag would tell the
    pipeline it may have to be built.
-10. **What a verified Story marks.** The stacks and entries the Story's Tasks name, as the
-    Task script returns them (R42), and the build-proved relationships that start at them,
-    at the merge commit. A Story is the unit that passes CI/CD and CDK, and requirement R24
-    marks each piece separately. The mark is set at the merge because continuous integration
-    and the CDK checks have passed by then, and the commit recorded exists on `main`.
+10. **When and on what the verified flag is set.** On the stacks and entries every Story of
+    an Epic built, as the Task script returns them (R42), and the build-proved relationships
+    that start at them, once every Task of every Story of the Epic has been built and tested
+    with its deployment working (requirements section 3.5, R25). The driver's call after each
+    Story's merge sets it only when that merge completes the Epic, at that merge commit:
+    continuous integration, the CDK checks and the Story's deploy have passed by then, and
+    the commit recorded exists on `main`. One flag for the whole Epic, not one per Story,
+    because the owner requires the Epic's architecture and relationships to be verified
+    together.
 11. **Concurrent changes.** Every change is one locked read-modify-write of the file, so two
     runs that write at the same moment both land.
 12. **Disagreements between documents.** An entry while the documents disagree, with the
@@ -641,9 +668,14 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
     because the documents then agree.
 13. **Design facts.** No kind. A fact's home is the heading a `describedBy` relationship
     names; its content stays in arc42 (requirement R13).
-14. **Approval markers.** One: the `lifecycle` mirrored from arc42 (requirement R22). What
-    is in review for an Epic is the documents it reaches whose `lifecycle` is not
-    `effective`; nothing more is stored.
+14. **Approval.** Two things, kept apart. A document's `lifecycle` mirrors arc42 (requirement
+    R22): what is in review for an Epic is the documents it reaches whose `lifecycle` is not
+    `effective`. The approved flag (requirement R57) is the one record of approval in the
+    matrix, on the content an Epic reaches, set when the Epic's architecture and design are
+    approved. It replaces the earlier `architectureApproved` attribute on requirements and
+    features: the owner named two flags, "one for verified, and one for approved", and a
+    third would be a second record of approval. It is a common member of every entry and
+    relationship, like `verified`, because the content an Epic reaches is of every kind.
 15. **Stack types.** The matrix stores none and reads the last token. `check` reports a
     token `resource-naming-standard.md` does not list, and the list is extended there.
 16. **A Task's shared capabilities.** Elaboration derives them with `uses` from the entries
@@ -681,7 +713,7 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
     architect designs or reads. No command reads a synthesized assembly: the repositories'
     CDK, built by hand and mostly empty, proves nothing (requirement R44), and no lookup in
     requirements section 2 needs one (requirement R31). The build and deploy steps record
-    only the verified mark.
+    only the verified flag.
 24. **Search beyond the matrix.** GraphRAG and GitNexus both stay in pipeline sessions.
     GraphRAG indexes the `skillspoke-docs` vault, arc42 and SDLC documents included, and the
     repositories, for search by meaning. GitNexus indexes each repository's call graph for

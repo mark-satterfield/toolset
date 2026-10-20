@@ -17,12 +17,12 @@ Every function here reads a matrix that is already loaded and changes nothing. E
 - :func:`uses_view` (``uses``), :func:`story_scope` (``story-scope``).
 - :func:`summarize` (``summary``): the counts by kind and by side, and on request the
   repository-side entries with no architecture-side counterpart.
-- :func:`approval_view` (``approval``): an Epic's requirements and the features that serve them,
-  split into those that carry the architecture-approved mark and those that do not.
+- :func:`approval_view` (``approval``): the matrix content an Epic reaches, split into what
+  carries the approved flag and what does not.
 
 A read follows the relationships of both sides, so a result shows what the architecture states and
 what is in a repository today. Each entry and relationship returned carries its kind, the side it
-came from and, where set, its verified mark and its architecture-approved mark. The walks are in
+came from and, where set, its approved flag and its verified flag. The walks are in
 ``matrixtraverse``.
 """
 
@@ -68,7 +68,7 @@ from matrix_contract import (
     entry_json,
     relationship_json,
 )
-from matrixstore import ATTR_ARCHITECTURE_APPROVED, Matrix, approved_by, name_key
+from matrixstore import Matrix, approved_by, name_key
 from matrixtraverse import (
     ATTR_APP,
     ATTR_EXECUTION_USE,
@@ -77,6 +77,7 @@ from matrixtraverse import (
     ATTR_REPOSITORY,
     ATTR_RESOURCE_TYPE,
     ATTR_SELECTOR,
+    ApprovalScope,
     CapabilityReach,
     ConstraintReach,
     Dependency,
@@ -84,6 +85,7 @@ from matrixtraverse import (
     Impact,
     Touch,
     Way,
+    approval_scope,
     authority_holder,
     capabilities,
     constraints_for,
@@ -528,7 +530,9 @@ class MatrixSummary(TypedDict):
     verifiedByKind: dict[str, int]
     verifiedRelationshipsByKind: dict[str, int]
     approvedByKind: dict[str, int]
-    """The entries that carry the architecture-approved mark, by kind."""
+    """The entries that carry the approved flag, by kind."""
+    approvedRelationshipsByKind: dict[str, int]
+    """The relationships that carry the approved flag, by kind."""
     documentsByLifecycle: dict[str, int]
     stacksByApp: dict[str, int]
     repositories: list[str]
@@ -538,23 +542,27 @@ class MatrixSummary(TypedDict):
 
 
 class Approval(TypedDict):
-    """One requirement or feature that carries the architecture-approved mark."""
+    """One entry that carries the approved flag."""
 
     id: EntryId
+    kind: str
     name: str
     approvedBy: str
-    """The beads id of the Epic whose architecture reviews approved it."""
+    """The beads id of the Epic whose architecture and design approval set the flag."""
 
 
 class ApprovalView(TypedDict):
     """What ``approval`` prints."""
 
     epic: EntryId
-    approvedRequirements: list[Approval]
-    notApprovedRequirements: list[EntryId]
-    approvedFeatures: list[Approval]
-    """The features that serve the Epic's requirements and carry the mark."""
-    notApprovedFeatures: list[EntryId]
+    approved: list[Approval]
+    """The entries the Epic reaches that carry the flag."""
+    notApproved: list[EntryId]
+    """The entries the Epic reaches that do not."""
+    relationships: int
+    """How many architecture-side relationships join two of the entries the Epic reaches."""
+    approvedRelationships: int
+    """How many of them carry the flag."""
 
 
 def _text(value: JsonValue) -> str:
@@ -608,9 +616,9 @@ def _brief(matrix: Matrix, entry_id: EntryId) -> View:
     """Render one entry as the end of a relationship.
 
     Returns:
-        The entry's id, kind, name and side, its purpose, verified mark and architecture-approved
-        mark where set, the attributes that say where and what it is, a stack's type, and
-        ``stack``: the id of its home.
+        The entry's id, kind, name and side, its purpose, approved and verified flags where set,
+        the attributes that say where and what it is, a stack's type, and ``stack``: the id of its
+        home.
 
     """
     entry: Entry = matrix.entry(entry_id)
@@ -623,10 +631,10 @@ def _brief(matrix: Matrix, entry_id: EntryId) -> View:
     home: EntryId | None = matrix.home(entry_id, side=None)
     if home is not None:
         view["stack"] = home
+    if entry.approved is not None:
+        view["approved"] = {"epic": entry.approved.epic}
     if entry.verified is not None:
         view["verified"] = {"commit": entry.verified.commit}
-    if ATTR_ARCHITECTURE_APPROVED in entry.attributes:
-        view[ATTR_ARCHITECTURE_APPROVED] = entry.attributes[ATTR_ARCHITECTURE_APPROVED]
     return view
 
 
@@ -1490,7 +1498,7 @@ def summarize(matrix: Matrix, *, unlinked: bool = False) -> MatrixSummary:
 
     Returns:
         The number of entries and relationships, of each kind, of each side and of each kind that
-        is verified; the documents by lifecycle; the stacks by app; the repositories the stacks
+        is approved and that is verified; the documents by lifecycle; the stacks by app; the repositories the stacks
         name; and on request ``noArchitecture``.
 
     """
@@ -1504,6 +1512,7 @@ def summarize(matrix: Matrix, *, unlinked: bool = False) -> MatrixSummary:
         "verifiedByKind": {},
         "verifiedRelationshipsByKind": {},
         "approvedByKind": {},
+        "approvedRelationshipsByKind": {},
         "documentsByLifecycle": {},
         "stacksByApp": {},
         "repositories": [],
@@ -1532,53 +1541,48 @@ def summarize(matrix: Matrix, *, unlinked: bool = False) -> MatrixSummary:
         _count(summary["relationshipsBySide"], relationship.side)
         if relationship.verified is not None:
             _count(summary["verifiedRelationshipsByKind"], relationship.kind)
+        if relationship.approved is not None:
+            _count(summary["approvedRelationshipsByKind"], relationship.kind)
     if unlinked:
         summary["noArchitecture"] = _no_architecture(matrix)
     return summary
 
 
-def _approvals(matrix: Matrix, entry_ids: Sequence[EntryId]) -> list[Approval]:
-    """Render the entries that carry the architecture-approved mark.
-
-    Returns:
-        Each of the entries that carries the mark, with its name and the Epic the mark names,
-        in the order given.
-
-    """
-    entries: list[Entry] = [matrix.entry(entry_id) for entry_id in entry_ids]
-    return [
-        {"id": entry.id, "name": entry.name, "approvedBy": epic}
-        for entry in entries
-        if (epic := approved_by(entry)) is not None
-    ]
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def approval_view(matrix: Matrix, bead: str) -> ApprovalView:
-    """List which of an Epic's requirements and features carry the architecture-approved mark.
+    """List which of the matrix content an Epic reaches carries the approved flag.
 
-    An Epic the matrix does not hold raises ``MatrixError`` from ``Matrix.approval_scope``, and an
-    empty beads id raises ``ValueError`` from ``epic_id``.
+    The content is ``matrixtraverse.approval_scope``: the Epic, its requirements and every
+    architecture-side entry it reaches, with the architecture-side relationships between them. An
+    Epic the matrix does not hold raises ``MatrixError``, and an empty beads id raises
+    ``ValueError`` from ``epic_id``.
 
     Args:
         matrix: The matrix.
         bead: The Epic's beads id.
 
     Returns:
-        The Epic; its requirements and the features that serve them, each split into those that
-        carry the mark (with the Epic whose reviews set it) and those that do not, in id order.
+        The Epic; the entries it reaches that carry the flag (with the Epic whose approval set
+        it) and those that do not, in id order; and how many of the relationships between them
+        there are and carry the flag.
 
     """
     epic: EntryId = epic_id(bead)
-    requirements: list[EntryId]
-    features: list[EntryId]
-    requirements, features = matrix.approval_scope(epic)
-    approved_requirements: list[Approval] = _approvals(matrix, requirements)
-    approved_features: list[Approval] = _approvals(matrix, features)
+    scope: ApprovalScope = approval_scope(matrix, epic)
+    approved: list[Approval] = []
+    not_approved: list[EntryId] = []
+    entry_id: EntryId
+    for entry_id in scope.entries:
+        entry: Entry = matrix.entry(entry_id)
+        by: str | None = approved_by(entry)
+        if by is None:
+            not_approved.append(entry_id)
+        else:
+            approved.append({"id": entry.id, "kind": entry.kind, "name": entry.name, "approvedBy": by})
     return {
         "epic": epic,
-        "approvedRequirements": approved_requirements,
-        "notApprovedRequirements": sorted(set(requirements) - {held["id"] for held in approved_requirements}),
-        "approvedFeatures": approved_features,
-        "notApprovedFeatures": sorted(set(features) - {held["id"] for held in approved_features}),
+        "approved": approved,
+        "notApproved": not_approved,
+        "relationships": len(scope.relationships),
+        "approvedRelationships": sum(1 for held in scope.relationships if held.approved is not None),
     }

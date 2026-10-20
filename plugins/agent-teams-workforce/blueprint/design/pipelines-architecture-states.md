@@ -19,14 +19,15 @@ changes are drawn in [The pipelines: elaboration](pipelines-elaboration.md),
 | `S1 --> S2 : event [guard] / effect` | What moves it from one state to another |
 | `A ->> B` / `B -->> A` (sequence) | A call, and its return |
 | `A -) Store` (sequence) | A write to a store, nothing returned |
-| "open - Qn" | Not decided by the owner; listed under "Open questions" at the end |
 | effective, in-review | The state of an arc42 document, in its front matter |
 | approved, verified | The two flags the matrix keeps on its entries and relationships |
 
 Three states are kept apart. The owner: "The approved flag is similar to, but IS NOT the same as
 the `effective` field in arc42." and "The matrix has 2 flag fields that help determine the states
 the information in the matrix. I do not recallk the exact names, but there is one for verified,
-and one for approved." Whether the tooling's existing approval mark is the approved flag is an open question (Q12).
+and one for approved." The matrix keeps them as the `approved` and `verified` members of every entry and
+relationship ([the matrix design](matrix.md), section 1.4); `approved` replaced the earlier
+`architectureApproved` attribute, so there is one record of approval.
 
 ## 1. An arc42 document
 
@@ -263,11 +264,3 @@ numbers"). The matrix records, on each element, the verified flag with the commi
 each later approved change to the Epic that approved it, so a spec reads the last verified point and
 every approved change after it without a scan. Whether v1.0.1 is built before Epic C does not change
 the rule: the spec covers everything since the last verified version, whichever that is.
-
-## Open questions
-
-Q12 is the plan's question for the owner, with the plan's recommendation.
-
-| Question | Where | Recommendation and reason |
-|---|---|---|
-| **Q12.** Is the tooling's existing architecture-approval mark the approved flag? | Legend | Yes: one approved flag on the matrix content an Epic's elaboration reaches. The owner named two flags, one for verified and one for approved; a third would be a second record of approval. |

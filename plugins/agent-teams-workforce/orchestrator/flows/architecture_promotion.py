@@ -3,8 +3,8 @@
 It promotes by rule: when no review returned a finding, or the lead recorded that every item is
 resolved. It sets the documents in review for the Epic effective in their front matter, brings
 their matrix entries up to date so that each mirrors its lifecycle, removes each disagreement a
-document maintainer of this run corrected the losing statement of, sets the architecture-approved
-mark on the Epic's requirements and the features that serve them, commits and pushes the vault
+document maintainer of this run corrected the losing statement of, sets the approved flag on the
+matrix content the Epic reaches, commits and pushes the vault
 when a document changed, and commits and pushes the matrix file. Anything else is a failure with
 a structured cause.
 """
@@ -82,7 +82,7 @@ class Promoted:
     removed: tuple[EntryId, ...]
     """The disagreements removed: settled, and the losing statement corrected in this run."""
     approved: tuple[EntryId, ...]
-    """The Epic's requirements and the features that serve them, which now carry the architecture-approved mark."""
+    """The entries the Epic reaches, which now carry the approved flag with the relationships between them."""
 
 
 def _promote(bead: str, arch: Path, corrected: Sequence[str], added_or_changed: Sequence[str]) -> Promoted:
@@ -92,8 +92,8 @@ def _promote(bead: str, arch: Path, corrected: Sequence[str], added_or_changed: 
     describe what the architect's result adds or changes, is set effective in its front matter;
     then, in one matrix change, the entries of those documents are brought up to date as
     ``atw-matrix sync-documents --paths`` does, each disagreement named that the matrix holds
-    with a ruling is removed, and the Epic's requirements and the features that serve them get
-    the architecture-approved mark (``matrixwrite.approve``, as the script role).
+    with a ruling is removed, and the matrix content the Epic reaches gets the approved flag
+    (``matrixwrite.approve``, as the script role).
 
     Args:
         bead: The Epic.
@@ -104,7 +104,7 @@ def _promote(bead: str, arch: Path, corrected: Sequence[str], added_or_changed: 
 
     Returns:
         The documents set effective, those the matrix does not show as effective afterwards, the
-        disagreements removed, and the requirements and features now approved.
+        disagreements removed, and the entries now approved.
 
     """
     path: Path = matrix_file()
@@ -140,7 +140,7 @@ def _promote(bead: str, arch: Path, corrected: Sequence[str], added_or_changed: 
         tuple(documents),
         tuple(not_effective),
         tuple(removed),
-        (*approved["requirements"], *approved["features"]),
+        tuple(approved["entries"]),
     )
 
 
@@ -294,7 +294,7 @@ def promote(run: StepRun) -> Completion:
         "documents": [*promoted.documents],
         "notEffective": [*promoted.not_effective],
         "removedDisagreements": [*promoted.removed],
-        "architectureApproved": [*promoted.approved],
+        "approved": [*promoted.approved],
     }
     write_json(path, record)
     artifacts: list[Artifact] = [file_artifact(PROMOTED, path)]

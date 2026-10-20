@@ -520,7 +520,10 @@ Notes on the diagram:
 
 - A deterministic step, which runs when the last Story of the Epic closes, sets all of the Epic's
   architecture and relationships verified, because the condition is factual and needs no
-  judgment.
+  judgment. Today it is `atw-matrix verify`, which the driver runs after every Story's merge,
+  before the Story's close: it sets the flag only when every Task of the Epic and every other
+  Story of the Epic is closed, so the merge of the last Story is the one that sets it
+  ([the matrix design](matrix.md), section 1.4.2).
 - Verified is set only on what was built and tested; an entry a later Epic changed stays not
   verified for that change, because verified says built, nothing more.
 - Verification writes only the matrix. It changes no arc42 document; `effective` is the
@@ -528,7 +531,8 @@ Notes on the diagram:
 - What the Epic reaches is followed through the matrix's links (plan item 1.13): its AWS
   resources, their stacks and repositories, the SSM parameters the stacks write and read, and the
   documents related to them.
-- The name of the verified flag is plan question 12.
+- The flags are `approved` and `verified` on every entry and relationship
+  ([the matrix design](matrix.md), section 1.4).
 
 ## 8. The states of a Story through deploy
 
@@ -680,9 +684,6 @@ Q1 to Q16 are the owner's questions from the elaboration plan.
   failure's output and the deploy step that failed name the subject. Reason: the owner: "What I do
   not want is python code deciding which specialists to use" and "Ever agent needs to have a
   reason to be used."
-- **Q12. Is `architectureApproved` the approved flag?** Appears in section 7 (the flag names).
-  Recommendation, as the plan gives it: yes, one approved flag and one verified flag. Reason: the
-  owner named two flags.
 - **Q14. Which checks of upstream steps stay in the build and deploy?** Appears in sections 1
   and 2. Recommendation: the deploy checks nothing the build already did, except that the test
   suite of a shared library runs once more before its package is published. Reason: the owner's

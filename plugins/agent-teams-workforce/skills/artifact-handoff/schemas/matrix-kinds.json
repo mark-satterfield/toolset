@@ -42,15 +42,6 @@
         "duplicateSignals": {"description": "Text patterns that show a consumer is doing this itself.", "type": "array", "items": {"type": "string"}}
       }
     },
-    "architectureApproval": {
-      "description": "The architecture-approved mark: the architecture of this requirement or feature has been through the solutions architect and the architecture reviews and is complete, correct and good, so it can be trusted. Separate from verified, which says what was built passed its tests. Only the script step that promotes an Epic's reviewed architecture sets it, on the Epic's requirements and the features that serve them; a later change to the entry, or to a document that describes it, clears it. Absent means not approved.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["epic"],
-      "properties": {
-        "epic": {"description": "The beads id of the Epic whose architecture reviews passed.", "type": "string", "minLength": 1}
-      }
-    },
     "trdRequirement": {
       "description": "One requirement of an Epic's TRD, by pointer: the Epic whose TRD states it and the requirement's id, which is its heading in that TRD. The TRD file is the one the Epic bead names (its TRD artifact path) and, during the Epic's elaboration, the architecture context's trdPath; the requirement's text is read there and is not copied into the matrix.",
       "type": "object",
@@ -99,8 +90,7 @@
       "required": ["hash"],
       "attributes": {
         "group": {"description": "The ### heading above the requirement.", "type": "string"},
-        "hash": {"description": "The hash of the requirement's own text.", "type": "string"},
-        "architectureApproved": {"$ref": "#/$defs/architectureApproval"}
+        "hash": {"description": "The hash of the requirement's own text.", "type": "string"}
       }
     },
     "feature": {
@@ -109,8 +99,7 @@
       "verifiable": false,
       "required": [],
       "attributes": {
-        "provides": {"description": "What a shared capability provides.", "type": "array", "items": {"$ref": "#/$defs/provides"}},
-        "architectureApproved": {"$ref": "#/$defs/architectureApproval"}
+        "provides": {"description": "What a shared capability provides.", "type": "array", "items": {"$ref": "#/$defs/provides"}}
       }
     },
     "constraint": {

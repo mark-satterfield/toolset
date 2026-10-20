@@ -3,7 +3,7 @@
 The matrix is one JSON file of entries and relationships: Epics and their requirements,
 features, constraints, architecture documents, services, components, infrastructure, events, stacks,
 packages, layers and disagreements, each carrying the side it came from (architecture or
-repository) and, where set, the verified mark. Its shape is
+repository) and, where set, the approved and verified flags. Its shape is
 ``skills/artifact-handoff/schemas/matrix.schema.json`` and its kinds are
 ``skills/artifact-handoff/schemas/matrix-kinds.json``; the file is
 ``ops/sdlc-automation/matrix.json`` in the control repository unless ``--matrix`` or the matrix

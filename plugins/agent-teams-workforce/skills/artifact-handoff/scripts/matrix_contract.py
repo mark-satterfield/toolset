@@ -191,8 +191,17 @@ OPERATOR_ROLE: Final[Role] = ROLE_OPERATOR
 HOME_RELATIONSHIP: Final[RelationshipKind] = REL_HOME_IN
 STACK_KIND: Final[EntryKind] = KIND_STACK
 AUTHORITY_SIDE: Final[Side] = SIDE_ARCHITECTURE
-ENTRY_MEMBERS: Final[frozenset[str]] = frozenset({"aliases", "id", "kind", "name", "purpose", "side", "verified"})
-RELATIONSHIP_MEMBERS: Final[frozenset[str]] = frozenset({"from", "kind", "side", "to", "verified"})
+ENTRY_MEMBERS: Final[frozenset[str]] = frozenset({
+    "aliases",
+    "approved",
+    "id",
+    "kind",
+    "name",
+    "purpose",
+    "side",
+    "verified",
+})
+RELATIONSHIP_MEMBERS: Final[frozenset[str]] = frozenset({"approved", "from", "kind", "side", "to", "verified"})
 PURPOSE_MEMBER: Final = "purpose"
 ENTRY_ID_REFERENCE: Final = "#/$defs/entryId"
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "matrix.schema.json"
@@ -262,11 +271,19 @@ class CommandRule:
 
 
 @dataclass(frozen=True, slots=True)
+class Approved:
+    """The approved flag: the architecture and design of the Epic that reaches it are approved."""
+
+    epic: str
+    """The beads id of the Epic whose architecture and design were approved."""
+
+
+@dataclass(frozen=True, slots=True)
 class Verified:
-    """The one code mark: the code was built, tested and merged."""
+    """The verified flag: every Task of every Story of an Epic was built and tested, with its deployment working."""
 
     commit: str
-    """The merge commit of the Story that verified it."""
+    """The merge commit of the Story whose merge completed the Epic."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -285,8 +302,10 @@ class Entry:
     """One or two sentences that identify the entry."""
     attributes: Mapping[str, JsonValue] = field(default_factory=dict)
     """The attributes the entry's kind declares."""
+    approved: Approved | None = None
+    """The approved flag; None means not approved."""
     verified: Verified | None = None
-    """The verified mark; None means not verified."""
+    """The verified flag; None means not verified."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,8 +321,10 @@ class Relationship:
     """Which side states the relationship."""
     attributes: Mapping[str, JsonValue] = field(default_factory=dict)
     """The attributes the relationship's kind declares."""
+    approved: Approved | None = None
+    """The approved flag; None means not approved."""
     verified: Verified | None = None
-    """The verified mark; None means not verified."""
+    """The verified flag; None means not verified."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -802,6 +823,8 @@ def entry_problems(entry: Entry) -> list[str]:
         problems.append(f"{entry.id}: a {entry.kind} carries no verified mark")
     if entry.verified is not None and not entry.verified.commit:
         problems.append(f"{entry.id}: the verified mark names no commit")
+    if entry.approved is not None and not entry.approved.epic:
+        problems.append(f"{entry.id}: the approved flag names no Epic")
     problems.extend(
         f"{entry.id}: {failure}" for failure in _failures(_entry_validator(entry.kind), dict(entry.attributes))
     )
@@ -849,6 +872,8 @@ def relationship_problems(relationship: Relationship) -> list[str]:
         problems.append(f"{label}: a {relationship.kind} relationship carries no verified mark")
     if relationship.verified is not None and not relationship.verified.commit:
         problems.append(f"{label}: the verified mark names no commit")
+    if relationship.approved is not None and not relationship.approved.epic:
+        problems.append(f"{label}: the approved flag names no Epic")
     problems.extend(
         f"{label}: {failure}"
         for failure in _failures(_relationship_validator(relationship.kind), dict(relationship.attributes))
@@ -933,6 +958,24 @@ def _verified(value: JsonValue, where: str) -> Verified | None:
     return Verified(commit=_string(value.get("commit"), f"{where}: verified.commit"))
 
 
+def _approved(value: JsonValue, where: str) -> Approved | None:
+    """Read the approved flag of an entry or a relationship.
+
+    Returns:
+        The flag, or None when the member is absent.
+
+    Raises:
+        MatrixError: The member is present and is not an object.
+
+    """
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        message: str = f"{where}: approved is not an object"
+        raise MatrixError(message)
+    return Approved(epic=_string(value.get("epic"), f"{where}: approved.epic"))
+
+
 def _typed_entry(raw: Mapping[str, JsonValue], where: str) -> Entry:
     """Build an entry from a JSON object that has the schema's Entry shape.
 
@@ -948,6 +991,7 @@ def _typed_entry(raw: Mapping[str, JsonValue], where: str) -> Entry:
         aliases=_string_tuple(raw.get("aliases"), f"{where}: aliases"),
         purpose=_string(raw.get("purpose"), f"{where}: purpose"),
         attributes={name: value for name, value in raw.items() if name not in ENTRY_MEMBERS},
+        approved=_approved(raw.get("approved"), where),
         verified=_verified(raw.get("verified"), where),
     )
 
@@ -965,6 +1009,7 @@ def _typed_relationship(raw: Mapping[str, JsonValue], where: str) -> Relationshi
         end=EntryId(_string(raw.get("to"), f"{where}: to")),
         side=as_side(_string(raw.get("side"), f"{where}: side")),
         attributes={name: value for name, value in raw.items() if name not in RELATIONSHIP_MEMBERS},
+        approved=_approved(raw.get("approved"), where),
         verified=_verified(raw.get("verified"), where),
     )
 
@@ -1052,11 +1097,21 @@ def _verified_json(verified: Verified) -> dict[str, JsonValue]:
     return {"commit": verified.commit}
 
 
+def _approved_json(approved: Approved) -> dict[str, JsonValue]:
+    """Render an approved flag as a matrix file holds it.
+
+    Returns:
+        The ``approved`` member.
+
+    """
+    return {"epic": approved.epic}
+
+
 def entry_json(entry: Entry) -> dict[str, JsonValue]:
     """Render one entry as a matrix file holds it.
 
     Returns:
-        The common members, the entry's attributes and, when set, the verified mark.
+        The common members, the entry's attributes and, when set, the approved and verified flags.
 
     """
     aliases: list[JsonValue] = list(entry.aliases)
@@ -1069,6 +1124,8 @@ def entry_json(entry: Entry) -> dict[str, JsonValue]:
         "aliases": aliases,
         "purpose": entry.purpose,
     }
+    if entry.approved is not None:
+        rendered["approved"] = _approved_json(entry.approved)
     if entry.verified is not None:
         rendered["verified"] = _verified_json(entry.verified)
     return rendered
@@ -1078,7 +1135,8 @@ def relationship_json(relationship: Relationship) -> dict[str, JsonValue]:
     """Render one relationship as a matrix file holds it.
 
     Returns:
-        The kind, both ends, the side, the relationship's attributes and, when set, the verified mark.
+        The kind, both ends, the side, the relationship's attributes and, when set, the approved and
+        verified flags.
 
     """
     rendered: dict[str, JsonValue] = {
@@ -1088,6 +1146,8 @@ def relationship_json(relationship: Relationship) -> dict[str, JsonValue]:
         "to": relationship.end,
         "side": relationship.side,
     }
+    if relationship.approved is not None:
+        rendered["approved"] = _approved_json(relationship.approved)
     if relationship.verified is not None:
         rendered["verified"] = _verified_json(relationship.verified)
     return rendered

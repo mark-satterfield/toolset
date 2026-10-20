@@ -9,7 +9,8 @@ came from.
 - :func:`dependencies`: the dependency family to any depth, in either direction.
 - :func:`epic_reach`: an Epic to everything its requirements reach, with the links of the Epic
   that have nothing recorded at the other end; :func:`epic_touches`: what of that another Epic
-  could also reach.
+  could also reach; :func:`approval_scope`: the architecture-side part of that, which the
+  approved flag of the Epic covers.
 - :func:`constraints_for`: some entries to the constraints that bind them.
 - :func:`capabilities`: some entries to the shared capabilities the work that builds them must use.
 - :func:`impact`: an entry to everything a change to it reaches.
@@ -168,6 +169,17 @@ class EpicReach:
         found.update(dict.fromkeys(self.stacks))
         found.update(dict.fromkeys(dependency.far for dependency in self.dependencies))
         return list(found)
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalScope:
+    """The matrix content one Epic's elaboration reaches, which the Epic's approval sets the approved flag on."""
+
+    epic: EntryId
+    entries: tuple[EntryId, ...]
+    """The Epic, its requirements and every architecture-side entry it reaches, in id order."""
+    relationships: tuple[Relationship, ...]
+    """Every architecture-side relationship between two of those entries, in the order the matrix holds them."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -685,6 +697,42 @@ def epic_reach(
             if not matrix.outgoing(entry_id, (REL_CORRESPONDS_TO,))
         ),
     )
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def approval_scope(matrix: Matrix, epic: EntryId) -> ApprovalScope:
+    """Name the matrix content an Epic's elaboration reaches, for the approved flag.
+
+    It is the Epic, its requirements, and what :func:`epic_reach` reaches from them that the
+    architecture side states: the features, the documents that describe them or what they reach,
+    the entries reached, their stacks and the far end of every dependency; with every
+    architecture-side relationship that joins two of those. What is in a repository today is a
+    hint and is left out. An Epic the matrix does not hold raises ``MatrixError``.
+
+    Args:
+        matrix: The matrix.
+        epic: The Epic's entry id.
+
+    Returns:
+        The entries and relationships the Epic's approval covers.
+
+    """
+    reach: EpicReach = epic_reach(matrix, epic)
+    reached: dict[EntryId, None] = dict.fromkeys((epic, *reach.served, *reach.entries()))
+    describing: tuple[Relationship, ...]
+    for describing in reach.documents.values():
+        reached.update(dict.fromkeys(relationship.end for relationship in describing))
+    reaching: tuple[Way, ...]
+    for reaching in reach.ways.values():
+        reached.update(dict.fromkeys(way.document for way in reaching if way.document is not None))
+    entries: set[EntryId] = {entry_id for entry_id in reached if matrix.entry(entry_id).side == AUTHORITY_SIDE}
+    joining: list[Relationship] = [
+        relationship
+        for entry_id in sorted(entries)
+        for relationship in matrix.outgoing(entry_id)
+        if relationship.side == AUTHORITY_SIDE and relationship.end in entries
+    ]
+    return ApprovalScope(epic=epic, entries=tuple(sorted(entries)), relationships=tuple(joining))
 
 
 def _heading(relationship: Relationship) -> str:

@@ -16,13 +16,15 @@ writes, so several sessions can record at once and none loses another's change.
 - :func:`move_repository` gives every stack of one repository another repository's name.
 - :func:`commit` commits the matrix file alone in the repository that holds it, and pushes it.
 
-Nothing here sets or clears the verified mark: an entry or a relationship that is added carries
-none, and one that is changed keeps the mark it has.
+Nothing here sets or clears the verified flag: an entry or a relationship that is added carries
+none, and one that is changed keeps the flag it has (``matrixcode`` sets it).
 
-The architecture-approved mark is set by :func:`approve` alone, which only the script role may
-run: the step that promotes an Epic's reviewed architecture runs it for the Epic's requirements
-and the features that serve them. :func:`put` refuses to state the mark. A change to an approved
-entry, or to a document that describes it, clears the mark (``matrixstore.Matrix.put``).
+The approved flag is set by :func:`approve` alone, which only the script role may run: the step
+that promotes an Epic's reviewed architecture and design runs it on the matrix content the Epic
+reaches (``matrixtraverse.approval_scope``). :func:`put` and :func:`link` take attributes only,
+so neither can state a flag. A change to an approved entry or relationship, to a relationship
+an entry starts, or to a document that describes it, clears the flag (``matrixstore.Matrix.put``
+and ``Matrix.link``).
 """
 
 import shutil
@@ -50,6 +52,7 @@ from matrix_contract import (
     REL_DISPUTES,
     REL_PUBLISHES,
     ROLE_SCRIPT,
+    Approved,
     Entry,
     EntryId,
     EntryKind,
@@ -63,15 +66,12 @@ from matrix_contract import (
     relationship_json,
 )
 from matrixstore import (
-    APPROVAL_EPIC,
-    ATTR_ARCHITECTURE_APPROVED,
     ATTR_EXTERNAL_SOURCE,
     DEFAULT_LOCK_WAIT,
     ID_SEPARATOR,
     Matrix,
     MatrixRefusedError,
     RelationshipId,
-    approved_by,
     as_entry_id,
     id_stack,
     kind_of,
@@ -81,6 +81,7 @@ from matrixstore import (
     repository_side_id,
     slug,
 )
+from matrixtraverse import ApprovalScope, approval_scope
 
 NAMED_ID_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_STACK, KIND_PACKAGE, KIND_EVENT})
 """The kinds whose id is the kind and the entry's name as written: a stack name, a distribution name, a detail type."""
@@ -105,7 +106,7 @@ COMMIT_MESSAGE: Final = "chore(matrix): record the matrix"
 UPSTREAM_RANGE: Final = "@{upstream}..HEAD"
 """The commits the branch has that the branch it pushes to does not."""
 APPROVING_ROLE: Final[Role] = ROLE_SCRIPT
-"""The one role that may set the architecture-approved mark: the script step that promotes an Epic's architecture."""
+"""The one role that may set the approved flag: the script step that promotes an Epic's architecture and design."""
 
 type View = dict[str, JsonValue]
 """One entry or one relationship as the command prints it."""
@@ -153,12 +154,14 @@ class ApproveResult(TypedDict):
     """What :func:`approve` did."""
 
     epic: EntryId
-    requirements: list[EntryId]
-    """The Epic's requirements, each now carrying the mark, in id order."""
-    features: list[EntryId]
-    """The features that serve them, each now carrying the mark, in id order."""
+    entries: list[EntryId]
+    """The entries the Epic reaches, each now carrying the flag, in id order."""
+    relationships: int
+    """How many relationships between them now carry the flag."""
     marked: list[EntryId]
-    """Those of them whose mark this call set or changed."""
+    """The entries whose flag this call set or changed."""
+    markedRelationships: int
+    """How many relationships had their flag set or changed by this call."""
 
 
 class MoveResult(TypedDict):
@@ -374,9 +377,9 @@ def put(  # ruff: ignore[too-many-arguments] - One keyword per member of an entr
     join the ones held. A stated attribute replaces the one held, except that the members of an
     object are laid over the held object's and the items of a list join the held list, where an
     object with the ``id`` of a held one replaces it; an attribute stated as null is removed.
-    The verified mark is left as it is. The architecture-approved mark is never stated; a call
-    that changes an approved entry clears it (``Matrix.put``), and ``changed`` then names it. A
-    call that states what the entry already holds changes nothing. An entry that then breaks its
+    The approved and verified flags are never stated. The verified flag is left as it is; a call
+    that changes an approved entry clears its approved flag (``Matrix.put``). A call that states
+    what the entry already holds changes nothing. An entry that then breaks its
     kind raises ``MatrixError`` from ``Matrix.put`` and changes nothing.
 
     Args:
@@ -400,8 +403,7 @@ def put(  # ruff: ignore[too-many-arguments] - One keyword per member of an entr
         The entry's id, whether it was created, what changed and the entry.
 
     Raises:
-        MatrixRefusedError: An attribute is not one the kind declares or is the
-            architecture-approved mark, the id is of another kind,
+        MatrixRefusedError: An attribute is not one the kind declares, the id is of another kind,
             a new entry has no name or a name another entry of the kind answers to on its side,
             the id cannot be built from what is stated, or a put from the repository side states
             another name or purpose for an entry on the architecture side.
@@ -413,12 +415,6 @@ def put(  # ruff: ignore[too-many-arguments] - One keyword per member of an entr
     if stray:
         message = f"a {kind} does not take {', '.join(stray)}; it takes " + (
             ", ".join(sorted(ENTRY_RULES[kind].attributes)) or "no attributes"
-        )
-        raise MatrixRefusedError(message)
-    if ATTR_ARCHITECTURE_APPROVED in stated:
-        message = (
-            f"{ATTR_ARCHITECTURE_APPROVED} is set only by the step that promotes an Epic's reviewed architecture, "
-            "never by a put"
         )
         raise MatrixRefusedError(message)
     key: EntryId = _derived_id(kind, side, name, stack) if entry_id is None else as_entry_id(entry_id)
@@ -637,12 +633,15 @@ def settle(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] -
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def approve(matrix: Matrix, bead: str, role: Role) -> ApproveResult:
-    """Set the architecture-approved mark on an Epic's requirements and the features that serve them.
+    """Set the approved flag on the matrix content an Epic's elaboration reaches.
 
-    Run by the step that promotes an Epic's reviewed architecture, once the reviews pass, in the
-    same matrix change that brings the promoted documents' entries up to date. The mark names
-    the Epic. An entry that already carries the Epic's mark is left as it is. An Epic the matrix
-    does not hold raises ``MatrixError`` from ``Matrix.approval_scope``.
+    Run by the step that promotes an Epic's reviewed architecture and design, once the reviews
+    pass, in the same matrix change that brings the promoted documents' entries up to date, so
+    that the matrix and arc42 are filled out or corrected for the Epic first. The content is
+    ``matrixtraverse.approval_scope``: the Epic, its requirements and every architecture-side
+    entry it reaches, with the architecture-side relationships between them. The flag names the
+    Epic. An entry or relationship that already carries the Epic's flag is left as it is. An Epic
+    the matrix does not hold raises ``MatrixError``.
 
     Args:
         matrix: The matrix, changed in place.
@@ -650,38 +649,41 @@ def approve(matrix: Matrix, bead: str, role: Role) -> ApproveResult:
         role: Who is running it.
 
     Returns:
-        The Epic, its requirements and features, and those whose mark this call set or changed.
+        The Epic, the entries and the count of relationships that carry the flag, and what this
+        call set or changed.
 
     Raises:
-        MatrixRefusedError: The role is not the one that may set the mark.
+        MatrixRefusedError: The role is not the one that may set the flag.
         ValueError: ``bead`` is empty.
 
     """
     message: str
     if role != APPROVING_ROLE:
-        message = f"the role {role} may not set {ATTR_ARCHITECTURE_APPROVED}; only {APPROVING_ROLE} may"
+        message = f"the role {role} may not set the approved flag; only {APPROVING_ROLE} may"
         raise MatrixRefusedError(message)
     if not bead.strip():
         message = "approve needs the Epic's beads id"
         raise ValueError(message)
     epic: EntryId = make_id(KIND_EPIC, bead.strip())
-    requirements: list[EntryId]
-    features: list[EntryId]
-    requirements, features = matrix.approval_scope(epic)
-    unmarked: list[Entry] = [
-        entry
-        for entry in (matrix.entry(entry_id) for entry_id in (*requirements, *features))
-        if approved_by(entry) != bead.strip()
-    ]
-    entry: Entry
-    for entry in unmarked:
-        mark: JsonValue = {APPROVAL_EPIC: bead.strip()}
-        matrix.put(replace(entry, attributes={**entry.attributes, ATTR_ARCHITECTURE_APPROVED: mark}))
+    scope: ApprovalScope = approval_scope(matrix, epic)
+    flag: Approved = Approved(epic=bead.strip())
+    unmarked: list[Relationship] = [held for held in scope.relationships if held.approved != flag]
+    relationship: Relationship
+    for relationship in unmarked:
+        matrix.link(replace(relationship, approved=flag))
+    marked: list[EntryId] = []
+    entry_id: EntryId
+    for entry_id in scope.entries:
+        entry: Entry = matrix.entry(entry_id)
+        if entry.approved != flag:
+            matrix.put(replace(entry, approved=flag))
+            marked.append(entry_id)
     return {
         "epic": epic,
-        "requirements": requirements,
-        "features": features,
-        "marked": [entry.id for entry in unmarked],
+        "entries": list(scope.entries),
+        "relationships": len(scope.relationships),
+        "marked": marked,
+        "markedRelationships": len(unmarked),
     }
 
 

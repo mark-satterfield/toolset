@@ -145,6 +145,7 @@ LIFECYCLE_EFFECTIVE: Final = "effective"
 ITEM_ID: Final = "id"
 """The member that identifies one object of a list attribute, such as one thing a feature provides."""
 VERIFIED_MEMBER: Final = "verified"
+APPROVED_MEMBER: Final = "approved"
 PYPROJECT: Final = "pyproject.toml"
 READING_ALLOWANCE: Final = 240_000
 """The bytes of text one seeding session reads: about 30% of its context."""
@@ -169,7 +170,7 @@ STATED_ID_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_EPIC, KIND_REQUIR
 RESULT_HOLDS: Final = (
     'One JSON object: "entries", a list of {"kind", "name", "aliases", "purpose", "attributes"}, and '
     '"relationships", a list of {"kind", "from", "to", "attributes"}. "from" and "to" are entry ids. An entry '
-    'may state its "id"; otherwise it is built from the kind and the name. Nothing carries "verified".'
+    'may state its "id"; otherwise it is built from the kind and the name. Nothing carries "approved" or "verified".'
 )
 REPOSITORY_RESULT_HOLDS: Final = (
     RESULT_HOLDS + ' A component, an infrastructure entry or a layer found in a repository states "stack", the '
@@ -517,12 +518,14 @@ def _attributes(raw: Mapping[str, JsonValue], where: str) -> dict[str, JsonValue
         The attributes; empty when the item states none.
 
     Raises:
-        MatrixError: ``attributes`` is not an object, or the item carries the verified mark.
+        MatrixError: ``attributes`` is not an object, or the item carries the approved or the
+            verified flag.
 
     """
     message: str
-    if VERIFIED_MEMBER in raw:
-        message = f"{where} carries the verified mark, and nothing is seeded as verified"
+    flagged: list[str] = [member for member in (APPROVED_MEMBER, VERIFIED_MEMBER) if member in raw]
+    if flagged:
+        message = f"{where} carries {' and '.join(flagged)}, and nothing is seeded as approved or verified"
         raise MatrixError(message)
     stated: JsonValue = raw.get("attributes")
     if stated is None:

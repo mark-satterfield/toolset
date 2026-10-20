@@ -100,7 +100,7 @@ After a successful run:
   roll-up), loaded by `scoring._load_wsjf`.
 - Agent context: the matrix, read by the judging sessions with `atw-matrix` as evidence of what
   is already decided or built (`epic <id> --closure` with each document's `lifecycle`,
-  `approval --epic <id>`, `node <id>` with its `verified` mark); a document heading or code file
+  `approval --epic <id>`, `node <id>` with its `approved` and `verified` flags); a document heading or code file
   only where an entry the matrix returns names it.
 - A Task's content: its bead, which the judging session reads by id with `beads-contract.py
   fingerprint-batch <ids> --scope judging --explain`, the content its judging fingerprint hashes.

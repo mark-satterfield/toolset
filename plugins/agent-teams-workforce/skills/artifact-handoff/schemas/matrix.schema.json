@@ -42,13 +42,22 @@
       "description": "Which side a fact came from. architecture: beads, a PRD or an arc42 document states it, or the architect designed it; this side is the authority. repository: it was read from what is in a repository today; it is a hint.",
       "enum": ["architecture", "repository"]
     },
+    "Approved": {
+      "description": "The approved flag: the architecture and design of the Epic that reaches this entry or relationship are approved, and the matrix and arc42 are filled out or corrected for that Epic. Similar to, but not the same as, the effective lifecycle of an arc42 document. Absent means not approved; nothing seeded is approved. A later change to the entry or relationship clears it until an Epic that reaches it is approved again.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["epic"],
+      "properties": {
+        "epic": {"description": "The beads id of the Epic whose architecture and design were approved.", "type": "string", "minLength": 1}
+      }
+    },
     "Verified": {
-      "description": "The one code mark. Absent means not verified.",
+      "description": "The verified flag: every Task of every Story of an Epic that built this was built and tested, including its CI/CD and CDK, with its deployment working. Absent means not verified; nothing seeded is verified.",
       "type": "object",
       "additionalProperties": false,
       "required": ["commit"],
       "properties": {
-        "commit": {"description": "The merge commit of the Story that verified it.", "type": "string", "minLength": 1}
+        "commit": {"description": "The merge commit of the Story whose merge completed the Epic.", "type": "string", "minLength": 1}
       }
     },
     "Entry": {
@@ -62,6 +71,7 @@
         "side": {"$ref": "#/$defs/side"},
         "aliases": {"description": "Other names the entry is known by.", "type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
         "purpose": {"description": "One or two sentences that identify the entry.", "type": "string"},
+        "approved": {"$ref": "#/$defs/Approved"},
         "verified": {"$ref": "#/$defs/Verified"}
       }
     },
@@ -74,6 +84,7 @@
         "from": {"$ref": "#/$defs/entryId"},
         "to": {"$ref": "#/$defs/entryId"},
         "side": {"$ref": "#/$defs/side"},
+        "approved": {"$ref": "#/$defs/Approved"},
         "verified": {"$ref": "#/$defs/Verified"}
       }
     }

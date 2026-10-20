@@ -5,14 +5,16 @@ builds in the matrix's ids, under its ``matrix_elements`` key. This module reads
 through ``bd`` (:func:`read_tasks`), matches the ids they carry against the matrix's entries and
 stores nothing. It answers three questions, each one ``atw-matrix`` command:
 
-- :func:`built` (``built --story``): the stacks and entries a Story built, for the verified mark.
+- :func:`built` (``built --story``): the stacks and entries a Story built, for the verified flag.
+- :func:`epic_work`: the Epic above a Story, with every Story and Task of that Epic and whether
+  each is closed, which decides when the Epic's verified flag is set.
 - :func:`work` (``work --id``): the open Tasks that name an entry or, for a stack, an entry the
   stack holds.
 - :func:`affected` (``affected --id``): the open Tasks a change to an entry affects.
 """
 
 import sys
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, NotRequired, TypedDict
@@ -65,8 +67,19 @@ class TaskBead:
     """The ids the Task's ``matrix_elements`` key carries, in the order stated."""
 
 
+@dataclass(frozen=True, slots=True)
+class EpicWork:
+    """The Epic above one Story, with every Story and Task of that Epic."""
+
+    epic: str
+    stories: Mapping[str, bool]
+    """Each Story of the Epic, by beads id, with whether it is closed."""
+    tasks: tuple[TaskBead, ...]
+    """Every Task, of any Epic, as :func:`read_tasks` reads them."""
+
+
 class VerifiedMark(TypedDict):
-    """The verified mark, as a command prints it."""
+    """The verified flag, as a command prints it."""
 
     commit: str
 
@@ -141,18 +154,41 @@ def read_tasks(control: Path | None = None) -> list[TaskBead]:
             one the driver's environment names.
 
     Returns:
+        The Tasks, closed ones included, in id order. Beads that cannot be read, or a Task whose
+        metadata is not readable, raises ``MatrixError``.
+
+    """
+    return _tasks_of(_load(control))
+
+
+def _load(control: Path | None) -> beadgraph.Graph:
+    """Read the tracker once.
+
+    Returns:
+        The beads graph.
+
+    Raises:
+        MatrixError: Beads could not be read.
+
+    """
+    try:
+        return beadgraph.load(control)
+    except beadgraph.GraphError as error:
+        message: str = f"cannot read the Task beads: {error}"
+        raise MatrixError(message) from error
+
+
+def _tasks_of(graph: beadgraph.Graph) -> list[TaskBead]:
+    """Reduce every Task of a beads graph to what the questions need.
+
+    Returns:
         The Tasks, closed ones included, in id order.
 
     Raises:
-        MatrixError: Beads could not be read, or a Task's metadata is not readable.
+        MatrixError: A Task's metadata is not readable.
 
     """
     message: str
-    try:
-        graph: beadgraph.Graph = beadgraph.load(control)
-    except beadgraph.GraphError as error:
-        message = f"cannot read the Task beads: {error}"
-        raise MatrixError(message) from error
     tasks: list[TaskBead] = []
     record: JsonObject
     for record in graph.records:
@@ -178,6 +214,39 @@ def read_tasks(control: Path | None = None) -> list[TaskBead]:
             ),
         )
     return sorted(tasks, key=lambda task: task.id)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def epic_work(story: str, control: Path | None = None) -> EpicWork:
+    """Read the Epic above a Story, with every Story and Task of it, from one read of beads.
+
+    Args:
+        story: The Story's beads id.
+        control: The control repository, whose beads database holds them; None reads the one
+            the driver's environment names.
+
+    Returns:
+        The Epic, each of its Stories with whether it is closed, and every Task.
+
+    Raises:
+        MatrixRefusedError: The Story is not in beads, or has no Epic above it.
+
+    """
+    graph: beadgraph.Graph = _load(control)
+    wanted: str = story.strip()
+    message: str
+    if wanted not in graph.beads:
+        message = f"beads holds no Story {wanted!r}"
+        raise MatrixRefusedError(message)
+    epic: beadgraph.Bead | None = graph.epic_of(wanted)
+    if epic is None:
+        message = f"the Story {wanted} has no Epic above it"
+        raise MatrixRefusedError(message)
+    return EpicWork(
+        epic=epic.id,
+        stories={bead.id: bead.closed for bead in graph.descendants(epic.id) if bead.kind == STORY_TYPE},
+        tasks=tuple(_tasks_of(graph)),
+    )
 
 
 def _row(entry: Entry, tasks: Sequence[str]) -> BuiltEntry:
