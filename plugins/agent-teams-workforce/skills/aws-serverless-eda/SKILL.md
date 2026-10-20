@@ -269,7 +269,7 @@ For detailed implementation patterns with full code examples, see the reference 
 
 The reference files hold some TypeScript examples; SkillSpoke writes the same constructs in Python CDK and the handlers in Python.
 
-> **Important**: Every resource name in CDK code (`rest_api_name`, `function_name`, `table_name`, `queue_name`, state machine and stack names, SSM parameter names) comes from the project's naming command, never typed by hand and never left for CDK to generate (see the `resource-naming` skill). When `printenv ATW_NAMING_COMMAND` prints nothing, say so in your result and leave the name unmade.
+> **Important**: How CDK code names resources (`rest_api_name`, `function_name`, `table_name`, `queue_name`, state machine and stack names, SSM parameter names) is the physical-name rule of the `cdk-coding` skill. When `printenv ATW_NAMING_COMMAND` prints nothing, say so in your result and leave the name unmade.
 
 ## Best Practices
 
