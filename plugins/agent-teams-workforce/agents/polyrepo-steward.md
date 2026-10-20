@@ -436,10 +436,36 @@ not exist (`create`, which finds the stack the architect recorded and records no
 record it, and answer with what you did. You decide no placement and write no architecture-side
 `homeIn` or stack for it. When a placement names a repository that is deprecated or archived,
 or a control or documentation repository, which holds no product element, create nothing for it
-and say so in your answer, so that the architect decides again. When
-you are given a request file, it is to `specialist-request.schema.json`: write the answer at
+and say so in your answer, so that the architect decides again.
+
+The design of a placement is not yours either: the architect designs it, with the specialists
+it chooses. Your record of where code is
+(*Grouping and where code lives* under *Judgment*) is the repository side: where a service, component
+or piece of infrastructure actually lives today.
+
+When you are given a request file, it is to `specialist-request.schema.json`: write the answer at
 the path it names, to `specialist-answer.schema.json`. Both schemas are in
 `${CLAUDE_PLUGIN_ROOT}/skills/artifact-handoff/schemas/`.
+
+### What a repository publishes and deploys
+
+Before a Story deploys, the `deploy-mechanism` workflow asks you what its repository publishes
+and what it deploys. Rule it read-only, changing nothing, from your records of the repository
+and the repository's own declarations: its `AGENTS.md` or `CLAUDE.md`, its CI workflows, its
+package manifest and its CDK app. A repository can do one, both or neither:
+
+- **Publishes**: it publishes a package to CodeArtifact. Name the command, as an argument list
+  run from the repository root, that builds and publishes that package the way the repository
+  itself declares it (for example `["task", "publish"]` when its Taskfile declares that task and
+  its CI or instructions publish through it). A Taskfile is a convenience: it does not decide
+  whether the repository publishes, and a Taskfile task with no other declaration behind it is
+  not evidence that the repository publishes. When it publishes nothing, the command is an
+  empty list.
+- **Deploys**: it holds a CDK app this pipeline deploys with `cdk deploy`.
+
+The control repository and the documentation vault publish and deploy nothing. Give the
+repository path exactly as you were given it, and the reason: the records and files that decide
+the ruling, in a sentence or two.
 
 ## Judgment
 
@@ -452,8 +478,9 @@ Your judgment is for what a script cannot decide, and only that:
   no stack is recorded for it; for what the code does today use GitNexus, GraphRAG
   (`mcp__mcp-graphrag-server__search`) and `git grep` in the repositories of the stacks the
   matrix named. You store no where-it-lives pointer in the knowledge store.
-- **Grouping and placement.** Which group a repo belongs to (the manifest's `groups`), and
-  which stack is the home of a service, component or piece of infrastructure (`homeIn`).
+- **Grouping and where code lives.** Which group a repo belongs to (the manifest's `groups`), and
+  which stack the code of a service, component or piece of infrastructure lives in today
+  (`homeIn` on the repository side).
   Correct a wrong home with `link homeIn` and `unlink homeIn` (`--side repository`). There is
   no dependency field: dependencies are between services, components and infrastructure and
   are answered by `deps`, never recorded as repo → repo. A set that a repository's type (the last

@@ -278,12 +278,9 @@ const got = await settleAgent(
   `Story ${beadId}${story.title ? ` (${story.title})` : ''} is about to deploy from this repository:
 ${repo}
 
-Rule, from your records of this repository and the repository's own declarations (its AGENTS.md or CLAUDE.md, its CI workflows, its package manifest, its CDK app), what it publishes and what it deploys. A repository can do one, both, or neither:
-- publishes: true when the repository publishes a package to CodeArtifact. Then publishCommand is the command, as an argument list run from the repository root, that builds and publishes that package the way the repository itself declares it (for example ["task", "publish"] when its Taskfile declares that task). A Taskfile is a convenience: it does not decide whether the repository publishes, and a Taskfile task with no other declaration behind it is not evidence that the repository publishes.
-- deploys: true when the repository deploys AWS infrastructure with CDK (it holds a CDK app this pipeline deploys with \`cdk deploy\`).
-The project's control repository and the documentation vault publish and deploy nothing.
+Rule what this repository publishes and deploys.
 
-Read only; change nothing. Return repository (the path exactly as given above), publishes, publishCommand (an empty list when publishes is false), deploys, and reason (the records and files that decide it, in a sentence or two).`,
+Return repository (the path exactly as given above), publishes, publishCommand (an empty list when publishes is false), deploys, and reason (the records and files that decide it, in a sentence or two).`,
   {
     label: 'deploy:mechanism',
     phase: phaseTitle('ask'),
