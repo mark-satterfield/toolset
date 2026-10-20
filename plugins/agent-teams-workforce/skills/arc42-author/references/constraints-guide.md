@@ -24,4 +24,5 @@ every later design without the owner having imposed it.
 - A design that would need a constraint to change does not change it. The agent reports the
   constraint, the design that conflicts with it and the reason, to its caller, who takes it to the
   owner.
-- A reviewer checks unapproved content against section 2 and reports any conflict as a finding.
+- The solutions architect checks unapproved content against section 2 before it approves it, and
+  settles or reports any conflict.

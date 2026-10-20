@@ -38,8 +38,8 @@ non-UML types), the Mermaid kind and conventions for each, and the rendered-read
 its required verification — render every diagram to PNG, look at it, fix until nothing
 overlaps. Load it and follow it for every UML view; this skill adds the UML semantics. Record
 rendering, visual readability and semantic self-checks separately in the caller's result schema.
-A successful parse is not a readability check; unavailable inspection is reported, not passed. Consumed by: the assigned architecture reviewer and architecture-decider — check the
-current view evidence before approval; self-checks do not replace their independent review.
+A successful parse is not a readability check; unavailable inspection is reported, not passed. Consumed by: aws-solutions-architect, which reviews and approves the architecture, and architecture-decider — check the
+current view evidence before approval.
 
 ## Workflow
 

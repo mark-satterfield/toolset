@@ -48,7 +48,7 @@ The PRD and portfolio workflows run their commands and accept agent files throug
 |---|---|---|---|
 | architecture context: `<arch-work>/context.json` | step `prd_to_spec.open_run` | `aws-solutions-architect` (as `context`); the architecture steps | `architecture-context.schema.json` |
 | architecture state: `<arch-work>/state.json` | `aws-solutions-architect` | `trd-author`; `aws-solutions-architect` | `architecture-state.schema.json` |
-| architecture result: `<arch-work>/result.json` | `aws-solutions-architect` | the check step; the reviewers; `architecture-team-lead`; the span step | `architecture-result.schema.json` |
+| architecture result: `<arch-work>/result.json` | `aws-solutions-architect` | the check step; `architecture-team-lead`; the span step | `architecture-result.schema.json` |
 | specialist request | `aws-solutions-architect`; `architecture-team-lead` | the design specialist, diagram author or `polyrepo-steward` asked | `specialist-request.schema.json` |
 | specialist answer | the agent asked | `aws-solutions-architect`; `architecture-team-lead` | `specialist-answer.schema.json` |
 | TRD request | `aws-solutions-architect` | `trd-author` | `trd-request.schema.json` |
@@ -57,10 +57,9 @@ The PRD and portfolio workflows run their commands and accept agent files throug
 | write result | `architecture-maintainer` | `aws-solutions-architect` | `write-result.schema.json` |
 | architecture documents (views, standards and policies): `<arch>/arc42/**` except section 2, and the detailed architecture `<arch>/detailed/**` | `architecture-maintainer` | the architecture team, `trd-author`, the spec authors | `skills/arc42/references/arc42-section-model.md`; `document-front-matter.schema.json#/$defs/ArchitectureView` and `#/$defs/ArchitectureStandard`; the architecture and design criteria of `skills/effective-architecture/review-standard.md` |
 | check result: `<arch-work>/checks/<step id>/check.json` | the check step | `aws-solutions-architect` (as `findings`) | `check-result.schema.json` |
+| review log: `<arch-work>/review-log.json` (the context's `reviewLogPath`) | `aws-solutions-architect` | the check step (`review_log.problems`); the promotion step, which files it at `<arch>/review-logs/<epic id>.json` and links it from the Epic's matrix entry as `reviewLog` | `skills/log-architecture-review/schemas/review-log.schema.json` |
 | review scope: `<arch-work>/checks/<step id>/review-scope.json` | the check step (what `atw-matrix review-scope --epic` prints) | the promotion step | `scripts/portfolio/matrixreview.py` `ReviewScope` |
 | unlinked links: `<arch-work>/checks/<step id>/unlinked.json` | the check step (what `atw-matrix epic <id> --unlinked` prints) | none: evidence | `scripts/portfolio/matrixquery.py` `EpicView` |
-| reviewer scope: `<arch-work>/checks/<step id>/review-scope.<reviewer>.json` | the check step | that reviewer (as `review scope`); the script | `reviewer-scope.schema.json` |
-| scope review: `<arch-work>/reviews/<reviewer>.json` | each selected reviewer | `architecture-team-lead`; `aws-solutions-architect`; the promotion step | `scope-review.schema.json` |
 | lead routing: `<arch-work>/routing-<step>.json` | `architecture-team-lead` | the script | `lead-routing.schema.json` |
 | architecture question | `architecture-team-lead` | `architecture-decider` | `architecture-question.schema.json` |
 | architecture ruling: `<arch-work>/ruling-<step>.json` | `architecture-decider` | `architecture-team-lead`; `aws-solutions-architect` | `architecture-ruling.schema.json` |
@@ -71,7 +70,7 @@ The PRD and portfolio workflows run their commands and accept agent files throug
 
 | Artifact | Writer | Readers | Contract |
 |---|---|---|---|
-| TRD: `<work>/trd.md` | `trd-author` | `trd-validator`; the spec authors, reviewer and decider; the Story and Task journals | `document-front-matter.schema.json#/$defs/TrdDocument`, each requirement `architecture-result.schema.json#/$defs/TrdRequirement`; the technical-requirement criteria of `skills/effective-architecture/review-standard.md` |
+| TRD: `<work>/trd.md` | `trd-author` | `aws-solutions-architect`; the spec authors, reviewer and decider; the Story and Task journals | `document-front-matter.schema.json#/$defs/TrdDocument`, each requirement `architecture-result.schema.json#/$defs/TrdRequirement`; the technical-requirement criteria of `skills/effective-architecture/review-standard.md` |
 
 ## Repository span
 

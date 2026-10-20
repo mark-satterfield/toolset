@@ -43,27 +43,27 @@ its own.
 
 ## Architecture Analysis
 
-`aws-solutions-architect` has single responsibility for the architecture a PRD needs. It starts a design specialist or a diagram author for one question or one bounded task, `trd-author` for the TRD and `architecture-maintainer` to write its decisions into arc42. A script selects the reviewers by rule; `architecture-team-lead` routes what a review found, and `architecture-decider` rules on what the team could not settle. `built-version` starts the maintainer and the conformance reviewer to correct the effective documents from what a Story built.
+`aws-solutions-architect` has single responsibility for the architecture a PRD needs. It starts a design specialist or a diagram author for one question or one bounded task, `trd-author` for the TRD and `architecture-maintainer` to write its decisions into arc42. It reviews and approves its own architecture and records the proof in the Epic's review log; `architecture-team-lead` routes what it could not settle, and `architecture-decider` rules on what the team could not settle. `built-version` starts the maintainer and the conformance reviewer to correct the effective documents from what a Story built.
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| aws-solutions-architect | execute | Holds single responsibility for the architecture a PRD needs, from the first read of the PRD until the architecture and the TRD are ready for review; starts only the agents a gap needs. |
-| architecture-team-lead | orchestrate | Routes what a review found or what the solutions architect could not settle, so that the team settles it with the least further work. Exists only when there is something to route. |
+| aws-solutions-architect | execute | Holds single responsibility for the architecture a PRD needs, from the first read of the PRD until the architecture and the TRD are designed, reviewed and approved, with the review log that proves how; starts only the agents a gap needs. |
+| architecture-team-lead | orchestrate | Routes what the solutions architect could not settle, so that the team settles it with the least further work. Exists only when the architect's result is unsettled. |
 | integration-pattern-architect | plan | Answers a question or does a bounded piece of design for the solutions architect on service boundaries, synchronous and event integration, and delivery and failure behaviour. |
 | persistence-architecture-specialist | plan | Answers a question or does a bounded piece of design for the solutions architect on which block owns each store, what it holds, consistency and data lifecycle. |
 | security-architecture-designer | plan | Answers a question or does a bounded piece of design for the solutions architect on trust boundaries, identities, authorization, IAM, encryption and threat mitigation. |
 | cdk-infrastructure-designer | plan | Answers a question or does a bounded piece of design for the solutions architect on repositories, CDK stacks, where each block runs and shared infrastructure. |
 | event-schema-designer | execute | Answers a question or does a bounded piece of design for the solutions architect on event types, their publishers, consumers and delivery paths. |
 | api-contract-designer | execute | Answers a question or does a bounded piece of design for the solutions architect on REST interfaces, which block exposes each, who may call it and how it stays compatible. |
-| cost-architecture-reviewer | plan | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: the cost of new billable resources. |
+| cost-architecture-reviewer | plan | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: the cost of new billable resources. No workflow currently dispatches it. |
 | bounded-context-mapper | plan | Answers a question or does a bounded piece of design for the solutions architect on bounded contexts, domain responsibilities and service ownership. |
 | domain-event-modeler | execute | Answers a question or does a bounded piece of design for the solutions architect on domain events as facts, who owns each and what triggers it. |
 | ubiquitous-language-writer | execute | Captures the ubiquitous language for the bounded context: terms, definitions, and usage rules shared by the domain model and the code. |
-| architecture-pattern-challenger | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: new patterns and the choices made between alternatives. |
-| architecture-tradeoff-skeptic | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: the trade-offs behind the choices made. |
-| architecture-boundary-guardian | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: ownership and boundaries, one home per fact, and readable diagrams. |
-| cost-impact-reviewer | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: changed billable limits and volumes. |
-| operational-readiness-reviewer | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: how new runtime resources are operated. |
+| architecture-pattern-challenger | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: new patterns and the choices made between alternatives. No workflow currently dispatches it. |
+| architecture-tradeoff-skeptic | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: the trade-offs behind the choices made. No workflow currently dispatches it. |
+| architecture-boundary-guardian | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: ownership and boundaries, one home per fact, and readable diagrams. No workflow currently dispatches it. |
+| cost-impact-reviewer | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: changed billable limits and volumes. No workflow currently dispatches it. |
+| operational-readiness-reviewer | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: how new runtime resources are operated. No workflow currently dispatches it. |
 | architecture-decider | approve | Rules on a matter the architecture team could not settle, between the positions and from the evidence they carry. The last resort. |
 | architecture-impact-analyst | test | Judges what an architecture change reaches: given the views an integration changed, created or deleted, finds every Epic, Story, Task and document citing those views or showing their elements, and rules each unaffected / not yet elaborated / elaborated-but-unbuilt / already-built. Read-only. No workflow currently dispatches it. |
 | architecture-fitness-function-author | execute | Defines testable assertions from the owner's constraints and the patterns the effective architecture establishes, such as 'no service reads another service's table'. No workflow currently dispatches it. |
@@ -73,14 +73,13 @@ its own.
 | architecture-maintainer | execute | Writes the solutions architect's decisions into the arc42 documents, each fact in its one home with links from the documents that need it, and corrects the documents from what a Story built. Never writes section 2. |
 | architecture-conformance-reviewer | test | In `built-version`, checks one correction of the effective documents from what a Story built and reports findings without fixing them: each element reads as the built documents show it, every document the catalog lists for a changed element was updated, and no contradicting content was left. |
 | graphql-schema-designer | execute | Answers a question or does a bounded piece of design for the solutions architect on GraphQL interfaces, which block exposes and resolves each operation and who may call it. |
-| failure-mode-analyst | plan | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: failure, retry and recovery behaviour. |
+| failure-mode-analyst | plan | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: failure, retry and recovery behaviour. No workflow currently dispatches it. |
 
 ## TRD Authoring (Phase 2.5)
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
 | trd-author | execute | Writes and keeps current the Technical Requirements Document at the solutions architect's request: the technical obligations of this PRD and its architecture, each with a checkable value, a source and the element it applies to. It cites the architecture rather than restating it. |
-| trd-validator | test | Reviews the unapproved TRD requirements of one Epic against the technical-requirement criteria. |
 | prd-trd-traceability-verifier | test | Builds and checks the TRD's source traceability matrix: every TRD requirement anchored to a PRD requirement or an architecture view, every PRD requirement needing elaboration answered, genuine scope drift flagged. Not a 1:1 relation. No workflow currently dispatches it. |
 | trd-decider | approve | Rules on competing TRD approaches, maker-checker deadlocks, and checker conflicts routed by whoever delegated the task. No workflow currently dispatches it. |
 

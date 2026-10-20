@@ -68,6 +68,8 @@
         "workflows/wsjf-scoring.js",
         "skills/effective-architecture/*",
         "skills/effective-architecture/**/*",
+        "skills/log-architecture-review/*",
+        "skills/log-architecture-review/**/*",
         "skills/arc42*/*",
         "skills/arc42*/**/*"
       ],

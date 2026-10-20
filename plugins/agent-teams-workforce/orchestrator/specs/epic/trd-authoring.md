@@ -7,8 +7,8 @@ confirm step).
 
 `trd-author` writes the TRD at the request of `aws-solutions-architect`, at the path the context
 file names (`<work>/trd.md`). It is drafted early and updated in place as the architecture is
-settled, and it is reviewed with the architecture: `trd-validator` is among the reviewers the
-criteria file selects.
+settled, and the architect reviews and approves it with the architecture, against the
+technical-requirement criteria.
 
 The architect starts `trd-author` inside its own session and records the request file it wrote on
 the helper's step. A `trd-author` step left running when the architect's session stopped is

@@ -17,8 +17,9 @@ No step of an Epic's journal runs `gate-enforce`, and no Epic step starts `phase
 `advantage-evaluator` or `constitutional-agent`. The driver names it in no module, and it is not a
 composite the driver dispatches.
 
-Review and approval inside elaboration are steps of the Epic's journal: the architecture reviewers
-selected by rule, `architecture-team-lead` and `architecture-decider`
+Review and approval inside elaboration are steps of the Epic's journal: the solutions architect's
+own review and approval, checked by the architecture check step, `architecture-team-lead` and
+`architecture-decider` for what the architect could not settle
 (`<orch>/specs/epic/architecture.md`), and the spec review with `spec-decider`
 (`<orch>/specs/epic/spec-authoring.md`).
 

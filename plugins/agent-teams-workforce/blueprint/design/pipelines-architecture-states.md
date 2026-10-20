@@ -51,7 +51,7 @@ stateDiagram-v2
     effective --> in_review : an Epic's elaboration changes it, for any reason
     effective --> in_review : a build or deploy finds it wrong / architecture-maintainer corrects it
     effective --> effective : read by any pipeline step / approved as of that moment
-    in_review --> in_review : review findings / the document is corrected
+    in_review --> in_review : the architecture check finds a problem / the document is corrected
     state "in-review" as in_review
 ```
 

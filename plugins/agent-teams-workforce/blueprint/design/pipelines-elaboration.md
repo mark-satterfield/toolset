@@ -69,11 +69,11 @@ flowchart TD
     design["Higher-level architecture, the architecture that goes in arc42, with specialists and the AWS tools - section 2"]
     design --> trdUpdate["TRD architecture update: technical or architecture decisions that impact the detailed design - section 4"]
     trdUpdate --> detailed["Detailed design, reading the TRD, with specialists and the AWS tools - section 2"]
-    detailed --> record["Record how decisions were made, best practices, security and Well-Architected review - section 2"]
+    detailed --> record["Review log: the AWS tools that reviewed each AWS resource, best practices, security, Well-Architected review, every decision's options and reason - section 2"]
     record --> repos["Repositories and stacks for every resource and component - section 5"]
-    repos --> review["Architecture reviews"]
-    review --> ok{"Architecture and design approved?"}
-    ok -->|"no: findings - the architect settles each, disputed ones ruled once by architecture-decider"| detailed
+    repos --> review["The solutions architect reviews and approves its own architecture against the criteria"]
+    review --> ok{"Does the check pass the result and the review log?"}
+    ok -->|"no: each problem goes back to the architect as a correction"| detailed
     ok -->|"yes"| writes["arc42 documents set effective. Matrix filled out or corrected for the Epic and set approved, verified stays false"]
     writes --> archChange{"Did the Epic need an architecture change?"}
     archChange -->|"yes"| spec["Specs written from what is not yet verified - section 6"]
@@ -94,9 +94,14 @@ Notes on the diagram:
   initial write is "one of the very first steps"; the update comes "Once the architecture docs are
   completed (this would be the higher-level architecture that would be in `arc42` that isn't
   considered detail or design)". Section 4 shows both.
-- The reviews run once. The architect settles each finding, and a finding the architect disputes
-  goes once to `architecture-decider`, whose ruling stands; there are no further rounds, because
-  the owner saw review loops make "A simple request or task ... take hours to complete".
+- The solutions architect is the reviewer; no other agent reviews the architecture. The owner:
+  "The solutions architect is the reviewer. I do not want to introduce new reviewers in for
+  architecture. I already took out reviewers." What the owner requires instead is proof: "what I
+  do want is some sort of proof that best practices and well-architected principles and security
+  practces were consulted and followed. I want every decision between 2 options to have a
+  reason. I don't want architecture going off instinct." The review log is that proof, and the
+  check step refuses a result whose log lacks it. A matter the architect cannot settle goes to
+  `architecture-team-lead`, and from there once to `architecture-decider`, whose ruling stands.
 
 ## 2. The architecture stage
 
@@ -130,7 +135,6 @@ sequenceDiagram
     participant SP as Specialist agents
     participant AWS as aws-mcp, cost analysis, other MCP servers and skills
     participant TRD as trd-author
-    participant RV as Architecture reviewers
     participant DEC as architecture-decider
     box Stores
         participant PRD as PRD file (vault)
@@ -167,21 +171,15 @@ sequenceDiagram
         SA->>AWS: blesses or reviews every AWS resource the design defines
         AWS-->>SA: review result, cost
     end
-    alt open - Q5 - where the record lives
-        SA-)A42: record - how decisions were made, best practices, security best practices, Well-Architected review
-    else
-        SA-)WF: the same record, logged
-    end
+    SA-)WF: review log beside the result - the AWS tools, MCP servers, skills and specialists that reviewed each AWS resource, best practices, security best practices, Well-Architected review, every decision's options and reason
     SA-)A42: new and changed arc42 documents, in-review
     SA-)DA: new and changed detailed architecture and design documents, in-review
     SA-)MX: new and changed entries and relationships, not approved, not verified
-    SA->>RV: the unapproved architecture, design and TRD content of the Epic
-    RV-->>SA: findings
-    opt the architect disputes a finding
-        SA->>DEC: the finding and the architect's reason
+    Note over SA,WF: the architect reviews and approves its own architecture. The check step refuses a result whose review log is incomplete
+    opt a matter the architect cannot settle
+        SA->>DEC: through architecture-team-lead, both positions and their evidence
         DEC-->>SA: ruling, which stands
     end
-    Note over SA,RV: one review pass. The architect settles every finding, then approves
     SA-)A42: documents approved, set effective, by the architecture agent responsible for approving the architecture
     SA-)MX: the Epic's entries and relationships filled out or corrected, set approved. verified stays false
     SA-->>WF: approved architecture and design, document and matrix ids
@@ -189,11 +187,17 @@ sequenceDiagram
 
 Notes on the diagram:
 
-- The review step comes from [requirements/matrix.md](../requirements/matrix.md) R57 (the
-  architecture "has been through the solutions architect and the architecture reviews"). The
-  architect names the review subjects its design raises (for example cost, security, failure
-  modes), each with its reason, and the workflow sends the design to the reviewer for each named
-  subject, because every agent needs a reason to be used, the same as the specialists in section 3.
+- The review is the solutions architect's own, against the criteria of
+  `skills/effective-architecture/review-standard.md`; no reviewer agent is started. Its record is
+  the Epic's review log (the `log-architecture-review` skill, `schemas/review-log.schema.json`),
+  written at the architecture context's `reviewLogPath` beside the result. The check step runs the
+  skill's check on it: a decision without two options, its choice or its reason, an AWS resource
+  the design adds or changes with no review entry, or a design with an AWS resource and no
+  Well-Architected review goes back to the architect as a correction. The promotion step files the
+  log in the vault at `<architectureRoot>/review-logs/<epic id>.json`, commits it with the Epic's
+  architecture, and links it from the Epic's matrix entry (attribute `reviewLog`). arc42 holds no
+  decision records, so the log keeps the documents to design facts while every decision and
+  review stays findable.
 - How the architect reaches a specialist is drawn in section 3: in its own session for a
   question or quick work, or by naming the agent and its request in its result for work outside
   its session.
@@ -211,7 +215,7 @@ Notes on the diagram:
   architecture and design level is homed in arc42 and the detailed architecture under
   `detailed/`, and holds the detailed design criteria (routes, store keys and data models, event
   values, names, idempotency keys and timeouts, a component's classes and object models) that
-  the solutions architect answers and the architecture reviewers check. Specialists return each
+  the solutions architect answers, and reviews and approves its own design against. Specialists return each
   decision with where it belongs (an arc42 section or a `detailed/` folder), the architect's
   result names each fact's home document, and `architecture-maintainer` writes it there; `atw-matrix
   sync-documents` records the documents. There is no free-text channel of details for the spec
@@ -579,11 +583,3 @@ Decisions in this diagram, each for one reason:
 - Build dependencies come from the matrix's links, so no scan is needed (plan item 1.13), and are
   recorded as beads dependency edges, because beads carries build order and the matrix holds no
   Task.
-
-## Open questions
-
-Question Q5 is the plan's question for the owner, with the plan's recommendation.
-
-| Question | Where | Recommendation and reason |
-|---|---|---|
-| **Q5.** Where does the record of tools, decisions and the Well-Architected review live? | Section 2 | A review record per Epic, written by the architecture stage, committed with the Epic's elaboration output and linked from the Epic's matrix entry. arc42 holds no decision records, so a log keeps the documents to design facts while every decision and review stays findable. |

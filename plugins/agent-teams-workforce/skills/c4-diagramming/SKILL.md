@@ -58,8 +58,8 @@ the Mermaid conventions, and the rendered-readability rule with its required ver
 render every diagram to PNG, look at it, fix until nothing overlaps. Load it and follow it for
 every C4 view. Record rendering, visual readability and semantic self-checks separately in the
 caller's result schema. A successful parse is not a readability check; unavailable inspection is
-reported, not passed. Consumed by: the assigned architecture reviewer and architecture-decider — check the
-current view evidence before approval; self-checks do not replace their independent review.
+reported, not passed. Consumed by: aws-solutions-architect, which reviews and approves the
+architecture, and architecture-decider — check the current view evidence before approval.
 
 ## Workflow
 

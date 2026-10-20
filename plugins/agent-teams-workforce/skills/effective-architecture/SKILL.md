@@ -1,20 +1,23 @@
 ---
 name: effective-architecture
-description: The one set of criteria that the solutions architect works to and the reviewers review against, with the level of each.
+description: The one set of criteria that the solutions architect works to and reviews and approves its architecture against, and the spec review checks the specs against, with the level of each.
 ---
 
 # Architecture criteria
 
 Read [the review standard](review-standard.md) before designing, writing, reviewing or
 ruling on architecture, a TRD or a spec. It is the common basis: the solutions architect
-develops the architecture, its detailed design and the TRD to exactly these criteria, the spec authors develop the
-specs to them, and reviewers apply exactly these and no others. It is the one text of the
-criteria an agent reads; no brief hands the criteria as an input. `review-criteria.json` beside
-it is the pipeline's data, read by the scripts only: each criterion's id, level, home document
-and text, the agents responsible for each level, and for each reviewer group its reviewer, the
-criteria it covers and the rule that selects it. A reviewer's review scope names the criterion
-ids it reviews against. The standard is written from that file by
-`artifact-handoff/scripts/review_criteria.py`, so a criterion is changed in
+develops the architecture, its detailed design and the TRD to exactly these criteria and
+reviews and approves them against exactly these and no others; nothing else reviews the
+architecture. The spec authors develop the specs to them, and the spec review
+(`openapi-contract-reviewer`) checks the specs against the specs-and-Tasks level. Each level
+of the standard names the agent that reviews and approves it. Criterion P10 requires the proof
+that no decision was made by instinct, recorded in the Epic's review log (the
+`log-architecture-review` skill). It is the one text of the criteria an agent reads; no brief
+hands the criteria as an input. `review-criteria.json` beside it is the pipeline's data, read by
+the scripts only: each criterion's id, level, home document and text, and for each level the
+agents responsible for it and the agent that reviews and approves it. The standard is written
+from that file by `artifact-handoff/scripts/review_criteria.py`, so a criterion is changed in
 `review-criteria.json` and nowhere else.
 
 Every criterion has a level: architecture and design (arc42 and the detailed architecture
