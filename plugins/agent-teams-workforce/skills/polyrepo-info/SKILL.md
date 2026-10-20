@@ -86,7 +86,7 @@ and information that exists nowhere else are welcome.
 An entry is a claim until it is checked, and it is checked every time it is used:
 
 - **Before storing** an entry, confirm it: the file, folder or vault document it names exists
-  (vault documents through `obsidian-cli vault="skillspoke-docs"`), the command it names runs, and
+  (vault documents through `obsidian-cli`, pinned to the vault the project instructions name), the command it names runs, and
   the fact it states is what the code, the repo or the canonical document says now. A
   location or pointer carries `resolves`, the path it points at; `polyrepo doctor` checks
   every one on each run and reports the ones that no longer exist.
@@ -109,6 +109,6 @@ replaces it.
 Structural questions (repos, groups, repo state) belong to **polyrepo-repo** and the
 `polyrepo` tool, and questions of what a repository holds or which one owns a piece of
 functionality to the matrix, not here. Deployment order lives in
-`$SKILLSPOKE_CC/deployment/waves*.yaml`. Bulk scanning to populate the store is **polyrepo-tribal-knowledge**.
+the control repository's deployment-order files, which its instructions name. Bulk scanning to populate the store is **polyrepo-tribal-knowledge**.
 The project's own scripts/tools/procedures registry is **polyrepo-governance**. Every change
 to a vault document goes to the `filing-clerk`.

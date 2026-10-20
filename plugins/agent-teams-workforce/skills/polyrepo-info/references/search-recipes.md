@@ -64,5 +64,5 @@ If the answer is **structural** — which repos exist, their state against GitHu
 comes from the `polyrepo` tool (`status`, `list`, `search`, `inventory`; see **polyrepo-repo**),
 not from search. What a repository holds, what it is for and which one owns a piece of
 functionality come from the matrix. Deployment order is in
-`$SKILLSPOKE_CC/deployment/waves*.yaml`. Search is for what none of them holds; for text across
+the control repository's deployment-order files, which its instructions name. Search is for what none of them holds; for text across
 every repo, the tool's `grep` runs `rg` over all of them at once.

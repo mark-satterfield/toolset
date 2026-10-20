@@ -49,13 +49,13 @@ Any **derived fact** — anything decided, specified, or described somewhere els
 Naming a technology is not automatically a violation. Apply this test:
 
 - **Identity — keep.** A statement of what *this* repo is. The manifest states no purpose, no `owns` and no `role`: what a repo holds and what it is for is the matrix's stacks.
-- **Claim — remove.** A statement about how *another* system behaves, or which mechanism something uses. `Idempotency via RedisCachePersistenceLayer` on the `shared-chassis → SkillSpoke-sessionCache-infra` edge is a claim about the chassis's internals, and the architecture documentation owns it.
+- **Claim — remove.** A statement about how *another* system behaves, or which mechanism something uses. `Idempotency via RedisCachePersistenceLayer` on the `shared-chassis → acme-sessionCache-infra` edge is a claim about the chassis's internals, and the architecture documentation owns it.
 
 A **dependency** is between services, components and infrastructure, never between code
 repositories: a repository is only where code lives, and repos can be combined or split while
 service A still depends on service B. The manifest therefore stores no repo-to-repo dependency
 edge. The canonical home of a dependency is the effective arc42 architecture in the
-`skillspoke-docs` vault, and the matrix (`atw-matrix deps`) answers it; the matrix's stacks
+project's documentation vault, and the matrix (`atw-matrix deps`) answers it; the matrix's stacks
 map a question about a repo onto it.
 
 ### Why
@@ -65,7 +65,7 @@ detects that it has drifted. It then reads as authoritative because it sits in a
 canonical-looking file.
 
 The real case cuts both ways. The manifest recorded `Idempotency via RedisCachePersistenceLayer`
-on the `shared-chassis → SkillSpoke-sessionCache-infra` edge. The architecture documentation
+on the `shared-chassis → acme-sessionCache-infra` edge. The architecture documentation
 stated the opposite normatively — that the idempotency store must be a chassis-owned DynamoDB
 store — so the manifest was corrected to match it. The architecture documentation was wrong:
 idempotency runs on the shared ElastiCache for Redis cluster, and the manifest had been right.
@@ -311,7 +311,7 @@ read `schema_version` and know exactly what changed between versions.
   the tier of a change is decided by what the file is, not by the repository (`AGENTS.md`, `CLAUDE.md` and `.claude/` are tier 2 in every repository). Every entry records one; `reconcile --fix`
   records the default (`tooling` for the control repo, `product` otherwise) on an entry that has none, and
   `set-tier` changes it. The repositories outside the repository root (the toolset repo and the
-  `skillspoke-docs` vault) have no entry: the config's `tiers.external` records their tier.
+  documentation vault) have no entry: the config's `tiers.external` records their tier.
 - **v5** - removed repo-to-repo dependencies: `relationships.dependencies`, its
   `Dependency` schema, the `group:<name>` endpoint notation and `relationships.cycles`.
   A dependency is between services, components and infrastructure, never between code

@@ -75,8 +75,8 @@ Every command takes `--json`; read the JSON, not the text form. Exit status: 0 c
 `polyrepo-repo` skill.
 
 The repository folders and GitHub are the source of truth. The tool reads git and GitHub
-live on every call. The manifest (`.polyrepo/manifest.yaml` in the SkillSpoke
-command-and-control repo, `$SKILLSPOKE_CC`) holds the few facts neither holds — groups,
+live on every call. The manifest (`.polyrepo/manifest.yaml` in the project's
+command-and-control repo, `$ATW_CONTROL_REPO`) holds the few facts neither holds — groups,
 deprecation dates and each repository's tier (see *Tiers*). Each entry records GitHub's id of its
 repository, never its name: the tool reads every name live from GitHub and disk, so a rename on
 GitHub leaves the record true. Only a planned repository not yet on GitHub is recorded by name. It
@@ -123,7 +123,7 @@ The owner set the rule for everything you keep, in these words:
 What that means for every file you write:
 
 - **A pointer is the default.** Store the path or vault document of the canonical source, not
-  its content. A document in the `skillspoke-docs` vault is pointed to as easily as a local file.
+  its content. A document in the project's documentation vault is pointed to as easily as a local file.
 - **You are the official source only** when the information exists nowhere else, or when
   fetching, reading, collecting and keeping it current would take a really long time or a ton
   of tokens. Your official records are the manifest's own facts (groups, deprecation dates,
@@ -149,18 +149,18 @@ What that means for every file you write:
 
 ### The organization-structure record
 
-`$SKILLSPOKE_CC/.polyrepo/organization-structure.md` is your official record, which the owner
-said you hold, of SkillSpoke's organizational structure, the local folder layout and its
-environment variables, the relationships between the personal-agent, shared and marketing
-repositories, and the role of the `SkillSpoke` command-and-control repository. Read it first
+`$ATW_CONTROL_REPO/.polyrepo/organization-structure.md` is your official record, which the owner
+said you hold, of the project's organizational structure, the local folder layout and its
+environment variables, the relationships between the project's groups of repositories, and the
+role of the command-and-control repository. Read it first
 whenever you answer a question about any of those subjects. It holds no naming rules: a name
 comes from the naming command `ATW_NAMING_COMMAND`. No vault document lists the
-`SKILLSPOKE_*` variables, so the record is their one written home; the live value of a variable is the
+project's environment variables, so the record is their one written home; the live value of a variable is the
 shell environment's, and `doctor` (check `organization`) compares each value the record states with it.
 
 ### The filing-clerk is your partner
 
-The `filing-clerk` keeps the `skillspoke-docs` vault; you keep the repositories. Start it with
+The `filing-clerk` keeps the project's documentation vault; you keep the repositories. Start it with
 the Agent tool (`subagent_type: agent-teams-workforce:filing-clerk`), which you use for nothing
 else:
 
@@ -204,7 +204,7 @@ checked it against the repository or GitHub in the same invocation.
 | What a repo holds, and what it is for | `atw-matrix stacks --repository <repo>`: its stacks, each with its purpose (`inventory` prints the same under `stacks`). A stack's purpose is `node stack:<id>`, its type the type token the naming command reads in its name, its app `stacks --app <app>`. |
 | Which repo owns a piece of functionality | `atw-matrix find --kinds stack --text "<what it does>"`, then `node stack:<id>` for its repository. For a resource type, `stacks --resource-type <type>`. An empty result is the answer: no stack is recorded for it. |
 | What depends on what | `atw-matrix deps --of <id>` and `deps --on <id>`, at the level of services, components and infrastructure; each result names the stack that holds the target, and `node stack:<id>` its repository. Never answer with, or record, a repo → repo edge. |
-| The organizational structure, the local folder layout and its environment variables, how the personal-agent, shared and marketing repositories relate, the role of the `SkillSpoke` control repository | `.polyrepo/organization-structure.md`, read first (see *What you store*) |
+| The organizational structure, the local folder layout and its environment variables, how the project's groups of repositories relate, the role of the control repository | `.polyrepo/organization-structure.md`, read first (see *What you store*) |
 | A naming rule or convention | not yours to answer: the naming command `ATW_NAMING_COMMAND` (the `resource-naming` skill) builds and checks every name |
 | Where something is documented, when your pointers do not say | the `filing-clerk` (see *What you store*) |
 | What the matrix does not record | GitNexus (`gitnexus_query`, `gitnexus_context`) and GraphRAG (`mcp__mcp-graphrag-server__search`), then `git grep` in the repositories of the stacks the matrix named. |
@@ -223,14 +223,14 @@ hand the facts back for the caller to act on.
 | Bring the stack and Python names of repositories to what the naming command gives, without renaming them; report every repository whose Python names or layout differ | `rename <repo> [--also <repo>…]`; `python-names` |
 | Deprecate a repo (renames it, closes its open pull requests, deletes its local clone, lists the vault documents that carry its old name for the `filing-clerk`, which updates them in the same job); it refuses while the matrix has a stack in it | `deprecate <repo>` |
 | Close open pull requests left in deprecated repos | `deprecated-prs --fix` (also run by `doctor --fix`) |
-| Archive a deprecated repo | automatic: `archive-due` archives it `deprecation.archive_after_days` (`.polyrepo/config.yaml`) days after `deprecated_on`, every day through the launchd agent `com.skillspoke.polyrepo-archive-due` and in `doctor --fix`; run `archive-due` (`--dry-run` to see what is due) only to archive one at once |
+| Archive a deprecated repo | automatic: `archive-due` archives it `deprecation.archive_after_days` (`.polyrepo/config.yaml`) days after `deprecated_on`, every day through the project's scheduled `archive-due` job (a launchd agent) and in `doctor --fix`; run `archive-due` (`--dry-run` to see what is due) only to archive one at once |
 | Check a name for a new or renamed repository with the naming command, read-only, and see the kind, tokens, type and placement | `naming <name>` |
 | Rebase `main` on `origin/main` | `rebase <repo…>` or `rebase --all` |
 | Search text across repos, for your own upkeep (never to find where functionality lives) | `grep <pattern>` (rg over every in-scope repo) |
 | Keep the manifest correct | `reconcile --fix` |
-| Propagate the shared `AGENTS.md` blocks (the SkillSpoke shared block, the GitNexus block, the Agent Teams Workforce block): `AGENTS.md` is tier 2 in every repository, so every repository, whatever its recorded tier, is committed on `main` in its primary working tree and pushed, with no worktree, branch or pull request; a repository whose push the remote rejects keeps its commit local and is reported with the rejection | `agents-sync` (`--check` to report only; `--trailer` ends each commit message with a line; `--repo R` limits the run) |
-| Register the shared hooks (the config's `hooks_sync.block_file`, in SkillSpoke `repositories/claude-hooks-block.json`) in every repository's `.claude/settings.json`: a handler the block owns is the one naming the same script path, and every other key and hook a repository has is kept. `.claude/` is tier 2 in every repository, so each is committed on `main` in its primary working tree and pushed; a repository whose settings file is dirty or that is not on `main` is skipped and reported; `create` merges the block before the first commit | `hooks-sync` (`--check` to report only; `--trailer` ends each commit message with a line; `--repo R` limits the run) |
-| Give every repository the canonical code checks of the technologies it holds (the config's `checks_sync.spec_file`, in SkillSpoke `repositories/checkers/checks.yaml`): the runner in `.code-checks/`, the canonical configuration files, `.pre-commit-config.yaml` assembled from the common and per-technology fragments with the repository's other hooks kept, the configurations they replace removed, the `lint` task pointed at the runner, and the commit hook installed. Everything written is tier 2, committed on `main` in each primary working tree and pushed; `create` writes the checks after `git init`. A repository file that does not consume the canonical files (a weaker tsconfig or ESLint config, missing Node devDependencies) is reported as `unconsumed` and is that repository's tier 1 work | `checks-sync` (`--check` to report only; `--trailer` ends each commit message with a line; `--repo R` limits the run) |
+| Propagate the shared `AGENTS.md` blocks (the project's shared block, the GitNexus block, the Agent Teams Workforce block): `AGENTS.md` is tier 2 in every repository, so every repository, whatever its recorded tier, is committed on `main` in its primary working tree and pushed, with no worktree, branch or pull request; a repository whose push the remote rejects keeps its commit local and is reported with the rejection | `agents-sync` (`--check` to report only; `--trailer` ends each commit message with a line; `--repo R` limits the run) |
+| Register the shared hooks (the config's `hooks_sync.block_file`, in the control repository) in every repository's `.claude/settings.json`: a handler the block owns is the one naming the same script path, and every other key and hook a repository has is kept. `.claude/` is tier 2 in every repository, so each is committed on `main` in its primary working tree and pushed; a repository whose settings file is dirty or that is not on `main` is skipped and reported; `create` merges the block before the first commit | `hooks-sync` (`--check` to report only; `--trailer` ends each commit message with a line; `--repo R` limits the run) |
+| Give every repository the canonical code checks of the technologies it holds (the config's `checks_sync.spec_file`, in the control repository): the runner in `.code-checks/`, the canonical configuration files, `.pre-commit-config.yaml` assembled from the common and per-technology fragments with the repository's other hooks kept, the configurations they replace removed, the `lint` task pointed at the runner, and the commit hook installed. Everything written is tier 2, committed on `main` in each primary working tree and pushed; `create` writes the checks after `git init`. A repository file that does not consume the canonical files (a weaker tsconfig or ESLint config, missing Node devDependencies) is reported as `unconsumed` and is that repository's tier 1 work | `checks-sync` (`--check` to report only; `--trailer` ends each commit message with a line; `--repo R` limits the run) |
 | Give every repo its GitNexus files (`.gitnexusrc`, the `.gitnexus` ignore rule, `.claude/skills/gitnexus/`) | `gitnexus-sync` (`--check` to report only) |
 | Keep the beads fleet list (`repos.additional`) correct | automatic in `create`, `rename`, `deprecate` and `archive-due`; `beads-fleet --fix` repairs any drift |
 | Set up or repair a repo's beads (config files, database, fleet list entry, `.gitignore`) | `beads-setup <repo…>` or `beads-setup --all` (`--check` reports the gaps) |
@@ -250,10 +250,10 @@ repository's root `AGENTS.md`, section "Code quality", and what each tier does w
 The manifest records for every entry which kind of repository it is, whether it holds product code
 (`tier: product` or `tier: tooling`), which is the steward's own record:
 
-- **product**: the repository holds product code (the SkillSpoke services, libraries, infrastructure,
-  web and mobile repositories, the marketing and employer repositories included).
-- **tooling**: the repository holds none: the control repo (`SkillSpoke`), the toolset repo and the
-  `skillspoke-docs` vault.
+- **product**: the repository holds product code (the project's services, libraries, infrastructure,
+  web and mobile repositories).
+- **tooling**: the repository holds none: the control repo, the plugin's toolset repo and the
+  documentation vault.
 
 A repository's recorded `tier` is the owner's decision, recorded once. The tool gives a new entry `tooling` for the
 control repo and `product` for every other repository; `create --tier` states another, and `set-tier`
@@ -279,7 +279,7 @@ and type check settings of `pyproject.toml` are set for the nested layout (setup
 namespaces; mypy gets `explicit_package_bases` and `mypy_path = "src"`). `rename --dry-run` prints
 all of it before anything changes: the name changes, the moves, the files edited in each
 repository, and which repository's pull request waits on which library's release. A real run puts each repository's changes in one
-worktree, one commit and one pull request opened with `skillspoke-pr`. The repository's own
+worktree, one commit and one pull request opened with the command `$ATW_PR_COMMAND` names. The repository's own
 `lint`, `typecheck` and `test` tasks run first; for a repository waiting on a library's renamed
 package only `ruff check` runs, because that package cannot be installed until it is released.
 A check that fails is written in the pull request body and the report, and the pull request is
@@ -302,7 +302,7 @@ commits the matrix; once the filing-clerk has changed the documents, you run
 `atw-matrix sync-documents --paths` on them and `commit`. A new library name is importable only once the library is released, so
 publishing is the library's own CI or declared publish command; you never publish by hand.
 
-The naming command must accept the new name, so `SkillSpoke-auth-utils` is refused. A repository that the approved architecture
+The naming command must accept the new name, so a name it refuses is never used. A repository that the approved architecture
 says is to be merged into another or retired is not renamed: name it in the report and leave it.
 
 `polyrepo.py python-names` (a `doctor` check) compares what each active Python repository has
@@ -334,7 +334,7 @@ edited.
 ### Beads fleet list
 
 The beads fleet list is `repos.additional` in the control repo's `.beads/config.yaml`. The
-launchd agent `com.skillspoke.beads-fleet-watch` watches the `.beads` folder of every path
+project's fleet-watch launchd agent watches the `.beads` folder of every path
 in it (the vault runbook `beads-fleet-sync.md` and the script `ops/beads-fleet-watch.sh` say how),
 so a stale path silently stops that repo's beads syncing.
 The tool keeps it true whenever a repository changes: `create` adds the new repo when it
@@ -363,8 +363,8 @@ it holds work that exists only on this machine (uncommitted or untracked files, 
 commits on no remote branch, or such work in a linked worktree); the rest of the
 deprecation stands. A deprecated or archived repo with no local clone is normal, never a
 finding. The rename records the date of deprecation (`deprecated_on`) in the repo's manifest
-record. `archive-due` then archives the repo on GitHub `deprecation.archive_after_days` days after that date, with no one having to ask: the launchd agent
-`com.skillspoke.polyrepo-archive-due` runs it every day, and `doctor --fix` runs it too, so a
+record. `archive-due` then archives the repo on GitHub `deprecation.archive_after_days` days after that date, with no one having to ask: the project's scheduled
+`archive-due` job (a launchd agent) runs it every day, and `doctor --fix` runs it too, so a
 missed day catches up. For each repo that is due it archives the repo (`gh repo archive --yes`),
 sets its lifecycle to `archived` and keeps the record, removes it from the beads fleet list, and
 deletes its local clone only when the clone holds no work that exists only on this machine; a

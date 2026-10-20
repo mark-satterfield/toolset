@@ -29,7 +29,7 @@ tool: start from `doctor --json`, or `doctor --fix --json` to repair first.
 | `gitnexus-sync` | `gitnexus-sync --check` | every repo that is not deprecated has `.gitnexusrc`, the `.gitnexus` ignore rule and the current `.claude/skills/gitnexus/` |
 | `beads` | `polyrepo-beads/scripts/audit-fleet.sh --json` over every non-deprecated, non-archived repo on disk, in every app space | no anomaly |
 | `beads-setup` | `beads-setup --check`: every non-deprecated, non-archived repo (whatever its lifecycle, `planned` included) has `.beads/config.yaml`, `metadata.json` and `.beads/.gitignore` committed, an entry in the beads fleet list, and a `.gitignore` with the beads and standard ignores | no gap |
-| `beads-fleet` | `beads-fleet`: the beads fleet list (`repos.additional` in the control repo's `.beads/config.yaml`), which `com.skillspoke.beads-fleet-watch` watches | every listed path exists and is an active fleet repo, and every active repo with a `.beads` folder is listed |
+| `beads-fleet` | `beads-fleet`: the beads fleet list (`repos.additional` in the control repo's `.beads/config.yaml`), which the project's fleet-watch launchd agent watches | every listed path exists and is an active fleet repo, and every active repo with a `.beads` folder is listed |
 | `environment` | `environment`: every non-deprecated, non-archived Python repo (a `pyproject.toml` and an `install` task in its Taskfile) | `.venv/bin/python` exists and runs, every declared dependency is installed and importable, and `aws_cdk` imports wherever the code uses it. A gap is repaired with `environment <repo> --fix` (removes a `.venv` whose interpreter is missing, a dangling link or does not start, then runs the repo's `task install --force`; it is not part of `doctor --fix`); a failure that needs a change to the repo's code or `pyproject.toml` is reported to the owner |
 | `python-names` | `python-names`: every non-deprecated, non-archived repo with a `pyproject.toml` (the control repo excluded) | The repo's `pyproject.toml` name, import package and source folder compared with what the naming command gives the repository name (`name repository-names`); `src` present when the template that builds the repository's type renders a `pyproject.toml` and a `src` folder; `tests` present; no `__init__.py` in a project or team folder. A failure is repaired by `rename <repo> [--also R …]`, which opens a pull request; a missing `tests` folder is the repo's own work and is reported |
 | `deprecated-prs` | `deprecated-prs`: every open pull request on GitHub in a repo of the owner whose name starts with `deprecated-` | no deprecated repo has an open pull request |
@@ -37,20 +37,20 @@ tool: start from `doctor --json`, or `doctor --fix --json` to repair first.
 | `governance` | each manifest `governance` entry: its `location` exists, and a script or tool's `invoke` (up to its first `<placeholder>`) runs with `--help` | every entry resolves and runs |
 | `knowledge` | each `location` or `pointer` entry in the knowledge store: every path in its `resolves` exists | every pointer resolves |
 | `templates` | the config's `templates.kinds[].types`, the steward's map from repository types to the template that builds them, each checked with the naming command (`token check <type> --role type --in repository`) | the naming command accepts every listed type. Kind: `type-unknown`, with the command's violations |
-| `organization` | the `SKILLSPOKE_*` values the steward's record `organization-structure.md` states, against the environment variables | each stated value equals the variable's value. Kinds: `unset`, `differs`, `missing` |
+| `organization` | the environment variable values the steward's record `organization-structure.md` states, against the environment variables | each stated value equals the variable's value. Kinds: `unset`, `differs`, `missing` |
 | `matrix` | the matrix's stacks (`atw-matrix stacks`) and `atw-matrix check` against the repositories: every active code repository (a name the naming command reads as a repository of kind `repository`, with a type) is the `repository` of a stack, every stack's `repository` is an active repository, each command a stack records (`commands`, a copy of what the repository declares) is still a task of the repository's Taskfile or a script of its package.json, and the matrix is valid | no finding. Kinds: `stack-missing`, `stack-repository-inactive`, `stack-repository-missing`, `stack-command-stale` (refresh it with `put stack --commands-<test|publish|deploy>` from what the repository declares now), `matrix-invalid`, and `error` when the matrix cannot be read |
 
 The output is one findings list: each finding with its `check`, `subject` (repo or entry),
 `kind` and `detail`, plus the count per check and, under `--fix`, what each repair did.
-The launchd agent `com.skillspoke.polyrepo-daily` runs `doctor --fix` daily; its reports
-are under `$SKILLSPOKE_LOGS/polyrepo/`.
+The project's daily launchd agent runs `doctor --fix`; where it writes its reports is in the
+steward's organization record.
 
 ## `--fix`
 
 `doctor --fix` runs `reconcile --fix`, `agents-sync`, `hooks-sync`, `checks-sync`, `gitnexus-sync`, `beads-setup --all`, `beads-fleet --fix`,
 `deprecated-prs --fix` and then `archive-due` before the checks; each commits and pushes what it changed.
-`archive-due` archives every deprecated repo that is due (the launchd agent
-`com.skillspoke.polyrepo-archive-due` runs it daily too, so `doctor --fix` catches up a missed day).
+`archive-due` archives every deprecated repo that is due (the project's scheduled
+`archive-due` job runs it daily too, so `doctor --fix` catches up a missed day).
 It then
 repairs the matrix's stacks and commits the matrix: `stack-missing` records the stack
 (repository side, purpose not stated), and `stack-repository-inactive` removes a hint stack that holds nothing or else unsets its
