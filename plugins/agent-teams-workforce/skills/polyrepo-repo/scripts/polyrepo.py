@@ -151,12 +151,14 @@ from name_sweep import (
 from naming_command import (
     KIND_REPOSITORY,
     KIND_REPOSITORY_DEPRECATED,
+    ROLE_DOMAIN,
     ROLE_ORIGINAL_NAME,
     ROLE_PROJECT,
     ROLE_TYPE,
     NamingCommandError,
     RepositoryCheck,
     check_repository,
+    convert_repository,
     deprecated_repository_name,
     repository_names,
     type_problem,
@@ -1010,6 +1012,9 @@ def collect_all_local(
 def parse_github_url(url: str | None) -> tuple[str, str] | None:
     """Split a GitHub remote URL into owner and repo name.
 
+    A `git+` prefix (the form beads and Dolt write a remote in, `git+https://...`) is read like
+    the URL it prefixes.
+
     Returns:
         (owner, name), or None when the URL is not a GitHub URL.
 
@@ -1017,10 +1022,21 @@ def parse_github_url(url: str | None) -> tuple[str, str] | None:
     if not url:
         return None
     m = re.match(
-        r"^(?:https://(?:[^@/]+@)?github\.com/|git@github\.com:|ssh://git@github\.com/)([^/]+)/(.+?)(?:\.git)?/?$",
-        url,
+        r"^(?:git\+)?(?:https://(?:[^@/]+@)?github\.com/|git@github\.com:|ssh://git@github\.com/)([^/]+)/(.+?)(?:\.git)?/?$",
+        url.strip(),
     )
     return (m.group(1), m.group(2)) if m else None
+
+
+def same_github_repo(a: str | None, b: str | None) -> bool:
+    """Tell whether two remote URLs name the same GitHub repository, whatever their form.
+
+    Returns:
+        True when both are GitHub URLs of one owner and repository, compared without case.
+
+    """
+    pa, pb = parse_github_url(a), parse_github_url(b)
+    return pa is not None and pb is not None and (pa[0].lower(), pa[1].lower()) == (pb[0].lower(), pb[1].lower())
 
 
 # --------------------------------------------------------------------------------------------
@@ -3698,15 +3714,68 @@ def _service_name(cfg: Config, name: str) -> str:
     return name.removeprefix(f"{project}-") if project else name
 
 
-def _template_data(cfg: Config, name: str) -> dict[str, str]:
+NAMING_KIND_API = "api-gateway-rest-api"
+NAMING_KIND_SSM = "ssm-parameter"
+SSM_PREFIX_PARAMETER = "prefix"
+"""The parameter name the SSM prefix is built with: the prefix is that parameter's path without it."""
+
+
+def _resource_names(name: str, domain: str, api: bool) -> dict[str, str]:
+    """Return the REST API name and the SSM parameter prefix the naming command gives a repository.
+
+    The SSM prefix is the path of a parameter of the repository's namespace (its domain), built by
+    the naming command, without the parameter's own last segment.
+
+    Args:
+        name: The repository name.
+        domain: Its domain token, as the naming command reads it.
+        api: Whether to ask for the REST API name as well.
+
+    Returns:
+        `ssm_prefix`, and `api_name` when asked for.
+
+    Raises:
+        PolyrepoError: when the naming command refuses either name.
+
+    """
+    try:
+        names = {"api_name": convert_repository(name, NAMING_KIND_API)} if api else {}
+        parameter = convert_repository(
+            name,
+            NAMING_KIND_SSM,
+            {"namespace": domain, "parameterName": SSM_PREFIX_PARAMETER},
+        )
+    except NamingCommandError as exc:
+        raise PolyrepoError(str(exc)) from exc
+    return {**names, "ssm_prefix": parameter.removesuffix(f"/{SSM_PREFIX_PARAMETER}")}
+
+
+def _template_questions(tdir: Path) -> set[str]:
+    """Read the questions a Copier template declares.
+
+    Returns:
+        The question names in its `copier.yml`; none when the file cannot be read.
+
+    """
+    try:
+        spec: object = YAML(typ="safe").load((tdir / "copier.yml").read_text())
+    except OSError, YAMLError:
+        return set()
+    return {str(k) for k in spec if not str(k).startswith("_")} if isinstance(spec, dict) else set()
+
+
+def _template_data(cfg: Config, name: str, tdir: Path) -> dict[str, str]:
     """Build the answers a template is rendered with: the names, each given by the naming command.
 
     A template holds no naming rule of its own. The import package (`package_name`, dotted),
-    its folder under `src` (`package_path`), the distribution (`distribution_name`) and the
-    stack module (`stack_module_name`) are what `name repository-names` gives the repository.
+    its folder under `src` (`package_path`), the distribution (`distribution_name`), the stack
+    (`stack_name`) and the stack module (`stack_module_name`) are what `name repository-names`
+    gives the repository; the REST API name (`api_name`) and the SSM parameter prefix
+    (`ssm_prefix`) are what `name convert` gives it (:func:`_resource_names`), asked only when the
+    template in `tdir` declares them.
 
     Returns:
-        The answers; the Python names are left out for a name the naming command reads as no
+        The answers; the names are left out for a name the naming command reads as no
         repository that holds a stack, so a template that needs them then refuses to render.
 
     """
@@ -3717,8 +3786,14 @@ def _template_data(cfg: Config, name: str) -> dict[str, str]:
     data["package_name"] = names.python_import_package
     data["package_path"] = names.python_source_package.removeprefix("src/")
     data["distribution_name"] = names.python_distribution
+    if names.cdk_stack:
+        data["stack_name"] = names.cdk_stack
     if names.cdk_stack_file:
         data["stack_module_name"] = Path(names.cdk_stack_file).stem
+    domain = cfg.check(name).tokens.get(ROLE_DOMAIN)
+    wanted = _template_questions(tdir)
+    if domain and wanted & {"api_name", "ssm_prefix"}:
+        data.update({k: v for k, v in _resource_names(name, domain, "api_name" in wanted).items() if k in wanted})
     return data
 
 
@@ -3861,7 +3936,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     name, b = args.name, cfg.default_branch
     args.template = args.template or _template_of_name(cfg, name)
     tdir, dest = _create_checks(args, cfg)
-    data = _template_data(cfg, name)
+    data = _template_data(cfg, name, tdir)
     res: dict[str, object] = {
         "repo": name,
         "space": args.space,
@@ -4562,6 +4637,165 @@ class _BeadsTarget:
     port: int
 
 
+BEADS_CONFIG = ".beads/config.yaml"
+ORPHAN_REMOTE_LINE = re.compile(r"^# (?:sync\.)?remote: ")
+"""A comment line `bd` leaves at column 0 holding a remote it replaced."""
+
+
+def beads_remote_url(cfg: Config, name: str, origin: str | None) -> str:
+    """Return the beads sync remote a repo must have: its GitHub repository, in the `git+https` form `bd` writes.
+
+    Returns:
+        `git+https://github.com/<owner>/<repo>.git` of the repo's origin; of the owner's repo of
+        that name when origin is no GitHub URL.
+
+    """
+    parsed = parse_github_url(origin)
+    url = f"https://github.com/{parsed[0]}/{parsed[1]}.git" if parsed else cfg.github_url(name)
+    return f"git+{url}"
+
+
+def _beads_sync_remote(path: Path) -> str | None:
+    """Read `sync.remote` from a repo's beads config.
+
+    Returns:
+        The remote, or None when the file or the key is missing or the file is not YAML.
+
+    """
+    try:
+        data: object = YAML(typ="safe").load((path / BEADS_CONFIG).read_text())
+    except OSError, YAMLError:
+        return None
+    sync = data.get("sync") if isinstance(data, dict) else None
+    remote = sync.get("remote") if isinstance(sync, dict) else None
+    return remote if isinstance(remote, str) and remote else None
+
+
+def _dolt_remotes(path: Path) -> dict[str, str]:
+    """List the Dolt remotes registered in a repo's beads database.
+
+    Returns:
+        Each remote's name with its URL.
+
+    Raises:
+        PolyrepoError: when `bd dolt remote list` fails or prints no JSON list.
+
+    """
+    cp = _bd(path, "dolt", "remote", "list", "--json", timeout=60)
+    if cp.returncode != 0:
+        msg = f"{path.name}: bd dolt remote list failed: {_last_line(cp)}"
+        raise PolyrepoError(msg)
+    try:
+        rows: object = json.loads(cp.stdout or "[]")
+    except ValueError as exc:
+        msg = f"{path.name}: bd dolt remote list printed no JSON: {exc}"
+        raise PolyrepoError(msg) from exc
+    if not isinstance(rows, list):
+        msg = f"{path.name}: bd dolt remote list printed no JSON list"
+        raise PolyrepoError(msg)
+    return {str(row["name"]): str(row.get("url") or "") for row in rows if isinstance(row, dict) and row.get("name")}
+
+
+def _orphan_remote_lines(path: Path, want: str) -> list[str]:
+    """Return the orphan remote comment lines of a repo's beads config that name another repository.
+
+    Returns:
+        The lines, without their line ends.
+
+    """
+    try:
+        lines = (path / BEADS_CONFIG).read_text().splitlines()
+    except OSError:
+        return []
+    return [
+        ln
+        for ln in lines
+        if ORPHAN_REMOTE_LINE.match(ln) and not same_github_repo(ln.split(":", 1)[1].strip().strip('"'), want)
+    ]
+
+
+def beads_remote_problem(path: Path, want: str) -> str | None:
+    """Say how a repo's beads remotes differ from its GitHub repository, if they do.
+
+    The config's `sync.remote`, the Dolt remote `origin` and any orphan remote comment line are
+    compared with the repository, whatever the URL form (`git+` or not).
+
+    A PolyrepoError from listing the Dolt remotes propagates.
+
+    Returns:
+        One sentence naming each stale value; None when every one names the repository.
+
+    """
+    stale: list[str] = []
+    sync = _beads_sync_remote(path)
+    if not same_github_repo(sync, want):
+        stale.append(f"sync.remote is {sync or 'missing'}")
+    origin = _dolt_remotes(path).get("origin")
+    if not same_github_repo(origin, want):
+        stale.append(f"the Dolt remote origin is {origin or 'missing'}")
+    orphans = _orphan_remote_lines(path, want)
+    if orphans:
+        stale.append(f"{len(orphans)} orphan remote comment line(s) name another repository")
+    return f"{'; '.join(stale)}; the repository is {want}" if stale else None
+
+
+def repoint_beads_remote(path: Path, want: str) -> list[str]:
+    """Point a repo's beads sync remote and Dolt remote `origin` at its repository, and drop orphan lines.
+
+    `bd dolt remote add` rewrites `sync.remote` in `.beads/config.yaml` itself; a remote that
+    already reads exactly `want` in both places is left alone.
+
+    Returns:
+        One line per step taken.
+
+    Raises:
+        GitFailedError: when a `bd` step fails, or the config does not name `want` afterwards.
+
+    """
+    steps: list[str] = []
+    try:
+        origin = _dolt_remotes(path).get("origin")
+    except PolyrepoError as exc:
+        raise GitFailedError(str(exc)) from exc
+    if origin != want or _beads_sync_remote(path) != want:
+        if origin is not None:
+            must(_bd(path, "dolt", "remote", "remove", "origin", timeout=60))
+        must(_bd(path, "dolt", "remote", "add", "origin", want, timeout=60))
+        steps.append(f"pointed the beads sync remote and the Dolt remote origin at {want}")
+    if _orphan_remote_lines(path, want):
+        f = path / BEADS_CONFIG
+        kept = [ln for ln in f.read_text().splitlines(keepends=True) if not ORPHAN_REMOTE_LINE.match(ln)]
+        f.write_text("".join(kept))
+        steps.append("removed the orphan remote comment lines")
+    if _beads_sync_remote(path) != want:
+        msg = f"{path.name}: {BEADS_CONFIG} sync.remote is {_beads_sync_remote(path)}, not {want}"
+        raise GitFailedError(msg)
+    return steps
+
+
+def _push_beads_config(cfg: Config, name: str, path: Path, head: str | None) -> list[str]:
+    """Commit a changed beads config on the default branch, and push it with any commit `bd` made since `head`.
+
+    Returns:
+        One line per step taken.
+
+    """
+    b = cfg.default_branch
+    if git_out(path, "symbolic-ref", "--short", "-q", "HEAD") != b:
+        return [f"{BEADS_CONFIG} NOT committed: {name} is not on {b}"]
+    must(git(path, "add", "-f", "--", BEADS_CONFIG))
+    steps: list[str] = []
+    if git(path, "diff", "--cached", "--quiet", "--", BEADS_CONFIG).returncode != 0:
+        msg = f"chore(beads): point the sync remote at {name}"
+        must(git(path, "commit", "-m", msg, "--", BEADS_CONFIG, timeout=300))
+        steps.append(f"committed {BEADS_CONFIG}")
+    if git_out(path, "rev-parse", "HEAD") != head:
+        must(git(path, "pull", "--rebase", "--autostash", "--quiet", timeout=120))
+        must(git(path, "push", "origin", b, timeout=120))
+        steps.append(f"pushed {b}")
+    return steps
+
+
 def _beads_files(t: _BeadsTarget, *, shared: bool) -> None:
     """Write `.beads/config.yaml` and `.beads/metadata.json` in shared-server or embedded mode.
 
@@ -4652,7 +4886,8 @@ def beads_setup(
     if git_out(path, "symbolic-ref", "--short", "-q", "HEAD") != b:
         msg = f"{name} is not on {b}"
         raise GitFailedError(msg)
-    prefix, port, remote = _beads_prefix(cfg), _beads_port(), cfg.github_url(name)
+    prefix, port, remote = _beads_prefix(cfg), _beads_port(), beads_remote_url(cfg, name, r.origin_url)
+    head = git_out(path, "rev-parse", "HEAD")
     try:
         db = json.loads((path / ".beads" / "metadata.json").read_text()).get(
             "dolt_database",
@@ -4661,11 +4896,12 @@ def beads_setup(
         db = None
     t = _BeadsTarget(path, prefix, remote, db or name.replace("-", "_"), port)
     steps = _beads_converge(cfg, name, t)
+    steps.extend(repoint_beads_remote(path, remote))
     _unstage(path, "*.gate.lock*")
     added = ensure_gitignore(cfg, r)
     if added:
         steps.append(f"added {len(added)} lines to .gitignore")
-    return _beads_commit(cfg, name, path, steps, trailer)
+    return _beads_commit(cfg, name, path, steps, (trailer, head))
 
 
 def _beads_converge(cfg: Config, name: str, t: _BeadsTarget) -> list[str]:
@@ -4715,10 +4951,12 @@ def _beads_commit(
     name: str,
     path: Path,
     steps: list[str],
-    trailer: str | None,
+    trailer_head: tuple[str | None, str | None],
 ) -> dict[str, object]:
     """Commit the repo's beads config files and `.gitignore` on the default branch, and push.
 
+    `trailer_head` is the commit message trailer and the HEAD before the setup: a commit `bd`
+    made itself since then (it commits `.beads/config.yaml` when a remote changes) is pushed too.
     A failed git step propagates as the GitFailedError that `must` raises.
 
     Returns:
@@ -4733,7 +4971,12 @@ def _beads_commit(
         "committed": False,
         "pushed": False,
     }
+    trailer, head = trailer_head
     if git(path, "diff", "--cached", "--quiet", "--", *paths).returncode == 0:
+        if git_out(path, "rev-parse", "HEAD") != head:
+            must(git(path, "pull", "--rebase", "--autostash", "--quiet", timeout=120))
+            must(git(path, "push", "origin", cfg.default_branch, timeout=120))
+            res["pushed"] = True
         return res
     msg = f"chore(beads): set up beads for {name}"
     if trailer:
@@ -4747,6 +4990,20 @@ def _beads_commit(
     must(git(path, "push", "origin", cfg.default_branch, timeout=120))
     res["pushed"] = True
     return res
+
+
+def _beads_remote_findings(cfg: Config, r: LocalRepo) -> list[Finding]:
+    """Check that a repo's beads sync remote and Dolt remote name its GitHub repository.
+
+    Returns:
+        One `beads-remote-stale` finding when a remote names another repository or cannot be read.
+
+    """
+    try:
+        stale = beads_remote_problem(r.path, beads_remote_url(cfg, r.name, r.origin_url))
+    except PolyrepoError as exc:
+        stale = str(exc)
+    return [Finding("beads-remote-stale", r.name, stale, fix=f"beads-setup {r.name}")] if stale else []
 
 
 def beads_setup_findings(st: State, space: str | None = None) -> list[Finding]:
@@ -4776,6 +5033,7 @@ def beads_setup_findings(st: State, space: str | None = None) -> list[Finding]:
                 Finding("beads-config-missing", name, f"missing {', '.join(missing)}"),
             )
         else:
+            out.extend(_beads_remote_findings(cfg, r))
             loose = [p for p in BEADS_REQUIRED if git(r.path, "ls-files", "--error-unmatch", "--", p).returncode != 0]
             if loose:
                 out.append(
@@ -4997,13 +5255,9 @@ def _clone_conflicts(cfg: Config, name: str) -> list[Path]:
     for n, paths in dups:
         if n.lower() == name.lower():
             found.update(paths)
-    wanted = {
-        cfg.github_url(name).lower(),
-        cfg.github_url(name)[: -len(".git")].lower(),
-    }
+    wanted = cfg.github_url(name)
     for r in local.values():
-        url = (git_out(r.path, "remote", "get-url", "origin") or "").lower()
-        if url in wanted:
+        if same_github_repo(git_out(r.path, "remote", "get-url", "origin"), wanted):
             found.add(r.path)
     return sorted(found)
 
@@ -5224,6 +5478,10 @@ def _rename_local_steps(cfg: Config, r: LocalRepo, new: str, url: str, steps: li
         steps.append(f"missing placement entry: {missing}")
     if r.origin_url != url:
         steps.append(f"point origin at {url}")
+    if (r.path / BEADS_CONFIG).is_file():
+        steps.append(
+            f"beads: point the sync remote and the Dolt remote origin at git+{url}; commit and push {BEADS_CONFIG}",
+        )
     return new_path
 
 
@@ -5276,6 +5534,10 @@ def _rename_moves(cfg: Config, new: str, plan: _RenamePlan, done: list[str]) -> 
         point_origin(new_path, plan.url)
         done.append(f"origin set to {plan.url}")
         must(git(new_path, "worktree", "repair"))
+        if (new_path / BEADS_CONFIG).is_file():
+            head = git_out(new_path, "rev-parse", "HEAD")
+            done.extend(repoint_beads_remote(new_path, f"git+{plan.url}"))
+            done.extend(_push_beads_config(cfg, new, new_path, head))
 
 
 def _rename_record(st: State, old: str, new: str, plan: _RenamePlan, done: list[str]) -> None:
@@ -7957,7 +8219,10 @@ def _compare_to_template(
 
     """
     given = {k: str(v) for k, v in answers.items() if not k.startswith("_")}
-    data = {**_template_data(cfg, r.name), **given}
+    try:
+        data = {**_template_data(cfg, r.name, tdir), **given}
+    except PolyrepoError as exc:
+        return TemplateComparison(repo=r.name, files={}, error=str(exc))
     out: dict[str, tuple[str, int | None]] = {}
     with tempfile.TemporaryDirectory(prefix="polyrepo-tc-") as tmp:
         rendered = Path(tmp) / r.name
@@ -8018,6 +8283,41 @@ def _check_template(
     )
 
 
+type _TemplateMembers = dict[str, list[tuple[LocalRepo, str, dict[str, object]]]]
+
+
+def _repos_by_template(
+    cfg: Config,
+    kinds: dict[str, object],
+    without: set[str],
+) -> tuple[_TemplateMembers, dict[str, list[str]], dict[str, list[str]]]:
+    """Sort the active repos by the template that built them.
+
+    A repo no template built is grouped under the type the naming command reads in its name; a
+    name with no repository type (the control repository, an unaffiliated repository) is never
+    built from a template and is left out.
+
+    Returns:
+        (the repos of each template with how each was matched and its answers, the types with
+        no template and their repos, the types the config makes without a template and their repos).
+
+    """
+    by_template: _TemplateMembers = {t: [] for t in kinds}
+    untemplated: dict[str, list[str]] = {}
+    by_design: dict[str, list[str]] = {}
+    for r in _local_repos(cfg):
+        if cfg.is_deprecated_name(r.name):
+            continue
+        t, how, answers = _template_for(cfg, r, kinds)
+        if t is not None:
+            by_template[t].append((r, str(how), answers))
+            continue
+        kind = cfg.repository_type(r.name)
+        if kind is not None:
+            (by_design if kind in without else untemplated).setdefault(kind, []).append(r.name)
+    return by_template, untemplated, by_design
+
+
 def cmd_templates_check(args: argparse.Namespace, cfg: Config) -> int:
     """Compare each template with the repos built from it, and name repo kinds with no template.
 
@@ -8038,37 +8338,35 @@ def cmd_templates_check(args: argparse.Namespace, cfg: Config) -> int:
         if (troot / t / "copier.yml").is_file()
     }
     ignore = _strs(tset.get("ignore") or [], "templates ignore")
-    by_template: dict[str, list[tuple[LocalRepo, str, dict[str, object]]]] = {t: [] for t in kinds}
-    untemplated: dict[str, list[str]] = {}
-    for r in _local_repos(cfg):
-        if cfg.is_deprecated_name(r.name):
-            continue
-        t, how, answers = _template_for(cfg, r, kinds)
-        if t is None:
-            kind = r.name.rsplit("-", 1)[-1].lower() if "-" in r.name else r.name
-            untemplated.setdefault(kind, []).append(r.name)
-        else:
-            by_template[t].append((r, str(how), answers))
+    without = set(_strs(tset.get("without_template") or [], "templates without_template"))
+    by_template, untemplated, by_design = _repos_by_template(cfg, kinds, without)
     for d in sorted(troot.iterdir()):
         if d.is_dir() and (d / "copier.yml").is_file() and d.name not in kinds:
             by_template[d.name] = []
     results = [_check_template(cfg, troot / t, members, ignore) for t, members in sorted(by_template.items())]
     no_template = [KindWithoutTemplate(kind=k, repos=sorted(v)) for k, v in sorted(untemplated.items())]
+    made_without = [KindWithoutTemplate(kind=k, repos=sorted(v)) for k, v in sorted(by_design.items())]
     lagging: list[str] = [x["template"] for x in results if x["lags"]]
     data: dict[str, object] = {
         "templates": results,
         "kinds_without_template": no_template,
+        "kinds_made_without_template": made_without,
         "lagging_templates": lagging,
     }
-    emit(args, data, lambda: _templates_text(results, no_template))
+    emit(args, data, lambda: _templates_text(results, no_template, made_without))
     return 1 if lagging or no_template else 0
 
 
-def _templates_text(results: list[TemplateReport], no_template: list[KindWithoutTemplate]) -> str:
+def _templates_text(
+    results: list[TemplateReport],
+    no_template: list[KindWithoutTemplate],
+    made_without: list[KindWithoutTemplate],
+) -> str:
     """Render the templates-check report as text.
 
     Returns:
-        One block per template, then the repo kinds with no template.
+        One block per template, then the repo kinds with no template, then the kinds the config
+        says are made without one.
 
     """
     lines = []
@@ -8085,6 +8383,8 @@ def _templates_text(results: list[TemplateReport], no_template: list[KindWithout
         lines.extend(f"  render error {e['repo']}: {e['error']}" for e in x["render_errors"])
     lines.append("repo kinds with no template:")
     lines.extend(f"  {k['kind']}: {', '.join(k['repos'])}" for k in no_template)
+    lines.append("repo kinds made without a template (templates.without_template):")
+    lines.extend(f"  {k['kind']}: {', '.join(k['repos'])}" for k in made_without)
     return "\n".join(lines)
 
 
@@ -8834,7 +9134,9 @@ def _template_type_findings(cfg: Config) -> list[DoctorFinding]:
         PolyrepoError: when no naming command is configured or it does not answer.
 
     """
-    kinds = _map(_templates(cfg)[1].get("kinds") or {}, "templates kinds")
+    tset = _templates(cfg)[1]
+    kinds = dict(_map(tset.get("kinds") or {}, "templates kinds"))
+    kinds["without_template"] = {"types": _strs(tset.get("without_template") or [], "templates without_template")}
     out: list[DoctorFinding] = []
     for kind, spec in kinds.items():
         for t in _kind_types(spec):
