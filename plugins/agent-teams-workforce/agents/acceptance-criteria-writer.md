@@ -11,6 +11,7 @@ skills:
 - agent-teams-workforce:validation-protocol
 - agent-teams-workforce:artifact-handoff
 - agent-teams-workforce:effective-architecture
+- agent-teams-workforce:acceptance-criteria
 effort: low
 isolation: worktree
 color: purple

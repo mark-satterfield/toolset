@@ -281,6 +281,9 @@ No workflow starts these agents; they remain for a spec written well before its 
 | react-native-implementer | execute | Implements React Native cross-platform mobile features; writes minimum code to pass failing Detox and Maestro tests. |
 | bedrock-integration-implementer | execute | Implements the code that calls Amazon Bedrock foundation models - Converse and ConverseStream calls, prompt assembly from specified templates, guardrail and prompt-cache settings on the call, structured-output parsing, and inference error handling - writing minimum code to pass failing tests. Embeddings calls belong to vector-search-embeddings-implementer. |
 | llm-observability-implementer | execute | Implements LLM observability — prompt/response logging, token and cost metrics, drift alerts — writing minimum code to pass failing tests. |
+| sagemaker-implementer | execute | Implements the code that runs models on Amazon SageMaker AI as the ml-training-designer and ml-inference-designer designs record them - training job launch and training entry scripts, model registration, inference handler scripts, and the calls that invoke real-time, serverless and asynchronous endpoints or start batch transform - writing minimum code to pass failing tests. Endpoint and other resource provisioning in CDK belongs to cdk-stack-author. |
+| applied-ai-services-implementer | execute | Implements the code that calls the AWS pre-trained AI services as the applied-ai-services-designer design records it - Amazon Textract document extraction, Amazon Rekognition image and video analysis, and Amazon Comprehend text analysis and PII detection - with their synchronous and asynchronous paths, result paging, confidence thresholds and error handling, writing minimum code to pass failing tests. Foundation-model extraction belongs to bedrock-integration-implementer. |
+| agentcore-agent-implementer | execute | Implements custom AI agent code on Amazon Bedrock AgentCore as the ai-agent-designer design records it - the Strands (or other specified framework) agent and its AgentCore Runtime entrypoint, AgentCore Memory sessions, tool wiring through AgentCore Gateway and MCP, and outbound credentials through AgentCore Identity - writing minimum code to pass failing tests. MCP servers and Gateway targets belong to mcp-server-implementer; direct model calls to bedrock-integration-implementer. |
 | vector-search-embeddings-implementer | execute | Implements vector search and embeddings for ML features — embedding generation, index read/write, similarity queries. |
 | matching-algorithm-implementer | execute | Implements matching algorithms - scoring functions, ranking and tie-breaking, candidate filtering, score normalisation and the composition of these stages into the specified matcher - writing minimum code to pass failing tests. |
 | recommendation-engine-implementer | execute | Implements recommendation engine components for ML features; writes minimum code to pass failing unit tests. |
@@ -450,10 +453,10 @@ code for the service.
 | 29 | Perimeter & Threat Protection | perimeter-protection-designer | none |
 | 30 | Foundation Model Integrator | foundation-model-designer | bedrock-integration-implementer, llm-observability-implementer |
 | 31 | RAG & Vector Data | rag-architecture-designer | vector-search-embeddings-implementer |
-| 32 | Applied AI Services | applied-ai-services-designer | none |
+| 32 | Applied AI Services | applied-ai-services-designer | applied-ai-services-implementer |
 | 33 | MLOps Data Prep | ml-feature-pipeline-designer | behavioral-signals-implementer |
-| 34 | MLOps Training | ml-training-designer | none |
-| 35 | MLOps Inference | ml-inference-designer | none |
+| 34 | MLOps Training | ml-training-designer | sagemaker-implementer |
+| 35 | MLOps Inference | ml-inference-designer | sagemaker-implementer |
 | 36 | Telemetry & Monitoring | monitoring-and-tracing-designer | power-tools-configuration-implementer, llm-observability-implementer |
 | 37 | Configuration & Audit | audit-and-compliance-designer | none |
 
@@ -471,9 +474,9 @@ set and which block owns it.
 
 | Topic | Design specialist | Build agents |
 | --- | --- | --- |
-| Bedrock | foundation-model-designer; rag-architecture-designer for Knowledge Bases; ai-agent-designer for AgentCore | bedrock-integration-implementer, llm-observability-implementer |
-| AI: retrieval, search and pre-trained AI services | rag-architecture-designer, applied-ai-services-designer | vector-search-embeddings-implementer, recommendation-engine-implementer, matching-algorithm-implementer |
-| Machine learning | ml-feature-pipeline-designer, ml-training-designer, ml-inference-designer | behavioral-signals-implementer, matching-algorithm-implementer, recommendation-engine-implementer; ml-evaluation-tester writes the evaluation suites |
-| Custom agents | ai-agent-designer | mcp-server-implementer (MCP servers and Gateway targets); none for the agent runtime code |
+| Bedrock | foundation-model-designer; rag-architecture-designer for Knowledge Bases; ai-agent-designer for AgentCore | bedrock-integration-implementer, llm-observability-implementer; agentcore-agent-implementer for AgentCore agents |
+| AI: retrieval, search and pre-trained AI services | rag-architecture-designer, applied-ai-services-designer | vector-search-embeddings-implementer, recommendation-engine-implementer, matching-algorithm-implementer, applied-ai-services-implementer |
+| Machine learning | ml-feature-pipeline-designer, ml-training-designer, ml-inference-designer | behavioral-signals-implementer, matching-algorithm-implementer, recommendation-engine-implementer, sagemaker-implementer; ml-evaluation-tester writes the evaluation suites |
+| Custom agents | ai-agent-designer | agentcore-agent-implementer (the agent, its Runtime entrypoint, Memory, Gateway tool wiring and Identity); mcp-server-implementer (MCP servers and Gateway targets) |
 | Custom AI patterns | generative-ai-pattern-designer | bedrock-integration-implementer |
 | Pure data architecture | data-architect | none: it designs the data, which the engine designers and access-layer implementers then realise |

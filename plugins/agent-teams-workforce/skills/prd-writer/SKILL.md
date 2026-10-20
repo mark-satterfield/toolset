@@ -122,23 +122,14 @@ It **cannot** decide *semantic* conformance — that is the reviewer's job (see 
    and back it with Evidence (or delete Evidence only if the problem is self-evident).
 6. **Write Requirements grouped by use case or capability.** Each carries a **Priority** (P0/P1/P2)
    and states a behavior. **Every P0 requirement MUST have Acceptance Criteria** as Given/When/Then
-   or boolean assertions, each verifiable pass/fail. If a requirement needs more than 5 assertions,
+   or boolean assertions, each verifiable pass/fail, written as the `acceptance-criteria` skill
+   states. If a requirement needs more than 5 assertions,
    the feature is too big — decompose.
-7. **Make the criteria within one requirement mutually consistent.** No two criteria may both apply
-   to the same input and demand opposite outcomes. The usual cause is a success criterion whose
-   `Given` lists only some of the conditions its sibling criteria make decisive — so a rejected
-   input also satisfies the success case. **Every success criterion's `Given` must restate every
-   condition that any sibling criterion treats as grounds for rejection.**
-
-   A real example that halted a pipeline for a day. One criterion said an out-of-range value must be
-   rejected; another said "Given a settings write containing no unknown fields … then the write
-   succeeds." A write with a known field holding an out-of-range value satisfied both, so the gate
-   could not certify the requirement. The repair was to close the second `Given`: "Given a settings
-   write containing no unknown fields **and no field value outside its defined type or range** …".
-
-   **When you find a contradiction like this in your own draft, fix it.** Close the under-specified
-   `Given`; do not reword it into vagueness, and do not delete the criterion that exposed the
-   conflict. **In an existing PRD, make the repair.** No workflow or pipeline ever edits a PRD.
+7. **Make the criteria within one requirement mutually consistent**, by the consistency rule of
+   the `acceptance-criteria` skill: every success criterion's `Given` restates every condition a
+   sibling criterion treats as grounds for rejection. **When you find a contradiction in your own
+   draft, fix it**, and **in an existing PRD, make the repair.** No workflow or pipeline ever edits
+   a PRD.
 8. **Fill every structured section:** Out of Scope, Constraints (behavioral, not tech choices),
    Measurable Outcomes (table + starting value/target/method), Visual References, Definition of Done.
    A PRD names no other PRD: ordering between Epics is carried by Epic dependency edges in beads.

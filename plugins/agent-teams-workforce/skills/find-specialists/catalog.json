@@ -21,7 +21,8 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:effective-architecture"
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:acceptance-criteria"
       ],
       "mcpServers": []
     },
@@ -32,7 +33,8 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:artifact-handoff",
-        "agent-teams-workforce:effective-architecture"
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:acceptance-criteria"
       ],
       "mcpServers": []
     },
@@ -77,6 +79,31 @@
         "agent-teams-workforce:agent-orchestration"
       ],
       "mcpServers": []
+    },
+    {
+      "name": "agentcore-agent-implementer",
+      "description": "Implements custom AI agent code on Amazon Bedrock AgentCore as the ai-agent-designer design records it - the Strands (or other specified framework) agent and its AgentCore Runtime entrypoint, AgentCore Memory sessions, tool wiring through AgentCore Gateway and MCP, and outbound credentials through AgentCore Identity - writing minimum code to pass failing tests. MCP servers and Gateway targets belong to mcp-server-implementer; direct model calls to bedrock-integration-implementer.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:aws-agentic-ai",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-agents:agents-build",
+        "aws-agents:agents-connect",
+        "aws-agents:agents-harden",
+        "aws-core:amazon-bedrock",
+        "aws-core:aws-sdk-python-usage",
+        "agent-teams-workforce:implementer-contract"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "aws-mcp",
+        "plugin_aws-agents_awsknowledge",
+        "context7",
+        "gitnexus"
+      ]
     },
     {
       "name": "ai-agent-designer",
@@ -229,6 +256,25 @@
         "mcp-graphrag-server",
         "gitnexus",
         "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
+      "name": "applied-ai-services-implementer",
+      "description": "Implements the code that calls the AWS pre-trained AI services as the applied-ai-services-designer design records it - Amazon Textract document extraction, Amazon Rekognition image and video analysis, and Amazon Comprehend text analysis and PII detection - with their synchronous and asynchronous paths, result paging, confidence thresholds and error handling, writing minimum code to pass failing tests. Foundation-model extraction belongs to bedrock-integration-implementer.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-sdk-python-usage",
+        "aws-core:aws-serverless",
+        "agent-teams-workforce:implementer-contract"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "aws-mcp",
+        "gitnexus"
       ]
     },
     {
@@ -2537,6 +2583,7 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:prd-writer",
+        "agent-teams-workforce:acceptance-criteria",
         "agent-teams-workforce:matrix"
       ],
       "mcpServers": []
@@ -2733,7 +2780,8 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:artifact-handoff",
-        "agent-teams-workforce:prd-writer"
+        "agent-teams-workforce:prd-writer",
+        "agent-teams-workforce:acceptance-criteria"
       ],
       "mcpServers": []
     },
@@ -2785,6 +2833,26 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "sagemaker-implementer",
+      "description": "Implements the code that runs models on Amazon SageMaker AI as the ml-training-designer and ml-inference-designer designs record them - training job launch and training entry scripts, model registration, inference handler scripts, and the calls that invoke real-time, serverless and asynchronous endpoints or start batch transform - writing minimum code to pass failing tests. Endpoint and other resource provisioning in CDK belongs to cdk-stack-author.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-ai-ml",
+        "aws-core:aws-sdk-python-usage",
+        "agent-teams-workforce:senior-ml-engineer",
+        "agent-teams-workforce:implementer-contract"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "aws-mcp",
         "gitnexus"
       ]
     },
