@@ -92,6 +92,8 @@ ARTIFACT_REVIEW: Final = "review"
 ARTIFACT_CHECK: Final = "check result"
 ARTIFACT_RESOLVED: Final = "every item is resolved"
 ARTIFACT_TRD: Final = "TRD"
+ARTIFACT_SPECIALIST_RECOMMENDATIONS: Final = "specialist recommendations"
+"""The solutions architect's recommendations to the owner to create or update a specialist agent."""
 
 ROLE_ARCHITECT: Final = "solutions-architect"
 ROLE_REVIEWER: Final = "architecture-reviewer"

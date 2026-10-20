@@ -74,6 +74,7 @@ from orchestrator.flows.architecture_files import (
     ARTIFACT_CHECK,
     ARTIFACT_CONCLUSION,
     ARTIFACT_REVIEW,
+    ARTIFACT_SPECIALIST_RECOMMENDATIONS,
     ARTIFACT_TRD,
     LABEL_ANSWER,
     LABEL_CONTEXT,
@@ -113,6 +114,7 @@ if TYPE_CHECKING:
     from architecture_work_contract import (
         ArchitectureResult,
         Citation,
+        SpecialistRecommendation,
         SpecialistRequest,
         TrdAnswer,
         TrdRequest,
@@ -440,6 +442,19 @@ def result_check(run: StepRun) -> Callable[[Path], dict[str, JsonValue]]:
     return check
 
 
+def _recommendation(entry: SpecialistRecommendation) -> JsonValue:
+    """State one specialist recommendation as the action the owner reads.
+
+    Returns:
+        The recommendation as one sentence naming the agent, what it would hold and the subject.
+
+    """
+    return (
+        f"Solutions architect recommends: {entry['action']} the specialist agent {entry['agent']!r}: "
+        f"{entry['recommendation']} (subject it designed itself: {entry['subject']})"
+    )
+
+
 @agent_step(*agents_with_role(PLUGIN, ROLE_ARCHITECT))
 def architect(run: StepRun) -> AgentLaunch:
     """Build the session of any step the solutions architect performs.
@@ -481,6 +496,10 @@ def architect(run: StepRun) -> AgentLaunch:
                 file_artifact(LABEL_RESULT, output),
                 value_artifact(ARTIFACT_CONCLUSION, result["conclusion"]),
                 value_artifact(NO_FEATURE, unserved),
+                value_artifact(
+                    ARTIFACT_SPECIALIST_RECOMMENDATIONS,
+                    [_recommendation(entry) for entry in result["specialistRecommendations"]],
+                ),
             ),
         )
 

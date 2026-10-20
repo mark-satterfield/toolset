@@ -19,7 +19,12 @@ from orchestrator.core.handback_contract import PASSED_PHASE, SPEC_PHASE_PREFIX,
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_steps import stage_of
 from orchestrator.core.models import RunContext
-from orchestrator.flows.architecture_files import ARTIFACT_TRD, CONFIRM_TRD, HUMAN_ACTION_STAGE
+from orchestrator.flows.architecture_files import (
+    ARTIFACT_SPECIALIST_RECOMMENDATIONS,
+    ARTIFACT_TRD,
+    CONFIRM_TRD,
+    HUMAN_ACTION_STAGE,
+)
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_CREATION,
     ARTIFACT_REPOSITORIES,
@@ -77,6 +82,37 @@ def _failure_of(step: Step) -> JsonObject:
     return json_object(decoded) if isinstance(decoded, dict) else {}
 
 
+def _owner_concerns(following: Step | None) -> list[JsonValue] | None:
+    """Read the owner concerns of a next step that failed for one.
+
+    Returns:
+        The concerns the failure carries as evidence; None when the next step did not fail with an
+        owner concern.
+
+    """
+    if following is None or following["status"] != STATUS_FAILED:
+        return None
+    cause: JsonObject = _failure_of(following)
+    if cause.get("stage") != HUMAN_ACTION_STAGE:
+        return None
+    evidence: JsonValue = cause.get("evidence", [])
+    return evidence if isinstance(evidence, list) else [evidence]
+
+
+def _recommendations(journal: Journal) -> list[JsonValue]:
+    """Read the solutions architect's latest recommendations to create or update a specialist agent.
+
+    Every architect step rewrites one result in place, so the last step's recommendations are all of them.
+
+    Returns:
+        The recommendations, each one sentence for the owner; empty when there are none.
+
+    """
+    recorded: list[JsonValue] = _values(journal, ARTIFACT_SPECIALIST_RECOMMENDATIONS)
+    latest: JsonValue = recorded[-1] if recorded else []
+    return latest if isinstance(latest, list) else []
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def journal_result(journal: Journal, context: RunContext) -> JsonObject:
     """Assemble what a dispatch reports from the Epic's journal alone.
@@ -87,8 +123,9 @@ def journal_result(journal: Journal, context: RunContext) -> JsonObject:
 
     Returns:
         The repository span, the Stories and the Tasks written so far, the artifact report, the edges, whether the
-        Epic's lifecycle is done, and the stage the journal stands at; for a journal whose next
-        step failed with an owner concern, the owner's required actions.
+        Epic's lifecycle is done, and the stage the journal stands at; under the owner's required
+        actions, the solutions architect's latest recommendations to create or update a specialist
+        agent, and for a journal whose next step failed with an owner concern, that concern.
 
     """
     dispatch: DispatchArguments = dispatch_arguments()
@@ -130,12 +167,10 @@ def journal_result(journal: Journal, context: RunContext) -> JsonObject:
         result.update({key: edges[key] for key in ("closureEdges", "crossStoryDependencies") if key in edges})
     for written in _values(journal, STORY_EDGES_RESULT):
         result["storyEdges"] = written
-    if following is not None and following["status"] == STATUS_FAILED:
-        cause: JsonObject = _failure_of(following)
-        if cause.get("stage") == HUMAN_ACTION_STAGE:
-            result.update(
-                stage=HUMAN_ACTION_STAGE,
-                requiredHumanActions=cause.get("evidence", []),
-                headline="Owner facts are required",
-            )
+    concerns: list[JsonValue] | None = _owner_concerns(following)
+    if concerns is not None:
+        result.update(stage=HUMAN_ACTION_STAGE, headline="Owner facts are required")
+    actions: list[JsonValue] = [*(concerns or []), *_recommendations(journal)]
+    if actions:
+        result["requiredHumanActions"] = actions
     return result

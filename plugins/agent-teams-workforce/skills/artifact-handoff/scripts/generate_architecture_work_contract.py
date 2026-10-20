@@ -45,6 +45,7 @@ VOCABULARIES: Final[dict[str, tuple[str, str]]] = {
     "RequirementKind": ("REQUIREMENT", "REQUIREMENT_KINDS"),
     "Routing": ("ROUTING", "ROUTINGS"),
     "OwnerConcernKind": ("OWNER_CONCERN", "OWNER_CONCERN_KINDS"),
+    "RecommendationAction": ("RECOMMENDATION", "RECOMMENDATION_ACTIONS"),
 }
 # (reader suffix, $defs entry, schema file, who writes it) for every document an agent writes.
 DOCUMENTS: Final[tuple[tuple[str, str, str, str], ...]] = (

@@ -314,14 +314,22 @@ journal", so an answer on disk is never asked for again after an interruption. Y
 output is the state file, and the result your `Finish` step carries is your result file, under
 the artifact name `architecture result`.
 
-### When a specialist falls short
+### A subject no specialist covers
 
-When no specialist's specialty covers a question, including a resource type no specialist's
-`resourceTypes` names, or an answer shows the specialist lacks what its specialty needs, do not do its
-work yourself and do not work around it. List it in your result under `specialistGaps`: the
-agent (or the specialty no agent covers), what it lacked, and the request file that showed
-it, so that the specialist is enhanced. You still decide the matter on the evidence you have,
-and record that decision like any other.
+You are responsible for all of the architecture for the Epic. There is no gap a specialist
+leaves: the specialists are tools you use, and you use all of your tools and resources and
+produce and approve the architecture. When no specialist covers a subject the design needs,
+or a specialist's answer shows it lacks what the subject needs, design that subject yourself
+with your own tools and resources (arc42, the AWS documentation and guidance, your skills,
+the internet), and record the decision like any other.
+
+Then recommend to the owner a specialist to create or update, so that the subject has one next
+time. List each recommendation in your result under `specialistRecommendations`: `action`
+(`create` for a specialist no agent is, `update` for an existing agent), `agent` (its name, or
+the name you propose), `subject` (what you designed yourself) and `recommendation` (what the
+specialist would cover or hold: instructions, skills, tools). The recommendation reaches the
+owner as a required human action in the Epic's elaboration report; it never holds back the
+design.
 
 ## When documents disagree or a choice is open
 

@@ -25,6 +25,7 @@ type TrdChangeKind = Literal["add", "change", "remove"]
 type RequirementKind = Literal["obligation", "reuse"]
 type Routing = Literal["reject", "correct", "opinion", "competing-design", "decider"]
 type OwnerConcernKind = Literal["business-conflict", "section-2-conflict"]
+type RecommendationAction = Literal["create", "update"]
 
 NEED_APPROVED: Final[Literal["approved"]] = "approved"
 NEED_DISAGREEMENT: Final[Literal["disagreement"]] = "disagreement"
@@ -56,6 +57,8 @@ ROUTING_COMPETING_DESIGN: Final[Literal["competing-design"]] = "competing-design
 ROUTING_DECIDER: Final[Literal["decider"]] = "decider"
 OWNER_CONCERN_BUSINESS_CONFLICT: Final[Literal["business-conflict"]] = "business-conflict"
 OWNER_CONCERN_SECTION_2_CONFLICT: Final[Literal["section-2-conflict"]] = "section-2-conflict"
+RECOMMENDATION_CREATE: Final[Literal["create"]] = "create"
+RECOMMENDATION_UPDATE: Final[Literal["update"]] = "update"
 
 NEED_STATES: Final[tuple[NeedState, ...]] = (
     NEED_APPROVED,
@@ -106,6 +109,10 @@ ROUTINGS: Final[tuple[Routing, ...]] = (
 OWNER_CONCERN_KINDS: Final[tuple[OwnerConcernKind, ...]] = (
     OWNER_CONCERN_BUSINESS_CONFLICT,
     OWNER_CONCERN_SECTION_2_CONFLICT,
+)
+RECOMMENDATION_ACTIONS: Final[tuple[RecommendationAction, ...]] = (
+    RECOMMENDATION_CREATE,
+    RECOMMENDATION_UPDATE,
 )
 SCHEMA_DIR: Final[Path] = Path(__file__).resolve().parent.parent / "schemas"
 ARCHITECTURE_RESULT_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "architecture-result.schema.json"
@@ -265,12 +272,13 @@ class ReviewSignals(TypedDict):
     newPatterns: list[str]
 
 
-class SpecialistGap(TypedDict):
-    """Typed form of #/$defs/SpecialistGap in architecture-result.schema.json."""
+class SpecialistRecommendation(TypedDict):
+    """Typed form of #/$defs/SpecialistRecommendation in architecture-result.schema.json."""
 
+    action: RecommendationAction
     agent: str
-    lacked: str
-    request: str
+    subject: str
+    recommendation: str
 
 
 class ArchitectureResult(TypedDict):
@@ -288,7 +296,7 @@ class ArchitectureResult(TypedDict):
     unsettled: list[UnsettledMatter]
     reviewSignals: ReviewSignals
     costEvidence: list[CostEvidence]
-    specialistGaps: list[SpecialistGap]
+    specialistRecommendations: list[SpecialistRecommendation]
 
 
 class SpecialistRequest(TypedDict):

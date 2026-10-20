@@ -278,9 +278,17 @@ Notes on the diagram:
 
 - No subject is left uncovered. The owner: "The solutions architect is responsible for all
   architecture for the agent." and "that architecture agent must use all of its tools and
-  resurces and produce and approve the architecture." What the architect does with a subject no
-  specialist covers is an open question (Q10); the "no" edge shows the
-  architect doing it, which the owner's sentence requires in any case.
+  resurces and produce and approve the architecture." There is no specialist gap: a subject no
+  specialist covers, or one a specialist covers without what it needs, takes the "no" edge, and
+  the architect designs it with its own tools and resources.
+- For such a subject the architect also recommends to the owner a specialist to create or
+  update (the owner: "At the very least I would have likeed to been given the opportunity to
+  update the agent or perhaps create some new agents."). It lists each one in its result under
+  `specialistRecommendations` (`skills/artifact-handoff/schemas/architecture-result.schema.json`);
+  the architect step records them in the Epic's step journal, and the elaboration report
+  (`orchestrator/flows/elaboration_result.py`) puts the latest ones in the handback's
+  `requiredHumanActions`, which the driver records in the owner's human-action log whether or
+  not the run succeeded. A recommendation never stops the run.
 - The subjects are open. The owner: "What if the architecture calls for us to to build a container
   using KMS? I doubt that's even in hour hardcoded resourceType list." No list of today's resource
   types limits the subjects.
@@ -569,10 +577,9 @@ Decisions in this diagram, each for one reason:
 
 ## Open questions
 
-Questions Q4, Q5 and Q10 are the plan's questions for the owner, with the plan's recommendations.
+Questions Q4 and Q5 are the plan's questions for the owner, with the plan's recommendations.
 
 | Question | Where | Recommendation and reason |
 |---|---|---|
 | **Q4.** How are specialists chosen? | Sections 2 and 3 | The owner's second example: the architect's result lists the topics needing specialist attention with a reason for each; the workflow sends the architect's result to the specialist for each topic, from a list of topics and specialists the owner approves; the architect may ask a specialist a follow-up directly. The architect's reasoning decides the topics, so no Python decides, and a workflow is observable and runs specialists in parallel. |
 | **Q5.** Where does the record of tools, decisions and the Well-Architected review live? | Section 2 | A review record per Epic, written by the architecture stage, committed with the Epic's elaboration output and linked from the Epic's matrix entry. arc42 holds no decision records, so a log keeps the documents to design facts while every decision and review stays findable. |
-| **Q10.** What does the solutions architect do with a subject no specialist covers? | Section 3 | It designs the subject with its own tools and resources and recommends to the owner a specialist to create or update. The owner: the architect "must use all of its tools and resurces and produce and approve the architecture", and "At the very least I would have likeed to been given the opportunity to update the agent or perhaps create some new agents." |
