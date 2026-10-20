@@ -1109,11 +1109,11 @@ const MAINTAIN_SCHEMA = {
   },
 }
 
-const ARCH_WHERE = `THE ARCHITECTURE is at ${archPath}. It is not inside any product repository.
-- The effective version, the approved architecture, is every view under it outside \`built/\` and \`target/\`: \`arc42/\`, and \`detailed/\` for the detailed design (one component, one feature, components working together, the whole system). All of it was designed during architecture. \`arc42/02-architecture-constraints/README.md\` holds the owner's constraints.
-- A standard or policy (\`document_class: standard\` or \`policy\`) states requirements and carries no \`view_type\` or \`shows\`. Each view's frontmatter names its \`view_type\`, \`scope\`, \`subject\` and every element it \`shows\`: that frontmatter is the catalog. Find the views of an element by searching it (\`subject:\` and the \`shows:\` lists) for the element's name, in every section, at every scope.
-- \`built/<element>/\` records what a build delivered for one element where it differs from the effective version.
-- The architecture documentation model is ${MODEL}; the view types to choose from are ${MENU}.`
+const ARCH_WHERE = `THE ARCHITECTURE ROOT: ${archPath}
+The owner's constraints (section 2): ${CONSTRAINTS}
+The built views: ${BUILT_DIR}/
+The architecture documentation model: ${MODEL}
+The list of view types: ${MENU}`
 
 /** Returns the section 2 fingerprint, or { error }; with `keep`, section 2 is also copied aside for a restore. */
 const constraintsSnapshot = (label, phaseName, keep) => depscore(label, phaseName, `arch-constraints --arch-root ${shq(archPath)}${keep ? ' --keep' : ''}`)
@@ -1201,25 +1201,14 @@ async function stepCompare(step) {
     .map((r) => `- ${r.id} (${r.kind}, stated by the ${r.side} side): ${r.name}\n${headingLines(r)}`)
     .join('\n')
   const compared = await run(
-    `You are the built-architecture-comparer, recording what Story ${beadId}${story.title ? ` (${story.title})` : ''} BUILT. Its deploy to AWS dev succeeded. Compare the code on the Story's branch with the approved architecture and design headings that describe what it built, and record each difference.
+    `Story ${beadId}${story.title ? ` (${story.title})` : ''}: its deploy to AWS dev succeeded.
 
-THE CODE is the worktree below, at its checked-out HEAD (the Story's branch). Read it there: \`git -C "${repo}" grep -n <term> HEAD\`, \`git -C "${repo}" show HEAD:<path>\`. Change nothing in it.
-${repo}${hasText(builtArgs.repoName) ? `\nRepository: ${builtArgs.repoName}` : ''}${hasText(builtArgs.branch) ? `\nBranch: ${builtArgs.branch}` : ''}
+THE CODE: the worktree ${repo}, at its checked-out HEAD${hasText(builtArgs.repoName) ? `\nRepository: ${builtArgs.repoName}` : ''}${hasText(builtArgs.branch) ? `\nBranch: ${builtArgs.branch}` : ''}
 
 ${ARCH_WHERE}
 
-THE STACKS AND ENTRIES OF THE MATRIX THIS STORY BUILT, as its Tasks state them, each with the approved architecture and design headings (arc42 and detailed/) that describe it:
-${rowLines}
-
-Everything else in the repository is outside the comparison: this Story did not build it, it is a hint of how something was once solved, and a difference between it and the architecture is not a finding.
-
-DO THIS:
-1. Read the headings named for each entry. For an entry with no heading named, find the effective views that show it through the catalog.
-2. For each entry, compare what the code this Story built does with what those headings state: which block is responsible, which block owns the data, who calls whom, what happens in what order, where it runs, and the detailed design (routes, fields, keys, types, schemas, names). A name, a field or a value no approved document states is outside the comparison.
-3. For each difference, write one view in ${BUILT_DIR}/<element>/, where <element> is the entry's name, in the section folder the model names for its view type, named for the element it shows. Each view has catalog frontmatter (\`view_type\` from ${MENU}, \`scope\`, \`subject\`, \`shows\`, \`lifecycle_state: in-review\`), a Mermaid diagram where the view type has one, and prose that describes the element as built, citing the code by repository, path and line. Where a view in ${BUILT_DIR}/<element>/ already shows the same element, update it in place. Write nothing outside ${BUILT_DIR}/.
-4. Where the code matches the headings, write nothing for it.
-
-Return one entry in \`differences\` per difference: the element (the entry's id), the effective views it differs from (absolute paths), what was built, the \`file:line\` citations, and the absolute path of the built view that records it. Return in \`files\` the absolute path of every file you wrote or updated under ${BUILT_DIR}/. With no difference, return both empty.`,
+THE STACKS AND ENTRIES OF THE MATRIX THIS STORY BUILT, as its Tasks state them, each with the approved architecture and design headings that describe it:
+${rowLines}`,
     { label: 'built:compare', phase: phaseTitle('compare'), agentType: 'built-architecture-comparer', effort: 'medium', schema: COMPARE_SCHEMA }
   )
   if (!compared) return failed(phaseTitle('compare'), 'compare', `the built-architecture-comparer returned no comparison for Story ${beadId}`)
@@ -1254,12 +1243,10 @@ Return one entry in \`differences\` per difference: the element (the entry's id)
 }
 
 // ---------------------------------------------------------------- Correct
-const SECTION_2_RULE = `Write nothing under ${CONSTRAINTS}: section 2 holds the owner's constraints, and only the owner changes them; the run fails on any change there. A constraint the build conflicts with goes in \`constraintIssues\`, with the constraint, the built view and the reason.`
-const correctTask = (builtFiles) => `Correct the effective version, every view under ${archPath} outside ${BUILT_DIR}/ and ${TARGET_DIR}/ (\`arc42/\` and \`detailed/\`), to match what was built, as the architecture documentation model's step 6 describes. The built views are:
-${builtFiles.map((f) => `- ${f}`).join('\n')}
-For each element a built view shows, find every effective view that shows it through the catalog (\`subject\` and \`shows\`), at every scope, and update it to describe the element as built; add a view where the effective version has none for a built element, in the section folder the model names, named for its subject. Keep every touched view's catalog frontmatter true to what it now shows. Edit in place: no changelog narrative, and no superseded content left beside the new. Leave every \`lifecycle_state\` as you find it: the run sets it after review. Leave ${BUILT_DIR}/ as it is: the run removes each built view once the effective version matches it.
-${SECTION_2_RULE}
-The result names every file you changed, created or deleted as an absolute path under ${archPath}, in \`matched\` every built view the effective version now matches, and every contradiction with another effective view or open target.`
+const correctTask = (builtFiles) => `${ARCH_WHERE}
+
+THE BUILT VIEWS:
+${builtFiles.map((f) => `- ${f}`).join('\n')}`
 
 const touched = (u) => [...new Set([...listed(u.changedFiles), ...listed(u.createdFiles)])]
 const allTouched = (u) => [...touched(u), ...listed(u.deletedFiles)]
@@ -1277,13 +1264,13 @@ async function stepCorrect(step) {
   const pass = J.earlier(['deploy:built-correct'], step).length
   const reported = await run(
     findings
-      ? `You are the architecture-maintainer, CORRECTING your correction of the effective version (pass ${pass} of ${MAX_CORRECTIONS}). The architecture-conformance-reviewer found the findings below. Correct each one in place, then return the complete report, every pass together.
+      ? `Correction pass ${pass} of ${MAX_CORRECTIONS}: answer the review findings below.
 
 FINDINGS:
 ${JSON.stringify(findings, null, 1)}
 
 ${correctTask(builtFiles)}`
-      : `You are the architecture-maintainer.\n\n${correctTask(builtFiles)}`,
+      : correctTask(builtFiles),
     { label: findings ? `built:correct-${pass}` : 'built:correct', phase: phaseTitle('correct'), agentType: 'architecture-maintainer', effort: 'medium', schema: MAINTAIN_SCHEMA }
   )
   if (!reported) return failed(phaseTitle('correct'), 'correct', findings ? `the architecture-maintainer returned no result for correction ${pass}` : 'the architecture-maintainer returned no result')
@@ -1320,20 +1307,16 @@ async function stepReview(step) {
   const reviewPass = J.earlier(['deploy:built-review'], step).length + 1
   const corrections = J.earlier(['deploy:built-correct'], step).length - 1
   const againBlock = previous
-    ? `\nTHIS IS REVIEW ${reviewPass}. The previous review found the findings below, and correction pass ${corrections} changed these files to answer them: ${listed(J.latest('changedSinceLast', step)).join(', ')}. Confirm each finding is resolved, and check the changed files as fully as the rest.\nPREVIOUS FINDINGS:\n${JSON.stringify(previous.findings || [], null, 1)}\n`
+    ? `\nREVIEW ${reviewPass}. Correction pass ${corrections} changed these files to answer the previous findings: ${listed(J.latest('changedSinceLast', step)).join(', ')}\nPREVIOUS FINDINGS:\n${JSON.stringify(previous.findings || [], null, 1)}\n`
     : ''
   const got = await run(
-    `You are the architecture-conformance-reviewer. Check one correction of the effective version to match what a build delivered; report findings and fix nothing.
-
-THE BUILT VIEWS (what was built, citing the code):
+    `THE BUILT VIEWS:
 ${builtFiles.map((f) => `- ${f}`).join('\n')}
-THE CORRECTION changed or created these files, every one of which you review:
+THE CORRECTION changed or created these files:
 ${touched(update).map((f) => `- ${f}`).join('\n') || '- (none)'}
 Files it deleted: ${listed(update.deletedFiles).join(', ') || '(none)'}
 ${againBlock}
-${ARCH_WHERE}
-
-Check that the effective version now describes each element as the built views show it, no more and no less; that every effective view the catalog lists for each built element was updated, at every scope; that new views sit in the section folders the model names with catalog frontmatter true to what they show; that no superseded content remains beside the new and no view contradicts another or an open target; and that nothing under ${CONSTRAINTS} changed. Return in \`reviewedFiles\` the absolute path of every file you checked and found conforming; in \`matchedBuiltViews\` the absolute path of every built view above that the effective version now describes completely, compared by you view by view (a built view goes in this list only when every element it shows reads the same in the effective version); and one finding per problem with its file and evidence. \`conforms\` is true only when there is no finding.`,
+${ARCH_WHERE}`,
     { label: `built:review-${reviewPass}`, phase: phaseTitle('correct'), agentType: 'architecture-conformance-reviewer', effort: 'medium', schema: BUILT_CONFORMANCE_SCHEMA }
   )
   if (!got) return failed(phaseTitle('correct'), 'correct', 'the architecture-conformance-reviewer returned no result')

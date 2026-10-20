@@ -226,18 +226,17 @@
     },
     {
       "name": "architecture-conformance-reviewer",
-      "description": "Check a correction of the effective architecture documents from what a Story built, without modifying them.",
+      "description": "Check, without modifying anything, that a correction of the effective architecture documents describes each element exactly as the built views of a Story record it, at every scope, with conforming front matter and placement and section 2 untouched.",
       "skills": [
         "agent-teams-workforce:artifact-handoff",
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:arc42",
-        "agent-teams-workforce:aws-solution-architect",
+        "agent-teams-workforce:architecture-diagramming",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:effective-architecture"
       ],
       "mcpServers": [
-        "aws-mcp",
         "mcp-graphrag-server",
         "gitnexus"
       ]
@@ -304,7 +303,7 @@
     },
     {
       "name": "architecture-maintainer",
-      "description": "Write the solutions architect's decisions into the arc42 documents, each fact in its one home.",
+      "description": "Write the solutions architect's decisions into the architecture documents (arc42 and detailed/), each fact in its one home with links from every other document, and correct the effective documents to match what a Story built.",
       "skills": [
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:subagent-contract",
@@ -520,10 +519,11 @@
     },
     {
       "name": "built-architecture-comparer",
-      "description": "Compare the code one Story built with the approved architecture for its elements and record each difference.",
+      "description": "Compare the code one Story built with the approved architecture and design headings that describe the stacks and entries it built, and record each difference as an in-review view under built/<element>/, citing the code by file and line.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:architecture-diagramming",
         "agent-teams-workforce:graphrag-lookup"
       ],
       "mcpServers": [
