@@ -729,7 +729,8 @@
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-cdk",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:cdk-coding"
+        "agent-teams-workforce:cdk-coding",
+        "agent-teams-workforce:implementer-contract"
       ],
       "mcpServers": [
         "aws-mcp",
