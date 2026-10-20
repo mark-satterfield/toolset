@@ -5,7 +5,8 @@ script chose for the architecture work of the Epic: the architect's state and re
 the TRD. Every later step is handed that file through the journal, so no step derives a path of
 its own.
 
-What a session reads of the architecture comes from the matrix: the session runs the
+A session reads the PRD it is handed, and the existing architecture in the arc42 documents and the
+matrix, which are its starting point and not a complete record: the session runs the
 ``atw-matrix`` reads its definition names, or a script step writes the result of a matrix read to
 a file and the brief names that file.
 """

@@ -374,7 +374,10 @@ detailed design.", "How would architecture know which repos are needed until it 
 resources are needed? I want to remind you that not all repos have stacks.", "All of those
 specialest agents that weren't happening until spec writing still have to be done before you
 know what repos can be determined." and "all resources or components or whatever will need a
-repository." Who decides where an element lives is an open question (Q9).
+repository." The solutions architect decides where each element lives (the architecture decides
+the repository and stack of each element, and the `polyrepo-steward` does the repository work
+that follows, because where an element lives follows from the design and repository work is the
+steward's).
 
 ```mermaid
 flowchart TD
@@ -383,9 +386,8 @@ flowchart TD
     known -->|"yes"| fit{"Does the design still fit there?"}
     fit -->|"yes"| keep["Keep it there"]
     fit -->|"no"| place
-    known -->|"no: new"| place{"open - Q9 - who decides where it lives"}
-    place -->|"the solutions architect"| decide["Stack and repository decided"]
-    place -->|"the polyrepo-steward"| decide
+    known -->|"no: new"| place["The solutions architect decides its stack and repository"]
+    place --> decide["Stack and repository recorded in the matrix, architecture side"]
     decide --> newRepo{"Does the repository exist?"}
     newRepo -->|"no"| create["polyrepo-steward creates it"]
     newRepo -->|"yes"| m(("merge"))
@@ -567,11 +569,10 @@ Decisions in this diagram, each for one reason:
 
 ## Open questions
 
-Questions Q4 to Q10 are the plan's questions for the owner, with the plan's recommendations.
+Questions Q4, Q5 and Q10 are the plan's questions for the owner, with the plan's recommendations.
 
 | Question | Where | Recommendation and reason |
 |---|---|---|
 | **Q4.** How are specialists chosen? | Sections 2 and 3 | The owner's second example: the architect's result lists the topics needing specialist attention with a reason for each; the workflow sends the architect's result to the specialist for each topic, from a list of topics and specialists the owner approves; the architect may ask a specialist a follow-up directly. The architect's reasoning decides the topics, so no Python decides, and a workflow is observable and runs specialists in parallel. |
 | **Q5.** Where does the record of tools, decisions and the Well-Architected review live? | Section 2 | A review record per Epic, written by the architecture stage, committed with the Epic's elaboration output and linked from the Epic's matrix entry. arc42 holds no decision records, so a log keeps the documents to design facts while every decision and review stays findable. |
-| **Q9.** Who decides where an element lives, once the detailed design has determined the resources? | Section 5 | The architecture decides the repository and stack of each element, and the `polyrepo-steward` does the repository work that follows. Where an element lives follows from the design, and repository work is the steward's. |
 | **Q10.** What does the solutions architect do with a subject no specialist covers? | Section 3 | It designs the subject with its own tools and resources and recommends to the owner a specialist to create or update. The owner: the architect "must use all of its tools and resurces and produce and approve the architecture", and "At the very least I would have likeed to been given the opportunity to update the agent or perhaps create some new agents." |

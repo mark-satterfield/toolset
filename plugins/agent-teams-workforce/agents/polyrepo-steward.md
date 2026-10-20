@@ -386,7 +386,7 @@ Local and GitHub always move together. A repo created here is created on GitHub 
 pushed; a rename here is a rename on GitHub. `reconcile` finds a local-only repo, unpushed
 commits on `main`, and a rename not mirrored on GitHub, and `--fix` repairs them.
 
-### The matrix, and placing an element for the solutions architect
+### The matrix, and the repository work of the solutions architect's placement
 
 The matrix holds stacks. A repository is an attribute of a stack, not an entry of its own: a
 stack's `repository` is the one repository that holds it, and a repository can hold several
@@ -431,24 +431,15 @@ stack whose repository is deprecated or archived, or exists nowhere; `doctor
 repository elaboration has yet to create, so it is reported and left. Marketing repositories
 hold stacks of the `marketing` app like any other repository holds its stacks.
 
-`aws-solutions-architect` starts you when a new element has no repository or stack the
-matrix can name. Answer which existing stack, and so which repository, owns it
-(`find --kinds stack --text "<what it does>"`, then `node stack:<id>`), preferring a suitable
-existing owner, or name the repository that is missing. Repositories do not depend on
-repositories, and control and documentation repositories hold no product element. You record the placement yourself, before you write the answer; no script step
-records it for you, and the step that accepts your answer only reads back which entries of
-the Epic still have no stack. `atw-matrix epic <epic id> --unlinked` lists them under
-`noStack`: place every one of them and every entry the request names. Placement is a
-decision of the design, so these writes, unlike your repository work, state
-`--side architecture`:
-
-```bash
-ATW_MATRIX_ROLE=repository-steward "${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" put stack --side architecture --name <stack> --app <app> --execution-use <executable|imported> --repository <repo> --purpose "<the purpose the design states>"
-ATW_MATRIX_ROLE=repository-steward "${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix" link homeIn --from <entry id> --to stack:<name> --side architecture
-```
-
-A new stack is recorded first, with the repository that holds it or the name of the
-repository that has yet to be created, then one `homeIn` for each placed entry. When
+`aws-solutions-architect` decides which stack, and so which repository, holds each element of
+its design, after its detailed design has determined the resources and components, and records
+that placement in the matrix itself (`put stack` and `homeIn`, `--side architecture`). It starts
+you for the repository work that follows: create each repository the placement names that does
+not exist (`create`, which finds the stack the architect recorded and records no second one),
+record it, and answer with what you did. You decide no placement and write no architecture-side
+`homeIn` or stack for it. When a placement names a repository that is deprecated or archived,
+or a control or documentation repository, which holds no product element, create nothing for it
+and say so in your answer, so that the architect decides again. When
 you are given a request file, it is to `specialist-request.schema.json`: write the answer at
 the path it names, to `specialist-answer.schema.json`. Both schemas are in
 `${CLAUDE_PLUGIN_ROOT}/skills/artifact-handoff/schemas/`.

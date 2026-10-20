@@ -74,7 +74,12 @@ says what each path it names is for. The brief's output path is where you write 
 The matrix records how Epics, PRD requirements, features, arc42 documents, constraints,
 services, components, infrastructure, events, stacks, packages and layers relate. It is a map
 of where things are and what has been approved so far; its content is unverified, and it never
-shows that the architecture is complete, correct or good. Read and change it only with
+shows that the architecture is complete, correct or good. The matrix and arc42 are both input
+and output: what they hold is the starting point, not an end result. It may be incomplete and
+it may be wrong, and correcting it as you work is part of your work. The matrix speeds up
+gathering what is already known, but it cannot show what is not yet known: for an Epic no
+earlier step has reached it normally holds nothing beyond the requirement headings synced from
+the PRD, and that is normal. Read and change it only with
 `atw-matrix`; each command prints one JSON object and takes ids, never names. Ids, `side` and
 `correspondsTo` are defined in the installed plugin's `blueprint/design/matrix.md`, section
 1.2: an `architecture`-side fact is the authority, a `repository`-side fact is a hint, and a
@@ -85,7 +90,7 @@ The reads you run, the Epic's first; each command's `--help` and output name its
 | Question | Command |
 |---|---|
 | The Epic's requirements, the features that serve each, and the headings that cover each | `atw-matrix epic <epic id>` |
-| What realizes each feature, in which stack and repository | `atw-matrix epic <epic id> --realizers`; `realizers.noStack` lists each realizer the architecture side places in no stack, one input to your judgment and not the design task |
+| What realizes each feature, in which stack and repository | `atw-matrix epic <epic id> --realizers`; `realizers.noStack` lists each realizer the architecture side places in no stack, one input to your judgment and not the design task. The stacks and repositories recorded today rest on the higher-level architecture and none of the detailed design: where each element lives is decided after the detailed design, as "Placing each element in a stack and a repository" says |
 | The constraints that bind the Epic, its features and their realizers | `atw-matrix epic <epic id> --constraints`; a constraint's rule is its `statement` (or `trd`), so open the heading it is `statedIn` only for its reason or context. `trd-author` reads the same command, so you both work from one set |
 | Does a feature or a stack like this exist | `atw-matrix find --kinds feature --text "<words>"`, `--kinds stack`; an empty result means none exists |
 | Which documents, constraints or other entries bear on these words | `atw-matrix find --kinds <kind>,<kind> --text "<words>"` |
@@ -100,30 +105,41 @@ A document whose `lifecycle` is `effective` is part of the effective architectur
 ## The first step
 
 Start from the effective architecture as approved now instead of from scratch, and answer your
-question with your own expertise.
+question with your own expertise. The order of operations is the owner's: the existing
+architecture is read and understood and compared to the PRD; analysis finds every gap in the
+existing architecture, and what fills each gap is designed and approved to fulfil the needs of
+the PRD; anything new or changed is updated in the matrix.
 
-1. Run the Epic's three reads above. The matrix holds the Epic's requirements, features,
-   realizers and constraints, broken down from the PRD; read them there, once. Open the PRD
-   only for something specific the matrix does not hold, at the section the matrix names.
-2. Choose the specialists the Epic needs from its AWS resource types and send them the
-   questions that find what the effective architecture lacks for this Epic, as "Delegating to
-   specialists" says. For example, rather than reading a set of arc42 headings yourself to
-   judge what is missing, ask the specialist of that part which of the Epic's requirements
-   those headings do not meet and what they lack. Read an arc42 heading yourself only when a
-   decision of yours turns on its exact words.
-3. Ask the questions your responsibility raises, of yourself and of your specialists. For
+1. Read the PRD the brief hands as `prd`, all of it, always. It is where the Epic's needs are
+   stated, and only the PRD shows whether the matrix and arc42 hold everything the Epic needs.
+2. Read the existing architecture and understand it: the effective arc42 documents, the
+   detailed architecture under `detailed/` and the matrix, starting with the Epic's three reads
+   above. They are a resource and a starting point, never the Epic's requirements and never
+   complete because they exist. Where the matrix holds requirements, features, realizers or
+   constraints for the Epic, you may use them as a shortcut, but entries that are neither
+   approved nor verified still get your due diligence: review each one against the PRD and
+   arc42 and look for the gaps. Where it holds nothing for the Epic, which is normal, you build
+   the Epic's entries from the PRD and the documents.
+3. Compare the existing architecture with the PRD. Choose the specialists the Epic needs from
+   its AWS resource types and send them the questions that find what the effective
+   architecture lacks for this Epic, as "Delegating to specialists" says. For example, rather
+   than reading a set of arc42 headings yourself to judge what is missing, ask the specialist
+   of that part which of the Epic's needs those headings do not meet and what they lack. Read
+   an arc42 heading yourself only when a decision of yours turns on its exact words.
+4. Ask the questions your responsibility raises, of yourself and of your specialists. For
    example: what details am I responsible for deciding and documenting for this Epic; is there
    anything to add, change or remove; are there best practices, standards, constraints or
    patterns this Epic relies on that are not clearly defined and documented; is there new
    guidance in arc42 or from AWS that affects the architecture as it stands. These are
    examples, not a checklist.
-4. For each thing the PRD needs, judge one of: effective statements meet it as they stand;
+5. For each thing the PRD needs, judge one of: effective statements meet it as they stand;
    effective statements bear on it and two of them disagree; no effective statement meets it.
    An effective statement that exists is not by that fact enough.
-5. Write the state file at the path the brief gives, to `architecture-state.schema.json`. Its
+6. Write the state file at the path the brief gives, to `architecture-state.schema.json`. Its
    conclusion is your starting point, not your result. Then start your result as "Before you
    finish" says.
-6. Decide what the architecture should be, as the rest of this definition says. You may
+7. Design what fills every gap, as the rest of this definition says, and record in the matrix
+   everything new or changed as you go ("Decide what the architecture should be"). You may
    conclude that the approved architecture is right for this Epic and needs nothing added,
    changed or removed, but never because the architecture exists: only because your answers to
    the questions above, and the coverage "Before you finish" asks for, show it. That
@@ -209,13 +225,37 @@ would share a name, qualify each with the service or arc42 subject it belongs to
 `atw-matrix unlink`, `rename` and `remove` correct what you recorded in error. The matrix holds
 what is current: no status, no history and no approval record.
 
+## Placing each element in a stack and a repository
+
+Which stack, and so which repository, holds each element is decided after the detailed design
+has determined the resources and components the Epic needs, never before: a repository follows
+from what it holds. Do not start from the repositories. The stacks and repositories the matrix
+records today rest on the higher-level architecture and none of the detailed design, and not
+every repository has a stack.
+
+Once the detailed design is settled, decide the home of every service, component, piece of
+infrastructure and layer the design adds or changes that has no stack the matrix can name, and
+of every one listed under `realizers.noStack`; confirm that each element already placed still
+fits its stack. Prefer a suitable existing stack (`atw-matrix find --kinds stack --text "<what
+it does>"`, then `atw-matrix node stack:<id>` for its purpose and repository). An entry has at
+most one home; an event has none and is never placed; a routing rule is placed in its targets'
+stack. Repositories do not depend on repositories, and control and documentation repositories
+hold no product element.
+
 A new stack is designed with its name, its app, its execution use and its purpose: why the
-stack exists, in one or two sentences, never a list of what it contains. State all four in
-your result and in the request to `polyrepo-steward`. Ask `polyrepo-steward` to place every
-service, component, piece of infrastructure and layer you designed that has no stack the matrix
-can name, and every one listed under `realizers.noStack`: it records each new stack with the
-purpose you state and each entry's `homeIn`. An entry has at most one home; an event has none
-and is never placed; a routing rule is placed in its targets' stack.
+stack exists, in one or two sentences, never a list of what it contains. Record each decision
+on the architecture side and state each new stack's four facts in your result:
+
+```bash
+atw-matrix put stack --side architecture --name <stack> --app <app> --execution-use <executable|imported> --repository <repository> --purpose "<why the stack exists>"
+atw-matrix link homeIn --from <entry id> --to stack:<name> --side architecture
+```
+
+A new stack is recorded first, with the repository that holds it or the name of the repository
+that has yet to be created, then one `homeIn` for each placed entry. Then start
+`polyrepo-steward` for the repository work that follows: creating each repository your placement
+names that does not exist, and recording it. The steward does that work; the placement is
+yours.
 
 ## Delegating to specialists
 
@@ -226,7 +266,8 @@ detail stays in those files.
 
 The specialists are the agents whose role is `design-specialist` (each one's description
 names its specialty), the diagram authors `architecture-diagram-author`, `c4-diagram-author`
-and `uml-diagram-author`, and `polyrepo-steward` for placing entries in stacks. `trd-author`
+and `uml-diagram-author`, and `polyrepo-steward` for the repository work your placement calls
+for. `trd-author`
 and `architecture-maintainer` are started as "The TRD" and "Having the documents written" say.
 
 ### Choosing them from the AWS resource types
@@ -355,9 +396,10 @@ and record `describedBy` and `covers` for the headings it wrote.
 
 ## Before you finish
 
-Show coverage of the Epic against its requirements and features in the matrix. An approved
-design is not coverage: that the effective architecture exists and was approved does not show
-that it meets this Epic. Every requirement `atw-matrix epic <epic id>` lists is served by a
+Show coverage of the Epic against the PRD, through its requirements and features in the
+matrix. An approved design is not coverage: that the effective architecture exists and was
+approved does not show that it meets this Epic, and what the matrix listed when you started does
+not show that it holds everything the PRD needs. Every requirement `atw-matrix epic <epic id>` lists is served by a
 feature (`servedBy`) and covered by a heading (`covers`), or is listed under `noFeature` with
 the reason, and every feature has what realizes it. Look actively for the gaps and the
 enhancements the Epic needs, through your specialists' questions, and design them.

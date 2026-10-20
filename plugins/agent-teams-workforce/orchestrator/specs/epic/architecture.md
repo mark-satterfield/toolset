@@ -6,8 +6,14 @@ Code: `orchestrator/flows/prd_to_spec.py` (the open-run step), `architecture.py`
 
 One agent, `aws-solutions-architect`, is responsible for the solution: it decides the architecture
 a PRD needs, starting from the effective architecture (the effective arc42 before this Epic runs, which
-is approved as of now and never complete), until it is ready for review. The matrix is its map and
-never shows that the architecture is complete, correct or good. Every conclusion it reaches,
+is approved as of now and never complete), until it is ready for review. It always reads the PRD.
+arc42 and the matrix are both input and output: a starting point that may be incomplete or wrong,
+and for an Epic no earlier step has reached the matrix normally holds nothing beyond the
+requirement headings synced from the PRD, which is normal. The order of operations is the owner's
+(`blueprint/requirements/pipelines.md`, "Architecture, the PRD, arc42 and the matrix"): the
+existing architecture is read and understood and compared to the PRD; every gap is designed and
+approved; anything new or changed is updated in the matrix. The matrix never shows that the
+architecture is complete, correct or good. Every conclusion it reaches,
 `no-change-needed` included, goes through the check and the review. The script starts sessions, records steps and carries results. It decides nothing
 about who the architect asks, in what order or how often. Every step is one step of the Epic's
 journal, and the journal alone decides where a run begins. The script names agents by the `role`
@@ -45,7 +51,10 @@ is written from the matrix for it: the architect reads the Epic live, with
 (what each returns is defined in `blueprint/design/matrix.md`, queries Q2 and Q4, Q26 and Q5), and runs
 `atw-matrix impact --id <id>` itself for an entry it means to change. The session is granted the
 work folder and no folder of the architecture or of the PRDs. The architect records its own entries and links in the matrix (`atw-matrix put`, `link`)
-before it writes its result.
+before it writes its result. After its detailed design has determined the resources and
+components, it decides the stack, and so the repository, of each element and records that
+placement itself (`put stack`, `homeIn`, architecture side); the repository steward does the
+repository work that follows, such as creating a repository the placement names.
 Its output is the architecture result at the path the context file names. The session's output
 check validates the result against its schema, then runs `repo_scoping.story_build_problems` on the
 result's `addedOrChangedElements` (what the Epic's Stories build): an id the matrix lacks, an entry
@@ -83,7 +92,7 @@ ends, the runner reads the journal again:
 
 | Helper left running | Request artifact | Output | Records |
 |---|---|---|---|
-| a design specialist, a diagram author, the repository steward | `request` or `question` | the answer path the request names | the request, file `answer`; for the repository steward, which records each stack and each `homeIn` itself, also the value `entries with no stack` (what `atw-matrix epic <id> --unlinked` still lists under `noStack`; an event has no home and is never in it) |
+| a design specialist, a diagram author, the repository steward | `request` or `question` | the answer path the request names | the request, file `answer`. The repository steward places nothing: an entry the architect's result builds in no stack fails the architect's output check |
 | `trd-author` | `request` | the answer path the request names; the TRD at the path the request names is kept and updated in place | the request, file `TRD`, file `answer`, value `obligations with no source`, value `constraints recorded`. The step records one `constraint` for each requirement the answer lists under `requirements` (every requirement that write added or changed), as a pointer `trd` (the Epic and the requirement id, a heading of the TRD) with no copy of its text, with `statedIn` and `appliesTo`, removes the constraint of each id the answer lists under `removed`, and records one with no `statedIn` for each `noSource` obligation; it fails when the matrix refuses one |
 | `architecture-maintainer` | `write request` or `request` | the result path the request names | the request, file `what was written`, value `documents synced`. The session is granted the architecture root, where it writes; the step sets each document written that exists `in-review` in its front matter (`matrixsync.set_lifecycle`), so the check, the review and the promotion of this run reach it, then runs `sync-documents --paths` on the documents written |
 

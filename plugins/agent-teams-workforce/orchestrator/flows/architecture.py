@@ -1,10 +1,14 @@
 """The solutions architect's steps, and the sessions of the agents it left running.
 
 One agent, the solutions architect, decides what the architecture should be for a PRD. The script
-starts the agent's session, hands it the files its definition names and records what it returns;
-the architect reads what the matrix holds for the Epic itself, live, with ``atw-matrix``, so
-nothing it is handed drifts from the matrix it writes to. What the architect reads, whom it asks
-and in what order are its own decisions. The same launch builder serves every step that agent
+starts the agent's session, hands it the files its definition names and records what it returns.
+The architect always reads the PRD it is handed; the arc42 documents and the matrix are its
+starting point, both input and output, possibly incomplete or wrong and possibly empty for the
+Epic. It reads what the matrix holds for the Epic itself, live, with ``atw-matrix``, so nothing it
+is handed drifts from the matrix it writes to. It decides the stack and repository of each element
+after its detailed design and records that placement itself; the repository steward does the
+repository work that follows. What the architect reads, whom it asks and in what order are its
+own decisions. The same launch builder serves every step that agent
 performs: the first, its "Finish" after an interruption, a correction after findings or after the
 mechanical check, and a competing design the lead orders.
 
@@ -120,7 +124,7 @@ if TYPE_CHECKING:
     from matrixquery import EpicView
     from matrixstore import Matrix
     from matrixsync import DocumentsSynced
-    from step_journal_contract import Artifact, Step, StepId, StepPlan
+    from step_journal_contract import Step, StepId, StepPlan
 
     from orchestrator.core.io import JsonValue
 
@@ -129,7 +133,6 @@ ARCHITECT_PURPOSE: Final = "One agent is responsible for the architecture this P
 ARCHITECT_REF: Final = "architect"
 NO_SOURCE: Final = "obligations with no source"
 NO_FEATURE: Final = "requirements with no feature"
-NO_STACK: Final = "entries with no stack"
 SYNCED: Final = "documents synced"
 CONSTRAINTS: Final = "constraints recorded"
 ATTR_HEADING: Final = "heading"
@@ -446,8 +449,9 @@ def architect(run: StepRun) -> AgentLaunch:
     after one of the architect's continues the nearest earlier session the agent holds. The
     output is always the architecture result, which every step after the first updates in place.
 
-    The session is handed files and no folder of the architecture or of the PRDs: the matrix
-    names the documents and headings the Epic reaches. A result already at the result path is
+    The session is handed files and no folder of the architecture or of the PRDs: it reads the PRD
+    it is handed in full, and the documents and headings the Epic reaches through the matrix, which
+    is its starting point and not a complete record. A result already at the result path is
     kept for every step: the architect writes its result as the work goes, so a session that
     starts again, for the first step as for any other, continues from the partial result. A
     valid file at the result path is therefore never taken as the step's finished output
@@ -513,17 +517,6 @@ def _saved_request(run: StepRun, *names: str) -> tuple[str, Path]:
     raise ArchitectureStepError(run, f"neither the step nor its inputs hold a request file named one of {names!r}")
 
 
-def _no_stack(bead: str) -> list[JsonValue]:
-    """List the entries an Epic reaches that have no home in code, as ``epic --unlinked`` returns them.
-
-    Returns:
-        The ids under ``noStack``.
-
-    """
-    view: EpicView = epic_view(read_matrix(matrix_file()), bead, unlinked=True)
-    return [*view.get("noStack", [])]
-
-
 @agent_step(
     *agents_with_role(PLUGIN, ROLE_SPECIALIST),
     *agents_with_role(PLUGIN, ROLE_DIAGRAMS),
@@ -532,8 +525,10 @@ def _no_stack(bead: str) -> list[JsonValue]:
 def specialist(run: StepRun) -> AgentLaunch:
     """Build the session of a specialist, a diagram author or the repository steward.
 
-    The repository steward records each home it places in the matrix itself; its step records the
-    entries of the Epic that have no stack afterwards.
+    The repository steward does the repository work the architect's placement calls for, such as
+    creating a repository the placement names; the placement itself is the architect's, recorded in
+    the matrix before the steward starts and checked when the architect's result is accepted
+    (``repo_scoping.story_build_problems``).
 
     Returns:
         The launch from the saved request file: the answer path the request names as output.
@@ -544,12 +539,8 @@ def specialist(run: StepRun) -> AgentLaunch:
     name, asked = _saved_request(run, LABEL_REQUEST, LABEL_QUESTION)
     request: SpecialistRequest = checked_file(run, asked, validate_specialist_request)
 
-    def accept(accepted: StepRun, output: Path) -> Completion:
-        artifacts: list[Artifact] = [file_artifact(LABEL_ANSWER, output)]
-        if accepted.step.get("agent") in agents_with_role(PLUGIN, ROLE_STEWARD):
-            unplaced: list[JsonValue] = accepted.tools.portfolio(accepted.inputs.stage, _no_stack, str(accepted.bead))
-            artifacts.append(value_artifact(NO_STACK, unplaced))
-        return Completion(artifacts=tuple(artifacts))
+    def accept(_accepted: StepRun, output: Path) -> Completion:
+        return Completion(artifacts=(file_artifact(LABEL_ANSWER, output),))
 
     return AgentLaunch(
         output=Path(request["answerPath"]),

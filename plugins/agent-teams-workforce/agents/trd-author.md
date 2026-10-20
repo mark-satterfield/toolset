@@ -29,10 +29,11 @@ which mode; that schema's descriptions say what each member is.
 
 Draft the TRD early, from three sources and only these:
 
-- The Epic's PRD requirements. `atw-matrix epic <the request's epic>` lists the Epic's
-  requirements; each requirement's `name` is its heading in the PRD at `prdPath`. Read those
-  headings, not the whole PRD. The state file at `statePath` names, for each need, the
-  requirement headings it comes from.
+- The Epic's PRD, at `prdPath`, read in full: it states the Epic's needs. `atw-matrix epic
+  <the request's epic>` lists the requirements the matrix holds for the Epic, each `name` its
+  heading in the PRD; it is a starting point that may be incomplete, and the PRD is what shows
+  whether it is. The state file at `statePath` names, for each need, the requirement headings
+  it comes from.
 - The constraints. `atw-matrix epic <the request's epic> --constraints` returns each
   constraint that binds the Epic, its features and the entries that realize them, with its rule
   as `statement`, the document and heading it is `statedIn`, and what it `appliesTo`;
