@@ -3723,11 +3723,23 @@ def _template_data(cfg: Config, name: str) -> dict[str, str]:
 
 
 def _copier_render(
+    cfg: Config,
     tdir: Path,
     dest: Path,
     data: dict[str, str],
 ) -> subprocess.CompletedProcess[str]:
+    """Render a Copier template into a folder.
+
+    A template inside the project's own templates folder (config `templates.dir`) is trusted, so
+    Copier runs its tasks and extensions; a template from anywhere else is not.
+
+    Returns:
+        The finished Copier process.
+
+    """
     argv = ["copier", "copy", "--defaults", "--quiet"]
+    if tdir.resolve().is_relative_to(_templates(cfg)[0].resolve()):
+        argv.append("--trust")
     for k, v in data.items():
         argv += ["--data", f"{k}={v}"]
     return run([*argv, str(tdir), str(dest)], timeout=300)
@@ -3885,9 +3897,9 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         ],
     }
     if args.dry_run:
-        return _create_dry_run(args, tdir, dest, data, res)
+        return _create_dry_run(args, cfg, tdir, data, res)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    cp = _copier_render(tdir, dest, data)
+    cp = _copier_render(cfg, tdir, dest, data)
     if cp.returncode != 0:
         msg = f"copier failed: {_last_line(cp)}"
         raise PolyrepoError(msg)
@@ -3932,8 +3944,8 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
 
 def _create_dry_run(
     args: argparse.Namespace,
+    cfg: Config,
     tdir: Path,
-    dest: Path,
     data: dict[str, str],
     res: dict[str, object],
 ) -> int:
@@ -3949,7 +3961,7 @@ def _create_dry_run(
     name = args.name
     with tempfile.TemporaryDirectory(prefix="polyrepo-create-") as tmp:
         out = Path(tmp) / name
-        cp = _copier_render(tdir, out, data)
+        cp = _copier_render(cfg, tdir, out, data)
         if cp.returncode != 0:
             msg = f"copier failed: {_last_line(cp)}"
             raise PolyrepoError(msg)
@@ -3958,7 +3970,7 @@ def _create_dry_run(
         args,
         res,
         lambda: "\n".join(
-            [f"dry run: {name} -> {dest}"]
+            [f"dry run: {name} -> {res['path']}"]
             + _placement_lines(res)
             + [f"  {s}" for s in _strs(res["steps"], "steps")]
             + [f"  template renders {len(_seq(res['rendered_files'], 'rendered_files'))} files"],
@@ -7934,7 +7946,7 @@ def _compare_to_template(
     out: dict[str, tuple[str, int | None]] = {}
     with tempfile.TemporaryDirectory(prefix="polyrepo-tc-") as tmp:
         rendered = Path(tmp) / r.name
-        cp = _copier_render(tdir, rendered, data)
+        cp = _copier_render(cfg, tdir, rendered, data)
         if cp.returncode != 0:
             return TemplateComparison(repo=r.name, files={}, error=_last_line(cp))
         for rel in files:
