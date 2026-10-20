@@ -445,7 +445,7 @@
           "adds": []
         },
         "deploy:fix-author": {
-          "description": "Diagnose the failure and fix it in the worktree, with cdk-stack-author",
+          "description": "Diagnose the failure and fix it in the worktree, with deploy-failure-fixer",
           "purpose": "The cause of the failed deploy is found in its output and corrected in the Story's code",
           "runBy": "story-deploy-fix",
           "within": "deploy:fix",

@@ -585,7 +585,7 @@
     },
     {
       "name": "cdk-stack-author",
-      "description": "Authors AWS CDK stacks in Python matching the approved architecture. Use for Deployment team work requiring CDK stack authoring, construct composition, synth validation, and infrastructure as code.",
+      "description": "Writes AWS CDK stacks, constructs and app wiring in Python for an infrastructure Task, as the Task, its spec, the provisioning intent and the architecture give them, with the minimum change that makes the failing synth assertion tests pass. Never deploys.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -594,7 +594,6 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-cdk",
-        "agent-teams-workforce:aurora-postgresql",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:cdk-coding"
       ],
@@ -973,6 +972,26 @@
       "mcpServers": []
     },
     {
+      "name": "deploy-failure-fixer",
+      "description": "Diagnoses a failed package publish, cdk synth, cdk deploy to AWS dev or stack verification from its output and the CloudFormation stack events, fixes the CDK (or whatever else the deploy needs) in the Story's worktree, runs the repository's synth assertion tests, corrects a test the fix proves wrong, and names the command that runs them. Never deploys, commits or publishes.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:cdk-coding",
+        "agent-teams-workforce:aws-cdk-development",
+        "aws-core:aws-cdk",
+        "aws-core:aws-cloudformation",
+        "agent-teams-workforce:cloudformation",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:test-failure-mindset"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "gitnexus"
+      ]
+    },
+    {
       "name": "deployment-lead",
       "description": "Routes the feature deployment sequence, validates preconditions per step, and reports evidence to Gate 5. Use for Deployment team work requiring delegation, sequencing discipline, and gate reporting.",
       "skills": [
@@ -991,6 +1010,22 @@
         "agent-teams-workforce:cove-prompt-design"
       ],
       "mcpServers": []
+    },
+    {
+      "name": "dev-deployer",
+      "description": "Deploys one repository to AWS dev by the mechanism the repository deploys by (cdk deploy of the affected stacks, or the repository's own deploy path such as a static-site build, S3 sync and CloudFront invalidation), then runs its smoke tests or names the one command that runs them. Never deploys to any other environment and never writes code.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-devops",
+        "agent-teams-workforce:aws-cdk-development",
+        "aws-core:aws-cdk",
+        "agent-teams-workforce:cdk-coding",
+        "agent-teams-workforce:python-coding"
+      ],
+      "mcpServers": [
+        "aws-mcp"
+      ]
     },
     {
       "name": "documentation-accuracy-reviewer",
@@ -2207,12 +2242,13 @@
     },
     {
       "name": "smoke-test-author",
-      "description": "Writes post-deployment smoke tests verifying the feature's critical paths against live endpoints. Use for Deployment team work requiring smoke test authoring, post-deployment verification, and critical-path coverage.",
+      "description": "Writes, before the deploy, the smoke tests that verify a change's critical paths against the endpoints of a deployment, parameterized by environment variables so the deploy session can run them against AWS dev once it has deployed. Never deploys and never runs them against a deployment.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-qa",
+        "agent-teams-workforce:api-test-suite-builder",
         "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:typescript-coding",
         "agent-teams-workforce:software-engineering",
         "agent-teams-workforce:graphrag-lookup"
       ],
