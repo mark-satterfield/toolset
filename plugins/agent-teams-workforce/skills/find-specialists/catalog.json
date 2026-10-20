@@ -128,11 +128,10 @@
     },
     {
       "name": "api-documentation-writer",
-      "description": "Writes human-readable API docs from OpenAPI and GraphQL specs for shipped APIs — guides, examples, SDK snippets. Use for cross-cutting Documentation team work requiring API reference writing, example generation, and SDK snippet authoring.",
+      "description": "Updates the human-readable API reference documents of shipped APIs from their OpenAPI and GraphQL specifications: endpoint and operation guides, request, response and error examples, SDK snippets. Never edits a specification file.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:api-design-reviewer"
+        "agent-teams-workforce:validation-protocol"
       ],
       "mcpServers": []
     },
@@ -665,7 +664,7 @@
     },
     {
       "name": "changelog-writer",
-      "description": "Generates changelog entries from merged work, parsing conventional commits into semantic version notes. Use for cross-cutting Documentation team work requiring conventional commit parsing, changelog drafting, and version note generation.",
+      "description": "Writes the changelog entries for a change before it merges, from the change and the conventional commits on its branch, in the project's changelog format, flagging breaking changes and recommending the semantic version increment. Never decides, sets or bumps a version.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -1028,8 +1027,20 @@
       ]
     },
     {
+      "name": "developer-documentation-writer",
+      "description": "Updates a repository's internal and technical documents so they match the shipped code: developer guides, design and implementation notes, module and service documentation, configuration references and contributing guides. Not READMEs, changelogs, API reference documents, user guides or specification files.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:software-engineering"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
       "name": "documentation-accuracy-reviewer",
-      "description": "Reviews documentation against actual shipped behavior, reporting findings with cited evidence. Use for cross-cutting Documentation team work requiring accuracy verification, claim-by-claim checking, and completeness review. No workflow currently dispatches it.",
+      "description": "Reviews the documents a documentation writer updated for a change against the behaviour the change ships, claim by claim, and reports each inaccurate claim and each uncovered behaviour with cited evidence. Read-only; never fixes.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol"
@@ -1038,7 +1049,7 @@
     },
     {
       "name": "documentation-currency-auditor",
-      "description": "Audits that documentation was updated when code shipped, flagging stale or missing docs per artifact with cited evidence, and names the writer that owns each stale doc. Use for cross-cutting Documentation team work requiring currency auditing, staleness detection, and coverage mapping.",
+      "description": "Audits which documents a change leaves stale or missing, with cited evidence, and assigns each stale document to the documentation writer whose kind covers it (API reference, README, changelog, user guide, or internal and technical documents); names the specification files the change contradicts. Read-only.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol"
@@ -2494,11 +2505,10 @@
     },
     {
       "name": "user-guide-writer",
-      "description": "Writes user-facing feature guides from specs and shipped behavior. Use for cross-cutting Documentation team work requiring feature guide writing, task-oriented walkthroughs, and audience-appropriate explanation.",
+      "description": "Updates user-facing feature guides and walkthroughs, for the people who use the product, from the spec and the shipped behaviour. Not internal or technical documents, READMEs, changelogs or API reference documents.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:roadmap-communicator"
+        "agent-teams-workforce:validation-protocol"
       ],
       "mcpServers": []
     },

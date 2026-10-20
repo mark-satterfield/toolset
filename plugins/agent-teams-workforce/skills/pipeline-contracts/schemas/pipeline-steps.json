@@ -265,7 +265,7 @@
           ]
         },
         "build:docs-write": {
-          "description": "Update the stale documents with {docAgent}",
+          "description": "Update the stale documents with {docAgent}; the documentation-accuracy-reviewer checks them",
           "purpose": "The audit named documents the change leaves stale",
           "runBy": "task-to-deploy",
           "params": ["docAgent", "docs"],

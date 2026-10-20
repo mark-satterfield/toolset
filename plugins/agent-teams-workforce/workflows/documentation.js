@@ -1,7 +1,7 @@
 export const meta = {
   name: 'documentation',
   description:
-    'Cross-cutting mini — Documentation. One read-only auditor names the docs the change leaves stale and the writer that owns each (a doc with no usable writer is assigned by its path); the writers update them in parallel in the worktree. A change confined to tests and fixtures skips the audit. With auditOnly it returns the stale documents and their assignments ({ agent, docs }) and updates none; with assignment it runs only that documentation agent on its documents.',
+    'Cross-cutting mini — Documentation. One read-only auditor names the docs the change leaves stale and the writer that owns each (a doc with no usable writer is assigned by its path), and the specification files the change contradicts, which no writer edits; the writers update them in parallel in the worktree, and the documentation-accuracy-reviewer checks each writer\'s documents, with one correction by the writer and a second review when it finds inaccuracies. A change confined to tests and fixtures skips the audit. With auditOnly it returns the stale documents, their assignments ({ agent, docs }) and specConflicts, and updates none; with assignment it runs only that documentation agent on its documents, then the review.',
   phases: [{ title: 'Documentation', detail: 'currency audit + assigned writes' }],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -182,7 +182,7 @@ const changedFiles = (green.changedFiles || []).join(', ') || 'n/a'
 
 phase('Documentation')
 
-const WRITERS = ['api-documentation-writer', 'readme-writer', 'changelog-writer', 'user-guide-writer']
+const WRITERS = ['api-documentation-writer', 'readme-writer', 'changelog-writer', 'user-guide-writer', 'developer-documentation-writer']
 const WRITE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -192,23 +192,87 @@ const WRITE_SCHEMA = {
     notes: { type: 'string' },
   },
 }
-/** Runs the documentation agent of one assignment, { writer, docs }, on its stale documents. */
-const updateDocs = (asg) =>
+const REVIEW_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['accurate', 'findings'],
+  properties: {
+    accurate: { type: 'boolean' },
+    findings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['doc', 'claim', 'problem', 'evidence'],
+        properties: {
+          doc: { type: 'string' },
+          claim: { type: 'string' },
+          problem: { type: 'string' },
+          evidence: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+const strings = (v) => (Array.isArray(v) ? v.map(String).filter(Boolean) : [])
+const findingLine = (f) => `- ${f.doc}: ${f.claim} — ${f.problem} (evidence: ${f.evidence})`
+/** Runs the documentation agent of one assignment, { writer, docs }, on its stale documents; with findings, on the review's findings. */
+const updateDocs = (asg, findings) =>
   settleAgent(
-    `Update the stale documentation assigned to you so it matches shipped behavior. Author only the docs in your assignment; other writers own the rest.
+    `${findings ? 'Correct the documents assigned to you: the accuracy review found the inaccuracies below.' : 'Update the documents assigned to you.'}
 
 ${pinTree}
 
 Change: ${changeLabel}
 Changed files: ${changedFiles}
-Docs assigned to you: ${asg.docs.join(', ')}`,
+Docs assigned to you: ${asg.docs.join(', ')}${findings ? `\nReview findings:\n${findings.map(findingLine).join('\n')}` : ''}`,
     {
-      label: `docs:write:${asg.writer}`,
+      label: `docs:${findings ? 'correct' : 'write'}:${asg.writer}`,
       phase: 'Documentation',
       agentType: asg.writer,
       schema: WRITE_SCHEMA,
     }
   )
+/** Runs the documentation-accuracy-reviewer on the documents one writer updated. */
+const reviewDocs = (writer, docs, round) =>
+  settleAgent(
+    `Review these documents ${writer} updated for this change.
+
+${pinTree}
+
+Change: ${changeLabel}
+Changed files: ${changedFiles}
+Documents: ${docs.join(', ')}`,
+    {
+      label: `docs:review${round}:${writer}`,
+      phase: 'Documentation',
+      agentType: 'documentation-accuracy-reviewer',
+      schema: REVIEW_SCHEMA,
+    }
+  )
+/**
+ * One writer's documents, reviewed: the writer updates them, the documentation-accuracy-reviewer checks them,
+ * and on findings the writer corrects them once and the reviewer checks again. Returns
+ * { updatedDocs, notes, review, corrected, reviewFindings }, or { failed } naming the session that returned nothing.
+ */
+async function writeAndReview(asg) {
+  const written = await updateDocs(asg, null)
+  if (!written) return { failed: `${asg.writer} returned nothing` }
+  const updated = strings(written.updatedDocs)
+  if (!updated.length) return { updatedDocs: [], notes: written.notes || '', review: null, corrected: false, reviewFindings: [] }
+  const review = await reviewDocs(asg.writer, updated, 1)
+  if (!review) return { failed: `the documentation-accuracy-reviewer returned nothing for ${asg.writer}'s documents` }
+  const findings = Array.isArray(review.findings) ? review.findings.filter((f) => f && f.doc) : []
+  if (review.accurate === true && !findings.length) return { updatedDocs: updated, notes: written.notes || '', review, corrected: false, reviewFindings: [] }
+  const correction = await updateDocs({ writer: asg.writer, docs: [...new Set([...asg.docs, ...findings.map((f) => String(f.doc))])] }, findings)
+  if (!correction) return { failed: `${asg.writer} returned nothing when given the review's findings` }
+  const docs = [...new Set([...updated, ...strings(correction.updatedDocs)])]
+  const again = await reviewDocs(asg.writer, docs, 2)
+  if (!again) return { failed: `the documentation-accuracy-reviewer returned nothing on ${asg.writer}'s corrected documents` }
+  const left = Array.isArray(again.findings) ? again.findings.filter((f) => f && f.doc) : []
+  if (left.length) log(`Documentation: ${left.length} accuracy finding(s) remain in ${asg.writer}'s documents after its correction`)
+  return { updatedDocs: docs, notes: [written.notes, correction.notes].filter(Boolean).join('\n'), review: again, corrected: true, reviewFindings: left }
+}
 
 // One assignment given: run its documentation agent and nothing else.
 if (a.assignment && typeof a.assignment === 'object') {
@@ -216,9 +280,9 @@ if (a.assignment && typeof a.assignment === 'object') {
   if (!WRITERS.includes(asg.writer) || !asg.docs.length) {
     return dispatchOutcome({ ok: false, dispatchFailed: true, reason: `no documents are assigned to a documentation agent of this roster: ${WRITERS.join(', ')}`, updatedDocs: [] })
   }
-  const updated = await updateDocs(asg)
-  if (!updated) return dispatchOutcome({ ok: false, dispatchFailed: true, reason: `${asg.writer} returned nothing`, updatedDocs: [] })
-  return dispatchOutcome({ updatedDocs: (Array.isArray(updated.updatedDocs) ? updated.updatedDocs : []).map(String), notes: updated.notes || '' })
+  const done = await writeAndReview(asg)
+  if (done.failed) return dispatchOutcome({ ok: false, dispatchFailed: true, reason: done.failed, updatedDocs: [] })
+  return dispatchOutcome(done)
 }
 
 const DOC_INERT_RE = /(^|\/)(tests?|__tests__|__mocks__|fixtures)\//i
@@ -237,17 +301,9 @@ if (changedList.length && changedList.every((f) => DOC_INERT_RE.test(f))) {
 }
 
 const audit = await settleAgent(
-  `Audit whether this change leaves documentation stale (READMEs, API docs, changelog, user guides). READ-ONLY — you write no documentation. List exactly which docs need updating and why.
+  `Audit the documentation this change leaves stale and assign each stale document to its writer.
 
 ${pinTree}
-
-Then ASSIGN each stale doc to the writer that owns its kind, drawn ONLY from this roster:
-- api-documentation-writer — API reference / OpenAPI / GraphQL docs
-- readme-writer — setup, onboarding, repo README, or a new repo
-- changelog-writer — version bump / changelog entry derived from commits
-- user-guide-writer — user-facing feature guide or walkthrough
-
-Use the FEWEST writers that cover the stale docs, list the stale docs assigned to each, and assign no writer whose kind nothing changed.
 
 Change: ${changeLabel}
 Changed files: ${changedFiles}`,
@@ -262,6 +318,7 @@ Changed files: ${changedFiles}`,
       properties: {
         docsCurrent: { type: 'boolean' },
         staleDocs: { type: 'array', items: { type: 'string' } },
+        specConflicts: { type: 'array', items: { type: 'string' } },
         assignments: {
           type: 'array',
           items: {
@@ -279,16 +336,25 @@ Changed files: ${changedFiles}`,
   }
 )
 
-const staleDocs = (audit && Array.isArray(audit.staleDocs) ? audit.staleDocs : []).filter(Boolean)
+// A specification file is the contract the code is built to: only spec authoring changes it, so no writer is
+// given one; one the audit lists is reported in specConflicts instead.
+const SPEC_RE = /\.(graphql|gql)$|(^|\/)[^/]*(openapi|swagger|asyncapi)[^/]*\.(ya?ml|json)$|\.schema\.json$/i
+const isSpec = (docPath) => SPEC_RE.test(String(docPath || ''))
+const listedStale = (audit && Array.isArray(audit.staleDocs) ? audit.staleDocs : []).filter(Boolean).map(String)
+const specConflicts = [...new Set([...strings(audit && audit.specConflicts), ...listedStale.filter(isSpec)])]
+const staleDocs = listedStale.filter((d) => !isSpec(d))
 const needsWork = staleDocs.length > 0
+if (specConflicts.length) log(`Documentation: the change contradicts ${specConflicts.length} specification file(s), which no writer edits: ${specConflicts.join(', ')}`)
 
-// Returns the documentation agent for a doc path: changelog, readme, API reference, otherwise user guide.
+// Returns the documentation agent for a doc path: changelog, README, API reference, user guide, otherwise the
+// internal and technical documents.
 const writerForPath = (docPath) => {
   const p = String(docPath || '')
   if (/changelog/i.test(p)) return 'changelog-writer'
   if (/readme/i.test(p)) return 'readme-writer'
-  if (/openapi|swagger|(^|\/)api(\/|\.|-|_)|\/api-reference/i.test(p)) return 'api-documentation-writer'
-  return 'user-guide-writer'
+  if (/(^|\/)api(-reference|-docs)?(\/|\.|-|_)|api-reference/i.test(p)) return 'api-documentation-writer'
+  if (/(^|\/)(user-?guides?|guides?|help|tutorials?|how-?tos?|manual)(\/|\.|-|_)/i.test(p)) return 'user-guide-writer'
+  return 'developer-documentation-writer'
 }
 
 let writerResults = []
@@ -305,7 +371,7 @@ if (needsWork) {
   }
   for (const x of audit && Array.isArray(audit.assignments) ? audit.assignments : []) {
     if (!x || !WRITERS.includes(x.writer) || !Array.isArray(x.docs)) continue
-    const docs = [...new Set(x.docs.filter(Boolean))].filter((doc) => !assigned.has(doc))
+    const docs = [...new Set(x.docs.filter(Boolean).map(String))].filter((doc) => !assigned.has(doc) && !isSpec(doc))
     for (const doc of docs) assigned.add(doc)
     if (docs.length) addDocs(x.writer, docs)
   }
@@ -322,23 +388,26 @@ if (a.auditOnly === true) {
     docsCurrent: !!audit && !needsWork,
     audit,
     staleDocs,
+    specConflicts,
     assignments: validAssignments.map((x) => ({ agent: x.writer, docs: x.docs })),
   })
 }
 
-if (needsWork) writerResults = (await parallel(validAssignments.map((asg) => () => updateDocs(asg)))).filter(Boolean)
+if (needsWork) writerResults = await parallel(validAssignments.map((asg) => () => writeAndReview(asg)))
+const writerFailures = writerResults.filter((r) => !r || r.failed).map((r) => (r && r.failed) || 'a documentation session returned nothing')
+writerResults = writerResults.filter((r) => r && !r.failed)
 
 const allUpdatedDocs = []
 for (const r of writerResults) {
   if (r && Array.isArray(r.updatedDocs)) allUpdatedDocs.push(...r.updatedDocs)
 }
-const update = needsWork ? { updatedDocs: allUpdatedDocs, writers: writerResults } : null
+const update = needsWork ? { updatedDocs: allUpdatedDocs, writers: writerResults, failures: writerFailures } : null
 const docsCurrent = !!(audit && (!needsWork || writerResults.length === writersChosen.length))
 
 const ledger = {
   phase: 'documentation',
   beadId,
-  chosen: ['documentation-currency-auditor'].concat(writersChosen),
+  chosen: ['documentation-currency-auditor'].concat(writersChosen, writersChosen.length ? ['documentation-accuracy-reviewer'] : []),
   mode: needsWork ? selectionMode : 'default',
   ok: docsCurrent,
 }
@@ -347,5 +416,6 @@ return dispatchOutcome({
   docsCurrent,
   audit,
   update,
+  specConflicts,
   ledger,
 })
