@@ -82,7 +82,7 @@ A16. Where the design has a store, it has its key attribute names, indexes, acce
      and expiry attribute, and its logical or physical data model, in the detailed design of
      the component that owns it.
 A17. Where the design publishes an event, its publishing service and the values passed to
-     the shared-events-service API are in the detailed design of the publishing component.
+     the project's event-publishing API are in the detailed design of the publishing component.
 A18. Configuration names, SSM parameter names, and log, metric and alarm names the design
      introduces are in the detailed design of the component that uses them, each generated
      with the project's naming command.
@@ -123,7 +123,7 @@ I1. Each route has its method, path, authorizer, request and response fields and
 I2. Each store has its key attribute names, indexes, access patterns and expiry attribute as
     the detailed design records them.
 I3. Each event names its publishing service and has the values passed to the
-    shared-events-service API as the detailed design records them.
+    project's event-publishing API as the detailed design records them.
 I4. Configuration names, SSM parameter names, and log, metric and alarm names are present as
     the detailed design records them.
 I5. Idempotency key fields and timeout settings are stated as the detailed design records

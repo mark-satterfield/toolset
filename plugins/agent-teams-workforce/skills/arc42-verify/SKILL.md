@@ -153,7 +153,7 @@ One home per fact
                    06-runtime-view/sign-up.md says "the sign-up handler verifies the address"
 
 Placement
-  [WARN] 05-building-block-view/settings/README.md — detail whose home is detailed/components/SkillSpoke-settings-service/
+  [WARN] 05-building-block-view/settings/README.md — detail whose home is detailed/components/acme-settings-service/
          evidence: "partition key userId, sort key settingName"
 
 Consistency

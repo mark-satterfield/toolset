@@ -197,7 +197,7 @@
       "id": "A17",
       "level": "architecture",
       "home": "architecture",
-      "text": "Where the design publishes an event, its publishing service and the values passed to the shared-events-service API are in the detailed design of the publishing component."
+      "text": "Where the design publishes an event, its publishing service and the values passed to the project's event-publishing API are in the detailed design of the publishing component."
     },
     {
       "id": "A18",
@@ -269,7 +269,7 @@
       "id": "I3",
       "level": "implementation",
       "home": "specs",
-      "text": "Each event names its publishing service and has the values passed to the shared-events-service API as the detailed design records them."
+      "text": "Each event names its publishing service and has the values passed to the project's event-publishing API as the detailed design records them."
     },
     {
       "id": "I4",

@@ -70,11 +70,11 @@ Token values may be given in any normal form (`"career profile"`, `career-profil
 `careerProfile`); quote a value that holds spaces. For example:
 
 ```bash
-<command> name build cdk-stack --project SkillSpoke --domain "career profile" --type service -q
-<command> name convert SkillSpoke-dataAccess-lib --to python-distribution -q
-<command> name convert skillSpoke-image-service --to lambda-function --with action=resize -q
-<command> name check skillSpoke-careerProfile-service --kind cdk-stack
-<command> name repository-names SkillSpoke-careerProfile-service --json
+<command> name build cdk-stack --project Acme --domain "career profile" --type service -q
+<command> name convert Acme-dataAccess-lib --to python-distribution -q
+<command> name convert acme-image-service --to lambda-function --with action=resize -q
+<command> name check acme-careerProfile-service --kind cdk-stack
+<command> name repository-names Acme-careerProfile-service --json
 ```
 
 When a name can be read as more than one kind and the readings give different results,

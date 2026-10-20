@@ -19,10 +19,10 @@ and they are used together:
 - **GitNexus** (`mcp__gitnexus__*`) indexes each code repository's call graph: symbols, callers
   and callees, imports, execution flows, API routes and their consumers. It is the tool for
   understanding and changing code inside a repository, and it is used constantly, not only
-  when something looks risky. SkillSpoke's code is spread across more than 60 repositories,
+  when something looks risky. A project's code can be spread across many repositories,
   so reading files and grepping misses callers that GitNexus finds.
-- **GraphRAG** (`mcp__mcp-graphrag-server`) indexes every repository and the `skillspoke-docs`
-  vault for search by meaning. Use it for a passage in a document, a pattern, or a concept the
+- **GraphRAG** (`mcp__mcp-graphrag-server`) indexes every repository and the project's
+  documentation vault for search by meaning. Use it for a passage in a document, a pattern, or a concept the
   matrix records nothing about and whose repository you do not yet know.
 
 Cite each matrix entry you rely on by its id, each GitNexus result by repository, symbol and
@@ -119,10 +119,10 @@ your result.
 - Name the repository in every GitNexus call (`repo`): many repositories are indexed, and a call
   without one may answer from the wrong index. `list_repos` returns the indexed repositories
   (page with `offset` while `pagination.hasMore` is true).
-- Every SkillSpoke repository is a member of the GitNexus group `skillspoke`, named by its clone
-  path under `$SKILLSPOKE_APPS`. `group_list` lists the members. To work across repositories, pass
-  `repo: "@skillspoke/<group path>"`, naming the member (for example
-  `@skillspoke/personal-agent/SkillSpoke-chat-service`), to `query`, `context`, `impact` or `trace`:
+- Where the project's repositories are members of a GitNexus group (the project instructions name
+  the group and how each member is named), `group_list` lists the members. To work across
+  repositories, pass `repo: "@<group>/<member>"`, naming the member (for example
+  `@acme/apps/acme-chat-service`), to `query`, `context`, `impact` or `trace`:
   `impact` then follows cross-repository contracts (HTTP routes, topics) to their consumers, and
   `trace` with no `to` follows a client call to the handler that serves it. A result with
   `truncated: true` is a floor, not a verdict; read its `truncationReason`.
@@ -135,12 +135,10 @@ your result.
 
 - Indexes refresh themselves: a git hook queues a background re-index after every commit, merge,
   checkout and rebase, and every session start queues any repository that is behind. A GitNexus
-  tool warns when a repository's index is behind the repository. First run
-  `python3 "$SKILLSPOKE_CC/ops/indexing/gitnexus-fleet.py" status`; re-index with
-  `"$SKILLSPOKE_CC/ops/indexing/gitnexus-reindex.sh" <repository path>` only when that shows no
-  re-index queued for the repository, then repeat the call.
-  Run any other GitNexus command through `"$SKILLSPOKE_CC/ops/indexing/gitnexus-pinned.sh"
-  <command>`; never start GitNexus another way, because the project pins one version.
+  tool warns when a repository's index is behind the repository. First check whether a re-index
+  is already queued, and re-index only when none is, with the commands the project instructions
+  name; then repeat the call. Run any other GitNexus command the way the project instructions
+  say; where the project pins one GitNexus version, never start GitNexus another way.
 - Never rebuild a group's contract registry (`group_sync`) and never change `group.yaml`; a
   missing or stale group is reported in your result.
 - A repository that is not indexed, or a GitNexus call that fails, is a named blocker in your

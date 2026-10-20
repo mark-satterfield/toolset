@@ -38,7 +38,7 @@ element?" without reading every file:
 ```yaml
 view_type: sequence diagram        # a type from diagram-and-model-types.md
 scope: service                     # system | domain | service | component | concept
-subject: SkillSpoke-settings-service
+subject: acme-settings-service
 shows:                             # every element that appears in the view
   - settings-api
   - settings-table

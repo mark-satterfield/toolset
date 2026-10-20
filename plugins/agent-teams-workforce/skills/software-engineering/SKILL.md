@@ -48,12 +48,12 @@ Take the first option that fully works:
   code.
 - Code you move or merge keeps its error handling and validation.
 - Between options of equal size, take the one that is correct on edge cases.
-- Lazy code without its check is unfinished. The check depends on the tier (the root `AGENTS.md` of the SkillSpoke
-  repository, "Code quality", defines the tiers):
-  - Tier 1, SkillSpoke product code: new non-trivial logic (a branch, a loop, a parser, money or security, or a whole
+- Lazy code without its check is unfinished. The check depends on the tier (the project's instructions define the tiers,
+  for example in its root `AGENTS.md`):
+  - Tier 1, the project's product code: new non-trivial logic (a branch, a loop, a parser, money or security, or a whole
     new script or app) leaves one small test or an assert-based self-check. Trivial changes need none.
-  - Tier 2, the owner's tooling (this plugin and everything else in the toolset repository, the tooling in `ops/`, and
-    every repository's `AGENTS.md`, `CLAUDE.md` and `.claude/`): the check is one throwaway probe. Import the changed
+  - Tier 2, the owner's tooling (this plugin and everything else in the toolset repository, the project's own build and
+    operations tooling, and every repository's `AGENTS.md`, `CLAUDE.md` and `.claude/`): the check is one throwaway probe. Import the changed
     code and call the changed function or entry point once with realistic input. The probe is not kept, committed,
     wired into a hook, or run again by a later step, and no test suite is written.
 - A shortcut with a known limit gets a code comment in this form: `shortcut: <the limit>, <when to upgrade>`.

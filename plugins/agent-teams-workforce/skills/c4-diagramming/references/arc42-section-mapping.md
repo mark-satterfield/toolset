@@ -48,10 +48,10 @@ Each view file declares what it describes. The matrix reads this front matter
 ```yaml
 view_type: container diagram       # a type from diagram-and-model-types.md
 scope: system                      # system | domain | service | component | concept
-subject: SkillSpoke                # the one thing this view describes
+subject: Acme                      # the one thing this view describes
 shows:                             # every element that appears in the view
-  - SkillSpoke-settings-service
-  - shared-events-service
+  - acme-settings-service
+  - acme-events-service
 lifecycle_state: in-review         # in-review | effective
 ```
 
