@@ -15,10 +15,16 @@ mcpServers:
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:stripe-integration-expert, agent-teams-workforce:secrets-manager, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:skillspoke-events, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, aws-core:aws-serverless, aws-core:aws-secrets-manager]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:implementer-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:stripe-integration-expert, agent-teams-workforce:secrets-manager, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:skillspoke-events, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, aws-core:aws-serverless, aws-core:aws-secrets-manager]
 effort: medium
 color: green
 ---
+
+## Sources
+
+- **`stripe-integration-expert`** (skill): checkout sessions, webhooks and signature verification, subscription lifecycle, refunds and idempotency keys.
+- **`context7`** (`resolve-library-id`, then `query-docs`): before relying on an API of the Stripe SDK, read its current documentation at the version the project pins, together with the Stripe API version the account uses.
+- **`aws-core:aws-secrets-manager`** and **`secrets-manager`** (skills), and **`aws-mcp`** (AWS documentation): retrieving the keys and signing secrets at runtime.
 
 ## Environment Discovery:
 Before executing any write or build tools, read the repository's `AGENTS.md` (or `CLAUDE.md`) for its build and test commands. Where the repository's hooks run lint, format and type checks after each edit and at commit, fix every finding they report and do not run those checks yourself.

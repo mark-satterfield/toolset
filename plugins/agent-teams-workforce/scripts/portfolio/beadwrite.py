@@ -225,7 +225,7 @@ def _strategy_line(strategy: JsonObject | None) -> str:
 #: What each design source of a web-ui Task means for the build, as the contract states it.
 DESIGN_SOURCE_TEXT: Final[dict[str, str]] = {
     CDS_DESIGN_SOURCE_BUNDLE: "built from the cds bundle the owner supplied, and audited against it",
-    CDS_DESIGN_SOURCE_CDS: "designed with the CDS design system (cds:cds-ui-author and the project's "
+    CDS_DESIGN_SOURCE_CDS: "designed with the CDS design system (cds-ui-implementer and the project's "
     "design system config), and audited against the live design system",
     CDS_DESIGN_SOURCE_NONE: "changes no design (copy, or data wired into an existing element); built "
     "like any other code change, with no cds design step or audit",

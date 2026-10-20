@@ -379,6 +379,10 @@ Notes on the diagram:
 
 - The implementers are those for the subjects the Task names, in the order the Task gives, for
   the same reason as the test writers: elaboration has already decided what the Task builds.
+- The brief carries only the Task's data. How an implementer works a Task (minimum change, tests
+  it never changes, what is missing outside the Task, the suite run, the result) is in the
+  `implementer-contract` skill every implementer loads, and its specialty in its own definition;
+  how the implementers are selected is in the implementation-lead's definition.
 - An implementer changes no test. It names a test that contradicts the spec and the contradiction,
   and the test writer rules on it against the spec (update, delete or keep), because the spec
   decides.

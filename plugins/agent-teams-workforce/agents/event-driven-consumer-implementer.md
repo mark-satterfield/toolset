@@ -14,7 +14,7 @@ mcpServers:
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:sqs, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:sns, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:skillspoke-events, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, aws-core:aws-serverless, aws-core:aws-messaging-and-streaming, aws-core:aws-sdk-python-usage]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:implementer-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:sqs, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:sns, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:skillspoke-events, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, aws-core:aws-serverless, aws-core:aws-sdk-python-usage]
 effort: medium
 color: green
 ---
@@ -23,7 +23,7 @@ color: green
 
 - **`aws-mcp`** (AWS documentation, AWS skills, regional availability): Before writing a handler, confirm in the AWS documentation how the chosen target type invokes it: for an SQS target the event source mapping behaviour (batch size, partial batch response, visibility timeout, redrive), for a Lambda target EventBridge's asynchronous invocation, for a Step Functions target the execution input. Search with `aws___search_documentation`, read the page with `aws___read_documentation`, and use `aws___list_regions` and `aws___get_regional_availability` when a choice depends on a service or feature being available in the target region.
 
-Cite what you relied on in your output, next to the claim it supports: the documentation URL, the skill name, or the DynamoDB tool and the result it returned.
+Cite what you relied on in your output, next to the claim it supports: the documentation URL or the skill name.
 
 ## Environment Discovery:
 Before executing any write or build tools, read the repository's `AGENTS.md` (or `CLAUDE.md`) for its build and test commands. Where the repository's hooks run lint, format and type checks after each edit and at commit, fix every finding they report and do not run those checks yourself.
