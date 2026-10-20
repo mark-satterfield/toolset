@@ -109,7 +109,12 @@ from orchestrator.flows.architecture_files import (
     output_check,
     read_context,
 )
-from orchestrator.flows.repo_scoping import FIELD_ADDED_OR_CHANGED, FIELD_UNCHANGED_WORK, story_build_problems
+from orchestrator.flows.repo_scoping import (
+    FIELD_ADDED_OR_CHANGED,
+    FIELD_UNCHANGED_WORK,
+    story_build_entries,
+    story_build_problems,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -418,8 +423,8 @@ def _result_problems(bead: str, result: ArchitectureResult) -> list[str]:
 
     What the Epic's Stories build is checked against the matrix as it is
     (``repo_scoping.story_build_problems``): the result's ``addedOrChangedElements`` and its
-    ``unchangedWorkElements``, each list on its own, and at least one of them must name something.
-    Then the design is recorded in an in-memory copy of the matrix, which is
+    ``unchangedWorkElements``, each list on its own; at least one of them must name something, and
+    no element may be named in both. Then the design is recorded in an in-memory copy of the matrix, which is
     never written, and compared with what ``epic`` returns from that copy.
 
     Returns:
@@ -439,6 +444,17 @@ def _result_problems(bead: str, result: ArchitectureResult) -> list[str]:
             f"{FIELD_UNCHANGED_WORK} the existing elements where the Epic's work that leaves them unchanged lands"
         )
         unbuildable.append(nothing)
+    both: list[EntryId] = sorted(
+        set(story_build_entries(result[FIELD_ADDED_OR_CHANGED]))
+        & set(story_build_entries(result[FIELD_UNCHANGED_WORK])),
+    )
+    if both:
+        twice: str = (
+            f"{bead}: {', '.join(both)} named in both {FIELD_ADDED_OR_CHANGED} and {FIELD_UNCHANGED_WORK}: "
+            f"an element the design adds or changes belongs under {FIELD_ADDED_OR_CHANGED} only, and one it "
+            f"leaves unchanged under {FIELD_UNCHANGED_WORK} only"
+        )
+        unbuildable.append(twice)
     recorded: Recorded = _compared(matrix, bead, _record_design(matrix, bead, result))
     return [*unbuildable, *recorded.problems]
 
