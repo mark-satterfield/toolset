@@ -91,6 +91,24 @@
       "mcpServers": []
     },
     {
+      "name": "analytics-query-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on serverless SQL analytics with Amazon Athena over the data lake — workgroups and their limits, query result handling, data layout for scan cost, partition projection, federated and Iceberg queries, CTAS and UNLOAD, and capacity.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-data-analytics:querying-data-lake",
+        "aws-data-analytics:finding-data-lake-assets"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
       "name": "android-compose-implementer",
       "description": "Implements Android features in Kotlin and Jetpack Compose; writes minimum code to pass failing Espresso suites. Use for Implementation work requiring Compose UI, Kotlin state and navigation wiring, and on-device ML Kit integration.",
       "skills": [
@@ -494,6 +512,23 @@
       ]
     },
     {
+      "name": "block-and-file-storage-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on block and file storage for EC2, containers and Lambda on Amazon EBS, Amazon EFS and Amazon FSx (Lustre, NetApp ONTAP, OpenZFS, Windows File Server) — volume and file system type, performance and throughput mode, availability, snapshots and backups, lifecycle tiering and access.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-storage"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
       "name": "bounded-context-mapper",
       "description": "Answer a question or do a bounded piece of design for the solutions architect on bounded contexts, domain responsibilities and service ownership.",
       "skills": [
@@ -541,6 +576,23 @@
       ],
       "mcpServers": [
         "mcp-graphrag-server"
+      ]
+    },
+    {
+      "name": "cache-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on in-memory caching and in-memory data stores on Amazon ElastiCache (Valkey, Redis OSS, Memcached; serverless or node-based) and Amazon MemoryDB — caching pattern, key and TTL design, invalidation, eviction, topology, durability and multi-Region replication.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-database"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -862,6 +914,23 @@
       ]
     },
     {
+      "name": "data-architect",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on pure data architecture independent of any engine — conceptual and logical data models, entities and relationships, which domain owns each entity and its system of record, data flows and lineage, reference and master data, data classification and retention classes, operational versus analytical data, and data contracts between domains.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:data-architecture"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
       "name": "data-consistency-checker",
       "description": "Verifies data consistency across services and stores after integration and event-flow runs — partial writes, orphaned records, divergent state. Use for Integration Testing work requiring cross-store verification, DynamoDB assertions, and eventual-consistency validation.",
       "skills": [
@@ -887,6 +956,27 @@
       ],
       "mcpServers": [
         "gitnexus"
+      ]
+    },
+    {
+      "name": "data-lake-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on the data lake on AWS Glue, AWS Lake Formation and Amazon S3 Tables — zones and table layout, open table format (Apache Iceberg), partitioning, the Glue Data Catalog, ingestion and ETL jobs, connections to sources, data quality and Lake Formation permissions.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-data-analytics:creating-data-lake-table",
+        "aws-data-analytics:ingesting-into-data-lake",
+        "aws-data-analytics:exploring-data-catalog",
+        "aws-data-analytics:connecting-to-data-source",
+        "agent-teams-workforce:senior-data-engineer"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -927,6 +1017,23 @@
       ],
       "mcpServers": [
         "gitnexus"
+      ]
+    },
+    {
+      "name": "data-warehouse-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on data warehousing on Amazon Redshift (Serverless or provisioned RA3) — workgroup or cluster shape, table design (distribution, sort keys, encoding), loading with COPY and zero-ETL, materialized views, data sharing, Spectrum and workload management.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-data-analytics:redshift-guide"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -991,6 +1098,23 @@
         "agent-teams-workforce:cove-prompt-design"
       ],
       "mcpServers": []
+    },
+    {
+      "name": "document-database-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on document data on Amazon DocumentDB (MongoDB compatible) — cluster type and capacity, document model (embedding or referencing), indexes, MongoDB API compatibility, change streams, transactions and read scaling.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-database"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
     },
     {
       "name": "documentation-accuracy-reviewer",
@@ -1127,6 +1251,25 @@
         "aws-mcp",
         "mcp-graphrag-server",
         "gitnexus"
+      ]
+    },
+    {
+      "name": "dynamodb-table-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on Amazon DynamoDB and DAX — access-pattern-first single-table or multi-table design, partition and sort keys, GSIs and LSIs, capacity mode, TTL, streams, transactions, global tables, backups and cost.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:dynamodb",
+        "aws-core:aws-database"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "awslabs-dynamodb-mcp-server",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -1397,6 +1540,25 @@
       "mcpServers": [
         "mcp-graphrag-server",
         "gitnexus"
+      ]
+    },
+    {
+      "name": "graph-database-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on graph data on Amazon Neptune Database and Neptune Analytics — engine and capacity choice, property graph or RDF, node and edge model, query language (openCypher, Gremlin, SPARQL), traversal and supernode design, loading, graph algorithms and vector search.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:amazon-neptune",
+        "aws-core:aws-database"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "awslabs-amazon-neptune-mcp-server",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -1725,6 +1887,24 @@
       "mcpServers": []
     },
     {
+      "name": "object-storage-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on object storage on Amazon S3 and the S3 Glacier storage classes — buckets, key layout, storage classes and lifecycle, versioning and Object Lock, replication, access control and Block Public Access, presigned URLs, multipart upload and event notifications.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:s3",
+        "aws-core:aws-storage"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
       "name": "operational-readiness-reviewer",
       "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
       "skills": [
@@ -1793,28 +1973,19 @@
     },
     {
       "name": "persistence-architecture-specialist",
-      "description": "Answer a question or do a bounded piece of design for the solutions architect on which block owns each store, what it holds, consistency and data lifecycle.",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on which store holds each data set (DynamoDB, Aurora or RDS, ElastiCache or MemoryDB, Neptune, DocumentDB, Timestream, S3, EBS, EFS or FSx), which block owns each store, the consistency each scenario needs, and the data lifecycle across stores.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:dynamodb",
-        "agent-teams-workforce:database-schema-designer",
+        "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:effective-architecture",
-        "aws-core:aws-database",
-        "agent-teams-workforce:aurora-postgresql",
-        "agent-teams-workforce:design-postgres-tables",
         "agent-teams-workforce:graphrag-lookup",
-        "aws-core:aws-well-architected-review",
-        "aws-core:aws-security",
-        "aws-core:aws-billing-and-cost-management",
+        "agent-teams-workforce:data-architecture",
+        "aws-core:aws-database",
         "aws-core:aws-storage"
       ],
       "mcpServers": [
         "aws-mcp",
-        "awslabs-dynamodb-mcp-server",
         "mcp-graphrag-server",
-        "pg-aiguide",
-        "awslabs-postgres-mcp-server",
-        "awslabs-amazon-neptune-mcp-server",
         "gitnexus",
         "plugin_aws-agents_awsknowledge"
       ]
@@ -2064,6 +2235,28 @@
       ]
     },
     {
+      "name": "relational-database-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on relational databases on Amazon Aurora, Amazon RDS, Aurora DSQL and RDS Proxy — engine and cluster shape, capacity, access path, replicas, backups, and the relational schema (tables, keys, constraints, indexes, partitioning, migrations).",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:aurora-postgresql",
+        "agent-teams-workforce:rds",
+        "agent-teams-workforce:design-postgres-tables",
+        "agent-teams-workforce:database-schema-designer",
+        "aws-core:aws-database"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "pg-aiguide",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
       "name": "requirements-clarifier",
       "description": "Identifies ambiguous, incomplete, or conflicting PRD requirements, returning structured clarification requests without resolving them. Use for PRD Validation work requiring requirements analysis and clarification drafting.",
       "skills": [
@@ -2290,6 +2483,24 @@
       "mcpServers": []
     },
     {
+      "name": "stream-processing-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on real-time data streams on Amazon Kinesis Data Streams, Amazon Data Firehose, Amazon MSK and Amazon Managed Service for Apache Flink — stream and capacity mode, partition keys and ordering, retention, consumers and fan-out, delivery buffering, transformation and processing windows.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-messaging-and-streaming",
+        "agent-teams-workforce:senior-data-engineer"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
       "name": "task-decomposer",
       "description": "Decompose what one Story builds into coherent, sized build Tasks in one repository.",
       "skills": [
@@ -2415,6 +2626,23 @@
         "agent-teams-workforce:cove-prompt-design"
       ],
       "mcpServers": []
+    },
+    {
+      "name": "time-series-database-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on time-series data on Amazon Timestream (Timestream for InfluxDB, and Timestream for LiveAnalytics for existing accounts) — engine choice, measurement, tag and field model, cardinality, retention and downsampling, ingestion and query.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-database"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
     },
     {
       "name": "trd-author",
