@@ -8,13 +8,13 @@ Failure handling: bounded transient retries and quota pauses remain. An ordinary
 caller's deterministic checks against the artifact first and loops on a failed one with no model
 turn; competitive criteria are recorded as flags; only constitutive criteria go to an independent
 `phase-gate-enforcer`, which returns pass, loop or escalate. A gate with no constitutive criterion
-passes on its checks alone. With `mode: 'exhaustion'` it asks the `advantage-evaluator` to rule
+passes on its checks alone. With `mode: 'exhaustion'` it asks the `exhausted-gate-ruler` to rule
 proceed or one directed revision on a gate whose loops are spent.
 
 ## The Epic pipeline does not run it
 
 No step of an Epic's journal runs `gate-enforce`, and no Epic step starts `phase-gate-enforcer`,
-`advantage-evaluator` or `constitutional-agent`. The driver names it in no module, and it is not a
+`exhausted-gate-ruler`, `advantage-evaluator` or `constitutional-agent`. The driver names it in no module, and it is not a
 composite the driver dispatches.
 
 Review and approval inside elaboration are steps of the Epic's journal: the solutions architect's

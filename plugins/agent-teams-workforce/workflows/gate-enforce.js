@@ -1,7 +1,7 @@
 export const meta = {
   name: 'gate-enforce',
   description:
-    'Reusable phase gate. Evaluates the caller\'s deterministic checks against the artifact first and loops on a failed one with no model turn. Competitive criteria are recorded as flags; only constitutive criteria go to an independent phase-gate-enforcer, which returns pass / loop / escalate. A gate with no constitutive criterion passes on its checks alone. With `mode: \'exhaustion\'` it asks the advantage-evaluator to rule proceed or one directed revision on a gate whose loops are spent.',
+    'Reusable phase gate. Evaluates the caller\'s deterministic checks against the artifact first and loops on a failed one with no model turn. Competitive criteria are recorded as flags; only constitutive criteria go to an independent phase-gate-enforcer, which returns pass / loop / escalate. A gate with no constitutive criterion passes on its checks alone. With `mode: \'exhaustion\'` it asks the exhausted-gate-ruler to rule proceed or one directed revision on a gate whose loops are spent.',
   phases: [{ title: 'Gate', detail: 'phase-gate-enforcer adjudicates the artifact' }],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -256,9 +256,7 @@ if (a.mode === 'exhaustion') {
     return dispatchOutcome({ verdict: 'ruled', ruling: 'none', directive: null, rationale: 'a deterministic check still fails', residuals: [], decidedBy: null, flags: [] })
   }
   const ruling = await settleAgent(
-    `You are the advantage-evaluator, ruling on an EXHAUSTED GATE. You did not produce this work and you did not judge it at the gate. Your ruling decides how the run continues.
-
-${where}${a.gateWorkflow ? ` — judged by ${a.gateWorkflow}` : ''}
+    `${where}${a.gateWorkflow ? ` — judged by ${a.gateWorkflow}` : ''}
 
 The gate's criteria:
 ${criteriaText || '(none recorded)'}
@@ -272,15 +270,12 @@ ${unmetNow || '- (the last verdict itemised no unmet criterion)'}
 The phase's latest output:
 ${artifactText}
 
-Rule exactly one of: ${rulings.map((r) => `"${r}"`).join(', ')}.
-- "proceed": the latest output stands and the run continues from it. For EVERY criterion still unmet, return one \`residuals\` entry naming the criterion, why proceeding is acceptable, and the mitigation the downstream phases must honour.${final ? '' : `
-- "revise": the phase runs ONCE more under your \`directive\`: a concrete, changed instruction that you expect to close the unmet criteria.`}
-Do not modify any artifact and do not dispatch any work.`,
+The rulings open to you: ${rulings.map((r) => `"${r}"`).join(', ')}.`,
     {
       label: `exhaustion:${a.gate || a.phaseName || 'phase'}`,
       phase: 'Gate',
       effort: 'high',
-      agentType: 'advantage-evaluator',
+      agentType: 'exhausted-gate-ruler',
       schema: {
         type: 'object',
         additionalProperties: false,
@@ -307,20 +302,20 @@ Do not modify any artifact and do not dispatch any work.`,
     }
   )
   if (!ruling) {
-    const why = `${where}: the advantage-evaluator returned no ruling on the exhausted gate`
+    const why = `${where}: the exhausted-gate-ruler returned no ruling on the exhausted gate`
     log(why)
     return dispatchOutcome({ ...failDispatch(why, 'Gate'), exhaustionRuling: null })
   }
   const directive = String(ruling.directive || '').trim()
   const decided = ruling.ruling === 'revise' && directive ? 'revise' : noProceed ? 'none' : 'proceed'
-  log(`${where}: exhausted gate ruled ${decided.toUpperCase()} by the advantage-evaluator — ${String(ruling.rationale).slice(0, 400)}`)
+  log(`${where}: exhausted gate ruled ${decided.toUpperCase()} by the exhausted-gate-ruler — ${String(ruling.rationale).slice(0, 400)}`)
   return dispatchOutcome({
     verdict: 'ruled',
     ruling: decided,
     directive: decided === 'revise' ? directive : null,
     rationale: ruling.rationale,
     residuals: ruling.residuals || [],
-    decidedBy: 'advantage-evaluator',
+    decidedBy: 'exhausted-gate-ruler',
     flags: (ruling.residuals || []).map((r) => `residual accepted on exhausted gate ${a.gate || '?'}: ${r.criterion} — ${r.mitigation}`),
   })
 }
@@ -406,27 +401,20 @@ if (!constitutiveCriteria.length) {
 }
 
 const settledBlock = checkResults.length
-  ? `\nAlready SETTLED by direct inspection of the artifact — treat these as met and do NOT re-open them:\n${checkResults.map((r) => `- ${r.criterion} (${r.evidence})`).join('\n')}\n`
+  ? `\nSettled by the gate's deterministic checks:\n${checkResults.map((r) => `- ${r.criterion} (${r.evidence})`).join('\n')}\n`
   : ''
-const calibrationBlock = a.calibration ? `\nCALIBRATION FOR THIS GATE — what this gate must block on and what it must not:\n${a.calibration}\n` : ''
+const calibrationBlock = a.calibration ? `\nCalibration for this gate:\n${a.calibration}\n` : ''
 
 const verdict = await settleAgent(
-  `You are the phase-gate-enforcer — an INDEPENDENT gate authority. You did not produce this work; you only judge it. Do NOT modify the artifact.
+  `Gate ${a.gate || '?'} — ${a.phaseName || 'phase'}
 
-Gate ${a.gate || '?'} — ${a.phaseName || 'phase'}
-
-Criteria — every one is CONSTITUTIVE: it defines whether the work is valid at all:
+Constitutive criteria:
 ${constitutiveCriteria.map((c, i) => `${i + 1}. ${c.text}`).join('\n')}
 ${calibrationBlock}${settledBlock}
+Escalation targets: ${a.escalateTargets && a.escalateTargets.length ? a.escalateTargets.join(', ') : '(none named)'}
+
 Artifact under review:
-${artifactText}
-
-Decide exactly one verdict:
-- "pass": every criterion above is met. Put any non-blocking quality concern in \`flags\`.
-- "loop": a criterion is unmet AND the root cause is INSIDE this phase. Return feedback specific enough that the phase can retry without interpretation.
-- "escalate": a criterion is unmet and the failure originates UPSTREAM. Name where it goes back to${a.escalateTargets && a.escalateTargets.length ? ` (options: ${a.escalateTargets.join(', ')})` : ''}.
-
-Loop or escalate only on a criterion listed above. Judge the artifact quoted above; do not survey the repository. For each criterion, state whether it is met with evidence, quoting the criterion text exactly.`,
+${artifactText}`,
   {
     label: `gate:${a.gate || a.phaseName || 'phase'}`,
     effort: 'medium',

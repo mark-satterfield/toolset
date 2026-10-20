@@ -54,7 +54,7 @@
     },
     {
       "name": "advantage-evaluator",
-      "description": "Evaluates competitive, non-constitutive conflicts via speculative execution with rollback: proceed under a flag, observe the outcome, commit or revert — never halts the pipeline for non-invalidating findings; rules every gate whose loops are spent (proceed with named residuals, or one directed revision). Use for Governance work requiring advantage-principle evaluation, speculative-execution oversight, commit-or-revert verdicts, and gate-exhaustion rulings.",
+      "description": "Rules commit or revert on a competitive (non-constitutive) finding that work was allowed to proceed under: before the outcome exists it states the observation window and the evidence that will decide, then judges the observed outcome against it. Speculative execution with rollback, so a tradeable finding never halts a run. Use when a caller proceeded past a competitive gate flag or a non-blocking concern and needs it closed on evidence.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol"
@@ -784,10 +784,11 @@
     },
     {
       "name": "constitutional-agent",
-      "description": "Appeals court for novel constitutive-constraint conflicts the Phase Gate Enforcer cannot resolve: rules via the constitutional layer (the system's founding objectives, spirit of the system) and records rulings as reusable precedent. Use for Governance work requiring constitutional interpretation, conflict resolution, and precedent recording.",
+      "description": "Rules on a conflict between two constitutive constraints that no gate can settle: establishes the constitutional layer the conflict falls under (the owner's section 2 constraints and settled decisions recorded in the matrix, the business outcomes of the PRD the work serves, and the review standard's acceptance basis), names which constraint prevails and under what conditions, and writes the ruling as a precedent record a later conflict can cite. Use when two constraints that each define validity cannot both be met.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol"
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:effective-architecture"
       ],
       "mcpServers": []
     },
@@ -819,7 +820,7 @@
     },
     {
       "name": "context-curator",
-      "description": "Owns context integrity: assembles role-specific context indexes of pointers under the least-context principle and guarantees every constitutive constraint's pointer survives every compaction, so no constraint is ever copied or summarized away. Use for Governance work requiring context-index assembly, compaction-safe constraint preservation, and manifest maintenance.",
+      "description": "Assembles a context index for one receiving agent and task: a file of pointers (paths, headings, matrix ids and atw-matrix commands) to exactly what the role needs, with every constitutive constraint that binds it carried by pointer to its one home, never copied or summarized, and keeps the constraint manifest those pointers come from current. Use when starting a session by hand that needs its context assembled under least context; the orchestrator's own briefs already carry paths only.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol"
@@ -1271,6 +1272,15 @@
       "mcpServers": [
         "aws-mcp"
       ]
+    },
+    {
+      "name": "exhausted-gate-ruler",
+      "description": "Rules how a run continues from a phase gate whose loops are spent: proceed, with the latest output standing and every unmet criterion carried on as a named residual with its mitigation, or one directed revision under a concrete, changed instruction. Started by the gate-enforce workflow in its exhaustion mode.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol"
+      ],
+      "mcpServers": []
     },
     {
       "name": "failure-mode-analyst",
@@ -1821,11 +1831,10 @@
     },
     {
       "name": "phase-gate-enforcer",
-      "description": "Referee for the constitutive criteria of the phase gates in both SDLC pipelines: enforces constitutive constraints as hard stops and returns pass/loop/escalate with structured feedback; competitive criteria are recorded as flags by the gate script and never reach it. Use for Governance work requiring gate adjudication, constitutive-constraint enforcement, and conflict classification.",
+      "description": "Rules pass, loop or escalate on the constitutive criteria of one phase gate, from the criteria and the artifact the gate-enforce workflow quotes: loop when the cause of an unmet criterion is inside the phase, escalate when it is upstream, naming where it goes back to. Deterministic checks and competitive criteria are settled by the gate script and never reach it.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:cumulative-regression"
+        "agent-teams-workforce:validation-protocol"
       ],
       "mcpServers": []
     },
@@ -2130,16 +2139,6 @@
         "mcp-graphrag-server",
         "gitnexus"
       ]
-    },
-    {
-      "name": "sdlc-pipeline-orchestrator",
-      "description": "Workflow-only orchestrator for the SDLC specification and delivery pipelines: sequences phases, dispatches team leads, routes Phase Gate Enforcer outcomes, tracks work state — never evaluates quality. Use for Governance work requiring phase sequencing, team-lead dispatch, gate-outcome routing, and work-state tracking.",
-      "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:agent-orchestration",
-        "agent-teams-workforce:beads-contract"
-      ],
-      "mcpServers": []
     },
     {
       "name": "security-architecture-designer",
@@ -2530,15 +2529,6 @@
       "description": "Executes one workflow-supplied checksum-guarded deterministic command and returns its exact compact machine receipt; never interprets or authors its payload.",
       "skills": [
         "agent-teams-workforce:artifact-handoff"
-      ],
-      "mcpServers": []
-    },
-    {
-      "name": "worktree-independent-verifier",
-      "description": "Independently reports the raw git facts about each of the filesystem paths it is given — their git-dir, their git-common-dir and their checked-out branch — including for the repository the tree is supposed to belong to. Use for Workspace phase work requiring segregation of duties: it is dispatched separately from whoever provisioned the tree, is never told what that provisioner claimed, and reports only what git printed so the calling script can compare the two accounts.",
-      "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol"
       ],
       "mcpServers": []
     },
