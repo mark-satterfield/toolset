@@ -3,7 +3,7 @@
   "agents": [
     {
       "name": "acceptance-criteria-coverage-assessor",
-      "description": "Establishes, before any test is written, which acceptance criteria the repository's existing tests already encode, and — when every criterion is covered — runs only those tests and rules whether they are red, already-satisfied or not-encoded. The tdd-red workflow dispatches it for both steps. Never writes or repairs a test.",
+      "description": "Establishes, before any test is written, which acceptance criteria the repository's existing tests already encode and which are gaps, and — when every criterion is covered — runs only those tests and rules whether they are red, already-satisfied or not-encoded. Use before Red to avoid duplicate tests or a manufactured red for behaviour that already exists. Never writes or repairs a test.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -403,15 +403,16 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:aws-serverless-eda",
+        "agent-teams-workforce:skillspoke-events",
         "agent-teams-workforce:cumulative-regression",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-sdk-python-usage",
-        "aws-core:aws-messaging-and-streaming",
         "aws-core:aws-serverless",
         "agent-teams-workforce:graphrag-lookup"
       ],
       "mcpServers": [
+        "aws-mcp",
         "gitnexus"
       ]
     },
@@ -699,7 +700,7 @@
     },
     {
       "name": "code-correctness-reviewer",
-      "description": "Reviews refactored code for correctness regressions and behavioral drift, verifying the test suite stays green. Use for Code Quality work requiring independent change-set review, regression detection, and behavior-preservation verification.",
+      "description": "Independently reviews a refactor or optimisation change set for correctness regressions and behavioral drift: re-runs the test suite itself, compares contracts, error and data semantics and side effects before and after, and flags modified, weakened or skipped tests and suppressed lint rules; reports findings, never fixes. Use when a caller wants an independent behaviour-preservation check of a change set.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -714,7 +715,7 @@
     },
     {
       "name": "code-quality-lead",
-      "description": "Routes refactor work to specialists, verifies tests stay green after every change, and reports to Gate 2c. Use for Code Quality work requiring delegation, refactor sequencing, green-test verification, and gate reporting.",
+      "description": "Routes refactor work to specialists, verifies tests stay green after every change, and assembles the refactor evidence packet. Use for Code Quality work requiring delegation, refactor sequencing and green-test verification.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:agent-orchestration"
@@ -723,7 +724,7 @@
     },
     {
       "name": "code-refactoring-specialist",
-      "description": "Restructures code for clarity and cohesion without changing behavior, keeping tests green after every change. Use for Code Quality work requiring behavior-preserving restructuring, duplication removal, and complexity reduction.",
+      "description": "Refactors the code a change touched for clarity, cohesion, less complexity and less duplication without changing behavior: decides which refactorings the changed files need (none is a valid answer), applies them through GitNexus (impact before each symbol, rename for every rename, detect_changes before finishing), and keeps the test suite green or gives up so the caller restores the tree.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -771,7 +772,7 @@
     },
     {
       "name": "complexity-analyzer",
-      "description": "Analyzes complexity and duplication in green-tested code, returning prioritized refactor recommendations and the optimizers to run; performs no refactoring. Use for Code Quality work requiring complexity scoring, duplication detection, and refactor planning.",
+      "description": "Analyzes complexity and duplication in a green-tested change set and returns a prioritized refactor recommendation memo, with the optimizer specialties (Lambda, DynamoDB cost, front-end performance, lint fixing) the change calls for; performs no refactoring. Use when a caller wants refactoring targeted by evidence before it assigns the work.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:tech-debt-tracker",
@@ -807,7 +808,7 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:api-test-suite-builder",
+        "agent-teams-workforce:contract-testing",
         "agent-teams-workforce:cumulative-regression",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
@@ -1080,7 +1081,7 @@
     },
     {
       "name": "dynamodb-cost-optimizer",
-      "description": "Optimizes DynamoDB capacity, access patterns, and cost without changing behavior or breaking tests. Use for Code Quality work requiring capacity-mode tuning, query efficiency, and index cost reduction.",
+      "description": "Reduces the DynamoDB cost of code whose tests are green within the approved data model — scans replaced by keyed queries, batching, projections, pagination, fewer round trips — and recommends capacity-mode and index changes with a stated cost basis, without changing behavior or data semantics. Use when a caller assigns DynamoDB cost items.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -1092,6 +1093,7 @@
         "agent-teams-workforce:graphrag-lookup"
       ],
       "mcpServers": [
+        "aws-mcp",
         "awslabs-dynamodb-mcp-server",
         "gitnexus"
       ]
@@ -1352,7 +1354,7 @@
     },
     {
       "name": "frontend-performance-optimizer",
-      "description": "Optimizes frontend performance in green-tested code without breaking tests. Use for Code Quality work requiring bundle trimming, render-path optimization, and Core Web Vitals improvement.",
+      "description": "Applies measured frontend performance optimizations — bundle trimming, code splitting and lazy loading, render-path fixes, Core Web Vitals (LCP, INP, CLS) — to React and Next.js code whose tests are green, without changing behavior, accessibility or visual output. Use when a caller assigns frontend performance items.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -1552,7 +1554,7 @@
     },
     {
       "name": "lambda-performance-optimizer",
-      "description": "Optimizes Lambda cold start, memory sizing, and hot paths in green-tested code without breaking tests or behavior. Use for Code Quality work requiring cold-start reduction, memory tuning, and hot-path optimization.",
+      "description": "Applies measured Lambda performance optimizations — cold start (init work, imports, bundle size), client and connection reuse, hot paths — to Lambda code whose tests are green, and recommends memory and timeout values with evidence, without changing behavior. Use when a caller assigns Lambda performance items.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -1569,7 +1571,7 @@
     },
     {
       "name": "lint-finding-fixer",
-      "description": "Runs project linters and applies formatting and style fixes while keeping tests green. Use for Code Quality work requiring lint execution, formatting cleanup, and style-convention enforcement.",
+      "description": "Fixes the lint, format and type-check findings of a check report on a change set with the smallest style-level change, keeping tests green; never suppresses or reconfigures a rule. Use when a caller has a check report (a check runner's output or a hook's findings) whose findings must be fixed.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -1767,6 +1769,7 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-qa",
+        "agent-teams-workforce:load-testing",
         "agent-teams-workforce:cumulative-regression",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
@@ -1836,7 +1839,6 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-qa",
-        "agent-teams-workforce:a11y-audit",
         "agent-teams-workforce:cumulative-regression",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:software-engineering",
@@ -2039,7 +2041,7 @@
     },
     {
       "name": "regression-coverage-reviewer",
-      "description": "Independently checks cumulative requirement discovery, regression mappings and justified supersession against source artifacts.",
+      "description": "Independently reviews a regression scope or final regression mapping against the actual requirement sources across PRDs, the changed code and the test assertions — completeness of discovered requirements and test layers, preservation of earlier requirements and tests, source-backed supersession, and, for a mapping, that the mapped tests exist, assert the obligations and are collected by the declared commands — and approves it or returns concrete findings.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:artifact-handoff",
@@ -2047,12 +2049,13 @@
         "agent-teams-workforce:graphrag-lookup"
       ],
       "mcpServers": [
+        "mcp-graphrag-server",
         "gitnexus"
       ]
     },
     {
       "name": "regression-impact-assessor",
-      "description": "Maps changed components to all affected current requirements and cumulative regression tests, retaining requirements across PRDs.",
+      "description": "Maps the components a Task changes to every current requirement they can affect, across all PRDs and the repositories that consume them, and to the unit, contract, integration and nonfunctional test layers each requires — before Red as the regression scope, after Red as the final mapping to actual test IDs and JUnit-reporting run commands — retaining earlier requirements unless an accepted source supersedes them.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:artifact-handoff",
@@ -2060,6 +2063,7 @@
         "agent-teams-workforce:graphrag-lookup"
       ],
       "mcpServers": [
+        "mcp-graphrag-server",
         "gitnexus"
       ]
     },
@@ -2183,10 +2187,9 @@
     },
     {
       "name": "shared-capability-reviewer",
-      "description": "Rule whether a new function duplicates a behaviour that a shared capability provides.",
+      "description": "Rules, for each definition a deterministic reuse check could not rule on, whether a function a Task added duplicates a behaviour a shared capability (a shared library, layer, chassis or service) provides to its consumers — duplicate or not-duplicate, with one sentence of reason. Reads only the named function and the provides entry; changes nothing.",
       "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:subagent-contract"
       ],
       "mcpServers": [
         "gitnexus"
@@ -2323,13 +2326,16 @@
     },
     {
       "name": "tdd-unit-test-generator",
-      "description": "Writes failing unit tests from spec acceptance criteria before implementation exists, confirming each fails for the intended reason. Use for Test Design work requiring unit test authoring, criterion-to-test translation, fixture/mock design, and Red confirmation.",
+      "description": "Writes failing unit tests, including cdk synth assertion tests of CDK stacks, from acceptance criteria before the implementation exists and confirms each fails for the intended reason; and, in update mode, rules on every existing test of any kind an implementer names (update, delete or keep, citing the contract) and applies the ruling. Python and TypeScript, back end, front end and CDK.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:tdd-guide",
         "agent-teams-workforce:cumulative-regression",
         "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:typescript-coding",
+        "agent-teams-workforce:web-frontend-coding",
+        "agent-teams-workforce:cdk-coding",
         "agent-teams-workforce:software-engineering",
         "agent-teams-workforce:graphrag-lookup"
       ],
@@ -2339,16 +2345,15 @@
     },
     {
       "name": "test-command-resolver",
-      "description": "Resolves the applicable test command from repository instructions and configuration without running tests.",
+      "description": "Finds the command a repository itself declares for running its whole test suite — from its AGENTS.md or CLAUDE.md, else the test task of its Taskfile — and returns it exactly as declared, or a resolution error naming the files read. Runs nothing and changes nothing.",
       "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:test-failure-mindset"
+        "agent-teams-workforce:subagent-contract"
       ],
       "mcpServers": []
     },
     {
       "name": "test-design-lead",
-      "description": "Routes spec acceptance criteria to test writers, confirms Red (every new test fails), and reports to Gate 2a. Use for Test Design work requiring delegation, criterion-to-test routing, and gate reporting.",
+      "description": "Routes spec acceptance criteria to test writers, confirms Red (every new test fails), and assembles the Red readiness packet. Use for Test Design work requiring delegation and criterion-to-test routing.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:agent-orchestration"
@@ -2373,21 +2378,19 @@
     },
     {
       "name": "test-failure-parser",
-      "description": "Extracts concrete failing test identifiers and errors from a saved test log without rerunning tests.",
+      "description": "Reads the saved output of one test-suite run and names every failure it reports — each failing test, and each test file the runner could not load — with the output line that names it and the runner's final summary, whatever the test runner. Never reruns the suite, fixes code or changes the log.",
       "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:test-failure-mindset"
+        "agent-teams-workforce:subagent-contract"
       ],
       "mcpServers": []
     },
     {
       "name": "test-isolation-specialist",
-      "description": "Validates test independence — no shared mutable state, isolated fixtures — reporting isolation defects without fixing them. Use for Test Design work requiring isolation validation, order-dependence detection, fixture audit, and flakiness prevention.",
+      "description": "Validates that tests are independent — no shared mutable state, no order dependence, self-cleaning fixtures — by static inspection and by running the suites in shuffled order and repeatedly, and reports each isolation defect with a reproduction; never fixes. Use when a caller wants a suite's isolation checked before its results are trusted.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:tdd-guide",
-        "agent-teams-workforce:test-failure-mindset",
         "agent-teams-workforce:graphrag-lookup"
       ],
       "mcpServers": [
@@ -2396,7 +2399,7 @@
     },
     {
       "name": "test-plan-strategy-reviewer",
-      "description": "Reviews the test plan strategy for pyramid balance, risk coverage, and environment needs; reports findings only. Use for Test Design work requiring strategy review, pyramid balance assessment, and risk coverage validation.",
+      "description": "Reviews a feature's test plan and authored suites at the strategy level — balance across unit, contract, integration, E2E, security and performance layers, test investment in the spec's highest risks, feasibility of the environments the tests need, duplication and contradiction between suites — and reports findings only. Use when a caller wants the shape of a test strategy challenged.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -2407,12 +2410,11 @@
     },
     {
       "name": "test-strategy-decider",
-      "description": "Decides the feature's test strategy — pyramid shape, environment matrix, coverage thresholds — from analyses routed by the calling workflow; generates no analysis of its own. Use for Test Design work requiring strategy adjudication, evidence weighing, and rationale recording.",
+      "description": "Decides a feature's test strategy — pyramid shape across test layers, environment matrix per platform, coverage thresholds — from strategy analyses and reviewer findings others produced, with a recorded rationale and rejected alternatives; generates no analysis of its own. Use when a caller has strategy evidence that needs one accountable decision.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-qa",
-        "agent-teams-workforce:cove-prompt-design"
+        "agent-teams-workforce:senior-qa"
       ],
       "mcpServers": []
     },

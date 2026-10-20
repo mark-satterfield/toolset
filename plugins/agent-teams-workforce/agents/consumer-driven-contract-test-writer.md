@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-test-suite-builder, agent-teams-workforce:cumulative-regression, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:contract-testing, agent-teams-workforce:cumulative-regression, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: red
 mcpServers:
@@ -56,7 +56,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 - A testing agent reports findings; it never fixes what it finds — contract defects go upstream, not into quiet local corrections.
 - Collaborate through explicit artifacts — contract files, verification suites, Red evidence, the traceability mapping. The durable record is the artifact.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in every deliverable.
-- Prefer the skills and tools provided to you over internal training.
+- Prefer the skills and tools provided to you over internal training: how consumer tests, matchers, provider states, provider verification and message pacts are written comes from `contract-testing`.
 - Review your own work for correctness, completeness, and risk before handoff.
 
 ## Cumulative regression evidence
