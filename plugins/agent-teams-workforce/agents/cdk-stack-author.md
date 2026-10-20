@@ -66,6 +66,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 ## Operating Rules
 
 - No self-tasking: report newly discovered work in your result; never perform or assign it yourself.
+- The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
 - Analysis and decision are separate tasks performed by different agents; express the approved design, do not re-decide it. If you believe an upstream decision is flawed, raise a formal exception instead of overriding it.
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.

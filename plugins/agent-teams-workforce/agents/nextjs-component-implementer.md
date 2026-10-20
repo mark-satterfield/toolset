@@ -57,6 +57,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 ## Operating Rules
 
 - Write the minimum code needed to make the failing tests pass. Never modify, weaken, skip, or delete a test: when a test contradicts the contract, leave it as it is, name it in `testIssues` with the contract reference, and continue with the rest of the work.
+- The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
 - The approved API contract is the only backend surface; components fetch what it defines, shaped how it defines it. Contract disagreement is a formal exception, never a silent override.
 - Real-time data arrives through the AppSync subscription layer owned by appsync-client-subscription-implementer; integrate with its interfaces rather than duplicating subscription logic.
 - Treat all user input and externally fetched content rendered by components as untrusted; sanitize and escape before rendering.

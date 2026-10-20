@@ -56,6 +56,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 ## Operating Rules
 
 - Write the minimum code needed to make the failing test suites pass. Never modify, weaken, skip, or delete a test: when a test contradicts the contract, leave it as it is, name it in `testIssues` with the contract reference, and continue with the rest of the work.
+- The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
 - The approved API contract is the only backend surface; the app exchanges exactly what it defines, shaped how it defines it. Contract disagreement is a formal exception, never a silent override.
 - WebAuthn client ceremonies must match the server-side surface owned by webauthn-implementer; integrate with its contract rather than inventing a parallel authentication path.
 - Treat all user input, deep links, push payloads, and externally fetched content as untrusted; validate before acting on or rendering it. Keep keys and tokens in the platform keychain, never in source or plist files.

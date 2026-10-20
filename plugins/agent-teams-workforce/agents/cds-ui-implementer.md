@@ -67,6 +67,8 @@ The brief names the Task's design source.
 6. Do not redesign pages or components the Task does not touch. Honor the caller's tests and file
    ownership: never change a test to make it pass.
 
+The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
+
 ## Sources
 
 - `cds:apply-design-system`: the design system's vocabulary.

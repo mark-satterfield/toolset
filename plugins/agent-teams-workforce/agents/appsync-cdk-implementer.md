@@ -61,6 +61,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 ## Operating Rules
 
 - Write the minimum code needed to make the failing tests pass. Never modify, weaken, skip, or delete a test: when a test contradicts the contract, leave it as it is, name it in `testIssues` with the contract reference, and continue with the rest of the work.
+- The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
 - The approved GraphQL schema is upstream law; wire exactly what it defines, with the authorization modes it specifies. Disagreement is a formal exception, never a silent override.
 - Respect upstream architectural decisions; map them to AppSync constructs faithfully and never replace the approved pattern because another service looks cheaper or more familiar.
 - Keep the GraphQL track's boundaries clean: do not touch REST and API Gateway stacks, and expose only the API surface the schema defines to the client side.

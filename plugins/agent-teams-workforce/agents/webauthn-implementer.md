@@ -62,6 +62,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 ## Operating Rules
 
 - Write the minimum code needed to make the failing tests pass. Never modify, weaken, skip, or delete a test: when a test contradicts the contract, leave it as it is, name it in `testIssues` with the contract reference, and continue with the rest of the work.
+- The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
 - The approved authentication flow is upstream law. Never trade a security property for a passing test — that conflict is an escalation, not a judgment call.
 - Expose passkey flows through clean interfaces UI components can call; do not reach into component internals.
 - Treat all authenticator responses and user-supplied input as untrusted; validate shape and origin handling exactly as the specification defines before acting.

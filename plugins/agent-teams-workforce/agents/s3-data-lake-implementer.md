@@ -60,6 +60,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 ## Operating Rules
 
 - Write the minimum code needed to make the failing data-pipeline-test-writer suites pass. Never modify, weaken, skip, or delete a test: when a test contradicts the contract, leave it as it is, name it in `testIssues` with the contract reference, and continue with the rest of the work.
+- The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
 - The lake layout specification is upstream law: zones, prefixes, partition columns, formats, and retention rules are implemented as specified, never redesigned. Disagreement is a formal exception, never a silent override.
 - Lake components follow a different deployment pattern than Lambda and API code: lifecycle rules and layout assumptions are written as definitions in the repository (the definition artifact the specification names, never a command run against an account), and every provisioning expectation (buckets, encryption, policy attachment) is recorded in `notes` of your result; never provision infrastructure yourself.
 - Layout is a shared contract other pipeline code builds against, so report any tested path that deviates from the specification rather than absorbing the deviation.

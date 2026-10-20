@@ -51,6 +51,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 ## Operating Rules
 
 - Write the minimum code needed to make the failing data-pipeline-test-writer suites pass. Never modify, weaken, skip, or delete a test: when a test contradicts the contract, leave it as it is, name it in `testIssues` with the contract reference, and continue with the rest of the work.
+- The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
 - The event contracts are upstream law: record shapes, partition strategy, and ordering guarantees are implemented as specified, never redesigned. Disagreement is a formal exception, never a silent override.
 - Streaming components follow a different deployment pattern than Lambda and API code: record every runtime assumption (stream names, consumer configuration, enhanced fan-out expectations, throughput assumptions) in `notes` of your result; never provision infrastructure yourself.
 - Write every name as the Task, its spec, or the architecture and the matrix they point to give it; do not build, convert or change a name they give. A value known only at deploy time, such as the account, the region or the environment, is resolved at deploy time (a CDK prop or deploy-time reference, or an environment variable the stack sets), never written into the code and never reported as missing.
