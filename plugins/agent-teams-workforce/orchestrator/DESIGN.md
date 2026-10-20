@@ -515,7 +515,9 @@ records the model in `run.json`; it passes no effort.
 | `architecture-maintainer` | | by the architect in its own session; by the script when left running |
 | `architecture-team-lead` | `architecture-lead` | by the script, only when the architect's result is unsettled |
 | `architecture-decider` | `decider` | by the script, only for a step the lead plans |
-| `api-specification-author`, `data-model-specification-author`, `acceptance-criteria-writer` | | by the script, in a repository's container under Specs and Stories: the UI sources step (the contracts author, frontend repositories), the step that writes its document, and a correction or a revision the review plans |
+| `ui-design-source-selector` | | by the script, in a frontend repository's container under Specs and Stories: the UI sources step |
+| `api-specification-author`, `data-model-specification-author`, `acceptance-criteria-writer` | | by the script, in a repository's container under Specs and Stories: the step that writes its document, and a correction or a revision the review plans |
+| `dynamodb-schema-access-pattern-reviewer` | | by the script, once per repository whose stacks hold a DynamoDB store, beside the acceptance criteria and before the review |
 | `spec-reviewer` | | by the script, once per repository, after the three documents |
 | `review-dispute-decider` | | by the script, only when an author disputed a finding of the review |
 | `task-decomposer` | | by the script, in a repository's container under Tasks: the decomposition, and one correction when the plan has a gap |
@@ -967,14 +969,17 @@ elaboration is done.
   single-repository container and nothing reads its prose to decide anything, so no session writes
   it.
 - **One review per repository.** `spec-reviewer` checks the three documents against the
-  specs-and-Tasks criteria. A finding goes once to the author of the document it names; a
+  specs-and-Tasks criteria. For a repository whose stacks hold a DynamoDB store (an
+  infrastructure entry with a `dynamodb-` resource type homed in a stack the Story builds in),
+  `dynamodb-schema-access-pattern-reviewer` first checks the data-model document's DynamoDB access
+  patterns, and its findings (D1, D2 ...) join the review's (F1, F2 ...). A finding goes once to the author of the document it names; a
   disputed finding goes to `review-dispute-decider`; an upheld finding goes back to that author. Each of these
   sessions is its own journal step, planned by the step whose result calls for it
   (`specs/epic/spec-authoring.md`).
 - **Every author writes its document.** No structured field says which surface an item touches, so
   no author is skipped; an author with nothing to specify writes a short "not applicable" document.
-- **UI design sources.** For a repository whose placement has `frontend: true`, the contracts author
-  (`api-specification-author`) writes `<work>/candidates/spec-<slug>.ui.json`; which items the Story builds
+- **UI design sources.** For a repository whose placement has `frontend: true`,
+  `ui-design-source-selector` writes `<work>/candidates/spec-<slug>.ui.json`; which items the Story builds
   are UI items is its judgment; Python checks the file against the supplied bundles and the placed
   item ids. The `frontend` flag of the placement is the only structured field that says a repository
   holds UI.

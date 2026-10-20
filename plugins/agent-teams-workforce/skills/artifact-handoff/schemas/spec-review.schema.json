@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Spec review",
-  "description": "The review of one repository's specification documents against the specs-and-Tasks criteria of effective-architecture/review-criteria.json, and the two documents that can follow it: an author's correction and the decider's ruling on a dispute. The root is the reviewer's result; spec-correction.schema.json and spec-ruling.schema.json refer to the other two.",
+  "description": "The review of one repository's specification documents against the specs-and-Tasks criteria of effective-architecture/review-criteria.json (and, for a repository whose stacks hold a DynamoDB store, the review of its data-model document's DynamoDB access patterns, in the same form), and the two documents that can follow it: an author's correction and the decider's ruling on a dispute. The root is the reviewer's result; spec-correction.schema.json and spec-ruling.schema.json refer to the other two.",
   "$ref": "#/$defs/SpecReview",
   "$defs": {
     "SpecDocument": {
@@ -21,9 +21,9 @@
       "required": ["id", "document", "criterion", "location", "observation", "correction", "doneWhen"],
       "properties": {
         "id": {
-          "description": "The reviewer's name for this finding, unique in the review: F1, F2 and so on.",
+          "description": "The reviewer's name for this finding, unique among the findings sent to the authors: F1, F2 and so on from the spec review; D1, D2 and so on from the data-model access-pattern review.",
           "type": "string",
-          "pattern": "^F[1-9][0-9]*$"
+          "pattern": "^[FD][1-9][0-9]*$"
         },
         "document": {
           "$ref": "#/$defs/SpecDocument"

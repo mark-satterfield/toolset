@@ -2,9 +2,10 @@
 
 The span step plans one container per repository with its first step, the repository context.
 That step gathers what the repository builds and plans the rest: for a frontend repository the UI
-bundle listing, the UI sources session and its normalization; the contracts session and the
-data-model session, which run together; the UI section; the acceptance-criteria session; the
-review; the Story document; and the Story bead write. Each step takes the files it reads from the
+bundle listing, the UI design-source session and its normalization; the contracts session and the
+data-model session, which run together; the UI section; the acceptance-criteria session and, for a
+repository whose stacks hold a DynamoDB store, the data-model access-pattern review, which run
+together; the review; the Story document; and the Story bead write. Each step takes the files it reads from the
 artifacts of the steps its inputs name, and records what it writes right after writing it.
 
 What a repository's Story is handed about the architecture is a set of pointers into the matrix:
@@ -35,6 +36,7 @@ import beadwrite
 import cdsbundles
 import hierarchy
 import specui
+from matrix_contract import KIND_INFRASTRUCTURE
 from matrixquery import documents_view, story_scope
 from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix
 from recon_contract import KEY_MOCKS_DIR
@@ -47,7 +49,7 @@ from orchestrator.core.driver_contracts import DispatchArguments, dispatch_argum
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_changes import create_child_journal
-from orchestrator.core.journal_registry import script_step
+from orchestrator.core.journal_registry import agent_step, script_step
 from orchestrator.core.journal_steps import (
     UNDER_CONTAINER,
     AgentLaunch,
@@ -69,6 +71,7 @@ from orchestrator.flows.elaboration_files import (
     CONTEXT,
     CRITERIA,
     DATA_MODEL,
+    DATA_MODEL_REVIEWER,
     REPOSITORY,
     REVIEWER,
     SPEC,
@@ -87,6 +90,7 @@ from orchestrator.flows.elaboration_files import (
     UI_BUNDLES_SCHEMA,
     UI_CANDIDATE,
     UI_NORMALIZE,
+    UI_SELECTOR,
     UI_SOURCES,
     WARNINGS,
     WORK,
@@ -113,7 +117,7 @@ from orchestrator.flows.trd_authoring import SPEC_FRONT_MATTER, document
 from step_journal_contract import BEAD_TYPE_STORY, BeadId
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Collection, Mapping, Sequence
 
     from matrix_contract import Entry, EntryId, Verified
     from matrixquery import Described, StoryScope
@@ -121,9 +125,11 @@ if TYPE_CHECKING:
 
     from orchestrator.core.models import OutputValidator
 
-WORK_UI: Final = "ui-sources"
 WORK_DOCUMENT: Final = "document"
 """What a step of an author agent, planned by the repository context step, does."""
+KEY_RESOURCE_TYPE: Final = "resourceType"
+DYNAMODB_RESOURCE_PREFIX: Final = "dynamodb-"
+"""An infrastructure entry whose resource type starts with this prefix is a DynamoDB resource."""
 DECISION_IDS: Final = "decision ids"
 KEY_STACKS: Final = "stacks"
 """The member of the repository context that lists the stacks the Story builds in, with their entries."""
@@ -268,8 +274,14 @@ def _step(  # ruff: ignore[too-many-arguments] - One plan field each.
     return NewStep(plan, params)
 
 
-def _repository_steps(run: StepRun, held: Repository) -> StepGroup:
+def _repository_steps(run: StepRun, held: Repository, *, dynamodb: bool) -> StepGroup:
     """Plan every step of one repository that follows its context step.
+
+    Args:
+        run: The context step.
+        held: The repository.
+        dynamodb: Whether a stack the Story builds in holds a DynamoDB store, which plans the
+            data-model access-pattern review beside the acceptance criteria.
 
     Returns:
         The steps in the order they run, after the context step.
@@ -292,8 +304,7 @@ def _repository_steps(run: StepRun, held: Repository) -> StepGroup:
                 f"Choose the UI design source of each UI item of {name}",
                 "Every UI item has a design source",
                 ["bundles", *upstream],
-                agent=AUTHOR_CONTRACTS,
-                work=WORK_UI,
+                agent=UI_SELECTOR,
             ),
             _step(
                 "sources",
@@ -333,7 +344,7 @@ def _repository_steps(run: StepRun, held: Repository) -> StepGroup:
             ),
         )
     documents: list[str] = ["contracts", "data-model", "criteria"]
-    steps.extend((
+    steps.append(
         _step(
             "criteria",
             f"Write the acceptance criteria of {name}",
@@ -342,11 +353,24 @@ def _repository_steps(run: StepRun, held: Repository) -> StepGroup:
             agent=AUTHOR_CRITERIA,
             work=WORK_DOCUMENT,
         ),
+    )
+    reviewed: list[str] = ["data-model-review"] if dynamodb else []
+    if dynamodb:
+        steps.append(
+            _step(
+                "data-model-review",
+                f"Review the DynamoDB access patterns of the data model of {name}",
+                "Every DynamoDB access pattern the data model states can be served as stated",
+                ["data-model", *upstream],
+                agent=DATA_MODEL_REVIEWER,
+            ),
+        )
+    steps.extend((
         _step(
             "review",
             f"Review the specification documents of {name}",
             "Every finding against the implementation criteria is settled",
-            [*documents, *upstream],
+            [*documents, *reviewed, *upstream],
             agent=REVIEWER,
         ),
         _step(
@@ -489,6 +513,27 @@ def items_by_story(every_build: Mapping[str, JsonValue]) -> dict[str, list[JsonV
     return grouped
 
 
+def holds_dynamodb(matrix: Matrix, stacks: Collection[EntryId]) -> bool:
+    """Tell whether any of some stacks holds a DynamoDB store.
+
+    Args:
+        matrix: The matrix.
+        stacks: The stacks a Story builds in.
+
+    Returns:
+        True when an infrastructure entry whose home is one of the stacks has a resource type
+        of DynamoDB (``dynamodb-table``, for example).
+
+    """
+    held: frozenset[EntryId] = frozenset(stacks)
+    return any(
+        isinstance(kind := entry.attributes.get(KEY_RESOURCE_TYPE), str)
+        and kind.startswith(DYNAMODB_RESOURCE_PREFIX)
+        and matrix.home(entry.id) in held
+        for entry in matrix.entries((KIND_INFRASTRUCTURE,))
+    )
+
+
 def story_context(matrix: Matrix, built: Sequence[JsonValue], every_build: Mapping[str, JsonValue]) -> BuildContext:
     """List what a Story depends on.
 
@@ -569,7 +614,13 @@ def context(run: StepRun) -> Completion:
     )
     return Completion(
         artifacts=(value_artifact(REPOSITORY, held.facts()), file_artifact(CONTEXT, path)),
-        add=(_repository_steps(run, held),),
+        add=(
+            _repository_steps(
+                run,
+                held,
+                dynamodb=run.tools.portfolio(SPEC_CONTEXT, holds_dynamodb, matrix, list(stacks)),
+            ),
+        ),
     )
 
 
@@ -589,15 +640,16 @@ def bundles(run: StepRun) -> Completion:
     return Completion(artifacts=(file_artifact(UI_BUNDLE_LIST, path),))
 
 
+@agent_step(UI_SELECTOR)
 def ui_sources(run: StepRun) -> AgentLaunch:
     """Build the session that chooses the design source of each UI item of a frontend repository.
 
     Returns:
-        The launch: the choices as the author wrote them, checked against the spec-ui schema.
+        The launch: the choices as the selector wrote them, checked against the spec-ui schema.
 
     """
     held: Repository = repository(run.inputs)
-    enter_phase(run.context, run.agents.emit, SPEC_AUTHORING_PHASE, WORK_UI, held.path)
+    enter_phase(run.context, run.agents.emit, SPEC_AUTHORING_PHASE, UI_SELECTOR, held.path)
 
     def accept(_accepted: StepRun, output: Path) -> Completion:
         return Completion(artifacts=(file_artifact(UI_CANDIDATE, output),))

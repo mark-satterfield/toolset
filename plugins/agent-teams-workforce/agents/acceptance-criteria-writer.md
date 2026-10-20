@@ -1,20 +1,16 @@
 ---
 name: acceptance-criteria-writer
 description: Derive traceable criteria and Definition of Done from the finished specification set.
-tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
-  mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
-  Skill, Agent, Workflow
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, Agent, Workflow
 disallowedTools: AskUserQuestion
-mcpServers:
-- aws-mcp
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
 skills:
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:validation-protocol
-- agent-teams-workforce:senior-qa
 - agent-teams-workforce:artifact-handoff
+- agent-teams-workforce:effective-architecture
 effort: low
 isolation: worktree
 color: purple
@@ -40,8 +36,14 @@ architecture. Preserve any test strategy the sources state, in the shape of the 
 property (`properties.testStrategy`) in the artifact-handoff skill's `schemas/tasks.schema.json`;
 do not invent values the sources do not state. Requirements not checkable by unit tests may be assigned to human testing explicitly.
 Write the assigned UTF-8 criteria document, keeping the set concise (guidance: 120 criteria and
-30 DoD items). Tasks cite these ids; do not replace the requirements with Task wording.
-Python creates the Story container deterministically; no story-bead-writer is dispatched.
+30 DoD items). Keep every id stable, and state requirements, not Task wording.
+
+Write the criteria to the specs-and-Tasks criteria of `effective-architecture/review-standard.md`
+(the criteria document's contract): each criterion names an observable outcome a test can show
+true or false from its text alone, with the concrete input, boundary or failure case it covers;
+each Definition of Done statement is a true-or-false statement about the finished work, never a
+checklist step. Criteria derive from the TRD, the contracts and the data model; they add no
+requirement and decide no design.
 
 ## Review correction
 

@@ -74,14 +74,10 @@ behaviour that a shared capability provides. Do not search code to decide which 
 omitted. Write nonempty UTF-8 Markdown with decisionIds frontmatter; cite the views you read. If
 this surface is not applicable, state why in a short document rather than inventing work.
 
-For a UI-source outcome, write the file at the assigned output path so that it validates against
-the artifact-handoff skill's `schemas/spec-ui.schema.json`, whose description says what the file
-means and when it is complete. Each `uiItems` entry is the UI item that `schemas/recon.schema.json`
-`$defs/UiItem` defines: its descriptions and the `$defs/DesignSource` and `$defs/ArtifactKind`
-enums give every field and allowed value; an unlisted design source fails the step. For the
-contract-document outcome use those design sources by reference, with no invented CSS/tokens;
-Python appends the normalized UI-source section. Distinct outputs use distinct fact-only
-assignments; never infer an unassigned writable companion.
+For a frontend repository the brief also hands you `ui sources` (`schemas/spec-ui.schema.json`):
+the design source already chosen for each UI item. Refer to those design sources by item, with
+no invented CSS or tokens; the step after you appends the UI design sources section to your
+document.
 
 ## Review correction
 

@@ -1,7 +1,9 @@
 """The review of one repository's specification documents, each session a step of the journal.
 
-One reviewer session reads the documents against the specs-and-Tasks criteria. Its step
-plans what its result calls for: a finding goes once to the author of the document it names, in
+One reviewer session reads the documents against the specs-and-Tasks criteria; for a repository
+whose stacks hold a DynamoDB store, a second reviewer session reads the data-model document's
+DynamoDB access patterns first, and its findings join the review's. The review step plans what
+the findings call for: a finding goes once to the author of the document it names, in
 the order the documents are written, each as its own step. A step that ends plans the next: the
 next document with a finding, a document derived from one that changed, and, when an author
 disputed a finding, the decider. A finding the decider upholds goes back to that author as a
@@ -25,7 +27,6 @@ from spec_review_contract import (
     DOCUMENT_SPEC,
     RULING_FINDING_STANDS,
     SPEC_CORRECTION_SCHEMA_PATH,
-    SPEC_REVIEW_SCHEMA_PATH,
     SPEC_RULING_SCHEMA_PATH,
     SpecDocument,
     validate_spec_correction,
@@ -54,6 +55,8 @@ from orchestrator.flows.elaboration_files import (
     CONTEXT,
     CRITERIA,
     DATA_MODEL,
+    DATA_MODEL_REVIEW,
+    DATA_MODEL_REVIEWER,
     DECIDER,
     REVIEWER,
     SPEC,
@@ -67,19 +70,18 @@ from orchestrator.flows.elaboration_files import (
 from orchestrator.flows.elaboration_support import SPEC_AUTHORING_PHASE, enter_phase
 from orchestrator.flows.spec_authoring import (
     WORK_DOCUMENT,
-    WORK_UI,
     author_dirs,
     author_files,
     document_check,
     spec_document,
-    ui_sources,
 )
 
 if TYPE_CHECKING:
-    from spec_review_contract import SpecCorrection, SpecReview, SpecRuling
+    from spec_review_contract import Finding, SpecCorrection, SpecReview, SpecRuling
     from step_journal_contract import Artifact, Step, StepPlan
 
     from orchestrator.core.io import JsonValue
+    from orchestrator.core.models import OutputValidator
 
 CRITERIA_FILE: Final = "skills/effective-architecture/review-criteria.json"
 
@@ -117,6 +119,10 @@ UPHELD: Final = "spec review findings upheld"
 DOCUMENT: Final = "document"
 
 REVIEW_RESULT: Final = "Review of this repository's specification documents against the implementation criteria."
+DATA_MODEL_REVIEW_RESULT: Final = "Review of the DynamoDB access patterns of this repository's data-model document."
+FINDING_PREFIX_REVIEW: Final = "F"
+FINDING_PREFIX_DATA_MODEL: Final = "D"
+"""The first letter of a finding id: the review's findings are F1, F2 and so on, the data-model review's D1, D2."""
 CORRECTION_RESULT: Final = "Correction of this specification document for the spec review findings."
 RULING_RESULT: Final = "Ruling on each disputed spec review finding."
 REVISION_RESULT: Final = "Revision of this specification document to the directives of the ruling."
@@ -231,6 +237,33 @@ def following(run: StepRun, own: dict[str, JsonValue] | None, phase: Pass) -> tu
     return ()
 
 
+def review_check(prefix: str, documents: frozenset[SpecDocument]) -> OutputValidator:
+    """Give the check a review must pass: the review contract, with its finding ids and documents.
+
+    Args:
+        prefix: The first letter every finding id of this review carries.
+        documents: The documents its findings may name.
+
+    Returns:
+        The check; a review that fails it raises ``ValueError`` and goes back to its session.
+
+    """
+
+    def check(path: Path) -> None:
+        review: SpecReview = validate_spec_review(strict_json(path), str(path))
+        wrong: list[str] = [
+            finding["id"]
+            for finding in review["findings"]
+            if not finding["id"].startswith(prefix) or finding["document"] not in documents
+        ]
+        if wrong:
+            named: str = ", ".join(sorted(documents))
+            message: str = f"findings {', '.join(wrong)}: every id starts with {prefix} and names one of {named}"
+            raise ValueError(message)
+
+    return check
+
+
 def _documents(run: StepRun) -> tuple[tuple[str, Path], ...]:
     """Name the three spec documents a step of the review is handed.
 
@@ -256,17 +289,18 @@ def reviewer(run: StepRun) -> AgentLaunch:
 
     def accept(accepted: StepRun, output: Path) -> Completion:
         review: SpecReview = validate_spec_review(strict_json(output), str(output))
+        data_model: Path | None = accepted.inputs.optional_file(DATA_MODEL_REVIEW)
+        found: list[Finding] = [
+            *review["findings"],
+            *([] if data_model is None else validate_spec_review(strict_json(data_model), str(data_model))["findings"]),
+        ]
         allowed: frozenset[str] = frozenset(
             entry.id for entry in load_criteria(criteria).at_level(LEVEL_IMPLEMENTATION)
         )
         kept: list[JsonValue] = [
-            _finding(finding["id"], finding["document"])
-            for finding in review["findings"]
-            if finding["criterion"] in allowed
+            _finding(finding["id"], finding["document"]) for finding in found if finding["criterion"] in allowed
         ]
-        dropped: list[JsonValue] = [
-            finding["id"] for finding in review["findings"] if finding["criterion"] not in allowed
-        ]
+        dropped: list[JsonValue] = [finding["id"] for finding in found if finding["criterion"] not in allowed]
         recorded: StepRun = _with(accepted, value_artifact(FINDINGS, kept))
         return Completion(
             artifacts=(file_artifact(REVIEW, output), value_artifact(FINDINGS, kept), value_artifact(DROPPED, dropped)),
@@ -275,12 +309,44 @@ def reviewer(run: StepRun) -> AgentLaunch:
 
     return AgentLaunch(
         output=run.context.work / f"spec-{held.slug}.review.json",
-        validate=SPEC_REVIEW_SCHEMA_PATH,
+        validate=review_check(FINDING_PREFIX_REVIEW, frozenset(ORDER)),
         outcome=REVIEW_RESULT,
         accept=accept,
         add_dirs=(run.context.work,),
         files=(
             *_documents(run),
+            (ARTIFACT_TRD, run.inputs.file(ARTIFACT_TRD)),
+            (CONTEXT, run.inputs.file(CONTEXT)),
+        ),
+        hand_inputs=False,
+    )
+
+
+@agent_step(DATA_MODEL_REVIEWER)
+def data_model_reviewer(run: StepRun) -> AgentLaunch:
+    """Build the session that reviews the DynamoDB access patterns of a repository's data model.
+
+    It is planned only for a repository whose stacks hold a DynamoDB store, before the review,
+    whose step adds these findings to its own.
+
+    Returns:
+        The launch: the data-model review as output, every finding on the data-model document.
+
+    """
+    held: Repository = repository(run.inputs)
+    enter_phase(run.context, run.agents.emit, SPEC_AUTHORING_PHASE, DATA_MODEL_REVIEWER, held.path)
+
+    def accept(_accepted: StepRun, output: Path) -> Completion:
+        return Completion(artifacts=(file_artifact(DATA_MODEL_REVIEW, output),))
+
+    return AgentLaunch(
+        output=run.context.work / f"spec-{held.slug}.data-model-review.json",
+        validate=review_check(FINDING_PREFIX_DATA_MODEL, frozenset((DOCUMENT_DATA_MODEL,))),
+        outcome=DATA_MODEL_REVIEW_RESULT,
+        accept=accept,
+        add_dirs=(run.context.work,),
+        files=(
+            (DATA_MODEL, run.inputs.file(DATA_MODEL)),
             (ARTIFACT_TRD, run.inputs.file(ARTIFACT_TRD)),
             (CONTEXT, run.inputs.file(CONTEXT)),
         ),
@@ -308,6 +374,17 @@ def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _data_model_review(run: StepRun) -> tuple[tuple[str, Path], ...]:
+    """Name the data-model review a step of the review is handed, when one was made.
+
+    Returns:
+        The data-model review with its artifact name, or nothing.
+
+    """
+    path: Path | None = run.inputs.optional_file(DATA_MODEL_REVIEW)
+    return () if path is None else ((DATA_MODEL_REVIEW, path),)
+
+
 def correction(run: StepRun) -> AgentLaunch:
     """Build the session in which an author works on its document again, after the review or the ruling.
 
@@ -332,7 +409,7 @@ def correction(run: StepRun) -> AgentLaunch:
     resumed: bool = "session" in run.step
     writing: Step | None = run.earlier_sibling(AUTHOR_OF[kind])
     enter_phase(run.context, run.agents.emit, SPEC_AUTHORING_PHASE, f"{kind}.{phase}", held.path)
-    basis: list[tuple[str, Path]] = [(REVIEW, run.inputs.file(REVIEW))]
+    basis: list[tuple[str, Path]] = [(REVIEW, run.inputs.file(REVIEW)), *_data_model_review(run)]
     if phase == WORK_REVISION:
         basis.append((RULING, run.inputs.file(RULING)))
 
@@ -425,6 +502,7 @@ def decider(run: StepRun) -> AgentLaunch:
         add_dirs=author_dirs(run, held),
         files=(
             (REVIEW, run.inputs.file(REVIEW)),
+            *_data_model_review(run),
             *((CORRECTION, path) for path in dict.fromkeys(run.inputs.files(CORRECTION))),
             *_documents(run),
             (ARTIFACT_TRD, run.inputs.file(ARTIFACT_TRD)),
@@ -437,8 +515,8 @@ def decider(run: StepRun) -> AgentLaunch:
 def author(run: StepRun) -> AgentLaunch:
     """Build the session of any step an author of a spec document performs.
 
-    The parameters the planning step handed say which: choosing UI design sources, writing the
-    document, correcting it after the review, or revising it after the ruling.
+    The parameters the planning step handed say which: writing the document, correcting it after
+    the review, or revising it after the ruling.
 
     Returns:
         The launch of that kind of step.
@@ -448,8 +526,6 @@ def author(run: StepRun) -> AgentLaunch:
 
     """
     work: JsonValue = run.params().get(WORK)
-    if work == WORK_UI:
-        return ui_sources(run)
     if work == WORK_DOCUMENT:
         return spec_document(run)
     if work in {WORK_CORRECTION, WORK_REVISION}:

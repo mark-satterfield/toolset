@@ -963,18 +963,14 @@ const taskDir = file('judgments/task')
 const PRIOR = typeof a.priorFailure === 'string' && a.priorFailure.trim()
   ? `THE PREVIOUS SCORING RUN FAILED on this same input: ${a.priorFailure.trim().slice(0, 2000)}. Do not repeat it.\n\n`
   : ''
-const JUDGE_RULES = `${PRIOR}JOB SIZE follows the rubric's "Job Size" section, which is the same at both levels: the relative amount of work to deliver the outcome, judged against the agent pipeline as the reference capability — not calendar time, not human effort, not a count of repositories. Weigh volume, complexity, knowledge and uncertainty, as the rubric defines them, together to place the item; never score them separately or add them up. The numbers express approximate relative magnitude, not measured ratios or time commitments, and an item's tracking type does not decide its size: an Epic and a Task can both be 5. The scale is Fibonacci (1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, and upward). Place each size by comparison with the \`referenceJobs\` in the judge-input file — elaborated Epics, each with its original estimate and its refined size, the sum of its Tasks — and name the comparison in the rationale. When \`referenceJobs\` is empty, judge knowledge and uncertainty from what the matrix says already exists, read with \`${MATRIX} <command>\` (a read needs no role, and every command prints one JSON object): \`epic <epic id> --closure\` returns everything the Epic reaches, by repository, each document with its \`lifecycle\` (\`effective\` is decided); \`approval --epic <epic id>\` returns what the Epic reaches, approved (its architecture and design are approved) and not approved; \`node <id>\` returns one entry with its relationships and their \`approved\` and \`verified\` flags, \`verified\` for what an Epic built and tested with its deployment working. Read a document heading or a code file only where an entry the matrix returns names it and the entry alone does not say whether it is decided or built. Survey no architecture folder and no project tree. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the estimate inside it, and \`sizeConfidence\`, an integer percent. What remains unknown widens the range and lowers the size confidence.
-
-THE RUBRIC OWNS ITS BANDS. The rungs in \`agent-teams-workforce:wsjf\` are the whole scale. RR-OE, reachability and WSJF are arithmetic computed after you return; they are not in your input and are not yours to state, estimate or reason about.`
+const JUDGE_RULES = `${PRIOR}Matrix: \`${MATRIX} <command>\`.`
 
 const judgeEpic = (id, revision) => settleAgent(
-  `You judge ONE Epic, ${id}, under \`agent-teams-workforce:wsjf\` at Epic level. Load that skill with the Skill tool and follow it.
+  `Judge ONE Epic, ${id}, at Epic level.
 
-An Epic is a PRD: a business requirement. Read your item in ${inputs.epic && inputs.epic.path} (the item whose \`id\` is ${id}); that file's contract is \`${JUDGE_INPUT_CONTRACT}\` (path from the plugin root \`${PLUGIN}\`). Its \`prdPath\` is the Epic's full requirements document: read that file to the end. When \`prdPath\` is null the matrix names no PRD for the Epic: return it under \`unscored\` with that reason. Judge it from its own document against the rubric's rungs and the file's \`referenceJobs\`, using the matrix reads below for what is already decided or built. Read no other Epic's PRD and no other Epic's values: each Epic is judged on its own, so adding an Epic never moves another Epic's judged values.
+Judge input: ${inputs.epic && inputs.epic.path} (the item whose \`id\` is ${id}), to \`${JUDGE_INPUT_CONTRACT}\` (path from the plugin root \`${PLUGIN}\`).
 
 ${JUDGE_RULES}
-
-Judge \`userBusinessValue\`, \`timeCriticality\` and their \`confidence\`, and — only when \`sizedFromTasks\` is false — the size estimate \`jobSize\` with \`sizeLow\`, \`sizeHigh\` and \`sizeConfidence\`. Only an Epic whose elaboration is done takes its size from its Tasks; until then it is sized by this estimate, never by the Tasks written so far. An Epic is sized before its design exists: judge the work to deliver the requirement from the requirement itself and from institutional knowledge — the architecture and what is already decided — and never invent a solution in order to size it. Missing implementation design is normal at this stage and is not itself evidence of exceptional difficulty, so it does not enlarge the size; let it show in the range and the size confidence. Uncertainty enlarges an Epic only where the PRD leaves an unresolved fact that could materially change the work — ambiguous scope, unknown feasibility, or assumptions with substantially different consequences. Each rationale cites the PRD.
 
 Write your judgment of ${id}, scored or unscored, to its contract, named below; the descriptions there define every member. ${relayKit.artifactBrief(`${epicDir}/candidates/${id}.json`, JUDGMENT_CONTRACT.epic, revision, RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`,
   { agentType: 'wsjf-scorer', label: `judge:epic:${id}`, phase: 'Judge', effort: 'medium', schema: relayKit.ARTIFACT_SCHEMA } // model: its definition's front matter sets it (sonnet)
@@ -983,13 +979,12 @@ Write your judgment of ${id}, scored or unscored, to its contract, named below; 
 const judgeTasks = (group, revision) => {
   const whose = group.epic ? `the Tasks of one Epic, ${group.epic}` : `one Task with no Epic, ${group.key}`
   return settleAgent(
-    `You size ${whose}, under \`agent-teams-workforce:wsjf\` at Task level. Load that skill with the Skill tool and follow it. You judge Job Size and nothing else; value, time criticality and their confidence are inherited from each Task's Epic by arithmetic. A Task is sized from the established architecture, design and implementation instructions it carries.
+    `Judge ${whose}, at Task level.
 
-Read ${inputs.task && inputs.task.path}; that file's contract is \`${JUDGE_INPUT_CONTRACT}\` (path from the plugin root \`${PLUGIN}\`). Size exactly these items in it: ${group.tasks.join(', ')}. The same file holds the \`referenceJobs\`. Each Task's content is its bead, read by its id with \`${BEADS_CONTRACT} fingerprint-batch ${group.tasks.map(shq).join(' ')} --scope judging --explain\`: \`results.<id>.hashed\` is exactly the content a size is recorded against, so a change to it is what re-judges the Task.
+Judge input: ${inputs.task && inputs.task.path}, to \`${JUDGE_INPUT_CONTRACT}\` (path from the plugin root \`${PLUGIN}\`). Size exactly these items in it: ${group.tasks.join(', ')}.
+Task content: \`${BEADS_CONTRACT} fingerprint-batch ${group.tasks.map(shq).join(' ')} --scope judging --explain\`.
 
 ${JUDGE_RULES}
-
-For each of those Tasks, judge the size estimate \`jobSize\` with \`sizeLow\`, \`sizeHigh\` and \`sizeConfidence\`. A Task above 13 should have been split: say so in its rationale, and record the size you judged. Do not reduce it to 13.
 
 Write your judgment to its contract, named below, with exactly one entry per Task listed above, in \`scores\` or in \`unscored\`, and none for any other item. ${relayKit.artifactBrief(`${taskDir}/candidates/${group.key}.json`, JUDGMENT_CONTRACT.task, revision, RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`,
     { agentType: 'wsjf-scorer', label: `judge:task:${group.key}`, phase: 'Judge', effort: 'medium', schema: relayKit.ARTIFACT_SCHEMA } // model: its definition's front matter sets it (sonnet)

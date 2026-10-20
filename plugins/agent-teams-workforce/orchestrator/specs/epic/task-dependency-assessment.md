@@ -154,9 +154,11 @@ Each step is what `workflows/task-dependency-assessment.js` does. Every `depscor
    checkpoint is `complete` under the same binding is accepted with no session; a `blocked`
    checkpoint stops the run; otherwise step 5 runs.
 5. `agent` **Assess**: `task-dependency-mapper` (assignment: one Task created outside
-   elaboration). The brief names `context.json` and its contract, carries `priorFailure` when
-   given, and states THE TEST (consumes or provides; both ends are Tasks; when in doubt leave it
-   out), the seven-step order and that the session runs no command that writes to beads. It ends
+   elaboration). The brief names `context.json` and its contract, the Task read, the
+   `atw-matrix` command, the candidate and reasoning files and the validation command, and
+   carries `priorFailure` when given. The edge test (consumes or provides; both ends are Tasks;
+   when in doubt leave it out), the seven-step order and that the session runs no command that
+   writes to beads are in the agent's definition. It ends
    with the artifact contract data, the contract file path included, as in the Epic spec. The session writes `candidates/edges.json` and
    `reasoning.md`, and checks the candidate with `depscore.py validate --edges
    candidates/edges.json --task <id> | tee validation.json`, revising it until `ok` is true or

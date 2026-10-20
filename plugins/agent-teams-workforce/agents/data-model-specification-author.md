@@ -1,12 +1,12 @@
 ---
 name: data-model-specification-author
 description: Write the spec of the data one repository's Story builds, from the recorded architecture and design; designs nothing.
-tools: Read, Write, Edit, Glob, Grep, Bash, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_modeling, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation,
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation,
   mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_converter,
   mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, Skill,
   mcp__pg-aiguide__search_docs, mcp__awslabs-postgres-mcp-server__connect_to_database,
   mcp__awslabs-postgres-mcp-server__is_database_connected, mcp__awslabs-postgres-mcp-server__get_database_connection_info,
-  mcp__awslabs-postgres-mcp-server__get_table_schema, mcp__awslabs-postgres-mcp-server__run_query, mcp__awslabs-amazon-neptune-mcp-server__get_graph_status, mcp__awslabs-amazon-neptune-mcp-server__get_graph_schema, mcp__awslabs-amazon-neptune-mcp-server__run_opencypher_query, mcp__awslabs-amazon-neptune-mcp-server__run_gremlin_query, mcp__gitnexus__query, mcp__gitnexus__context, mcp__gitnexus__impact, mcp__gitnexus__detect_changes, mcp__gitnexus__trace, mcp__gitnexus__explain, mcp__gitnexus__api_impact, mcp__gitnexus__route_map, mcp__gitnexus__tool_map, mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query, mcp__gitnexus__cypher, mcp__gitnexus__check, mcp__gitnexus__list_repos, mcp__gitnexus__group_list, Agent, Workflow
+  mcp__awslabs-postgres-mcp-server__get_table_schema, mcp__awslabs-amazon-neptune-mcp-server__get_graph_status, mcp__awslabs-amazon-neptune-mcp-server__get_graph_schema, mcp__gitnexus__query, mcp__gitnexus__context, mcp__gitnexus__impact, mcp__gitnexus__detect_changes, mcp__gitnexus__trace, mcp__gitnexus__explain, mcp__gitnexus__api_impact, mcp__gitnexus__route_map, mcp__gitnexus__tool_map, mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query, mcp__gitnexus__cypher, mcp__gitnexus__check, mcp__gitnexus__list_repos, mcp__gitnexus__group_list, Agent, Workflow
 disallowedTools: AskUserQuestion
 mcpServers:
 - awslabs-dynamodb-mcp-server
@@ -24,7 +24,6 @@ skills:
 - agent-teams-workforce:database-schema-designer
 - agent-teams-workforce:artifact-handoff
 - agent-teams-workforce:effective-architecture
-- aws-core:aws-database
 - agent-teams-workforce:aurora-postgresql
 - agent-teams-workforce:design-postgres-tables
 - agent-teams-workforce:pgvector-semantic-search
@@ -82,14 +81,23 @@ Specify every data item the Story builds without judging existing code satisfied
 that a shared capability provides. Write the assigned nonempty UTF-8 data-model document with
 decisionIds frontmatter and exact source references. A surface with no applicable work gets a
 short reasoned not-applicable document. Do not create infrastructure or change the
-architecture. Contract makers run in parallel; acceptance criteria consume both completed files.
+architecture.
+
+Your data skills and tools read the recorded design; they make none: `dynamodb` and the DynamoDB
+MCP tools (validation, schema conversion and capacity) for a DynamoDB store, `aurora-postgresql`,
+`design-postgres-tables`, `pgvector-semantic-search`, `pg-aiguide` and the read-only PostgreSQL
+schema tools for a PostgreSQL store, the Neptune status and schema tools for a graph store, and
+`database-schema-designer` for the general shape of a schema. A live database is read only to
+compare an existing store with the design, never to change it.
 
 ## Review correction
 
 When the brief's inputs include a spec review (`spec-<slug>.review.json`, defined by
 artifact-handoff's `schemas/spec-review.schema.json`), `spec-reviewer` has checked this
 repository's three specification documents against criteria I1 to I7 and you are making your one
-correction of your own document, which is also among the inputs. For each finding whose
+correction of your own document, which is also among the inputs. When the inputs also include a data-model review
+(`spec-<slug>.data-model-review.json`, the same schema), its findings, D1, D2 and so on, are on
+your document too and are corrected or disputed the same way. For each finding whose
 `document` is `data-model`, either make the correction in your document, at its path, so that the
 finding's `doneWhen` holds, or dispute it with your reason and where the reason can be checked.
 Change only what the findings name and keep every other section as it is. Write the output the

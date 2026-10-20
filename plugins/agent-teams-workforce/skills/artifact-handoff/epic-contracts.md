@@ -85,11 +85,12 @@ The PRD and portfolio workflows run their commands and accept agent files throug
 | Artifact | Writer | Readers | Contract |
 |---|---|---|---|
 | repository context: `<work>/spec-<slug>.context.json` | step `spec_authoring.context` | the spec authors; `spec-reviewer`; `task-decomposer` | `spec-context.schema.json` |
-| ui bundles: `<work>/spec-<slug>.bundles.json` | step `cdsbundles.list_bundles` | `api-specification-author`; step `spec_authoring.normalize_ui` | `ui-bundles.schema.json` |
-| ui sources: `<work>/candidates/spec-<slug>.ui.json`, then `<work>/spec-<slug>.ui.json` | `api-specification-author`, then step `spec_authoring.normalize_ui` | the contracts session; `task-decomposer` | `spec-ui.schema.json` |
+| ui bundles: `<work>/spec-<slug>.bundles.json` | step `cdsbundles.list_bundles` | `ui-design-source-selector`; step `spec_authoring.normalize_ui` | `ui-bundles.schema.json` |
+| ui sources: `<work>/candidates/spec-<slug>.ui.json`, then `<work>/spec-<slug>.ui.json` | `ui-design-source-selector`, then step `spec_authoring.normalize_ui` | the contracts session; `task-decomposer` | `spec-ui.schema.json` |
 | contracts document: `<work>/spec-<slug>.md` | `api-specification-author` | `acceptance-criteria-writer`; `spec-reviewer`; `review-dispute-decider`; `task-decomposer` | `document-front-matter.schema.json#/$defs/SpecDocument`; the specs-and-Tasks criteria of `skills/effective-architecture/review-standard.md` |
 | data-model document: `<work>/spec-<slug>.data-model.md` | `data-model-specification-author` | `acceptance-criteria-writer`; `spec-reviewer`; `review-dispute-decider`; `task-decomposer` | `document-front-matter.schema.json#/$defs/SpecDocument`; the specs-and-Tasks criteria of `skills/effective-architecture/review-standard.md` |
 | criteria document: `<work>/spec-<slug>.criteria.md` | `acceptance-criteria-writer` | `spec-reviewer`; `review-dispute-decider`; `task-decomposer` | the specs-and-Tasks criteria of `skills/effective-architecture/review-standard.md`; Tasks cite its ids as `tasks.schema.json` states |
+| data model review: `<work>/spec-<slug>.data-model-review.json` | `dynamodb-schema-access-pattern-reviewer` | the review step; `data-model-specification-author`; `review-dispute-decider` | `spec-review.schema.json` |
 | spec review: `<work>/spec-<slug>.review.json` | `spec-reviewer` | the three spec authors; `review-dispute-decider` | `spec-review.schema.json` |
 | spec correction and revision: `<work>/spec-<slug>.<document>.correction.json`, `.revision.json` | the author of the document | `review-dispute-decider` | `spec-correction.schema.json` |
 | spec ruling: `<work>/spec-<slug>.ruling.json` | `review-dispute-decider` | the three spec authors | `spec-ruling.schema.json` |
