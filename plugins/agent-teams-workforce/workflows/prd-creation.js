@@ -1,10 +1,10 @@
 export const meta = {
   name: 'prd-creation',
   description:
-    'Leaf mini — turns a raw stakeholder request into a template-conformant PRD paired with its Epic. Intake captures the request, then the persona and OKRs are authored in parallel, then the PRD is drafted (WHAT-not-HOW) and independently checked for alignment with the intake brief, persona, and OKRs. A PRD and its Epic are created at the same time, so the mini emits exactly one Epic per PRD: a container bead spec derived from the PRD itself in the same authoring pass — no acceptance criteria, no repo scope (one Epic may span repos) — which the caller writes with bd. The matrix is the one record of the pair: the result carries the command that records it (atw-matrix sync-epics --bead <id> --prd <path>), which the caller runs once the Epic bead exists and the PRD file is written. Maker, checker, and decider are distinct agents; the maker is re-run with the checker\'s verdict file on reject (bounded 2 passes) and a review-dispute-decider rules on deadlock. Every agent writes its own file in args.workDir to its contract in skills/artifact-handoff/schemas/prd-creation.schema.json (the PRD as Markdown beside its draft record); the checked relay validates each, later agents are handed the earlier files by path, and a rerun with the same workDir reuses every accepted file whose inputs are unchanged. Authors no judgment of its own work.',
+    'Leaf mini — turns a raw stakeholder request into a template-conformant PRD paired with its Epic. Intake captures the request, then the persona and the objective with its key results are authored in parallel, then the PRD is drafted (WHAT-not-HOW) and independently checked for alignment with the intake brief, persona, and objective. A PRD and its Epic are created at the same time, so the mini emits exactly one Epic per PRD: a container bead spec derived from the PRD itself in the same authoring pass — no acceptance criteria, no repo scope (one Epic may span repos) — which the caller writes with bd. The matrix is the one record of the pair: the result carries the command that records it (atw-matrix sync-epics --bead <id> --prd <path>), which the caller runs once the Epic bead exists and the PRD file is written. Maker, checker, and decider are distinct agents; the maker is re-run with the checker\'s verdict file on reject (bounded 2 passes) and a review-dispute-decider rules on deadlock. Every agent writes its own file in args.workDir to its contract in skills/artifact-handoff/schemas/prd-creation.schema.json (the PRD as Markdown beside its draft record); the checked relay validates each, later agents are handed the earlier files by path, and a rerun with the same workDir reuses every accepted file whose inputs are unchanged. Authors no judgment of its own work.',
   phases: [
-    { title: 'Intake', detail: 'ONE session scopes the request and captures the structured intake brief' },
-    { title: 'Persona & OKR', detail: 'author the target persona and the OKRs in parallel' },
+    { title: 'Intake', detail: 'ONE session frames the request\'s scope and writes the intake' },
+    { title: 'Persona & OKR', detail: 'author the target persona and the objective with its key results in parallel' },
     { title: 'PRD Draft', detail: 'draft the PRD + independent alignment check (bounded loop)' },
   ],
 }
@@ -903,17 +903,12 @@ const counted = (result, key) => Array.from({ length: Number(result && result.co
 // ── Intake ──────────────────────────────────────────────────────────────────
 phase('Intake')
 
-// ── ONE INTAKE SESSION, NOT TWO ─────────────────────────────────────────────────
+// ── ONE INTAKE SESSION ──────────────────────────────────────────────────────────
 //
-// This was a `prd-creation-lead` router (`intake:scope`) followed by the intake writer.
-// The router authored nothing and ruled nothing — it framed the request as scope in/out
-// and open questions — and its ONLY reader was the writer below, which also received the
-// raw request verbatim. So the run paid a full session-start (the dominant cost of any
-// session, ahead of the work it does) to reformat text its one consumer already had.
-//
-// Segregation of duties is untouched: nothing here judges anything. The scope framing and
-// the brief are both intake authoring, and the independent alignment check downstream
-// still judges the PRD against this brief without having written any of it.
+// The scope framing and the intake are both intake authoring, so one session writes both:
+// a separate framing session would only reformat the request for the writer that reads it.
+// Segregation of duties is untouched: nothing here judges anything, and the independent
+// alignment check judges the PRD against this intake without having written any of it.
 // ── THE LIST LIMITS EACH MAKER WORKS UNDER ───────────────────────────────────────
 //
 // Stated in each brief, counted after the result is in hand, never bound in the schema:
@@ -939,15 +934,11 @@ const intake = await author({
   name: 'intake', phase: 'Intake', contract: 'Intake', final: FILES.intake, inputs: [FILES.request],
   counts: ['inScope', 'outOfScope', 'constraints', 'openQuestions'],
   produce: (brief) => settleAgent(
-    `Scope this stakeholder request and capture it as a structured intake brief: the scope framing and the brief, in one pass. State the problem, the audience, and the desired outcome plainly — WHAT the job seeker needs, not HOW to build it. Do NOT write the PRD itself, the persona, or the OKRs; later makers own those.
-
-The raw stakeholder request is ${FILES.request} (${contractOf('Request')}, path from the plugin root ${PLUGIN}).
+    `The raw stakeholder request is ${FILES.request} (${contractOf('Request')}, path from the plugin root ${PLUGIN}).
 
 Working repository context: ${repo}
 
-READING BUDGET (binding): the request is your source. This is a framing task over a few paragraphs of stakeholder text — read at most 5 other files, and only to resolve a term the request uses that you genuinely cannot interpret. Do not survey the repository or the polyrepo, and carry anything still unclear as an open question rather than investigating it.
-
-Write the intake to its contract, named below; the descriptions there define every member. Ceilings: ${SCOPE_LIST_MAX} entries each in \`inScope\` and \`outOfScope\`, ${CONSTRAINTS_MAX} in \`constraints\`, ${OPEN_QUESTIONS_MAX} in \`openQuestions\`. A framing that needs more than that is enumerating restatements of one concern.${brief}`,
+Ceilings: ${SCOPE_LIST_MAX} entries each in \`inScope\` and \`outOfScope\`, ${CONSTRAINTS_MAX} in \`constraints\`, ${OPEN_QUESTIONS_MAX} in \`openQuestions\`.${brief}`,
     {
       label: 'intake:scope-and-brief',
       effort: 'medium',
@@ -972,9 +963,9 @@ const [persona, okrs] = await parallel([
     name: 'persona', phase: 'Persona & OKR', contract: 'Persona', final: FILES.persona, inputs: [FILES.intake],
     counts: ['goals', 'frustrations'],
     produce: (brief) => settleAgent(
-      `Author the target persona this PRD serves. Take the persona's population from the intake brief at ${FILES.intake} (${contractOf('Intake')}, path from the plugin root ${PLUGIN}), and ground the persona in it.
+      `The intake is ${FILES.intake} (${contractOf('Intake')}, path from the plugin root ${PLUGIN}).
 
-Write the persona to its contract, named below; the descriptions there define every member. At most ${PERSONA_LIST_MAX} entries each in \`goals\` and \`frustrations\`. A persona with more goals than that has no persona.${brief}`,
+Ceiling: ${PERSONA_LIST_MAX} entries each in \`goals\` and \`frustrations\`.${brief}`,
       {
         label: 'persona:author',
         effort: 'low',
@@ -988,9 +979,9 @@ Write the persona to its contract, named below; the descriptions there define ev
     name: 'okrs', phase: 'Persona & OKR', contract: 'Okrs', final: FILES.okrs, inputs: [FILES.intake],
     counts: ['keyResults'],
     produce: (brief) => settleAgent(
-      `Author the objective and key results this feature must move. The objective is a qualitative, job-seeker-centered statement; each key result is a measurable signal that proves the objective was met. Ground them in the intake brief at ${FILES.intake} (${contractOf('Intake')}, path from the plugin root ${PLUGIN}).
+      `The intake is ${FILES.intake} (${contractOf('Intake')}, path from the plugin root ${PLUGIN}).
 
-Write them to their contract, named below; the descriptions there define every member. At most ${KEY_RESULTS_MAX} key results: an objective with more than a handful of key results has no objective.${brief}`,
+Ceiling: ${KEY_RESULTS_MAX} key results.${brief}`,
       {
         label: 'okr:author',
         effort: 'low',
@@ -1023,14 +1014,12 @@ const MAKER_INPUTS = [FILES.intake, FILES.persona, FILES.okrs]
 // because the PRD already contains the scope.
 function draftPRD(pass, brief) {
   const previous = pass > 1
-    ? `\n\nALIGNMENT FEEDBACK from the independent checker: the verdict on your previous draft (${prdFile(pass - 1)}) is ${alignmentFile(pass - 1)} (${contractOf('Alignment')}). Address its \`feedback\` and every dimension it marks unsatisfied, starting from that draft.`
+    ? `\n\nRevision: your previous draft is ${prdFile(pass - 1)}; the alignment verdict on it is ${alignmentFile(pass - 1)} (${contractOf('Alignment')}).`
     : ''
   return settleAgent(
-    `Author the template-conformant Product Requirements Document (PRD) from ${INPUTS}. Stay WHAT-not-HOW — describe the required behavior and outcomes, never the implementation. Follow the standard PRD template: required sections, P0 acceptance criteria, no leftover scaffolding. Resolve or flag each of the intake's \`openQuestions\`.
+    `The inputs: ${INPUTS}.
 
-Write the full PRD in Markdown to ${prdFile(pass)}. It carries no \`**Epic:**\` line: the matrix is the one record of which Epic a PRD belongs to. At most ${SECTIONS_MAX} section headings, and P0 acceptance criteria ONLY, as given/when/then, at most ${P0_CRITERIA_MAX}, each clause under 30 words: every one of them is re-read by the alignment checker, by PRD validation, by the TRD author and by every spec author.
-
-Then write the draft record to its contract, named below; the descriptions there define every member.${previous}${brief}`,
+Write the PRD in Markdown to ${prdFile(pass)}, and the draft record to the candidate below. Ceilings: ${SECTIONS_MAX} section headings and ${P0_CRITERIA_MAX} P0 acceptance criteria.${previous}${brief}`,
     {
       label: `prd:draft:${pass}`,
       effort: 'medium',
@@ -1044,9 +1033,9 @@ Then write the draft record to its contract, named below; the descriptions there
 // Checker: an INDEPENDENT verifier — never the prd-writer.
 function verifyAlignment(pass, brief) {
   return settleAgent(
-    `You are an INDEPENDENT alignment verifier. You did NOT write this PRD — you only judge it. Do NOT rewrite the PRD. Verify the PRD at ${prdFile(pass)} (its draft record: ${draftFile(pass)}) aligns with ${INPUTS}, and that it is template-conformant and WHAT-not-HOW.
+    `The PRD is ${prdFile(pass)}; its draft record is ${draftFile(pass)}. The inputs it was written from: ${INPUTS}.
 
-Write your verdict to its contract, named below; the descriptions there define the verdict and the dimensions — exactly ${ALIGNMENT_DIMENSIONS.length} entries in \`dimensions\`, one per dimension and no others.${brief}`,
+Dimensions: ${ALIGNMENT_DIMENSIONS.join(', ')}.${brief}`,
     {
       label: `prd:alignment-check:${pass}`,
       // A checker, and the prd-alignment-verifier's own file already says `effort: low`.
@@ -1121,11 +1110,9 @@ if (deadlocked) {
     inputs: [...MAKER_INPUTS, draftFile(passesRun), prdFile(passesRun), alignmentFile(passesRun)],
     keys: ['verdict'],
     produce: (brief) => settleAgent(
-      `The prd-writer and the independent prd-alignment-verifier could not converge after ${passesRun} pass(es)${actionable ? '' : ', and the checker named nothing the writer could act on'}. Rule on the standoff, as a PRD deadlock ruling. Your ruling is binding.
+      `A PRD deadlock: the prd-writer and the prd-alignment-verifier did not converge after ${passesRun} pass(es)${actionable ? '' : ', and the last verdict names nothing the writer could act on'}.
 
-The checker's latest verdict is ${alignmentFile(passesRun)}, on the PRD at ${prdFile(passesRun)}. It judged the PRD against ${INPUTS}: judge its objection against the same files.
-
-Write your ruling to its contract, named below; the descriptions there define the verdict and the rationale.${brief}`,
+The latest verdict is ${alignmentFile(passesRun)}, on the PRD at ${prdFile(passesRun)}. The inputs the PRD was written from and judged against: ${INPUTS}.${brief}`,
       {
         label: 'prd:deadlock-ruling',
         effort: 'high',

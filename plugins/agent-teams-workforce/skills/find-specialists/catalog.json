@@ -1283,23 +1283,21 @@
     },
     {
       "name": "feature-objective-writer",
-      "description": "Derives the OKR cascade from strategy docs and the intake brief — objectives, key results, leading vs. lagging indicators. Use for PRD Creation work requiring goal cascading, key-result quantification, and indicator classification.",
+      "description": "Writes the one objective a feature must move and the key results that prove it was met, grounded in the feature's intake: a qualitative, user-centered objective and measurable key results, each with its metric and target. Use as the objective step of PRD creation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-strategist",
         "agent-teams-workforce:product-analytics"
       ],
       "mcpServers": []
     },
     {
       "name": "feature-persona-writer",
-      "description": "Generates data-driven persona profiles from research — behavioral segments, jobs-to-be-done, empathy maps. Use for PRD Creation work requiring behavioral segmentation, jobs-to-be-done framing, and empathy mapping.",
+      "description": "Writes the one target persona a feature serves, grounded in the audience, problem and outcome of the feature's intake: a proto-persona whose goals, frustrations and context are each stated, inferred or marked as an assumption, behavior over demographics. Use as the persona step of PRD creation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-discovery",
-        "agent-teams-workforce:product-analytics"
+        "agent-teams-workforce:persona-research"
       ],
       "mcpServers": []
     },
@@ -1904,11 +1902,10 @@
     },
     {
       "name": "prd-alignment-verifier",
-      "description": "Independently judges whether a draft PRD aligns with the intake brief, persona and objective it was written from, and is template-conformant and WHAT-not-HOW. Use as the checker of the PRD draft in prd-creation.",
+      "description": "Independently judges whether a draft PRD aligns with the intake brief, persona and objective it was written from, and is template-conformant and WHAT-not-HOW, on four dimensions (intake, persona, objective, template). Use as the checker of the PRD draft in PRD creation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-discovery",
         "agent-teams-workforce:prd-writer"
       ],
       "mcpServers": []
@@ -1934,11 +1931,10 @@
     },
     {
       "name": "prd-writer",
-      "description": "Drafts the full PRD from the intake brief, persona profiles, and OKR cascade: scope, requirements, success metrics, competitive context. Use for PRD Creation work requiring requirement drafting, scope articulation, and success-metric derivation.",
+      "description": "Writes a template-conformant PRD, WHAT and never HOW, from a feature's intake, persona and objective, with acceptance criteria for its P0 requirements, and the one-paragraph scope of the Epic that pairs with it; on a revision, applies the alignment verdict on its previous draft. Use as the drafting step of PRD creation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-discovery",
         "agent-teams-workforce:prd-writer"
       ],
       "mcpServers": []
@@ -2260,7 +2256,7 @@
     },
     {
       "name": "stakeholder-request-intake-writer",
-      "description": "Converts raw stakeholder requests into a structured intake brief: requestor, problem, desired outcome, constraints, urgency. Use for PRD Creation work requiring request structuring, problem framing, and urgency classification.",
+      "description": "Turns one raw stakeholder request into the structured intake of a feature: the scope the request frames (what it asks for and what it leaves out), the problem, the audience, the desired outcome, the constraints it states and the open questions it leaves, WHAT the users need and never HOW to build it. Use as the intake step of PRD creation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
