@@ -261,15 +261,15 @@ stack exists, in one or two sentences, never a list of what it contains. Record 
 on the architecture side and state each new stack's four facts in your result:
 
 ```bash
-atw-matrix put stack --side architecture --name <stack> --app <app> --execution-use <executable|imported> --repository <repository> --purpose "<why the stack exists>"
+atw-matrix put stack --side architecture --name <stack> --app <app> --execution-use <executable|imported> [--repository <repository>] --purpose "<why the stack exists>"
 atw-matrix link homeIn --from <entry id> --to stack:<name> --side architecture
 ```
 
-A new stack is recorded first, with the repository that holds it or the name of the repository
-that has yet to be created, then one `homeIn` for each placed entry. Then start
-`polyrepo-steward` for the repository work that follows: creating each repository your placement
-names that does not exist, and recording it. The steward does that work; the placement is
-yours.
+A new stack is recorded first, then one `homeIn` for each placed entry. Give `--repository`
+only for a repository that exists, with its name exactly as `atw-matrix node stack:<id>` or the
+repository inventory prints it. For a repository that does not exist yet, leave `--repository`
+out and never type a name for it: the elaboration's `span` step names it with the project's
+naming command and creates it. The placement is yours; the repository work is not.
 
 ## Delegating to specialists
 

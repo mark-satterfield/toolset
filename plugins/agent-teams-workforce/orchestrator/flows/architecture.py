@@ -10,8 +10,8 @@ The architect always reads the PRD it is handed; the arc42 documents and the mat
 starting point, both input and output, possibly incomplete or wrong and possibly empty for the
 Epic. It reads what the matrix holds for the Epic itself, live, with ``atw-matrix``, so nothing it
 is handed drifts from the matrix it writes to. It decides the stack and repository of each element
-after its detailed design and records that placement itself; the repository steward does the
-repository work that follows. What the architect reads, whom it asks and in what order are its
+after its detailed design and records that placement itself; the ``span`` step names and
+creates each repository that placement needs. What the architect reads, whom it asks and in what order are its
 own decisions. The same launch builder serves every step that agent
 performs: the first, its "Finish" after an interruption, a correction after findings or after the
 mechanical check, and a competing design the lead orders.

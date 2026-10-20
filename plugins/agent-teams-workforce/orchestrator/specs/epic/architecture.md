@@ -66,8 +66,8 @@ is written from the matrix for it: the architect reads the Epic live, with
 work folder and no folder of the architecture or of the PRDs. The architect records its own entries and links in the matrix (`atw-matrix put`, `link`)
 before it writes its result. After its detailed design has determined the resources and
 components, it decides the stack, and so the repository, of each element and records that
-placement itself (`put stack`, `homeIn`, architecture side); the repository steward does the
-repository work that follows, such as creating a repository the placement names.
+placement itself (`put stack`, `homeIn`, architecture side), leaving the repository out of a
+stack whose repository does not exist yet; the `span` step names and creates that repository.
 Its output is the architecture result at the path the context file names. The session's output
 check validates the result against its schema, then runs `repo_scoping.story_build_problems` on the
 result's `addedOrChangedElements` (the elements the design adds or changes) and on its

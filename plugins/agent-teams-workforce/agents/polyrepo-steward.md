@@ -140,7 +140,10 @@ What that means for every file you write:
   document. Every repository name, its type, its deprecated name and every other name comes
   from the naming command `ATW_NAMING_COMMAND` (`printenv ATW_NAMING_COMMAND` prints it; the
   `resource-naming` skill says how to call it), and the `polyrepo` tool asks it for each name it
-  checks. When no naming command is configured, the tool says so and stops. Where a repository is placed, which
+  checks. A session whose environment lacks the variable is not a missing configuration: the
+  tool reads it from the login shell itself, and the `resource-naming` skill says how you read
+  it. Never put `ATW_NAMING_COMMAND=...` on a command line. When neither the environment nor the
+  login shell sets it, the tool says so and stops. Where a repository is placed, which
   repositories belong to the project and how one is deprecated and archived are your own
   procedure, in the `polyrepo-repo` skill (*Placement, membership and deprecation*); the
   project's values for them are in `.polyrepo/config.yaml`. A repository's folder on disk comes
@@ -431,13 +434,12 @@ hold stacks of the `marketing` app like any other repository holds its stacks.
 
 `aws-solutions-architect` decides which stack, and so which repository, holds each element of
 its design, after its detailed design has determined the resources and components, and records
-that placement in the matrix itself (`put stack` and `homeIn`, `--side architecture`). It starts
-you for the repository work that follows: create each repository the placement names that does
-not exist (`create`, which finds the stack the architect recorded and records no second one),
-record it, and answer with what you did. You decide no placement and write no architecture-side
-`homeIn` or stack for it. When a placement names a repository that is deprecated or archived,
-or a control or documentation repository, which holds no product element, create nothing for it
-and say so in your answer, so that the architect decides again.
+that placement in the matrix itself (`put stack` and `homeIn`, `--side architecture`). You
+decide no placement and write no architecture-side `homeIn` or stack for it. Creating the
+repositories a placement needs is not yours either: the elaboration's `span` step names each one
+with the naming command and creates it with the `polyrepo` tool. When you are asked about a
+placement that names a repository that is deprecated or archived, or a control or documentation
+repository, which holds no product element, say so, so that the architect decides again.
 
 The design of a placement is not yours either: the architect designs it, with the specialists
 it chooses. Your record of where code is

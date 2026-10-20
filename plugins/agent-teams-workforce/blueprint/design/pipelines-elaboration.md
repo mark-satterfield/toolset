@@ -408,7 +408,7 @@ flowchart TD
     known -->|"no: new"| place["The solutions architect decides its stack and repository"]
     place --> decide["Stack and repository recorded in the matrix, architecture side"]
     decide --> newRepo{"Does the repository exist?"}
-    newRepo -->|"no"| create["polyrepo-steward creates it"]
+    newRepo -->|"no"| create["span names it with the naming command and creates it with polyrepo"]
     newRepo -->|"yes"| m(("merge"))
     create --> m
     keep --> m
@@ -419,9 +419,10 @@ flowchart TD
 ```
 
 Sources for the two steps not quoted above: "Does the design still fit there?" follows the owner:
-"The architecture process is designed to clean up the matrix is it works". "polyrepo-steward
-creates it" follows the SkillSpoke rule `.claude/rules/keep-polyrepo-steward-current.md`: "The
-`polyrepo-steward` owns repository work: creating, naming and cloning repositories".
+"The architecture process is designed to clean up the matrix is it works". "span names it
+and creates it": the deterministic `span` step of `orchestrator/flows/repo_scoping.py` names
+each missing repository with the naming command and creates it with the steward's `polyrepo`
+tool; no agent session creates it.
 
 ## 6. The spec, the Stories and the Tasks
 
