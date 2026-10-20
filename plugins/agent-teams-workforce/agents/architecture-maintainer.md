@@ -1,7 +1,6 @@
 ---
 name: architecture-maintainer
 description: Write the solutions architect's decisions into the arc42 documents, each fact in its one home.
-role: document-maintainer
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Agent
 model: sonnet

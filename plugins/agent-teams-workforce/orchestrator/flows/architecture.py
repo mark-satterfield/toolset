@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "find-specialists" / "scripts"))
 from architecture_work_contract import (
     ArchitectureWorkError,
     validate_architecture_result,
@@ -55,11 +56,14 @@ from matrixstore import as_entry_id, make_id, name_key, read_matrix, slug, updat
 from matrixsync import LIFECYCLE_IN_REVIEW, relative_path, set_lifecycle, sync_documents, vault_root
 from matrixtraverse import epic_id
 from matrixwrite import link, put
+from specialist_catalog import agent_names
 
 from orchestrator.core.agents import strict_json
-from orchestrator.core.journal_registry import agent_step, plan_under
+from orchestrator.core.io import write_json
+from orchestrator.core.journal_registry import agent_step, any_agent_step, plan_under
 from orchestrator.core.journal_steps import (
     UNDER_CONTAINER,
+    UNDER_THIS,
     AgentLaunch,
     Completion,
     NewStep,
@@ -70,6 +74,7 @@ from orchestrator.core.journal_steps import (
 )
 from orchestrator.flows.architecture_check import check_step
 from orchestrator.flows.architecture_files import (
+    ARCHITECT,
     ARCHITECTURE,
     ARTIFACT_CHECK,
     ARTIFACT_CONCLUSION,
@@ -85,18 +90,12 @@ from orchestrator.flows.architecture_files import (
     LABEL_RESULT,
     LABEL_RULING,
     LABEL_STATE,
-    PLUGIN,
-    ROLE_ARCHITECT,
-    ROLE_DIAGRAMS,
-    ROLE_MAINTAINER,
-    ROLE_SPECIALIST,
-    ROLE_STEWARD,
-    ROLE_TRD_AUTHOR,
+    MAINTAINER,
+    TRD_AUTHOR,
     WRITE_REQUEST,
     WRITTEN,
     ArchitectureContext,
     ArchitectureStepError,
-    agents_with_role,
     checked_file,
     cited_document,
     document_path,
@@ -112,6 +111,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
     from architecture_work_contract import (
+        AgentRequest,
         ArchitectureResult,
         Citation,
         SpecialistRecommendation,
@@ -145,6 +145,13 @@ ATTR_EPIC: Final = "epic"
 ATTR_REQUIREMENT: Final = "requirement"
 REQUIREMENT_KEY_SEPARATOR: Final = "/"
 HEADING_MARK: Final = "#"
+PARAM_REQUEST: Final = "request"
+"""The parameter that hands a requested agent's step the path of its request file."""
+REQUEST_SUFFIX: Final = ".request.json"
+"""What the request file of an entry of the result's ``requests`` adds to its answer file's stem."""
+FINISH_DESCRIPTION: Final = "Finish deciding the architecture with the answers of the agents the architect requested"
+CATALOG_AGENTS: Final[frozenset[str]] = agent_names()
+"""Every agent the find-specialists skill's catalog lists: the names a request may give."""
 
 
 @dataclass(frozen=True)
@@ -209,7 +216,7 @@ def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
 
 plan_under(
     ARCHITECTURE,
-    _architect_plan(agents_with_role(PLUGIN, ROLE_ARCHITECT)[0], []),
+    _architect_plan(ARCHITECT, []),
     check_step([ARCHITECT_REF], corrections=0).plan,
 )
 
@@ -426,7 +433,8 @@ def result_check(run: StepRun) -> Callable[[Path], dict[str, JsonValue]]:
 
     Returns:
         A check that reads the output as strict JSON, validates it with its contract, then runs
-        :func:`_result_problems`. Each problem is one line of the ``ArchitectureWorkError`` it
+        :func:`_result_problems`, and refuses a request naming an agent the find-specialists
+        catalog does not list. Each problem is one line of the ``ArchitectureWorkError`` it
         raises, which sends the session to its one correction.
 
     """
@@ -434,7 +442,14 @@ def result_check(run: StepRun) -> Callable[[Path], dict[str, JsonValue]]:
     def check(path: Path) -> dict[str, JsonValue]:
         document: dict[str, JsonValue] = strict_json(path)
         result: ArchitectureResult = validate_architecture_result(document, str(path))
-        problems: list[str] = run.tools.portfolio(run.inputs.stage, _result_problems, str(run.bead), result)
+        problems: list[str] = [
+            *run.tools.portfolio(run.inputs.stage, _result_problems, str(run.bead), result),
+            *(
+                f"requests: the find-specialists catalog lists no agent named {entry['agent']!r}"
+                for entry in result["requests"]
+                if entry["agent"] not in CATALOG_AGENTS
+            ),
+        ]
         if problems:
             raise ArchitectureWorkError("\n".join(problems))
         return document
@@ -455,7 +470,7 @@ def _recommendation(entry: SpecialistRecommendation) -> JsonValue:
     )
 
 
-@agent_step(*agents_with_role(PLUGIN, ROLE_ARCHITECT))
+@agent_step(ARCHITECT)
 def architect(run: StepRun) -> AgentLaunch:
     """Build the session of any step the solutions architect performs.
 
@@ -491,7 +506,9 @@ def architect(run: StepRun) -> AgentLaunch:
                 *recorded.problems,
             )
         unserved: list[JsonValue] = [*recorded.no_feature]
+        requested: tuple[StepGroup, ...] = _requested(result["requests"])
         return Completion(
+            add=requested,
             artifacts=(
                 file_artifact(LABEL_RESULT, output),
                 value_artifact(ARTIFACT_CONCLUSION, result["conclusion"]),
@@ -517,6 +534,69 @@ def architect(run: StepRun) -> AgentLaunch:
     )
 
 
+def _answered(request: SpecialistRequest) -> bool:
+    """Tell whether a request's answer file already holds a valid answer.
+
+    Returns:
+        True when the file at the request's answer path is a valid specialist answer.
+
+    """
+    path: Path = Path(request["answerPath"])
+    if not path.is_file():
+        return False
+    try:
+        validate_specialist_answer(strict_json(path), str(path))
+    except OSError, ValueError:
+        return False
+    return True
+
+
+def _requested(requests: Sequence[AgentRequest]) -> tuple[StepGroup, ...]:
+    """Plan the work the architect's result requests of other agents, below the accepting step.
+
+    Each request whose answer is not yet a valid answer gets one step, performed by the agent the
+    request names and handed its request file, written beside the answer path; then one
+    ``Finish`` step of the architect, handed every answer. The agent of each step is the one the
+    result names; nothing here chooses it.
+
+    Returns:
+        One group below the accepting step; none when every request is answered.
+
+    """
+    steps: list[NewStep] = []
+    refs: list[str] = []
+    index: int
+    entry: AgentRequest
+    for index, entry in enumerate(requests):
+        if _answered(entry["request"]):
+            continue
+        answer: Path = Path(entry["request"]["answerPath"])
+        asked: Path = answer.with_name(answer.stem + REQUEST_SUFFIX)
+        write_json(asked, entry["request"])
+        ref: str = f"request-{index}"
+        refs.append(ref)
+        steps.append(
+            NewStep(
+                {
+                    "ref": ref,
+                    "description": f"Answer the solutions architect's request to {entry['agent']}",
+                    "purpose": "The solutions architect named this agent for this work in its result",
+                    "agent": entry["agent"],
+                },
+                params={PARAM_REQUEST: str(asked)},
+            ),
+        )
+    if not steps:
+        return ()
+    finish: StepPlan = {
+        "description": FINISH_DESCRIPTION,
+        "purpose": "The architect decides with the answers to the requests its result made",
+        "agent": ARCHITECT,
+        "inputs": refs,
+    }
+    return (StepGroup((*steps, NewStep(finish)), UNDER_THIS),)
+
+
 def _saved_request(run: StepRun, *names: str) -> tuple[str, Path]:
     """Find the request file a helper step is launched from.
 
@@ -536,26 +616,29 @@ def _saved_request(run: StepRun, *names: str) -> tuple[str, Path]:
     raise ArchitectureStepError(run, f"neither the step nor its inputs hold a request file named one of {names!r}")
 
 
-@agent_step(
-    *agents_with_role(PLUGIN, ROLE_SPECIALIST),
-    *agents_with_role(PLUGIN, ROLE_DIAGRAMS),
-    *agents_with_role(PLUGIN, ROLE_STEWARD),
-)
+@any_agent_step(CATALOG_AGENTS)
 def specialist(run: StepRun) -> AgentLaunch:
-    """Build the session of a specialist, a diagram author or the repository steward.
+    """Build the session of any agent the architect or the lead named for a request.
 
-    The repository steward does the repository work the architect's placement calls for, such as
-    creating a repository the placement names; the placement itself is the architect's, recorded in
-    the matrix before the steward starts and checked when the architect's result is accepted
+    The agent is the one the step names: the architect's result named it (``requests``), the
+    architect started it in its own session and it was left running, or the lead asked it for an
+    opinion. No code chooses it. The repository steward, when named, does the repository work the
+    architect's placement calls for; the placement itself is the architect's, recorded in the
+    matrix before the steward starts and checked when the architect's result is accepted
     (``repo_scoping.story_build_problems``).
 
     Returns:
-        The launch from the saved request file: the answer path the request names as output.
+        The launch from the request file the step's parameters name, else the saved one: the
+        answer path the request names as output.
 
     """
     name: str
     asked: Path
-    name, asked = _saved_request(run, LABEL_REQUEST, LABEL_QUESTION)
+    planned: JsonValue = run.params().get(PARAM_REQUEST)
+    if isinstance(planned, str):
+        name, asked = LABEL_REQUEST, Path(planned)
+    else:
+        name, asked = _saved_request(run, LABEL_REQUEST, LABEL_QUESTION)
     request: SpecialistRequest = checked_file(run, asked, validate_specialist_request)
 
     def accept(_accepted: StepRun, output: Path) -> Completion:
@@ -684,7 +767,7 @@ def _record_trd(bead: str, arch: Path, answer: TrdAnswer) -> Recorded:
     return update_matrix(matrix_file(), change)
 
 
-@agent_step(*agents_with_role(PLUGIN, ROLE_TRD_AUTHOR))
+@agent_step(TRD_AUTHOR)
 def trd_author(run: StepRun) -> AgentLaunch:
     """Build the session of the TRD author the architect left running.
 
@@ -791,7 +874,7 @@ def _sync(arch: Path, paths: Sequence[str]) -> DocumentsSynced:
     return update_matrix(matrix_file(), change)
 
 
-@agent_step(*agents_with_role(PLUGIN, ROLE_MAINTAINER))
+@agent_step(MAINTAINER)
 def maintainer(run: StepRun) -> AgentLaunch:
     """Build the session of the document maintainer the architect left running.
 

@@ -267,11 +267,35 @@
         "recommendation": {"description": "What the specialist would cover or hold (instructions, skills, tools) so that it serves the subject next time.", "type": "string", "minLength": 1}
       }
     },
-    "ArchitectureResult": {
-      "description": "The solutions architect's result for one Epic, at the context file's `resultPath`. The architect writes it as the work goes, so that a session that stops loses nothing: the members settled so far, written as soon as the state file is written and rewritten in place each time a part settles (a fact and its home, a settlement, a feature, a criterion answer). The file satisfies this schema when the architect finishes; until then it is the partial result a `Finish` step, or a session started again, continues from. The script reads `conclusion`, checks every criterion answer, and selects reviewers from `reviewSignals`; what is unapproved comes from the matrix, not from this file. For a `no-change-needed` conclusion the reviewers are also handed the effective documents `criteria` cites. Every conclusion goes to review; none ends the architecture work by itself.",
+    "SpecialistRequest": {
+      "description": "What the solutions architect, or the lead when it asks for an opinion, asks of one agent: a question or a bounded piece of design, in the asker's own session or, for the architect, as an entry of the result's `requests`.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["bead", "conclusion", "features", "noFeature", "addedOrChangedElements", "sharedCapabilities", "facts", "settledDisagreements", "criteria", "unsettled", "reviewSignals", "costEvidence", "specialistRecommendations"],
+      "required": ["kind", "request", "bounds", "concerns", "trustedCode", "answerPath"],
+      "properties": {
+        "kind": {"$ref": "#/$defs/RequestKind"},
+        "request": {"description": "The question, or the task.", "type": "string", "minLength": 1},
+        "bounds": {"description": "For a task, exactly what is to be decided and what is not; an empty string for a question.", "type": "string"},
+        "concerns": {"description": "The PRD sections and architecture headings the request concerns, and nothing wider.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
+        "trustedCode": {"description": "The matrix ids of the entries the matrix marks verified. Code of any other entry is a hint only.", "type": "array", "items": {"type": "string"}},
+        "answerPath": {"description": "The absolute path the answer is written to, under the context file's `helpersFolder`.", "type": "string", "minLength": 1}
+      }
+    },
+    "AgentRequest": {
+      "description": "One request for work an agent does outside the solutions architect's session, with the agent the architect chose for it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent", "request"],
+      "properties": {
+        "agent": {"description": "The name of the agent that does the work, as the find-specialists skill's catalog lists it. The script refuses a name the catalog does not list.", "type": "string", "minLength": 1},
+        "request": {"$ref": "#/$defs/SpecialistRequest"}
+      }
+    },
+    "ArchitectureResult": {
+      "description": "The solutions architect's result for one Epic, at the context file's `resultPath`. The architect writes it as the work goes, so that a session that stops loses nothing: the members settled so far, written as soon as the state file is written and rewritten in place each time a part settles (a fact and its home, a settlement, a feature, a criterion answer). The file satisfies this schema when the architect finishes; until then it is the partial result a `Finish` step, or a session started again, continues from. The script reads `conclusion`, starts the agent each entry of `requests` names with its request, checks every criterion answer, and selects reviewers from `reviewSignals`; what is unapproved comes from the matrix, not from this file. For a `no-change-needed` conclusion the reviewers are also handed the effective documents `criteria` cites. Every conclusion goes to review; none ends the architecture work by itself.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bead", "conclusion", "features", "noFeature", "addedOrChangedElements", "sharedCapabilities", "facts", "settledDisagreements", "criteria", "unsettled", "reviewSignals", "costEvidence", "specialistRecommendations", "requests"],
       "properties": {
         "bead": {"description": "The Epic id.", "type": "string", "minLength": 1},
         "conclusion": {"$ref": "#/$defs/Conclusion"},
@@ -285,21 +309,8 @@
         "unsettled": {"description": "Empty unless `conclusion` is `unsettled`.", "type": "array", "items": {"$ref": "#/$defs/UnsettledMatter"}},
         "reviewSignals": {"$ref": "#/$defs/ReviewSignals"},
         "costEvidence": {"type": "array", "items": {"$ref": "#/$defs/CostEvidence"}},
-        "specialistRecommendations": {"description": "Each recommendation to the owner to create or update a specialist agent; empty when the specialists covered every subject.", "type": "array", "items": {"$ref": "#/$defs/SpecialistRecommendation"}}
-      }
-    },
-    "SpecialistRequest": {
-      "description": "What the solutions architect, or the lead when it asks for an opinion, asks of one design specialist or diagram author.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "request", "bounds", "concerns", "trustedCode", "answerPath"],
-      "properties": {
-        "kind": {"$ref": "#/$defs/RequestKind"},
-        "request": {"description": "The question, or the task.", "type": "string", "minLength": 1},
-        "bounds": {"description": "For a task, exactly what is to be decided and what is not; an empty string for a question.", "type": "string"},
-        "concerns": {"description": "The PRD sections and architecture headings the request concerns, and nothing wider.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
-        "trustedCode": {"description": "The matrix ids of the entries the matrix marks verified. Code of any other entry is a hint only.", "type": "array", "items": {"type": "string"}},
-        "answerPath": {"description": "The absolute path the answer is written to, under the context file's `helpersFolder`.", "type": "string", "minLength": 1}
+        "specialistRecommendations": {"description": "Each recommendation to the owner to create or update a specialist agent; empty when the specialists covered every subject.", "type": "array", "items": {"$ref": "#/$defs/SpecialistRecommendation"}},
+        "requests": {"description": "The work the architect has agents do outside its own session, one entry per request; empty when it needs none. Consumed by: the step of orchestrator/flows/architecture.py that accepts the result, which plans below that step one step for each request whose answer file is not yet a valid answer, started as the agent the entry names and handed its request, then the architect's `Finish` step, handed every answer. The script decides nothing about which agent runs. A question or a quick piece of work the architect asks in its own session is not listed here.", "type": "array", "items": {"$ref": "#/$defs/AgentRequest"}}
       }
     },
     "Reason": {

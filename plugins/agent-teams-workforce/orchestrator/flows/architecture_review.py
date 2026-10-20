@@ -49,6 +49,7 @@ from orchestrator.flows.architecture_files import (
     ARCHITECTURE_FOLDER,
     ARTIFACT_RESOLVED,
     ARTIFACT_REVIEW,
+    DECIDER,
     HUMAN_ACTION_STAGE,
     LABEL_FINDINGS,
     LABEL_PRD,
@@ -57,10 +58,9 @@ from orchestrator.flows.architecture_files import (
     LABEL_RULING,
     LABEL_SCOPE,
     LABEL_TRD,
+    LEAD,
     PLUGIN,
     PROMOTE,
-    ROLE_DECIDER,
-    ROLE_LEAD,
     ROLE_REVIEWER,
     ArchitectureContext,
     ArchitectureStepError,
@@ -242,7 +242,7 @@ def _accept_review(run: StepRun, output: Path, scope_path: Path, *, original: bo
     follows: StepId
     reviews, follows = _review_group(run)
     routed: bool = bool(kept or review["alternativesRequested"]) or any(_holds_raised(step) for step in reviews)
-    lead: str = agents_with_role(run.tools.plugin, ROLE_LEAD)[0]
+    lead: str = LEAD
     return Completion(artifacts=tuple(artifacts), add=(_lead_group(reviews, follows, lead),) if routed else ())
 
 
@@ -315,16 +315,15 @@ def _raised(run: StepRun, path: Path) -> bool:
     return bool(review["findings"] or review["alternativesRequested"])
 
 
-@agent_step(*agents_with_role(PLUGIN, ROLE_LEAD))
+@agent_step(LEAD)
 def lead(run: StepRun) -> AgentLaunch:
     """Build the session of the lead: its routing, or its "Finish" after the steps it added.
 
     The lead adds the steps its routing calls for under its own step, so its session normally
     ends with child steps and nothing is accepted here. A routing that rejects every item needs
     no step. Launched for "Finish", the lead either records that every item is resolved or adds
-    the steps that remain. The design specialists it may ask are the agents whose definitions
-    state the design-specialist role; it reads them from the definitions, so nothing is listed
-    for it.
+    the steps that remain. The specialists it asks for an opinion are its own choice, made from
+    the find-specialists skill's catalog, so nothing is listed for it.
 
     Returns:
         The launch, with exactly the input labels the lead's definition names.
@@ -396,7 +395,7 @@ def _disagreements(arch: Path, matter: UnsettledMatter) -> tuple[list[JsonValue]
     return settled, unset
 
 
-@agent_step(*agents_with_role(PLUGIN, ROLE_DECIDER))
+@agent_step(DECIDER)
 def decider(run: StepRun) -> AgentLaunch:
     """Build the session of the decider: one question file in, one ruling out.
 

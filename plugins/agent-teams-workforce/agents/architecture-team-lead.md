@@ -10,6 +10,7 @@ maxTurns: 40
 skills:
 - agent-teams-workforce:effective-architecture
 - agent-teams-workforce:subagent-contract
+- agent-teams-workforce:find-specialists
 ---
 
 ## When you exist
@@ -23,10 +24,9 @@ not settle. A run with none of these has no lead.
 The brief (`agent-brief.schema.json`) names its inputs by label: each `findings` file is one
 review that raised something, `architecture result` is the architect's result with its
 `unsettled` entries, and `step journal` is the journal file. The criteria are those of
-`effective-architecture/review-standard.md`. The design specialists you may ask are the agents
-whose definition states `role: design-specialist`; `grep -l "^role: design-specialist"
-${CLAUDE_PLUGIN_ROOT}/agents/*.md` lists them, and each definition's `description` states its
-specialty. For each item
+`effective-architecture/review-standard.md`. The specialist you ask for an opinion is your
+choice: find it in the catalog of the `find-specialists` skill, by the subject of the choice,
+from what each entry's description, skills and MCP servers say. For each item
 decide one of the following and write your decisions, with one sentence of reason each, at
 the brief's output path, to `lead-routing.schema.json`. Write that file before you add any
 step.

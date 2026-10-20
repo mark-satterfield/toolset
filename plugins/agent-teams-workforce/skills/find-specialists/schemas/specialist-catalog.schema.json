@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/find-specialists/schemas/specialist-catalog.schema.json",
+  "title": "Specialist catalog",
+  "description": "The shape of skills/find-specialists/catalog.json: every agent of the plugin, generated from its definition file by scripts/specialist_catalog.py (generate; generate --check fails when the file is stale). scripts/specialist_catalog.py is the one reader and writer and checks this shape when it reads the file. Consumed by: the solutions architect and the architecture lead, which choose the agents a subject needs from it (find, show, list); orchestrator/flows/architecture.py, which refuses an architecture result request naming an agent the catalog does not list, and launches every listed agent that has no launch builder of its own with the specialist launch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["description", "agents"],
+  "properties": {
+    "description": {"type": "string", "minLength": 1},
+    "agents": {
+      "description": "One entry per agent definition under agents/, in name order.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/CatalogEntry"}
+    }
+  },
+  "$defs": {
+    "CatalogEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description", "skills", "mcpServers"],
+      "properties": {
+        "name": {"description": "The agent's front matter name, which is also its file name; the name it is started by.", "type": "string", "minLength": 1},
+        "description": {"description": "The agent's front matter description: what it is for.", "type": "string", "minLength": 1},
+        "skills": {"description": "The skills its front matter lists, loaded when it starts.", "type": "array", "items": {"type": "string", "minLength": 1}},
+        "mcpServers": {"description": "The MCP servers whose tools its tools list grants.", "type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    }
+  }
+}

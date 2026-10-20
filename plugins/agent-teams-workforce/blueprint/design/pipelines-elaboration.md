@@ -194,8 +194,9 @@ Notes on the diagram:
   architect names the review subjects its design raises (for example cost, security, failure
   modes), each with its reason, and the workflow sends the design to the reviewer for each named
   subject, because every agent needs a reason to be used, the same as the specialists in section 3.
-- How the architect reaches a specialist (directly, through a domain lead, or through the
-  workflow) is Q4, drawn in section 3.
+- How the architect reaches a specialist is drawn in section 3: in its own session for a
+  question or quick work, or by naming the agent and its request in its result for work outside
+  its session.
 - "Any updates or corrections to arc42 must also be made." (the owner): every correction written
   to the matrix at the end of the stage has its counterpart in the arc42 documents written in the
   same stage.
@@ -249,8 +250,14 @@ sort of reasoning or expertise or decision making to even know which specialist 
 do not want is python code deciding which specialists to use", "I also do not want a pipeline
 that blindly sends everything to ever agent, whether it applies or not", "Ever agent needs to have
 a reason to be used.", "For architecture, that reasoning agent is supposed to be the solutions
-architect". The two ways are the owner's two examples, and "Neither one of these scenarios are
-perfect or fool proof." (Q4).
+architect". The owner decided: "I think the architecture agent can continue to use subagents for
+basic questions and quick responses.", "We can add a skill that the architecture agent can use,
+and the skill has all specialized agents in it (like a table or json file) with descriptions, and
+the architecture can find agents that way.", "If the architecture agent needs needs actual work to
+be done by a specialized agent outside of the architecture agent's headless claude code session,
+then it can pass the agent and request in the results, and the code can route the request to the
+agent by name (not by resourceType)." and "In other words, let the architect decide whih agents
+are needed."
 
 ```mermaid
 flowchart TD
@@ -261,13 +268,15 @@ flowchart TD
     dd --> m1(("merge"))
     fresh --> m1
     m1 --> subj["Name each subject the design needs. For example persistence, an SQS queue, KMS for a container"]
-    subj --> q2{"For this subject, does a specialist's expertise give a reason to use it?"}
-    q2 -->|"yes"| how{"open - Q4"}
-    how -->|"example 1: request to one domain lead, who decides which of its specialists take part"| lead["Domain lead, for example Data Persistence and Storage (no agent yet)"]
-    how -->|"example 2: architect returns the subjects needing specialist attention, the workflow sends all the information to each named specialist"| direct["The named specialist, for example an SQS specialist (no agent yet)"]
-    q2 -->|"no: the subject needs no specialist"| self["The architect designs it, with its own tools and resources"]
-    lead --> m2(("merge"))
-    direct --> m2
+    subj --> cat["Find the agents for the subject in the find-specialists catalog: description, skills, MCP servers"]
+    cat --> q2{"For this subject, does an agent's expertise give a reason to use it?"}
+    q2 -->|"yes"| how{"What does the architect need from it?"}
+    how -->|"a question or a quick response"| ask["The architect starts the agent in its own session, by name"]
+    how -->|"work outside the architect's session"| req["The architect names the agent and its request in its result's requests"]
+    req --> route["The script starts that agent by the name given, with the request, then the architect's Finish with the answer"]
+    q2 -->|"no: no agent covers the subject, or none is equipped for it"| self["The architect designs it, with its own tools and resources"]
+    ask --> m2(("merge"))
+    route --> m2
     self --> m2
     m2 --> more{"Another subject?"}
     more -->|"yes"| q2
@@ -291,7 +300,18 @@ Notes on the diagram:
   not the run succeeded. A recommendation never stops the run.
 - The subjects are open. The owner: "What if the architecture calls for us to to build a container
   using KMS? I doubt that's even in hour hardcoded resourceType list." No list of today's resource
-  types limits the subjects.
+  types limits the subjects, and no agent definition carries routing fields: the architect
+  chooses from the catalog of the `find-specialists` skill (`skills/find-specialists/catalog.json`),
+  generated from every agent's own definition by `scripts/specialist_catalog.py`, whose
+  `generate --check` the pre-commit hook `specialist-catalog-fresh` runs whenever an agent
+  changes.
+- Python decides nothing about which agent runs. Each entry of the result's `requests`
+  (`architecture-result.schema.json`) names an agent and states its request; the step that
+  accepts the result (`orchestrator/flows/architecture.py`, `_requested`) plans one step for each
+  named agent and the architect's `Finish` after them, and the launch builder registered for
+  every catalog agent without one of its own (`journal_registry.any_agent_step`) starts it. A name
+  the catalog does not list is sent back to the architect as a correction.
+- The architecture lead chooses the specialist it asks for an opinion from the same catalog.
 - In example 1 the owner noted the cost of autonomy: "So I'm not necessarily interested in an
   agent orchestating with autonomy like this."
 
@@ -302,24 +322,9 @@ skills and expertise and tools, small context, and focused scope and responsabil
 experience, the general default training data for Anthropic models isn't good enough when it
 comes to a lot of specific topics." and "Without spreading the work to specialist agents, a
 generic agent ends of doing way too much of the work, filling up it's own context, and then making
-horrible decisions and producing horrible results". The specialists the architect can use today,
-each with the subject that is its reason to be used:
-
-| Specialist today | Subject that gives the reason to use it |
-|---|---|
-| `bounded-context-mapper` | Bounded contexts, domain responsibilities, service ownership |
-| `integration-pattern-architect` | Service boundaries, synchronous and event integration, delivery and failure behaviour |
-| `api-contract-designer` | REST interfaces, which block exposes each, who may call it, compatibility |
-| `graphql-schema-designer` | GraphQL interfaces |
-| `domain-event-modeler` | Domain events as facts, their owners and triggers |
-| `event-schema-designer` | EventBridge event types and routing rules (the owner: "That agent was originally written to be used for eventbridge event schemas.") |
-| `persistence-architecture-specialist` | Which block owns each store, what it holds, consistency, data lifecycle |
-| `security-architecture-designer` | Trust boundaries, identities, authorization, IAM, encryption, threat mitigation |
-| `cdk-infrastructure-designer` | Repositories, CDK stacks, where each block runs, shared infrastructure |
-| `architecture-diagram-author`, `c4-diagram-author`, `uml-diagram-author` | Drawing one diagram of a settled design |
-
-A subject with no specialist today (the owner's examples: an SQS specialist, a lead for Data
-Persistence and Storage) is a gap in the roster, not a gap in the architecture.
+horrible decisions and producing horrible results". Which agents exist, and what each is for and equipped with, is the catalog of the
+`find-specialists` skill and nowhere else. A subject no agent covers is a gap in the roster, not a
+gap in the architecture.
 
 ## 4. The TRD is written, then updated, during architecture
 
@@ -577,9 +582,8 @@ Decisions in this diagram, each for one reason:
 
 ## Open questions
 
-Questions Q4 and Q5 are the plan's questions for the owner, with the plan's recommendations.
+Question Q5 is the plan's question for the owner, with the plan's recommendation.
 
 | Question | Where | Recommendation and reason |
 |---|---|---|
-| **Q4.** How are specialists chosen? | Sections 2 and 3 | The owner's second example: the architect's result lists the topics needing specialist attention with a reason for each; the workflow sends the architect's result to the specialist for each topic, from a list of topics and specialists the owner approves; the architect may ask a specialist a follow-up directly. The architect's reasoning decides the topics, so no Python decides, and a workflow is observable and runs specialists in parallel. |
 | **Q5.** Where does the record of tools, decisions and the Well-Architected review live? | Section 2 | A review record per Epic, written by the architecture stage, committed with the Epic's elaboration output and linked from the Epic's matrix entry. arc42 holds no decision records, so a log keeps the documents to design facts while every decision and review stays findable. |

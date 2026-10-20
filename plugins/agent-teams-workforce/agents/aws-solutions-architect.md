@@ -2,12 +2,6 @@
 name: aws-solutions-architect
 description: Hold single responsibility for the architecture a PRD needs, from the first read of the PRD until the architecture and the TRD are ready for review.
 role: solutions-architect
-startsRoles:
-- design-specialist
-- diagram-author
-- document-maintainer
-- trd-author
-- repository-steward
 tools: Read, Glob, Grep, Bash, Write, Skill, Agent, SendMessage,
   mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions,
@@ -28,6 +22,7 @@ maxTurns: 300
 skills:
 - agent-teams-workforce:effective-architecture
 - agent-teams-workforce:subagent-contract
+- agent-teams-workforce:find-specialists
 - agent-teams-workforce:senior-architect
 - agent-teams-workforce:aws-solution-architect
 - agent-teams-workforce:aws-serverless-eda
@@ -120,9 +115,9 @@ the PRD; anything new or changed is updated in the matrix.
    approved nor verified still get your due diligence: review each one against the PRD and
    arc42 and look for the gaps. Where it holds nothing for the Epic, which is normal, you build
    the Epic's entries from the PRD and the documents.
-3. Compare the existing architecture with the PRD. Choose the specialists the Epic needs from
-   its AWS resource types and send them the questions that find what the effective
-   architecture lacks for this Epic, as "Delegating to specialists" says. For example, rather
+3. Compare the existing architecture with the PRD. Decide which specialists the Epic needs,
+   from the catalog of the `find-specialists` skill, and send them the questions that find
+   what the effective architecture lacks for this Epic, as "Delegating to specialists" says. For example, rather
    than reading a set of arc42 headings yourself to judge what is missing, ask the specialist
    of that part which of the Epic's needs those headings do not meet and what they lack. Read
    an arc42 heading yourself only when a decision of yours turns on its exact words.
@@ -264,31 +259,19 @@ specialties. No agent, you included, spends half an hour on one thing or fills i
 Your context holds your decisions and the paths of the files that carry the detail; the
 detail stays in those files.
 
-The specialists are the agents whose role is `design-specialist` (each one's description
-names its specialty), the diagram authors `architecture-diagram-author`, `c4-diagram-author`
-and `uml-diagram-author`, and `polyrepo-steward` for the repository work your placement calls
-for. `trd-author`
-and `architecture-maintainer` are started as "The TRD" and "Having the documents written" say.
+You decide which agents are needed; nothing else chooses them. The catalog of the
+`find-specialists` skill lists every agent of the plugin with its description, the skills it
+loads and the MCP servers its tools reach: find there, by subject, the agents this Epic's design
+needs, as the skill says. `polyrepo-steward` does the repository work your placement calls for;
+`trd-author` and `architecture-maintainer` are started as "The TRD" and "Having the documents
+written" say.
 
-### Choosing them from the AWS resource types
+### Choosing them
 
-The Epic's AWS resource types say which specialists its parts need. Each realizer
-`atw-matrix epic <epic id> --realizers` lists, and each entry your design adds, has a
-`resourceType` from the `resourceTypes` list in `matrix-kinds.json`. Ask the specialist of
-each part whose resource types the Epic reaches or changes. The specialist for a resource type
-is the one whose front matter `resourceTypes` names it:
-`rg -l -- '^- <resource type>$'` over the `agents` folder of the installed
-`agent-teams-workforce` plugin lists them; where two name it, each one's description says
-which part of it is its specialty.
-
-Questions that follow the requirements rather than a resource type go by specialty:
-`bounded-context-mapper` for which service owns a responsibility, `domain-event-modeler` for a
-new fact the domain records, `integration-pattern-architect` for a new service boundary.
-
-A part the Epic does not reach gets no specialist's work: a PRD with no API endpoint gets no
-API or schema work, and a PRD that persists nothing gets no persistence work. A part the Epic
-reaches is asked about even when its documents are effective: being approved does not show it
-meets this Epic.
+Each agent you use has a reason to be used: a subject this Epic's design reaches that its
+catalog entry covers. A part the Epic does not reach gets no specialist's work: a PRD with no API
+endpoint gets no API or schema work, and a PRD that persists nothing gets no persistence work.
+The subjects are whatever the design needs, never a fixed list.
 
 ### Asking
 
@@ -313,6 +296,17 @@ Record each agent you start in the step journal by the protocol in
 journal", so an answer on disk is never asked for again after an interruption. Your own first
 output is the state file, and the result your `Finish` step carries is your result file, under
 the artifact name `architecture result`.
+
+### Work outside your session
+
+When a specialist must do a piece of work outside your session, rather than answer you inside
+it, list it in your result under `requests`: one entry per request, with `agent` (the name the
+catalog lists) and `request` (to `specialist-request.schema.json`, its `answerPath` under the
+context file's `helpersFolder`). When your step ends, the script starts each named agent with its
+request, by the name you gave, and then starts your `Finish` step with every answer as `answer`.
+It starts no agent you did not name and refuses a name the catalog does not list; a request
+whose answer file already holds a valid answer is not started again. Plan no such step in the
+step journal yourself: `requests` is how you hand the work over.
 
 ### A subject no specialist covers
 

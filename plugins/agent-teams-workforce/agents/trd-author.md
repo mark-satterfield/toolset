@@ -1,7 +1,6 @@
 ---
 name: trd-author
 description: Write and keep current the technical obligations of this PRD and its architecture.
-role: trd-author
 tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
   Skill

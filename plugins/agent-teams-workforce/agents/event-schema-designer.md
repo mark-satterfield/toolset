@@ -1,16 +1,6 @@
 ---
 name: event-schema-designer
 description: Answer a question or do a bounded piece of design for the solutions architect on event types, their producers, and the routing rules (event pattern, targets, owning stack) with per-target retry and DLQ.
-role: design-specialist
-resourceTypes:
-- eventbridge-bus
-- eventbridge-rule
-- eventbridge-schedule
-- sns-topic
-- sns-subscription
-- sqs-queue
-- sqs-queue-and-dlq
-- sqs-queue-and-alarm
 tools: Read, Write, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
   Skill, mcp__mcp-graphrag-server, mcp__gitnexus__query, mcp__gitnexus__context, mcp__gitnexus__impact, mcp__gitnexus__detect_changes, mcp__gitnexus__trace, mcp__gitnexus__explain, mcp__gitnexus__api_impact, mcp__gitnexus__route_map, mcp__gitnexus__tool_map, mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query, mcp__gitnexus__cypher, mcp__gitnexus__check, mcp__gitnexus__list_repos, mcp__gitnexus__group_list

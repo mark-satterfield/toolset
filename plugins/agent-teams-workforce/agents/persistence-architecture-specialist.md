@@ -1,15 +1,6 @@
 ---
 name: persistence-architecture-specialist
 description: Answer a question or do a bounded piece of design for the solutions architect on which block owns each store, what it holds, consistency and data lifecycle.
-role: design-specialist
-resourceTypes:
-- dynamodb-table
-- dynamodb-export
-- database
-- dataset
-- data-component
-- elasticache-replication-group
-- s3-bucket
 tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
   mcp__awslabs-dynamodb-mcp-server__dynamodb_data_modeling, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation,

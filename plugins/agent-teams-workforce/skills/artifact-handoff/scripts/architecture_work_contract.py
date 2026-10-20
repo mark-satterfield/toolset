@@ -281,6 +281,24 @@ class SpecialistRecommendation(TypedDict):
     recommendation: str
 
 
+class SpecialistRequest(TypedDict):
+    """Typed form of #/$defs/SpecialistRequest in architecture-result.schema.json."""
+
+    kind: RequestKind
+    request: str
+    bounds: str
+    concerns: list[Citation]
+    trustedCode: list[str]
+    answerPath: str
+
+
+class AgentRequest(TypedDict):
+    """Typed form of #/$defs/AgentRequest in architecture-result.schema.json."""
+
+    agent: str
+    request: SpecialistRequest
+
+
 class ArchitectureResult(TypedDict):
     """Typed form of #/$defs/ArchitectureResult in architecture-result.schema.json."""
 
@@ -297,17 +315,7 @@ class ArchitectureResult(TypedDict):
     reviewSignals: ReviewSignals
     costEvidence: list[CostEvidence]
     specialistRecommendations: list[SpecialistRecommendation]
-
-
-class SpecialistRequest(TypedDict):
-    """Typed form of #/$defs/SpecialistRequest in architecture-result.schema.json."""
-
-    kind: RequestKind
-    request: str
-    bounds: str
-    concerns: list[Citation]
-    trustedCode: list[str]
-    answerPath: str
+    requests: list[AgentRequest]
 
 
 class Reason(TypedDict):

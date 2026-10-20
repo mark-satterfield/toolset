@@ -95,16 +95,18 @@ ARTIFACT_TRD: Final = "TRD"
 ARTIFACT_SPECIALIST_RECOMMENDATIONS: Final = "specialist recommendations"
 """The solutions architect's recommendations to the owner to create or update a specialist agent."""
 
-ROLE_ARCHITECT: Final = "solutions-architect"
-ROLE_REVIEWER: Final = "architecture-reviewer"
+ARCHITECT: Final = "aws-solutions-architect"
+LEAD: Final = "architecture-team-lead"
+DECIDER: Final = "architecture-decider"
+TRD_AUTHOR: Final = "trd-author"
+MAINTAINER: Final = "architecture-maintainer"
+"""The agents of the architecture team's fixed steps, by name. The agents the architect or the lead
+chooses for a subject are named in their own files (``architecture-result.schema.json``
+``requests``; ``lead-routing.schema.json``), never here."""
 ROLE_LEAD: Final = "architecture-lead"
-ROLE_DECIDER: Final = "decider"
-ROLE_SPECIALIST: Final = "design-specialist"
-ROLE_DIAGRAMS: Final = "diagram-author"
-ROLE_MAINTAINER: Final = "document-maintainer"
-ROLE_TRD_AUTHOR: Final = "trd-author"
-ROLE_STEWARD: Final = "repository-steward"
-"""The roles agent definitions state in front matter; the flow names agents by role only."""
+ROLE_REVIEWER: Final = "architecture-reviewer"
+"""The roles ``agents_with_role`` reads: the architecture reviewers' seat, which the review criteria
+file's reviewer groups fill, and the lead's."""
 
 PLUGIN: Final[Path] = Path(__file__).resolve().parents[2]
 HUMAN_ACTION_STAGE: Final = "requires-human-action"

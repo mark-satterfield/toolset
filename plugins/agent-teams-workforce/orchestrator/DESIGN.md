@@ -507,11 +507,9 @@ records the model in `run.json`; it passes no effort.
 | Agent | Role | Launched |
 |---|---|---|
 | `aws-solutions-architect` | `solutions-architect` | by the script: its first step, a correction, a competing design, its "Finish" |
-| `integration-pattern-architect`, `persistence-architecture-specialist`, `security-architecture-designer`, `cdk-infrastructure-designer`, `event-schema-designer`, `api-contract-designer`, `graphql-schema-designer`, `domain-event-modeler`, `bounded-context-mapper` | `design-specialist` | by the architect in its own session; by the script when left running or when the lead asks for an opinion |
-| `architecture-diagram-author`, `c4-diagram-author`, `uml-diagram-author` | `diagram-author` | by the architect in its own session; by the script when left running |
-| `trd-author` | `trd-author` | by the architect in its own session; by the script when left running |
-| `architecture-maintainer` | `document-maintainer` | by the architect in its own session; by the script when left running |
-| `polyrepo-steward` | `repository-steward` | by the architect in its own session; by the script when left running |
+| Any agent the `find-specialists` catalog lists that has no row here (for example `persistence-architecture-specialist`, `c4-diagram-author`, `polyrepo-steward`) | its own, if any | by the architect in its own session, by the name it chose from the catalog; by the script when the architect names it in its result's `requests`, when it was left running, or when the lead asks it for an opinion |
+| `trd-author` | | by the architect in its own session; by the script when left running |
+| `architecture-maintainer` | | by the architect in its own session; by the script when left running |
 | `architecture-boundary-guardian`, `failure-mode-analyst`, `architecture-pattern-challenger`, `architecture-tradeoff-skeptic`, `operational-readiness-reviewer`, `cost-architecture-reviewer`, `cost-impact-reviewer`, `trd-validator` | `architecture-reviewer` | by the script, when the rule of its reviewer group selects it; again for a re-check the lead plans |
 | `architecture-team-lead` | `architecture-lead` | by the script, only when a review raised something or the architect's result is unsettled |
 | `architecture-decider` | `decider` | by the script, only for a step the lead plans |
@@ -521,8 +519,8 @@ records the model in `run.json`; it passes no effort.
 | `task-decomposer` | | by the script, in a repository's container under Tasks: the decomposition, and one correction when the plan has a gap |
 | `task-dependency-mapper` | | by the script, under Task edges, when the span has two or more repositories |
 
-An agent whose front matter gives it the Agent tool starts, by its instructions, only agents with
-the roles its `startsRoles` lists. `ATW_MATRIX_ROLE` is the
+No code chooses an agent for a subject: the architect and the lead choose from the
+`find-specialists` catalog, and the script starts the agent they name. `ATW_MATRIX_ROLE` is the
 launched agent's role, which decides the `atw-matrix` commands it may run.
 
 ### 5.5 Agents declaring `model: fable` (QUESTIONS 1)

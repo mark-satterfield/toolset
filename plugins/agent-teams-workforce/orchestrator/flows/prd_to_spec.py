@@ -57,14 +57,13 @@ from orchestrator.flows import (
 )
 from orchestrator.flows.architecture import first_steps
 from orchestrator.flows.architecture_files import (
+    ARCHITECT,
     ARCHITECTURE,
     CONFIRM_TRD,
     HUMAN_ACTION_STAGE,
     LABEL_CONTEXT,
     LABEL_PRD,
     OPEN_RUN,
-    ROLE_ARCHITECT,
-    agents_with_role,
     context_path,
     new_context,
 )
@@ -265,7 +264,7 @@ def open_run(run: StepRun) -> Completion:
     commit: str = run.tools.portfolio(OPEN_RUN, _sync_matrix, epics, prd, arch)
     path: Path = context_path(run.context.work)
     write_json(path, new_context(run.bead, prd, arch, run.context.work, commit))
-    architect: str = agents_with_role(run.tools.plugin, ROLE_ARCHITECT)[0]
+    architect: str = ARCHITECT
     return Completion(
         artifacts=(
             file_artifact(LABEL_PRD, prd),

@@ -1,0 +1,2571 @@
+{
+  "description": "Every agent of the agent-teams-workforce plugin, generated from its definition file by skills/find-specialists/scripts/specialist_catalog.py. Do not edit by hand.",
+  "agents": [
+    {
+      "name": "acceptance-criteria-reviewer",
+      "description": "Validates acceptance criteria are testable, complete, and unambiguous — derivable into tests without interpretation. Use for Spec Authoring work requiring testability review, ambiguity detection, and completeness checking.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-qa"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "acceptance-criteria-writer",
+      "description": "Derive traceable criteria and Definition of Done from the finished specification set.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-qa",
+        "agent-teams-workforce:artifact-handoff"
+      ],
+      "mcpServers": [
+        "aws-mcp"
+      ]
+    },
+    {
+      "name": "accessibility-validator",
+      "description": "Validates UI changes against WCAG 2.2 A/AA — contrast, keyboard navigation, ARIA, focus management, screen-reader flows — reporting violations with locations and remediations; never fixes. Use for Code Quality work requiring WCAG validation, accessibility regression detection, and focus-order review.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:a11y-audit",
+        "agent-teams-workforce:senior-frontend",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "advantage-evaluator",
+      "description": "Evaluates competitive, non-constitutive conflicts via speculative execution with rollback: proceed under a flag, observe the outcome, commit or revert — never halts the pipeline for non-invalidating findings; rules every gate whose loops are spent (proceed with named residuals, or one directed revision). Use for Governance work requiring advantage-principle evaluation, speculative-execution oversight, commit-or-revert verdicts, and gate-exhaustion rulings.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "adversarial-critique-adjudicator",
+      "description": "Rules on each adversarial finding's severity and whether it is constitutive (hard stop) or competitive (plays advantage); Gate 4 Referee whose rulings implementers cannot downgrade. Use for Adversarial Validation phase work requiring finding adjudication and constitutive-vs-competitive classification.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-security"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "adversarial-review-loop-supervisor",
+      "description": "Sequences the adversarial validation loop: testers attack project code in designated test environments only; the Adversarial Critique Adjudicator rules on findings, which route back until pass or loop-limit escalation. Use for Adversarial Validation phase work requiring attack-wave orchestration, finding routing, and loop-limit enforcement.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:agent-orchestration"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "ambiguity-detector",
+      "description": "Scans the raw PRD for vague quantifiers, missing boundary conditions, and unstated assumptions; reports findings, never fixes. Use for PRD Validation work requiring ambiguity scanning, boundary-condition checks, and severity rating.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:product-discovery"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "android-compose-implementer",
+      "description": "Implements Android features in Kotlin and Jetpack Compose; writes minimum code to pass failing Espresso suites. Use for Implementation work requiring Compose UI, Kotlin state and navigation wiring, and on-device ML Kit integration.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:software-engineering"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "context7",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "api-contract-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on REST interfaces, which block exposes each, who may call it and how it stays compatible.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:api-design-reviewer",
+        "agent-teams-workforce:effective-architecture",
+        "aws-core:aws-serverless",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "api-documentation-writer",
+      "description": "Writes human-readable API docs from OpenAPI and GraphQL specs for shipped APIs — guides, examples, SDK snippets. Use for cross-cutting Documentation team work requiring API reference writing, example generation, and SDK snippet authoring.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:api-design-reviewer"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "api-gateway-cdk-implementer",
+      "description": "Implements API Gateway resources, methods, and authorizers in CDK; writes minimum code to pass failing unit tests. Use for Implementation work requiring API Gateway constructs, CDK infrastructure, and authorizer wiring.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:api-gateway",
+        "agent-teams-workforce:aws-cdk-development",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:resource-naming",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-cdk",
+        "aws-core:aws-serverless",
+        "aws-core:aws-auth",
+        "agent-teams-workforce:cdk-coding"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "api-specification-author",
+      "description": "Specify API, event, error and UI contracts for what one repository's Story builds.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:api-design-reviewer",
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:skillspoke-events",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "appsync-cdk-implementer",
+      "description": "Implements AppSync GraphQL APIs in CDK: schema wiring, resolvers, data sources, authorization. Use for Implementation work requiring AppSync API construction, resolver and data source wiring, and authorization setup.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:aws-cdk-development",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:resource-naming",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-cdk",
+        "agent-teams-workforce:cdk-coding"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "appsync-client-subscription-implementer",
+      "description": "Implements AppSync client subscriptions for real-time web features. Use for Implementation work requiring GraphQL subscription wiring, connection lifecycle handling, real-time state updates, and reconnection handling.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-frontend",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:typescript-coding",
+        "agent-teams-workforce:web-frontend-coding"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "context7",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "architecture-boundary-guardian",
+      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:senior-architect",
+        "agent-teams-workforce:effective-architecture"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server"
+      ]
+    },
+    {
+      "name": "architecture-conformance-reviewer",
+      "description": "Check a correction of the effective architecture documents from what a Story built, without modifying them.",
+      "skills": [
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:arc42",
+        "agent-teams-workforce:aws-solution-architect",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:effective-architecture"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "architecture-decider",
+      "description": "Rule on a matter the architecture team could not settle.",
+      "skills": [
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-architect",
+        "agent-teams-workforce:aws-solution-architect"
+      ],
+      "mcpServers": [
+        "aws-mcp"
+      ]
+    },
+    {
+      "name": "architecture-diagram-author",
+      "description": "Draw one architecture diagram of a settled design for the solutions architect.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:architecture-diagramming",
+        "agent-teams-workforce:c4-diagramming",
+        "agent-teams-workforce:uml-diagramming",
+        "agent-teams-workforce:effective-architecture"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server"
+      ]
+    },
+    {
+      "name": "architecture-fitness-function-author",
+      "description": "Defines testable assertions from the owner's constraints and the architecture decisions, e.g. \"every Lambda uses the configured logging library\", \"no service reads another service's table\". Use for Architecture Analysis work requiring fitness function authoring, constraint formalization, and conformance criteria. No workflow currently dispatches it.",
+      "skills": [
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-architect",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "architecture-impact-analyst",
+      "description": "Judges what an architecture change reaches. Given the architecture views an integration changed, created or deleted, it takes from the matrix every Epic, open Task and entry those views reach (`atw-matrix impact`, `affected`), and rules on each one: unaffected, not yet elaborated, elaborated but unbuilt, or already built. Read-only — it changes no bead and writes no code. Use after an architecture ruling created, changed or retired architecture views.",
+      "skills": [
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:beads-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-architect",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "architecture-maintainer",
+      "description": "Write the solutions architect's decisions into the arc42 documents, each fact in its one home.",
+      "skills": [
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:arc42-maintain",
+        "agent-teams-workforce:c4-diagramming",
+        "agent-teams-workforce:uml-diagramming"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "architecture-pattern-challenger",
+      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:senior-architect",
+        "agent-teams-workforce:aws-solution-architect",
+        "agent-teams-workforce:effective-architecture"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server"
+      ]
+    },
+    {
+      "name": "architecture-team-lead",
+      "description": "Route what a review found or what the solutions architect could not settle, so that the team settles it with the least further work.",
+      "skills": [
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:find-specialists"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "architecture-tradeoff-skeptic",
+      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:senior-architect",
+        "agent-teams-workforce:effective-architecture"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server"
+      ]
+    },
+    {
+      "name": "athena-redshift-analytics-implementer",
+      "description": "Implements Athena queries and Redshift analytics models over the data lake — tables, views, SQL — writing minimum code to pass failing data-pipeline tests. Use for Implementation work requiring analytics SQL authoring, external table definition, and warehouse modeling.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-data-engineer",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "auth-bypass-tester",
+      "description": "Attempts auth bypass — token forgery, session fixation, flow skipping — against the project's auth flows in designated test environments only, reporting each confirmed bypass. Use for Adversarial Validation phase work requiring auth-flow attack, Cognito probing, and minimal-reproduction reporting.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-secops",
+        "agent-teams-workforce:cognito",
+        "aws-core:aws-auth",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "aws-integration-test-runner",
+      "description": "Runs AWS integration test suites against the provisioned test environment, reporting structured pass/fail, coverage, and flakiness results. Use for Integration Testing work requiring suite execution, coverage measurement, and flakiness detection.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:test-failure-mindset",
+        "agent-teams-workforce:cumulative-regression",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "aws-integration-test-writer",
+      "description": "Writes failing integration tests covering the event delivery path the effective architecture describes, hop by hop. Use for Test Design work requiring AWS integration test authoring, event-driven flow assertions, and test harness design.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:aws-serverless-eda",
+        "agent-teams-workforce:cumulative-regression",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-sdk-python-usage",
+        "aws-core:aws-messaging-and-streaming",
+        "aws-core:aws-serverless",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "aws-solutions-architect",
+      "description": "Hold single responsibility for the architecture a PRD needs, from the first read of the PRD until the architecture and the TRD are ready for review.",
+      "skills": [
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:find-specialists",
+        "agent-teams-workforce:senior-architect",
+        "agent-teams-workforce:aws-solution-architect",
+        "agent-teams-workforce:aws-serverless-eda",
+        "agent-teams-workforce:senior-security",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-serverless"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "awslabs-dynamodb-mcp-server",
+        "mcp-graphrag-server",
+        "pg-aiguide",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "beads-format-validator",
+      "description": "Validates every Beads issue is structurally complete (title, acceptance criteria, DoD, dependencies, spec link) and obeys the hierarchy rule; reports defects, never fixes. Use for Task Decomposition work requiring Beads format validation, field completeness, and traceability checks. No workflow currently dispatches it.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:beads-contract"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "bedrock-integration-implementer",
+      "description": "Implements Bedrock foundation-model integrations; writes minimum code to pass failing unit tests. Use for Implementation work requiring model invocation clients, prompt assembly, embeddings generation, and inference error handling.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:bedrock",
+        "agent-teams-workforce:senior-ml-engineer",
+        "agent-teams-workforce:senior-prompt-engineer",
+        "agent-teams-workforce:aws-agentic-ai",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:amazon-bedrock",
+        "aws-core:aws-sdk-python-usage"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "aws-mcp",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "behavioral-signals-implementer",
+      "description": "Implements behavioral signal capture and feature pipelines feeding matching and recommendation models; minimum code to pass failing tests. Use for Implementation work requiring event signal capture, feature engineering, and ML feature delivery.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-data-engineer",
+        "agent-teams-workforce:senior-data-scientist",
+        "agent-teams-workforce:product-analytics",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "bounded-context-mapper",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on bounded contexts, domain responsibilities and service ownership.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:senior-architect",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "brd-traceability-auditor",
+      "description": "Produces an INFORMATIONAL mapping from PRD requirements to the objectives of a BRD, when one is supplied — a correspondence, never a verdict on the PRD. Use for PRD Validation work requiring optional requirement-to-objective mapping.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:product-discovery"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "built-architecture-comparer",
+      "description": "Compare the code one Story built with the approved architecture for its elements and record each difference.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "c4-diagram-author",
+      "description": "Draw one C4 diagram of a settled design for the solutions architect.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:architecture-diagramming",
+        "agent-teams-workforce:c4-diagramming",
+        "agent-teams-workforce:effective-architecture"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server"
+      ]
+    },
+    {
+      "name": "cdk-infrastructure-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on repositories, CDK stacks, where each block runs and shared infrastructure.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:aws-cdk-development",
+        "agent-teams-workforce:resource-naming",
+        "agent-teams-workforce:effective-architecture",
+        "aws-core:aws-cdk",
+        "agent-teams-workforce:aurora-postgresql",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:cdk-coding"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "cdk-infrastructure-drift-detector",
+      "description": "Detects drift between deployed infrastructure and its CDK stacks, reporting divergences with evidence. Use for Deployment team work requiring CDK validation, drift detection, and template diffing.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:aws-cdk-development",
+        "agent-teams-workforce:cloudformation",
+        "aws-core:aws-cdk",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "cdk-stack-author",
+      "description": "Authors AWS CDK stacks in Python matching the approved architecture. Use for Deployment team work requiring CDK stack authoring, construct composition, synth validation, and infrastructure as code.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:aws-cdk-development",
+        "agent-teams-workforce:cloudformation",
+        "agent-teams-workforce:resource-naming",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-cdk",
+        "agent-teams-workforce:aurora-postgresql",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:cdk-coding"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "cds-finding-reviewer",
+      "description": "Independently classifies findings from the CDS audit against the configured design system.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "cds:apply-design-system",
+        "cds:audit-against-system",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "cds-live-auditor",
+      "description": "Audits the UI files a Task changed against the live Configurable Design System (cds) when no mockup or cds bundle was supplied, and rules each finding.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "cds:apply-design-system",
+        "cds:audit-against-system",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "cds-ui-implementer",
+      "description": "Implements assigned UI using the CDS plugin and its existing design system, supplied bundle and review contracts.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "cds:apply-design-system",
+        "cds:audit-against-system",
+        "cds:compose-page",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:typescript-coding",
+        "agent-teams-workforce:web-frontend-coding"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "changelog-writer",
+      "description": "Generates changelog entries from merged work, parsing conventional commits into semantic version notes. Use for cross-cutting Documentation team work requiring conventional commit parsing, changelog drafting, and version note generation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:changelog-generator"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "chassis-extension-implementer",
+      "description": "Implements Lambda handlers as chassis superclass extensions for API endpoints and event consumers; writes minimum code to pass failing unit tests. Use for Implementation work requiring Lambda handlers, chassis extension, and endpoint/consumer business logic.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:lambda",
+        "agent-teams-workforce:aws-serverless-eda",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:resource-naming",
+        "agent-teams-workforce:skillspoke-events",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-serverless",
+        "aws-core:aws-sdk-python-usage",
+        "agent-teams-workforce:aurora-postgresql"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "pg-aiguide",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "code-correctness-reviewer",
+      "description": "Reviews refactored code for correctness regressions and behavioral drift, verifying the test suite stays green. Use for Code Quality work requiring independent change-set review, regression detection, and behavior-preservation verification.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:code-reviewer",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "code-quality-lead",
+      "description": "Routes refactor work to specialists, verifies tests stay green after every change, and reports to Gate 2c. Use for Code Quality work requiring delegation, refactor sequencing, green-test verification, and gate reporting.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:agent-orchestration"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "code-refactoring-specialist",
+      "description": "Restructures code for clarity and cohesion without changing behavior, keeping tests green after every change. Use for Code Quality work requiring behavior-preserving restructuring, duplication removal, and complexity reduction.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:code-reviewer",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "aws-mcp",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "code-style-and-linting-enforcer",
+      "description": "Runs project linters and applies formatting and style fixes while keeping tests green. Use for Code Quality work requiring lint execution, formatting cleanup, and style-convention enforcement.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:code-reviewer",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "cognito-lambda-trigger-implementer",
+      "description": "Implements Cognito Lambda triggers — sign-up, confirmation, token customization, custom auth challenges — on the chassis the architecture describes. Use for Implementation work requiring Cognito trigger logic, auth flows, and user pool event processing.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:cognito",
+        "agent-teams-workforce:lambda",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:resource-naming",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-auth",
+        "aws-core:aws-serverless"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "aws-mcp",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "completeness-checker",
+      "description": "Validates each PRD requirement has an actor, action, observable outcome, and acceptance criteria. Use for PRD Validation work requiring requirement structure checks, acceptance-criteria audits, and completeness scoring.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:product-discovery",
+        "agent-teams-workforce:prd-writer"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "complexity-analyzer",
+      "description": "Analyzes complexity and duplication in green-tested code, returning prioritized refactor recommendations and the optimizers to run; performs no refactoring. Use for Code Quality work requiring complexity scoring, duplication detection, and refactor planning.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:tech-debt-tracker",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "constitutional-agent",
+      "description": "Appeals court for novel constitutive-constraint conflicts the Phase Gate Enforcer cannot resolve: rules via the constitutional layer (the system's founding objectives, spirit of the system) and records rulings as reusable precedent. Use for Governance work requiring constitutional interpretation, conflict resolution, and precedent recording.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "constraint-extractor",
+      "description": "Extracts technical constraints from the raw PRD into the constraint manifest consumed by downstream phases. Use for PRD Validation work requiring constraint identification, manifest authoring, and source-cited classification.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:product-discovery"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "consumer-driven-contract-test-writer",
+      "description": "Writes failing consumer-driven contract tests from the spec's API and event contracts. Use for Test Design work requiring contract test authoring, consumer expectation modeling, and provider verification setup.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:api-test-suite-builder",
+        "agent-teams-workforce:cumulative-regression",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "context-curator",
+      "description": "Owns context integrity: assembles role-specific context indexes of pointers under the least-context principle and guarantees every constitutive constraint's pointer survives every compaction, so no constraint is ever copied or summarized away. Use for Governance work requiring context-index assembly, compaction-safe constraint preservation, and manifest maintenance.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "contract-violation-tester",
+      "description": "Sends contract-violating inputs — malformed payloads, type/range violations, schema mismatches — across the project's service boundaries in designated test environments only. Use for Adversarial Validation phase work requiring contract-boundary attack, API/event schema probing, and minimal-reproduction reporting.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:api-test-suite-builder",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "cost-architecture-reviewer",
+      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:aws-cost-operations",
+        "agent-teams-workforce:effective-architecture",
+        "aws-core:aws-billing-and-cost-management"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "awslabs-dynamodb-mcp-server",
+        "mcp-graphrag-server",
+        "pg-aiguide"
+      ]
+    },
+    {
+      "name": "cost-impact-reviewer",
+      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:aws-cost-operations",
+        "agent-teams-workforce:effective-architecture",
+        "aws-core:aws-billing-and-cost-management"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "awslabs-dynamodb-mcp-server",
+        "mcp-graphrag-server"
+      ]
+    },
+    {
+      "name": "cross-repo-integration-test-coordinator",
+      "description": "Sequences cross-repo integration test runs over the event chain, aligns environment state between repos, and routes results to integration-testing-lead. Coordinates only — runs no tests. Use for Integration Testing work requiring cross-repo sequencing, environment alignment, and result routing.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:agent-orchestration"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "cross-service-contract-tester",
+      "description": "Runs contract tests across service and repo boundaries, verifying providers and consumers honor approved API and event contracts. Use for Integration Testing work requiring consumer-driven contract verification, schema compatibility checks, and cross-repo boundary testing.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:api-test-suite-builder",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "data-consistency-checker",
+      "description": "Verifies data consistency across services and stores after integration and event-flow runs — partial writes, orphaned records, divergent state. Use for Integration Testing work requiring cross-store verification, DynamoDB assertions, and eventual-consistency validation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:dynamodb",
+        "agent-teams-workforce:aurora-postgresql",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "awslabs-postgres-mcp-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "data-exposure-scanner",
+      "description": "Scans the project's responses, logs, and storage in designated test environments only for data exposure — leaked secrets, PII, over-returned fields, unencrypted storage — reporting each confirmed exposure. Use for Adversarial Validation phase work requiring data-leak scanning, secret/PII detection, and minimal-reproduction reporting.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-secops",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "data-model-specification-author",
+      "description": "Specify data ownership and access patterns for what one repository's Story builds.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:dynamodb",
+        "agent-teams-workforce:database-schema-designer",
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:effective-architecture",
+        "aws-core:aws-database",
+        "agent-teams-workforce:aurora-postgresql",
+        "agent-teams-workforce:design-postgres-tables",
+        "agent-teams-workforce:pgvector-semantic-search",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "awslabs-dynamodb-mcp-server",
+        "pg-aiguide",
+        "awslabs-postgres-mcp-server",
+        "awslabs-amazon-neptune-mcp-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "data-pipeline-test-writer",
+      "description": "Writes failing data pipeline tests — ETL correctness, CDC ordering, data quality, replay safety — confirming each fails for the intended reason. Use for Test Design work requiring pipeline test authoring, data quality assertions, and replay-safety checks.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-data-engineer",
+        "agent-teams-workforce:cumulative-regression",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "definition-of-done-enforcer",
+      "description": "Writes the feature spec's Definition of Done as independently verifiable true/false statements rather than checklists. Use for Spec Authoring work requiring DoD authoring, verifiability discipline, and completion semantics.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-qa"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "dependency-change-detector",
+      "description": "Detects dependency version or contract changes since the spec was written, classifying each as unchanged, reconciled, or needing reconciliation. Use for Spec Freshness phase work requiring manifest and lockfile diffing, upstream contract comparison, and breaking-change detection.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:dependency-auditor",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "dependency-cve-auditor",
+      "description": "Audits the project's Python and Node dependencies for known CVEs, scoring severity and exploitable transitive paths. Use for Adversarial Validation phase work requiring CVE scanning, severity scoring, and supply-chain risk reporting.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:dependency-auditor"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "dependency-graph-extractor",
+      "description": "Produces the dependency manifest from the raw PRD — services, APIs, events, data contracts — flagging nonexistent dependencies. Use for PRD Validation work requiring dependency identification, existence verification, and manifest authoring.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:product-discovery"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "deployment-lead",
+      "description": "Routes the feature deployment sequence, validates preconditions per step, and reports evidence to Gate 5. Use for Deployment team work requiring delegation, sequencing discipline, and gate reporting.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:agent-orchestration"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "deployment-strategy-decider",
+      "description": "Decides deployment strategy from received analyses — rollout, risk, FinOps — with recorded rationale; generates no analysis. Use for Deployment team work requiring decision adjudication, evidence weighing, and rationale recording. No workflow currently dispatches it.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-devops",
+        "agent-teams-workforce:cove-prompt-design"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "documentation-accuracy-reviewer",
+      "description": "Reviews documentation against actual shipped behavior, reporting findings with cited evidence. Use for cross-cutting Documentation team work requiring accuracy verification, claim-by-claim checking, and completeness review. No workflow currently dispatches it.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "documentation-currency-auditor",
+      "description": "Audits that documentation was updated when code shipped, flagging stale or missing docs per artifact with cited evidence, and names the writer that owns each stale doc. Use for cross-cutting Documentation team work requiring currency auditing, staleness detection, and coverage mapping.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "documentation-lead",
+      "description": "Routes documentation work for shipped changes, tracks artifacts lacking current docs, and reports doc currency to the production readiness review. Use for cross-cutting Documentation team work requiring delegation, currency tracking, and readiness reporting.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:agent-orchestration"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "domain-boundary-validator",
+      "description": "Confirms the raw PRD stays within one bounded context, flagging cross-domain scope creep as findings. Use for PRD Validation work requiring bounded-context verification, domain ownership checks, and scope-creep detection.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:product-discovery"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "domain-event-modeler",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on domain events as facts, who owns each and what triggers it.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:aws-serverless-eda",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:skillspoke-events",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "dos-resilience-tester",
+      "description": "Probes load and resource-exhaustion resilience in designated test environments only, reporting where throttling, backpressure, or quotas fail; findings are competitive, not gate-stopping. Use for Adversarial Validation phase work requiring exhaustion probing, resilience evaluation, and competitive-finding reporting.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-secops",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "dynamodb-access-layer-implementer",
+      "description": "Implements DynamoDB access patterns from the data model spec; writes minimum code to pass failing tests. Use for Implementation work requiring single-table design, GSI query construction, and conditional write semantics.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:dynamodb",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:resource-naming",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-sdk-python-usage",
+        "aws-core:aws-database"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "awslabs-dynamodb-mcp-server",
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "dynamodb-cost-optimizer",
+      "description": "Optimizes DynamoDB capacity, access patterns, and cost without changing behavior or breaking tests. Use for Code Quality work requiring capacity-mode tuning, query efficiency, and index cost reduction.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:dynamodb",
+        "agent-teams-workforce:aws-cost-operations",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-database",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "awslabs-dynamodb-mcp-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "dynamodb-schema-access-pattern-reviewer",
+      "description": "Validates DynamoDB access patterns in the spec are implementable and performant given key design, indexes, and capacity estimates. Use for Spec Authoring work requiring access-pattern validation, key/index review, and performance risk detection.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:dynamodb",
+        "aws-core:aws-database"
+      ],
+      "mcpServers": [
+        "awslabs-dynamodb-mcp-server"
+      ]
+    },
+    {
+      "name": "dynamodb-streams-cdc-implementer",
+      "description": "Implements change data capture from DynamoDB Streams; writes minimum code to pass failing data-pipeline test suites. Use for Implementation work requiring stream record processing, change event transformation, and exactly-once-effect handling.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-data-engineer",
+        "agent-teams-workforce:dynamodb",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-serverless",
+        "aws-core:aws-sdk-python-usage"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "email-notification-implementer",
+      "description": "Implements transactional and notification email features: responsive templates, rendering pipelines, delivery via AWS messaging, and bounce/complaint handling. Use for Implementation work requiring email template construction and delivery wiring.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:email-template-builder",
+        "agent-teams-workforce:sns",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:skillspoke-events",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-messaging-and-streaming",
+        "aws-core:aws-sdk-python-usage"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "aws-mcp",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "epic-sequencer",
+      "description": "Assesses the architecture dependencies of ONE Epic. An Epic is a PRD, and an edge between two Epics is an architecture dependency: it exists wherever an architecture decision one Epic rests on should be designed from another Epic's requirements first and the effective architecture does not already settle it. Reads the Epic's full PRD, answers the foundation-layer checklist (drives, rests on or not touched for each of nine layers) and names the other architecture decisions it drives and rests on, checks each against the effective architecture, finds the related Epics through the matrix, reads the requirements of each that bear on a decision, and applies the edge test in both directions, drawing an edge it is unsure of at low confidence. Emits every edge to or from the Epic with a reason and a confidence, accounts for every owned edge standing on it — kept, or withdrawn with a reason — and validates the file before reporting.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:epic-sequencing",
+        "agent-teams-workforce:artifact-handoff"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "espresso-test-writer",
+      "description": "Writes failing Espresso suites for Android features from spec acceptance criteria, confirming each test fails for the intended reason. Use for Test Design work requiring Espresso authoring, Android UI coverage, Compose semantics matchers, and Red confirmation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-qa",
+        "agent-teams-workforce:tdd-guide",
+        "agent-teams-workforce:cumulative-regression",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:software-engineering"
+      ],
+      "mcpServers": [
+        "context7",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "event-api-client-implementer",
+      "description": "Implements the calls a service makes to the shared-events-service API to publish SkillSpoke events. Use for Implementation work requiring event publishing calls, mapping of domain values to the API request, and event contract conformance.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:aws-serverless-eda",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:resource-naming",
+        "agent-teams-workforce:skillspoke-events",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-sdk-python-usage"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "aws-mcp",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "event-driven-consumer-implementer",
+      "description": "Implements the handler code of a routing rule's target, for whatever target type the target's owner chose. Use for Implementation work requiring event handler logic, batch processing where the target delivers batches, and reading of the SkillSpoke standard event.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:sqs",
+        "agent-teams-workforce:aws-serverless-eda",
+        "agent-teams-workforce:sns",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:resource-naming",
+        "agent-teams-workforce:skillspoke-events",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-serverless",
+        "aws-core:aws-messaging-and-streaming",
+        "aws-core:aws-sdk-python-usage"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "event-flow-tester",
+      "description": "Tests event flows end-to-end through the EventBridge-SQS-Lambda chain, verifying delivery, routing, retry, and dead-letter behavior per hop. Use for Integration Testing work requiring event-driven flow validation, EventBridge rule verification, and queue/consumer checks.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:aws-serverless-eda",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-messaging-and-streaming",
+        "aws-core:aws-sdk-python-usage",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "event-schema-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on event types, their producers, and the routing rules (event pattern, targets, owning stack) with per-target retry and DLQ.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:aws-serverless-eda",
+        "agent-teams-workforce:eventbridge",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:skillspoke-events",
+        "aws-core:aws-messaging-and-streaming",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "event-schema-reviewer",
+      "description": "Validates event contracts against the SkillSpoke standard event and each event's payload schema — event type names, passed values, publishing conditions, consumer obligations, retry/DLQ behavior. Use for Spec Authoring work requiring standard-event conformance, event contract validation, and failure-semantics checks.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:aws-serverless-eda",
+        "agent-teams-workforce:skillspoke-events",
+        "aws-core:aws-messaging-and-streaming"
+      ],
+      "mcpServers": [
+        "aws-mcp"
+      ]
+    },
+    {
+      "name": "failure-mode-analyst",
+      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:senior-architect",
+        "agent-teams-workforce:observability-designer",
+        "agent-teams-workforce:effective-architecture"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "pg-aiguide"
+      ]
+    },
+    {
+      "name": "filing-clerk",
+      "description": "The documentation filing clerk for the SkillSpoke knowledge base. Hand it a fact, decision, definition, or note and it (1) searches the skillspoke-docs Obsidian vault — fast, from several angles — to see whether it is already documented, (2) hunts for any single-source-of-truth violation (an unmarked duplicate of something canonical), (3) if the fact is genuinely new, decides the one correct home and files it there with proper classification frontmatter, and (4) reports what it did and any conflicts for the owner to adjudicate. Use PROACTIVELY whenever the owner says things like \"if we don't have it already, note that…\", \"file this\", \"document that…\", \"make sure it's written down somewhere\", \"capture this\", \"record that we decided…\", \"add … to arc42 / the glossary / the docs\", or offloads a fact so he won't forget it. Examples: \"note in arc42 somewhere that we use Amazon Bedrock AgentCore and the Strands Agents SDK for our agent\" → clerk checks the SAD, files under §4 Solution Strategy if absent; \"define 'aging authority' in the glossary if it isn't there\" → clerk searches, adds a glossary term; \"record that student verification uses SheerID\" → clerk finds the right tech/spec doc and files it.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "obsidian:obsidian-cli",
+        "obsidian:obsidian-markdown",
+        "agent-teams-workforce:arc42",
+        "notebooklm",
+        "document-classification"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server"
+      ]
+    },
+    {
+      "name": "finops-analyst",
+      "description": "Analyzes pre-deployment feature cost posture — unit economics, scaling cost curves, budget impact — recommendations only, never decisions. Use for Deployment team work requiring cost analysis, unit economics modeling, and budget impact assessment. No workflow currently dispatches it.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:aws-cost-operations",
+        "aws-core:aws-billing-and-cost-management"
+      ],
+      "mcpServers": [
+        "aws-mcp"
+      ]
+    },
+    {
+      "name": "flaky-test-detector",
+      "description": "Verifies intermittent test failures via repeated controlled reruns; reports verified-flaky tests as findings only — never edits or disables tests. Use for Integration Testing work requiring flakiness verification, rerun-based reproduction, and root-cause findings. No workflow currently dispatches it.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:test-failure-mindset",
+        "agent-teams-workforce:find-cause",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "frontend-performance-optimizer",
+      "description": "Optimizes frontend performance in green-tested code without breaking tests. Use for Code Quality work requiring bundle trimming, render-path optimization, and Core Web Vitals improvement.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-frontend",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:typescript-coding",
+        "agent-teams-workforce:web-frontend-coding"
+      ],
+      "mcpServers": [
+        "context7",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "github-actions-pipeline-implementer",
+      "description": "Implements GitHub Actions workflows: OIDC authentication, caching, build, test, and deploy stages. Use for Deployment team work requiring CI/CD pipeline implementation, OIDC auth wiring, and deploy configuration.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-devops",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:resource-naming",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:shell-coding"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "glue-etl-implementer",
+      "description": "Implements Glue ETL jobs for batch data processing; writes minimum code to pass failing data-pipeline suites. Use for Implementation work requiring Glue job authoring, PySpark transformations, and batch pipeline construction.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-data-engineer",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "graphql-schema-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on GraphQL interfaces, which block exposes and resolves each operation and who may call it.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:api-design-reviewer",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "graphql-schema-reviewer",
+      "description": "Validates GraphQL schemas in specs against architecture decisions and AppSync contract patterns — resolver mappings, authorization directives. Use for Spec Authoring work requiring GraphQL conformance review, AppSync pattern checking, and decision-drift detection.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:api-design-reviewer"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "implementation-lead",
+      "description": "Selects the implementer(s) whose specialties cover a Task, in build order, from the Task's build contract — its spec documents and the architecture views it was designed against. Use for Implementation work requiring implementer selection.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:agent-orchestration",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server"
+      ]
+    },
+    {
+      "name": "incident-response-runbook-designer",
+      "description": "Produces operational runbooks: incident response procedures, rollback steps, and disaster recovery. Use for Deployment team work requiring runbook authoring, incident response design, and rollback documentation. No workflow currently dispatches it.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-devops",
+        "agent-teams-workforce:observability-designer",
+        "aws-core:aws-observability"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "infrastructure-security-scanner",
+      "description": "Scans project IaC and deployed test infrastructure, designated test environments only, for public exposure, over-broad IAM, missing encryption, and open security groups, reporting each with a minimal reproduction. Use for Adversarial Validation phase work requiring IaC security scanning, CDK and cloud-config review, and misconfiguration reporting.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-secops",
+        "agent-teams-workforce:aws-cdk-development",
+        "aws-core:aws-iam",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "injection-attack-tester",
+      "description": "Probes this project's endpoints in designated test environments only for SQL, NoSQL, command, and template injection; reports each confirmed path with a minimal reproduction. Use for Adversarial Validation phase work requiring injection probing and input-boundary attack.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-secops",
+        "agent-teams-workforce:aurora-postgresql",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "awslabs-postgres-mcp-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "integration-pattern-architect",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on service boundaries, synchronous and event integration, and delivery and failure behaviour.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:senior-architect",
+        "agent-teams-workforce:aws-serverless-eda",
+        "agent-teams-workforce:effective-architecture",
+        "aws-core:aws-serverless",
+        "aws-core:aws-messaging-and-streaming",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "integration-testing-lead",
+      "description": "Read-only selector for the integration workflow when contract surfaces are unavailable. Chooses the fewest applicable suites and whether provisioning must precede them, returning suites, provisionEnv and rationale. Does not dispatch workers, run tests, aggregate results, classify failures or judge gates.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:agent-orchestration"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "ios-swiftui-implementer",
+      "description": "Implements iOS features in SwiftUI; writes minimum code to pass failing XCUITest suites. Use for Implementation work requiring SwiftUI views, StoreKit purchase flows, on-device CoreML integration, and passkey/WebAuthn client wiring.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:software-engineering"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "context7",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "kinesis-stream-implementer",
+      "description": "Implements Kinesis stream producers and consumers — record serialization, partition keys, checkpointing — writing minimum code to pass failing data-pipeline tests. Use for Implementation work requiring stream producer authoring, consumer logic, and event contract adherence.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-data-engineer",
+        "agent-teams-workforce:aws-serverless-eda",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:resource-naming",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-messaging-and-streaming",
+        "aws-core:aws-sdk-python-usage"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "aws-mcp",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "lambda-performance-optimizer",
+      "description": "Optimizes Lambda cold start, memory sizing, and hot paths in green-tested code without breaking tests or behavior. Use for Code Quality work requiring cold-start reduction, memory tuning, and hot-path optimization.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:lambda",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-serverless",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "llm-observability-implementer",
+      "description": "Implements LLM observability — prompt/response logging, token and cost metrics, drift alerts — writing minimum code to pass failing tests. Use for Implementation work requiring LLM telemetry instrumentation, quality-signal capture, and drift alerting.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-ml-engineer",
+        "agent-teams-workforce:observability-designer",
+        "agent-teams-workforce:senior-prompt-engineer",
+        "agent-teams-workforce:aws-agentic-ai",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-observability",
+        "aws-core:amazon-bedrock"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "aws-mcp",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "matching-algorithm-implementer",
+      "description": "Implements matching and recommendation algorithms for ML features; writes minimum code to pass failing unit tests. Use for Implementation work requiring matching logic, scoring and ranking functions, and recommendation pipelines.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-ml-engineer",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:aurora-postgresql"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "pg-aiguide",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "mcp-server-implementer",
+      "description": "Implements MCP servers on AWS, including AgentCore Gateway-fronted deployments — tool definitions and schemas, authorization, transport config, CDK deployment wiring. Use for Implementation work requiring MCP tool definitions, gateway-fronted deployments, and CDK wiring.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:mcp-server-builder",
+        "agent-teams-workforce:aws-agentic-ai",
+        "agent-teams-workforce:aws-mcp-setup",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:resource-naming",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:amazon-bedrock",
+        "aws-core:aws-cdk"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "aws-mcp",
+        "context7",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "ml-evaluation-tester",
+      "description": "Writes and runs ML evaluation suites — matching quality, recommendation relevance, embedding drift — confirming each fails before the component exists. Use for Test Design work requiring ML evaluation design, metric/threshold encoding, dataset construction, and drift detection.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-ml-engineer",
+        "agent-teams-workforce:senior-data-scientist",
+        "agent-teams-workforce:cumulative-regression",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "mobile-e2e-test-writer",
+      "description": "Writes failing Detox and Maestro E2E tests for React Native and cross-platform mobile flows before implementation, confirming each fails for the intended reason. Use for Test Design work requiring mobile E2E authoring, Detox and Maestro scripting, and Red confirmation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-qa",
+        "agent-teams-workforce:cumulative-regression",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:typescript-coding",
+        "agent-teams-workforce:web-frontend-coding"
+      ],
+      "mcpServers": [
+        "context7",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "nextjs-component-implementer",
+      "description": "Implements the non-visual React/Next.js work — component state, data fetching, Next.js routing — writing minimum code to pass failing unit tests. Visual component and page work goes to cds:cds-ui-author, which builds with the cds design system.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-frontend",
+        "agent-teams-workforce:a11y-audit",
+        "agent-teams-workforce:senior-fullstack",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:typescript-coding",
+        "agent-teams-workforce:web-frontend-coding"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "context7",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "nfr-analyst",
+      "description": "Extracts non-functional requirements from the raw PRD and flags unstated implied NFRs; never resolves or quantifies them. Use for PRD Validation work requiring NFR extraction, implied-NFR detection, and quality-attribute analysis.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:product-discovery"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "okr-writer",
+      "description": "Derives the OKR cascade from strategy docs and the intake brief — objectives, key results, leading vs. lagging indicators. Use for PRD Creation work requiring goal cascading, key-result quantification, and indicator classification.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:product-strategist",
+        "agent-teams-workforce:product-analytics"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "openapi-contract-reviewer",
+      "description": "The independent reviewer session for Spec Authoring: reviews one repository's contracts document, data-model document and acceptance criteria against the specs-and-Tasks criteria (I1 to I7) of the review standard, once, and returns findings a document's author can correct without interpretation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:api-design-reviewer",
+        "agent-teams-workforce:skillspoke-events",
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:aurora-postgresql",
+        "agent-teams-workforce:design-postgres-tables"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "awslabs-dynamodb-mcp-server",
+        "pg-aiguide",
+        "awslabs-postgres-mcp-server"
+      ]
+    },
+    {
+      "name": "operational-readiness-reviewer",
+      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:observability-designer",
+        "agent-teams-workforce:effective-architecture",
+        "aws-core:aws-observability"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server"
+      ]
+    },
+    {
+      "name": "payments-integration-implementer",
+      "description": "Implements Stripe payment features: checkout sessions, webhook handlers built on the chassis, subscription lifecycle, refunds, and idempotent operations, with secrets in Secrets Manager. Use for Implementation work requiring Stripe integration, payment webhook handling, and subscription lifecycle management.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:stripe-integration-expert",
+        "agent-teams-workforce:secrets-manager",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:skillspoke-events",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-serverless",
+        "aws-core:aws-secrets-manager"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "aws-mcp",
+        "context7",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "performance-benchmark-writer",
+      "description": "Writes failing performance benchmarks with budgets from the spec's non-functional requirements. Use for Test Design work requiring benchmark authoring, NFR-to-budget translation, and Red confirmation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-qa",
+        "agent-teams-workforce:cumulative-regression",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "permission-escalation-tester",
+      "description": "Attempts horizontal and vertical privilege escalation against this project's own IAM and authorization model in designated test environments only, reporting each confirmed escalation with a minimal reproduction. Use for Adversarial Validation phase work requiring authorization attack and IAM-model probing.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-secops",
+        "agent-teams-workforce:iam",
+        "aws-core:aws-iam",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "persistence-architecture-specialist",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on which block owns each store, what it holds, consistency and data lifecycle.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:dynamodb",
+        "agent-teams-workforce:database-schema-designer",
+        "agent-teams-workforce:effective-architecture",
+        "aws-core:aws-database",
+        "agent-teams-workforce:aurora-postgresql",
+        "agent-teams-workforce:design-postgres-tables",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "awslabs-dynamodb-mcp-server",
+        "mcp-graphrag-server",
+        "pg-aiguide",
+        "awslabs-postgres-mcp-server",
+        "awslabs-amazon-neptune-mcp-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "persona-profile-writer",
+      "description": "Generates data-driven persona profiles from research — behavioral segments, jobs-to-be-done, empathy maps. Use for PRD Creation work requiring behavioral segmentation, jobs-to-be-done framing, and empathy mapping.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:product-discovery",
+        "agent-teams-workforce:product-analytics"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "phase-gate-enforcer",
+      "description": "Referee for the constitutive criteria of the phase gates in both SDLC pipelines: enforces constitutive constraints as hard stops and returns pass/loop/escalate with structured feedback; competitive criteria are recorded as flags by the gate script and never reach it. Use for Governance work requiring gate adjudication, constitutive-constraint enforcement, and conflict classification.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:cumulative-regression"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "playwright-e2e-web-test-writer",
+      "description": "Writes failing Playwright E2E web tests for UI and API flows from spec acceptance criteria. Use for Test Design work requiring E2E test authoring, user journey coverage, and Red confirmation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-qa",
+        "agent-teams-workforce:a11y-audit",
+        "agent-teams-workforce:cumulative-regression",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:typescript-coding",
+        "agent-teams-workforce:web-frontend-coding"
+      ],
+      "mcpServers": [
+        "context7",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "polyrepo-steward",
+      "description": "The one place to ask about anything concerning this project's repositories, other than work inside a repository's contents. It answers by pointing to the canonical source of each answer, which it does not own, and is the official source only for what exists nowhere else. Answers from live git and GitHub facts and from the matrix's stacks: how many repos there are, which repo owns a piece of functionality, which repos hold the services and components something depends on, whether a repo has uncommitted files, when it was last updated, whether it is up to date with GitHub `main`, which repos contain Python, CDK, TypeScript, JavaScript or web code and which linter, type-check, pre-commit and CI checker configurations each carries (with identical copies grouped and missing checks named). Does the repository work itself: creates a repo from a template (locally and on GitHub), renames, deprecates and archives repos, rebases repos on `origin/main`, searches text across repos, propagates the shared `AGENTS.md` block and the shared hook registrations, and keeps its own records and the matrix's stacks true to the repositories without being asked. Use it whenever work touches or may touch more than one repo, or when anyone asks \"how many repos\", \"where does X live\", \"which repo owns Y\", \"what depends on Z\", \"is X up to date\", \"create/rename/deprecate this repo\". A caller that needs repository facts in order to do repository work hands the work here instead.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:polyrepo-repo",
+        "agent-teams-workforce:polyrepo-info",
+        "agent-teams-workforce:polyrepo-governance",
+        "agent-teams-workforce:polyrepo-beads",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering"
+      ],
+      "mcpServers": [
+        "gitnexus",
+        "mcp-graphrag-server"
+      ]
+    },
+    {
+      "name": "postgresql-access-layer-implementer",
+      "description": "Implements Aurora PostgreSQL access patterns through the RDS Data API from the data model spec, and the schema migrations they need; writes minimum code to pass failing tests. Use for Implementation work requiring relational queries, transactions, migrations, and pgvector or recursive graph queries over a PostgreSQL store.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:aurora-postgresql",
+        "agent-teams-workforce:design-postgres-tables",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:resource-naming",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-sdk-python-usage",
+        "aws-core:aws-database"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "pg-aiguide",
+        "awslabs-postgres-mcp-server",
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "power-tools-configuration-implementer",
+      "description": "Configures Lambda Power Tools — structured logging, tracing, metrics, idempotency — on Lambdas built on the chassis; configures, never rebuilds. Use for Implementation work requiring Power Tools configuration, idempotency setup, and observability wiring.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:lambda",
+        "agent-teams-workforce:secrets-manager",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:resource-naming",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-serverless",
+        "aws-core:aws-observability"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "aws-mcp",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "prd-alignment-verifier",
+      "description": "Independently judges whether a draft PRD aligns with the intake brief, persona and objective it was written from, and is template-conformant and WHAT-not-HOW. Use as the checker of the PRD draft in prd-creation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:product-discovery",
+        "agent-teams-workforce:prd-writer"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "prd-creation-lead",
+      "description": "Routes stakeholder requests through intake, persona, OKR, and PRD drafting, then hands off to prd-validation-lead — makes no product decisions. Use for PRD Creation work requiring sequenced delegation, artifact tracking, and validation handoff.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:agent-orchestration"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "prd-trd-traceability-verifier",
+      "description": "Builds and checks the TRD's SOURCE traceability matrix: every TRD requirement anchored to a PRD requirement OR to an architecture view, every PRD requirement needing technical elaboration answered, and genuine scope drift flagged. The relation is not 1:1 and an architecture-sourced requirement is not an orphan. Use for TRD Authoring work requiring requirement-to-technical-requirement tracing, architecture anchoring, and scope-drift detection. No workflow currently dispatches it.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "prd-validation-analyst",
+      "description": "Independently checks a PRD against the caller supplied requirement lenses, with no authoring authority.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:artifact-handoff"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "prd-validation-lead",
+      "description": "Manual-only coordinator for explicitly assigned PRD validation work. Selects bounded analysts and routes their findings without making solution or approval decisions. The active prd-validation mini uses one analyst session across seven lenses and does not dispatch this lead.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:agent-orchestration",
+        "agent-teams-workforce:product-discovery",
+        "agent-teams-workforce:prd-writer"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "prd-writer",
+      "description": "Drafts the full PRD from the intake brief, persona profiles, and OKR cascade: scope, requirements, success metrics, competitive context. Use for PRD Creation work requiring requirement drafting, scope articulation, and success-metric derivation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:product-discovery",
+        "agent-teams-workforce:prd-writer"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "production-readiness-review-facilitator",
+      "description": "Coordinates the production readiness review: collects artifacts, routes them to reviewers, assembles the readiness packet; facilitates only, never decides readiness. Use for Deployment team work requiring review coordination, reviewer routing, and readiness packet assembly.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:agent-orchestration"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "race-condition-tester",
+      "description": "Probes this project's concurrent flows in designated test environments only for race conditions and idempotency gaps — TOCTOU, double-spend, lost updates, replay duplication — reporting each defect with a minimal reproduction. Use for Adversarial Validation phase work requiring concurrency attack and idempotency probing.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-secops",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "react-native-implementer",
+      "description": "Implements React Native cross-platform mobile features; writes minimum code to pass failing Detox and Maestro tests. Use for Implementation work requiring React Native components, navigation and state wiring, and native module integration.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-frontend",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:typescript-coding",
+        "agent-teams-workforce:web-frontend-coding"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "context7",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "readme-writer",
+      "description": "Writes and maintains README files — setup, usage, onboarding — derived from shipped code and pipelines. Use for cross-cutting Documentation team work requiring README authoring, setup documentation, and onboarding flow writing.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "recommendation-engine-implementer",
+      "description": "Implements recommendation engine components for ML features; writes minimum code to pass failing unit tests. Use for Implementation work requiring recommendation pipeline assembly, candidate sourcing, re-ranking, and serving-layer composition.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-ml-engineer",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:aurora-postgresql"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "pg-aiguide",
+        "awslabs-amazon-neptune-mcp-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "regression-coverage-reviewer",
+      "description": "Independently checks cumulative requirement discovery, regression mappings and justified supersession against source artifacts.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:cumulative-regression",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "regression-impact-assessor",
+      "description": "Maps changed components to all affected current requirements and cumulative regression tests, retaining requirements across PRDs.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:cumulative-regression",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "requirements-clarifier",
+      "description": "Identifies ambiguous, incomplete, or conflicting PRD requirements, returning structured clarification requests without resolving them. Use for PRD Validation work requiring requirements analysis and clarification drafting.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:product-discovery"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "requirements-conflict-detector",
+      "description": "Identifies PRD requirements that contradict each other, returning a structured conflict report; never resolves. Use for PRD Validation work requiring contradiction analysis and conflict classification.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:product-discovery"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "root-cause-analyst",
+      "description": "Diagnoses a bug bead read-only: the reproduction, the root cause, the distinct defects behind it, the files a fix must change, the blast radius, the surfaces the fix touches, and the repository it lives in; never fixes. No workflow currently dispatches it. Use for bug diagnosis requiring evidence-chain analysis.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:find-cause",
+        "agent-teams-workforce:test-failure-mindset",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:artifact-handoff"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "s3-data-lake-implementer",
+      "description": "Implements S3 data lake layout, partitioning, and lifecycle policies; writes minimum code to pass failing data-pipeline tests. Use for Implementation work requiring lake layout, partition key construction, and lifecycle policy definition.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-data-engineer",
+        "agent-teams-workforce:s3",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:resource-naming",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-storage",
+        "aws-core:aws-sdk-python-usage"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "sdlc-pipeline-orchestrator",
+      "description": "Workflow-only orchestrator for the SDLC specification and delivery pipelines: sequences phases, dispatches team leads, routes Phase Gate Enforcer outcomes, tracks work state — never evaluates quality. Use for Governance work requiring phase sequencing, team-lead dispatch, gate-outcome routing, and work-state tracking.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:agent-orchestration",
+        "agent-teams-workforce:beads-contract"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "security-architecture-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on trust boundaries, identities, authorization, IAM, encryption and threat mitigation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:senior-security",
+        "agent-teams-workforce:iam",
+        "agent-teams-workforce:secrets-manager",
+        "agent-teams-workforce:effective-architecture",
+        "aws-core:aws-iam",
+        "aws-core:aws-auth",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "security-test-case-designer",
+      "description": "Designs failing security test cases from the threat model: abuse cases, negative paths, authorization matrices. Use for Test Design work requiring threat-model-driven test design, abuse case coverage, and authorization matrix verification.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-security",
+        "agent-teams-workforce:cumulative-regression",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "shared-capability-reviewer",
+      "description": "Rule whether a new function duplicates a behaviour that a shared capability provides.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "slo-error-budget-designer",
+      "description": "Designs SLOs and error budgets: SLIs, targets, burn-rate alerts, budget policies. Use for Deployment team work requiring SLO design, error budget policy, SLI selection, and CloudWatch alerting design. No workflow currently dispatches it.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:observability-designer",
+        "agent-teams-workforce:cloudwatch",
+        "aws-core:aws-observability"
+      ],
+      "mcpServers": [
+        "aws-mcp"
+      ]
+    },
+    {
+      "name": "smoke-test-author",
+      "description": "Writes post-deployment smoke tests verifying the feature's critical paths against live endpoints. Use for Deployment team work requiring smoke test authoring, post-deployment verification, and critical-path coverage.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-qa",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "spec-authoring-lead",
+      "description": "Routes maker output to checkers and findings back to makers until checkers pass, then routes the spec to Gate 3; never evaluates spec quality, only pass/rework signals. Use for Spec Authoring work requiring maker-checker loop coordination, delegation, and read-only orchestration.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:agent-orchestration"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "spec-currency-validator",
+      "description": "Validates the spec still matches project reality before implementation begins, flagging drift since authoring. Use for Spec Freshness phase work requiring spec-to-codebase comparison, drift detection, and currency evidence gathering.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "spec-decider",
+      "description": "Rules on each spec review finding that the author of the document disputes — the finding stands or the document stands — and states the directive the author applies; generates no spec content or analysis. Use for Spec Authoring work requiring decision adjudication, deadlock resolution, and rationale recording.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-architect",
+        "agent-teams-workforce:cove-prompt-design",
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:effective-architecture"
+      ],
+      "mcpServers": [
+        "aws-mcp"
+      ]
+    },
+    {
+      "name": "spec-freshness-lead",
+      "description": "Routes spec freshness checks to validators and aggregates findings into a gate packet for workflow-2 Gate 1. Use for Spec Freshness phase work requiring delegation, validation routing, and gate packet assembly. No workflow currently dispatches it.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:agent-orchestration"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "stakeholder-request-intake-writer",
+      "description": "Converts raw stakeholder requests into a structured intake brief: requestor, problem, desired outcome, constraints, urgency. Use for PRD Creation work requiring request structuring, problem framing, and urgency classification.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:product-discovery"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "task-decomposer",
+      "description": "Decompose what one Story builds into coherent, sized build Tasks in one repository.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:beads-contract",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:wsjf"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "task-dependency-mapper",
+      "description": "Identify justified build dependencies between Tasks of different Stories.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:beads-contract",
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "tdd-unit-test-generator",
+      "description": "Writes failing unit tests from spec acceptance criteria before implementation exists, confirming each fails for the intended reason. Use for Test Design work requiring unit test authoring, criterion-to-test translation, fixture/mock design, and Red confirmation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:tdd-guide",
+        "agent-teams-workforce:cumulative-regression",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "test-command-resolver",
+      "description": "Resolves the applicable test command from repository instructions and configuration without running tests.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:test-failure-mindset"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "test-coverage-gap-reviewer",
+      "description": "Establishes, before any test is written, which acceptance criteria the repository's existing tests already encode, and — when every criterion is covered — runs only those tests and rules whether they are red, already-satisfied or not-encoded. The tdd-red workflow dispatches it for both steps. Never writes or repairs a test.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-qa",
+        "agent-teams-workforce:cumulative-regression",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "test-design-lead",
+      "description": "Routes spec acceptance criteria to test writers, confirms Red (every new test fails), and reports to Gate 2a. Use for Test Design work requiring delegation, criterion-to-test routing, and gate reporting.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:agent-orchestration"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "test-environment-orchestrator",
+      "description": "Provisions and resets integration test environments — the event path, functions and data stores the suites depend on — confirming readiness. Use for Integration Testing work requiring environment provisioning, state reset, fixture seeding, and readiness confirmation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-devops",
+        "agent-teams-workforce:aws-mcp-setup",
+        "aws-core:aws-cdk",
+        "agent-teams-workforce:aurora-postgresql"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "awslabs-dynamodb-mcp-server"
+      ]
+    },
+    {
+      "name": "test-failure-parser",
+      "description": "Extracts concrete failing test identifiers and errors from a saved test log without rerunning tests.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:test-failure-mindset"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "test-isolation-specialist",
+      "description": "Validates test independence — no shared mutable state, isolated fixtures — reporting isolation defects without fixing them. Use for Test Design work requiring isolation validation, order-dependence detection, fixture audit, and flakiness prevention.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:tdd-guide",
+        "agent-teams-workforce:test-failure-mindset",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "test-plan-strategy-reviewer",
+      "description": "Reviews the test plan strategy for pyramid balance, risk coverage, and environment needs; reports findings only. Use for Test Design work requiring strategy review, pyramid balance assessment, and risk coverage validation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-qa",
+        "agent-teams-workforce:cumulative-regression"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "test-strategy-decider",
+      "description": "Decides the feature's test strategy — pyramid shape, environment matrix, coverage thresholds — from analyses routed by the calling workflow; generates no analysis of its own. Use for Test Design work requiring strategy adjudication, evidence weighing, and rationale recording.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-qa",
+        "agent-teams-workforce:cove-prompt-design"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "trd-author",
+      "description": "Write and keep current the technical obligations of this PRD and its architecture.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:effective-architecture"
+      ],
+      "mcpServers": [
+        "aws-mcp"
+      ]
+    },
+    {
+      "name": "trd-decider",
+      "description": "Rules on competing TRD approaches, maker-checker deadlocks, and checker conflicts routed by whoever delegated the task; generates no TRD content or analysis. Use for TRD Authoring work requiring decision adjudication, deadlock resolution, and rationale recording. No workflow currently dispatches it.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-architect"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "trd-validator",
+      "description": "Review the unapproved TRD requirements of one Epic against the technical-requirement criteria.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:effective-architecture"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "ubiquitous-language-writer",
+      "description": "Captures each bounded context's ubiquitous language — terms, definitions, usage rules — as a maintained glossary. Use for Architecture Analysis work requiring domain glossary authoring, terminology consistency, and language-to-code alignment.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-architect"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "uml-diagram-author",
+      "description": "Draw one UML diagram of a settled design for the solutions architect.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:architecture-diagramming",
+        "agent-teams-workforce:uml-diagramming",
+        "agent-teams-workforce:effective-architecture"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server"
+      ]
+    },
+    {
+      "name": "user-guide-writer",
+      "description": "Writes user-facing feature guides from specs and shipped behavior. Use for cross-cutting Documentation team work requiring feature guide writing, task-oriented walkthroughs, and audience-appropriate explanation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:roadmap-communicator"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "user-story-reviewer",
+      "description": "Validates every user story is complete, testable, and scoped to its single task; reports findings, never fixes. Use for Task Decomposition work requiring story validation, testability auditing, and scope challenge.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:product-discovery",
+        "agent-teams-workforce:beads-contract"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "user-story-writer",
+      "description": "Writes the ONE Story bead a Spec pairs with — a single-repository container with a title, a description and the out-of-repo work the Epic's closure in the matrix holds. Use for Spec Authoring work requiring the Story that pairs with a Spec.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "vector-search-embeddings-implementer",
+      "description": "Implements vector search and embeddings for ML features — embedding generation, index read/write, similarity queries. Use for Implementation work requiring embedding pipelines, vector index access, and similarity queries.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:rag-architect",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:amazon-bedrock",
+        "aws-core:aws-sdk-python-usage",
+        "agent-teams-workforce:aurora-postgresql",
+        "agent-teams-workforce:pgvector-semantic-search"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "pg-aiguide",
+        "awslabs-postgres-mcp-server",
+        "awslabs-amazon-neptune-mcp-server",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "webauthn-implementer",
+      "description": "Implements WebAuthn passkey flows across web clients and the Cognito-backed auth stack: registration and authentication ceremonies with client-side handling. Use for Implementation work requiring WebAuthn ceremony wiring, passkey credential lifecycle, and Cognito integration.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-frontend",
+        "agent-teams-workforce:cognito",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-auth",
+        "agent-teams-workforce:typescript-coding",
+        "agent-teams-workforce:web-frontend-coding"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "context7",
+        "gitnexus"
+      ]
+    },
+    {
+      "name": "workflow-command-runner",
+      "description": "Executes one workflow-supplied checksum-guarded deterministic command and returns its exact compact machine receipt; never interprets or authors its payload.",
+      "skills": [
+        "agent-teams-workforce:artifact-handoff"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "worktree-independent-verifier",
+      "description": "Independently reports the raw git facts about each of the filesystem paths it is given — their git-dir, their git-common-dir and their checked-out branch — including for the repository the tree is supposed to belong to. Use for Workspace phase work requiring segregation of duties: it is dispatched separately from whoever provisioned the tree, is never told what that provisioner claimed, and reports only what git printed so the calling script can compare the two accounts.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "wsjf-scorer",
+      "description": "Judges Epic or Task WSJF inputs against the caller-selected rubric, using authoritative requirements and existing-work evidence. Supplies scores and uncertainty; deterministic scripts compute rankings and persist metadata.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:product-strategist",
+        "agent-teams-workforce:wsjf",
+        "agent-teams-workforce:beads-contract",
+        "agent-teams-workforce:artifact-handoff"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "wsjf-scoring-reviewer",
+      "description": "Validates the job sizes behind task WSJF scores are internally consistent, evidence-backed, and defensible; reports findings, never fixes. Use for Task Decomposition work requiring scoring validation, consistency auditing, and prioritization challenge. No workflow currently dispatches it.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:product-strategist",
+        "agent-teams-workforce:wsjf"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "xcuitest-writer",
+      "description": "Writes failing XCUITest suites for iOS features from spec acceptance criteria pre-implementation, confirming each fails for the intended reason. Use for Test Design work requiring XCUITest authoring, iOS UI flow coverage, accessibility-identifier queries, and Red confirmation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-qa",
+        "agent-teams-workforce:tdd-guide",
+        "agent-teams-workforce:cumulative-regression",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:software-engineering"
+      ],
+      "mcpServers": [
+        "context7",
+        "gitnexus"
+      ]
+    }
+  ]
+}

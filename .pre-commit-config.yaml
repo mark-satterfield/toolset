@@ -31,3 +31,9 @@ repos:
         language: system
         files: ^(plugins/agent-teams-workforce/(orchestrator|scripts/portfolio|skills/(beads-contract|wsjf)/scripts)/.*\.py|\.pre-commit-config\.yaml|mypy\.ini)$
         pass_filenames: false
+      - id: specialist-catalog-fresh
+        name: Specialist catalog matches the agent definitions
+        entry: uv run --no-project --python 3.14 --with pyyaml python plugins/agent-teams-workforce/skills/find-specialists/scripts/specialist_catalog.py generate --check
+        language: system
+        files: ^(plugins/agent-teams-workforce/(agents/.*\.md|skills/find-specialists/.*)|\.pre-commit-config\.yaml)$
+        pass_filenames: false

@@ -16,10 +16,11 @@ approved; anything new or changed is updated in the matrix. The matrix never sho
 architecture is complete, correct or good. Every conclusion it reaches,
 `no-change-needed` included, goes through the check and the review. The script starts sessions, records steps and carries results. It decides nothing
 about who the architect asks, in what order or how often. Every step is one step of the Epic's
-journal, and the journal alone decides where a run begins. The script names agents by the `role`
-their definitions state (`solutions-architect`, `design-specialist`, `diagram-author`,
-`trd-author`, `document-maintainer`, `repository-steward`, `architecture-reviewer`,
-`architecture-lead`, `decider`), never by name.
+journal, and the journal alone decides where a run begins. The script names the agents of the
+fixed steps by name (`aws-solutions-architect`, `trd-author`, `architecture-maintainer`,
+`architecture-team-lead`, `architecture-decider`; `orchestrator/flows/architecture_files.py`),
+and the architecture reviewers by the `architecture-reviewer` role their definitions state. Every
+other agent it starts is one the architect or the lead named; no code chooses it.
 
 `<arch-work>` is `<work>/architecture/`.
 
@@ -69,7 +70,16 @@ session's one corrective resume). The step that accepts the result then makes th
 in the matrix what the result states of the Epic's features (`servedBy`, `realizedBy`,
 `supportedBy`, and `covers` from each document heading that describes a feature), and fails only
 when the matrix written does not hold it. It records the file `architecture result` and the values
-`conclusion` and `requirements with no feature`.
+`conclusion` and `requirements with no feature`. The output check also refuses a `requests` entry
+naming an agent the `find-specialists` catalog (`skills/find-specialists/catalog.json`) does not
+list.
+
+Each entry of the result's `requests` is work the architect has an agent do outside its own
+session. The accepting step writes each request beside its answer path
+(`<answer stem>.request.json`) and plans, below its own step, one step per request whose answer
+file is not yet a valid answer, performed by the agent the entry names and handed the request
+file as the parameter `request`; then a step "Finish" of the architect whose inputs are those
+steps, so it is handed each `answer`. The architect's step stays running until they are done.
 
 The same launch builder serves every step the architect performs: the first, its "Finish", a
 correction after the mechanical check or after findings, and a competing design the lead plans.
@@ -79,8 +89,8 @@ the partial result. A step after the first updates the result file in place and 
 architect's session: the "Finish" step continues the session of the step above it, and any other
 later step continues the nearest earlier session the agent holds in the journal.
 
-The architect starts the agents a gap in the PRD needs inside its own session: design specialists,
-diagram authors, the repository steward, the TRD author and the document maintainer. It records
+The architect starts the agents the PRD needs inside its own session, by the names it chose from
+the `find-specialists` catalog, and the TRD author and the document maintainer. It records
 each as a child step of its own step with `atw-step-journal`, with the request file it wrote, and
 adds a last child step "Finish", by the protocol in `helper-steps.schema.json`. When its session
 ends, the runner reads the journal again:
@@ -92,7 +102,7 @@ ends, the runner reads the journal again:
 
 | Helper left running | Request artifact | Output | Records |
 |---|---|---|---|
-| a design specialist, a diagram author, the repository steward | `request` or `question` | the answer path the request names | the request, file `answer`. The repository steward places nothing: an entry the architect's result builds in no stack fails the architect's output check |
+| any agent the architect or the lead named (the launch builder registered for every catalog agent with no builder of its own, `journal_registry.any_agent_step`) | the step's parameter `request`, else `request` or `question` | the answer path the request names | the request, file `answer`. The repository steward places nothing: an entry the architect's result builds in no stack fails the architect's output check |
 | `trd-author` | `request` | the answer path the request names; the TRD at the path the request names is kept and updated in place | the request, file `TRD`, file `answer`, value `obligations with no source`, value `constraints recorded`. The step records one `constraint` for each requirement the answer lists under `requirements` (every requirement that write added or changed), as a pointer `trd` (the Epic and the requirement id, a heading of the TRD) with no copy of its text, with `statedIn` and `appliesTo`, removes the constraint of each id the answer lists under `removed`, and records one with no `statedIn` for each `noSource` obligation; it fails when the matrix refuses one |
 | `architecture-maintainer` | `write request` or `request` | the result path the request names | the request, file `what was written`, value `documents synced`. The session is granted the architecture root, where it writes; the step sets each document written that exists `in-review` in its front matter (`matrixsync.set_lifecycle`), so the check, the review and the promotion of this run reach it, then runs `sync-documents --paths` on the documents written |
 
@@ -161,7 +171,7 @@ reviewer's scope is taken out of the review file and counted (value
 The first review that returns a finding, or asks for alternatives, plans one step for
 `architecture-team-lead` after the last reviewer and before the promotion step. The lead is handed
 the reviews that raised something as `findings` and the `architecture result`; it reads the
-design specialists from the agent definitions whose role is design-specialist. It writes its routing
+specialist it asks for an opinion from the `find-specialists` catalog. It writes its routing
 (`<arch-work>/routing-<step>.json`) and adds the steps its routing calls for under its own step,
 with a last child step "Finish": a correction by the architect with a re-check by the reviewer
 that raised the finding, a specialist's opinion, a competing design, or a ruling. A re-check is a

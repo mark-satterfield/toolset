@@ -2,7 +2,9 @@
 
 A flow module fills the registry when it is imported: ``@script_step("<key>")`` registers the
 handler of the script steps whose ``script`` text is that key, and ``@agent_step("<agent>", ...)``
-registers the launch builder of the steps those agents perform. The journal runner asks the
+registers the launch builder of the steps those agents perform, and
+``@any_agent_step(<names>)`` registers one launch builder for every other agent of a set: an agent
+another module chose by name at run time, which no flow lists. The journal runner asks the
 registry for the code of each step it runs; a step whose key or agent has none fails with a
 structured error.
 
@@ -35,6 +37,7 @@ class Registry:
         """Start with no handler, no builder and no plan under a container."""
         self._scripts: dict[str, ScriptHandler] = {}
         self._agents: dict[str, AgentBuilder] = {}
+        self._any_agent: tuple[frozenset[str], AgentBuilder] | None = None
         self._containers: dict[str, tuple[StepPlan, ...]] = {}
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -76,8 +79,23 @@ class Registry:
         if "script" in step:
             return step["script"] in self._scripts
         if "agent" in step:
-            return step["agent"] in self._agents
+            return self._builder(step["agent"]) is not None
         return False
+
+    def _builder(self, name: str) -> AgentBuilder | None:
+        """Find the launch builder of one agent: its own, else the one for any agent of the set.
+
+        Returns:
+            The builder; None when the agent has none and is not in the set.
+
+        """
+        own: AgentBuilder | None = self._agents.get(name)
+        if own is not None or self._any_agent is None:
+            return own
+        names: frozenset[str]
+        builder: AgentBuilder
+        names, builder = self._any_agent
+        return builder if name in names else None
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def script_step(self, key: str) -> Callable[[ScriptHandler], ScriptHandler]:
@@ -124,6 +142,30 @@ class Registry:
         return register
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def any_agent_step(self, agents: frozenset[str]) -> Callable[[AgentBuilder], AgentBuilder]:
+        """Register one launch builder for every agent of a set that has no builder of its own.
+
+        An agent registered with ``agent_step`` keeps its own builder, whenever it is registered.
+
+        Returns:
+            The decorator, which returns the builder unchanged.
+
+        Raises:
+            ValueError: The set is empty or holds a blank name, or a builder for any agent is
+                already registered.
+
+        """
+        if not agents or any(not name.strip() for name in agents) or self._any_agent is not None:
+            message: str = "the set of agents is empty, holds a blank name, or a builder for any agent exists"
+            raise ValueError(message)
+
+        def register(builder: AgentBuilder) -> AgentBuilder:
+            self._any_agent = (agents, builder)
+            return builder
+
+        return register
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def script(self, step: Step) -> ScriptHandler:
         """Find the handler of a script step.
 
@@ -156,7 +198,7 @@ class Registry:
 
         """
         name: str = step.get("agent", "")
-        builder: AgentBuilder | None = self._agents.get(name)
+        builder: AgentBuilder | None = self._builder(name)
         if builder is None:
             raise StepError(
                 stage_of(step),
@@ -170,4 +212,5 @@ REGISTRY: Final[Registry] = Registry()
 """The registry the flow modules fill when they are imported."""
 script_step: Final = REGISTRY.script_step
 agent_step: Final = REGISTRY.agent_step
+any_agent_step: Final = REGISTRY.any_agent_step
 plan_under: Final = REGISTRY.plan_under

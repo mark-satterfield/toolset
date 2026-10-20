@@ -43,17 +43,16 @@ from orchestrator.core.journal_steps import (
     value_artifact,
 )
 from orchestrator.flows.architecture_files import (
+    ARCHITECT,
     ARCHITECTURE_FOLDER,
     ARTIFACT_CHECK,
     CHECK,
     LABEL_PRD,
     LABEL_SCOPE,
+    LEAD,
     PROMOTE,
-    ROLE_ARCHITECT,
-    ROLE_LEAD,
     ArchitectureContext,
     ArchitectureStepError,
-    agents_with_role,
     cited_document,
     journal_file,
     lead_resolved,
@@ -475,7 +474,7 @@ def _correction(run: StepRun, check: CheckResult, path: Path) -> Completion:
             f"the mechanical check still finds defects after {MAX_CORRECTIONS} corrections; see {path}",
             *check["problems"],
         )
-    architect: str = agents_with_role(run.tools.plugin, ROLE_ARCHITECT)[0]
+    architect: str = ARCHITECT
     plan: StepPlan = {
         "ref": "correction",
         "description": CORRECTION_DESCRIPTION,
@@ -536,7 +535,7 @@ def check(run: StepRun) -> Completion:
         result["addedOrChangedElements"],
     )
     recorded.extend(_review_files(folder, scope, unlinked))
-    lead: str = agents_with_role(run.tools.plugin, ROLE_LEAD)[0]
+    lead: str = LEAD
     if result["conclusion"] == CONCLUSION_UNSETTLED and lead_resolved(run, lead) is None:
         routing: StepPlan = {
             "ref": "lead",

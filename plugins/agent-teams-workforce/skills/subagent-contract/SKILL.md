@@ -11,8 +11,7 @@ Perform the role in your definition. The brief is the artifact-handoff skill's
 the inputs this step needs. The skills your
 definition lists are in your context; read the applicable contract before writing. The artifact-handoff skill is the shared producer/reviewer authority.
 Write the result file; Python validates it, records it in the step journal and keeps pipeline state.
-Start another agent by its plain front-matter name (`trd-author`, `uml-diagram-author`); when
-your definition has a `startsRoles` list, start only agents with those roles. Never invoke a Workflow
+Start another agent by its plain front-matter name (`trd-author`, `uml-diagram-author`). Never invoke a Workflow
 or a command runner. When the brief carries ARTIFACT CONTRACT DATA, write the progress
 file it names and record a checkpoint or the submission only by running the artifactcontract.py
 commands it gives; never write a checkpoint sidecar any other way. The progress file's fields are

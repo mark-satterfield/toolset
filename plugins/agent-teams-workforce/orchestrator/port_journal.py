@@ -25,7 +25,7 @@ if __package__ in {None, ""}:
 
 from orchestrator.core import step_journal
 from orchestrator.flows.architecture_earlier import EarlierWork, carry
-from orchestrator.flows.architecture_files import PLUGIN, ROLE_ARCHITECT, agents_with_role
+from orchestrator.flows.architecture_files import ARCHITECT
 from orchestrator.flows.prd_to_spec import outermost_steps
 
 # isort: split
@@ -90,7 +90,7 @@ def earlier_journal(bead: str, work: list[EarlierWork]) -> Journal:
 
     """
     journal: Journal = step_journal.new_journal(BeadId(bead), BEAD_TYPE_EPIC, PIPELINE_ELABORATION, outermost_steps())
-    carry(journal, work, agents_with_role(PLUGIN, ROLE_ARCHITECT)[0], step_journal.timestamp())
+    carry(journal, work, ARCHITECT, step_journal.timestamp())
     return journal
 
 
