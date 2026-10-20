@@ -63,7 +63,7 @@
     },
     {
       "name": "adversarial-critique-adjudicator",
-      "description": "Rules on each adversarial finding's severity and whether it is constitutive (hard stop) or competitive (plays advantage); Gate 4 Referee whose rulings implementers cannot downgrade. Use for Adversarial Validation phase work requiring finding adjudication and constitutive-vs-competitive classification.",
+      "description": "Rules on each adversarial finding's severity and whether it is real or not, its severity, and whether it is constitutive (a hard stop) or competitive (a tradeable concern), with a rationale per finding; the referee whose rulings implementers cannot downgrade. Use for Adversarial Validation phase work requiring finding adjudication and constitutive-vs-competitive classification.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -452,6 +452,7 @@
         "agent-teams-workforce:graphrag-lookup"
       ],
       "mcpServers": [
+        "aws-mcp",
         "gitnexus"
       ]
     },
@@ -977,7 +978,7 @@
     },
     {
       "name": "cross-repo-integration-test-coordinator",
-      "description": "Sequences cross-repo integration test runs over the event chain, aligns environment state between repos, and routes results to integration-testing-lead. Coordinates only — runs no tests. Use for Integration Testing work requiring cross-repo sequencing, environment alignment, and result routing.",
+      "description": "Sequences cross-repo integration test runs over the event chain, aligns environment state between repos, and routes consolidated results to its caller. Coordinates only — runs no tests. Use for Integration Testing work requiring cross-repo sequencing, environment alignment, and result routing.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:agent-orchestration"
@@ -1617,7 +1618,7 @@
     },
     {
       "name": "flaky-test-detector",
-      "description": "Verifies intermittent test failures via repeated controlled reruns; reports verified-flaky tests as findings only — never edits or disables tests. Use for Integration Testing work requiring flakiness verification, rerun-based reproduction, and root-cause findings. No workflow currently dispatches it.",
+      "description": "Verifies intermittent test failures via repeated controlled reruns; reports verified-flaky tests as findings only — never edits or disables tests. Use for Integration Testing work requiring flakiness verification, rerun-based reproduction, and root-cause findings.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -1831,7 +1832,6 @@
         "agent-teams-workforce:graphrag-lookup"
       ],
       "mcpServers": [
-        "awslabs-postgres-mcp-server",
         "gitnexus"
       ]
     },
@@ -1857,7 +1857,7 @@
     },
     {
       "name": "integration-testing-lead",
-      "description": "Read-only selector for the integration workflow when contract surfaces are unavailable. Chooses the fewest applicable suites and whether provisioning must precede them, returning suites, provisionEnv and rationale. Does not dispatch workers, run tests, aggregate results, classify failures or judge gates.",
+      "description": "Read-only selector a caller invokes to choose the integration suites for a change when it cannot derive them from declared contract surfaces. Chooses the fewest applicable suites and whether provisioning must precede them, returning suites, provisionEnv and rationale. Does not dispatch workers, run tests, aggregate results, classify failures or judge gates.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:agent-orchestration"
@@ -2295,6 +2295,7 @@
         "agent-teams-workforce:graphrag-lookup"
       ],
       "mcpServers": [
+        "aws-mcp",
         "gitnexus"
       ]
     },
@@ -2501,6 +2502,8 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-secops",
+        "agent-teams-workforce:skillspoke-events",
+        "agent-teams-workforce:aws-serverless-eda",
         "agent-teams-workforce:graphrag-lookup"
       ],
       "mcpServers": [

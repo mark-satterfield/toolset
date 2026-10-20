@@ -1,10 +1,10 @@
 export const meta = {
   name: 'adversarial',
   description:
-    'Shared-tail mini — Adversarial Validation. Attack lanes run concurrently in designated test environments only: the caller\'s trimmedScope when given, otherwise lanes derived from the declared surfaces plus a data-exposure and dependency-CVE baseline conditioned on the changed files, otherwise every lane. One adversarial-critique-adjudicator rules each confirmed finding constitutive or competitive (skipped when there are no findings), and the script returns the count of open constitutive findings as `constitutiveOpen`. A lane or the adjudicator returning nothing reports dispatchFailed. When no lane applies the phase reports alreadySatisfied.',
+    'Shared-tail mini — Adversarial Validation. Attack lanes run concurrently against the designated test environment and with the test identities the caller names (testEnvironment, testIdentities): the caller\'s trimmedScope when given, otherwise lanes derived from the declared surfaces plus a data-exposure and dependency-CVE baseline conditioned on the changed files, otherwise every lane. An attacker that cannot run (no designated test environment or test identity it needs) says so in `blocked`, and the script returns those lanes as blockedLanes with ok false. Attackers report findings without severity; one adversarial-critique-adjudicator rules each confirmed finding real or not, its severity and whether it is constitutive or competitive, with a rationale (skipped when there are no findings), given the caller\'s priorRulings when supplied; a ruling that changes a prior ruling without a reversalCitation is replaced by the prior ruling. The script returns the count of open constitutive findings as `constitutiveOpen`; a finding the adjudicator did not rule on counts as open and constitutive. A lane or the adjudicator returning nothing reports dispatchFailed. When no lane applies the phase reports alreadySatisfied.',
   phases: [
     { title: 'Attack', detail: 'access-control + data-integrity and infra + exposure lanes (concurrent)' },
-    { title: 'Adjudicate', detail: 'referee severity; classify constitutive vs competitive' },
+    { title: 'Adjudicate', detail: 'rule real, severity and constitutive vs competitive' },
   ],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -178,13 +178,17 @@ async function settleAgent(prompt, opts) {
   }
 }
 
-// args: { contract, green, trimmedScope?, feedback?, priorRulings? }
+// args: { contract, green, trimmedScope?, feedback?, priorRulings?, testEnvironment?, testIdentities? }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
 const green = a.green || {}
-const feedback = a.feedback ? `\nPrior gate feedback to address:\n${a.feedback}` : ''
+const feedback = a.feedback ? `\nPrior gate feedback:\n${a.feedback}` : ''
 const repo = String(c.repoPath || (c.bead && c.bead.repoPath) || '').trim() || '(repo path not provided)'
-const target = `Change under attack: ${c.bead ? `${c.bead.id} ${c.bead.title}` : 'feature'}. Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}. DESIGNATED TEST ENVIRONMENTS ONLY — never attack production. Work within: ${repo}`
+const named = (v) => (v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length) ? 'none named' : JSON.stringify(v))
+const target = `Change under attack: ${c.bead ? `${c.bead.id} ${c.bead.title}` : 'feature'}. Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}. Repository: ${repo}
+Designated test environment: ${named(a.testEnvironment)}
+Test identities: ${named(a.testIdentities)}`
+const priorRulings = Array.isArray(a.priorRulings) ? a.priorRulings.filter((r) => r && typeof r.findingId === 'string') : []
 
 // Returns `<lane>#<normalized prefix>-<FNV-1a hash>` of a finding's reproduction.
 function findingIdFor(lane, finding) {
@@ -201,21 +205,34 @@ function findingIdFor(lane, finding) {
 const FINDINGS_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['findings'],
+  required: ['findings', 'coverage'],
   properties: {
     findings: {
       type: 'array',
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['title', 'severity', 'reproduction'],
+        required: ['title', 'reproduction'],
         properties: {
           title: { type: 'string' },
-          severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low', 'info'] },
           reproduction: { type: 'string' },
         },
       },
     },
+    coverage: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['surface', 'outcome'],
+        properties: {
+          surface: { type: 'string' },
+          outcome: { type: 'string', enum: ['finding', 'clean', 'inconclusive', 'not-run'] },
+        },
+      },
+    },
+    blocked: { type: 'string' },
+    observations: { type: 'array', items: { type: 'string' } },
   },
 }
 
@@ -292,7 +309,7 @@ if (!attackers.length) {
 phase('Attack')
 const results = await parallel(
   attackers.map((name) => () =>
-    settleAgent(`Attempt your attack class against the change. Report only confirmed findings with a minimal reproduction. ${target}${feedback}`, {
+    settleAgent(`${target}${feedback}`, {
       label: `attack:${name}`,
       phase: 'Attack',
       agentType: name,
@@ -309,6 +326,12 @@ if (deadLanes.length) {
   return dispatchOutcome({ dispatchFailed: true, dispatchFailures: dispatchDeaths('Attack'), reason, attackers, laneMode, surfaces: declaredSurfaces, ledger: { ...ledger, ok: false } })
 }
 
+const blockedLanes = attackers
+  .map((name, i) => ({ lane: name, reason: String((results[i] && results[i].blocked) || '').trim() }))
+  .filter((b) => b.reason)
+if (blockedLanes.length) log(`Adversarial: lane(s) could not run: ${blockedLanes.map((b) => `${b.lane} (${b.reason})`).join('; ')}`)
+const coverage = attackers.map((name, i) => ({ lane: name, coverage: (results[i] && results[i].coverage) || [], observations: (results[i] && results[i].observations) || [] }))
+
 const findings = []
 const seenIds = new Set()
 results.forEach((r, i) => {
@@ -321,16 +344,17 @@ results.forEach((r, i) => {
 })
 
 if (!findings.length) {
-  log(`Adversarial: ${attackers.length} lane(s) ran and confirmed no finding`)
-  return dispatchOutcome(emptyResult({ ledger: { ...ledger, ok: true } }))
+  log(`Adversarial: ${attackers.length - blockedLanes.length} lane(s) ran and confirmed no finding`)
+  return dispatchOutcome(emptyResult({ coverage, blockedLanes, ledger: { ...ledger, ok: blockedLanes.length === 0 } }))
 }
 
 phase('Adjudicate')
 const adjudication = await settleAgent(
-  `You are the adversarial-critique-adjudicator (Referee). Rule on each finding's real severity and whether it is CONSTITUTIVE (a security/validity hard stop — implementers cannot downgrade it) or COMPETITIVE (a tradeable quality concern). Discard false positives with reasoning. Return one ruling per findingId.
+  `Findings (${findings.length}):
+${JSON.stringify(findings, null, 2)}
 
-Findings (${findings.length}):
-${JSON.stringify(findings, null, 2)}`,
+Prior rulings (${priorRulings.length}):
+${priorRulings.length ? JSON.stringify(priorRulings, null, 2) : 'none'}`,
   {
     label: 'adversarial:adjudicate',
     phase: 'Adjudicate',
@@ -345,13 +369,15 @@ ${JSON.stringify(findings, null, 2)}`,
           items: {
             type: 'object',
             additionalProperties: false,
-            required: ['findingId', 'title', 'severity', 'classification', 'real'],
+            required: ['findingId', 'title', 'severity', 'classification', 'real', 'rationale'],
             properties: {
               findingId: { type: 'string', enum: findings.map((f) => f.findingId) },
               title: { type: 'string' },
               severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low', 'info'] },
               classification: { type: 'string', enum: ['constitutive', 'competitive'] },
               real: { type: 'boolean' },
+              rationale: { type: 'string' },
+              reversalCitation: { type: 'string' },
             },
           },
         },
@@ -370,10 +396,21 @@ const byId = {}
 for (const r of Array.isArray(adjudication.rulings) ? adjudication.rulings : []) {
   if (r && r.findingId && !byId[r.findingId]) byId[r.findingId] = r
 }
+// A ruling that changes a prior ruling's `real` or `classification` without a citation is not a reversal: the prior ruling stands.
+const priorById = {}
+for (const p of priorRulings) if (!priorById[p.findingId]) priorById[p.findingId] = p
+for (const id of Object.keys(byId)) {
+  const prior = priorById[id]
+  const r = byId[id]
+  if (!prior || (prior.real === r.real && prior.classification === r.classification)) continue
+  if (String(r.reversalCitation || '').trim()) continue
+  log(`Adversarial: uncited reversal of ${id} discarded; the prior ruling stands`)
+  byId[id] = { ...prior, reinstated: true }
+}
+// A finding the adjudicator did not rule on stays open and blocks: attackers carry no severity to fall back on.
 for (const f of findings) {
   if (byId[f.findingId]) continue
-  const blocking = f.severity === 'critical' || f.severity === 'high'
-  byId[f.findingId] = { findingId: f.findingId, title: f.title, severity: f.severity, classification: blocking ? 'constitutive' : 'competitive', real: true, unadjudicated: true }
+  byId[f.findingId] = { findingId: f.findingId, title: f.title, severity: null, classification: 'constitutive', real: true, rationale: 'not adjudicated', unadjudicated: true }
 }
 const rulings = Object.keys(byId).map((k) => byId[k])
 const constitutiveOpen = rulings.filter((r) => r.real === true && r.classification === 'constitutive').length
@@ -382,8 +419,10 @@ return dispatchOutcome({
   findings,
   adjudication: { rulings, constitutiveOpen },
   constitutiveOpen,
+  coverage,
+  blockedLanes,
   attackers,
   laneMode,
   surfaces: declaredSurfaces,
-  ledger: { ...ledger, ok: constitutiveOpen === 0 },
+  ledger: { ...ledger, ok: constitutiveOpen === 0 && blockedLanes.length === 0 },
 })
