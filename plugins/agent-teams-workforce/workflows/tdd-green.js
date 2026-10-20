@@ -289,11 +289,11 @@ const specBlock = (() => {
   const s = c.spec && typeof c.spec === 'object' ? c.spec : null
   const docs = s ? [...new Set([str(s.specPath), ...strList(s.specPaths)].filter(Boolean))] : []
   const lines = [
-    docs.length ? `Spec documents — read the sections named below in these files before writing code:\n${docs.map((d) => `  - ${d}`).join('\n')}` : '',
+    docs.length ? `Spec documents:\n${docs.map((d) => `  - ${d}`).join('\n')}` : '',
     s && strList(s.specSections).length ? `Spec sections defining this work: ${strList(s.specSections).join(', ')}` : '',
     s && strList(s.requirementIds).length ? `Requirements satisfied: ${strList(s.requirementIds).join(', ')}` : '',
     decisionIds.length ? `Architecture views this work is designed against (paths relative to the arc42 folder): ${decisionIds.join(', ')}` : '',
-    str(c.trdPath) ? `The Epic's TRD, its technical requirements not considered functional; read it as a source of information for the decisions this work makes: ${str(c.trdPath)}` : '',
+    str(c.trdPath) ? `The Epic's TRD: ${str(c.trdPath)}` : '',
     s && strList(s.definitionOfDone).length ? `Definition of Done:\n${strList(s.definitionOfDone).map((d) => `  - ${d}`).join('\n')}` : '',
   ].filter(Boolean)
   return lines.length ? `\n\n${lines.join('\n')}` : ''
@@ -308,17 +308,17 @@ const designSource = DESIGN_SOURCES.includes(str(c.cdsDesignSource)) ? str(c.cds
 const cdsBlock = (() => {
   if (designSource === DESIGN_SOURCE.BUNDLE) {
     const lines = [
-      `Design source: ${DESIGN_SOURCE.BUNDLE}. This Task builds web UI from the cds bundle the owner supplied, the only source of its visual design: its tokens, components and stylesheets as the bundle packages them. The code defines no colors, spacing, typography, radii, motion or component styles of its own.`,
+      `Design source: ${DESIGN_SOURCE.BUNDLE} (the cds bundle the owner supplied).`,
       cdsBundle ? `cds bundle: ${cdsBundle}` : '',
       cdsSpecs.length ? `cds build-spec items this Task implements:\n${cdsSpecs.map((x) => `  - ${x}`).join('\n')}` : '',
     ].filter(Boolean)
     return `\n\n${lines.join('\n')}`
   }
   if (designSource === DESIGN_SOURCE.CDS) {
-    return `\n\nDesign source: ${DESIGN_SOURCE.CDS}. No mockup was supplied for this Task's UI, and it changes design: design it with the Configurable Design System (cds) — the project's design system config and the cds plugin skills — using the system's tokens, components and stylesheets. The code defines no colors, spacing, typography, radii, motion or component styles of its own.`
+    return `\n\nDesign source: ${DESIGN_SOURCE.CDS} (no mockup was supplied; the UI changes design).`
   }
   if (designSource === DESIGN_SOURCE.NONE) {
-    return `\n\nDesign source: ${DESIGN_SOURCE.NONE}. This Task's UI change has no design impact (copy, or data wired into an existing element): keep the existing markup, classes and styles as they are and change no stylesheet.`
+    return `\n\nDesign source: ${DESIGN_SOURCE.NONE} (the UI change has no design impact).`
   }
   return ''
 })()
@@ -346,7 +346,7 @@ const infraBlock = (() => {
 
 // Consumed by both selector and implementer prompts; only an explicit caller grants this scope.
 const scopeBlock = c.baselineRepairScope === 'affected-repository'
-  ? `\n\nASSIGNED REPAIR SCOPE: repair ALL baseline suite failures in the affected repository ${repo}, even outside this Task's feature. Diagnose and fix repository code/configuration needed for those failures; this is authorized work, not scope expansion. Preserve accepted behavior and published contracts. Test changes remain owned by Red through testIssues. Do not do unrelated cleanup or modify other repositories. Missing external resources or authority remain upstreamMissing with evidence.`
+  ? `\n\nAssigned repair scope: affected-repository (every baseline suite failure in ${repo}).`
   : ''
 
 const taskBlock = `${c.bead ? `${isBugContract ? 'Bug' : 'Task'} ${c.bead.id || ''}: ${c.bead.title || ''}` : 'Feature implementation'}${
@@ -372,8 +372,7 @@ const capabilityLines = (capability) => {
   return [`- ${str(capability.name)}${providers.length ? ` (provided by ${providers.join('; ')})` : ''}`, ...provides].join('\n')
 }
 const reuseBlock = sharedCapabilities.length
-  ? `SHARED CAPABILITIES THIS TASK MUST USE
-Each behaviour below comes from the shared capability named, through the interface named. This repository holds none of it: no copy, no local equivalent, and no direct call to the AWS service or provider the capability wraps. When a capability lacks something this Task needs, write nothing in its place and name it in \`upstreamMissing\` with the evidence. After the suite is green, \`atw-matrix check-reuse\` checks the files you changed against this list.
+  ? `Shared capabilities this Task must use:
 ${sharedCapabilities.map(capabilityLines).join('\n')}
 
 `
@@ -381,21 +380,18 @@ ${sharedCapabilities.map(capabilityLines).join('\n')}
 
 const suiteCommand = str(c.suiteCommand)
 const suiteBlock = suiteCommand
-  ? `\n\nThe run judges green by running exactly \`cd "${repo}" && ${suiteCommand}\` itself, and green means it exits 0: the whole suite, including any test that was already failing before this Task. Run that command before you report.`
+  ? `\n\nSuite command: \`cd "${repo}" && ${suiteCommand}\``
   : ''
 
-const treeBlock = `Every file you create or modify is under this tree, and every git command runs as \`git -C "${repo}"\`:
-${repo}`
+const treeBlock = `Work tree: ${repo}`
 
 phase('Green')
 
 // Routing is a required contract, never an implicit chassis default.
 function validImplementers(value) {
   if (!Array.isArray(value)) return null
-  // Preserve an existing CDS assignment while moving execution to the owned wrapper.
-  const names = value.map(name => name === 'cds:cds-ui-author' ? 'cds-ui-implementer' : name)
-  return names.length > 0 && names.every(name => IMPLEMENTER_ROSTER.includes(name))
-    ? [...new Set(names)] : null
+  return value.length > 0 && value.every(name => IMPLEMENTER_ROSTER.includes(name))
+    ? [...new Set(value)] : null
 }
 function routingFailure(reason) {
   return { ok: false, dispatchFailed: true, reason: `Implementer routing failed: ${reason}`, changedFiles: [],
@@ -413,11 +409,11 @@ if (a.implementer !== undefined && a.implementer !== null && a.implementer !== '
   selectionMode = 'reused'
 } else {
   const selection = await settleAgent(
-    `You are the implementation-lead. Do NOT write code. Select the FEWEST implementer agent(s) whose specialty covers this change, drawn ONLY from: ${IMPLEMENTER_ROSTER.join(', ')}. Read each implementer's specialty in its agent description; when one covers the whole change, select it alone. Web UI component and page work that changes design (anything newly rendered, styled or laid out) goes to cds-ui-implementer, which builds with the cds design system; nextjs-component-implementer takes the non-visual React work (state, data fetching, routing) and a change with design source none (copy, or data wired into an existing element). Order them so earlier ones lay groundwork for later ones.
+    `Implementer roster: ${IMPLEMENTER_ROSTER.join(', ')}
 
 ${treeBlock}
 
-${taskBlock}${sharedCapabilities.length ? `\n\nShared capabilities the implementers must use rather than write: ${sharedCapabilities.map((x) => str(x.name)).join(', ')}` : ''}${a.feedback ? `\n\nKnown suite failures and prior rulings to cover in your selection:\n${a.feedback}` : ''}`,
+${taskBlock}${sharedCapabilities.length ? `\n\nShared capabilities the implementers must use: ${sharedCapabilities.map((x) => str(x.name)).join(', ')}` : ''}${a.feedback ? `\n\nKnown suite failures and prior rulings:\n${a.feedback}` : ''}`,
     {
       label: 'green:select-implementers',
       effort: 'low',
@@ -492,14 +488,9 @@ const upstreamMissing = []
 const deadImplementers = []
 for (const impl of implementersRun) {
   green = await settleAgent(
-    `${reuseBlock}Make the failing test pass with the MINIMUM production change. Then run the test suite and confirm the target test passes (Green) and nothing else regressed.${suiteBlock}
+    `${reuseBlock}${treeBlock}${suiteBlock}
 
-${treeBlock}
-
-${taskBlock}${implementers.length > 1 ? `\n\nYou are '${impl}', one of ${implementers.length} implementers on this task — make only the part matching your specialty; prior implementers' changes are already applied.` : ''}${impl === 'cds-ui-implementer' ? `\n\nYou work in the app repo (direct-build) context: consult the design system, build with the system classes and tokens ${designSource === DESIGN_SOURCE.BUNDLE && cdsBundle ? `the cds bundle at ${cdsBundle} ships` : 'the live cds design system (the project\'s design system config) defines'}, and run audit-against-system on the files you changed before you report.` : ''}
-${a.feedback ? `\nFeedback from the previous attempt — address it:\n${a.feedback}` : ''}
-
-Build to the contract above; do not modify the tests. What the Task, its spec, the architecture views and the matrix record is decided: use every name and decision they give as given, read by the paths above, and decide only a pure build detail none of them records. A value known only at deploy time, such as the account, the region or the environment, is resolved at deploy time (a CDK prop or deploy-time reference, or an environment variable the stack sets): write no literal for it and never name it in \`upstreamMissing\`. When a test stands between the code and the contract — it encodes behaviour the contract removes (obsolete-by-contract), it is wrong on its own terms (defect), or its fixtures lack configuration the contract now requires (missing-config) — leave it as it is and name it in \`testIssues\` with the contract reference; the test author rules on it. When the code cannot pass because a genuinely external dependency or resource does not exist yet (a package, stack, parameter, table or service outside the assigned repair scope), name each such thing in \`upstreamMissing\` with the evidence. A fixable defect or configuration inside explicitly authorized repository baseline repair is not upstreamMissing merely because it predates this Task. Deliver the changed files, whether Green is confirmed (the target test passes), whether the full suite shows no regression (\`noRegressions\`), and the captured output of both runs.`,
+${taskBlock}${implementers.length > 1 ? `\n\nImplementers on this Task, in order: ${implementers.join(', ')}. You are ${impl}.` : ''}${a.feedback ? `\n\nFeedback from the previous attempt:\n${a.feedback}` : ''}`,
     {
       label: `green:${impl}`,
       phase: 'Green',

@@ -136,6 +136,8 @@
       "description": "Implements Android features in Kotlin and Jetpack Compose; writes minimum code to pass failing Espresso suites. Use for Implementation work requiring Compose UI, Kotlin state and navigation wiring, and on-device ML Kit integration.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
+        "agent-teams-workforce:android-compose",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:software-engineering"
@@ -180,6 +182,7 @@
       "description": "Implements API Gateway resources, methods, and authorizers in CDK; writes minimum code to pass failing unit tests. Use for Implementation work requiring API Gateway constructs, CDK infrastructure, and authorizer wiring.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:api-gateway",
         "agent-teams-workforce:aws-cdk-development",
@@ -235,6 +238,7 @@
       "description": "Implements AppSync GraphQL APIs in CDK: schema wiring, resolvers, data sources, authorization. Use for Implementation work requiring AppSync API construction, resolver and data source wiring, and authorization setup.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:aws-cdk-development",
         "agent-teams-workforce:graphrag-lookup",
@@ -244,6 +248,7 @@
         "agent-teams-workforce:cdk-coding"
       ],
       "mcpServers": [
+        "aws-mcp",
         "mcp-graphrag-server",
         "gitnexus"
       ]
@@ -253,6 +258,7 @@
       "description": "Implements AppSync client subscriptions for real-time web features. Use for Implementation work requiring GraphQL subscription wiring, connection lifecycle handling, real-time state updates, and reconnection handling.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-frontend",
         "agent-teams-workforce:graphrag-lookup",
@@ -261,6 +267,7 @@
         "agent-teams-workforce:web-frontend-coding"
       ],
       "mcpServers": [
+        "aws-mcp",
         "mcp-graphrag-server",
         "context7",
         "gitnexus"
@@ -411,13 +418,17 @@
       "description": "Implements Athena queries and Redshift analytics models over the data lake — tables, views, SQL — writing minimum code to pass failing data-pipeline tests. Use for Implementation work requiring analytics SQL authoring, external table definition, and warehouse modeling.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-data-engineer",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:python-coding",
-        "agent-teams-workforce:software-engineering"
+        "agent-teams-workforce:software-engineering",
+        "aws-data-analytics:redshift-guide",
+        "aws-data-analytics:querying-data-lake"
       ],
       "mcpServers": [
+        "aws-mcp",
         "mcp-graphrag-server",
         "gitnexus"
       ]
@@ -725,7 +736,7 @@
     },
     {
       "name": "cds-finding-reviewer",
-      "description": "Independently classifies findings from the CDS audit against the configured design system.",
+      "description": "Rules on the findings a deterministic cds audit of a Task's changed UI could not rule on - each class name the supplied cds bundle's stylesheets do not name - as a violation, allowed, or a cds gap, against the bundle and the configured design system; changes no file.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -753,12 +764,12 @@
     },
     {
       "name": "cds-ui-implementer",
-      "description": "Implements assigned UI using the CDS plugin and its existing design system, supplied bundle and review contracts.",
+      "description": "Implements a Task's web UI components and pages in the application repository with the Configurable Design System (cds) applied by construction, from the supplied cds bundle or the live design system, and audits the changed UI against it before reporting; writes the minimum code that makes the failing tests pass.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "cds:apply-design-system",
         "cds:audit-against-system",
-        "cds:compose-page",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:software-engineering",
         "agent-teams-workforce:typescript-coding",
@@ -766,6 +777,7 @@
       ],
       "mcpServers": [
         "mcp-graphrag-server",
+        "context7",
         "gitnexus"
       ]
     },
@@ -799,21 +811,19 @@
       "description": "Implements Lambda handlers as chassis superclass extensions for API endpoints and event consumers; writes minimum code to pass failing unit tests. Use for Implementation work requiring Lambda handlers, chassis extension, and endpoint/consumer business logic.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:lambda",
         "agent-teams-workforce:aws-serverless-eda",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:skillspoke-events",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-serverless",
-        "aws-core:aws-sdk-python-usage",
-        "agent-teams-workforce:aurora-postgresql"
+        "aws-core:aws-sdk-python-usage"
       ],
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "pg-aiguide",
         "gitnexus"
       ]
     },
@@ -863,6 +873,7 @@
       "description": "Implements Cognito Lambda triggers — sign-up, confirmation, token customization, custom auth challenges — on the chassis the architecture describes. Use for Implementation work requiring Cognito trigger logic, auth flows, and user pool event processing.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:cognito",
         "agent-teams-workforce:lambda",
@@ -1291,6 +1302,7 @@
       "description": "Implements DynamoDB access patterns from the data model spec; writes minimum code to pass failing tests. Use for Implementation work requiring single-table design, GSI query construction, and conditional write semantics.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:dynamodb",
         "agent-teams-workforce:graphrag-lookup",
@@ -1343,6 +1355,7 @@
       "description": "Implements change data capture from DynamoDB Streams; writes minimum code to pass failing data-pipeline test suites. Use for Implementation work requiring stream record processing, change event transformation, and exactly-once-effect handling.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-data-engineer",
         "agent-teams-workforce:dynamodb",
@@ -1396,17 +1409,17 @@
     },
     {
       "name": "email-notification-implementer",
-      "description": "Implements transactional and notification email features: responsive templates, rendering pipelines, delivery via AWS messaging, and bounce/complaint handling. Use for Implementation work requiring email template construction and delivery wiring.",
+      "description": "Implements transactional and notification email features: responsive templates, rendering pipelines, delivery through Amazon SES, and bounce/complaint handling. Use for Implementation work requiring email template construction and delivery wiring.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:email-template-builder",
-        "agent-teams-workforce:sns",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:skillspoke-events",
         "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:typescript-coding",
         "agent-teams-workforce:software-engineering",
-        "aws-core:aws-messaging-and-streaming",
         "aws-core:aws-sdk-python-usage"
       ],
       "mcpServers": [
@@ -1449,7 +1462,7 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-qa",
+        "agent-teams-workforce:android-compose",
         "agent-teams-workforce:tdd-guide",
         "agent-teams-workforce:cumulative-regression",
         "agent-teams-workforce:graphrag-lookup",
@@ -1465,6 +1478,7 @@
       "description": "Implements the calls a service makes to the shared-events-service API to publish SkillSpoke events. Use for Implementation work requiring event publishing calls, mapping of domain values to the API request, and event contract conformance.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:aws-serverless-eda",
         "agent-teams-workforce:graphrag-lookup",
@@ -1484,6 +1498,7 @@
       "description": "Implements the handler code of a routing rule's target, for whatever target type the target's owner chose. Use for Implementation work requiring event handler logic, batch processing where the target delivers batches, and reading of the SkillSpoke standard event.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:sqs",
         "agent-teams-workforce:aws-serverless-eda",
@@ -1493,7 +1508,6 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-serverless",
-        "aws-core:aws-messaging-and-streaming",
         "aws-core:aws-sdk-python-usage"
       ],
       "mcpServers": [
@@ -1705,13 +1719,17 @@
       "description": "Implements Glue ETL jobs for batch data processing; writes minimum code to pass failing data-pipeline suites. Use for Implementation work requiring Glue job authoring, PySpark transformations, and batch pipeline construction.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-data-engineer",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:python-coding",
-        "agent-teams-workforce:software-engineering"
+        "agent-teams-workforce:software-engineering",
+        "aws-data-analytics:ingesting-into-data-lake",
+        "aws-data-analytics:connecting-to-data-source"
       ],
       "mcpServers": [
+        "aws-mcp",
         "mcp-graphrag-server",
         "gitnexus"
       ]
@@ -1869,6 +1887,8 @@
       "description": "Implements iOS features in SwiftUI; writes minimum code to pass failing XCUITest suites. Use for Implementation work requiring SwiftUI views, StoreKit purchase flows, on-device CoreML integration, and passkey/WebAuthn client wiring.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
+        "agent-teams-workforce:ios-swiftui",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:software-engineering"
@@ -1884,6 +1904,7 @@
       "description": "Implements Kinesis stream producers and consumers — record serialization, partition keys, checkpointing — writing minimum code to pass failing data-pipeline tests. Use for Implementation work requiring stream producer authoring, consumer logic, and event contract adherence.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-data-engineer",
         "agent-teams-workforce:aws-serverless-eda",
@@ -2118,7 +2139,6 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-qa",
         "agent-teams-workforce:cumulative-regression",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:software-engineering",
@@ -2167,13 +2187,12 @@
     },
     {
       "name": "nextjs-component-implementer",
-      "description": "Implements the non-visual React/Next.js work — component state, data fetching, Next.js routing — writing minimum code to pass failing unit tests. Visual component and page work goes to cds:cds-ui-author, which builds with the cds design system.",
+      "description": "Implements the non-visual React/Next.js work — component state, data fetching, Next.js routing — writing minimum code to pass failing unit tests. Visual component and page work goes to cds-ui-implementer, which builds with the cds design system.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
+        "cds:apply-design-system",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-frontend",
-        "agent-teams-workforce:a11y-audit",
-        "agent-teams-workforce:senior-fullstack",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:software-engineering",
         "agent-teams-workforce:typescript-coding",
@@ -2231,6 +2250,7 @@
       "description": "Implements Stripe payment features: checkout sessions, webhook handlers built on the chassis, subscription lifecycle, refunds, and idempotent operations, with secrets in Secrets Manager. Use for Implementation work requiring Stripe integration, payment webhook handling, and subscription lifecycle management.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:stripe-integration-expert",
         "agent-teams-workforce:secrets-manager",
@@ -2369,6 +2389,7 @@
       "description": "Implements Aurora PostgreSQL access patterns through the RDS Data API from the data model spec, and the schema migrations they need; writes minimum code to pass failing tests. Use for Implementation work requiring relational queries, transactions, migrations, and pgvector or recursive graph queries over a PostgreSQL store.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:aurora-postgresql",
         "agent-teams-workforce:design-postgres-tables",
@@ -2391,6 +2412,7 @@
       "description": "Configures Lambda Power Tools — structured logging, tracing, metrics, idempotency — on Lambdas built on the chassis; configures, never rebuilds. Use for Implementation work requiring Power Tools configuration, idempotency setup, and observability wiring.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:lambda",
         "agent-teams-workforce:secrets-manager",
@@ -2539,6 +2561,7 @@
       "description": "Implements React Native cross-platform mobile features; writes minimum code to pass failing Detox and Maestro tests. Use for Implementation work requiring React Native components, navigation and state wiring, and native module integration.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-frontend",
         "agent-teams-workforce:graphrag-lookup",
@@ -2683,6 +2706,7 @@
       "description": "Implements S3 data lake layout, partitioning, and lifecycle policies; writes minimum code to pass failing data-pipeline tests. Use for Implementation work requiring lake layout, partition key construction, and lifecycle policy definition.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-data-engineer",
         "agent-teams-workforce:s3",
@@ -2693,6 +2717,7 @@
         "aws-core:aws-sdk-python-usage"
       ],
       "mcpServers": [
+        "aws-mcp",
         "mcp-graphrag-server",
         "gitnexus"
       ]
@@ -3135,17 +3160,16 @@
       "description": "Implements WebAuthn passkey flows across web clients and the Cognito-backed auth stack: registration and authentication ceremonies with client-side handling. Use for Implementation work requiring WebAuthn ceremony wiring, passkey credential lifecycle, and Cognito integration.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-frontend",
-        "agent-teams-workforce:cognito",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-auth",
         "agent-teams-workforce:typescript-coding",
         "agent-teams-workforce:web-frontend-coding"
       ],
       "mcpServers": [
+        "aws-mcp",
         "mcp-graphrag-server",
         "context7",
         "gitnexus"
@@ -3216,7 +3240,7 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-qa",
+        "agent-teams-workforce:ios-swiftui",
         "agent-teams-workforce:tdd-guide",
         "agent-teams-workforce:cumulative-regression",
         "agent-teams-workforce:graphrag-lookup",

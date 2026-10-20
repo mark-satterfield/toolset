@@ -1190,7 +1190,6 @@ const runValue = (run) => ({
   relayFile: run.relayFile || null,
 })
 
-const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
 /** Runs one gitutils.py command through relayrun.py; returns { facts } or { error }. */
 async function gitutils(label, argv) {
   const r = await relayKit.run(guardedAgent, { label, phase: currentPhase || phaseTitle('green'), runner: RELAY.runner, argv: ['python3', RELAY.gitutils, ...argv], file: relayFileIn(stepDir(), label) })
@@ -1491,19 +1490,11 @@ async function auditCds(tree, bundle, label) {
     let judged = null
     try {
       judged = await guardedAgent(
-        `Use the Skill tool to load cds:audit-against-system, then rule on findings a deterministic cds audit could not rule on. They come from the files this Task changed in the work tree at ${tree}, audited against the cds bundle at ${bundle} (its stylesheet set is the only design system the app may use).
+        `Work tree: ${tree}
+cds bundle: ${bundle}
 
-Each finding is a class name the bundle's stylesheets do not name. Read the line in the file, the applicable bundle design artifacts and stylesheets, and the audit-against-system skill. Use supplied applicable mock/build-spec choices, graphics and stylesheets as design inputs. A static mock communicates design intent without specifying every detail; preserve its established intent and any explicit precision requirements, and use judgment with the Task requirements, configured cds and approved application standards for unspecified interactions, states and responsive behavior. When no mock is supplied and the Task delegates UI design, judge that design against configured cds and the approved application standards; absence of a pre-existing Page or Section preset is not itself a missing capability.
-
-Consider supported configuration/composition and generated-stylesheet freshness when identifying the remedy. Missing output in this bundle does not by itself prove that the cds plugin needs an extension. Distinguish a configuration or artifact correction from a genuinely missing capability; do not invent off-system styling or treat unverified output as allowed. Rule each finding:
-- violation: the class styles the UI outside cds (a utility class, a component class of the app's own, a value cds tokens cover) and the code must use the cds classes and tokens instead;
-- allowed: the class carries no styling (a behaviour or test hook, a third-party library's own class the cds bundle does not style);
-- cds-gap: required system-provided UI remains unavailable in the applicable bundle; name the unresolved configuration, generated artifact or actual missing capability and the evidence. A plugin extension is required only when the evidence establishes a capability the configured system cannot supply.
-
-Findings, one per line (file:line rule value):
-${unruled.map(findingText).join('\n')}
-
-Return one ruling per finding, with its file, line and value exactly as given, the ruling, and a one-sentence reason. Change no file.`,
+Findings the deterministic cds audit could not rule on, one per line (file:line rule value):
+${unruled.map(findingText).join('\n')}`,
         { agentType: 'cds-finding-reviewer', label: `${label}:judgment`, phase: currentPhase || phaseTitle('cds-audit'), schema: CDS_JUDGMENT_SCHEMA }
       )
     } catch (err) {
@@ -1594,7 +1585,7 @@ async function auditCdsLive(tree, label) {
   let out = null
   try {
     out = await guardedAgent(
-      `Audit the UI files this Task changed in the work tree at ${tree} against the live Configurable Design System (cds). No mockup or cds bundle was supplied for this Task. The changed files: \`git -C ${shq(tree)} status --porcelain\`.`,
+      `Work tree: ${tree}`,
       { agentType: 'cds-live-auditor', label, phase: currentPhase || phaseTitle('cds-audit'), schema: LIVE_AUDIT_SCHEMA }
     )
   } catch (err) {
