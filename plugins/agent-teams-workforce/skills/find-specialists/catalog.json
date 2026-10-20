@@ -17,11 +17,11 @@
     },
     {
       "name": "acceptance-criteria-reviewer",
-      "description": "Validates acceptance criteria are testable, complete, and unambiguous — derivable into tests without interpretation. Use for Spec Authoring work requiring testability review, ambiguity detection, and completeness checking.",
+      "description": "Reviews acceptance criteria and Definition of Done statements for testability, completeness and ambiguity: whether a test can be derived from each without interpretation, with boundary and failure cases covered; reports findings, never fixes. For a caller that wants criteria checked on their own; in elaboration spec-reviewer reviews the criteria document with the specs.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-qa"
+        "agent-teams-workforce:effective-architecture"
       ],
       "mcpServers": []
     },
@@ -443,7 +443,7 @@
     },
     {
       "name": "beads-format-validator",
-      "description": "Validates every Beads issue is structurally complete (title, acceptance criteria, DoD, dependencies, spec link) and obeys the hierarchy rule; reports defects, never fixes. Use for Task Decomposition work requiring Beads format validation, field completeness, and traceability checks. No workflow currently dispatches it.",
+      "description": "Validates that Beads issues are structurally complete (title, acceptance criteria found where the beads contract looks, dependencies that resolve, spec links that resolve) and obey the hierarchy rule; reports defects, never fixes. For a caller that wants a set of issues checked before work starts.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -928,17 +928,17 @@
     },
     {
       "name": "definition-of-done-writer",
-      "description": "Writes the feature spec's Definition of Done as independently verifiable true/false statements rather than checklists. Use for Spec Authoring work requiring DoD authoring, verifiability discipline, and completion semantics.",
+      "description": "Writes the Definition of Done of a given scope of work as independently verifiable true-or-false statements about the finished work, never checklist steps, each traced to the requirement or design decision it comes from. For a caller that needs a Definition of Done on its own; in elaboration the acceptance-criteria-writer writes it with the criteria.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-qa"
+        "agent-teams-workforce:effective-architecture"
       ],
       "mcpServers": []
     },
     {
       "name": "dependency-change-detector",
-      "description": "Detects dependency version or contract changes since the spec was written, classifying each as unchanged, reconciled, or needing reconciliation. Use for Spec Freshness phase work requiring manifest and lockfile diffing, upstream contract comparison, and breaking-change detection.",
+      "description": "Detects dependency version and contract changes since a specification was written, by diffing manifests and lockfiles against the spec-time reference and checking changed contracts, classing each as unchanged, reconciled in the spec, or needing reconciliation. For a caller that holds a spec written some time before its build.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -1262,9 +1262,9 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:aws-serverless-eda",
         "agent-teams-workforce:skillspoke-events",
-        "aws-core:aws-messaging-and-streaming"
+        "agent-teams-workforce:eventbridge",
+        "agent-teams-workforce:sqs"
       ],
       "mcpServers": [
         "aws-mcp"
@@ -1419,13 +1419,16 @@
     },
     {
       "name": "graphql-schema-reviewer",
-      "description": "Validates GraphQL schemas in specs against architecture decisions and AppSync contract patterns — resolver mappings, authorization directives. Use for Spec Authoring work requiring GraphQL conformance review, AppSync pattern checking, and decision-drift detection.",
+      "description": "Reviews the GraphQL contracts of a specification against the architecture and detailed design that record the API and against AppSync patterns: types, operations, resolver and data-source mappings, authorization modes and directives, error shapes, pagination and naming; reports findings, never fixes. For a caller that wants a spec's GraphQL contracts checked.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:api-design-reviewer"
+        "agent-teams-workforce:api-design-reviewer",
+        "agent-teams-workforce:effective-architecture"
       ],
-      "mcpServers": []
+      "mcpServers": [
+        "aws-mcp"
+      ]
     },
     {
       "name": "implementation-lead",
@@ -1928,10 +1931,11 @@
     },
     {
       "name": "prd-trd-traceability-verifier",
-      "description": "Builds and checks the TRD's SOURCE traceability matrix: every TRD requirement anchored to a PRD requirement OR to an architecture view, every PRD requirement needing technical elaboration answered, and genuine scope drift flagged. The relation is not 1:1 and an architecture-sourced requirement is not an orphan. Use for TRD Authoring work requiring requirement-to-technical-requirement tracing, architecture anchoring, and scope-drift detection. No workflow currently dispatches it.",
+      "description": "Builds and checks the TRD's SOURCE traceability matrix: every TRD requirement anchored to a PRD requirement OR to an architecture view, every PRD requirement needing technical elaboration answered, and genuine scope drift flagged. The relation is not 1:1 and an architecture-sourced requirement is not an orphan. Use for TRD Authoring work requiring requirement-to-technical-requirement tracing, architecture anchoring, and scope-drift detection.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol"
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:effective-architecture"
       ],
       "mcpServers": []
     },
@@ -2219,7 +2223,7 @@
     },
     {
       "name": "spec-authoring-lead",
-      "description": "Routes maker output to checkers and findings back to makers until checkers pass, then routes the spec to Gate 3; never evaluates spec quality, only pass/rework signals. Use for Spec Authoring work requiring maker-checker loop coordination, delegation, and read-only orchestration.",
+      "description": "Routes maker output to checkers and findings back to makers until checkers pass, then reports the spec packet; never evaluates spec quality, only pass/rework signals. Use for Spec Authoring work requiring maker-checker loop coordination, delegation, and read-only orchestration.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:agent-orchestration"
@@ -2228,7 +2232,7 @@
     },
     {
       "name": "spec-currency-validator",
-      "description": "Validates the spec still matches project reality before implementation begins, flagging drift since authoring. Use for Spec Freshness phase work requiring spec-to-codebase comparison, drift detection, and currency evidence gathering.",
+      "description": "Checks, before implementation begins, that a specification still matches the project: every module, interface, contract, data model, file path and convention it references still exists and still matches, each claim classed current, drifted or unverifiable with evidence. For a caller that holds a spec written some time before its build.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -2240,7 +2244,7 @@
     },
     {
       "name": "spec-freshness-lead",
-      "description": "Routes spec freshness checks to validators and aggregates findings into a gate packet for workflow-2 Gate 1. Use for Spec Freshness phase work requiring delegation, validation routing, and gate packet assembly. No workflow currently dispatches it.",
+      "description": "Routes spec freshness checks to validators and aggregates findings into one freshness packet. Use for Spec Freshness phase work requiring delegation, validation routing, and packet assembly. No workflow currently dispatches it.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:agent-orchestration"
@@ -2280,7 +2284,7 @@
     },
     {
       "name": "story-bead-writer",
-      "description": "Writes the ONE Story bead a Spec pairs with — a single-repository container with a title, a description and the out-of-repo work the Epic's closure in the matrix holds. Use for Spec Authoring work requiring the Story that pairs with a Spec.",
+      "description": "Writes the title and description of ONE Story bead, a single-repository container paired with a spec set, and names the work outside the Story's repository that the Epic's closure in the matrix holds. For a caller that needs a Story written outside elaboration; elaboration writes its Stories by script.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol"
@@ -2425,11 +2429,11 @@
     },
     {
       "name": "trd-decider",
-      "description": "Rules on competing TRD approaches, maker-checker deadlocks, and checker conflicts routed by whoever delegated the task; generates no TRD content or analysis. Use for TRD Authoring work requiring decision adjudication, deadlock resolution, and rationale recording. No workflow currently dispatches it.",
+      "description": "Rules on a dispute over a TRD from the evidence the sides wrote: a TRD maker-checker deadlock, competing TRD approaches, or checkers that contradict each other on one TRD section; generates no TRD content or analysis. For a caller that runs a TRD review loop; in elaboration TRD disputes go to architecture-decider through the architecture team.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-architect"
+        "agent-teams-workforce:effective-architecture"
       ],
       "mcpServers": []
     },
@@ -2479,11 +2483,10 @@
     },
     {
       "name": "user-story-reviewer",
-      "description": "Validates every user story is complete, testable, and scoped to its single task; reports findings, never fixes. Use for Task Decomposition work requiring story validation, testability auditing, and scope challenge.",
+      "description": "Reviews user stories (persona, goal, benefit and acceptance criteria) for completeness, testability and scope against the work each story covers and the spec it cites; reports findings, never fixes. For a caller that holds user stories, such as a PRD's or a person's backlog.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-discovery",
         "agent-teams-workforce:beads-contract"
       ],
       "mcpServers": []
@@ -2563,11 +2566,10 @@
     },
     {
       "name": "wsjf-scoring-reviewer",
-      "description": "Validates the job sizes behind task WSJF scores are internally consistent, evidence-backed, and defensible; reports findings, never fixes. Use for Task Decomposition work requiring scoring validation, consistency auditing, and prioritization challenge. No workflow currently dispatches it.",
+      "description": "Reviews the job sizes in a set of Task WSJF judgments for consistency, evidence and defensibility against the wsjf skill's rubric and recomputes the arithmetic; reports findings, never fixes. For a caller that wants a scoring run checked.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-strategist",
         "agent-teams-workforce:wsjf"
       ],
       "mcpServers": []

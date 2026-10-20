@@ -29,15 +29,15 @@ schema's descriptions say what each member is.
 
 ### Mode `initial`
 
-The TRD initial write is one of the very first steps of the architecture: it runs before the
-solutions architect starts, and the architect works from the TRD you write. No design exists yet,
+The TRD initial write is one of the very first steps of the architecture: it runs before any
+design exists,
 so write only what is already stated. Many of these requirements are already pre-written in
 arc42; add them to the TRD. Your sources, and only these:
 
 - The constraints. `atw-matrix epic <the request's epic> --constraints` returns each
   constraint that binds the Epic, its features and the entries that realize them, with its rule
   as `statement`, the document and heading it is `statedIn`, and what it `appliesTo`;
-  `selections` names the entries each selector binds. The architect reads the same command.
+  `selections` names the entries each selector binds.
   The `statement` is the rule: cite its `statedIn` document and heading as the source without
   reading that heading again. A constraint with `trd` in place of a statement is a requirement
   of a TRD (its Epic and id); one of this Epic's is already in the TRD you keep. A constraint
@@ -54,8 +54,8 @@ arc42; add them to the TRD. Your sources, and only these:
 
 A requirement whose element the PRD's need does not yet name applies to the Epic as a whole
 (`appliesTo` empty). Return `noSource`: every quality or operational obligation the PRD implies
-for which neither the PRD nor the effective documents give a source. The architect decides
-each; the TRD holds only sourced requirements.
+for which neither the PRD nor the effective documents give a source; the TRD holds only sourced
+requirements.
 
 ### Mode `update`
 
@@ -65,9 +65,9 @@ as one requirement of kind `reuse`. `atw-matrix node <capability>` returns the `
 its `relies` names, with each item's behaviour and what a consumer must not implement itself.
 The rest of the file stays as it is.
 
-The TRD architecture update is one: once the higher-level architecture is in arc42, the
-architect asks you to add the technical or architecture decisions it made that impact the
-detailed design. The architect may ask for further updates as the design settles.
+One update follows the higher-level architecture: once it is in arc42, the request lists the
+technical or architecture decisions that impact the detailed design. Further updates may follow
+as the design settles.
 
 ### Every requirement
 
@@ -91,8 +91,8 @@ would need a new element is returned in `noSource`. Where the PRD, section 2 and
 documents give no value for an obligation the design needs, take the value from AWS
 documentation and the stated scale, and cite what it rests on.
 
-Write to the technical-requirement criteria of `effective-architecture/review-standard.md`, the
-same text the solutions architect reviews and approves the TRD against. The TRD's fixed form is
+Write to the technical-requirement criteria of `effective-architecture/review-standard.md`. The
+TRD's fixed form is
 `document-front-matter.schema.json#/$defs/TrdDocument` in the artifact-handoff skill's schemas.
 Keep `decisionIds` in the front matter: the arc42 paths, with headings, that the requirements
 cite. Write the TRD file at the request's `trdPath` and the answer, to
