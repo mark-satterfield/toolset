@@ -16,7 +16,7 @@ mcpServers:
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:skillspoke-events, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture, agent-teams-workforce:dynamodb, agent-teams-workforce:aurora-postgresql, agent-teams-workforce:design-postgres-tables]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture, agent-teams-workforce:dynamodb, agent-teams-workforce:aurora-postgresql, agent-teams-workforce:design-postgres-tables]
 effort: low
 isolation: worktree
 color: purple
@@ -28,7 +28,8 @@ color: purple
   three documents.
 - **`api-design-reviewer`**: the REST contract checks behind I1 (method, path, authorizer, request
   and response fields, status codes).
-- **`skillspoke-events`**: the SkillSpoke standard event and the shared-events-service request.
+- **The project's event standard**, which the project instructions name: the standard event and
+  the request the central event API takes.
 - **`dynamodb`** and **`awslabs-dynamodb-mcp-server`**: a DynamoDB store in the data model: that
   its keys, indexes, access patterns and expiry attribute are stated as the design records them.
   Check a `schema.json` with
@@ -72,7 +73,7 @@ in those documents, so check that each detail is present, exact, and the same wh
 documents and the TRD state it.
 
 - I1, I3, I4 and I5 are met by the contracts document. For an event, check the values passed to
-  the shared-events-service API against the skillspoke-events skill.
+  the project's central event API against the project's event standard.
 - I2 is met by the data-model document, and I4 for the names it states. For a DynamoDB store,
   check that the store is stated as the design records it; whether each access pattern can be
   served by the keys and indexes the document states belongs to

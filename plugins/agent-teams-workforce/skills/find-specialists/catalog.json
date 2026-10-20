@@ -206,7 +206,6 @@
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:api-design-reviewer",
         "agent-teams-workforce:artifact-handoff",
-        "agent-teams-workforce:skillspoke-events",
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:graphrag-lookup"
       ],
@@ -495,7 +494,6 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:aws-serverless-eda",
-        "agent-teams-workforce:skillspoke-events",
         "agent-teams-workforce:cumulative-regression",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
@@ -827,7 +825,6 @@
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:aws-serverless-eda",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:skillspoke-events",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-serverless",
@@ -1329,7 +1326,6 @@
         "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:skillspoke-events",
         "agent-teams-workforce:senior-architect"
       ],
       "mcpServers": [
@@ -1473,7 +1469,6 @@
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:email-template-builder",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:skillspoke-events",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:typescript-coding",
         "agent-teams-workforce:software-engineering",
@@ -1532,14 +1527,13 @@
     },
     {
       "name": "event-api-client-implementer",
-      "description": "Implements the calls a service makes to the shared-events-service API to publish SkillSpoke events. Use for Implementation work requiring event publishing calls, mapping of domain values to the API request, and event contract conformance.",
+      "description": "Implements the calls a service makes to the project's central event API to publish the project's events. Use for Implementation work requiring event publishing calls, mapping of domain values to the API request, and event contract conformance.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:implementer-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:aws-serverless-eda",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:skillspoke-events",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-sdk-python-usage"
@@ -1552,7 +1546,7 @@
     },
     {
       "name": "event-driven-consumer-implementer",
-      "description": "Implements the handler code of a routing rule's target, for whatever target type the target's owner chose. Use for Implementation work requiring event handler logic, batch processing where the target delivers batches, and reading of the SkillSpoke standard event.",
+      "description": "Implements the handler code of a routing rule's target, for whatever target type the target's owner chose. Use for Implementation work requiring event handler logic, batch processing where the target delivers batches, and reading of the project's standard event.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:implementer-contract",
@@ -1561,7 +1555,6 @@
         "agent-teams-workforce:aws-serverless-eda",
         "agent-teams-workforce:sns",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:skillspoke-events",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-serverless",
@@ -1599,7 +1592,6 @@
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:eventbridge",
-        "agent-teams-workforce:skillspoke-events",
         "aws-core:aws-serverless"
       ],
       "mcpServers": [
@@ -1611,11 +1603,10 @@
     },
     {
       "name": "event-schema-reviewer",
-      "description": "Validates event contracts against the SkillSpoke standard event and each event's payload schema — event type names, passed values, publishing conditions, consumer obligations, retry/DLQ behavior. Use for Spec Authoring work requiring standard-event conformance, event contract validation, and failure-semantics checks.",
+      "description": "Validates event contracts against the project's standard event and each event's payload schema — event type names, passed values, publishing conditions, consumer obligations, retry/DLQ behavior. Use for Spec Authoring work requiring standard-event conformance, event contract validation, and failure-semantics checks.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:skillspoke-events",
         "agent-teams-workforce:eventbridge",
         "agent-teams-workforce:sqs"
       ],
@@ -1640,7 +1631,6 @@
         "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:aws-serverless-eda",
-        "agent-teams-workforce:skillspoke-events",
         "agent-teams-workforce:lambda",
         "agent-teams-workforce:sqs",
         "agent-teams-workforce:eventbridge"
@@ -1929,7 +1919,6 @@
         "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:skillspoke-events",
         "agent-teams-workforce:aws-serverless-eda",
         "agent-teams-workforce:senior-architect",
         "aws-core:aws-messaging-and-streaming"
@@ -2327,7 +2316,6 @@
         "agent-teams-workforce:stripe-integration-expert",
         "agent-teams-workforce:secrets-manager",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:skillspoke-events",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-serverless",
@@ -2574,7 +2562,6 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-secops",
-        "agent-teams-workforce:skillspoke-events",
         "agent-teams-workforce:aws-serverless-eda",
         "agent-teams-workforce:graphrag-lookup"
       ],
@@ -2895,7 +2882,6 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:api-design-reviewer",
-        "agent-teams-workforce:skillspoke-events",
         "agent-teams-workforce:artifact-handoff",
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:dynamodb",

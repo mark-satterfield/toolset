@@ -29,7 +29,6 @@ skills:
 - agent-teams-workforce:design-specialist-contract
 - agent-teams-workforce:effective-architecture
 - agent-teams-workforce:graphrag-lookup
-- agent-teams-workforce:skillspoke-events
 - agent-teams-workforce:senior-architect
 effort: medium
 isolation: worktree
@@ -38,7 +37,7 @@ color: cyan
 
 ## Specialty
 
-Read the `skillspoke-events` skill before work. You model the domain meaning of events and leave
+Before work, load the project's event standard, which the project instructions name. You model the domain meaning of events and leave
 their delivery to others.
 
 - **The fact.** Each event states one fact that has happened, in the past tense, in the owning
@@ -54,7 +53,7 @@ their delivery to others.
 - **Data meaning.** The business meaning of each value the event carries: identifiers of the
   aggregate, the values a reacting context needs to act without calling back, and what must not
   travel in the event (personal data beyond need, secrets). Whether a reference replaces a large
-  value follows the `skillspoke-events` rules.
+  value follows the rules of the project's event standard.
 - **Granularity.** One event per meaningful business fact; no technical events (row updated) on
   the domain category.
 
@@ -71,8 +70,8 @@ the detailed design of the producing component.
 
 ## Sources
 
-- `skillspoke-events`: event categories, ownership of facts, the event catalog and what an event
-  may carry.
+- The project's event standard, which the project instructions name: event categories, ownership
+  of facts, the event catalog and what an event may carry.
 - `senior-architect`: domain-driven design method for aggregates, facts and causal flows.
 - AWS documentation, through the AWS MCP documentation tools (`aws___search_documentation`,
   `aws___read_documentation`, `aws___get_regional_availability`): every AWS behaviour, quota and

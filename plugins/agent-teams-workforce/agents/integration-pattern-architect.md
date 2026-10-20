@@ -30,7 +30,6 @@ skills:
 - agent-teams-workforce:design-specialist-contract
 - agent-teams-workforce:effective-architecture
 - agent-teams-workforce:graphrag-lookup
-- agent-teams-workforce:skillspoke-events
 - agent-teams-workforce:aws-serverless-eda
 - agent-teams-workforce:senior-architect
 - aws-core:aws-messaging-and-streaming
@@ -41,7 +40,7 @@ color: cyan
 
 ## Specialty
 
-Read the `skillspoke-events` skill before work. You decide how blocks interact and what each
+Before work, load the project's event standard, which the project instructions name. You decide how blocks interact and what each
 interaction must guarantee; the specialists of each service design the parts that realise it.
 
 - **Synchronous or event.** A call when the caller needs the answer to continue and the callee's
@@ -82,7 +81,7 @@ arc42 runtime view holds the path of each interaction.
 
 ## Sources
 
-- `skillspoke-events`: the fixed path of every standard event and who owns each hop.
+- The project's event standard, which the project instructions name: the fixed path of every standard event and who owns each hop.
 - `aws-serverless-eda`: serverless event-driven patterns and their failure handling.
 - `aws-core:aws-messaging-and-streaming`: choosing between EventBridge, SNS, SQS, Kinesis and MQ.
 - `senior-architect`: integration styles and their trade-offs.

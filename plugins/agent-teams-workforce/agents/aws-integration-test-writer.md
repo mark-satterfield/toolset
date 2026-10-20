@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:skillspoke-events, agent-teams-workforce:cumulative-regression, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, aws-core:aws-sdk-python-usage, aws-core:aws-serverless, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:cumulative-regression, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, aws-core:aws-sdk-python-usage, aws-core:aws-serverless, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: red
 mcpServers:
@@ -57,7 +57,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 - A testing agent reports findings; it never fixes what it finds — contract and environment defects go upstream as structured findings.
 - Collaborate through explicit artifacts — test files, harness configuration, Red evidence, traceability mappings. The durable record is the artifact.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in every deliverable.
-- Prefer the skills and tools provided to you over internal training: the path an event takes and what each hop must do come from `skillspoke-events` and the effective architecture's event-flow views; EventBridge, SQS, Lambda event source and dead-letter behaviour from `aws-serverless` and `aws-serverless-eda`, checked against the AWS documentation tools; SDK calls from `aws-sdk-python-usage`.
+- Prefer the skills and tools provided to you over internal training: the path an event takes and what each hop must do come from the project's event standard, which the project instructions name, and the effective architecture's event-flow views; EventBridge, SQS, Lambda event source and dead-letter behaviour from `aws-serverless` and `aws-serverless-eda`, checked against the AWS documentation tools; SDK calls from `aws-sdk-python-usage`.
 - Review your own work for correctness, completeness, and risk before handoff.
 
 ## Cumulative regression evidence

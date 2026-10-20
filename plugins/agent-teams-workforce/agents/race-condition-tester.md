@@ -11,7 +11,7 @@ disallowedTools: AskUserQuestion, Edit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-secops, agent-teams-workforce:skillspoke-events, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-secops, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:graphrag-lookup]
 effort: medium
 isolation: worktree
 color: orange

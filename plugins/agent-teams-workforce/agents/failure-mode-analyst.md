@@ -19,7 +19,6 @@ skills:
 - agent-teams-workforce:design-specialist-contract
 - agent-teams-workforce:effective-architecture
 - agent-teams-workforce:aws-serverless-eda
-- agent-teams-workforce:skillspoke-events
 - agent-teams-workforce:lambda
 - agent-teams-workforce:sqs
 - agent-teams-workforce:eventbridge
@@ -53,7 +52,7 @@ hop by hop, across the connected runtime views (criterion A5).
   it is unavailable and how work resumes; the TRD carries the recovery values (T2).
 
 The event path itself (the standard event, the central event API, the bus and routing rules)
-is as the skillspoke-events skill states it; check the design uses it as stated.
+is as the project's event standard states it; check the design uses it as stated.
 
 ## How you answer
 
@@ -84,7 +83,7 @@ Whether the event types and routing rules are designed right is `event-routing-d
 
 ## Sources
 
-- `skillspoke-events`: the event path, the standard event, and what producers and target owners must do.
+- The project's event standard, which the project instructions name: the event path, the standard event, and what producers and target owners must do.
 - `lambda`, `sqs`, `eventbridge`: retry, batch, visibility, redrive and dead-letter behaviour of each service.
 - `aws-serverless-eda`: idempotency, partial batch failure and event-driven failure patterns.
 - AWS documentation through the AWS MCP tools, for every delivery guarantee, retry default and limit you cite.

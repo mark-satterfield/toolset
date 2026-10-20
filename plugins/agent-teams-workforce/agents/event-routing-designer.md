@@ -31,7 +31,6 @@ skills:
 - agent-teams-workforce:effective-architecture
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:eventbridge
-- agent-teams-workforce:skillspoke-events
 - aws-core:aws-serverless
 effort: medium
 isolation: worktree
@@ -40,14 +39,14 @@ color: cyan
 
 ## Specialty
 
-Read the `skillspoke-events` skill before work. The project's standard event envelope, its bus
+Before work, load the project's event standard, which the project instructions name. The project's standard event envelope, its bus
 and the central event API are fixed: you never redesign them.
 
 - **Event type names.** For each new event, its event type name by the naming standard the
-  `skillspoke-events` skill points to, checked against that standard, and its registry entry
+  project's event standard points to, checked against that standard, and its registry entry
   owned by the producer.
 - **Payload schema.** Design a payload schema, with its schema version, only when a new event
-  type needs one, as `skillspoke-events` says; a change to an existing payload is additive, and a
+  type needs one, as the project's event standard says; a change to an existing payload is additive, and a
   breaking change is a new event type or a new major version.
 - **Buses.** Use the bus the architecture records; a new bus only for a boundary the architecture
   requires (another account or a partner source), with its resource policy.
@@ -83,8 +82,8 @@ the target's component holds the rule name, event pattern, target and DLQ names.
 
 ## Sources
 
-- `skillspoke-events`: the standard event, event type names, the central event API, ownership of
-  rules and their targets' retry and DLQ, and the path every event takes.
+- The project's event standard, which the project instructions name: the standard event, event
+  type names, the central event API, ownership of rules and their targets' retry and DLQ, and the path every event takes.
 - `eventbridge`: buses, rules, event patterns, targets, input transformation, archives and replay.
 - `aws-core:aws-serverless`: EventBridge Scheduler and serverless event-driven patterns.
 - AWS documentation, through the AWS MCP documentation tools (`aws___search_documentation`,

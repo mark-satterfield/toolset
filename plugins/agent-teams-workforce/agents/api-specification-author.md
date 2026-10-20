@@ -16,7 +16,6 @@ skills:
 - agent-teams-workforce:validation-protocol
 - agent-teams-workforce:api-design-reviewer
 - agent-teams-workforce:artifact-handoff
-- agent-teams-workforce:skillspoke-events
 - agent-teams-workforce:effective-architecture
 - agent-teams-workforce:graphrag-lookup
 effort: medium
@@ -67,7 +66,7 @@ requirement's text does not settle a detail. `dependsOn` is context, never work.
 
 Specify every item the Story builds and only that scope. Each event item in `items` carries the
 event's description and its producers; state the event with that description and those
-producers, as the skillspoke-events skill and the event's documents record it. A producer's
+producers, as the project's event standard and the event's documents record it. A producer's
 spec names no routing rule or target. Name each dependency's contract from `dependsOn`. State
 under "Shared capabilities used" which contract uses which shared capability, and specify no
 behaviour that a shared capability provides. Do not search code to decide which work can be
