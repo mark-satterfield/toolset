@@ -693,6 +693,8 @@ A cancelled check is usually a superseded run or a timeout: read its log; if it 
 
 1. **Lint / format.** Run the formatter and the linter's own auto-fix exactly as the workflow's tools would (`ruff format`, `ruff check --fix`; `npx eslint --fix .`, `npx prettier --write .`), then fix the remaining findings by hand. Re-run the workflow's own check command until it exits 0.
 2. **Type checks** (`mypy`, `tsc --noEmit`). Fix the code so the types are true. No ignores, no casts to `Any`/`any` to silence an error, no config relaxation.
+
+   The lint and type checks run over the whole repository, while commit hooks check only the files a commit touches, so a PR often carries findings in files it never changed. Those findings block the merge exactly as the PR's own do, and they are fixed in this pass: every finding the check's command reports, in whatever file, as a separate commit that says the findings were already in the repository. A finding is never left for a human because this PR did not introduce it, and never scoped out because its file is outside the diff.
 3. **Unit tests** (`unit-tests.yml` or the repository's test check). Reproduce with the workflow's own command, read the failure, find the root cause, fix the code. A failing test blocks the merge whether this PR introduced it or not, so a pre-existing failure is fixed too, as a separate commit that says so — unless fixing it is out of this PR's scope by a margin that needs a decision, in which case escalate (follow-up issue + WARNING-block artifacts) and record it in the audit comment. A test is changed only when it is provably wrong about the specified behavior, with the spec cited.
 4. **Snapshots.** Regenerate with the repository's own snapshot-update command, review the diff, and commit only when the new output is the intended behavior.
 5. **Any other required check** (build, synth, security scan, dependency audit, a CodeRabbit status check, a workflow that failed for environment reasons). Read the log, find the cause, fix it in the code or the PR. A check that failed for a transient infrastructure reason (runner lost, network, rate limit) is re-run: `gh run rerun <run-id> --failed --repo "$OWNER/$REPO"` — once per pass, and recorded. A check that fails because of something outside the repository (a missing secret, an expired credential, a broken shared workflow) is escalated with the evidence, not worked around.
@@ -762,8 +764,8 @@ gh pr comment "$PR_NUMBER" --repo "$OWNER/$REPO" --body "$AUDIT_BODY"
 | Check | Status | Action |
 |-------|--------|--------|
 | lint | was FAILURE → PASS | auto-fixed, commit ghi9012 |
-| typecheck | PASS | none |
-| tests | FAILURE | pre-existing, left for human |
+| typecheck | was FAILURE → PASS | 27 findings already in the repository fixed, commit jkl3456 |
+| tests | PASS | none |
 
 ---
 
