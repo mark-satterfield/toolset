@@ -245,7 +245,7 @@
     },
     {
       "name": "architecture-decider",
-      "description": "Rule on a matter the architecture team could not settle.",
+      "description": "Rule between the positions on an architecture matter the solutions architect and the architecture team lead could not settle, from the evidence each position carries, and record the ruling in the matrix as the settlement of the disagreement.",
       "skills": [
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:subagent-contract",
@@ -274,7 +274,7 @@
     },
     {
       "name": "architecture-fitness-function-author",
-      "description": "Defines testable assertions from the owner's constraints and the architecture decisions, e.g. \"every Lambda uses the configured logging library\", \"no service reads another service's table\". Use for Architecture Analysis work requiring fitness function authoring, constraint formalization, and conformance criteria. No workflow currently dispatches it.",
+      "description": "Defines testable assertions from the owner's constraints and the architecture decisions, e.g. \"every Lambda uses the configured logging library\", \"no service reads another service's table\". Use for Architecture Analysis work requiring fitness function authoring, constraint formalization, and conformance criteria.",
       "skills": [
         "agent-teams-workforce:artifact-handoff",
         "agent-teams-workforce:subagent-contract",
@@ -290,7 +290,7 @@
     },
     {
       "name": "architecture-impact-analyst",
-      "description": "Judges what an architecture change reaches. Given the architecture views an integration changed, created or deleted, it takes from the matrix every Epic, open Task and entry those views reach (`atw-matrix impact`, `affected`), and rules on each one: unaffected, not yet elaborated, elaborated but unbuilt, or already built. Read-only — it changes no bead and writes no code. Use after an architecture ruling created, changed or retired architecture views.",
+      "description": "Judges what an architecture change reaches. Given the architecture views an integration changed, created or deleted, it takes from the matrix every Epic, open Task and entry those views reach (`atw-matrix impact`, `affected`), and rules on each one: unaffected, not yet elaborated, elaborated but unbuilt, or already built, with a knock-on Task proposed for each built item. It changes no bead and writes no code or document; it writes only its result file. Use after an architecture change created, changed or retired architecture views.",
       "skills": [
         "agent-teams-workforce:artifact-handoff",
         "agent-teams-workforce:subagent-contract",
@@ -1334,7 +1334,7 @@
     },
     {
       "name": "filing-clerk",
-      "description": "The documentation filing clerk for the SkillSpoke knowledge base. Hand it a fact, decision, definition, or note and it (1) searches the skillspoke-docs Obsidian vault — fast, from several angles — to see whether it is already documented, (2) hunts for any single-source-of-truth violation (an unmarked duplicate of something canonical), (3) if the fact is genuinely new, decides the one correct home and files it there with proper classification frontmatter, and (4) reports what it did and any conflicts for the owner to adjudicate. Use PROACTIVELY whenever the owner says things like \"if we don't have it already, note that…\", \"file this\", \"document that…\", \"make sure it's written down somewhere\", \"capture this\", \"record that we decided…\", \"add … to arc42 / the glossary / the docs\", or offloads a fact so he won't forget it. Examples: \"note in arc42 somewhere that we use Amazon Bedrock AgentCore and the Strands Agents SDK for our agent\" → clerk checks the SAD, files under §4 Solution Strategy if absent; \"define 'aging authority' in the glossary if it isn't there\" → clerk searches, adds a glossary term; \"record that student verification uses SheerID\" → clerk finds the right tech/spec doc and files it.",
+      "description": "The documentation filing clerk for the SkillSpoke knowledge base. Hand it a fact, decision, definition, or note and it (1) searches the skillspoke-docs Obsidian vault — fast, from several angles — to see whether it is already documented, (2) hunts for any single-source-of-truth violation (an unmarked duplicate of something canonical), (3) if the fact is genuinely new, decides the one correct home and files it there with proper classification frontmatter, and (4) reports what it did and any conflicts for the owner to adjudicate. Use PROACTIVELY whenever the owner says things like \"if we don't have it already, note that…\", \"file this\", \"document that…\", \"make sure it's written down somewhere\", \"capture this\", \"record that we decided…\", \"add … to arc42 / the glossary / the docs\", or offloads a fact so the owner won't forget it. Examples: \"note in arc42 somewhere that we use Amazon Bedrock AgentCore and the Strands Agents SDK for our agent\" → clerk checks the SAD, files under §4 Solution Strategy if absent; \"define 'aging authority' in the glossary if it isn't there\" → clerk searches, adds a glossary term; \"record that student verification uses SheerID\" → clerk finds the right tech/spec doc and files it.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "obsidian:obsidian-cli",
@@ -2122,7 +2122,7 @@
     },
     {
       "name": "root-cause-analyst",
-      "description": "Diagnoses a bug bead read-only: the reproduction, the root cause, the distinct defects behind it, the files a fix must change, the blast radius, the surfaces the fix touches, and the repository it lives in; never fixes. No workflow currently dispatches it. Use for bug diagnosis requiring evidence-chain analysis.",
+      "description": "Diagnoses a bug bead read-only: the reproduction, the root cause, the distinct defects behind it, the files a fix must change, the blast radius, the surfaces the fix touches, and the repository it lives in; never fixes. Use for bug diagnosis requiring evidence-chain analysis.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:find-cause",
