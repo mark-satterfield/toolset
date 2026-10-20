@@ -213,11 +213,13 @@
     },
     {
       "name": "architecture-boundary-guardian",
-      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
+      "description": "Review, for the solutions architect, the boundaries of a design: whether each building block's responsibilities and owned data stay inside its bounded context, whether every interface that crosses a boundary is explicit about who exposes it and who may call it, whether shared behaviour is taken from its shared home, and whether the design breaks a section 2 constraint or departs from an established pattern without a stated reason.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:senior-architect",
-        "agent-teams-workforce:effective-architecture"
+        "agent-teams-workforce:graphrag-lookup"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -316,12 +318,15 @@
     },
     {
       "name": "architecture-pattern-challenger",
-      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
+      "description": "Review, for the solutions architect, the structure of a design for concrete weaknesses: a mechanism that does not do what the requirement needs, a structure more complex than the requirement, or an AWS pattern used against its documented best practice, each reported with the simpler sufficient repair.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:senior-architect",
         "agent-teams-workforce:aws-solution-architect",
-        "agent-teams-workforce:effective-architecture"
+        "agent-teams-workforce:aws-serverless-eda",
+        "aws-core:aws-well-architected-review"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -340,11 +345,14 @@
     },
     {
       "name": "architecture-tradeoff-skeptic",
-      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
+      "description": "Review, for the solutions architect, the trade-off claims of a design: whether each choice between options states the options and a reason the evidence supports, and whether the assumptions and estimates it rests on (latency, throughput, limits, effort) hold against the stated constraints and AWS documentation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:senior-architect",
-        "agent-teams-workforce:effective-architecture"
+        "agent-teams-workforce:aws-solution-architect",
+        "aws-core:aws-well-architected-review"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -653,10 +661,10 @@
     },
     {
       "name": "changed-resource-cost-reviewer",
-      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
+      "description": "Review, for the solutions architect, the cost effect of a design's changes to existing resources: changed billable limits, capacity modes, retention or usage, the cost assumptions each change rests on, a monthly floor it adds or moves, and any cost cliff (a pricing tier, free-tier limit, quota or capacity-mode boundary) the stated usage reaches.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:aws-cost-operations",
+        "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:effective-architecture",
         "aws-core:aws-billing-and-cost-management"
       ],
@@ -1286,17 +1294,20 @@
     },
     {
       "name": "failure-mode-analyst",
-      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
+      "description": "Review, for the solutions architect, how a design fails and recovers: throttling, duplicate and out-of-order delivery, poison messages, downstream outages, timeouts, retries, dead-letter queues, idempotency and recovery paths across Lambda, SQS, SNS, EventBridge and the event path, as the runtime views and the TRD state them.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:senior-architect",
-        "agent-teams-workforce:observability-designer",
-        "agent-teams-workforce:effective-architecture"
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:aws-serverless-eda",
+        "agent-teams-workforce:skillspoke-events",
+        "agent-teams-workforce:lambda",
+        "agent-teams-workforce:sqs",
+        "agent-teams-workforce:eventbridge"
       ],
       "mcpServers": [
         "aws-mcp",
-        "mcp-graphrag-server",
-        "pg-aiguide"
+        "mcp-graphrag-server"
       ]
     },
     {
@@ -1693,18 +1704,17 @@
     },
     {
       "name": "new-resource-cost-reviewer",
-      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
+      "description": "Review, for the solutions architect, the cost of each billable AWS resource a design adds: its unit prices from the AWS Price List, the monthly unit math at the stated usage computed by script, its fixed monthly floor separated from its usage cost, and the total against the stated cost ceilings.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:aws-cost-operations",
+        "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:effective-architecture",
         "aws-core:aws-billing-and-cost-management"
       ],
       "mcpServers": [
         "aws-mcp",
         "awslabs-dynamodb-mcp-server",
-        "mcp-graphrag-server",
-        "pg-aiguide"
+        "mcp-graphrag-server"
       ]
     },
     {
@@ -1738,11 +1748,13 @@
     },
     {
       "name": "operational-readiness-reviewer",
-      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
+      "description": "Review, for the solutions architect, whether a design can be operated: the logs, metrics, alarms and dashboards each block needs, the TRD's observability, availability and recovery obligations, how each failure is detected and who is told, and the operational burden at the stated usage.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:observability-designer",
+        "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:observability-designer",
+        "agent-teams-workforce:cloudwatch",
         "aws-core:aws-observability"
       ],
       "mcpServers": [
