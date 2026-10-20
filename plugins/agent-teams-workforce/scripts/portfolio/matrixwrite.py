@@ -360,6 +360,7 @@ def put(  # ruff: ignore[too-many-arguments] - One keyword per member of an entr
     entry_id: EntryId | None = None,
     name: str | None = None,
     aliases: Sequence[str] = (),
+    removed_aliases: Sequence[str] = (),
     purpose: str | None = None,
     attributes: Mapping[str, JsonValue] | None = None,
     stack: EntryId | None = None,
@@ -375,9 +376,10 @@ def put(  # ruff: ignore[too-many-arguments] - One keyword per member of an entr
     names the stack that holds it.
 
     Only what is stated changes. A stated name or purpose replaces the one held. Stated aliases
-    join the ones held. A stated attribute replaces the one held, except that the members of an
-    object are laid over the held object's and the items of a list join the held list, where an
-    object with the ``id`` of a held one replaces it; an attribute stated as null is removed.
+    join the ones held; aliases stated for removal leave them. A stated attribute replaces the
+    one held, except that the members of an object are laid over the held object's and the items
+    of a list join the held list, where an object with the ``id`` of a held one replaces it; an
+    attribute stated as null is removed.
     The approved and verified flags are never stated. The verified flag is left as it is; a call
     that changes an approved entry clears its approved flag (``Matrix.put``). A call that states
     what the entry already holds changes nothing. An entry that then breaks its
@@ -395,6 +397,7 @@ def put(  # ruff: ignore[too-many-arguments] - One keyword per member of an entr
             infrastructure or layer). An Epic, a requirement and a document state their id.
         name: The entry's name; needed for an entry that is new.
         aliases: Other names the entry is known by.
+        removed_aliases: Aliases the entry is no longer known by; one it does not hold changes nothing.
         purpose: One or two sentences that identify the entry.
         attributes: The attributes the kind declares, by name.
         stack: The id of the stack that holds the entry; needed only to build the id of a
@@ -406,12 +409,18 @@ def put(  # ruff: ignore[too-many-arguments] - One keyword per member of an entr
     Raises:
         MatrixRefusedError: An attribute is not one the kind declares, the id is of another kind,
             a new entry has no name or a name another entry of the kind answers to on its side,
-            the id cannot be built from what is stated, or a put from the repository side states
-            another name or purpose for an entry on the architecture side.
+            the id cannot be built from what is stated, a put from the repository side states
+            another name or purpose for an entry on the architecture side, or one alias is
+            stated both to add and to remove.
 
     """
     stated: dict[str, JsonValue] = dict(attributes or {})
     message: str
+    dropped: set[str] = {alias.strip() for alias in removed_aliases if alias.strip()}
+    contested: list[str] = sorted(dropped & {alias.strip() for alias in aliases})
+    if contested:
+        message = f"the aliases {', '.join(contested)} are stated both to add and to remove"
+        raise MatrixRefusedError(message)
     stray: list[str] = sorted(set(stated) - ENTRY_RULES[kind].attributes)
     if stray:
         message = f"a {kind} does not take {', '.join(stray)}; it takes " + (
@@ -431,7 +440,11 @@ def put(  # ruff: ignore[too-many-arguments] - One keyword per member of an entr
         name=named,
         side=_side_kept(existing, side, named, described, stated),
         aliases=tuple(
-            dict.fromkeys(alias.strip() for alias in (*base.aliases, *aliases) if alias.strip() and alias != named),
+            dict.fromkeys(
+                alias.strip()
+                for alias in (*base.aliases, *aliases)
+                if alias.strip() and alias != named and alias.strip() not in dropped
+            ),
         ),
         purpose=described,
         attributes=_laid(base.attributes, stated),

@@ -361,6 +361,7 @@ def _run_put(call: Call) -> Outcome:
             entry_id=entry_id,
             name=call.text("name"),
             aliases=call.texts("aliases"),
+            removed_aliases=call.texts("remove_aliases"),
             purpose=call.text("purpose"),
             attributes=attributes,
             stack=stack,
@@ -826,6 +827,11 @@ def _change_parsers(
     entry.add_argument("--id", help="the entry's id; default: built from the kind and the name")
     entry.add_argument("--name", help="the entry's name; needed for an entry that is new")
     entry.add_argument("--aliases", nargs="+", help="other names the entry is known by; the values given are added")
+    entry.add_argument(
+        "--remove-aliases",
+        nargs="+",
+        help="aliases to remove from the entry; one it does not hold is ignored",
+    )
     entry.add_argument("--purpose", help="one or two sentences that identify the entry")
     entry.add_argument(
         "--stack",

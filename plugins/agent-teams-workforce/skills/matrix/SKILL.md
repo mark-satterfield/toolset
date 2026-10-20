@@ -169,6 +169,7 @@ entry.
 | Events, purposes and publishers from the event catalog (arc42 section 6) | `atw-matrix sync-events` |
 | Stacks against the repositories | the `polyrepo-doctor` `matrix` check (`atw-matrix stacks`, `check`) |
 | Validate the file | `atw-matrix check` |
+| Remove an alias from an entry (clears its approved flag) | `atw-matrix put <kind> --id <id> --side <side> --remove-aliases "<alias>"` |
 
 Seeding fills an empty matrix in this order (`blueprint/design/matrix.md` section 3):
 
