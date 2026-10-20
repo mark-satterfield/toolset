@@ -161,7 +161,7 @@ from naming_command import (
     repository_names,
     type_problem,
 )
-from stack_scan import scan_markdown, scan_repository, summarize, summary_markdown
+from technology_scan import scan_markdown, scan_repository, summarize, summary_markdown
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -3842,7 +3842,10 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
             f"render the {args.template} template into {dest}",
             "write the shared AGENTS.md blocks, including GitNexus",
             "merge the shared hook registrations into .claude/settings.json (hooks_sync)",
-            "after git init, write the canonical code checks of its stacks and install the commit hook (checks_sync)",
+            (
+                "after git init, write the canonical code checks of its technologies"
+                " and install the commit hook (checks_sync)"
+            ),
             "install GitNexus: .gitnexusrc, the .gitnexus ignore rule and .claude/skills/gitnexus/",
             "run the repo's own formatters (.code-checks/run.py commit mode) over the rendered files once",
             f"git init on {b}, exclude {WORKTREES_LINE} locally",
@@ -7075,16 +7078,16 @@ def cmd_hooks_sync(args: argparse.Namespace, cfg: Config) -> int:
 
 # checks-sync ----------------------------------------------------------------------------------
 # The config's `checks_sync.spec_file` names the project's canonical code checks: one pin per tool,
-# the common pre-commit fragment and, per stack, the canonical configuration files, the pre-commit
+# the common pre-commit fragment and, per technology, the canonical configuration files, the pre-commit
 # fragment and the configurations they replace. checks_sync.py plans what each repository receives
-# from the stacks the tech-stacks scan finds in it; this section commits and pushes it. Everything
+# from the technologies the tech-stacks scan finds in it; this section commits and pushes it. Everything
 # written is tier 2 (configuration and hooks), so it is committed on main whatever the repo's tier.
 
 CHECKS_SYNC_SUBJECT = "chore(checks): sync the canonical checker configurations"
 CHECKS_HOOK_SUBJECT = "chore(checks): run the canonical checks from the commit hook"
 PRE_COMMIT_INSTALL_TIMEOUT = 300
 FORMAT_TIMEOUT = 600
-# The runner's formatting hooks, by stack: (stack, hook id, the suffixes it takes, or None for
+# The runner's formatting hooks, by technology: (technology, hook id, the suffixes it takes, or None for
 # every file). In commit mode the runner writes the formatting in place (ruff check --fix and
 # ruff format; prettier --write --ignore-unknown, which honours the repo's .prettierignore).
 FORMAT_HOOKS: tuple[tuple[str, str, frozenset[str] | None], ...] = (
@@ -7094,11 +7097,11 @@ FORMAT_HOOKS: tuple[tuple[str, str, frozenset[str] | None], ...] = (
 )
 
 
-def _checks_stacks(dest: Path) -> frozenset[str]:
-    """Read the stacks the repo's synced `checks.json` names.
+def _checks_technologies(dest: Path) -> frozenset[str]:
+    """Read the technologies the repo's synced `checks.json` names.
 
     Returns:
-        The stacks; none when the repo has no readable `checks.json`.
+        The technologies; none when the repo has no readable `checks.json`.
 
     """
     spec_path = dest / CHECKS_JSON
@@ -7108,14 +7111,14 @@ def _checks_stacks(dest: Path) -> frozenset[str]:
         parsed: object = json.loads(spec_path.read_text())
     except json.JSONDecodeError:
         return frozenset()
-    stacks = parsed.get("stacks") if isinstance(parsed, dict) else None
-    return frozenset(s for s in stacks if isinstance(s, str)) if isinstance(stacks, list) else frozenset()
+    technologies = parsed.get("technologies") if isinstance(parsed, dict) else None
+    return frozenset(s for s in technologies if isinstance(s, str)) if isinstance(technologies, list) else frozenset()
 
 
 def format_rendered(dest: Path) -> list[str]:
     """Run the repo's own formatters over its uncommitted files once, before the first commit (create).
 
-    Each formatting hook of a stack the synced `checks.json` names runs through the synced
+    Each formatting hook of a technology the synced `checks.json` names runs through the synced
     `.code-checks/run.py` in commit mode, the mode that writes, over the files git would commit.
     A finding a formatter cannot fix is reported, not raised: the commit hook reports it again.
 
@@ -7128,8 +7131,8 @@ def format_rendered(dest: Path) -> list[str]:
         return []
     listing = git_out(dest, "ls-files", "--others", "--exclude-standard", "-z") or ""
     files = [f for f in listing.split("\0") if f]
-    stacks = _checks_stacks(dest)
-    hooks = [(hook, suffixes) for stack, hook, suffixes in FORMAT_HOOKS if stack in stacks]
+    technologies = _checks_technologies(dest)
+    hooks = [(hook, suffixes) for technology, hook, suffixes in FORMAT_HOOKS if technology in technologies]
     problems: list[str] = []
     for hook, suffixes in hooks:
         targets = [f for f in files if suffixes is None or Path(f).suffix in suffixes]
@@ -7189,7 +7192,7 @@ def _checks_sync(cfg: Config) -> ChecksSync | None:
 
 
 def _checks_plan(sync: ChecksSync, path: Path, name: str) -> RepoPlan:
-    """Scan a working tree's stacks and plan its canonical checks.
+    """Scan a working tree's technologies and plan its canonical checks.
 
     Returns:
         The plan.
@@ -7202,7 +7205,7 @@ def _checks_plan(sync: ChecksSync, path: Path, name: str) -> RepoPlan:
     if scan.error:
         raise PolyrepoError(scan.error)
     try:
-        return plan_repository(path, [stack.name for stack in scan.stacks], sync.spec, _git_output)
+        return plan_repository(path, [technology.name for technology in scan.technologies], sync.spec, _git_output)
     except ChecksSpecError as exc:
         raise PolyrepoError(str(exc)) from exc
 
@@ -7329,10 +7332,10 @@ def _checks_result(name: str, plan: RepoPlan) -> dict[str, object]:
     """Describe a repo's plan.
 
     Returns:
-        {repo, state, stacks} plus the changed paths, the notes and the stacks with no canonical checks.
+        {repo, state, technologies} plus the changed paths, the notes and the technologies with no canonical checks.
 
     """
-    res: dict[str, object] = {"repo": name, "state": plan.state, "stacks": list(plan.stacks)}
+    res: dict[str, object] = {"repo": name, "state": plan.state, "technologies": list(plan.technologies)}
     extra = {
         "changes": [c.path for c in plan.changes],
         "notes": list(plan.notes),
@@ -7398,7 +7401,7 @@ def _sync_checks_files(
 
 
 def cmd_checks_sync(args: argparse.Namespace, cfg: Config) -> int:
-    """Give every repo the canonical code checks of the stacks it holds.
+    """Give every repo the canonical code checks of the technologies it holds.
 
     Returns:
         0 when every repo is current (or was brought current and pushed), else 1.
@@ -9219,7 +9222,7 @@ def _add_inspect_commands(add: Callable[[str, str], argparse.ArgumentParser]) ->
     s.add_argument(
         "--summary",
         action="store_true",
-        help="group repos by stack and configurations by fingerprint, and list missing checks",
+        help="group repos by technology and configurations by fingerprint, and list missing checks",
     )
     s.set_defaults(func=cmd_tech_stacks)
 
@@ -9357,7 +9360,7 @@ def _add_checks_sync_command(add: Callable[[str, str], argparse.ArgumentParser])
     """Add checks-sync."""
     s = add(
         "checks-sync",
-        "give every repo the canonical code checks of its stacks and the commit hook that runs them",
+        "give every repo the canonical code checks of its technologies and the commit hook that runs them",
     )
     s.add_argument("--check", action="store_true", help="report repos out of date")
     s.add_argument("--dry-run", action="store_true", help="same as --check")

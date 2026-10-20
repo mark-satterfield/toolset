@@ -53,7 +53,7 @@ uv run "${CLAUDE_PLUGIN_ROOT}/skills/polyrepo-repo/scripts/polyrepo.py" <command
 | Repos with an attribute | `search attr=value` (dotted keys, e.g. `main.behind=0`, `github.archived=false`) |
 | Every repo's full record (path, groups, live state, and the matrix's stacks with their purposes) | `inventory` |
 | Text across every repo | `grep <pattern>` |
-| Which repos hold which tech stacks (Python, CDK, TypeScript, JavaScript, web, shell, YAML, JSON, Markdown), which checker configurations each carries, which copies are identical, and which checks a repo lacks for a stack it holds | `tech-stacks` (one repo: `--repo R`; grouped: `--summary`) |
+| Which repos hold which tech stacks (Python, CDK, TypeScript, JavaScript, web, shell, YAML, JSON, Markdown), which checker configurations each carries, which copies are identical, and which checks a repo lacks for a technology it holds | `tech-stacks` (one repo: `--repo R`; grouped: `--summary`) |
 
 Invoke the tool by that path; a bare `polyrepo` on `PATH` may be an unrelated program.
 Everything else — which repo owns a piece of functionality (the matrix's answer, not

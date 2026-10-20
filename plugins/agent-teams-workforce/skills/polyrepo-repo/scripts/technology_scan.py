@@ -1,4 +1,4 @@
-"""Detect the stacks a repository holds and the checker configurations it carries.
+"""Detect the technologies a repository holds and the checker configurations it carries.
 
 Detection is generic: it reads evidence from the files in a working tree (file types,
 manifests, configuration files, workflow files) and from no list of repositories. The files
@@ -48,7 +48,7 @@ SUFFIX_KINDS: Final[Mapping[str, str]] = {
     ".html": "html",
 }  # fmt: skip
 NAME_KINDS: Final[Mapping[str, str]] = {"Dockerfile": "dockerfile"}
-DATA_STACKS: Final = ("shell", "yaml", "json", "markdown", "toml", "dockerfile")
+DATA_TECHNOLOGIES: Final = ("shell", "yaml", "json", "markdown", "toml", "dockerfile")
 WEB_FRAMEWORKS: Final[Mapping[str, str]] = {
     "next": "Next.js", "react": "React", "vue": "Vue", "nuxt": "Nuxt", "svelte": "Svelte",
     "@sveltejs/kit": "SvelteKit", "@angular/core": "Angular", "astro": "Astro", "solid-js": "Solid",
@@ -100,7 +100,7 @@ TOOL_TOKENS: Final = (
 )
 LINT_TOOLS: Final = frozenset({"ruff", "flake8", "pylint", "eslint", "biome", "prettier", "shellcheck", "yamllint"})
 TYPE_TOOLS: Final = frozenset({"mypy", "pyright", "tsc"})
-STACK_CHECKS: Final[Mapping[str, tuple[tuple[str, frozenset[str]], ...]]] = {
+TECHNOLOGY_CHECKS: Final[Mapping[str, tuple[tuple[str, frozenset[str]], ...]]] = {
     "python": (("lint", frozenset({"ruff", "flake8", "pylint"})), ("types", frozenset({"mypy", "pyright"}))),
     "typescript": (("lint", frozenset({"eslint", "biome"})), ("types", frozenset({"tsconfig", "tsc"}))),
     "javascript": (("lint", frozenset({"eslint", "biome"})),),
@@ -110,7 +110,7 @@ STACK_CHECKS: Final[Mapping[str, tuple[tuple[str, frozenset[str]], ...]]] = {
     "json": (("lint", frozenset({"check-json", "biome", "prettier"})),),
     "markdown": (("lint", frozenset({"markdownlint", "prettier"})),),
 }
-CODE_STACKS: Final = ("python", "typescript", "javascript", "cdk", "web")
+CODE_TECHNOLOGIES: Final = ("python", "typescript", "javascript", "cdk", "web")
 WORKFLOW_FOLDER: Final = ".github/workflows/"
 TASK_FILES: Final = re.compile(r"Taskfile(\.dist)?\.ya?ml|Makefile|justfile")
 CDK_NAG_SOURCES: Final = ("*.py", "*.ts", "*.js", "*.mjs")
@@ -125,8 +125,8 @@ REQUIREMENTS_FILE: Final = re.compile(r"requirements[\w.-]*\.txt")
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class Stack:
-    """One stack a repository holds, with the evidence for it."""
+class Technology:
+    """One technology a repository holds, with the evidence for it."""
 
     name: str
     evidence: tuple[str, ...]
@@ -145,11 +145,11 @@ class CheckerConfig:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class RepoScan:
-    """What one repository holds: its stacks, its checker configurations and its missing checks."""
+    """What one repository holds: its technologies, its checker configurations and its missing checks."""
 
     repo: str
     path: str
-    stacks: tuple[Stack, ...]
+    technologies: tuple[Technology, ...]
     configs: tuple[CheckerConfig, ...]
     tools: tuple[str, ...]
     gaps: tuple[str, ...]
@@ -496,7 +496,7 @@ def _declaring(deps: Mapping[str, frozenset[str]], package: str) -> list[str]:
 
 
 # ------------------------------------------------------------------------------------------
-# stacks
+# technologies
 
 
 def _count_line(tree: Tree, kind: str, label: str) -> list[str]:
@@ -515,7 +515,7 @@ def _count_line(tree: Tree, kind: str, label: str) -> list[str]:
     return [f"{count} {label} files"] if count else []
 
 
-def _python_stack(tree: Tree, manifests: Manifests) -> Stack | None:
+def _python_technology(tree: Tree, manifests: Manifests) -> Technology | None:
     """Detect Python.
 
     Args:
@@ -523,11 +523,11 @@ def _python_stack(tree: Tree, manifests: Manifests) -> Stack | None:
         manifests: The tree's manifests.
 
     Returns:
-        The stack, or None when the tree holds no Python.
+        The technology, or None when the tree holds no Python.
 
     """
     evidence: list[str] = [*manifests.pyprojects, *tree.named(REQUIREMENTS_FILE), *_count_line(tree, "python", "*.py")]
-    return Stack("python", tuple(evidence)) if evidence else None
+    return Technology("python", tuple(evidence)) if evidence else None
 
 
 def _cdk_language(tree: Tree, rel: str) -> str:
@@ -546,7 +546,7 @@ def _cdk_language(tree: Tree, rel: str) -> str:
     return next((language for language, pattern in CDK_APP_LANGUAGES if pattern.search(text)), "unknown")
 
 
-def _cdk_stack(tree: Tree, manifests: Manifests) -> Stack | None:
+def _cdk_technology(tree: Tree, manifests: Manifests) -> Technology | None:
     """Detect a CDK app or construct library.
 
     Args:
@@ -554,7 +554,7 @@ def _cdk_stack(tree: Tree, manifests: Manifests) -> Stack | None:
         manifests: The tree's manifests.
 
     Returns:
-        The stack with its app languages, or None when the tree holds no CDK.
+        The technology with its app languages, or None when the tree holds no CDK.
 
     """
     apps: list[str] = tree.named(re.compile(r"cdk\.json"))
@@ -566,24 +566,24 @@ def _cdk_stack(tree: Tree, manifests: Manifests) -> Stack | None:
     languages: set[str] = {_cdk_language(tree, rel) for rel in apps}
     languages |= {"python"} if python_lib else set()
     languages |= {"typescript" if tree.kinds["typescript"] else "javascript"} if node_lib else set()
-    return Stack("cdk", tuple(evidence), tuple(sorted(languages)))
+    return Technology("cdk", tuple(evidence), tuple(sorted(languages)))
 
 
-def _typescript_stack(tree: Tree) -> Stack | None:
+def _typescript_technology(tree: Tree) -> Technology | None:
     """Detect TypeScript.
 
     Args:
         tree: The tree.
 
     Returns:
-        The stack, or None when the tree holds no TypeScript.
+        The technology, or None when the tree holds no TypeScript.
 
     """
     evidence: list[str] = [*tree.named(re.compile(r"tsconfig\.json")), *_count_line(tree, "typescript", "*.ts/*.tsx")]
-    return Stack("typescript", tuple(evidence)) if evidence else None
+    return Technology("typescript", tuple(evidence)) if evidence else None
 
 
-def _javascript_stack(tree: Tree, manifests: Manifests) -> Stack | None:
+def _javascript_technology(tree: Tree, manifests: Manifests) -> Technology | None:
     """Detect JavaScript: JavaScript files, or a package.json with no TypeScript beside it.
 
     Args:
@@ -591,15 +591,15 @@ def _javascript_stack(tree: Tree, manifests: Manifests) -> Stack | None:
         manifests: The tree's manifests.
 
     Returns:
-        The stack, or None when the tree holds no JavaScript.
+        The technology, or None when the tree holds no JavaScript.
 
     """
     lone_packages: list[str] = [] if tree.kinds["typescript"] else list(manifests.package_jsons)
     evidence: list[str] = [*lone_packages, *_count_line(tree, "javascript", "*.js/*.mjs/*.cjs/*.jsx")]
-    return Stack("javascript", tuple(evidence)) if evidence else None
+    return Technology("javascript", tuple(evidence)) if evidence else None
 
 
-def _web_stack(tree: Tree, manifests: Manifests) -> Stack | None:
+def _web_technology(tree: Tree, manifests: Manifests) -> Technology | None:
     """Detect a web front end: a front-end framework dependency or framework configuration.
 
     Args:
@@ -607,7 +607,7 @@ def _web_stack(tree: Tree, manifests: Manifests) -> Stack | None:
         manifests: The tree's manifests.
 
     Returns:
-        The stack with its frameworks, or None when the tree holds no web front end.
+        The technology with its frameworks, or None when the tree holds no web front end.
 
     """
     found: dict[str, list[str]] = {
@@ -616,41 +616,41 @@ def _web_stack(tree: Tree, manifests: Manifests) -> Stack | None:
     frameworks: dict[str, list[str]] = {label: rels for label, rels in found.items() if rels}
     configs: list[str] = tree.named(WEB_CONFIG_FILE)
     evidence: list[str] = [*(f"{label} in {', '.join(rels)}" for label, rels in frameworks.items()), *configs]
-    return Stack("web", tuple(evidence), tuple(frameworks)) if evidence else None
+    return Technology("web", tuple(evidence), tuple(frameworks)) if evidence else None
 
 
-def _data_stacks(tree: Tree) -> list[Stack]:
+def _data_technologies(tree: Tree) -> list[Technology]:
     """Detect the other file kinds that have common checkers.
 
     Args:
         tree: The tree.
 
     Returns:
-        One stack per kind the tree holds.
+        One technology per kind the tree holds.
 
     """
-    return [Stack(kind, (f"{tree.kinds[kind]} files",)) for kind in DATA_STACKS if tree.kinds[kind]]
+    return [Technology(kind, (f"{tree.kinds[kind]} files",)) for kind in DATA_TECHNOLOGIES if tree.kinds[kind]]
 
 
-def detect_stacks(tree: Tree, manifests: Manifests) -> tuple[Stack, ...]:
-    """Detect every stack a tree holds.
+def detect_technologies(tree: Tree, manifests: Manifests) -> tuple[Technology, ...]:
+    """Detect every technology a tree holds.
 
     Args:
         tree: The tree.
         manifests: The tree's manifests.
 
     Returns:
-        The stacks, code stacks first.
+        The technologies, code technologies first.
 
     """
-    code: list[Stack | None] = [
-        _python_stack(tree, manifests),
-        _cdk_stack(tree, manifests),
-        _typescript_stack(tree),
-        _javascript_stack(tree, manifests),
-        _web_stack(tree, manifests),
+    code: list[Technology | None] = [
+        _python_technology(tree, manifests),
+        _cdk_technology(tree, manifests),
+        _typescript_technology(tree),
+        _javascript_technology(tree, manifests),
+        _web_technology(tree, manifests),
     ]
-    return (*(stack for stack in code if stack), *_data_stacks(tree))
+    return (*(technology for technology in code if technology), *_data_technologies(tree))
 
 
 # ------------------------------------------------------------------------------------------
@@ -911,26 +911,26 @@ def checker_tools(configs: Iterable[CheckerConfig]) -> tuple[str, ...]:
     return tuple(sorted({tool for config in configs for tool in _config_tools(config)}))
 
 
-def find_gaps(stacks: Iterable[Stack], tools: Iterable[str]) -> tuple[str, ...]:
-    """Name each check a stack calls for that no tool of the repository provides.
+def find_gaps(technologies: Iterable[Technology], tools: Iterable[str]) -> tuple[str, ...]:
+    """Name each check a technology calls for that no tool of the repository provides.
 
     A tool counts when the repository configures it, or runs it from its own pre-commit hooks
     or task runner. A CI workflow does not count on its own: a shared workflow can name a tool
     and run it only when the repository configures it.
 
     Args:
-        stacks: The repository's stacks.
+        technologies: The repository's technologies.
         tools: The checker tools the repository configures or runs.
 
     Returns:
-        One `<stack>:<check>` per missing check.
+        One `<technology>:<check>` per missing check.
 
     """
     present: frozenset[str] = frozenset(tools)
     return tuple(
-        f"{stack.name}:{check}"
-        for stack in stacks
-        for check, satisfying in STACK_CHECKS.get(stack.name, ())
+        f"{technology.name}:{check}"
+        for technology in technologies
+        for check, satisfying in TECHNOLOGY_CHECKS.get(technology.name, ())
         if not satisfying & present
     )
 
@@ -952,10 +952,10 @@ def scan_repository(repo: str, root: Path, git_output: GitOutput) -> RepoScan:
     except ValueError as error:
         return RepoScan(repo, str(root), (), (), (), (), str(error))
     manifests: Manifests = read_manifests(tree)
-    stacks: tuple[Stack, ...] = detect_stacks(tree, manifests)
+    technologies: tuple[Technology, ...] = detect_technologies(tree, manifests)
     configs: tuple[CheckerConfig, ...] = find_configs(tree, manifests, git_output)
     own: tuple[str, ...] = checker_tools(config for config in configs if config.checker not in COVERAGE_EXCLUDED)
-    return RepoScan(repo, str(root), stacks, configs, checker_tools(configs), find_gaps(stacks, own))
+    return RepoScan(repo, str(root), technologies, configs, checker_tools(configs), find_gaps(technologies, own))
 
 
 # ------------------------------------------------------------------------------------------
@@ -973,15 +973,15 @@ class Variant:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Summary:
-    """Repositories grouped by stack, configurations grouped by fingerprint, and missing checks."""
+    """Repositories grouped by technology, configurations grouped by fingerprint, and missing checks."""
 
     repositories: int
-    stacks: dict[str, list[str]]
+    technologies: dict[str, list[str]]
     configs: dict[str, list[Variant]]
     variant_counts: dict[str, int]
     gaps: dict[str, list[str]]
     gaps_by_check: dict[str, list[str]]
-    code_stack_gaps: list[str]
+    code_technology_gaps: list[str]
     errors: dict[str, str]
 
 
@@ -1023,7 +1023,7 @@ def _variants(scans: Sequence[RepoScan], checker: str) -> list[Variant]:
 
 
 def summarize(scans: Sequence[RepoScan]) -> Summary:
-    """Group repositories by stack, configurations by fingerprint, and list missing checks.
+    """Group repositories by technology, configurations by fingerprint, and list missing checks.
 
     Args:
         scans: Every repository's scan.
@@ -1036,12 +1036,14 @@ def summarize(scans: Sequence[RepoScan]) -> Summary:
     configs: dict[str, list[Variant]] = {checker: _variants(scans, checker) for checker in checkers}
     return Summary(
         repositories=len(scans),
-        stacks=_group((stack.name, scan.repo) for scan in scans for stack in scan.stacks),
+        technologies=_group((technology.name, scan.repo) for scan in scans for technology in scan.technologies),
         configs=configs,
         variant_counts={checker: len(variants) for checker, variants in configs.items()},
         gaps={scan.repo: list(scan.gaps) for scan in scans if scan.gaps},
         gaps_by_check=_group((gap, scan.repo) for scan in scans for gap in scan.gaps),
-        code_stack_gaps=sorted({s.repo for s in scans for g in s.gaps if g.partition(":")[0] in CODE_STACKS}),
+        code_technology_gaps=sorted({
+            s.repo for s in scans for g in s.gaps if g.partition(":")[0] in CODE_TECHNOLOGIES
+        }),
         errors={scan.repo: scan.error for scan in scans if scan.error},
     )
 
@@ -1057,9 +1059,12 @@ def summary_markdown(summary: Summary) -> str:
 
     """
     copies: dict[str, int] = {name: sum(v.count for v in variants) for name, variants in summary.configs.items()}
-    lines: list[str] = [f"# Repository stacks and checker configurations ({summary.repositories} repositories)", ""]
-    lines += ["## Repositories per stack", "", "| Stack | Count | Repositories |", "|---|---|---|"]
-    lines += [f"| {name} | {len(repos)} | {', '.join(repos)} |" for name, repos in summary.stacks.items()]
+    lines: list[str] = [
+        f"# Repository tech stacks and checker configurations ({summary.repositories} repositories)",
+        "",
+    ]
+    lines += ["## Repositories per technology", "", "| Technology | Count | Repositories |", "|---|---|---|"]
+    lines += [f"| {name} | {len(repos)} | {', '.join(repos)} |" for name, repos in summary.technologies.items()]
     lines += ["", "## Configuration variants per checker", "", "| Checker | Variants | Copies |", "|---|---|---|"]
     lines += [f"| {name} | {count} | {copies[name]} |" for name, count in summary.variant_counts.items()]
     for name, variants in summary.configs.items():
@@ -1067,7 +1072,10 @@ def summary_markdown(summary: Summary) -> str:
         lines += [f"- `{v.fingerprint}` ({v.count}): {', '.join(v.locations)}" for v in variants]
     lines += ["", "## Missing checks", "", "| Check | Repositories lacking it |", "|---|---|"]
     lines += [f"| {gap} | {len(repos)}: {', '.join(repos)} |" for gap, repos in summary.gaps_by_check.items()]
-    lines += ["", f"Repositories lacking a check for a code stack they contain: {len(summary.code_stack_gaps)}"]
+    lines += [
+        "",
+        f"Repositories lacking a check for a code technology they contain: {len(summary.code_technology_gaps)}",
+    ]
     lines += [f"- error in {repo}: {error}" for repo, error in summary.errors.items()]
     return "\n".join(lines) + "\n"
 
@@ -1084,7 +1092,10 @@ def scan_markdown(scan: RepoScan) -> str:
     """
     lines: list[str] = [f"{scan.repo}  {scan.path}"]
     lines += [f"  error: {scan.error}"] if scan.error else []
-    lines += [f"  stack {stack.name}{_languages(stack)}: {'; '.join(stack.evidence)}" for stack in scan.stacks]
+    lines += [
+        f"  technology {technology.name}{_languages(technology)}: {'; '.join(technology.evidence)}"
+        for technology in scan.technologies
+    ]
     lines += [
         f"  config {c.checker} {c.path} {c.fingerprint or '-'} {' '.join(c.detail)}".rstrip() for c in scan.configs
     ]
@@ -1092,14 +1103,14 @@ def scan_markdown(scan: RepoScan) -> str:
     return "\n".join(lines)
 
 
-def _languages(stack: Stack) -> str:
-    """Format a stack's languages for text output.
+def _languages(technology: Technology) -> str:
+    """Format a technology's languages for text output.
 
     Args:
-        stack: The stack.
+        technology: The technology.
 
     Returns:
-        ` (<languages>)`, or an empty string when the stack names none.
+        ` (<languages>)`, or an empty string when the technology names none.
 
     """
-    return f" ({', '.join(stack.languages)})" if stack.languages else ""
+    return f" ({', '.join(technology.languages)})" if technology.languages else ""

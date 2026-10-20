@@ -1,14 +1,14 @@
 """Plan a repository's canonical code checks: the files `polyrepo checks-sync` writes, changes and removes.
 
 The project's spec file (`checks_sync.spec_file` in the polyrepo config) names one pin per tool, the
-pre-commit fragment every repository receives, and per stack the canonical configuration files, the
+pre-commit fragment every repository receives, and per technology the canonical configuration files, the
 pre-commit fragment and the configurations the canonical files replace. A repository receives the
-common entries and the entries of each stack the tech-stacks scan finds in it; nothing here names a
-repository or a stack.
+common entries and the entries of each technology the tech-stacks scan finds in it; nothing here names a
+repository or a technology.
 
 Into `.code-checks/` go the runner payload (the scripts in `code_checks/` beside this module) and
-`checks.json`, which tells the runner the repository's stacks, the pins, its CDK apps and the files
-beside a `cdk.json` that belong to its app (the stacks' `hook_files`). The edit
+`checks.json`, which tells the runner the repository's technologies, the pins, its CDK apps and the files
+beside a `cdk.json` that belong to its app (the technologies' `hook_files`). The edit
 hook, the commit hook and the repository's `lint` task all run that runner, so every caller checks
 with one definition.
 
@@ -36,7 +36,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString, SingleQuotedScalarString
-from stack_scan import DATA_STACKS, EXCLUDED_DIRS
+from technology_scan import DATA_TECHNOLOGIES, EXCLUDED_DIRS
 from tomlkit.exceptions import TOMLKitError
 
 if TYPE_CHECKING:
@@ -51,7 +51,7 @@ CHECKS_JSON: Final = f"{CHECKS_DIR}/checks.json"
 RUNNER_MARK: Final = f"{CHECKS_DIR}/run.py"
 PRE_COMMIT_CONFIG: Final = ".pre-commit-config.yaml"
 TASKFILE_NAMES: Final = ("Taskfile.yml", "Taskfile.yaml")
-LINT_TASK_DESCRIPTION: Final = "Run every code check of the repository's stacks (.code-checks/run.py)"
+LINT_TASK_DESCRIPTION: Final = "Run every code check of the repository's technologies (.code-checks/run.py)"
 PYPROJECT: Final = "pyproject.toml"
 SETUP_CFG: Final = "setup.cfg"
 ROOT_TSCONFIG: Final = "tsconfig.json"
@@ -86,8 +86,8 @@ class ChecksSpecError(ValueError):
 
 
 @dataclasses.dataclass(frozen=True)
-class StackSpec:
-    """What the spec gives the repositories that hold one stack."""
+class TechnologySpec:
+    """What the spec gives the repositories that hold one technology."""
 
     name: str
     files: dict[str, Path]
@@ -108,7 +108,7 @@ class ChecksSpec:
     source: Path
     pins: dict[str, object]
     common_pre_commit: Path
-    stacks: dict[str, StackSpec]
+    technologies: dict[str, TechnologySpec]
     supersede_repos: frozenset[str]
     supersede_tools: frozenset[str]
     lint_task: str
@@ -133,7 +133,7 @@ class FileChange:
 class RepoPlan:
     """Everything checks-sync would do in one repository, and what it cannot do itself."""
 
-    stacks: tuple[str, ...]
+    technologies: tuple[str, ...]
     unchecked: tuple[str, ...]
     changes: tuple[FileChange, ...]
     notes: tuple[str, ...]
@@ -258,35 +258,35 @@ def _plain(value: object) -> object:
     return json.loads(json.dumps(value))
 
 
-def _stack_spec(name: str, raw: object, folder: Path) -> StackSpec:
-    """Parse one stack's entry.
+def _technology_spec(name: str, raw: object, folder: Path) -> TechnologySpec:
+    """Parse one technology's entry.
 
     Args:
-        name: The stack's name.
+        name: The technology's name.
         raw: Its entry.
         folder: The spec file's folder.
 
     Returns:
-        The stack spec.
+        The technology spec.
 
     """
-    entry = _mapping(raw, f"stacks.{name}")
-    files = _mapping(entry.get("files") or {}, f"stacks.{name}.files")
-    remove = _mapping(entry.get("remove") or {}, f"stacks.{name}.remove")
-    hook_files = _mapping(entry.get("hook_files") or {}, f"stacks.{name}.hook_files")
+    entry = _mapping(raw, f"technologies.{name}")
+    files = _mapping(entry.get("files") or {}, f"technologies.{name}.files")
+    remove = _mapping(entry.get("remove") or {}, f"technologies.{name}.remove")
+    hook_files = _mapping(entry.get("hook_files") or {}, f"technologies.{name}.hook_files")
     pre_commit = entry.get("pre_commit")
     base = entry.get("tsconfig_base")
-    return StackSpec(
+    return TechnologySpec(
         name=name,
-        files={dest: _source(folder, src, f"stacks.{name}.files.{dest}") for dest, src in files.items()},
-        pre_commit=None if pre_commit is None else _source(folder, pre_commit, f"stacks.{name}.pre_commit"),
+        files={dest: _source(folder, src, f"technologies.{name}.files.{dest}") for dest, src in files.items()},
+        pre_commit=None if pre_commit is None else _source(folder, pre_commit, f"technologies.{name}.pre_commit"),
         pyproject_tables=tuple(
             tuple(table.split(".")) for table in _strings(remove.get("pyproject_tables"), "pyproject_tables")
         ),
         setup_cfg_sections=_strings(remove.get("setup_cfg_sections"), "setup_cfg_sections"),
         remove_files=_strings(remove.get("files"), "remove.files"),
         hook_files={hook: _strings(names, f"hook_files.{hook}") for hook, names in hook_files.items()},
-        tsconfig_base=None if base is None else _string(base, f"stacks.{name}.tsconfig_base"),
+        tsconfig_base=None if base is None else _string(base, f"technologies.{name}.tsconfig_base"),
         eslint_imports=_strings(entry.get("eslint_imports"), "eslint_imports"),
         node_dev_dependencies=_strings(entry.get("node_dev_dependencies"), "node_dev_dependencies"),
     )
@@ -328,12 +328,12 @@ def load_spec(spec_file: Path) -> ChecksSpec:
     folder = spec_file.parent
     pins = _mapping(raw.get("pins"), "pins")
     supersedes = _mapping(raw.get("supersedes") or {}, "supersedes")
-    stacks = _mapping(raw.get("stacks"), "stacks")
+    technologies = _mapping(raw.get("technologies"), "technologies")
     return ChecksSpec(
         source=spec_file,
         pins=pins,
         common_pre_commit=_source(folder, _mapping(raw.get("common"), "common").get("pre_commit"), "common"),
-        stacks={name: _stack_spec(name, entry, folder) for name, entry in stacks.items()},
+        technologies={name: _technology_spec(name, entry, folder) for name, entry in technologies.items()},
         supersede_repos=frozenset(_strings(supersedes.get("repos"), "supersedes.repos")),
         supersede_tools=frozenset(_strings(supersedes.get("local_entry_tools"), "supersedes.local_entry_tools")),
         lint_task=_string(raw.get("lint_task"), "lint_task"),
@@ -545,18 +545,21 @@ def _with_excludes(entries: Iterable[CommentedMap], excludes: Mapping[str, objec
     return copies
 
 
-def _canonical_local(stacks: Sequence[StackSpec], hook_patterns: Mapping[str, str | None]) -> list[CommentedMap]:
-    """Build the one local entry holding every hook of the repository's stacks.
+def _canonical_local(
+    technologies: Sequence[TechnologySpec],
+    hook_patterns: Mapping[str, str | None],
+) -> list[CommentedMap]:
+    """Build the one local entry holding every hook of the repository's technologies.
 
     Args:
-        stacks: The repository's stacks, in spec order.
+        technologies: The repository's technologies, in spec order.
         hook_patterns: Hook id to the `files` pattern built for this repository; None drops the hook.
 
     Returns:
-        The local entry, or nothing when no stack has a hook.
+        The local entry, or nothing when no technology has a hook.
 
     """
-    fragments = [stack.pre_commit for stack in stacks if stack.pre_commit is not None]
+    fragments = [technology.pre_commit for technology in technologies if technology.pre_commit is not None]
     hooks = [
         copy.deepcopy(hook)
         for fragment in fragments
@@ -618,18 +621,18 @@ def _leading_comments(text: str) -> str:
 def pre_commit_text(
     current_text: str | None,
     spec: ChecksSpec,
-    stacks: Sequence[StackSpec],
+    technologies: Sequence[TechnologySpec],
     hook_patterns: Mapping[str, str | None],
 ) -> str:
     """Build the repository's `.pre-commit-config.yaml`.
 
     The common entries come first, then every entry and hook of the repository's own that the
-    canonical hooks do not own or replace, then the one local entry of the stacks' hooks.
+    canonical hooks do not own or replace, then the one local entry of the technologies' hooks.
 
     Args:
         current_text: The repository's file, or None.
         spec: The spec.
-        stacks: The repository's stacks, in spec order.
+        technologies: The repository's technologies, in spec order.
         hook_patterns: Hook id to its per-repository `files` pattern.
 
     Returns:
@@ -659,23 +662,23 @@ def pre_commit_text(
     document["repos"] = CommentedSeq([
         *_with_excludes(common_entries, excludes),
         *_kept_entries(repos, owned_urls, spec),
-        *_canonical_local(stacks, hook_patterns),
+        *_canonical_local(technologies, hook_patterns),
     ])
     buffer = io.StringIO()
     yaml.dump(_single_quoted(document), buffer)
     return _leading_comments(current_text or "") + buffer.getvalue()
 
 
-def hook_patterns(root: Path, stacks: Sequence[StackSpec], cdk_apps: Sequence[str]) -> dict[str, str | None]:
+def hook_patterns(root: Path, technologies: Sequence[TechnologySpec], cdk_apps: Sequence[str]) -> dict[str, str | None]:
     """Build each per-application hook's `files` pattern from the repository's `cdk.json` files.
 
-    A hook listed under a stack's `hook_files` runs when a file of an app changes: the app
+    A hook listed under a technology's `hook_files` runs when a file of an app changes: the app
     script's folder (every Python file when the app script sits at the tree root) and the named
     files beside each `cdk.json`.
 
     Args:
         root: The working tree.
-        stacks: The repository's stacks.
+        technologies: The repository's technologies.
         cdk_apps: The `cdk.json` paths.
 
     Returns:
@@ -683,8 +686,8 @@ def hook_patterns(root: Path, stacks: Sequence[StackSpec], cdk_apps: Sequence[st
 
     """
     patterns: dict[str, str | None] = {}
-    for stack in stacks:
-        for hook, names in stack.hook_files.items():
+    for technology in technologies:
+        for hook, names in technology.hook_files.items():
             parts = [_app_pattern(root, cdk_json, names) for cdk_json in cdk_apps]
             patterns[hook] = "|".join(parts) if parts else None
     return patterns
@@ -1248,22 +1251,22 @@ def _nested_config_notes(root: Path, files: Sequence[str], canonical: Mapping[st
 # the plan
 
 
-def _canonical_files(stacks: Sequence[StackSpec]) -> dict[str, str]:
-    """Collect the canonical files of the repository's stacks.
+def _canonical_files(technologies: Sequence[TechnologySpec]) -> dict[str, str]:
+    """Collect the canonical files of the repository's technologies.
 
     Args:
-        stacks: The repository's stacks.
+        technologies: The repository's technologies.
 
     Returns:
         Destination to text.
 
     Raises:
-        ChecksSpecError: When two stacks write different files to one destination.
+        ChecksSpecError: When two technologies write different files to one destination.
 
     """
     sources: dict[str, Path] = {}
-    for stack in stacks:
-        for dest, source in stack.files.items():
+    for technology in technologies:
+        for dest, source in technology.files.items():
             if sources.setdefault(dest, source) != source:
                 message = f"{dest} has two sources: {sources[dest]} and {source}"
                 raise ChecksSpecError(message)
@@ -1291,21 +1294,21 @@ def _payload(root: Path, checks_json: str) -> dict[str, str | None]:
     return {**wanted, **stale}
 
 
-def _removals(root: Path, files: Sequence[str], stacks: Sequence[StackSpec]) -> dict[str, str | None]:
+def _removals(root: Path, files: Sequence[str], technologies: Sequence[TechnologySpec]) -> dict[str, str | None]:
     """Plan the removal of every configuration the canonical files replace.
 
     Args:
         root: The working tree.
         files: The tree's files.
-        stacks: The repository's stacks.
+        technologies: The repository's technologies.
 
     Returns:
         Path to wanted text, None to remove.
 
     """
-    tables = [table for stack in stacks for table in stack.pyproject_tables]
-    sections = [section for stack in stacks for section in stack.setup_cfg_sections]
-    doomed = {name for stack in stacks for name in stack.remove_files}
+    tables = [table for technology in technologies for table in technology.pyproject_tables]
+    sections = [section for technology in technologies for section in technology.setup_cfg_sections]
+    doomed = {name for technology in technologies for name in technology.remove_files}
     by_name: dict[str, Callable[[str], str | None]] = {
         PYPROJECT: lambda text: _without_tables(text, tables),
         SETUP_CFG: lambda text: _without_sections(text, sections),
@@ -1321,7 +1324,7 @@ def _repository_files(
     root: Path,
     files: Sequence[str],
     spec: ChecksSpec,
-    stacks: Sequence[StackSpec],
+    technologies: Sequence[TechnologySpec],
 ) -> dict[str, str | None]:
     """Plan the repository's own files the sync edits: the Taskfile's lint task and the root tsconfig.
 
@@ -1329,7 +1332,7 @@ def _repository_files(
         root: The working tree.
         files: The tree's files.
         spec: The spec.
-        stacks: The repository's stacks.
+        technologies: The repository's technologies.
 
     Returns:
         Path to wanted text.
@@ -1339,7 +1342,7 @@ def _repository_files(
     taskfile = next((name for name in TASKFILE_NAMES if name in files), None)
     if taskfile is not None:
         wanted[taskfile] = _lint_task_text(_read(root, taskfile) or "", spec.lint_task)
-    base = next((stack.tsconfig_base for stack in stacks if stack.tsconfig_base), None)
+    base = next((technology.tsconfig_base for technology in technologies if technology.tsconfig_base), None)
     tsconfig = _read(root, ROOT_TSCONFIG) if base else None
     extended = _extends_first(tsconfig, base) if tsconfig is not None and base else None
     if extended is not None:
@@ -1347,25 +1350,34 @@ def _repository_files(
     return wanted
 
 
-def _notes(root: Path, files: Sequence[str], stacks: Sequence[StackSpec], canonical: Mapping[str, str]) -> list[str]:
+def _notes(
+    root: Path,
+    files: Sequence[str],
+    technologies: Sequence[TechnologySpec],
+    canonical: Mapping[str, str],
+) -> list[str]:
     """Collect what the repository must change itself for the canonical files to take effect.
 
     Args:
         root: The working tree.
         files: The tree's files.
-        stacks: The repository's stacks.
+        technologies: The repository's technologies.
         canonical: The canonical files.
 
     Returns:
         The notes.
 
     """
-    base = next((stack.tsconfig_base for stack in stacks if stack.tsconfig_base), None)
+    base = next((technology.tsconfig_base for technology in technologies if technology.tsconfig_base), None)
     tsconfig = _read(root, ROOT_TSCONFIG) if base else None
     not_json = base is not None and tsconfig is not None and _extends_first(tsconfig, base) is None
-    imports = sorted({name for stack in stacks for name in stack.eslint_imports})
+    imports = sorted({name for technology in technologies for name in technology.eslint_imports})
     has_package = (root / PACKAGE_JSON).is_file()
-    dependencies = sorted({name for stack in stacks for name in stack.node_dev_dependencies}) if has_package else []
+    dependencies = (
+        sorted({name for technology in technologies for name in technology.node_dev_dependencies})
+        if has_package
+        else []
+    )
     return [
         *([f"{ROOT_TSCONFIG} is not plain JSON: list ./{base} first in its extends"] if not_json else []),
         *(_tsconfig_notes(root, files, base) if base and (root / base).is_file() else []),
@@ -1375,12 +1387,12 @@ def _notes(root: Path, files: Sequence[str], stacks: Sequence[StackSpec], canoni
     ]
 
 
-def plan_repository(root: Path, found_stacks: Iterable[str], spec: ChecksSpec, git_output: GitOutput) -> RepoPlan:
+def plan_repository(root: Path, found_technologies: Iterable[str], spec: ChecksSpec, git_output: GitOutput) -> RepoPlan:
     """Plan the canonical checks of one repository.
 
     Args:
         root: The working tree.
-        found_stacks: The stacks the tech-stacks scan found in it.
+        found_technologies: The technologies the tech-stacks scan found in it.
         spec: The spec.
         git_output: Runs git in a folder.
 
@@ -1388,31 +1400,38 @@ def plan_repository(root: Path, found_stacks: Iterable[str], spec: ChecksSpec, g
         The plan.
 
     """
-    found = frozenset(found_stacks)
-    stacks = [stack for name, stack in spec.stacks.items() if name in found]
+    found = frozenset(found_technologies)
+    technologies = [technology for name, technology in spec.technologies.items() if name in found]
     files = list_files(root, git_output)
     cdk_apps = sorted(rel for rel in files if PurePosixPath(rel).name == "cdk.json")
-    names = [stack.name for stack in stacks]
-    cdk_app_files = sorted({name for stack in stacks for names in stack.hook_files.values() for name in names})
-    checks = {"stacks": names, "pins": spec.pins, "cdk_apps": cdk_apps, "cdk_app_files": cdk_app_files}
+    names = [technology.name for technology in technologies]
+    cdk_app_files = sorted({
+        name for technology in technologies for names in technology.hook_files.values() for name in names
+    })
+    checks = {"technologies": names, "pins": spec.pins, "cdk_apps": cdk_apps, "cdk_app_files": cdk_app_files}
     checks_json = json_text(checks)
-    canonical = _canonical_files(stacks)
+    canonical = _canonical_files(technologies)
     current_pre_commit = _read(root, PRE_COMMIT_CONFIG)
     wanted: dict[str, str | None] = {
         **_payload(root, checks_json),
         **canonical,
-        PRE_COMMIT_CONFIG: pre_commit_text(current_pre_commit, spec, stacks, hook_patterns(root, stacks, cdk_apps)),
-        **_removals(root, files, stacks),
-        **_repository_files(root, files, spec, stacks),
+        PRE_COMMIT_CONFIG: pre_commit_text(
+            current_pre_commit,
+            spec,
+            technologies,
+            hook_patterns(root, technologies, cdk_apps),
+        ),
+        **_removals(root, files, technologies),
+        **_repository_files(root, files, spec, technologies),
     }
     hook = plan_hook(root, spec, git_output)
     changes = [FileChange(rel, _read(root, rel), text) for rel, text in sorted(wanted.items())]
     differing = [change for change in changes if change.current != change.wanted]
     return RepoPlan(
-        stacks=tuple(names),
-        unchecked=tuple(sorted(found - set(spec.stacks) - set(DATA_STACKS))),
+        technologies=tuple(names),
+        unchecked=tuple(sorted(found - set(spec.technologies) - set(DATA_TECHNOLOGIES))),
         changes=(*differing, *([hook.change] if hook.change else [])),
-        notes=(*_notes(root, files, stacks, canonical), *([hook.note] if hook.note else [])),
+        notes=(*_notes(root, files, technologies, canonical), *([hook.note] if hook.note else [])),
         install_pre_commit=hook.install,
     )
 
