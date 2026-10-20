@@ -1,17 +1,21 @@
 """Answer the three transitive questions of the matrix that one ``atw-matrix`` read does not.
 
 ``atw-matrix node`` and ``atw-matrix impact`` show only an entry's direct relationships, so an
-Epic that reaches a service through requirement -> feature -> document -> service never appears
-there. This script walks every Epic with the walk ``atw-matrix epic --closure`` makes
-(``matrixtraverse.epic_reach``), in one process over one read of the file, and prints a compact
+Epic that reaches a service through requirement -> document heading -> service never appears
+there. This script walks every Epic in one process over one read of the file and prints a compact
 answer:
 
-- ``epics-reaching <id>``: the Epics whose walk reaches the entry, with the features that lead
-  to it.
+- ``epics-reaching <id>``: the Epics that reach the entry, with how.
 - ``epic-needs <beads id>``: the services, components, infrastructure, stacks and repositories an
-  Epic reaches, and its gaps: requirements with no feature, no covering document, no stack or no
-  repository.
+  Epic reaches, and its gaps.
 - ``unreached --kinds <kinds>``: the entries of those kinds (and ``repository``) no Epic reaches.
+
+The rule of reach: an Epic reaches an entry when a document ``covers`` one of the Epic's
+requirements under the same heading that ``describedBy`` names for the entry, or when a feature
+serving one of its requirements is ``realizedBy`` the entry. It reaches a stack when an entry so
+reached is the stack, has its home in it (``homeIn``), or ``correspondsTo`` an entry that does.
+Stack dependencies are not followed and a document shared under different headings joins nothing:
+both make every Epic reach every service.
 
 It reads the matrix the same way ``atw-matrix`` does (``--matrix``, else ``ATW_MATRIX``, else
 ``ATW_CONTROL_REPO``) and changes nothing. ``--json`` prints one JSON object instead of text.
@@ -23,18 +27,27 @@ import argparse
 import json
 import os
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "portfolio"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "artifact-handoff" / "scripts"))
 from matrix_contract import (
+    AUTHORITY_SIDE,
     KIND_COMPONENT,
     KIND_EPIC,
+    KIND_FEATURE,
     KIND_INFRASTRUCTURE,
     KIND_SERVICE,
     KIND_STACK,
+    REL_CORRESPONDS_TO,
+    REL_COVERS,
+    REL_DESCRIBED_BY,
+    REL_HAS_REQUIREMENT,
     REL_HOME_IN,
+    REL_REALIZED_BY,
+    REL_SERVED_BY,
     Entry,
     EntryId,
     EntryKind,
@@ -42,7 +55,7 @@ from matrix_contract import (
 )
 from matrixquery import epic_view
 from matrixstore import Matrix, matrix_path, read_matrix
-from matrixtraverse import Dependency, EpicReach, epic_id, epic_reach
+from matrixtraverse import ATTR_HEADING, epic_id
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -50,12 +63,33 @@ if TYPE_CHECKING:
 REPOSITORY: Final = "repository"
 """The pseudo-kind ``unreached`` accepts for the repositories stacks name."""
 REALIZER_KINDS: Final[tuple[EntryKind, ...]] = (KIND_SERVICE, KIND_COMPONENT, KIND_INFRASTRUCTURE)
+HOMED_KINDS: Final[frozenset[EntryKind]] = frozenset(REALIZER_KINDS)
 EPIC_PREFIX: Final = f"{KIND_EPIC}:"
-DEPENDENCY: Final = "dependency"
-"""How an Epic reaches an entry only through the dependencies of the stacks it reaches."""
+REALIZED: Final = "realizedBy "
 
-type Walked = dict[EntryId, tuple[Dependency, ...]]
+type Heading = tuple[EntryId, str]
 type Json = dict[str, Any]
+
+
+@dataclass(slots=True)
+class Reach:
+    """What one Epic reaches by the rule of reach, each with how."""
+
+    entries: dict[EntryId, set[str]] = field(default_factory=dict)
+    """Each entry reached, with the ``document#heading`` pairs or ``realizedBy <feature>`` that reach it."""
+    stacks: dict[EntryId, set[EntryId]] = field(default_factory=dict)
+    """Each stack reached, with the reached entries that place it."""
+    requirements: dict[EntryId, set[EntryId]] = field(default_factory=dict)
+    """Each requirement of the Epic, with the entries it reaches."""
+
+    def ids(self) -> set[EntryId]:
+        """Collect every entry and stack reached.
+
+        Returns:
+            The union of the entries and the stacks.
+
+        """
+        return set(self.entries) | set(self.stacks)
 
 
 def _bead(epic: EntryId) -> str:
@@ -68,31 +102,117 @@ def _bead(epic: EntryId) -> str:
     return epic.removeprefix(EPIC_PREFIX)
 
 
-def _reached(reach: EpicReach) -> set[EntryId]:
-    """Collect every entry an Epic's walk reaches.
+def _text(value: object) -> str:
+    """Read a string attribute.
 
     Returns:
-        The entries ``EpicReach.entries`` lists, the Epic's requirements and the documents that
-        describe its features.
+        The value, or an empty string when it is not a string.
 
     """
-    found: set[EntryId] = set(reach.entries())
-    found.update(reach.served)
-    found.update(relationship.end for held in reach.documents.values() for relationship in held)
+    return value if isinstance(value, str) else ""
+
+
+def heading_index(matrix: Matrix) -> dict[Heading, list[EntryId]]:
+    """Index the architecture-side entries by the document heading that describes them.
+
+    Returns:
+        Each (document, heading) pair with the entries, other than features, whose
+        architecture-side ``describedBy`` names exactly that pair.
+
+    """
+    index: dict[Heading, list[EntryId]] = {}
+    for describing in matrix.relationships((REL_DESCRIBED_BY,)):
+        start: Entry | None = matrix.find(describing.start)
+        if describing.side != AUTHORITY_SIDE or start is None or start.kind == KIND_FEATURE:
+            continue
+        index.setdefault((describing.end, _text(describing.attributes.get(ATTR_HEADING))), []).append(start.id)
+    return index
+
+
+def _stacks_of(matrix: Matrix, entry: EntryId) -> set[EntryId]:
+    """Find the stacks an entry places: itself, its homes, and the homes of what it corresponds to.
+
+    Returns:
+        The stacks.
+
+    """
+    found: set[EntryId] = set()
+    for item in (entry, *(relationship.end for relationship in matrix.outgoing(entry, (REL_CORRESPONDS_TO,)))):
+        held: Entry | None = matrix.find(item)
+        if held is None:
+            continue
+        if held.kind == KIND_STACK:
+            found.add(item)
+        found.update(relationship.end for relationship in matrix.outgoing(item, (REL_HOME_IN,)))
     return found
 
 
-def _stack_of(matrix: Matrix, entry: EntryId) -> EntryId | None:
-    """Find the stack an entry has its home in.
+def _requirement_reach(
+    matrix: Matrix,
+    requirement: EntryId,
+    index: Mapping[Heading, list[EntryId]],
+) -> dict[EntryId, set[str]]:
+    """Find the entries one requirement reaches by the rule of reach.
 
     Returns:
-        The stack (the entry itself when it is a stack), or None while it has no home.
+        Each entry with how the requirement reaches it.
 
     """
-    if matrix.entry(entry).kind == KIND_STACK:
-        return entry
-    homes: list[EntryId] = [relationship.end for relationship in matrix.outgoing(entry, (REL_HOME_IN,))]
-    return homes[0] if homes else None
+    found: dict[EntryId, set[str]] = {}
+    for covering in matrix.incoming(requirement, (REL_COVERS,)):
+        heading: str = _text(covering.attributes.get(ATTR_HEADING))
+        for entry in index.get((covering.start, heading), ()):
+            found.setdefault(entry, set()).add(f"{covering.start.removeprefix('document:')}#{heading}")
+    for serving in matrix.outgoing(requirement, (REL_SERVED_BY,)):
+        for realizing in matrix.outgoing(serving.end, (REL_REALIZED_BY,)):
+            found.setdefault(realizing.end, set()).add(REALIZED + serving.end)
+    return found
+
+
+def epic_reach(matrix: Matrix, epic: EntryId, index: Mapping[Heading, list[EntryId]]) -> Reach:
+    """Walk one Epic by the rule of reach.
+
+    Returns:
+        The entries, stacks and per-requirement entries the Epic reaches.
+
+    """
+    reach = Reach()
+    for stated in matrix.outgoing(matrix.entry(epic).id, (REL_HAS_REQUIREMENT,)):
+        found: dict[EntryId, set[str]] = _requirement_reach(matrix, stated.end, index)
+        reach.requirements[stated.end] = set(found)
+        for entry, ways in found.items():
+            reach.entries.setdefault(entry, set()).update(ways)
+            for stack in _stacks_of(matrix, entry):
+                reach.stacks.setdefault(stack, set()).add(entry)
+    return reach
+
+
+def _all_reaches(matrix: Matrix) -> dict[EntryId, Reach]:
+    """Walk every Epic once.
+
+    Returns:
+        Each Epic with what it reaches.
+
+    """
+    index: dict[Heading, list[EntryId]] = heading_index(matrix)
+    return {epic.id: epic_reach(matrix, epic.id, index) for epic in matrix.entries((KIND_EPIC,))}
+
+
+def epics_reaching(matrix: Matrix, target: EntryId) -> Json:
+    """List the Epics that reach an entry.
+
+    Returns:
+        The entry and each Epic that reaches it, with how: the headings or features that reach an
+        entry, or the reached entries that place a stack.
+
+    """
+    matrix.entry(target)
+    epics: list[Json] = []
+    for epic, reach in _all_reaches(matrix).items():
+        via: set[str] = reach.entries.get(target, set()) | reach.stacks.get(target, set())
+        if via:
+            epics.append({"epic": _bead(epic), "via": sorted(via)})
+    return {"id": target, "epics": epics}
 
 
 def _repository(matrix: Matrix, stack: EntryId) -> str:
@@ -102,70 +222,23 @@ def _repository(matrix: Matrix, stack: EntryId) -> str:
         The repository, or an empty string while none holds the stack.
 
     """
-    value: object = matrix.entry(stack).attributes.get(REPOSITORY)
-    return value if isinstance(value, str) else ""
+    return _text(matrix.entry(stack).attributes.get(REPOSITORY))
 
 
-def _via(reach: EpicReach, target: EntryId) -> list[str]:
-    """Name how a walk reaches an entry.
-
-    Returns:
-        The features that lead to it, else the kind of link that found it.
-
-    """
-    features: set[str] = {way.feature for way in reach.ways.get(target, ())}
-    features.update(reach.stacks.get(target, frozenset()))
-    if features:
-        return sorted(features)
-    if target in reach.served:
-        return ["hasRequirement"]
-    if target in reach.features:
-        return ["servedBy"]
-    if any(dependency.far == target for dependency in reach.dependencies):
-        return [DEPENDENCY]
-    return ["describedBy"]
-
-
-def epics_reaching(matrix: Matrix, target: EntryId, *, features_only: bool = False) -> Json:
-    """List the Epics whose walk reaches an entry.
-
-    ``features_only`` leaves out the Epics that reach it only through a stack dependency (for
-    example every Epic whose service calls a shared service that calls it).
+def _requirement_gaps(matrix: Matrix, reach: Reach) -> tuple[list[EntryId], list[Json]]:
+    """Find the requirements that reach no stack, or reach stacks no repository holds.
 
     Returns:
-        The entry and each Epic that reaches it, with how.
-
-    """
-    matrix.entry(target)
-    walked: Walked = {}
-    epics: list[Json] = []
-    epic: Entry
-    for epic in matrix.entries((KIND_EPIC,)):
-        reach: EpicReach = epic_reach(matrix, epic.id, walked)
-        if target not in _reached(reach):
-            continue
-        via: list[str] = _via(reach, target)
-        if not (features_only and via == [DEPENDENCY]):
-            epics.append({"epic": _bead(epic.id), "via": via})
-    return {"id": target, "epics": epics}
-
-
-def _requirement_gaps(matrix: Matrix, reach: EpicReach) -> tuple[list[EntryId], list[Json]]:
-    """Find the requirements whose features reach no stack, or reach stacks no repository holds.
-
-    Returns:
-        The requirements with no stack, and each requirement with the stacks it reaches that name
-        no repository.
+        The requirements that reach entries but no stack, and each requirement with the stacks it
+        reaches that name no repository.
 
     """
     no_stack: list[EntryId] = []
     no_repository: list[Json] = []
-    requirement: EntryId
-    features: tuple[EntryId, ...]
-    for requirement, features in reach.served.items():
-        if not features:
+    for requirement, entries in sorted(reach.requirements.items()):
+        if not entries:
             continue
-        stacks: set[EntryId] = {stack for stack, leading in reach.stacks.items() if leading.intersection(features)}
+        stacks: set[EntryId] = {stack for entry in entries for stack in _stacks_of(matrix, entry)}
         if not stacks:
             no_stack.append(requirement)
             continue
@@ -182,31 +255,40 @@ def epic_needs(matrix: Matrix, bead: str) -> Json:
         The realizers, stacks and repositories the Epic reaches, and its gaps.
 
     """
-    reach: EpicReach = epic_reach(matrix, epic_id(bead))
+    reach: Reach = epic_reach(matrix, epic_id(bead), heading_index(matrix))
     view: Mapping[str, object] = epic_view(matrix, bead)
-    reached: set[EntryId] = _reached(reach)
     realizers: dict[str, list[Json]] = {kind: [] for kind in REALIZER_KINDS}
-    entry: EntryId
-    for entry in sorted(reached):
+    for entry in sorted(reach.entries):
         kind: EntryKind = matrix.entry(entry).kind
         if kind in realizers:
-            stack: EntryId | None = _stack_of(matrix, entry)
-            realizers[kind].append({"id": entry, "stack": stack or ""})
-    stacks: list[Json] = [{"id": stack, "repository": _repository(matrix, stack)} for stack in sorted(reach.stacks)]
+            stacks: list[EntryId] = sorted(_stacks_of(matrix, entry))
+            realizers[kind].append({"id": entry, "stack": ", ".join(stacks)})
+    stacks_held: list[Json] = [
+        {"id": stack, "repository": _repository(matrix, stack)} for stack in sorted(reach.stacks)
+    ]
     no_stack, no_repository = _requirement_gaps(matrix, reach)
     return {
         "epic": bead,
         "prd": view["prd"],
         **{f"{kind}s": realizers[kind] for kind in REALIZER_KINDS},
-        "stacks": stacks,
-        "repositories": sorted({str(stack["repository"]) for stack in stacks} - {""}),
+        "stacks": stacks_held,
+        "repositories": sorted({str(stack["repository"]) for stack in stacks_held} - {""}),
         "gaps": {
             "noFeature": view["noFeature"],
             "noDocument": view["noDocument"],
+            "requirementsReachNothing": sorted(
+                requirement for requirement, found in reach.requirements.items() if not found
+            ),
             "requirementsNoStack": no_stack,
             "requirementsNoRepository": no_repository,
-            "entriesNoStack": list(reach.no_stack),
-            "stacksNoRepository": list(reach.no_repository),
+            "entriesNoStack": sorted(
+                entry
+                for entry in reach.entries
+                if matrix.entry(entry).kind in HOMED_KINDS
+                and matrix.entry(entry).side == AUTHORITY_SIDE
+                and not _stacks_of(matrix, entry)
+            ),
+            "stacksNoRepository": [stack["id"] for stack in stacks_held if not stack["repository"]],
         },
     }
 
@@ -215,16 +297,13 @@ def unreached(matrix: Matrix, kinds: Sequence[str]) -> Json:
     """List the entries of some kinds, and the repositories, that no Epic reaches.
 
     Returns:
-        For each kind asked for, the ids (or repository names) no Epic's walk reaches.
+        For each kind asked for, the ids (or repository names) no Epic reaches.
 
     """
-    walked: Walked = {}
     reached: set[EntryId] = set()
-    epic: Entry
-    for epic in matrix.entries((KIND_EPIC,)):
-        reached.update(_reached(epic_reach(matrix, epic.id, walked)))
+    for reach in _all_reaches(matrix).values():
+        reached.update(reach.ids())
     result: dict[str, list[str]] = {}
-    kind: str
     for kind in kinds:
         if kind == REPOSITORY:
             held: set[str] = {_repository(matrix, stack.id) for stack in matrix.entries((KIND_STACK,))}
@@ -245,7 +324,7 @@ def _lines_reaching(result: Json) -> Iterable[str]:
     epics: list[Json] = result["epics"]
     yield f"{result['id']}: {len(epics)} Epic(s)"
     for item in epics:
-        yield f"{item['epic']}  via {', '.join(item['via'])}"
+        yield f"{item['epic']}  via {'; '.join(item['via'])}"
 
 
 def _lines_needs(result: Json, *, full: bool = False) -> Iterable[str]:
@@ -309,13 +388,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--matrix", default=None, help="the matrix file; default: as atw-matrix decides")
     parser.add_argument("--json", action="store_true", help="print one JSON object instead of text")
     sub = parser.add_subparsers(dest="command", required=True)
-    reaching = sub.add_parser("epics-reaching", help="the Epics that reach an entry, transitively")
+    reaching = sub.add_parser("epics-reaching", help="the Epics that reach an entry by the rule of reach")
     reaching.add_argument("id")
-    reaching.add_argument(
-        "--features-only",
-        action="store_true",
-        help="leave out Epics that reach it only by dependency",
-    )
     needs = sub.add_parser("epic-needs", help="what an Epic reaches, and its gaps")
     needs.add_argument("epic")
     needs.add_argument("--full", action="store_true", help="list the components and infrastructure too")
@@ -338,10 +412,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args: argparse.Namespace = _parser().parse_args(argv)
     matrix: Matrix = read_matrix(matrix_path(args.matrix, os.environ))
     handlers: dict[str, tuple[Callable[[], Json], Callable[[Json], Iterable[str]]]] = {
-        "epics-reaching": (
-            lambda: epics_reaching(matrix, EntryId(args.id), features_only=args.features_only),
-            _lines_reaching,
-        ),
+        "epics-reaching": (lambda: epics_reaching(matrix, EntryId(args.id)), _lines_reaching),
         "epic-needs": (
             lambda: epic_needs(matrix, args.epic),
             lambda result: _lines_needs(result, full=args.full),

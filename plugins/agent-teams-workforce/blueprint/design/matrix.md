@@ -522,7 +522,7 @@ those lanes only as far as slices 29 and 31 of section 6 state.
 | Step | Where | Reads | Records |
 |---|---|---|---|
 | I1 Shared instruction text | `skills/subagent-contract/SKILL.md`, `agents/aws-solutions-architect.md`, `agents/built-architecture-comparer.md`, `agents/polyrepo-steward.md`, `skills/polyrepo-repo/SKILL.md`, and the preamble bundled into each `workflows/*.js` | The text states the approved and verified flags as section 1.4 does. | Nothing; no agent sets a flag. |
-| I2 How an agent uses the matrix | `skills/matrix/SKILL.md`, loaded by every agent whose definition calls `atw-matrix` and pointed to from `skills/graphrag-lookup/SKILL.md`; `skills/matrix/scripts/matrix-reach` | The model, which command answers which question (section 2), that `node` and `impact` are direct only, and the three transitive reads `matrix-reach` makes over `matrixtraverse.epic_reach` for every Epic: the Epics that reach an entry, what an Epic reaches with its gaps, and the entries no Epic reaches. | Nothing. |
+| I2 How an agent uses the matrix | `skills/matrix/SKILL.md`, loaded by every agent whose definition calls `atw-matrix` and pointed to from `skills/graphrag-lookup/SKILL.md`; `skills/matrix/scripts/matrix-reach` | The model, which command answers which question (section 2), that `node` and `impact` are direct only, and the three transitive reads `matrix-reach` makes for every Epic by the rule of reach (a document covers one of the Epic's requirements under the heading that describes the entry, or a feature is realized by it; a stack through what is reached in it; no stack dependencies): the Epics that reach an entry, what an Epic reaches with its gaps, and the entries no Epic reaches. | Nothing. |
 
 ## 5. Replacement list
 

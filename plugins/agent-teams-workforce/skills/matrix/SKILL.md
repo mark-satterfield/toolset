@@ -7,9 +7,9 @@ description: >-
   before any `atw-matrix` call, and whenever you ask which Epics, features, documents, services,
   stacks or repositories relate to something, what an Epic needs, what depends on an entry, or
   what is approved or verified, or record, rename or remove a fact in the matrix. It holds the
-  model, which command answers which question, the direct-versus-transitive trap, ready
-  scripts for the transitive questions, the approved and verified flags, and the rules for
-  writing.
+  model, which command answers which question, the direct-versus-transitive trap, the rule of
+  reach, ready scripts for the transitive questions, the approved and verified flags, and the
+  rules for writing.
 user-invocable: false
 allowed-tools: [Bash, Read]
 ---
@@ -80,45 +80,51 @@ with direction and meaning, are in [references/model.md](references/model.md).
 | Counts; repository-side entries with no architecture counterpart | `atw-matrix summary [--unlinked]` |
 | Does the file meet its contract? | `atw-matrix check` |
 
-## The trap: direct is not transitive
+## The trap: direct is not transitive, and the closure reaches everything
 
 `atw-matrix node <id>` and `atw-matrix impact --id <id>` return only what is linked **directly**
-to the entry. A service is joined to an Epic through requirement → feature → document → service
-(the feature and the service are described by the same document), so `node` and `impact` on a
-service show no Epic even when many Epics reach it. Never answer "which Epics reach X" or "no
-Epic needs X" from `node` or `impact`.
+to the entry. A service is joined to an Epic through requirement → document heading → service,
+so `node` and `impact` on a service show no Epic even when many Epics reach it. Never answer
+"which Epics reach X" or "no Epic needs X" from `node` or `impact`.
 
-Example: Epic `ssbd-mx3vn` reaches `service:skillspoke-push-service` through
-`feature:register-a-device-for-push-notifications` and `feature:set-notification-preferences`
-(both described by `arc42/05-building-block-view/messaging-and-realtime/README.md`, which also
-describes the service). `impact --id service:skillspoke-push-service` lists no Epic. The walk
-that finds it is the one `atw-matrix epic <id> --closure` makes.
+The opposite trap: `atw-matrix epic <id> --closure` follows stack dependencies and every document
+that describes a feature, so broad documents (READMEs, crosscutting concepts) and shared services
+make every Epic reach every service. `related --epic` and `resources --epic` walk the same
+closure. Never answer "which Epics reach X" from the closure either.
+
+**The rule of reach.** An Epic reaches an entry when a document `covers` one of the Epic's
+requirements under the same heading that the entry's `describedBy` names, or when a feature
+serving one of its requirements is `realizedBy` the entry. It reaches a stack when an entry so
+reached is the stack, has its home in it (`homeIn`), or `correspondsTo` an entry that does.
+`atw-matrix epic <id> --realizers` applies the same heading match per feature.
+
+Example: Epic `ssbd-mx3vn` reaches `service:skillspoke-push-service` because
+`arc42/05-building-block-view/messaging-and-realtime/README.md` covers its requirements under
+"Building blocks" and "Per-channel delivery services", the headings that describe the service.
 
 - `atw-matrix epic <id>` (no flag) returns `requirements[]` (each with `features` and
   `coveredBy`), `noFeature` and `noDocument`. `noStack`, `noRepository`, `noCounterpart` and
   `noSource` appear only with `--unlinked` (or `--closure`).
-- `--closure` output is over a megabyte for one Epic. Never read it raw: pipe it to a script, or
-  use the scripts below.
+- `--closure` output is over a megabyte for one Epic. Never read it raw.
 
 ## Ready scripts for the transitive questions
 
-`${CLAUDE_PLUGIN_ROOT}/skills/matrix/scripts/matrix-reach` walks every Epic with the same code
-`epic --closure` uses, in one process, and prints a short answer (`--json`, placed before the
-query, prints one object). It reads only. Each run takes a few seconds.
+`${CLAUDE_PLUGIN_ROOT}/skills/matrix/scripts/matrix-reach` applies the rule of reach to every
+Epic in one process and prints a short answer (`--json`, placed before the query, prints one
+object). It reads only. Each run takes a few seconds.
 
 ```bash
 R="${CLAUDE_PLUGIN_ROOT}/skills/matrix/scripts/matrix-reach"
-"$R" epics-reaching service:skillspoke-push-service              # every Epic whose walk reaches it, with the features that lead there
-"$R" epics-reaching --features-only service:skillspoke-push-service  # leave out Epics that reach it only through a stack dependency
+"$R" epics-reaching service:skillspoke-push-service   # the Epics that reach it, each with the document#heading or realizedBy feature
+"$R" epics-reaching stack:skillSpoke-push-service     # a stack: via names the reached entries that place it
 "$R" epic-needs ssbd-mx3vn            # services, stacks, repositories it reaches, and gaps; --full lists components and infrastructure
 "$R" unreached --kinds service,stack,repository   # entries of those kinds (repository = names stacks hold) no Epic reaches
 ```
 
 `epic-needs` gaps: `noFeature` (requirement no feature serves), `noDocument` (requirement and
-feature with no covering document), `requirementsNoStack`, `requirementsNoRepository` (with the
-stacks that name none), `entriesNoStack`, `stacksNoRepository`. "Reaches" includes what the
-reached stacks depend on, so a shared service is reached by many Epics; `via dependency` marks an
-Epic that reaches it only that way.
+feature with no covering document), `requirementsReachNothing`, `requirementsNoStack`,
+`requirementsNoRepository` (with the stacks that name none), `entriesNoStack`,
+`stacksNoRepository`.
 
 ## Approved, verified, effective and side
 
