@@ -203,16 +203,16 @@ Use when choosing a database for a new project or migrating existing data.
 | Document-oriented data | | ✓ |
 | Time-series data | | ✓ (specialized) |
 
-**Step 2: Choose among SkillSpoke's stores.** SkillSpoke chooses persistence per data set from three stores, each owned by one service (arc42 section 4; constraints in section 2):
+**Step 2: Choose among the project's stores.** The stores the project allows, and who owns each, are in its solution strategy and constraints (arc42 sections 4 and 2); read them first. A serverless AWS project typically chooses persistence per data set from three stores, each owned by one service:
 - **DynamoDB (on-demand)** → key-value and document data with known access patterns, session records, idempotency records (`dynamodb`)
 - **Aurora PostgreSQL Serverless v2 through the RDS Data API** → relational data, joins, transactions, temporal facts, vectors with pgvector, graph-shaped data in most cases (`aurora-postgresql`, which also states when a graph database is justified)
 - **Versioned S3** → documents, files and large content
 
-MySQL, MongoDB, Cassandra, ScyllaDB, CockroachDB and TimescaleDB are outside SkillSpoke's stack. ElastiCache and Redis are deployed only when a measured need appears. Size to the stated development context (alpha: one dev account, at most five users); do not design for hypothetical scale.
+A store outside the project's stated stack is not chosen without a stated need the architecture accepts; an always-on cache (ElastiCache, Redis) is deployed only when a measured need appears. Size to the development context the project instructions state; do not design for hypothetical scale.
 
 **Step 3: Check consistency requirements**
 - Strong consistency or multi-row transactions required → Aurora PostgreSQL, or DynamoDB transactions and strongly consistent reads within one table's partition
-- Eventual consistency acceptable → DynamoDB (GSIs are eventually consistent), or a read model built from SkillSpoke events
+- Eventual consistency acceptable → DynamoDB (GSIs are eventually consistent), or a read model built from the project's events
 
 **Step 4: Describe the result in the architecture**
 Make the chosen design part of the architecture description, as current state: update the views that show the elements it changes, at every scope they appear in (a pattern used across services is a crosscutting concept in section 8), with:
@@ -220,7 +220,7 @@ Make the chosen design part of the architecture description, as current state: u
 - The reason for it, where it departs from an established pattern
 - The limits and trade-offs it accepts
 
-**Quick reference (SkillSpoke):**
+**Quick reference (the three serverless stores):**
 ```
 DynamoDB (on-demand)          → Key-value and document data, known access patterns
 Aurora PostgreSQL (Data API)  → Relational data, transactions, pgvector
@@ -233,7 +233,7 @@ Versioned S3                  → Files, documents, large results
 
 Use when designing a new system or refactoring existing architecture.
 
-**SkillSpoke's style is decided:** a serverless, event-driven microservices platform on AWS, decomposed by bounded context, each service one CDK app with its own stores, coordinating through SkillSpoke events (arc42 section 4). Pieces are consolidated only when they always change and deploy together, have one owner and have no reason to scale or fail independently. Inside SkillSpoke, use the workflow below only to apply that consolidation rule or to choose patterns inside one service (DDD, CQRS, hexagonal); the team-size guidance does not reopen the style. For a system outside SkillSpoke it applies in full.
+**Where the project's architectural style is decided** (its solution strategy, arc42 section 4), the workflow below does not reopen it. For a style such as a serverless, event-driven microservices platform decomposed by bounded context, each service one CDK app with its own stores and coordinating through events, pieces are consolidated only when they always change and deploy together, have one owner and have no reason to scale or fail independently; use the workflow below only to apply that consolidation rule or to choose patterns inside one service (DDD, CQRS, hexagonal), and the team-size guidance does not reopen the style. Where no style is decided yet, it applies in full.
 
 **Step 1: Assess team and project size**
 | Team Size | Recommended Starting Point |
@@ -305,9 +305,9 @@ Load these files for detailed information:
 
 ## Tech Stack Coverage
 
-**SkillSpoke's stack:** Python Lambdas on `aws-lambda-powertools` (Django, Flask and FastAPI banned); API Gateway REST API v1 spec-first in OpenAPI and the WebSocket API (HTTP API v2 not used); DynamoDB, Aurora PostgreSQL Serverless v2 through the RDS Data API, versioned S3; SkillSpoke events through the events service onto EventBridge; Cognito; SES; Bedrock and AgentCore; CDK in Python, values across stacks through SSM Parameter Store; CloudWatch, X-Ray and ADOT; Next.js and React Native on CDS; GitHub Actions.
+**The project's stack** is the one its architecture constraints and solution strategy state; read it there. This skill's serverless AWS guidance covers: Python Lambdas on `aws-lambda-powertools`; API Gateway REST API v1 spec-first in OpenAPI and the WebSocket API; DynamoDB, Aurora PostgreSQL Serverless v2 through the RDS Data API, versioned S3; events onto EventBridge; Cognito; SES; Bedrock and AgentCore; CDK in Python, values across stacks through SSM Parameter Store; CloudWatch, X-Ray and ADOT; Next.js and React Native; GitHub Actions.
 
-**General knowledge for other systems:** TypeScript, Go, Swift, Kotlin, Rust; Vue, Angular, Flutter; Node.js, Express, GraphQL; MySQL, MongoDB, Redis, Cassandra; Docker, Kubernetes, Terraform; GitLab CI, CircleCI, Jenkins. These describe systems you may read; they are not choices for SkillSpoke.
+**General knowledge for other systems:** TypeScript, Go, Swift, Kotlin, Rust; Vue, Angular, Flutter; Node.js, Express, GraphQL; MySQL, MongoDB, Redis, Cassandra; Docker, Kubernetes, Terraform; GitLab CI, CircleCI, Jenkins. These describe systems you may read; they are choices only where the project's architecture makes them.
 
 ---
 

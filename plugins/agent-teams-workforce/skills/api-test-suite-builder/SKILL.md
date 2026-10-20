@@ -13,7 +13,7 @@ description: "API Test Suite Builder"
 
 ## Overview
 
-Scans API route definitions (SkillSpoke's OpenAPI specifications and Powertools handlers, and Next.js App Router routes) and
+Scans API route definitions (OpenAPI specifications and Powertools handlers, Next.js App Router routes, and other frameworks) and
 auto-generates comprehensive test suites covering auth, input validation, error codes, pagination, file
 uploads, and rate limiting. Outputs ready-to-run test files for Vitest+Supertest (Node) or Pytest+httpx
 (Python).
@@ -62,8 +62,8 @@ find ./app/api -name "route.ts" | while read f; do
 done
 ```
 
-### SkillSpoke services (OpenAPI + Powertools)
-SkillSpoke APIs are API Gateway REST API v1, spec-first, with Python Lambda handlers on the Powertools event handler; Express, FastAPI and Django are not used (FastAPI and Django are banned). The OpenAPI specification is the route map, and the tests are generated from it:
+### Spec-first services (OpenAPI + Powertools)
+For APIs on API Gateway REST API v1, spec-first, with Python Lambda handlers on the Powertools event handler (the project's architecture constraints state whether its APIs are of this kind), the OpenAPI specification is the route map, and the tests are generated from it:
 
 ```bash
 # Every path and method in the specification

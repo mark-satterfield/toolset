@@ -189,14 +189,14 @@ Analyzes and optimizes existing alert configurations:
 ### 3. Dashboard Generator (`dashboard_generator.py`)
 Creates comprehensive dashboard specifications:
 - **Input:** Service/system description JSON
-- **Output:** a dashboard specification (panels, metrics, queries) and documentation; the SkillSpoke dashboard is built from it as a CloudWatch dashboard in CDK, and any Grafana JSON the script emits is not used
+- **Output:** a dashboard specification (panels, metrics, queries) and documentation; on an AWS-native stack the dashboard is built from it as a CloudWatch dashboard in CDK, and any Grafana JSON the script emits is not used
 - **Features:** Golden signals coverage, RED/USE methods, drill-down paths, role-based views
 
 ## Integration Patterns
 
 ### Monitoring Stack Integration
 
-SkillSpoke is serverless on AWS, and its observability stack is AWS-native and priced per use (see `aws-core:aws-observability` for the services):
+On a serverless AWS project the observability stack is AWS-native and priced per use (see `aws-core:aws-observability` for the services); the project's architecture states which it uses:
 - **Metrics:** CloudWatch metrics, emitted from Lambda as Embedded Metric Format through Powertools `Metrics`
 - **Alerting:** CloudWatch alarms (metric, composite and anomaly detection), including SLO burn-rate alarms
 - **Dashboards:** CloudWatch dashboards, defined in CDK
@@ -210,7 +210,7 @@ SkillSpoke is serverless on AWS, and its observability stack is AWS-native and p
 - **Performance Regression:** Automated performance monitoring in pipelines
 
 ### Incident Management Integration
-- **Alert routing:** CloudWatch alarms notify an Amazon SNS topic (operational alerts only, never customer email); SkillSpoke uses no PagerDuty, VictorOps, JIRA or ServiceNow
+- **Alert routing:** CloudWatch alarms notify an Amazon SNS topic (operational alerts only, never customer email); paging and ticketing products (PagerDuty, VictorOps, JIRA, ServiceNow) only where the project's architecture names them
 - **Tracking:** follow-up work is tracked in beads (`bd`)
 - **Post-Mortem:** Automated incident analysis and improvement tracking
 
@@ -224,9 +224,9 @@ SkillSpoke is serverless on AWS, and its observability stack is AWS-native and p
 
 ### Microservices Observability
 - **API Gateway Monitoring:** REST API latency, 4XX/5XX and throttling metrics per stage and method
-- **Event Flow:** SkillSpoke observability events (unit-of-work start and outcome, error events) in the one event log, correlated by `trace.correlationId` (see `skillspoke-events`)
+- **Event Flow:** the observability events the project's event standard defines (for example unit-of-work start and outcome, and error events) in its event log, correlated by a correlation id; the project instructions name that standard (load it before you design, specify, review or implement anything that produces, routes or receives an event)
 - **Tracing:** X-Ray and ADOT across API Gateway, Lambda, SQS and EventBridge
-- SkillSpoke runs no containers or service mesh, so Kubernetes, Istio and Linkerd monitoring do not apply
+- A project that runs no containers or service mesh has no Kubernetes, Istio or Linkerd monitoring to design
 
 ### Machine Learning Observability
 - **Model Performance:** Accuracy, drift, and bias monitoring

@@ -180,7 +180,7 @@ python scripts/data_quality_validator.py validate \
 
 ### Workflow 2: Implementing Real-Time Streaming
 
-**Scenario:** Stream high-volume records through Kinesis Data Streams, process them with a Python Lambda, and land them in an Apache Iceberg table on S3 through Amazon Data Firehose. For SkillSpoke business events use EventBridge through the events service instead (the `skillspoke-events` skill); for changes to a service's own table use DynamoDB Streams with the same Lambda pattern.
+**Scenario:** Stream high-volume records through Kinesis Data Streams, process them with a Python Lambda, and land them in an Apache Iceberg table on S3 through Amazon Data Firehose. For the project's business events use EventBridge instead, as the project's event standard defines (the project instructions name it; load it before you design, specify, review or implement anything that produces, routes or receives an event); for changes to a service's own table use DynamoDB Streams with the same Lambda pattern.
 
 #### Step 1: Define the Record Schema
 

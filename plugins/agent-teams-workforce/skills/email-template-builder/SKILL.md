@@ -15,7 +15,7 @@ description: "Email Template Builder"
 
 Build complete transactional email systems: React Email templates, provider integration, preview server, i18n support, dark mode, spam optimization, and analytics tracking. Output production-ready code for Resend, Postmark, SendGrid, or AWS SES.
 
-**SkillSpoke sends customer email through Amazon SES** (the SES v2 API), which keeps credentials in IAM rather than a third-party API key and is priced per message; SES bounce and complaint events go to an SNS topic or EventBridge for handling. The template-building guidance below applies unchanged. Amazon SNS email subscriptions are for operational alerts, never customer email.
+**The project's email provider is the one its architecture names.** On AWS, Amazon SES (the SES v2 API) keeps credentials in IAM rather than a third-party API key and is priced per message; SES bounce and complaint events go to an SNS topic or EventBridge for handling. The template-building guidance below applies unchanged. Amazon SNS email subscriptions are for operational alerts, never customer email.
 
 ---
 

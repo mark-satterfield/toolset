@@ -361,7 +361,7 @@ API_KEY = get_secret("api/key")
 
 ### SQL Injection Prevention
 
-SkillSpoke reaches Aurora PostgreSQL through the RDS Data API, which binds named parameters (`aurora-postgresql`):
+Aurora PostgreSQL reached through the RDS Data API binds named parameters (`aurora-postgresql`):
 
 ```python
 # BAD: string formatting builds the SQL
@@ -389,11 +389,11 @@ import DOMPurify from 'dompurify';
 const safeHTML = DOMPurify.sanitize(userInput);
 ```
 
-In React (SkillSpoke's Next.js and React Native front ends), render untrusted data as JSX text, which React escapes, and never pass it to `dangerouslySetInnerHTML` unsanitized (`web-frontend-coding`).
+In React (Next.js and React Native front ends), render untrusted data as JSX text, which React escapes, and never pass it to `dangerouslySetInnerHTML` unsanitized (`web-frontend-coding`).
 
 ### Authentication
 
-SkillSpoke stores no passwords: Amazon Cognito user pools hold credentials, MFA and password policy, and services validate Cognito tokens (`cognito`). Service-to-service calls use OAuth2 client credentials with one app client per calling service. Never write password hashing or a hand-rolled JWT check for SkillSpoke.
+Where the project's identity provider is Amazon Cognito (its architecture states which it uses), the services store no passwords: Cognito user pools hold credentials, MFA and password policy, and services validate Cognito tokens (`cognito`). Service-to-service calls use OAuth2 client credentials with one app client per calling service. Never write password hashing or a hand-rolled JWT check where a managed identity provider holds the credentials.
 
 ### Security Headers
 

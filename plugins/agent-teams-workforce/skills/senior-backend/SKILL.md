@@ -1,22 +1,22 @@
 ---
 name: "senior-backend"
-description: Designs and implements SkillSpoke backend services - REST APIs on API Gateway REST API v1 with Python Lambda handlers on aws-lambda-powertools, DynamoDB and Aurora PostgreSQL data access, Cognito authentication, and security hardening. Use when the user asks to "design REST APIs", "optimize database queries", "implement authentication", "build microservices", "review backend code", "handle database migrations", or "load test APIs". Covers Python Lambda services, PostgreSQL optimization, API security, and backend architecture patterns.
+description: Designs and implements serverless backend services on AWS - REST APIs on API Gateway REST API v1 with Python Lambda handlers on aws-lambda-powertools, DynamoDB and Aurora PostgreSQL data access, Cognito authentication, and security hardening, within the stack the project's architecture constraints fix. Use when the user asks to "design REST APIs", "optimize database queries", "implement authentication", "build microservices", "review backend code", "handle database migrations", or "load test APIs". Covers Python Lambda services, PostgreSQL optimization, API security, and backend architecture patterns.
 ---
 
 # Senior Backend Engineer
 
-Backend development patterns, API design, database optimization, and security practices for SkillSpoke's services.
+Backend development patterns, API design, database optimization, and security practices for serverless backend services on AWS.
 
-## SkillSpoke's backend stack
+## The backend stack
 
-Confirm against the architecture constraints and solution strategy (arc42 sections 2 and 4) in the `skillspoke-docs` vault.
+The project's backend stack, its banned frameworks and its shared libraries are decided in its architecture constraints and solution strategy (arc42 sections 2 and 4) and named in its project instructions; read them before you choose anything. This skill describes a serverless AWS backend of this shape:
 
-- Every service Lambda is Python on `aws-lambda-powertools`, through `shared-chassis-lib`. Django, Flask and FastAPI are banned; Node.js backends (Express, Fastify, Koa, NestJS) are not SkillSpoke's.
-- APIs are API Gateway REST API v1, spec-first: the OpenAPI specification exists before the handler code, and the API is built from it. HTTP API v2 is not used. GraphQL is not used.
+- Every service Lambda is Python on `aws-lambda-powertools`, through the project's Lambda chassis library where it has one. Frameworks the constraints ban (Django, Flask and FastAPI are the usual ones on Lambda) are not used.
+- APIs are API Gateway REST API v1, spec-first: the OpenAPI specification exists before the handler code, and the API is built from it.
 - Data: DynamoDB (on-demand) or Aurora PostgreSQL Serverless v2 through the RDS Data API (see `aurora-postgresql`), each owned by one service. A service never imports another service's source and does not share its tables by default.
-- Authentication: Amazon Cognito user pools; service-to-service calls use OAuth2 client credentials with one app client per calling service. SkillSpoke Lambdas call SkillSpoke APIs through `shared-apiClient-lib`.
+- Authentication: Amazon Cognito user pools; service-to-service calls use OAuth2 client credentials with one app client per calling service, through the project's API client library where it has one.
 - Infrastructure: CDK in Python (`aws-cdk-development`, `cdk-coding`); names from the naming command (`resource-naming`).
-- Work between services goes through SkillSpoke events (`skillspoke-events`).
+- Work between services goes through events, to the project's event standard, which the project instructions name (load it before you design, specify, review or implement anything that produces, routes or receives an event).
 
 Load `python-coding` for every Python change.
 
@@ -35,11 +35,11 @@ python scripts/api_load_tester.py https://<api-id>.execute-api.us-east-1.amazona
 
 ### 1. API Scaffolder
 
-`scripts/api_scaffolder.py` generates Express, Fastify or Koa route handlers. Those frameworks are not SkillSpoke's backend, so do not use its generated routes for SkillSpoke work; write the handlers with the Powertools event handler as shown in the API Design Workflow.
+`scripts/api_scaffolder.py` generates Express, Fastify or Koa route handlers. On a Python Lambda backend do not use its generated routes; write the handlers with the Powertools event handler as shown in the API Design Workflow.
 
 ### 2. Database Migration Tool
 
-`scripts/database_migration_tool.py` analyses a PostgreSQL schema over a direct connection string. SkillSpoke reaches Aurora PostgreSQL through the RDS Data API, with migrations and schema review as the `aurora-postgresql` skill states; use that skill's approach for SkillSpoke databases.
+`scripts/database_migration_tool.py` analyses a PostgreSQL schema over a direct connection string. A database reached through the RDS Data API has no such connection; use the migration and schema-review approach the `aurora-postgresql` skill states for it.
 
 ### 3. API Load Tester
 
@@ -62,7 +62,7 @@ python scripts/api_load_tester.py https://<api-id>.execute-api.us-east-1.amazona
   --duration 60
 ```
 
-Size a load test to the stated context (alpha: one dev account, at most five users), and run it only against AWS dev.
+Size a load test to the development context the project instructions state, and run it only against the development environment they name.
 
 ---
 
@@ -137,7 +137,7 @@ def handler(event: dict[str, object], context: LambdaContext) -> dict[str, objec
     return app.resolve(event, context)
 ```
 
-In a SkillSpoke service the chassis supplies the logger, tracer, metrics and idempotency wiring; use what `shared-chassis-lib` provides rather than re-creating it.
+Where the project's Lambda chassis library supplies the logger, tracer, metrics and idempotency wiring, use what it provides rather than re-creating it.
 
 **Step 4: Validation** comes from the Pydantic models (`enable_validation=True`) and from API Gateway request validation against the specification; both reject a bad request with 4xx before business logic runs.
 
@@ -187,7 +187,7 @@ python scripts/api_load_tester.py https://<api-id>.execute-api.us-east-1.amazona
 
 ## Reference Documentation
 
-The references hold general backend knowledge; their Node.js, Express and GraphQL examples are background, and SkillSpoke writes the same patterns in Python on Powertools.
+The references hold general backend knowledge; their Node.js, Express and GraphQL examples are background; on a Python Lambda backend write the same patterns in Python on Powertools.
 
 | File | Contains | Use When |
 |------|----------|----------|

@@ -15,15 +15,15 @@ description: "Database Schema Designer"
 
 Design relational database schemas from requirements and generate migrations, TypeScript/Python types, seed data, RLS policies, and indexes. Handles multi-tenancy, soft deletes, audit trails, versioning, and polymorphic associations.
 
-**Scope:** this skill applies to relational stores. In SkillSpoke that is Aurora PostgreSQL Serverless v2 reached through the RDS Data API, including its graph and vector uses; the `aurora-postgresql` skill is the authority there and overrides this skill where they differ (keys, migrations, connection handling). Normalization, foreign keys and relational migrations do not apply to a DynamoDB store: a DynamoDB store is designed access-pattern first, as the `dynamodb` skill describes. Apply each store's guidance to that store.
+**Scope:** this skill applies to relational stores. For Aurora PostgreSQL Serverless v2 reached through the RDS Data API, including its graph and vector uses, the `aurora-postgresql` skill is the authority and overrides this skill where they differ (keys, migrations, connection handling). Normalization, foreign keys and relational migrations do not apply to a DynamoDB store: a DynamoDB store is designed access-pattern first, as the `dynamodb` skill describes. Apply each store's guidance to that store.
 
 ## Core Capabilities
 
 - **Schema design** — normalize requirements into tables, relationships, constraints
-- **Migration generation** — versioned SQL migration files (SkillSpoke); Drizzle, Prisma, TypeORM and Alembic only for systems outside SkillSpoke
+- **Migration generation** — versioned SQL migration files, or Drizzle, Prisma, TypeORM and Alembic where the project's stack uses an ORM
 - **Type generation** — TypeScript interfaces, Python dataclasses/Pydantic models
 
-**SkillSpoke:** relational data is Aurora PostgreSQL Serverless v2 reached through the RDS Data API from Python Lambdas, with no ORM. Schema changes are versioned SQL migration files run at deploy time by the owning service's stack, and the `aurora-postgresql` skill overrides this skill wherever they disagree. The Prisma, Drizzle and TypeORM material below is general knowledge for other systems.
+**The project's relational store** is the one its architecture constraints state; read them first. Where it is Aurora PostgreSQL Serverless v2 reached through the RDS Data API from Python Lambdas with no ORM, schema changes are versioned SQL migration files run at deploy time by the owning service's stack, and the `aurora-postgresql` skill overrides this skill wherever they disagree; the Prisma, Drizzle and TypeORM material below is then general knowledge for other systems.
 - **RLS policies** — Row-Level Security for multi-tenant apps
 - **Index strategy** — composite indexes, partial indexes, covering indexes
 - **Seed data** — realistic test data generation

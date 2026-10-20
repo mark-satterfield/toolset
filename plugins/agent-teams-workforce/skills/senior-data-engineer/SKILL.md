@@ -90,7 +90,7 @@ python scripts/etl_performance_optimizer.py analyze \
 
 ## Architecture Decision Framework
 
-Use this framework to choose the right approach for your data pipeline. SkillSpoke runs on AWS serverless services, owned per service and built in Python CDK: Python Lambdas on `aws-lambda-powertools`, DynamoDB and Aurora PostgreSQL Serverless v2 (through the RDS Data API), S3, SkillSpoke events through the events service onto the one EventBridge bus, and CloudWatch, X-Ray and ADOT for observability. At alpha scale (one dev account, at most five users), prefer per-request services over always-on clusters unless a stated need justifies the floor cost.
+Use this framework to choose the right approach for your data pipeline. The project's stack and its development context are stated in its architecture constraints and project instructions; read them first. This framework assumes AWS serverless services, owned per service and built in Python CDK: Python Lambdas on `aws-lambda-powertools`, DynamoDB and Aurora PostgreSQL Serverless v2 (through the RDS Data API), S3, events published to EventBridge as the project's event standard defines, and CloudWatch, X-Ray and ADOT for observability. At small scale, prefer per-request services over always-on clusters unless a stated need justifies the floor cost.
 
 ### Batch vs Streaming
 
@@ -102,13 +102,13 @@ Use this framework to choose the right approach for your data pipeline. SkillSpo
 | **Cost sensitivity** | More cost-effective | Higher infrastructure cost |
 | **Error handling** | Easier to reprocess | Requires careful design |
 
-**Decision Tree (AWS services SkillSpoke uses):**
+**Decision Tree (AWS serverless services):**
 ```
 Is real-time insight required?
 ├── Yes → Use streaming
-│   ├── Reacting to a SkillSpoke business or system event?
-│   │   └── EventBridge: publish through the central event API; the target's
-│   │       stack owns the routing rule, its SQS queue or Lambda target and DLQ
+│   ├── Reacting to a business or system event of the project?
+│   │   └── EventBridge, published as the project's event standard defines; the
+│   │       target's stack owns the routing rule, its SQS queue or Lambda target and DLQ
 │   ├── Reacting to changes in a service's own DynamoDB table?
 │   │   └── DynamoDB Streams → Lambda event source mapping (Powertools batch
 │   │       processing, bisect on error, on-failure destination)
@@ -125,7 +125,7 @@ Is real-time insight required?
         into Iceberg on S3
 ```
 
-Every consumer is idempotent (delivery is at least once), and every stream consumer has an on-failure destination or DLQ. Kafka (including Amazon MSK) is not part of SkillSpoke's stack: an MSK cluster is always-on capacity, and EventBridge, Kinesis and DynamoDB Streams cover SkillSpoke's streaming needs. Use the Kafka material in the references only when the task is explicitly about an external Kafka source.
+Every consumer is idempotent (delivery is at least once), and every stream consumer has an on-failure destination or DLQ. Weigh Kafka (including Amazon MSK) against that: an MSK cluster is always-on capacity, and EventBridge, Kinesis and DynamoDB Streams cover most serverless streaming needs; use it only where the project's architecture chooses it. Use the Kafka material in the references only when the task is explicitly about an external Kafka source.
 
 Cost facts to weigh (confirm current prices with the AWS documentation tools): Kinesis Data Streams in On-demand Standard mode charges per GB written and read plus an hourly charge for each stream; Firehose charges per GB ingested; Managed Service for Apache Flink charges per running application hour; EventBridge custom-bus events and Lambda are charged per request.
 
@@ -148,7 +148,7 @@ Cost facts to weigh (confirm current prices with the AWS documentation tools): K
 - All processing can be expressed as stream operations
 - Starting fresh without legacy systems
 
-SkillSpoke does not use EventBridge archive or replay; replay for a Kappa design comes from the stream's retention (Kinesis) or from the data a service keeps in S3.
+Where the project's event standard rules out EventBridge archive and replay, replay for a Kappa design comes from the stream's retention (Kinesis) or from the data a service keeps in S3.
 
 ### Data Warehouse vs Data Lakehouse
 
@@ -164,24 +164,24 @@ SkillSpoke does not use EventBridge archive or replay; replay for a Kappa design
 
 ## Tech Stack
 
-The AWS services SkillSpoke uses come first in each row; the rest are general knowledge for reading other systems, not choices for SkillSpoke.
+The AWS serverless services come first in each row; the rest are general knowledge for reading other systems. The project's architecture decides which it uses.
 
-| Category | SkillSpoke (AWS) | Other systems you may meet |
+| Category | AWS serverless | Other systems you may meet |
 |----------|------------------|----------------------------|
 | **Languages** | Python, SQL | Scala |
 | **Orchestration** | Step Functions, EventBridge Scheduler, Lambda durable functions | Airflow (MWAA), Prefect, Dagster |
 | **Transformation** | Lambda, AWS Glue (Spark), Athena SQL | dbt, Spark, Flink |
-| **Streaming** | EventBridge (through the events service), DynamoDB Streams, Kinesis Data Streams, Amazon Data Firehose | Kafka, Pub/Sub |
+| **Streaming** | EventBridge (as the project's event standard defines), DynamoDB Streams, Kinesis Data Streams, Amazon Data Firehose | Kafka, Pub/Sub |
 | **Storage** | S3, Apache Iceberg / S3 Tables, DynamoDB, Aurora PostgreSQL Serverless v2 | GCS, Delta Lake |
 | **Warehouses** | Athena, Redshift Serverless | Snowflake, BigQuery, Databricks |
 | **Quality** | Validation at the boundary in Python (Pydantic), AWS Glue Data Quality | Great Expectations, dbt tests |
-| **Monitoring** | CloudWatch metrics, logs and alarms, X-Ray, ADOT, SkillSpoke observability events | Prometheus, Grafana, Datadog |
+| **Monitoring** | CloudWatch metrics, logs and alarms, X-Ray, ADOT, observability events | Prometheus, Grafana, Datadog |
 
 ---
 
 ## Reference Documentation
 
-The references hold general data-engineering knowledge. Their examples use Airflow, dbt, Kafka, Spark, Snowflake and Prometheus; in SkillSpoke, map each to the AWS service in the Tech Stack table above, and follow this file where they differ.
+The references hold general data-engineering knowledge. Their examples use Airflow, dbt, Kafka, Spark, Snowflake and Prometheus; on an AWS serverless stack, map each to the AWS service in the Tech Stack table above, and follow this file where they differ.
 
 ### 1. Data Pipeline Architecture
 See `references/data_pipeline_architecture.md` for:

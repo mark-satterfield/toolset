@@ -78,7 +78,7 @@ The RAG (Retrieval-Augmented Generation) Architect skill provides comprehensive 
 
 ### 3. Vector Database Selection
 
-**SkillSpoke stores vectors in Aurora PostgreSQL Serverless v2 with pgvector, reached through the RDS Data API and owned by the service whose data it is** (see `aurora-postgresql` and `pgvector-semantic-search`). The other AWS stores below are the alternatives a design weighs it against. Embeddings come from an Amazon Bedrock embeddings model through `skillSpoke-ai-lib`, since all SkillSpoke inference runs on Bedrock; self-hosted sentence-transformers models are not part of the stack.
+**The project's vector store and its embeddings source are stated in its architecture; read them first.** On a serverless AWS stack the usual default is Aurora PostgreSQL Serverless v2 with pgvector, reached through the RDS Data API and owned by the service whose data it is (see `aurora-postgresql` and `pgvector-semantic-search`); the other AWS stores below are the alternatives a design weighs it against. Where all inference runs on Amazon Bedrock, embeddings come from a Bedrock embeddings model, through the project's model-calling library where it has one, and self-hosted sentence-transformers models are not used.
 
 #### Amazon S3 Vectors
 - **Managed vector buckets and indexes** (`s3vectors` API): lowest cost for large, infrequently queried corpora; dimension, metric and non-filterable metadata keys are immutable after index creation
@@ -112,7 +112,7 @@ Bedrock Knowledge Bases can manage chunking, embedding and ingestion into these 
 - **Implementation**: Vector similarity search with k-NN or ANN algorithms
 
 #### Sparse Retrieval
-- **Keyword-based**: TF-IDF, BM25, Elasticsearch; in SkillSpoke, PostgreSQL full-text search (`tsvector`, `ts_rank`) beside pgvector
+- **Keyword-based**: TF-IDF, BM25, Elasticsearch; beside pgvector, PostgreSQL full-text search (`tsvector`, `ts_rank`)
 - **Advantages**: Exact keyword matching, interpretable results
 - **Limitations**: Misses semantic similarity, vulnerable to vocabulary mismatch
 - **Implementation**: Inverted indexes, term frequency analysis
@@ -195,7 +195,7 @@ Bedrock Knowledge Bases can manage chunking, embedding and ingestion into these 
 - **Query-level caching**: Cache results for identical queries
 - **Semantic caching**: Cache for semantically similar queries
 - **Chunk-level caching**: Cache embedding computations
-- **Multi-level caching**: an in-memory cache for hot queries elsewhere; SkillSpoke deploys no ElastiCache or Redis without a measured need, and caches in DynamoDB (with TTL) or in the Lambda execution environment
+- **Multi-level caching**: an in-memory cache for hot queries; on a serverless stack, deploy no ElastiCache or Redis without a measured need, and cache in DynamoDB (with TTL) or in the Lambda execution environment
 
 #### Streaming Retrieval
 - **Progressive loading**: Stream results as they become available

@@ -18,14 +18,16 @@ triggers:
 
 Production ML engineering patterns for model deployment, MLOps infrastructure, and LLM integration.
 
-## SkillSpoke's ML stack
+## The ML stack
 
-- **Inference:** all inference runs on Amazon Bedrock in the SkillSpoke account, and service code calls a model only through `skillSpoke-ai-lib`, the one way to call a model (`bedrock` skill). Agents run on Amazon Bedrock AgentCore Runtime (`aws-agentic-ai`). Agents reach data only through the owning services' APIs; deterministic computation such as scoring is service code, and the model explains the result.
+The project's ML stack, and any shared library that is the one way its code calls a model, are stated in its architecture constraints and project instructions; read them first. This skill covers a serverless AWS ML stack of this shape:
+
+- **Inference:** inference runs on Amazon Bedrock in the project's AWS account, and service code calls a model only through the project's model-calling library where it has one (`bedrock` skill). Agents run on Amazon Bedrock AgentCore Runtime (`aws-agentic-ai`). Agents reach data only through the owning services' APIs; deterministic computation such as scoring is service code, and the model explains the result.
 - **Vectors:** Aurora PostgreSQL Serverless v2 with pgvector, through the RDS Data API (`aurora-postgresql`, `pgvector-semantic-search`).
-- **Serving code:** Python Lambdas on `aws-lambda-powertools`; FastAPI, Flask and Django are banned, and SkillSpoke runs no Kubernetes or container serving.
+- **Serving code:** Python Lambdas on `aws-lambda-powertools`; frameworks the project's constraints ban are not used, and a Lambda-only project runs no Kubernetes or container serving.
 - **Pipelines and monitoring:** Step Functions, EventBridge, S3; CloudWatch, X-Ray and ADOT. A self-trained model, if a stated need ever requires one, goes to Amazon SageMaker (`aws-core:aws-ai-ml`), not a self-managed cluster.
 
-The container, Kubernetes, MLflow, Kafka, Pinecone and LangChain material below is general ML engineering knowledge for other systems; in SkillSpoke, follow this section where they differ.
+The container, Kubernetes, MLflow, Kafka, Pinecone and LangChain material below is general ML engineering knowledge for other systems; on the stack above, follow this section where they differ.
 
 ---
 
@@ -75,8 +77,8 @@ CMD ["uvicorn", "src.server:app", "--host", "0.0.0.0", "--port", "8080"]
 
 | Option | Latency | Throughput | Use Case |
 |--------|---------|------------|----------|
-| FastAPI + Uvicorn | Low | Medium | REST APIs, small models (not SkillSpoke: FastAPI is banned) |
-| Amazon Bedrock | Low | High | SkillSpoke: every foundation-model call, through `skillSpoke-ai-lib` |
+| FastAPI + Uvicorn | Low | Medium | REST APIs, small models (not on Lambda where the constraints ban FastAPI) |
+| Amazon Bedrock | Low | High | Foundation-model calls on the stack above, through the project's model-calling library |
 | Triton Inference Server | Very Low | Very High | GPU inference, batching |
 | TensorFlow Serving | Low | High | TensorFlow models |
 | TorchServe | Low | High | PyTorch models |
@@ -190,7 +192,7 @@ Build retrieval-augmented generation pipeline:
 | Qdrant | Both | High | Very Low | Performance-critical |
 | Weaviate | Both | High | Low | Hybrid search |
 | Chroma | Self-hosted | Medium | Low | Prototyping |
-| pgvector on Aurora PostgreSQL | Managed (Aurora) | Medium | Medium | Existing Postgres; SkillSpoke's vector store |
+| pgvector on Aurora PostgreSQL | Managed (Aurora) | Medium | Medium | Existing Postgres; the vector store of the stack above |
 
 ### Chunking Strategies
 
@@ -302,9 +304,9 @@ Sets up drift detection, alerting, and performance dashboards.
 
 ## Tech Stack
 
-| Category | SkillSpoke | Other systems you may meet |
+| Category | Serverless AWS stack | Other systems you may meet |
 |----------|------------|----------------------------|
-| Models | Amazon Bedrock through `skillSpoke-ai-lib`; AgentCore Runtime for agents | PyTorch, TensorFlow, Scikit-learn, XGBoost |
+| Models | Amazon Bedrock through the project's model-calling library; AgentCore Runtime for agents | PyTorch, TensorFlow, Scikit-learn, XGBoost |
 | LLM Frameworks | Bedrock Converse API; Strands Agents on AgentCore | LangChain, LlamaIndex, DSPy |
 | MLOps | Step Functions, CloudWatch; SageMaker for a self-trained model | MLflow, Weights & Biases, Kubeflow |
 | Data | S3, EventBridge, DynamoDB Streams, Kinesis | Spark, Airflow, dbt, Kafka |
