@@ -24,7 +24,7 @@ whose name matches the frontend template.
 | 6 | Write the data model | agent `data-model-specification-author` | `TRD`, `span`, `elements`, `repository context` | `spec-<slug>.data-model.md` | file `data model` |
 | 7 | Add the UI design sources to the contracts (frontend) | script `specui.spec_ui_append` | `spec`, `ui sources` | the section `## UI design sources` of `spec-<slug>.md` | file `spec` |
 | 8 | Write the acceptance criteria | agent `acceptance-criteria-writer` | `TRD`, `span`, `elements`, `spec`, `data model`, `repository context` | `spec-<slug>.criteria.md` | file `criteria` |
-| 9 | Review the specification documents | agent `openapi-contract-reviewer` | `spec`, `data model`, `criteria`, `TRD`, `repository context` | `spec-<slug>.review.json` | see "The review" |
+| 9 | Review the specification documents | agent `spec-reviewer` | `spec`, `data model`, `criteria`, `TRD`, `repository context` | `spec-<slug>.review.json` | see "The review" |
 | 10 | Write the Story document | script `spec_authoring.story_document` | `spec`, `data model`, `criteria`, `repository context` | the section `## Architecture and design documents` at the end of each of the three spec documents; `story-<slug>.json` | file `story document`, value `decision ids` |
 | 11 | Write the Story bead | script `beadwrite.write_story` | `story document`, the three spec documents, `span`, `elements` | the Story bead; the Story's journal | value `story`, value `story write`, value `decision ids`; plans the repository's container under Tasks |
 
@@ -73,9 +73,9 @@ step whose result calls for it, one step at a time, after that step:
 
 | Step | Planned when | Performed by | Records |
 |---|---|---|---|
-| Review | always | `openapi-contract-reviewer` | file `spec review`; value `spec review findings` (the findings held against an implementation criterion); value `spec review findings dropped` (the others, which go no further) |
+| Review | always | `spec-reviewer` | file `spec review`; value `spec review findings` (the findings held against an implementation criterion); value `spec review findings dropped` (the others, which go no further) |
 | Correct a document for the review's findings | the document has a finding, or is derived from a document that changed in this pass | the agent that wrote the document, continuing the session in which it wrote it | file `spec correction`, the document again, value `spec review document worked on` (whether it changed, which findings it disputed), value `warnings` |
-| Rule on the disputed findings | an author disputed a finding of its own document | `spec-decider` | file `spec ruling`, value `spec review findings upheld`, value `warnings` |
+| Rule on the disputed findings | an author disputed a finding of its own document | `review-dispute-decider` | file `spec ruling`, value `spec review findings upheld`, value `warnings` |
 | Revise a document to the ruling | the document has an upheld finding, or is derived from a document that changed in this pass | the agent that wrote the document | file `spec revision`, the document again, value `spec review document worked on`, value `warnings` |
 
 Documents are worked on in the order they are written: contracts, data model, criteria. The

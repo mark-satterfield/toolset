@@ -1,18 +1,20 @@
 ---
-name: cost-impact-reviewer
+name: new-resource-cost-reviewer
 description: Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.
 role: architecture-reviewer
 tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
-  mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, Skill, mcp__mcp-graphrag-server, Agent, Workflow
-disallowedTools: AskUserQuestion, Edit
+  mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, Skill, mcp__mcp-graphrag-server,
+  mcp__pg-aiguide__search_docs, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit, NotebookEdit
 mcpServers:
 - aws-mcp
 - awslabs-dynamodb-mcp-server
 - mcp-graphrag-server
+- pg-aiguide
 model: sonnet
 permissionMode: acceptEdits
-maxTurns: 90
+maxTurns: 80
 skills:
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:aws-cost-operations
@@ -25,7 +27,7 @@ color: cyan
 
 ## Specialty
 
-Check cost assumptions, fixed floors and evidenced cost cliffs at the stated usage. Do not make hypothetical 10x/100x/1000x load a blocking requirement.
+Estimate applicable infrastructure and request costs with assumptions and unit math; distinguish fixed monthly floors from usage costs and assess stated ceilings.
 
 ## What you review
 

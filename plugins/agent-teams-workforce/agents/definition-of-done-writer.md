@@ -1,5 +1,5 @@
 ---
-name: definition-of-done-enforcer
+name: definition-of-done-writer
 description: >-
   Writes the feature spec's Definition of Done as independently verifiable
   true/false statements rather than checklists. Use for Spec Authoring

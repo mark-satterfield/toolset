@@ -84,15 +84,15 @@ The PRD and portfolio workflows run their commands and accept agent files throug
 
 | Artifact | Writer | Readers | Contract |
 |---|---|---|---|
-| repository context: `<work>/spec-<slug>.context.json` | step `spec_authoring.context` | the spec authors; `openapi-contract-reviewer`; `task-decomposer` | `spec-context.schema.json` |
+| repository context: `<work>/spec-<slug>.context.json` | step `spec_authoring.context` | the spec authors; `spec-reviewer`; `task-decomposer` | `spec-context.schema.json` |
 | ui bundles: `<work>/spec-<slug>.bundles.json` | step `cdsbundles.list_bundles` | `api-specification-author`; step `spec_authoring.normalize_ui` | `ui-bundles.schema.json` |
 | ui sources: `<work>/candidates/spec-<slug>.ui.json`, then `<work>/spec-<slug>.ui.json` | `api-specification-author`, then step `spec_authoring.normalize_ui` | the contracts session; `task-decomposer` | `spec-ui.schema.json` |
-| contracts document: `<work>/spec-<slug>.md` | `api-specification-author` | `acceptance-criteria-writer`; `openapi-contract-reviewer`; `spec-decider`; `task-decomposer` | `document-front-matter.schema.json#/$defs/SpecDocument`; the specs-and-Tasks criteria of `skills/effective-architecture/review-standard.md` |
-| data-model document: `<work>/spec-<slug>.data-model.md` | `data-model-specification-author` | `acceptance-criteria-writer`; `openapi-contract-reviewer`; `spec-decider`; `task-decomposer` | `document-front-matter.schema.json#/$defs/SpecDocument`; the specs-and-Tasks criteria of `skills/effective-architecture/review-standard.md` |
-| criteria document: `<work>/spec-<slug>.criteria.md` | `acceptance-criteria-writer` | `openapi-contract-reviewer`; `spec-decider`; `task-decomposer` | the specs-and-Tasks criteria of `skills/effective-architecture/review-standard.md`; Tasks cite its ids as `tasks.schema.json` states |
-| spec review: `<work>/spec-<slug>.review.json` | `openapi-contract-reviewer` | the three spec authors; `spec-decider` | `spec-review.schema.json` |
-| spec correction and revision: `<work>/spec-<slug>.<document>.correction.json`, `.revision.json` | the author of the document | `spec-decider` | `spec-correction.schema.json` |
-| spec ruling: `<work>/spec-<slug>.ruling.json` | `spec-decider` | the three spec authors | `spec-ruling.schema.json` |
+| contracts document: `<work>/spec-<slug>.md` | `api-specification-author` | `acceptance-criteria-writer`; `spec-reviewer`; `review-dispute-decider`; `task-decomposer` | `document-front-matter.schema.json#/$defs/SpecDocument`; the specs-and-Tasks criteria of `skills/effective-architecture/review-standard.md` |
+| data-model document: `<work>/spec-<slug>.data-model.md` | `data-model-specification-author` | `acceptance-criteria-writer`; `spec-reviewer`; `review-dispute-decider`; `task-decomposer` | `document-front-matter.schema.json#/$defs/SpecDocument`; the specs-and-Tasks criteria of `skills/effective-architecture/review-standard.md` |
+| criteria document: `<work>/spec-<slug>.criteria.md` | `acceptance-criteria-writer` | `spec-reviewer`; `review-dispute-decider`; `task-decomposer` | the specs-and-Tasks criteria of `skills/effective-architecture/review-standard.md`; Tasks cite its ids as `tasks.schema.json` states |
+| spec review: `<work>/spec-<slug>.review.json` | `spec-reviewer` | the three spec authors; `review-dispute-decider` | `spec-review.schema.json` |
+| spec correction and revision: `<work>/spec-<slug>.<document>.correction.json`, `.revision.json` | the author of the document | `review-dispute-decider` | `spec-correction.schema.json` |
+| spec ruling: `<work>/spec-<slug>.ruling.json` | `review-dispute-decider` | the three spec authors | `spec-ruling.schema.json` |
 | Story document: `<work>/story-<slug>.json` | step `spec_authoring.story_document` | step `beadwrite.write_story`; `task-decomposer` | `story-document.schema.json` |
 | filed documents in the vault | the driver (`artifactio.file_in_vault`) | the owner | the driver's `artifactio.py` |
 
@@ -116,10 +116,10 @@ These are owner-run workflows, not Epic elaboration. Their files are in the run'
 
 | Artifact | Writer | Readers | Contract |
 |---|---|---|---|
-| prd-creation request, intake, persona, objectives, draft record, alignment verdict and deadlock ruling | the workflow; `stakeholder-request-intake-writer`; `persona-profile-writer`; `okr-writer`; `prd-writer`; `prd-alignment-verifier`; `spec-decider` | the next agent of the chain; the workflow | `prd-creation.schema.json` (one `$defs` entry each) |
+| prd-creation request, intake, persona, objectives, draft record, alignment verdict and deadlock ruling | the workflow; `stakeholder-request-intake-writer`; `feature-persona-writer`; `feature-objective-writer`; `prd-writer`; `prd-alignment-verifier`; `review-dispute-decider` | the next agent of the chain; the workflow | `prd-creation.schema.json` (one `$defs` entry each) |
 | prd-validation analysis | `prd-validation-analyst` | the workflow | `prd-validation-analysis.schema.json` |
-| assessment context: `<workDir>/context.json` | `depscore.py assess-context` | `epic-sequencer`; `task-dependency-mapper` | `dependency-assessment.schema.json` (`$defs/EpicContext`, `$defs/TaskContext`) |
-| Epic edge proposal: `<workDir>/edges.json` | `epic-sequencer` | the dependency-assessment workflow | `epic-edge-proposal.schema.json` |
+| assessment context: `<workDir>/context.json` | `depscore.py assess-context` | `epic-dependency-assessor`; `task-dependency-mapper` | `dependency-assessment.schema.json` (`$defs/EpicContext`, `$defs/TaskContext`) |
+| Epic edge proposal: `<workDir>/edges.json` | `epic-dependency-assessor` | the dependency-assessment workflow | `epic-edge-proposal.schema.json` |
 | Task edge proposal: `<workDir>/edges.json` | `task-dependency-mapper` | the task-dependency-assessment workflow | `task-edge-proposal.schema.json` |
 | WSJF judge input: `<workDir>/judge-input-<level>.json` | `depscore.py judge-input` | `wsjf-scorer` | `wsjf-judge-input.schema.json` |
 | WSJF judgment: `<workDir>/judgments/<level>/<key>.json` | `wsjf-scorer` | `depscore.py record` | `wsjf-judgment.schema.json` |

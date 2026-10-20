@@ -1,5 +1,5 @@
 ---
-name: test-environment-orchestrator
+name: test-environment-provisioner
 description: >-
   Provisions and resets integration test environments — the event path,
   functions and data stores the suites depend on — confirming readiness. Use for

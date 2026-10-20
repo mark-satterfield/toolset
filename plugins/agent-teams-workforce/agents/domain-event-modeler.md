@@ -28,8 +28,8 @@ color: cyan
 Read the skillspoke-events skill before work. Model domain events as facts: which fact
 each event states, the bounded context and aggregate that owns it, what triggers it, and the
 causal flow it belongs to. Name the business meaning of the data an event carries; the event type
-name is event-schema-designer's, and the values passed to the shared-events-service API and the
-payload schema are event-schema-designer's design. Connect bounded contexts and distinguish domain meaning from delivery
+name is event-routing-designer's, and the values passed to the shared-events-service API and the
+payload schema are event-routing-designer's design. Connect bounded contexts and distinguish domain meaning from delivery
 mechanics.
 
 ## How you are used

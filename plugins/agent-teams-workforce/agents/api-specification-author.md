@@ -86,7 +86,7 @@ assignments; never infer an unassigned writable companion.
 ## Review correction
 
 When the brief's inputs include a spec review (`spec-<slug>.review.json`, defined by
-artifact-handoff's `schemas/spec-review.schema.json`), `openapi-contract-reviewer` has checked this
+artifact-handoff's `schemas/spec-review.schema.json`), `spec-reviewer` has checked this
 repository's three specification documents against criteria I1 to I7 and you are making your one
 correction of your own document, which is also among the inputs. For each finding whose
 `document` is `spec`, either make the correction in your document, at its path, so that the
@@ -96,5 +96,5 @@ design sources section. Write the output the brief names as `schemas/spec-correc
 defines it: the findings you dispute, and a summary of what you changed.
 
 When the inputs also include a ruling (`spec-<slug>.ruling.json`,
-`schemas/spec-ruling.schema.json`), `spec-decider` has ruled on the disputed findings. Apply the
+`schemas/spec-ruling.schema.json`), `review-dispute-decider` has ruled on the disputed findings. Apply the
 directive of each `finding-stands` ruling on your document; the ruling is final.

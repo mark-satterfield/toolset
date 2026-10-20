@@ -2,6 +2,20 @@
   "description": "Every agent of the agent-teams-workforce plugin, generated from its definition file by skills/find-specialists/scripts/specialist_catalog.py. Do not edit by hand.",
   "agents": [
     {
+      "name": "acceptance-criteria-coverage-assessor",
+      "description": "Establishes, before any test is written, which acceptance criteria the repository's existing tests already encode, and — when every criterion is covered — runs only those tests and rules whether they are red, already-satisfied or not-encoded. The tdd-red workflow dispatches it for both steps. Never writes or repairs a test.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-qa",
+        "agent-teams-workforce:cumulative-regression",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
       "name": "acceptance-criteria-reviewer",
       "description": "Validates acceptance criteria are testable, complete, and unambiguous — derivable into tests without interpretation. Use for Spec Authoring work requiring testability review, ambiguity detection, and completeness checking.",
       "skills": [
@@ -636,6 +650,21 @@
       ]
     },
     {
+      "name": "changed-resource-cost-reviewer",
+      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:aws-cost-operations",
+        "agent-teams-workforce:effective-architecture",
+        "aws-core:aws-billing-and-cost-management"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "awslabs-dynamodb-mcp-server",
+        "mcp-graphrag-server"
+      ]
+    },
+    {
       "name": "changelog-writer",
       "description": "Generates changelog entries from merged work, parsing conventional commits into semantic version notes. Use for cross-cutting Documentation team work requiring conventional commit parsing, changelog drafting, and version note generation.",
       "skills": [
@@ -706,21 +735,6 @@
       "mcpServers": [
         "mcp-graphrag-server",
         "aws-mcp",
-        "gitnexus"
-      ]
-    },
-    {
-      "name": "code-style-and-linting-enforcer",
-      "description": "Runs project linters and applies formatting and style fixes while keeping tests green. Use for Code Quality work requiring lint execution, formatting cleanup, and style-convention enforcement.",
-      "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:code-reviewer",
-        "agent-teams-workforce:python-coding",
-        "agent-teams-workforce:software-engineering",
-        "agent-teams-workforce:graphrag-lookup"
-      ],
-      "mcpServers": [
         "gitnexus"
       ]
     },
@@ -826,37 +840,6 @@
       ]
     },
     {
-      "name": "cost-architecture-reviewer",
-      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
-      "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:aws-cost-operations",
-        "agent-teams-workforce:effective-architecture",
-        "aws-core:aws-billing-and-cost-management"
-      ],
-      "mcpServers": [
-        "aws-mcp",
-        "awslabs-dynamodb-mcp-server",
-        "mcp-graphrag-server",
-        "pg-aiguide"
-      ]
-    },
-    {
-      "name": "cost-impact-reviewer",
-      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
-      "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:aws-cost-operations",
-        "agent-teams-workforce:effective-architecture",
-        "aws-core:aws-billing-and-cost-management"
-      ],
-      "mcpServers": [
-        "aws-mcp",
-        "awslabs-dynamodb-mcp-server",
-        "mcp-graphrag-server"
-      ]
-    },
-    {
       "name": "cross-repo-integration-test-coordinator",
       "description": "Sequences cross-repo integration test runs over the event chain, aligns environment state between repos, and routes results to integration-testing-lead. Coordinates only — runs no tests. Use for Integration Testing work requiring cross-repo sequencing, environment alignment, and result routing.",
       "skills": [
@@ -947,7 +930,7 @@
       ]
     },
     {
-      "name": "definition-of-done-enforcer",
+      "name": "definition-of-done-writer",
       "description": "Writes the feature spec's Definition of Done as independently verifiable true/false statements rather than checklists. Use for Spec Authoring work requiring DoD authoring, verifiability discipline, and completion semantics.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
@@ -1168,7 +1151,7 @@
       ]
     },
     {
-      "name": "epic-sequencer",
+      "name": "epic-dependency-assessor",
       "description": "Assesses the architecture dependencies of ONE Epic. An Epic is a PRD, and an edge between two Epics is an architecture dependency: it exists wherever an architecture decision one Epic rests on should be designed from another Epic's requirements first and the effective architecture does not already settle it. Reads the Epic's full PRD, answers the foundation-layer checklist (drives, rests on or not touched for each of nine layers) and names the other architecture decisions it drives and rests on, checks each against the effective architecture, finds the related Epics through the matrix, reads the requirements of each that bear on a decision, and applies the edge test in both directions, drawing an edge it is unsure of at low confidence. Emits every edge to or from the Epic with a reason and a confidence, accounts for every owned edge standing on it — kept, or withdrawn with a reason — and validates the file before reporting.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
@@ -1254,7 +1237,7 @@
       ]
     },
     {
-      "name": "event-schema-designer",
+      "name": "event-routing-designer",
       "description": "Answer a question or do a bounded piece of design for the solutions architect on event types, their producers, and the routing rules (event pattern, targets, owning stack) with per-target retry and DLQ.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
@@ -1303,6 +1286,28 @@
         "mcp-graphrag-server",
         "pg-aiguide"
       ]
+    },
+    {
+      "name": "feature-objective-writer",
+      "description": "Derives the OKR cascade from strategy docs and the intake brief — objectives, key results, leading vs. lagging indicators. Use for PRD Creation work requiring goal cascading, key-result quantification, and indicator classification.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:product-strategist",
+        "agent-teams-workforce:product-analytics"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "feature-persona-writer",
+      "description": "Generates data-driven persona profiles from research — behavioral segments, jobs-to-be-done, empathy maps. Use for PRD Creation work requiring behavioral segmentation, jobs-to-be-done framing, and empathy mapping.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:product-discovery",
+        "agent-teams-workforce:product-analytics"
+      ],
+      "mcpServers": []
     },
     {
       "name": "filing-clerk",
@@ -1395,7 +1400,7 @@
       ]
     },
     {
-      "name": "graphql-schema-designer",
+      "name": "graphql-api-designer",
       "description": "Answer a question or do a bounded piece of design for the solutions architect on GraphQL interfaces, which block exposes and resolves each operation and who may call it.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
@@ -1563,6 +1568,21 @@
       ]
     },
     {
+      "name": "lint-finding-fixer",
+      "description": "Runs project linters and applies formatting and style fixes while keeping tests green. Use for Code Quality work requiring lint execution, formatting cleanup, and style-convention enforcement.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:code-reviewer",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
+    },
+    {
       "name": "llm-observability-implementer",
       "description": "Implements LLM observability — prompt/response logging, token and cost metrics, drift alerts — writing minimum code to pass failing tests. Use for Implementation work requiring LLM telemetry instrumentation, quality-signal capture, and drift alerting.",
       "skills": [
@@ -1660,6 +1680,22 @@
       ]
     },
     {
+      "name": "new-resource-cost-reviewer",
+      "description": "Review the unapproved architecture and TRD content of one Epic against the criteria its reviewer group covers.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:aws-cost-operations",
+        "agent-teams-workforce:effective-architecture",
+        "aws-core:aws-billing-and-cost-management"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "awslabs-dynamodb-mcp-server",
+        "mcp-graphrag-server",
+        "pg-aiguide"
+      ]
+    },
+    {
       "name": "nextjs-component-implementer",
       "description": "Implements the non-visual React/Next.js work — component state, data fetching, Next.js routing — writing minimum code to pass failing unit tests. Visual component and page work goes to cds:cds-ui-author, which builds with the cds design system.",
       "skills": [
@@ -1687,37 +1723,6 @@
         "agent-teams-workforce:product-discovery"
       ],
       "mcpServers": []
-    },
-    {
-      "name": "okr-writer",
-      "description": "Derives the OKR cascade from strategy docs and the intake brief — objectives, key results, leading vs. lagging indicators. Use for PRD Creation work requiring goal cascading, key-result quantification, and indicator classification.",
-      "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-strategist",
-        "agent-teams-workforce:product-analytics"
-      ],
-      "mcpServers": []
-    },
-    {
-      "name": "openapi-contract-reviewer",
-      "description": "The independent reviewer session for Spec Authoring: reviews one repository's contracts document, data-model document and acceptance criteria against the specs-and-Tasks criteria (I1 to I7) of the review standard, once, and returns findings a document's author can correct without interpretation.",
-      "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:api-design-reviewer",
-        "agent-teams-workforce:skillspoke-events",
-        "agent-teams-workforce:artifact-handoff",
-        "agent-teams-workforce:effective-architecture",
-        "agent-teams-workforce:aurora-postgresql",
-        "agent-teams-workforce:design-postgres-tables"
-      ],
-      "mcpServers": [
-        "aws-mcp",
-        "awslabs-dynamodb-mcp-server",
-        "pg-aiguide",
-        "awslabs-postgres-mcp-server"
-      ]
     },
     {
       "name": "operational-readiness-reviewer",
@@ -1813,17 +1818,6 @@
         "gitnexus",
         "plugin_aws-agents_awsknowledge"
       ]
-    },
-    {
-      "name": "persona-profile-writer",
-      "description": "Generates data-driven persona profiles from research — behavioral segments, jobs-to-be-done, empathy maps. Use for PRD Creation work requiring behavioral segmentation, jobs-to-be-done framing, and empathy mapping.",
-      "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-discovery",
-        "agent-teams-workforce:product-analytics"
-      ],
-      "mcpServers": []
     },
     {
       "name": "phase-gate-enforcer",
@@ -2089,6 +2083,21 @@
       "mcpServers": []
     },
     {
+      "name": "review-dispute-decider",
+      "description": "Rules on each spec review finding that the author of the document disputes — the finding stands or the document stands — and states the directive the author applies; generates no spec content or analysis. Use for Spec Authoring work requiring decision adjudication, deadlock resolution, and rationale recording.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-architect",
+        "agent-teams-workforce:cove-prompt-design",
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:effective-architecture"
+      ],
+      "mcpServers": [
+        "aws-mcp"
+      ]
+    },
+    {
       "name": "root-cause-analyst",
       "description": "Diagnoses a bug bead read-only: the reproduction, the root cause, the distinct defects behind it, the files a fix must change, the blast radius, the surfaces the fix touches, and the repository it lives in; never fixes. No workflow currently dispatches it. Use for bug diagnosis requiring evidence-chain analysis.",
       "skills": [
@@ -2233,21 +2242,6 @@
       ]
     },
     {
-      "name": "spec-decider",
-      "description": "Rules on each spec review finding that the author of the document disputes — the finding stands or the document stands — and states the directive the author applies; generates no spec content or analysis. Use for Spec Authoring work requiring decision adjudication, deadlock resolution, and rationale recording.",
-      "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-architect",
-        "agent-teams-workforce:cove-prompt-design",
-        "agent-teams-workforce:artifact-handoff",
-        "agent-teams-workforce:effective-architecture"
-      ],
-      "mcpServers": [
-        "aws-mcp"
-      ]
-    },
-    {
       "name": "spec-freshness-lead",
       "description": "Routes spec freshness checks to validators and aggregates findings into a gate packet for workflow-2 Gate 1. Use for Spec Freshness phase work requiring delegation, validation routing, and gate packet assembly. No workflow currently dispatches it.",
       "skills": [
@@ -2257,12 +2251,41 @@
       "mcpServers": []
     },
     {
+      "name": "spec-reviewer",
+      "description": "The independent reviewer session for Spec Authoring: reviews one repository's contracts document, data-model document and acceptance criteria against the specs-and-Tasks criteria (I1 to I7) of the review standard, once, and returns findings a document's author can correct without interpretation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:api-design-reviewer",
+        "agent-teams-workforce:skillspoke-events",
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:aurora-postgresql",
+        "agent-teams-workforce:design-postgres-tables"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "awslabs-dynamodb-mcp-server",
+        "pg-aiguide",
+        "awslabs-postgres-mcp-server"
+      ]
+    },
+    {
       "name": "stakeholder-request-intake-writer",
       "description": "Converts raw stakeholder requests into a structured intake brief: requestor, problem, desired outcome, constraints, urgency. Use for PRD Creation work requiring request structuring, problem framing, and urgency classification.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:product-discovery"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "story-bead-writer",
+      "description": "Writes the ONE Story bead a Spec pairs with — a single-repository container with a title, a description and the out-of-repo work the Epic's closure in the matrix holds. Use for Spec Authoring work requiring the Story that pairs with a Spec.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol"
       ],
       "mcpServers": []
     },
@@ -2324,20 +2347,6 @@
       "mcpServers": []
     },
     {
-      "name": "test-coverage-gap-reviewer",
-      "description": "Establishes, before any test is written, which acceptance criteria the repository's existing tests already encode, and — when every criterion is covered — runs only those tests and rules whether they are red, already-satisfied or not-encoded. The tdd-red workflow dispatches it for both steps. Never writes or repairs a test.",
-      "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-qa",
-        "agent-teams-workforce:cumulative-regression",
-        "agent-teams-workforce:graphrag-lookup"
-      ],
-      "mcpServers": [
-        "gitnexus"
-      ]
-    },
-    {
       "name": "test-design-lead",
       "description": "Routes spec acceptance criteria to test writers, confirms Red (every new test fails), and reports to Gate 2a. Use for Test Design work requiring delegation, criterion-to-test routing, and gate reporting.",
       "skills": [
@@ -2347,7 +2356,7 @@
       "mcpServers": []
     },
     {
-      "name": "test-environment-orchestrator",
+      "name": "test-environment-provisioner",
       "description": "Provisions and resets integration test environments — the event path, functions and data stores the suites depend on — confirming readiness. Use for Integration Testing work requiring environment provisioning, state reset, fixture seeding, and readiness confirmation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
@@ -2469,15 +2478,6 @@
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:product-discovery",
         "agent-teams-workforce:beads-contract"
-      ],
-      "mcpServers": []
-    },
-    {
-      "name": "user-story-writer",
-      "description": "Writes the ONE Story bead a Spec pairs with — a single-repository container with a title, a description and the out-of-repo work the Epic's closure in the matrix holds. Use for Spec Authoring work requiring the Story that pairs with a Spec.",
-      "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol"
       ],
       "mcpServers": []
     },

@@ -15,7 +15,7 @@ in the matrix, what the Epic drives and rests on, then triggers `wsjf-scoring`, 
 decide RR-OE.
 
 `<epic-id>` is required: the one Epic, new or changed, to assess. Report the usage and stop
-without it. The epic-sequencer reads that Epic's full PRD, at the path the matrix holds for it,
+without it. The epic-dependency-assessor reads that Epic's full PRD, at the path the matrix holds for it,
 and names the architecture decisions its requirements drive and the ones it rests on. It asks
 the matrix what already states each decision (`atw-matrix find --kinds document,constraint,feature`,
 then `atw-matrix node`) and drops those a document the matrix returns as `effective` settles.

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/dependency-assessment.schema.json",
   "title": "Dependency assessment context",
-  "description": "The context file (<workDir>/context.json) an item's dependency assessment starts from. `depscore.py assess-context` (scripts/portfolio/assesscontext.py) writes it before the session starts: EpicContext for the dependency-assessment workflow (handed to the epic-sequencer), TaskContext for the task-dependency-assessment workflow (handed to the task-dependency-mapper). It names files and matrix ids and copies no document. The $defs here are also the shared parts of the two edge proposals, epic-edge-proposal.schema.json and task-edge-proposal.schema.json.",
+  "description": "The context file (<workDir>/context.json) an item's dependency assessment starts from. `depscore.py assess-context` (scripts/portfolio/assesscontext.py) writes it before the session starts: EpicContext for the dependency-assessment workflow (handed to the epic-dependency-assessor), TaskContext for the task-dependency-assessment workflow (handed to the task-dependency-mapper). It names files and matrix ids and copies no document. The $defs here are also the shared parts of the two edge proposals, epic-edge-proposal.schema.json and task-edge-proposal.schema.json.",
   "oneOf": [
     {"$ref": "#/$defs/EpicContext"},
     {"$ref": "#/$defs/TaskContext"}

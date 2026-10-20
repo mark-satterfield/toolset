@@ -1,5 +1,5 @@
 ---
-name: persona-profile-writer
+name: feature-persona-writer
 description: >-
   Generates data-driven persona profiles from research — behavioral segments,
   jobs-to-be-done, empathy maps. Use for PRD Creation

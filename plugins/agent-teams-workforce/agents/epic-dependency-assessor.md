@@ -1,5 +1,5 @@
 ---
-name: epic-sequencer
+name: epic-dependency-assessor
 description: >-
   Assesses the architecture dependencies of ONE Epic. An Epic is a PRD, and an edge between
   two Epics is an architecture dependency: it exists wherever an architecture decision one

@@ -516,8 +516,8 @@ records the model in `run.json`; it passes no effort.
 | `architecture-team-lead` | `architecture-lead` | by the script, only when the architect's result is unsettled |
 | `architecture-decider` | `decider` | by the script, only for a step the lead plans |
 | `api-specification-author`, `data-model-specification-author`, `acceptance-criteria-writer` | | by the script, in a repository's container under Specs and Stories: the UI sources step (the contracts author, frontend repositories), the step that writes its document, and a correction or a revision the review plans |
-| `openapi-contract-reviewer` | | by the script, once per repository, after the three documents |
-| `spec-decider` | | by the script, only when an author disputed a finding of the review |
+| `spec-reviewer` | | by the script, once per repository, after the three documents |
+| `review-dispute-decider` | | by the script, only when an author disputed a finding of the review |
 | `task-decomposer` | | by the script, in a repository's container under Tasks: the decomposition, and one correction when the plan has a gap |
 | `task-dependency-mapper` | | by the script, under Task edges, when the span has two or more repositories |
 
@@ -966,9 +966,9 @@ elaboration is done.
   what the Story builds (id and element) and the three spec document paths>, decisionIds}`. The Story is a
   single-repository container and nothing reads its prose to decide anything, so no session writes
   it.
-- **One review per repository.** `openapi-contract-reviewer` checks the three documents against the
+- **One review per repository.** `spec-reviewer` checks the three documents against the
   specs-and-Tasks criteria. A finding goes once to the author of the document it names; a
-  disputed finding goes to `spec-decider`; an upheld finding goes back to that author. Each of these
+  disputed finding goes to `review-dispute-decider`; an upheld finding goes back to that author. Each of these
   sessions is its own journal step, planned by the step whose result calls for it
   (`specs/epic/spec-authoring.md`).
 - **Every author writes its document.** No structured field says which surface an item touches, so

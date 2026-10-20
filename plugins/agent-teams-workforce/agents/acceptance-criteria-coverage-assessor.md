@@ -1,5 +1,5 @@
 ---
-name: test-coverage-gap-reviewer
+name: acceptance-criteria-coverage-assessor
 description: >-
   Establishes, before any test is written, which acceptance criteria the
   repository's existing tests already encode, and — when every criterion is

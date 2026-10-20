@@ -1,5 +1,5 @@
 ---
-name: spec-decider
+name: review-dispute-decider
 description: >-
   Rules on each spec review finding that the author of the document disputes —
   the finding stands or the document stands — and states the directive the

@@ -113,7 +113,7 @@ T6. A requirement says what, with a value. It does not say how, and it holds no 
 
 ## The specs and the Tasks
 
-Reviewed and approved by `openapi-contract-reviewer`.
+Reviewed and approved by `spec-reviewer`.
 
 These are not part of the architecture. A spec and a Task carry what their work builds from
 the architecture and design documents, by link or as stated there; they decide no design.

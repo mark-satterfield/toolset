@@ -10,7 +10,7 @@ the readiness process exists is the owner's concern, outside this rewrite. The r
 of its contract, for that decision and for the readiness process.
 
 Source: `<plugin>/workflows/dependency-assessment.js` (`meta.description`), the plugin command
-`<plugin>/commands/dependency-assessment.md`, the agent `<plugin>/agents/epic-sequencer.md` and its
+`<plugin>/commands/dependency-assessment.md`, the agent `<plugin>/agents/epic-dependency-assessor.md` and its
 skill `epic-sequencing`, `<plugin>/skills/beads-contract/SKILL.md` (bead metadata),
 `<plugin>/workflows/README.md` (Portfolio section), and, for contracts only,
 `<plugin>/scripts/portfolio/depscore.py` (`assess-plan`, `assess-context`, `validate`,
@@ -44,7 +44,7 @@ spec restates none of their names, values or shapes.
 Assess the architecture dependencies of ONE Epic and write its `tracks` edges, then re-score. An
 Epic is a PRD, and an edge from Epic A to Epic B means an architecture decision B rests on should
 be designed from A's requirements first, and no `effective` architecture view already settles it
-(`epic-sequencing`). One `epic-sequencer` session reads the Epic's full PRD and the related PRDs,
+(`epic-sequencing`). One `epic-dependency-assessor` session reads the Epic's full PRD and the related PRDs,
 answers the nine-layer foundation checklist, checks each decision against the effective
 architecture, and proposes every edge to or from the Epic with a reason, a confidence and the
 architecture view it checked, keeping or withdrawing (with a reason) every owned edge standing on
@@ -180,7 +180,7 @@ command printed.
    - When that checkpoint's status is `blocked`, the run stops with the checkpoint's reason and
      its remaining items (`ARTIFACT_BLOCKED`).
    - In every other case step 5 runs.
-5. `agent` **Assess**: `epic-sequencer`. The brief names `context.json` and its contract, and the
+5. `agent` **Assess**: `epic-dependency-assessor`. The brief names `context.json` and its contract, and the
    `atw-matrix` reads the session makes, carries the `priorFailure` text when given,
    and states THE TEST and the nine foundation layers (network and egress; identity and
    authorization; data stores and data residency; event platform; API shape; chassis and
@@ -216,7 +216,7 @@ command printed.
 10. `deterministic` **Result**: assemble the result (section 4).
 
 Agents the workflow dispatches:
-- `epic-sequencer`: step 5, at most one session a run.
+- `epic-dependency-assessor`: step 5, at most one session a run.
 - `workflow-command-runner`: one session for each relay call of steps 1 to 4 and 6 to 8.
 - The `wsjf-scoring` workflow's agents: see `<orch>/specs/epic/wsjf-scoring.md`.
 
@@ -250,7 +250,7 @@ Agents the workflow dispatches:
   (`readdsWithdrawn`) are reported by `validate` but are not part of `ok`, although the session's
   brief, the command text and `README.md` say they are refused.
 - The workflow itself guards no write to arc42 section 2: its own steps write nothing in the
-  vault, and the `epic-sequencer` session holds Write and reads `archPath`.
+  vault, and the `epic-dependency-assessor` session holds Write and reads `archPath`.
 
 ## 7. Failure causes
 
@@ -274,7 +274,7 @@ Agents the workflow dispatches:
 
 ## 8. Resume points
 
-- Steps 1 to 3: recomputed every run (no `epic-sequencer` session).
+- Steps 1 to 3: recomputed every run (no `epic-dependency-assessor` session).
 - Step 5: saved as `edges.json` with `edges.json.receipt`. A rerun in the same `workDir` starts
   no session when the input revision is unchanged, that is when `context.json` has
   the same bytes (the Epic's PRD path, the related and similar Epics, the

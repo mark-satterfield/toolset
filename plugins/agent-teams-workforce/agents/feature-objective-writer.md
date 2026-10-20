@@ -1,5 +1,5 @@
 ---
-name: okr-writer
+name: feature-objective-writer
 description: >-
   Derives the OKR cascade from strategy docs and the intake brief —
   objectives, key results, leading vs. lagging indicators. Use for PRD

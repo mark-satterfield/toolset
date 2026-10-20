@@ -52,7 +52,7 @@ This lead is the face of the following team; each member and what it does:
 
 - **complexity-analyzer** — Analyzes complexity and duplication in green-tested code, returning prioritized refactor recommendations; performs no refactoring.
 - **code-refactoring-specialist** — Restructures code for clarity and cohesion without changing behavior, keeping tests green after every change.
-- **code-style-and-linting-enforcer** — Runs project linters and applies formatting and style fixes while keeping tests green.
+- **lint-finding-fixer** — Runs project linters and applies formatting and style fixes while keeping tests green.
 - **dynamodb-cost-optimizer** — Optimizes DynamoDB capacity, access patterns, and cost without changing behavior or breaking tests.
 - **lambda-performance-optimizer** — Optimizes Lambda cold start, memory sizing, and hot paths in green-tested code without breaking tests or behavior.
 - **frontend-performance-optimizer** — Optimizes frontend performance in green-tested code without breaking tests.

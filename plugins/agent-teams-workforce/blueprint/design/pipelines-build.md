@@ -555,7 +555,7 @@ sequenceDiagram
     else findings
         loop until every gate passes, at most three fix rounds
             WF->>LF: all the findings
-            Note over LF: for example code-style-and-linting-enforcer
+            Note over LF: for example lint-finding-fixer
             LF-)G: every finding fixed. Hook auto-fixes staged as part of the change
             WF->>G: script: the gates run again
         end

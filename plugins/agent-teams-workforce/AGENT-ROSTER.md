@@ -19,8 +19,8 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | prd-creation-lead | orchestrate | Routes stakeholder requests through intake, persona, OKR, and PRD drafting work, then hands the draft PRD to prd-validation-lead |
 | stakeholder-request-intake-writer | execute | Converts raw stakeholder requests into a structured intake brief: requestor, problem, desired outcome, constraints, urgency. |
 | prd-writer | execute | Produces the full PRD from the intake brief, persona profiles, and OKR cascade: feature scope, requirements, success metrics, competitive context. |
-| persona-profile-writer | execute | Generates data-driven persona profiles from research inputs: behavioral segments, jobs-to-be-done, empathy maps. |
-| okr-writer | execute | Derives the OKR cascade from strategy documents and the intake brief: objectives, measurable key results, leading versus lagging indicators. |
+| feature-persona-writer | execute | Generates data-driven persona profiles from research inputs: behavioral segments, jobs-to-be-done, empathy maps. |
+| feature-objective-writer | execute | Derives the OKR cascade from strategy documents and the intake brief: objectives, measurable key results, leading versus lagging indicators. |
 
 ## PRD Validation
 
@@ -53,16 +53,16 @@ its own.
 | persistence-architecture-specialist | plan | Answers a question or does a bounded piece of design for the solutions architect on which block owns each store, what it holds, consistency and data lifecycle. |
 | security-architecture-designer | plan | Answers a question or does a bounded piece of design for the solutions architect on trust boundaries, identities, authorization, IAM, encryption and threat mitigation. |
 | cdk-infrastructure-designer | plan | Answers a question or does a bounded piece of design for the solutions architect on repositories, CDK stacks, where each block runs and shared infrastructure. |
-| event-schema-designer | execute | Answers a question or does a bounded piece of design for the solutions architect on event types, their publishers, consumers and delivery paths. |
+| event-routing-designer | execute | Answers a question or does a bounded piece of design for the solutions architect on event types, their publishers, consumers and delivery paths. |
 | api-contract-designer | execute | Answers a question or does a bounded piece of design for the solutions architect on REST interfaces, which block exposes each, who may call it and how it stays compatible. |
-| cost-architecture-reviewer | plan | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: the cost of new billable resources. No workflow currently dispatches it. |
+| new-resource-cost-reviewer | plan | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: the cost of new billable resources. No workflow currently dispatches it. |
 | bounded-context-mapper | plan | Answers a question or does a bounded piece of design for the solutions architect on bounded contexts, domain responsibilities and service ownership. |
 | domain-event-modeler | execute | Answers a question or does a bounded piece of design for the solutions architect on domain events as facts, who owns each and what triggers it. |
 | ubiquitous-language-writer | execute | Captures the ubiquitous language for the bounded context: terms, definitions, and usage rules shared by the domain model and the code. |
 | architecture-pattern-challenger | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: new patterns and the choices made between alternatives. No workflow currently dispatches it. |
 | architecture-tradeoff-skeptic | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: the trade-offs behind the choices made. No workflow currently dispatches it. |
 | architecture-boundary-guardian | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: ownership and boundaries, one home per fact, and readable diagrams. No workflow currently dispatches it. |
-| cost-impact-reviewer | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: changed billable limits and volumes. No workflow currently dispatches it. |
+| changed-resource-cost-reviewer | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: changed billable limits and volumes. No workflow currently dispatches it. |
 | operational-readiness-reviewer | test | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: how new runtime resources are operated. No workflow currently dispatches it. |
 | architecture-decider | approve | Rules on a matter the architecture team could not settle, between the positions and from the evidence they carry. The last resort. |
 | architecture-impact-analyst | test | Judges what an architecture change reaches: given the views an integration changed, created or deleted, finds every Epic, Story, Task and document citing those views or showing their elements, and rules each unaffected / not yet elaborated / elaborated-but-unbuilt / already-built. Read-only. No workflow currently dispatches it. |
@@ -72,7 +72,7 @@ its own.
 | uml-diagram-author | execute | Draws one UML diagram of a settled design for the solutions architect. |
 | architecture-maintainer | execute | Writes the solutions architect's decisions into the arc42 documents, each fact in its one home with links from the documents that need it, and corrects the documents from what a Story built. Never writes section 2. |
 | architecture-conformance-reviewer | test | In `built-version`, checks one correction of the effective documents from what a Story built and reports findings without fixing them: each element reads as the built documents show it, every document the catalog lists for a changed element was updated, and no contradicting content was left. |
-| graphql-schema-designer | execute | Answers a question or does a bounded piece of design for the solutions architect on GraphQL interfaces, which block exposes and resolves each operation and who may call it. |
+| graphql-api-designer | execute | Answers a question or does a bounded piece of design for the solutions architect on GraphQL interfaces, which block exposes and resolves each operation and who may call it. |
 | failure-mode-analyst | plan | Reviews the unapproved architecture and TRD content of one Epic against the criteria of its reviewer group: failure, retry and recovery behaviour. No workflow currently dispatches it. |
 
 ## TRD Authoring (Phase 2.5)
@@ -89,16 +89,16 @@ its own.
 | --- | --- | --- |
 | spec-authoring-lead | orchestrate | Routes maker output to checkers and checker findings back to makers until checkers pass, then routes to Gate 3 |
 | acceptance-criteria-writer | execute | Writes testable acceptance criteria per requirement (given/when/then), specific enough for test agents to derive tests from. |
-| definition-of-done-enforcer | execute | Writes the Definition of Done as independently verifiable statements, not checklists. |
+| definition-of-done-writer | execute | Writes the Definition of Done as independently verifiable statements, not checklists. |
 | api-specification-author | execute | Produces the three interface contract artifacts from the contract drafts in one pass: the API specification (schemas, error codes, rate limits, examples), the event contracts (event type name, the values passed to the shared-events-service API, payload schema when the event has a payload, publishing conditions, consumers, retry and DLQ behavior), and the error-handling specification (per failure mode, noting what the chassis handles). |
 | data-model-specification-author | execute | Writes DynamoDB table specifications: keys, GSI/LSI, access patterns, capacity estimates. |
 | prd-alignment-verifier | test | Verifies traceability: PRD requirement to spec section to acceptance criteria |
 | acceptance-criteria-reviewer | test | Validates acceptance criteria are testable, complete, and unambiguous. |
-| openapi-contract-reviewer | test | Validates API specifications match the architecture decisions and established contract patterns. |
+| spec-reviewer | test | Validates API specifications match the architecture decisions and established contract patterns. |
 | event-schema-reviewer | test | Validates event contracts against the SkillSpoke standard event and each event's payload schema. |
 | dynamodb-schema-access-pattern-reviewer | test | Validates the specified access patterns are implementable and performant. |
 | graphql-schema-reviewer | test | Validates GraphQL schemas match the architecture decisions and AppSync contract patterns. |
-| spec-decider | approve | Rules on every spec artifact the independent reviewer rejects; the owning maker enacts a ruling that sends its artifact back |
+| review-dispute-decider | approve | Rules on every spec artifact the independent reviewer rejects; the owning maker enacts a ruling that sends its artifact back |
 
 ## Task Decomposition
 
@@ -108,7 +108,7 @@ its own.
 | task-dependency-mapper | execute | Identifies inter-task dependencies |
 | wsjf-scorer | execute | Judges the job size of Tasks on the WSJF rubric's Fibonacci scale — the one judged input; value and time criticality are inherited from the Epic and RR-OE is computed, so the WSJF itself is arithmetic. No workflow currently dispatches it; task-decomposer sizes the Tasks it decomposes. |
 | wsjf-scoring-reviewer | test | Validates WSJF scores are consistent and defensible. No workflow currently dispatches it. |
-| user-story-writer | execute | Writes user stories per task with acceptance criteria drawn from the spec. |
+| story-bead-writer | execute | Writes user stories per task with acceptance criteria drawn from the spec. |
 | user-story-reviewer | test | Validates stories are complete, testable, and properly scoped. |
 | beads-format-validator | test | Validates Beads issue format: title, acceptance criteria, DoD, WSJF score, dependencies, spec link. No workflow currently dispatches it. |
 
@@ -150,7 +150,7 @@ shown the answer is not a checker.
 | playwright-e2e-web-test-writer | test | Writes Playwright end-to-end web tests for UI and API flows. |
 | performance-benchmark-writer | test | Writes performance benchmarks with explicit budgets derived from the NFRs. |
 | test-plan-strategy-reviewer | test | Reviews the test plan strategy: pyramid balance, risk coverage, environment needs. |
-| test-coverage-gap-reviewer | test | Before Red authors anything, names which acceptance criteria existing tests already encode and which are gaps; when none is a gap, runs only those tests and rules red / already-satisfied / not-encoded. Dispatched by tdd-red. |
+| acceptance-criteria-coverage-assessor | test | Before Red authors anything, names which acceptance criteria existing tests already encode and which are gaps; when none is a gap, runs only those tests and rules red / already-satisfied / not-encoded. Dispatched by tdd-red. |
 | xcuitest-writer | test | Writes failing XCUITest suites for iOS features from spec acceptance criteria. |
 | espresso-test-writer | test | Writes failing Espresso test suites for Android features from spec acceptance criteria. |
 | mobile-e2e-test-writer | test | Writes failing Detox and Maestro end-to-end tests for React Native and cross-platform mobile flows. |
@@ -203,7 +203,7 @@ shown the answer is not a checker.
 | code-refactoring-specialist | execute | Restructures existing code for clarity and cohesion without changing behavior. |
 | lambda-performance-optimizer | execute | Optimizes Lambda cold start, memory sizing, and hot paths without breaking tests. |
 | dynamodb-cost-optimizer | execute | Optimizes DynamoDB capacity, access patterns, and cost without changing behavior. |
-| code-style-and-linting-enforcer | execute | Runs the project linters and applies formatting and style fixes. |
+| lint-finding-fixer | execute | Runs the project linters and applies formatting and style fixes. |
 | code-correctness-reviewer | test | Reviews refactored code for correctness regressions and behavioral drift. |
 | frontend-performance-optimizer | execute | Optimizes frontend performance without breaking tests: bundle size, rendering paths, Core Web Vitals. |
 | accessibility-validator | test | Validates UI changes against WCAG 2.2 Level A and AA: automated scans plus heuristics for contrast, keyboard navigation, ARIA semantics, focus management, and screen-reader flows. No workflow currently dispatches it; it reports and never edits, so it is not a refactor optimizer |
@@ -217,7 +217,7 @@ shown the answer is not a checker.
 | event-flow-tester | test | Tests event flows end-to-end through every hop of the event delivery path the effective architecture describes. |
 | data-consistency-checker | test | Verifies data consistency across services and stores after test runs. |
 | cross-service-contract-tester | test | Runs contract tests across service and repository boundaries. |
-| test-environment-orchestrator | execute | Provisions and resets the integration test environments. |
+| test-environment-provisioner | execute | Provisions and resets the integration test environments. |
 | root-cause-analyst | plan | Diagnoses a bug bead read-only — reproduction, root cause, enumerated defects, affected files, blast radius, touched surfaces, repository. No workflow currently dispatches it. |
 | flaky-test-detector | test | Identifies intermittent test failures and their root causes. No workflow currently dispatches it. |
 | cross-repo-integration-test-coordinator | orchestrate | Coordinates integration testing across repository boundaries: sequences cross-repo test runs over the event chain, aligns environment state between repos, and routes results back to integration-testing-lead |

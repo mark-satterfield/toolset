@@ -20,7 +20,7 @@ composite the driver dispatches.
 Review and approval inside elaboration are steps of the Epic's journal: the solutions architect's
 own review and approval, checked by the architecture check step, `architecture-team-lead` and
 `architecture-decider` for what the architect could not settle
-(`<orch>/specs/epic/architecture.md`), and the spec review with `spec-decider`
+(`<orch>/specs/epic/architecture.md`), and the spec review with `review-dispute-decider`
 (`<orch>/specs/epic/spec-authoring.md`).
 
 It therefore has no inputs, outputs, steps, checks or failure causes in the Epic pipeline.

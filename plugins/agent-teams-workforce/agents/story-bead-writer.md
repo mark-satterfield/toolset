@@ -1,5 +1,5 @@
 ---
-name: user-story-writer
+name: story-bead-writer
 description: >-
   Writes the ONE Story bead a Spec pairs with — a single-repository container
   with a title, a description and the out-of-repo work the Epic's closure in the matrix holds.

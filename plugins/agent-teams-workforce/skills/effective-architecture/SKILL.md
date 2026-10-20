@@ -10,7 +10,7 @@ ruling on architecture, a TRD or a spec. It is the common basis: the solutions a
 develops the architecture, its detailed design and the TRD to exactly these criteria and
 reviews and approves them against exactly these and no others; nothing else reviews the
 architecture. The spec authors develop the specs to them, and the spec review
-(`openapi-contract-reviewer`) checks the specs against the specs-and-Tasks level. Each level
+(`spec-reviewer`) checks the specs against the specs-and-Tasks level. Each level
 of the standard names the agent that reviews and approves it. Criterion P10 requires the proof
 that no decision was made by instinct, recorded in the Epic's review log (the
 `log-architecture-review` skill). It is the one text of the criteria an agent reads; no brief

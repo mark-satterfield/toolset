@@ -42,7 +42,7 @@
         "api-specification-author",
         "data-model-specification-author"
       ],
-      "reviewer": "openapi-contract-reviewer",
+      "reviewer": "spec-reviewer",
       "reviewPoint": "specs"
     }
   ],

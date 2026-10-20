@@ -55,7 +55,7 @@ Integration-related specialist inventory. Only names in the caller's suite menu 
 - **cross-service-contract-tester** — Runs contract tests across service and repo boundaries, verifying providers and consumers honor approved API and event contracts.
 - **flaky-test-detector** — Verifies intermittent test failures via repeated controlled reruns; reports verified-flaky tests as findings only — never edits or disables tests.
 - **cross-repo-integration-test-coordinator** — Sequences cross-repo integration test runs over the event chain, aligns environment state between repos, and routes results to integration-testing-lead.
-- **test-environment-orchestrator** — Provisions and resets integration test environments — the event path, functions and data stores the suites depend on — confirming readiness.
+- **test-environment-provisioner** — Provisions and resets integration test environments — the event path, functions and data stores the suites depend on — confirming readiness.
 - **root-cause-analyst** — Determines whether an integration test failure stems from code, test, environment, or architecture, and which team it escalates to; analyzes evidence only, never fixes.
 
 ## Operating Rules

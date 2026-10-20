@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-creation',
   description:
-    'Leaf mini — turns a raw stakeholder request into a template-conformant PRD paired with its Epic. Intake captures the request, then the persona and OKRs are authored in parallel, then the PRD is drafted (WHAT-not-HOW) and independently checked for alignment with the intake brief, persona, and OKRs. A PRD and its Epic are created at the same time, so the mini emits exactly one Epic per PRD: a container bead spec derived from the PRD itself in the same authoring pass — no acceptance criteria, no repo scope (one Epic may span repos) — which the caller writes with bd. The matrix is the one record of the pair: the result carries the command that records it (atw-matrix sync-epics --bead <id> --prd <path>), which the caller runs once the Epic bead exists and the PRD file is written. Maker, checker, and decider are distinct agents; the maker is re-run with the checker\'s verdict file on reject (bounded 2 passes) and a spec-decider rules on deadlock. Every agent writes its own file in args.workDir to its contract in skills/artifact-handoff/schemas/prd-creation.schema.json (the PRD as Markdown beside its draft record); the checked relay validates each, later agents are handed the earlier files by path, and a rerun with the same workDir reuses every accepted file whose inputs are unchanged. Authors no judgment of its own work.',
+    'Leaf mini — turns a raw stakeholder request into a template-conformant PRD paired with its Epic. Intake captures the request, then the persona and OKRs are authored in parallel, then the PRD is drafted (WHAT-not-HOW) and independently checked for alignment with the intake brief, persona, and OKRs. A PRD and its Epic are created at the same time, so the mini emits exactly one Epic per PRD: a container bead spec derived from the PRD itself in the same authoring pass — no acceptance criteria, no repo scope (one Epic may span repos) — which the caller writes with bd. The matrix is the one record of the pair: the result carries the command that records it (atw-matrix sync-epics --bead <id> --prd <path>), which the caller runs once the Epic bead exists and the PRD file is written. Maker, checker, and decider are distinct agents; the maker is re-run with the checker\'s verdict file on reject (bounded 2 passes) and a review-dispute-decider rules on deadlock. Every agent writes its own file in args.workDir to its contract in skills/artifact-handoff/schemas/prd-creation.schema.json (the PRD as Markdown beside its draft record); the checked relay validates each, later agents are handed the earlier files by path, and a rerun with the same workDir reuses every accepted file whose inputs are unchanged. Authors no judgment of its own work.',
   phases: [
     { title: 'Intake', detail: 'ONE session scopes the request and captures the structured intake brief' },
     { title: 'Persona & OKR', detail: 'author the target persona and the OKRs in parallel' },
@@ -979,7 +979,7 @@ Write the persona to its contract, named below; the descriptions there define ev
         label: 'persona:author',
         effort: 'low',
         phase: 'Persona & OKR',
-        agentType: 'persona-profile-writer', // model: its definition's front matter sets it (sonnet)
+        agentType: 'feature-persona-writer', // model: its definition's front matter sets it (sonnet)
         schema: relayKit.ARTIFACT_SCHEMA,
       }
     ),
@@ -995,7 +995,7 @@ Write them to their contract, named below; the descriptions there define every m
         label: 'okr:author',
         effort: 'low',
         phase: 'Persona & OKR',
-        agentType: 'okr-writer', // model: its definition's front matter sets it (sonnet)
+        agentType: 'feature-objective-writer', // model: its definition's front matter sets it (sonnet)
         schema: relayKit.ARTIFACT_SCHEMA,
       }
     ),
@@ -1112,10 +1112,10 @@ for (let pass = 1; pass <= MAX_PASSES; pass++) {
   retries.push({ pass: pass + 1, whatChanged: `the prd-writer is handed the alignment verdict of pass ${pass}: ${alignmentFile(pass)}` })
 }
 
-// Deadlock: the maker and checker could not converge — the spec-decider rules.
+// Deadlock: the maker and checker could not converge — the review-dispute-decider rules.
 let ruling = null
 if (deadlocked) {
-  log('PRD draft: maker-checker deadlock — escalating to spec-decider for a binding ruling')
+  log('PRD draft: maker-checker deadlock — escalating to review-dispute-decider for a binding ruling')
   ruling = await author({
     name: 'ruling', phase: 'PRD Draft', contract: 'DeadlockRuling', final: FILES.ruling,
     inputs: [...MAKER_INPUTS, draftFile(passesRun), prdFile(passesRun), alignmentFile(passesRun)],
@@ -1130,7 +1130,7 @@ Write your ruling to its contract, named below; the descriptions there define th
         label: 'prd:deadlock-ruling',
         effort: 'high',
         phase: 'PRD Draft',
-        agentType: 'spec-decider', // model: its definition's front matter sets it (opus)
+        agentType: 'review-dispute-decider', // model: its definition's front matter sets it (opus)
         schema: relayKit.ARTIFACT_SCHEMA,
       }
     ),

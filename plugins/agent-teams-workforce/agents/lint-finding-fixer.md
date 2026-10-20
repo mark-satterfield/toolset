@@ -1,5 +1,5 @@
 ---
-name: code-style-and-linting-enforcer
+name: lint-finding-fixer
 description: >-
   Runs project linters and applies formatting and style fixes while keeping
   tests green. Use for Code Quality work requiring lint

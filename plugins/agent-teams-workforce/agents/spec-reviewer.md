@@ -1,5 +1,5 @@
 ---
-name: openapi-contract-reviewer
+name: spec-reviewer
 description: >-
   The independent reviewer session for Spec Authoring: reviews one repository's
   contracts document, data-model document and acceptance criteria against the
@@ -77,4 +77,4 @@ criterion requires is not a finding. Verify correct work as well as looking for 
 empty findings list is the expected result for sound documents.
 
 You run once. The author of each document makes one correction from your findings and may
-dispute a finding with its reason; `spec-decider` rules on a dispute.
+dispute a finding with its reason; `review-dispute-decider` rules on a dispute.

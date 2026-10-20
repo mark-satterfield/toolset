@@ -1,10 +1,10 @@
 export const meta = {
   name: 'dependency-assessment',
   description:
-    "Assesses the architecture dependencies of ONE Epic and writes its `tracks` edges. The workflow writes the Epic's context: the Epics the matrix relates to it (atw-matrix related --epic), each with its PRD file, and the edges standing on it in the tracker. One epic-sequencer session reads the Epic's PRD and the related PRDs, asks the matrix what already settles each decision (atw-matrix find, node), proposes the edges and checks its proposal; the workflow validates the proposal, runs apply-edges and records in the matrix what the Epic drives and rests on (atw-matrix link drives and restsOn). The Epic-to-Epic edge stays a beads `tracks` edge. When the edges are applied it triggers wsjf-scoring. With `apply: false` apply-edges runs as a dry run, nothing is recorded in the matrix and no scoring runs.",
+    "Assesses the architecture dependencies of ONE Epic and writes its `tracks` edges. The workflow writes the Epic's context: the Epics the matrix relates to it (atw-matrix related --epic), each with its PRD file, and the edges standing on it in the tracker. One epic-dependency-assessor session reads the Epic's PRD and the related PRDs, asks the matrix what already settles each decision (atw-matrix find, node), proposes the edges and checks its proposal; the workflow validates the proposal, runs apply-edges and records in the matrix what the Epic drives and rests on (atw-matrix link drives and restsOn). The Epic-to-Epic edge stays a beads `tracks` edge. When the edges are applied it triggers wsjf-scoring. With `apply: false` apply-edges runs as a dry run, nothing is recorded in the matrix and no scoring runs.",
   whenToUse: 'A new or changed Epic needs its architecture dependencies assessed.',
   phases: [
-    { title: 'Assess', detail: 'the workflow writes the context; one epic-sequencer session proposes and validates the edges; the workflow runs apply-edges and records the drives and restsOn relationships in the matrix' },
+    { title: 'Assess', detail: 'the workflow writes the context; one epic-dependency-assessor session proposes and validates the edges; the workflow runs apply-edges and records the drives and restsOn relationships in the matrix' },
     { title: 'Score', detail: 'wsjf-scoring over the new edges' },
   ],
 }
@@ -944,10 +944,10 @@ Do not run apply-edges or any other command that writes to the tracker or the ma
 Record your validation findings, every related item read and any uncertainty in ${reasoningFile}. Return only the authored candidate reference.${relayKit.artifactBrief(candidateFile, EDGE_CONTRACT, inputRevision, RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`
 
 const assess = () => settleAgent(assessPrompt, {
-      label: `epic-sequencer:${target}`,
+      label: `epic-dependency-assessor:${target}`,
       phase: 'Assess',
       effort: 'medium',
-      agentType: 'epic-sequencer', // model: its definition's front matter sets it (architecture judgment)
+      agentType: 'epic-dependency-assessor', // model: its definition's front matter sets it (architecture judgment)
       schema: relayKit.ARTIFACT_SCHEMA,
     })
 
@@ -1022,7 +1022,7 @@ const edges = {
         reason: contextError
           ? `the context could not be written: ${contextError}`
           : !accepted && !(saved && saved.error)
-            ? 'the epic-sequencer returned no result; the tracker keeps its current edges'
+            ? 'the epic-dependency-assessor returned no result; the tracker keeps its current edges'
             : !saved || !saved.ok
               ? `the edge proposal could not be saved to ${edgesFile}: ${saved && saved.error || 'not accepted'}; the tracker keeps its current edges`
               : !validation || validation.error
