@@ -366,6 +366,24 @@
       ]
     },
     {
+      "name": "audit-and-compliance-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on AWS CloudTrail (trails, management and data events, CloudTrail Lake, log integrity and retention) and AWS Config (recording, managed and custom rules, conformance packs, remediation), and the Security Hub controls they feed.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-observability",
+        "aws-core:aws-security"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
       "name": "auth-bypass-tester",
       "description": "Attempts auth bypass — token forgery, session fixation, flow skipping — against the project's auth flows in designated test environments only, reporting each confirmed bypass. Use for Adversarial Validation phase work requiring auth-flow attack, Cognito probing, and minimal-reproduction reporting.",
       "skills": [
@@ -437,6 +455,23 @@
         "awslabs-dynamodb-mcp-server",
         "mcp-graphrag-server",
         "pg-aiguide",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
+      "name": "batch-compute-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on AWS Batch: compute environments (Fargate, EC2, Spot), job queues and their priorities, job definitions, array and multi-node jobs, retries and timeouts, and scheduling policies.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-compute"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
         "gitnexus",
         "plugin_aws-agents_awsknowledge"
       ]
@@ -813,6 +848,23 @@
       ]
     },
     {
+      "name": "container-service-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on containers on Amazon ECS: Fargate or ECS Managed Instances or EC2 capacity, task definitions (CPU, memory, containers, health checks), services and their deployment and scaling, Amazon ECR repositories and image lifecycle.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-containers"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
       "name": "context-curator",
       "description": "Owns context integrity: assembles role-specific context indexes of pointers under the least-context principle and guarantees every constitutive constraint's pointer survives every compaction, so no constraint is ever copied or summarized away. Use for Governance work requiring context-index assembly, compaction-safe constraint preservation, and manifest maintenance.",
       "skills": [
@@ -988,6 +1040,23 @@
       "mcpServers": []
     },
     {
+      "name": "dns-and-edge-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on Amazon Route 53 and Amazon CloudFront: hosted zones, records and routing policies, health checks and failover, CloudFront distributions, origins and origin access control, cache and origin request policies, edge functions, and custom domains.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-networking"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
       "name": "documentation-accuracy-reviewer",
       "description": "Reviews documentation against actual shipped behavior, reporting findings with cited evidence. Use for cross-cutting Documentation team work requiring accuracy verification, claim-by-claim checking, and completeness review. No workflow currently dispatches it.",
       "skills": [
@@ -1127,6 +1196,23 @@
       ]
     },
     {
+      "name": "ec2-fleet-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on Amazon EC2 fleets: instance type selection, AMIs, launch templates, Auto Scaling groups and their scaling policies, Spot and mixed instances, IMDSv2 and fleet operations through Systems Manager.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-compute"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
       "name": "email-notification-implementer",
       "description": "Implements transactional and notification email features: responsive templates, rendering pipelines, delivery via AWS messaging, and bounce/complaint handling. Use for Implementation work requiring email template construction and delivery wiring.",
       "skills": [
@@ -1145,6 +1231,24 @@
         "mcp-graphrag-server",
         "aws-mcp",
         "gitnexus"
+      ]
+    },
+    {
+      "name": "encryption-and-secrets-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on AWS KMS keys and key policies, envelope encryption and key rotation, AWS Secrets Manager secrets and their rotation, and AWS Certificate Manager certificates.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:secrets-manager",
+        "aws-core:aws-secrets-manager"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -1422,6 +1526,24 @@
       "mcpServers": []
     },
     {
+      "name": "iam-policy-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on AWS IAM: roles and their trust policies, identity and resource policies with least privilege, condition keys and confused-deputy protection, permission boundaries, cross-account access, service-linked and service roles, and IAM Identity Center for human access.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:iam",
+        "aws-core:aws-iam"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
       "name": "implementation-lead",
       "description": "Selects the implementer(s) whose specialties cover a Task, in build order, from the Task's build contract — its spec documents and the architecture views it was designed against. Use for Implementation work requiring implementer selection.",
       "skills": [
@@ -1541,6 +1663,41 @@
       ]
     },
     {
+      "name": "kubernetes-cluster-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on Amazon EKS: cluster version and access, compute (managed node groups, Karpenter, Fargate profiles, EKS Auto Mode), pod networking, workload identity, add-ons and pod scaling.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-containers"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
+      "name": "lambda-function-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on AWS Lambda functions: runtime and architecture, memory, timeout and ephemeral storage, concurrency (reserved and provisioned), SnapStart, layers, invocation model and event source mappings, asynchronous invocation destinations, VPC attachment and cold-start behaviour.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:lambda",
+        "aws-core:aws-serverless"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
       "name": "lambda-performance-optimizer",
       "description": "Optimizes Lambda cold start, memory sizing, and hot paths in green-tested code without breaking tests or behavior. Use for Code Quality work requiring cold-start reduction, memory tuning, and hot-path optimization.",
       "skills": [
@@ -1592,6 +1749,22 @@
         "mcp-graphrag-server",
         "aws-mcp",
         "gitnexus"
+      ]
+    },
+    {
+      "name": "load-balancer-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on Elastic Load Balancing: choosing an Application, Network or Gateway Load Balancer, listeners and TLS, routing rules, target groups and health checks, stickiness, deregistration and cross-zone behaviour.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -1667,6 +1840,25 @@
       "mcpServers": [
         "context7",
         "gitnexus"
+      ]
+    },
+    {
+      "name": "monitoring-and-tracing-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on Amazon CloudWatch and AWS X-Ray: metrics and embedded metric format, log groups and retention, Logs Insights queries, alarms (metric, composite, anomaly detection) and their actions, dashboards, distributed tracing with X-Ray and ADOT, Application Signals, synthetics and SLO alarms.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-observability",
+        "agent-teams-workforce:cloudwatch",
+        "agent-teams-workforce:observability-designer"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -1764,6 +1956,24 @@
       ],
       "mcpServers": [
         "gitnexus"
+      ]
+    },
+    {
+      "name": "perimeter-protection-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on AWS WAF web ACLs and rules (managed rule groups, rate-based rules, bot control), AWS Shield Standard and Advanced for DDoS protection, Route 53 Resolver DNS Firewall, and Amazon GuardDuty threat detection.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-networking",
+        "aws-core:aws-security"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -1967,6 +2177,25 @@
         "agent-teams-workforce:agent-orchestration"
       ],
       "mcpServers": []
+    },
+    {
+      "name": "queue-and-topic-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on Amazon SQS queues and Amazon SNS topics: standard or FIFO, visibility timeout, retention, redrive policies and dead- letter queues, SNS subscriptions, filter policies and delivery retry, fan-out, and Amazon MQ where a broker protocol is required.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:sqs",
+        "agent-teams-workforce:sns",
+        "aws-core:aws-messaging-and-streaming"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
     },
     {
       "name": "race-condition-tester",
@@ -2444,6 +2673,24 @@
       ]
     },
     {
+      "name": "user-authentication-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on end-user authentication with Amazon Cognito: user pools and app clients, sign-up and sign-in flows, MFA and passkeys, OAuth 2.0 and OIDC flows, social and SAML federation, tokens and their lifetimes, Lambda triggers, and identity pools.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:cognito",
+        "aws-core:aws-auth"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
       "name": "user-guide-writer",
       "description": "Writes user-facing feature guides from specs and shipped behavior. Use for cross-cutting Documentation team work requiring feature guide writing, task-oriented walkthroughs, and audience-appropriate explanation.",
       "skills": [
@@ -2488,6 +2735,23 @@
       ]
     },
     {
+      "name": "vpc-network-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on Amazon VPC networking: CIDR plan, subnets and route tables, internet and NAT gateways, VPC endpoints (gateway and interface) and PrivateLink, security groups and network ACLs, Transit Gateway and peering, and VPC flow logs.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-networking"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
       "name": "webauthn-implementer",
       "description": "Implements WebAuthn passkey flows across web clients and the Cognito-backed auth stack: registration and authentication ceremonies with client-side handling. Use for Implementation work requiring WebAuthn ceremony wiring, passkey credential lifecycle, and Cognito integration.",
       "skills": [
@@ -2515,6 +2779,24 @@
         "agent-teams-workforce:artifact-handoff"
       ],
       "mcpServers": []
+    },
+    {
+      "name": "workflow-orchestration-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on AWS Step Functions: Standard or Express workflows, state machine structure in Amazon States Language, service integration patterns, retries and catches, sagas and compensation, Map and Parallel states, callbacks, and execution logging.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:step-functions",
+        "aws-core:aws-serverless"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
     },
     {
       "name": "worktree-independent-verifier",
