@@ -11,7 +11,7 @@ disallowedTools: AskUserQuestion, Edit
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-test-suite-builder, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-test-suite-builder, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:contract-testing]
 effort: low
 isolation: worktree
 color: cyan

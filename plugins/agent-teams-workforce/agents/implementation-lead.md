@@ -58,18 +58,18 @@ This lead is the face of the following team; each member and what it does:
 - **postgresql-access-layer-implementer** — Implements Aurora PostgreSQL access patterns through the RDS Data API from the data model spec, and the schema migrations they need; writes minimum code to pass failing tests.
 - **event-api-client-implementer** — Implements the calls a service makes to the shared-events-service API to publish SkillSpoke events.
 - **event-driven-consumer-implementer** — Implements the handler code of a routing rule's target, for whatever target type the target's owner chose.
-- **cds-ui-implementer** — Builds web UI components and pages with the Configurable Design System (cds), audited against the system before it reports.
-- **nextjs-component-implementer** — Implements the non-visual React/Next.js work — component state, data fetching, routing — writing minimum code to pass failing unit tests.
+- **cds-ui-implementer** — Implements a Task's web UI components and pages in the application repository with the Configurable Design System (cds) applied by construction, from the supplied cds bundle or the live design system, and audits the changed UI against it before reporting; writes the minimum code that makes the failing tests pass.
+- **nextjs-component-implementer** — Implements the non-visual React/Next.js work — component state, data fetching, Next.js routing — writing minimum code to pass failing unit tests. Visual component and page work goes to cds-ui-implementer, which builds with the cds design system.
 - **appsync-client-subscription-implementer** — Implements AppSync client subscriptions for real-time web features.
 - **webauthn-implementer** — Implements WebAuthn passkey flows across web clients and the Cognito-backed auth stack: registration and authentication ceremonies with client-side handling.
 - **appsync-cdk-implementer** — Implements AppSync GraphQL APIs in CDK: schema wiring, resolvers, data sources, authorization.
 - **ios-swiftui-implementer** — Implements iOS features in SwiftUI; writes minimum code to pass failing XCUITest suites.
 - **android-compose-implementer** — Implements Android features in Kotlin and Jetpack Compose; writes minimum code to pass failing Espresso suites.
 - **react-native-implementer** — Implements React Native cross-platform mobile features; writes minimum code to pass failing Detox and Maestro tests.
-- **matching-algorithm-implementer** — Implements matching and recommendation algorithms for ML features; writes minimum code to pass failing unit tests.
+- **matching-algorithm-implementer** — Implements matching algorithms - scoring functions, ranking and tie-breaking, candidate filtering, score normalisation and the composition of these stages into the specified matcher - writing minimum code to pass failing tests.
 - **vector-search-embeddings-implementer** — Implements vector search and embeddings for ML features — embedding generation, index read/write, similarity queries.
 - **recommendation-engine-implementer** — Implements recommendation engine components for ML features; writes minimum code to pass failing unit tests.
-- **bedrock-integration-implementer** — Implements Bedrock foundation-model integrations; writes minimum code to pass failing unit tests.
+- **bedrock-integration-implementer** — Implements the code that calls Amazon Bedrock foundation models - Converse and ConverseStream calls, prompt assembly from specified templates, guardrail and prompt-cache settings on the call, structured-output parsing, and inference error handling - writing minimum code to pass failing tests. Embeddings calls belong to vector-search-embeddings-implementer.
 - **behavioral-signals-implementer** — Implements behavioral signal capture and feature pipelines feeding matching and recommendation models; minimum code to pass failing tests.
 - **llm-observability-implementer** — Implements LLM observability — prompt/response logging, token and cost metrics, drift alerts — writing minimum code to pass failing tests.
 - **glue-etl-implementer** — Implements Glue ETL jobs for batch data processing; writes minimum code to pass failing data-pipeline suites.
@@ -78,9 +78,9 @@ This lead is the face of the following team; each member and what it does:
 - **s3-data-lake-implementer** — Implements S3 data lake layout, partitioning, and lifecycle policies; writes minimum code to pass failing data-pipeline tests.
 - **athena-redshift-analytics-implementer** — Implements Athena queries and Redshift analytics models over the data lake — tables, views, SQL — writing minimum code to pass failing data-pipeline tests.
 - **payments-integration-implementer** — Implements Stripe payment features: checkout sessions, webhook handlers built on the chassis, subscription lifecycle, refunds, and idempotent operations, with secrets in Secrets Manager.
-- **email-notification-implementer** — Implements transactional and notification email features: responsive templates, rendering pipelines, delivery via AWS messaging, and bounce/complaint handling.
+- **email-notification-implementer** — Implements transactional and notification email features: responsive templates, rendering pipelines, delivery through Amazon SES, and bounce/complaint handling.
 - **mcp-server-implementer** — Implements MCP servers on AWS, including AgentCore Gateway-fronted deployments — tool definitions and schemas, authorization, transport config, CDK deployment wiring.
-- **cdk-stack-author** — Authors AWS CDK stacks in Python matching the approved architecture; implements an infrastructure Task's provisioning intent.
+- **cdk-stack-author** — Authors AWS CDK stacks in Python matching the approved architecture.
 
 ## Operating Rules
 

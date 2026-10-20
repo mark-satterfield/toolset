@@ -245,7 +245,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-cdk",
-        "agent-teams-workforce:cdk-coding"
+        "agent-teams-workforce:cdk-coding",
+        "agent-teams-workforce:appsync-graphql"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -264,7 +265,8 @@
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:software-engineering",
         "agent-teams-workforce:typescript-coding",
-        "agent-teams-workforce:web-frontend-coding"
+        "agent-teams-workforce:web-frontend-coding",
+        "agent-teams-workforce:appsync-graphql"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -567,7 +569,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:amazon-bedrock",
-        "aws-core:aws-sdk-python-usage"
+        "aws-core:aws-sdk-python-usage",
+        "agent-teams-workforce:implementer-contract"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -585,7 +588,8 @@
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
-        "aws-core:aws-sdk-python-usage"
+        "aws-core:aws-sdk-python-usage",
+        "agent-teams-workforce:implementer-contract"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -1003,7 +1007,8 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:api-test-suite-builder",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:contract-testing"
       ],
       "mcpServers": [
         "gitnexus"
@@ -1291,7 +1296,8 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-secops",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:load-testing"
       ],
       "mcpServers": [
         "gitnexus"
@@ -1998,7 +2004,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-observability",
-        "aws-core:amazon-bedrock"
+        "aws-core:amazon-bedrock",
+        "agent-teams-workforce:implementer-contract"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -2031,7 +2038,8 @@
         "agent-teams-workforce:recommendation-ranking",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:python-coding",
-        "agent-teams-workforce:software-engineering"
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:implementer-contract"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -2050,7 +2058,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:amazon-bedrock",
-        "aws-core:aws-cdk"
+        "aws-core:aws-cdk",
+        "agent-teams-workforce:implementer-contract"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -2594,7 +2603,8 @@
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
-        "aws-core:aws-sdk-python-usage"
+        "aws-core:aws-sdk-python-usage",
+        "agent-teams-workforce:implementer-contract"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -3128,7 +3138,8 @@
         "aws-core:amazon-bedrock",
         "aws-core:aws-sdk-python-usage",
         "agent-teams-workforce:aurora-postgresql",
-        "agent-teams-workforce:pgvector-semantic-search"
+        "agent-teams-workforce:pgvector-semantic-search",
+        "agent-teams-workforce:implementer-contract"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
