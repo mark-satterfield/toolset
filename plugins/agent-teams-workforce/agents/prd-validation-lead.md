@@ -3,14 +3,14 @@ name: prd-validation-lead
 description: >-
   Manual-only coordinator for explicitly assigned PRD validation work.
   Selects bounded analysts and routes their findings without making solution
-  or approval decisions. The active prd-validation mini uses one analyst
-  session across seven lenses and does not dispatch this lead.
+  or approval decisions. The active prd-validation mini dispatches its lens
+  specialists itself and does not dispatch this lead.
 tools: Read, Glob, Grep, Agent, SendMessage, Skill, Workflow
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default
 maxTurns: 40
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:agent-orchestration, agent-teams-workforce:product-discovery, agent-teams-workforce:prd-writer]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:agent-orchestration, agent-teams-workforce:prd-writer]
 effort: medium
 color: blue
 ---
@@ -46,9 +46,9 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 
 ## Workflow status
 
-No active workflow dispatches this role. `workflows/prd-validation.js` directly
-uses one read-only analyst across seven lenses and adds informational BRD
-traceability only when supplied. It consolidates findings and fails validation
+No active workflow dispatches this role. `workflows/prd-validation.js` dispatches
+one read-only specialist per lens itself and adds informational BRD traceability
+only when supplied. It merges and consolidates the findings and fails validation
 on blockers. Do not substitute the manual team below for that consumer contract.
 
 ## Team
@@ -58,10 +58,10 @@ Available specialists for explicitly assigned manual work; this inventory is not
 - **ambiguity-detector** — Scans the raw PRD for vague quantifiers, missing boundary conditions, and unstated assumptions.
 - **brd-traceability-auditor** — Runs ONLY when a BRD has been supplied: returns an informational matrix mapping PRD requirements to that BRD's objectives. Its output carries no verdict, and a requirement that maps to no objective is not a defect.
 - **completeness-checker** — Validates each PRD requirement has an actor, action, observable outcome, and acceptance criteria.
-- **constraint-extractor** — Extracts technical constraints from the raw PRD into the constraint manifest consumed by downstream phases.
-- **dependency-graph-extractor** — Produces the dependency manifest from the raw PRD — services, APIs, events, data contracts — flagging nonexistent dependencies.
+- **constraint-extractor** — Extracts the explicit and implied constraints a PRD imposes: regulatory, business, platform, policy.
 - **domain-boundary-validator** — Confirms the raw PRD stays within one bounded context, flagging cross-domain scope creep as findings.
-- **nfr-analyst** — Extracts non-functional requirements from the raw PRD and flags unstated implied NFRs.
+- **nfr-analyst** — Lists the non-functional quality intents a PRD states or implies, as input to the TRD; never a finding against the PRD.
+- **requirement-classifier** — Classifies every requirement as business or technical and asks the matrix whether the architecture states each technical rule.
 - **requirements-clarifier** — Identifies ambiguous, incomplete, or conflicting PRD requirements, returning structured clarification requests without resolving them.
 - **requirements-conflict-detector** — Identifies PRD requirements that contradict each other, returning a structured conflict report.
 

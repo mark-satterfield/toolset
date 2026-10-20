@@ -105,11 +105,12 @@
     },
     {
       "name": "ambiguity-detector",
-      "description": "Scans the raw PRD for vague quantifiers, missing boundary conditions, and unstated assumptions; reports findings, never fixes. Use for PRD Validation work requiring ambiguity scanning, boundary-condition checks, and severity rating.",
+      "description": "Finds the requirements of a PRD whose user-observable behavior is unclear, contradictory within itself or open to two incompatible readings (vague quantifiers, missing user-observable boundary conditions, unstated assumptions); reports each with a concrete clarification, never fixes. Use for the ambiguity lens of PRD validation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-discovery"
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:prd-writer"
       ],
       "mcpServers": []
     },
@@ -640,11 +641,12 @@
     },
     {
       "name": "brd-traceability-auditor",
-      "description": "Produces an INFORMATIONAL mapping from PRD requirements to the objectives of a BRD, when one is supplied — a correspondence, never a verdict on the PRD. Use for PRD Validation work requiring optional requirement-to-objective mapping.",
+      "description": "Maps each PRD requirement to the objectives of a BRD the run names, for information only: a correspondence, never a verdict on the PRD. Use for the informational BRD traceability lens of PRD validation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-discovery"
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:prd-writer"
       ],
       "mcpServers": []
     },
@@ -904,11 +906,11 @@
     },
     {
       "name": "completeness-checker",
-      "description": "Validates each PRD requirement has an actor, action, observable outcome, and acceptance criteria. Use for PRD Validation work requiring requirement structure checks, acceptance-criteria audits, and completeness scoring.",
+      "description": "Checks that each requirement of a PRD has an actor, a trigger or action, an observable user outcome and a behavioral acceptance criterion, and reports each missing or defective element; never supplies one. Use for the completeness lens of PRD validation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-discovery",
+        "agent-teams-workforce:artifact-handoff",
         "agent-teams-workforce:prd-writer"
       ],
       "mcpServers": []
@@ -938,11 +940,12 @@
     },
     {
       "name": "constraint-extractor",
-      "description": "Extracts technical constraints from the raw PRD into the constraint manifest consumed by downstream phases. Use for PRD Validation work requiring constraint identification, manifest authoring, and source-cited classification.",
+      "description": "Extracts the explicit and implied constraints a PRD imposes (regulatory, business, platform, policy), each with its kind and where the PRD states or implies it; invents none. Use for the constraints lens of PRD validation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-discovery"
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:prd-writer"
       ],
       "mcpServers": []
     },
@@ -1181,16 +1184,6 @@
       "mcpServers": []
     },
     {
-      "name": "dependency-graph-extractor",
-      "description": "Produces the dependency manifest from the raw PRD — services, APIs, events, data contracts — flagging nonexistent dependencies. Use for PRD Validation work requiring dependency identification, existence verification, and manifest authoring.",
-      "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-discovery"
-      ],
-      "mcpServers": []
-    },
-    {
       "name": "deploy-failure-fixer",
       "description": "Diagnoses a failed package publish, cdk synth, cdk deploy to AWS dev or stack verification from its output and the CloudFormation stack events, fixes the CDK (or whatever else the deploy needs) in the Story's worktree, runs the repository's synth assertion tests, corrects a test the fix proves wrong, and names the command that runs them. Never deploys, commits or publishes.",
       "skills": [
@@ -1323,11 +1316,12 @@
     },
     {
       "name": "domain-boundary-validator",
-      "description": "Confirms the raw PRD stays within one bounded context, flagging cross-domain scope creep as findings. Use for PRD Validation work requiring bounded-context verification, domain ownership checks, and scope-creep detection.",
+      "description": "Checks that a PRD's requirements stay inside one bounded context, and reports each requirement that makes the feature own behavior another feature or service owns or that sits in more than one context. Use for the domain-boundary lens of PRD validation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-discovery"
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:prd-writer"
       ],
       "mcpServers": []
     },
@@ -1661,23 +1655,21 @@
     },
     {
       "name": "feature-objective-writer",
-      "description": "Derives the OKR cascade from strategy docs and the intake brief — objectives, key results, leading vs. lagging indicators. Use for PRD Creation work requiring goal cascading, key-result quantification, and indicator classification.",
+      "description": "Writes the one objective a feature must move and the key results that prove it was met, grounded in the feature's intake: a qualitative, user-centered objective and measurable key results, each with its metric and target. Use as the objective step of PRD creation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-strategist",
         "agent-teams-workforce:product-analytics"
       ],
       "mcpServers": []
     },
     {
       "name": "feature-persona-writer",
-      "description": "Generates data-driven persona profiles from research — behavioral segments, jobs-to-be-done, empathy maps. Use for PRD Creation work requiring behavioral segmentation, jobs-to-be-done framing, and empathy mapping.",
+      "description": "Writes the one target persona a feature serves, grounded in the audience, problem and outcome of the feature's intake: a proto-persona whose goals, frustrations and context are each stated, inferred or marked as an assumption, behavior over demographics. Use as the persona step of PRD creation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-discovery",
-        "agent-teams-workforce:product-analytics"
+        "agent-teams-workforce:persona-research"
       ],
       "mcpServers": []
     },
@@ -2284,10 +2276,10 @@
     },
     {
       "name": "nfr-analyst",
-      "description": "Extracts non-functional requirements from the raw PRD and flags unstated implied NFRs; never resolves or quantifies them. Use for PRD Validation work requiring NFR extraction, implied-NFR detection, and quality-attribute analysis.",
+      "description": "Lists the non-functional quality intents a PRD states or implies (performance, availability, security, privacy, accessibility, operability and the rest), each tied to the requirements that state or imply it, for the TRD author or the solutions architect to carry into the TRD; never quantifies them and never reports them as defects of the PRD. Available to a caller that chooses it; no workflow dispatches it.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:product-discovery"
+        "agent-teams-workforce:prd-writer"
       ],
       "mcpServers": []
     },
@@ -2509,21 +2501,11 @@
     },
     {
       "name": "prd-alignment-verifier",
-      "description": "Independently judges whether a draft PRD aligns with the intake brief, persona and objective it was written from, and is template-conformant and WHAT-not-HOW. Use as the checker of the PRD draft in prd-creation.",
+      "description": "Independently judges whether a draft PRD aligns with the intake brief, persona and objective it was written from, and is template-conformant and WHAT-not-HOW, on four dimensions (intake, persona, objective, template). Use as the checker of the PRD draft in PRD creation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-discovery",
         "agent-teams-workforce:prd-writer"
-      ],
-      "mcpServers": []
-    },
-    {
-      "name": "prd-creation-lead",
-      "description": "Routes stakeholder requests through intake, persona, OKR, and PRD drafting, then hands off to prd-validation-lead — makes no product decisions. Use for PRD Creation work requiring sequenced delegation, artifact tracking, and validation handoff.",
-      "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:agent-orchestration"
       ],
       "mcpServers": []
     },
@@ -2537,33 +2519,21 @@
       "mcpServers": []
     },
     {
-      "name": "prd-validation-analyst",
-      "description": "Independently checks a PRD against the caller supplied requirement lenses, with no authoring authority.",
-      "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:artifact-handoff"
-      ],
-      "mcpServers": []
-    },
-    {
       "name": "prd-validation-lead",
-      "description": "Manual-only coordinator for explicitly assigned PRD validation work. Selects bounded analysts and routes their findings without making solution or approval decisions. The active prd-validation mini uses one analyst session across seven lenses and does not dispatch this lead.",
+      "description": "Manual-only coordinator for explicitly assigned PRD validation work. Selects bounded analysts and routes their findings without making solution or approval decisions. The active prd-validation mini dispatches its lens specialists itself and does not dispatch this lead.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:agent-orchestration",
-        "agent-teams-workforce:product-discovery",
         "agent-teams-workforce:prd-writer"
       ],
       "mcpServers": []
     },
     {
       "name": "prd-writer",
-      "description": "Drafts the full PRD from the intake brief, persona profiles, and OKR cascade: scope, requirements, success metrics, competitive context. Use for PRD Creation work requiring requirement drafting, scope articulation, and success-metric derivation.",
+      "description": "Writes a template-conformant PRD, WHAT and never HOW, from a feature's intake, persona and objective, with acceptance criteria for its P0 requirements, and the one-paragraph scope of the Epic that pairs with it; on a revision, applies the alignment verdict on its previous draft. Use as the drafting step of PRD creation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-discovery",
         "agent-teams-workforce:prd-writer"
       ],
       "mcpServers": []
@@ -2733,21 +2703,35 @@
       ]
     },
     {
-      "name": "requirements-clarifier",
-      "description": "Identifies ambiguous, incomplete, or conflicting PRD requirements, returning structured clarification requests without resolving them. Use for PRD Validation work requiring requirements analysis and clarification drafting.",
+      "name": "requirement-classifier",
+      "description": "Classifies every requirement a PRD states as business or technical and, for each technical rule, asks the matrix whether the architecture already states it; never rewrites the PRD. Use for the requirement-class lens of PRD validation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:product-discovery"
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:prd-writer"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "requirements-clarifier",
+      "description": "Raises the open BUSINESS questions a PRD's author must answer before it can be specified, each tied to its requirement and unresolved; never answers them and never raises a technical gap. Use for the clarification lens of PRD validation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:prd-writer"
       ],
       "mcpServers": []
     },
     {
       "name": "requirements-conflict-detector",
-      "description": "Identifies PRD requirements that contradict each other, returning a structured conflict report; never resolves. Use for PRD Validation work requiring contradiction analysis and conflict classification.",
+      "description": "Finds sets of requirements in a PRD whose WHAT cannot all hold, citing the requirements in tension; never resolves them. Use for the conflict lens of PRD validation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:product-discovery"
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:prd-writer"
       ],
       "mcpServers": []
     },
@@ -2926,7 +2910,7 @@
     },
     {
       "name": "stakeholder-request-intake-writer",
-      "description": "Converts raw stakeholder requests into a structured intake brief: requestor, problem, desired outcome, constraints, urgency. Use for PRD Creation work requiring request structuring, problem framing, and urgency classification.",
+      "description": "Turns one raw stakeholder request into the structured intake of a feature: the scope the request frames (what it asks for and what it leaves out), the problem, the audience, the desired outcome, the constraints it states and the open questions it leaves, WHAT the users need and never HOW to build it. Use as the intake step of PRD creation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",

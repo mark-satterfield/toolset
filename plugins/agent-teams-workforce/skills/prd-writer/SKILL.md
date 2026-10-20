@@ -1,6 +1,6 @@
 ---
 name: prd-writer
-description: Use when writing, revising, or validating a Product Requirements Document (PRD) against the standard PRD template — author a template-conformant PRD, or verify an existing PRD for conformance (required sections, P0 acceptance criteria, no leftover scaffolding, WHAT-not-HOW). For any agent that produces or reviews a PRD.
+description: Use when writing, revising, or validating a Product Requirements Document (PRD) against the standard PRD template — author a template-conformant PRD, verify an existing PRD for conformance (required sections, P0 acceptance criteria, no leftover scaffolding, WHAT-not-HOW), or inspect a PRD through one validation lens under the ground rules every lens applies (business versus technical requirements, what a reviewer judges in acceptance criteria). For any agent that produces or reviews a PRD.
 ---
 
 # PRD Writer & Template Conformance
@@ -66,12 +66,16 @@ Three consequences bind every PRD author and reviewer:
    So the PRD's **first and only** `# ` heading is the Epic title, and everything after it is the
    Epic description. Do not add YAML frontmatter, and do not introduce a second `# ` heading; both break
    the split. `.delta.md` files are working artifacts, not PRDs, and are never synced.
-3. **A PRD edit is not finished until the Epic matches.** After writing or revising a PRD, bring its
-   Epic into sync, and say in your reply that you did. The project supplies two scripts through
-   environment variables whose names are defined only by the `agent-teams-workforce:pipeline-contracts`
-   skill (`schemas/driver-surface.schema.json`, `$defs.DriverEnvironment`): the sync script is the
-   variable whose `x-constant` is `PRD_EPIC_SYNC_ENV`, the verify script the one whose `x-constant`
-   is `PRD_EPIC_VERIFY_ENV`. Read the names from that schema, never from memory, and run:
+3. **A PRD edit is not finished until the Epic matches, and the one who writes the PRD's vault file
+   brings the Epic in sync.** An agent a workflow starts writes no bead and runs neither script
+   below: it writes the PRD where its brief says and names the slug in its result, and the
+   workflow's caller, which writes the vault file and the Epic bead, syncs them and records the
+   pair. A session that writes a PRD's vault file itself runs the sync. The project supplies two
+   scripts through environment variables whose names are defined only by the
+   `agent-teams-workforce:pipeline-contracts` skill (`schemas/driver-surface.schema.json`,
+   `$defs.DriverEnvironment`): the sync script is the variable whose `x-constant` is
+   `PRD_EPIC_SYNC_ENV`, the verify script the one whose `x-constant` is `PRD_EPIC_VERIFY_ENV`.
+   Read the names from that schema, never from memory, and run:
 
    ```bash
    "<sync script>" --only <slug> --apply     # document -> Epic (creates the Epic if absent)
@@ -145,8 +149,9 @@ It **cannot** decide *semantic* conformance — that is the reviewer's job (see 
    discussion. Never smooth a contradiction into vague language.
 10. **Delete every template comment (`<!-- ... -->`) and `[placeholder]`** before saving.
 11. **Run `scripts/check_prd.py` on your draft and resolve every error** before you finish.
-12. **Sync the Epic half** — run the sync script (rule 3) with `--only <slug> --apply` — and say so
-    in your reply.
+12. **Sync the Epic half when you write the PRD's vault file yourself** — run the sync script
+    (rule 3) with `--only <slug> --apply` and say so in your reply. A workflow agent writing a draft
+    names the slug in its result instead.
 
 ## Validate Mode — Workflow
 
@@ -163,7 +168,44 @@ Use this when reviewing someone else's PRD (or your own before a gate).
    - **Measurable Outcomes:** does each metric have a starting value, a target, and a measurement method?
    - **Scope:** do the smell tests pass, or should this be decomposed?
 3. **Report findings as structured defects** (location + what's wrong + why) — do not fix them if
-   your role is review-only; route them back to the author.
+   your role is review-only.
+
+## Acceptance Criteria: What the Author Writes and What a Reviewer Judges
+
+The author of a PRD written to the template gives every P0 requirement an Acceptance Criteria
+block (Author mode step 6), and `scripts/check_prd.py` reports a P0 requirement without one as a
+structural `FAIL`. A reviewer judging substance asks a different question: does the requirement
+state an observable outcome that can be checked pass/fail? A requirement whose own statement names
+such an outcome ("the button on the login screen is green") has its acceptance criterion in that
+statement. A PRD is a business requirement and may be one sentence: a reviewer never faults a
+requirement for lacking a separately headed criteria block, an identifier, or length. It faults a
+criterion that only restates its requirement without an observable outcome, and a criterion that
+is not pass/fail.
+
+## Validation Lenses — The Ground Rules Every Lens Applies
+
+A PRD validation runs one specialist per lens (requirement class, ambiguity, completeness,
+conflict, constraints, domain boundaries, clarifications, and BRD traceability when a BRD is
+named). Each applies these rules:
+
+- **A PRD is WHAT-level.** A requirement that names a desired outcome without naming its
+  implementation mechanism is not defective. Never flag absent mechanism, thresholds, schemas,
+  or quantified non-functional requirements: they belong to the TRD and the specs.
+- **A PRD is one slice of a decomposed set and names no other PRD.** Ordering between features is
+  carried by Epic dependency edges, not by the PRD. Behavior another feature provides is not a
+  gap in this one.
+- **The product is built iteratively.** An absence that may legitimately arrive as its own later
+  PRD is scheduling, not a defect: report it at `info` severity only, or not at all.
+- **The PRD is the top of the requirements chain.** Judge it against itself (and, for traceability,
+  map it to a BRD for information only); never fault it for diverging from a document above it.
+- **Read the PRD and only the files your brief names.** It is the entire object of every lens. Do
+  not survey the repository, the architecture folders or the polyrepo.
+- **Identify each requirement as the PRD writes it**, or as R1, R2, … in document order where it
+  gives none.
+- **Severity says what the finding does to specifying the requirement.** `blocker` only when the
+  requirement cannot be specified as written; `info` for scheduling.
+- **Report findings, not essays.** One finding once, never restated as several; every issue,
+  question and detail under 40 words.
 
 ## Conformance Checklist (shared)
 
