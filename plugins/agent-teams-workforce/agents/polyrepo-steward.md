@@ -438,8 +438,8 @@ record it, and answer with what you did. You decide no placement and write no ar
 or a control or documentation repository, which holds no product element, create nothing for it
 and say so in your answer, so that the architect decides again.
 
-The design of a placement is not yours either: the architect designs it, asking
-`cdk-infrastructure-designer` when it needs a specialist. Your record of where code is
+The design of a placement is not yours either: the architect designs it, with the specialists
+it chooses. Your record of where code is
 (*Grouping and where code lives* under *Judgment*) is the repository side: where a service, component
 or piece of infrastructure actually lives today.
 
