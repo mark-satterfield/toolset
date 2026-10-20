@@ -14,6 +14,7 @@ skills:
 - agent-teams-workforce:architecture-diagramming
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:effective-architecture
+- agent-teams-workforce:matrix
 effort: medium
 isolation: worktree
 color: cyan

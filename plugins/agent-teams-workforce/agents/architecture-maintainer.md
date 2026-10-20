@@ -12,6 +12,7 @@ skills:
 - agent-teams-workforce:arc42-maintain
 - agent-teams-workforce:c4-diagramming
 - agent-teams-workforce:uml-diagramming
+- agent-teams-workforce:matrix
 effort: medium
 isolation: worktree
 color: cyan

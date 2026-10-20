@@ -16,6 +16,7 @@ skills:
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:artifact-handoff
 - agent-teams-workforce:wsjf
+- agent-teams-workforce:matrix
 effort: medium
 isolation: worktree
 color: yellow

@@ -20,6 +20,7 @@ skills:
 - agent-teams-workforce:design-specialist-contract
 - agent-teams-workforce:effective-architecture
 - aws-core:aws-billing-and-cost-management
+- agent-teams-workforce:matrix
 effort: medium
 isolation: worktree
 color: cyan

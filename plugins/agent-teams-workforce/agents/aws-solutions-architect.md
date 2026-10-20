@@ -40,6 +40,7 @@ skills:
 - aws-core:aws-billing-and-cost-management
 - agent-teams-workforce:log-architecture-review
 - aws-core:aws-database
+- agent-teams-workforce:matrix
 ---
 
 ## What you are responsible for

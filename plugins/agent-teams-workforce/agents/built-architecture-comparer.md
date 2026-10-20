@@ -11,6 +11,7 @@ skills:
 - agent-teams-workforce:effective-architecture
 - agent-teams-workforce:architecture-diagramming
 - agent-teams-workforce:graphrag-lookup
+- agent-teams-workforce:matrix
 mcpServers:
   - gitnexus
 ---

@@ -14,8 +14,10 @@ Three sources answer "what exists, and what does it touch". Each answers a diffe
 and they are used together:
 
 - **The matrix** records which features and stacks exist, which repository holds each stack and
-  what depends on what. Read it with `atw-matrix`; each command prints one JSON object. It is
-  the authority for what it records: go to it first.
+  what depends on what. It is the authority for what it records: go to it first. How to read and
+  write it (the model, which `atw-matrix` command answers which question, the direct-versus-
+  transitive trap, the ready scripts and the flags) is the `matrix` skill: load it before any
+  `atw-matrix` call.
 - **GitNexus** (`mcp__gitnexus__*`) indexes each code repository's call graph: symbols, callers
   and callees, imports, execution flows, API routes and their consumers. It is the tool for
   understanding and changing code inside a repository, and it is used constantly, not only
@@ -31,15 +33,11 @@ your result.
 
 ## Before designing
 
-- Ask the matrix first whether the capability exists:
-  `atw-matrix find --kinds feature --text "<the behaviour>"` for a feature that provides it, with
-  the Epics it serves, and `atw-matrix find --kinds stack --text "<the behaviour>"` for the stack
-  that is its home. `atw-matrix node <id>` returns one entry with what realizes it, the stack that
-  holds it and the documents that describe it.
-- An empty result is the answer: no such feature or stack exists. Do not search the repositories
-  to learn whether one does.
-- For the stacks the matrix returns, see how the code realises them: `atw-matrix node stack:<id>`
-  gives the `repository`; GitNexus `query` with that repository as `repo` returns the execution
+- Ask the matrix first whether the capability exists, as the `matrix` skill says. An empty
+  result is the answer: no such feature or stack exists. Do not search the repositories to learn
+  whether one does.
+- For the stacks the matrix returns, see how the code realises them: GitNexus `query` with the
+  stack's repository as `repo` returns the execution
   flows for the behaviour, and `context` on a symbol it names shows what calls it and what it
   calls. For an API, `route_map` shows each route, its handler and its consumers.
 - Use GraphRAG for what the matrix does not record, such as a passage in a document, a pattern or
@@ -64,9 +62,8 @@ your result.
 
 ## Before any change or refactor
 
-- Ask the matrix first what depends on the entry you change: `atw-matrix deps --on <id>` returns
-  every entry and stack that depends on it, to any depth, each with the relationship kind and the
-  stack that holds the dependent. `atw-matrix node stack:<id>` returns that stack's `repository`.
+- Ask the matrix first what depends on the entry you change, and what rests on it, as the
+  `matrix` skill says.
 - Then, before editing any function, class or method, run GitNexus `impact` on it with
   `direction: "upstream"` in each repository concerned (the one you change and those of the
   stacks the matrix returned). Report the blast radius in your result: the direct callers (d=1,

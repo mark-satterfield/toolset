@@ -13,7 +13,7 @@ disallowedTools: AskUserQuestion, Edit, Bash, NotebookEdit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 80
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:find-cause, agent-teams-workforce:test-failure-mindset, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:artifact-handoff]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:find-cause, agent-teams-workforce:test-failure-mindset, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:artifact-handoff, agent-teams-workforce:matrix]
 effort: low
 isolation: worktree
 color: cyan

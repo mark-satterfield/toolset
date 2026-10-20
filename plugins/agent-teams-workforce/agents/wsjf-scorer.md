@@ -11,7 +11,7 @@ disallowedTools: AskUserQuestion
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:wsjf, agent-teams-workforce:beads-contract, agent-teams-workforce:artifact-handoff]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:wsjf, agent-teams-workforce:beads-contract, agent-teams-workforce:artifact-handoff, agent-teams-workforce:matrix]
 effort: medium
 isolation: worktree
 color: yellow

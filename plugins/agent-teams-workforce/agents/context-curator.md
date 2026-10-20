@@ -13,7 +13,7 @@ disallowedTools: AskUserQuestion, Bash, NotebookEdit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:matrix]
 effort: medium
 isolation: worktree
 color: red

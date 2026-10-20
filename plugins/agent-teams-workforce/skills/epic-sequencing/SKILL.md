@@ -149,9 +149,9 @@ this same way, one after another. The Epic's assessment is the only judgment of 
 it decides every edge to or from that Epic, including each one an earlier assessment of
 another Epic set.
 
-The matrix is read with `atw-matrix`; a read needs no role, and every command prints one JSON
-object. `atw-matrix epic <beads id>` returns an Epic's PRD path (`prd`, relative to the vault
-root), its requirements, each named by its PRD heading, and the features each is served by.
+The matrix is read as the `matrix` skill says. `atw-matrix epic <beads id>` returns an Epic's
+PRD path (`prd`, relative to the vault root), its requirements, each named by its PRD heading,
+and the features each is served by.
 When the assessment is handed a context file (artifact-handoff's
 `schemas/dependency-assessment.schema.json`, `#/$defs/EpicContext`), that file is the material
 it starts from: its descriptions say what each member holds, its `prdPath` values are absolute,

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# matrix-reach <query> ... — the transitive matrix questions one atw-matrix read does not answer:
+#   epics-reaching <entry id>     the Epics whose walk reaches the entry, with the features that lead to it
+#   epic-needs <beads id>         the services, components, infrastructure, stacks and repositories an Epic
+#                                 reaches, and its gaps
+#   unreached [--kinds k1,k2]     the entries of those kinds (and repository) no Epic reaches
+# Add --json (before the query) for one JSON object. Reads only; matrix_reach.py beside this file is
+# the code. The matrix modules it imports need typeguard, jsonschema and PyYAML, so uv supplies
+# them, as bin/atw-matrix does.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec uv run --no-project --python 3.14 --with 'typeguard>=4.4' --with 'jsonschema>=4.18' --with 'pyyaml>=6' \
+  python -O -P "$here/matrix_reach.py" "$@"

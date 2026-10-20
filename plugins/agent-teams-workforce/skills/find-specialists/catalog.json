@@ -207,7 +207,8 @@
         "agent-teams-workforce:api-design-reviewer",
         "agent-teams-workforce:artifact-handoff",
         "agent-teams-workforce:effective-architecture",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -280,7 +281,8 @@
         "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:senior-architect",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -297,7 +299,8 @@
         "agent-teams-workforce:arc42",
         "agent-teams-workforce:architecture-diagramming",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:effective-architecture"
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -312,7 +315,8 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-architect",
-        "agent-teams-workforce:aws-solution-architect"
+        "agent-teams-workforce:aws-solution-architect",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "aws-mcp"
@@ -358,7 +362,8 @@
         "agent-teams-workforce:beads-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-architect",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -373,7 +378,8 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:arc42-maintain",
         "agent-teams-workforce:c4-diagramming",
-        "agent-teams-workforce:uml-diagramming"
+        "agent-teams-workforce:uml-diagramming",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": []
     },
@@ -523,7 +529,8 @@
         "aws-core:aws-security",
         "aws-core:aws-billing-and-cost-management",
         "agent-teams-workforce:log-architecture-review",
-        "aws-core:aws-database"
+        "aws-core:aws-database",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -652,7 +659,8 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:architecture-diagramming",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "gitnexus"
@@ -700,7 +708,8 @@
         "agent-teams-workforce:aws-cdk-development",
         "aws-core:aws-cdk",
         "agent-teams-workforce:cdk-coding",
-        "agent-teams-workforce:resource-naming"
+        "agent-teams-workforce:resource-naming",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -798,7 +807,8 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:effective-architecture",
-        "aws-core:aws-billing-and-cost-management"
+        "aws-core:aws-billing-and-cost-management",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -928,7 +938,8 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:effective-architecture"
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": []
     },
@@ -981,7 +992,8 @@
       "description": "Assembles a context index for one receiving agent and task: a file of pointers (paths, headings, matrix ids and atw-matrix commands) to exactly what the role needs, with every constitutive constraint that binds it carried by pointer to its one home, never copied or summarized, and keeps the constraint manifest those pointers come from current. Use when starting a session by hand that needs its context assembled under least context; the orchestrator's own briefs already carry paths only.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol"
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": []
     },
@@ -1100,7 +1112,8 @@
         "agent-teams-workforce:aurora-postgresql",
         "agent-teams-workforce:design-postgres-tables",
         "agent-teams-workforce:pgvector-semantic-search",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "awslabs-dynamodb-mcp-server",
@@ -1504,7 +1517,8 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:epic-sequencing",
-        "agent-teams-workforce:artifact-handoff"
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": []
     },
@@ -2434,7 +2448,8 @@
         "agent-teams-workforce:polyrepo-governance",
         "agent-teams-workforce:polyrepo-beads",
         "agent-teams-workforce:python-coding",
-        "agent-teams-workforce:software-engineering"
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "gitnexus",
@@ -2521,7 +2536,8 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:prd-writer"
+        "agent-teams-workforce:prd-writer",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": []
     },
@@ -2743,7 +2759,8 @@
         "agent-teams-workforce:find-cause",
         "agent-teams-workforce:test-failure-mindset",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:artifact-handoff"
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -2908,7 +2925,8 @@
       "description": "Writes the title and description of ONE Story bead, a single-repository container paired with a spec set, and names the work outside the Story's repository that the Epic's closure in the matrix holds. For a caller that needs a Story written outside elaboration; elaboration writes its Stories by script.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol"
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": []
     },
@@ -2939,7 +2957,8 @@
         "agent-teams-workforce:beads-contract",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:artifact-handoff",
-        "agent-teams-workforce:wsjf"
+        "agent-teams-workforce:wsjf",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -2954,7 +2973,8 @@
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:beads-contract",
         "agent-teams-workforce:artifact-handoff",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "gitnexus"
@@ -3076,7 +3096,8 @@
       "description": "Write the TRD as one of the very first steps of the architecture, the requirements not considered functional, many pre-written in arc42, and update it as the architecture is decided.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:effective-architecture"
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "aws-mcp"
@@ -3271,7 +3292,8 @@
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:wsjf",
         "agent-teams-workforce:beads-contract",
-        "agent-teams-workforce:artifact-handoff"
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": []
     },

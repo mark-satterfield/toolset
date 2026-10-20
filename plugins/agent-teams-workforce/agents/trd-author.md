@@ -13,6 +13,7 @@ maxTurns: 100
 skills:
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:effective-architecture
+- agent-teams-workforce:matrix
 effort: medium
 isolation: worktree
 color: teal

@@ -16,7 +16,7 @@ disallowedTools: AskUserQuestion, Edit, NotebookEdit
 model: opus
 permissionMode: default
 maxTurns: 50
-skills: [agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:beads-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:artifact-handoff, agent-teams-workforce:subagent-contract, agent-teams-workforce:beads-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:matrix]
 effort: low
 isolation: worktree
 color: cyan

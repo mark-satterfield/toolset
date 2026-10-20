@@ -9,7 +9,7 @@ disallowedTools: AskUserQuestion, Edit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 240
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:epic-sequencing, agent-teams-workforce:artifact-handoff]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:epic-sequencing, agent-teams-workforce:artifact-handoff, agent-teams-workforce:matrix]
 effort: medium
 isolation: none
 color: purple

@@ -18,6 +18,7 @@ skills:
 - agent-teams-workforce:artifact-handoff
 - agent-teams-workforce:effective-architecture
 - agent-teams-workforce:graphrag-lookup
+- agent-teams-workforce:matrix
 effort: medium
 isolation: worktree
 color: purple

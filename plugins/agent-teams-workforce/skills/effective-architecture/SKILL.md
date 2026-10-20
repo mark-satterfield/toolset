@@ -30,7 +30,7 @@ decide none of it.
 An effective document is approved design. It is not evidence that anything is built, and it
 is not a permanent constraint on a later PRD.
 
-The matrix records what is approved and what code is trusted. Read it through `atw-matrix`.
+The matrix records what is approved and what code is trusted. Read it as the `matrix` skill says.
 
 ## The files the team hands on
 
