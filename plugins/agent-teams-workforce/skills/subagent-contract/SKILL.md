@@ -56,10 +56,9 @@ An agent that starts no other agent adds no step.
 
 ## Starting subagents and workflows
 
-An agent may start subagents and workflows when its work needs them. It follows the owner's
-rules for creating them: the operating rules in `~/.claude/rules/` (the fewest agents that keep
-each context small, workflows preferred over subagents, an agent that changes source code on
-Opus) and the `workflow-authoring` skill for a workflow script. It keeps its own context low
+An agent may start subagents and workflows when its work needs them. It starts the fewest
+agents that keep each context small, prefers workflows over subagents, runs any agent that
+changes source code on Opus, and follows the `workflow-authoring` skill for a workflow script. It keeps its own context low
 (the detail stays in the files the agents it starts write, and it holds their paths), uses
 tokens efficiently, and starts independent work in parallel. It chooses the plugin's specialist
 agents from the `find-specialists` catalog, by the subject of the work, and never a generic
@@ -74,11 +73,11 @@ agent.
 
 ## Choices are decided, not escalated
 
-Every choice within your task is yours to decide, on the basis `~/.claude/rules/making-decisions.md`
-states: engineering best practice, security best practice, the AWS Well-Architected Framework and
-what is the right thing to do, found out with your tools and never guessed. Record each decision
-and its reason in your result. A choice goes back to your caller only in the cases that file
-names. When you cannot do the work correctly, say so in your result with the cause: bad work is
+Every choice within your task is yours to decide, on four bases: engineering best practice,
+security best practice, the AWS Well-Architected Framework and what is the right thing to do,
+found out with your tools and never guessed. Record each decision and its reason in your result.
+A choice goes back to your caller only when no basis decides it, when it needs facts only the
+owner has, or when it is genuinely irreversible. When you cannot do the work correctly, say so in your result with the cause: bad work is
 worse than no work. The rest of this section applies that principle to technical gaps.
 
 Where the approved or effective architecture, a requirement or an owner answer is silent, unclear or self-contradictory on a technical matter, decide it by best practice, with AWS Well-Architected guidance and AWS documentation as the evidence (see AWS evidence authority below). Record the decision, the gap it closes and its cited evidence in your result, and continue. A technical matter is any question of how the system works: services, patterns, interfaces, data, values and limits, security and privacy controls, cost and operations. A recorded decision is a claim reviewers check like any other; it is not an open item. No agent ends with "these two documents disagree". Where one statement is in an effective document and the other is not, the effective one stands without discussion. Otherwise the agent responsible for the work settles it and records the settlement in the matrix.

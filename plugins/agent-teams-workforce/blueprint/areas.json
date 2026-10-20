@@ -1,5 +1,5 @@
 {
-  "description": "Which blueprint documents state the requirements and design of each area of the plugin. Paths are relative to the plugin root and use glob patterns; the first area whose pattern matches a changed file names its documents. A user-level PreToolUse hook (~/.claude/hooks/pre-tool-use/blueprint-pointer.sh) reads this file and names the documents to every session that edits a file under the plugin.",
+  "description": "Which blueprint documents state the requirements and design of each area of the plugin. Paths are relative to the plugin root and use glob patterns; the first area whose pattern matches a changed file names its documents. Tooling outside the plugin, such as a PreToolUse hook, reads this file to name the documents to every session that edits a file under the plugin.",
   "areas": [
     {
       "name": "the blueprint",
