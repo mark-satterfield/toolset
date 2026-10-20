@@ -57,7 +57,7 @@ For each fact:
    rewritten, otherwise in its document under `detailed/`, linked from the arc42 view of its
    subject. A home the request names in arc42 for a fact the model places under `detailed/`
    is written under `detailed/` and linked from that home. No fact is returned for being too
-   detailed; `belowArchitectureLevel` stays empty. A new document carries the front matter of
+   detailed. A new document carries the front matter of
    its class, a view or a standard or policy, as the artifact-handoff skill's
    `schemas/document-front-matter.schema.json` defines it.
 4. Write what the request contains and only that. A document has one purpose: a fact outside
@@ -77,5 +77,4 @@ headings and, from its `shows`, what it describes. Name in `shows` each entry by
 matrix holds for it, so that the document is found from the entry.
 
 Write the result at the path the request names, to `write-result.schema.json`: each heading
-you changed or created, each link you added, each restatement you removed,
-`belowArchitectureLevel`, and anything in the request you could not apply and why.
+you changed or created, each link you added, each restatement you removed, and anything in the request you could not apply and why.

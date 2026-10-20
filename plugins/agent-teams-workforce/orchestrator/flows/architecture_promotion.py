@@ -255,7 +255,7 @@ def _corrected(run: StepRun) -> list[str]:
             continue
         request: WriteRequest = checked_file(run, asked, validate_write_request)
         result: WriteResult = checked_file(run, written, validate_write_result)
-        unapplied: list[str] = [left["entry"] for left in (*result["notApplied"], *result["belowArchitectureLevel"])]
+        unapplied: list[str] = [left["entry"] for left in result["notApplied"]]
         corrected.extend(
             settlement["disagreement"]
             for settlement in request["settlements"]

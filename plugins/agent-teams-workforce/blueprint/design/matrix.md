@@ -32,25 +32,30 @@ registry. `skills/artifact-handoff/scripts/matrix_contract.py` is generated from
 The registry declares:
 
 - for each entry kind: its id pattern, its attributes with their types and allowed values,
-  which attributes are required, and `verifiable` (whether the kind carries the verified
-  flag);
-- for each relationship kind: its name, its reverse name, the entry kinds it starts from and
-  ends at, its attributes, its `key` attributes (what distinguishes two relationships of one
-  kind between the same two entries), its `family` and `provedByBuild`;
-- the controlled list of resource types;
+  and which attributes are required;
+- for each declared relationship kind: its name, its reverse name, its attributes, its `key`
+  attributes (what distinguishes two relationships of one kind between the same two
+  entries), its `family`, its `side` and its `maxPerStart`. No kind names the entry kinds it
+  may join: any entry may link to any other (requirement R58);
+- `resourceType` (`$defs/resourceType`): the form of the name of one AWS resource kind,
+  lowercase words joined by hyphens, checked by the form and not by a list (requirement R61);
 - each `atw-matrix` command with the roles that run it (the `ATW_MATRIX_ROLE` variable).
 
-A new kind of entry or relationship is one declaration in the registry. The store, `put`,
-`link`, `node`, `find` and `check` work on any registered kind, so nothing already held is
-restructured. A lookup that follows a whole group of relationships selects by `family`, so a
+A new kind of entry is one declaration in the registry. A relationship kind is checked by its
+form (`matrix.schema.json` `$defs/kindName`, lowerCamelCase letters): one the registry
+declares carries its declaration, and any other of that form is accepted with no attributes
+and is reported from its end under its name followed by `Reverse` (`matrix_contract`
+`relationship_kind`, `relationship_rule`). A reverse name of a declared kind is refused, so the
+link is stated from its other end. The store, `put`, `link`, `node`, `find` and `check` work on
+any kind, so nothing already held is restructured. A lookup that follows a whole group of relationships selects by `family`, so a
 new dependency kind declared with `family: dependency` is followed by Q9 and Q15 with no
 change to them.
 
 ### 1.2 Entries
 
 Every entry has `id`, `kind`, `name`, `aliases` (other names it is known by) and `purpose`
-(one or two sentences that identify it). Any entry may carry `approved`, and an entry of a
-verifiable kind may carry `verified` (section 1.4).
+(one or two sentences that identify it). Any entry may carry `approved` and `verified`, and
+none must (section 1.4).
 
 Every entry and every relationship carries `side`, which shows which of the two sides the
 fact came from (requirements section 4.1, R43, R45, R50). It is one common field with no
@@ -85,12 +90,13 @@ holds.
 | `constraint` | One technical requirement or constraint. | `constraint:<slug>` | `statement`; `selector` when the rule applies to every entry of a class. A selector is a set of attribute values (any of `app`, `stackType`, `resourceType`, `executionUse`) that names every entry having those values. |
 | `document` | One arc42 document. | `document:<path under the architecture root>` | `lifecycle` (`effective`, `in-review`, `draft`), `section`, `viewType`, `scope`, `subject`, `headings` (the heading texts), `hash`. |
 | `service` | One service the architecture describes. | `service:<slug>` | `executionUse`. |
-| `component` | One component: a Lambda function, a module, a construct, a page. | `component:<slug>` | `resourceType`, `executionUse`. |
-| `infrastructure` | One piece of infrastructure: a table, a queue, a rule, a parameter, a bus. | `infrastructure:<slug>` | `resourceType`. |
+| `component` | One component: a Lambda function, a module, a construct, a page. | `component:<slug>` | `resourceType` when it is one AWS resource (a Lambda function, an AgentCore runtime), `executionUse`. |
+| `infrastructure` | One piece of infrastructure: a table, a queue, a rule, an SSM parameter, a bus. An SSM parameter is one entry, named by its path, with `resourceType` `ssm-parameter` and `homeIn` the stack that writes it (requirement R59). | `infrastructure:<slug>` | `resourceType` when it is one AWS resource. |
 | `event` | One event type: a fact with a meaning, its name, the services or components that publish it (`publishes`) and its description. On the architecture side its `purpose` is the description the event catalog in arc42 section 6 gives it and its publishers are the catalog's producers, both written by `atw-matrix sync-events`. It has no `homeIn`: its stack is its publisher's architecture-side stack. | `event:<detail type>` | `externalSource`: the system outside SkillSpoke that publishes it (for example Stripe), only for an event no SkillSpoke service or component publishes. |
 | `stack` | The home in code of services, components and infrastructure. | `stack:<stack name>` | `repository`, `app` (an open token: lowercase words joined by hyphens, for example `personal-agent`), `executionUse`, `commands` (`test`, `publish`, `deploy`). `purpose` is required: why the stack exists, in the form of the example in requirements section 3.3, or the statement that the purpose is not stated. |
 | `package` | One Python package. | `package:<distribution name>` | `origin` (`project`, `third-party`). |
 | `layer` | One AWS Lambda layer the project deploys. | `layer:<slug>` | none. |
+| `file` | A file in a repository that the architecture or design names and that is not a document in the vault, such as a service's saved OpenAPI document. | `file:<stack name>/<path in the stack's repository>` | `path` (required); `homeIn` the stack. |
 | `disagreement` | Two or more arc42 statements that disagree now. | `disagreement:<slug>` | `stands` (`document`, `heading`) and `rule` once ruled; `reason`. |
 
 Notes on the kinds:
@@ -109,7 +115,9 @@ Notes on the kinds:
 ### 1.3 Relationships
 
 A relationship has `kind`, `from`, `to`, the attributes its kind declares, `side`
-(section 1.2), and optionally `approved` and `verified` (section 1.4). It is stored once for each side that
+(section 1.2), and optionally `approved` and `verified` (section 1.4). Any entry may link to
+any other; the From → to column below says what each declared kind usually joins and limits
+nothing (requirement R58). It is stored once for each side that
 states it and indexed from both ends: `atw-matrix node <id>`
 returns the relationships that start at the entry under the kind's name and those that end
 at it under the reverse name.
@@ -136,16 +144,16 @@ at it under the reverse name.
 | `onBus` (`busFor`) | infrastructure → infrastructure | The EventBridge rule (`resourceType` `eventbridge-rule`) belongs to this one event bus (`eventbridge-bus`). At most one per rule. | none |
 | `matches` (`matchedBy`) | infrastructure → event | The rule's event pattern matches the event type. A rule whose pattern matches every event on its bus states the attribute `matchesAllEvents` instead. | none |
 | `routesTo` (`targetOf`) | infrastructure → service, component, infrastructure | The rule delivers every event it matches to this target. At most five per rule, the EventBridge limit. | none |
-| `reads` (`readBy`) | stack, service, component → infrastructure | Code reads a value another stack stored, such as an SSM parameter. | none |
-| `runsIn` (`hosts`) | stack, service, component → infrastructure | Code runs in shared infrastructure, such as a VPC or a bus. | none |
+| `reads` (`readBy`) | stack, service, component → infrastructure | Code reads a value another stack stored, such as an SSM parameter: an entry of `resourceType` `ssm-parameter` whose home is the stack that writes it. | none |
+| `runsIn` (`hosts`) | stack, service, component → infrastructure | Code runs in shared infrastructure, such as a Lambda function in its VPC, subnets and security groups, which another stack holds. | none |
 | `drives` (`drivenBy`) | epic → feature, document | The Epic's requirements shape this architecture decision. | `heading` for a document (key) |
 | `restsOn` (`supportsEpic`) | epic → feature, document, stack, service, component, infrastructure | The Epic relies on this as settled architecture. | `heading` for a document (key) |
+| `specifiedBy` (`specifies`) | infrastructure, component, service → file, document | The entry, such as an API Gateway API, is specified by this file or document heading, such as its saved OpenAPI document. | `heading` for a document (key) |
 | `disputes` (`disputedBy`) | disagreement → document | The document holds one of the disagreeing statements, under the heading; the statement's text stays in the document. | `heading` (key) |
 
 `imports`, `usesLayer`, `calls`, `publishes`, `onBus`, `matches`, `routesTo`, `reads` and
 `runsIn` have `family: dependency`. A producer publishes through the events API and knows
-nothing of rules or targets; a consumer is reached as the target of a rule. `homeIn`, `partOf`, `distributedAs`, `contains` and the dependency
-family have `provedByBuild: true`.
+nothing of rules or targets; a consumer is reached as the target of a rule.
 
 A dependency between two stacks is read, never stored: stack A depends on stack B when a
 dependency relationship starts at A or at an entry whose home is A and ends at B or at an
@@ -228,8 +236,11 @@ deployment working.
   `commit` is that Story's merge commit. Otherwise nothing is written, and the command
   returns `complete: false` with `openStories` and `openTasks`.
 - **What it covers.** Each stack and entry any Story of the Epic built, as the Task script's
-  `built` read returns them for each Story (section 1.5), and each relationship with
-  `provedByBuild` that starts at one of them.
+  `built` read returns them for each Story (section 1.5), and every relationship, of any kind
+  and either side, that starts at one of them. `built` lists as built the stacks and the
+  entries of the kinds a Task builds (`matrixtasks.BUILT_KINDS`: service, component,
+  infrastructure, event, package, layer, file); any other id a Task names, such as a shared
+  capability it uses, is listed under `notBuilt` and takes no flag.
 - For a stack with no CDK app, the publish of its package to CodeArtifact stands where the
   CDK deploy does. A Story that closes with no pull request runs no `verify`.
 - When verified code is changed by a later Epic, the flag stays, with its commit, until that
@@ -303,9 +314,13 @@ today, each marked with its side.
 | Q19 | `impact --id <id>` | From the entry (for a stack, also every entry it `holds`): `describes` (for a document), `realizes`, `supports` to any depth (for a feature), `constrainedBy`, `supportsEpic`, Q15's dependents, then from every feature reached `serves` → requirements → Epics. For a component, each requirement is returned with its PRD. |
 | Q20 | `related --epic <id>` | The Epics that reach any feature, document, stack, service, component or infrastructure this Epic reaches through Q12, `covers`, `drives` or `restsOn`. Each is returned with what is shared and through which relationship. |
 | Q21 | `node stack:<id>` | `executionUse`, the `distributedAs` package, and `commands.test`, `commands.publish`, `commands.deploy`. |
-| Q22 | `stacks --resource-type <type>` | The stacks that `holds` an entry with that `resourceType`. |
+| Q22 | `stacks --resource-type <type>` | The stacks that `holds` an entry with that `resourceType`. The type is checked by its form (`matrix_contract.definition_problems`), not by a list. |
 | Q24 | `stacks --repository <name>` | The stacks whose `repository` equals the name. |
-| Q25 | `summary --unlinked` | `noArchitecture`: over the whole matrix, the entries with `side: repository`, of the kinds `correspondsTo` may end at (component, infrastructure, layer, stack), that no `correspondsTo` ends at. It is the other direction of Q13's `noCounterpart`. |
+| Q27 | `resources --epic <id>` | Q12's walk (`epic_reach`): the entries the Epic's features lead to, what is in a repository for each, and the far end of every dependency of their stacks, with every entry the Epic links to itself. Each entry that states `resourceType` is returned with its stack (`holder`) and that stack's `repository`; `stacks` groups them by stack; `noStack` lists those no stack holds. |
+| Q28 | `parameters --stack <id>` | `writes`: each entry the stack holds whose `resourceType` is `ssm-parameter`, with each `readBy` relationship and the reader's stack and repository. `reads`: each `ssm-parameter` the stack or an entry it holds reads, with the stack that writes it. |
+| Q29 | `documents --id <id>` | The entry, every entry that is `partOf` it to any depth and, for a stack, what it holds; every `document` or `file` any relationship of either direction joins to one of them, once, with its `lifecycle` and the relationships that join it. |
+| Q30 | `links --id <id> [--depth <n>] [--direction out\|in\|both] [--kinds <k,...>]` | Breadth first from the entry over every relationship (or the kinds named), outward by default, to any depth unless `--depth` bounds it; each entry is reached once and each relationship followed is returned with its depth, the direction and the far end. |
+| Q25 | `summary --unlinked` | `noArchitecture`: over the whole matrix, the entries with `side: repository`, of the kinds read from a repository (`matrixquery.FOUND_KINDS`: component, infrastructure, layer, stack), that no `correspondsTo` ends at. It is the other direction of Q13's `noCounterpart`. |
 | Q26 | `epic <id> --realizers` | For each feature Q12 reaches, the ends of its `realizedBy` relationships and every service, component, infrastructure, event or layer whose architecture-side `describedBy` names a document heading that `covers` one of the Epic's requirements by way of the feature. Each realizer is returned once with its architecture-side stack (`authority_holder`), that stack's `repository`, its `resourceType` when it has one and, for an event, its publishers; `noStack` lists the realizers with no such stack. |
 | Approval | `approval --epic <id>` | `matrixtraverse.approval_scope`: the Epic, its requirements and every architecture-side entry Q12 reaches, with the architecture-side relationships between them. Each entry is returned under `approved` (with `kind`, `name` and `approvedBy`, the Epic the flag names) when it carries `approved`, otherwise under `notApproved`; `relationships` and `approvedRelationships` count the relationships (section 1.4.1). |
 
@@ -747,3 +762,21 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
     command computes it (requirements R4, R52). The `noStack` of `--realizers` is one input to
     that judgment (requirements R54, R55). What the Stories build is the result's `addedOrChangedElements`
     (requirement R56 for events).
+30. **Links.** Any entry may link to any other, and a relationship kind is checked by its
+    form, never by a list of the kinds it may join (requirement R58). The owner said "A node
+    can link to anything else. That lonkage can also have a type.", and a fixed list refuses
+    tomorrow's link while a checked form still catches a misspelt type. The registry still
+    declares the named kinds, so each has one reverse name, its attributes and its family.
+31. **SSM parameters.** Each is its own `infrastructure` entry of `resourceType`
+    `ssm-parameter`, named by its path, with `homeIn` the stack that writes it and `reads` from
+    each reader (requirement R59). A stack then finds another stack's parameter by following
+    links, which an attribute on another entry cannot give, and the writer is the parameter's
+    home, so no second link records it. A set of parameters whose paths no source states is
+    kept as an entry with no `resourceType` until its parameters are known.
+32. **Resource types.** `resourceType` names one actual AWS resource and is checked by its
+    form (requirement R61). A value that named a bundle (alarms, subnets, endpoints, a set of
+    parameters), a code construct, a module, a package, a data set or a database inside a
+    cluster was removed from its entry; a value that named one AWS resource under another word
+    was re-typed to it (an AgentCore agent to `bedrock-agentcore-runtime`, an Aurora cluster to
+    `rds-db-cluster`, a queue recorded with its dead-letter queue to `sqs-queue`, the queue it
+    names). The entries themselves stay.

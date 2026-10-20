@@ -33,9 +33,10 @@ DEFINITIONS: Final[str] = "$defs"
 REF_KEY: Final[str] = "$ref"
 REF_PREFIX: Final[str] = "#/$defs/"
 ENTRY_ID_ENTRY: Final[str] = "entryId"
-RESOURCE_TYPE_ENTRY: Final[str] = "resourceType"
 # The $defs entries the generated readers add to the registry's own when they validate attributes.
-BUILT_IN_DEFINITIONS: Final[frozenset[str]] = frozenset({ENTRY_ID_ENTRY, RESOURCE_TYPE_ENTRY})
+BUILT_IN_DEFINITIONS: Final[frozenset[str]] = frozenset({ENTRY_ID_ENTRY})
+# The $defs entry of the schema that gives the form of a kind name.
+KIND_NAME_ENTRY: Final[str] = "kindName"
 PURPOSE_MEMBER: Final[str] = "purpose"
 # The members the generated dataclasses read from each closed part of the matrix file: ($defs entry, members, required).
 SHAPES: Final[tuple[tuple[str, frozenset[str], frozenset[str]], ...]] = (
@@ -64,7 +65,6 @@ ROOT_STRINGS: Final[tuple[tuple[str, str], ...]] = (
 DEFAULT_PATH_KEY: Final[str] = "x-defaultMatrixPath"
 ENTRY_KINDS_KEY: Final[str] = "entryKinds"
 RELATIONSHIP_KINDS_KEY: Final[str] = "relationshipKinds"
-RESOURCE_TYPES_KEY: Final[str] = "resourceTypes"
 COMMANDS_KEY: Final[str] = "commands"
 ROLES_KEY: Final[str] = "roles"
 OPERATOR_KEY: Final[str] = "operatorRole"
@@ -80,7 +80,6 @@ ID_PATTERN_KEY: Final[str] = "idPattern"
 REPOSITORY_ID_PATTERN_KEY: Final[str] = "repositoryIdPattern"
 _CAMEL: Final[re.Pattern[str]] = re.compile(r"(?<=[a-z0-9])([A-Z])")
 _KIND_NAME: Final[re.Pattern[str]] = re.compile(r"[a-z][A-Za-z]*")
-_RESOURCE_TYPE: Final[re.Pattern[str]] = re.compile(r"[a-z][a-z0-9-]*")
 
 
 class SchemaShapeError(ValueError):
@@ -456,7 +455,6 @@ def _check_entry_kinds(registry: Mapping[str, JsonValue], known: Sequence[str], 
             raise SchemaShapeError(message)
         _check_id_patterns(kind, rule, where)
         _check_kind_side(rule, sides, where)
-        _flag(rule.get("verifiable"), where + "/verifiable")
         attributes: list[str] = _attributes(rule, members, known, where)
         required: list[str] = _strings(rule.get("required"), where + "/required")
         _subset(required, [*attributes, PURPOSE_MEMBER], where + "/required", "attributes of the kind")
@@ -471,19 +469,19 @@ def _check_entry_kinds(registry: Mapping[str, JsonValue], known: Sequence[str], 
 
 def _check_relationship_kinds(
     registry: Mapping[str, JsonValue],
-    entry_kinds: Sequence[str],
     known: Sequence[str],
     sides: Sequence[str],
 ) -> tuple[list[str], list[str]]:
     """Check every relationship kind the registry declares.
 
+    A declaration names no entry kinds: any entry may link to any other.
+
     Returns:
         The relationship kinds and the families they name, each in registry order.
 
     Raises:
-        SchemaShapeError: A name is malformed or used twice, a kind joins an undeclared entry
-            kind, names a side that is not one, a key or required attribute is undeclared, or the
-            home relationship is not a kind.
+        SchemaShapeError: A name is malformed or used twice, a kind names a side that is not
+            one, a key or required attribute is undeclared, or the home relationship is not a kind.
 
     """
     table: dict[str, JsonValue] = _node(registry.get(RELATIONSHIP_KINDS_KEY), RELATIONSHIP_KINDS_KEY)
@@ -502,12 +500,9 @@ def _check_relationship_kinds(
             raise SchemaShapeError(message)
         names.append(reverse)
         _check_kind_side(rule, sides, where)
-        _subset(_strings(rule.get("from"), where + "/from"), entry_kinds, where + "/from", "entry kinds")
-        _subset(_strings(rule.get("to"), where + "/to"), entry_kinds, where + "/to", "entry kinds")
         attributes: list[str] = _attributes(rule, members, known, where)
         _subset(_strings(rule.get("required"), where + "/required"), attributes, where + "/required", "its attributes")
         _subset(_strings(rule.get("key"), where + "/key"), attributes, where + "/key", "its attributes")
-        _flag(rule.get("provedByBuild"), where + "/provedByBuild")
         _limit(rule.get("maxPerStart"), where + "/maxPerStart")
         if "family" in rule and _text(rule["family"], where + "/family") not in families:
             families.append(_text(rule["family"], where + "/family"))
@@ -540,20 +535,6 @@ def _check_commands(registry: Mapping[str, JsonValue]) -> list[str]:
             raise SchemaShapeError(message)
         _subset(_strings(rule.get("roles"), where + "/roles"), roles, where + "/roles", "roles")
     return roles
-
-
-def _check_resource_types(registry: Mapping[str, JsonValue]) -> None:
-    """Require the controlled list of resource types to hold well-formed names.
-
-    Raises:
-        SchemaShapeError: A resource type is not lowercase words joined by hyphens.
-
-    """
-    name: str
-    for name in _strings(registry.get(RESOURCE_TYPES_KEY), RESOURCE_TYPES_KEY):
-        if _RESOURCE_TYPE.fullmatch(name) is None:
-            message: str = f"matrix contract: the resource type {name!r} is not lowercase words joined by hyphens"
-            raise SchemaShapeError(message)
 
 
 @dataclass(frozen=True, slots=True)
@@ -591,8 +572,7 @@ def _checked(schema: Mapping[str, JsonValue], registry: Mapping[str, JsonValue])
     entry_kinds: list[str] = _check_entry_kinds(registry, known, sides)
     relationship_kinds: list[str]
     families: list[str]
-    relationship_kinds, families = _check_relationship_kinds(registry, entry_kinds, known, sides)
-    _check_resource_types(registry)
+    relationship_kinds, families = _check_relationship_kinds(registry, known, sides)
     return Vocabulary(
         entry_kinds=entry_kinds,
         relationship_kinds=relationship_kinds,
@@ -630,8 +610,30 @@ def _strings_vocabulary(alias: str, prefix: str, collection: str, values: Sequen
     )
 
 
+def _open_vocabulary(alias: str, prefix: str, collection: str, values: Sequence[str]) -> tuple[str, list[str]]:
+    """Render one open vocabulary: a NewType over str, one constant per declared value and a tuple.
+
+    A value outside the declared ones is accepted by its form, so the type is not a Literal.
+
+    Returns:
+        The alias line, and the constant lines with the collection last.
+
+    """
+    names: list[str] = [f"{prefix}_{_upper_snake(value)}" for value in values]
+    constants: list[str] = [
+        f"{name}: Final[{alias}] = {alias}({json.dumps(value)})" for name, value in zip(names, values, strict=True)
+    ]
+    return (
+        f"{alias} = NewType({json.dumps(alias)}, str)",
+        [*constants, _tuple_line(f"{collection}: Final[tuple[{alias}, ...]] = ", names)],
+    )
+
+
 def _vocabulary_lines(vocabulary: Vocabulary) -> tuple[list[str], list[str]]:
     """Render every vocabulary the registry declares.
+
+    Relationship kinds are an open vocabulary (``_open_vocabulary``): the registry declares the
+    named ones, and any other name of the kind-name form is accepted.
 
     Returns:
         The type alias lines and the constant lines.
@@ -645,7 +647,6 @@ def _vocabulary_lines(vocabulary: Vocabulary) -> tuple[list[str], list[str]]:
     values: list[str]
     for alias, prefix, collection, values in (
         ("EntryKind", "KIND", "ENTRY_KINDS", vocabulary.entry_kinds),
-        ("RelationshipKind", "REL", "RELATIONSHIP_KINDS", vocabulary.relationship_kinds),
         ("Role", "ROLE", "ROLES", vocabulary.roles),
         ("Side", "SIDE", "SIDES", vocabulary.sides),
     ):
@@ -654,6 +655,16 @@ def _vocabulary_lines(vocabulary: Vocabulary) -> tuple[list[str], list[str]]:
         alias_line, lines = _strings_vocabulary(alias, prefix, collection, values)
         aliases.append(alias_line)
         constants.extend(lines)
+    open_alias: str
+    open_lines: list[str]
+    open_alias, open_lines = _open_vocabulary(
+        "RelationshipKind",
+        "REL",
+        "RELATIONSHIP_KINDS",
+        vocabulary.relationship_kinds,
+    )
+    aliases.append(open_alias)
+    constants.extend(open_lines)
     names: list[str] = [f"FAMILY_{_upper_snake(family)}" for family in vocabulary.families]
     constants.extend(
         f"{name}: Final = {json.dumps(family)}" for name, family in zip(names, vocabulary.families, strict=True)
@@ -693,6 +704,8 @@ def _fixed_lines(schema: Mapping[str, JsonValue], registry: Mapping[str, JsonVal
     definitions: dict[str, JsonValue] = _node(schema.get(DEFINITIONS), DEFINITIONS)
     entry_id: dict[str, JsonValue] = _node(definitions.get(ENTRY_ID_ENTRY), REF_PREFIX + ENTRY_ID_ENTRY)
     pattern: str = _raw_pattern(entry_id.get("pattern"), REF_PREFIX + ENTRY_ID_ENTRY + "/pattern")
+    kind_name: dict[str, JsonValue] = _node(definitions.get(KIND_NAME_ENTRY), REF_PREFIX + KIND_NAME_ENTRY)
+    kind_pattern: str = _raw_pattern(kind_name.get("pattern"), REF_PREFIX + KIND_NAME_ENTRY + "/pattern")
     version: JsonValue = _node(_node(schema.get("properties"), "properties").get("version"), "version").get("const")
     if isinstance(version, bool) or not isinstance(version, int):
         message: str = "matrix schema: properties/version/const is not an integer"
@@ -701,6 +714,7 @@ def _fixed_lines(schema: Mapping[str, JsonValue], registry: Mapping[str, JsonVal
     return [
         f"VERSION: Final[Literal[{version}]] = {version}",
         f'ENTRY_ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"{pattern}")',
+        f'KIND_NAME_PATTERN: Final[re.Pattern[str]] = re.compile(r"{kind_pattern}")',
         *[f"{constant}: Final = {json.dumps(_text(schema.get(key), key))}" for constant, key in ROOT_STRINGS],
         _wrapped("DEFAULT_MATRIX_PARTS: Final[tuple[str, ...]] = ", "(", parts, ")"),
         f"OPERATOR_ROLE: Final[Role] = ROLE_{_upper_snake(_text(registry.get(OPERATOR_KEY), OPERATOR_KEY))}",
@@ -788,22 +802,16 @@ class EntryRule:
     """The attributes an entry of the kind must carry."""
     purpose_required: bool
     """Whether an entry of the kind must state its purpose."""
-    verifiable: bool
-    """Whether an entry of the kind carries the verified mark."""
 
 
 @dataclass(frozen=True, slots=True)
 class RelationshipRule:
-    """What the registry declares for one relationship kind."""
+    """What the registry declares for one relationship kind; it names no entry kinds, so it joins any two entries."""
 
     reverse: str
     """The name the relationship is reported under from the entry it ends at; it is computed, never stored."""
     side: Side | None
     """The one side a relationship of the kind is always recorded with; None when it may carry either."""
-    sources: frozenset[EntryKind]
-    """The kinds of entry the relationship may start from."""
-    targets: frozenset[EntryKind]
-    """The kinds of entry the relationship may end at."""
     attributes: frozenset[str]
     """The attributes a relationship of the kind may carry."""
     required: frozenset[str]
@@ -814,8 +822,6 @@ class RelationshipRule:
     """The attributes whose value is the id of an entry."""
     family: str | None
     """The group of kinds a lookup follows together, when the kind is in one."""
-    proved_by_build: bool
-    """Whether a verified build proves the relationship, so it carries the verified mark."""
     max_per_start: int | None
     """The most relationships of the kind an entry may start on one side; None when there is no limit."""
 
@@ -1056,12 +1062,7 @@ def _entry_rules() -> dict[EntryKind, EntryRule]:
         rule: dict[str, JsonValue] = _object(table.get(kind), where)
         pattern: JsonValue = rule.get("idPattern")
         other: JsonValue = rule.get("repositoryIdPattern")
-        verifiable: JsonValue = rule.get("verifiable")
-        if (
-            not isinstance(pattern, str)
-            or not isinstance(verifiable, bool)
-            or not (other is None or isinstance(other, str))
-        ):
+        if not isinstance(pattern, str) or not (other is None or isinstance(other, str)):
             message: str = f"matrix contract: {where} is malformed"
             raise TypeError(message)
         required: list[str] = _names(rule.get("required"), where + "/required")
@@ -1072,7 +1073,6 @@ def _entry_rules() -> dict[EntryKind, EntryRule]:
             attributes=frozenset(_object(rule.get("attributes"), where + "/attributes")),
             required=frozenset(name for name in required if name != PURPOSE_MEMBER),
             purpose_required=PURPOSE_MEMBER in required,
-            verifiable=verifiable,
         )
     return rules
 
@@ -1095,11 +1095,9 @@ def _relationship_rules() -> dict[RelationshipKind, RelationshipRule]:
         rule: dict[str, JsonValue] = _object(table.get(kind), where)
         reverse: JsonValue = rule.get("reverse")
         family: JsonValue = rule.get("family")
-        proved: JsonValue = rule.get("provedByBuild")
         limit: JsonValue = rule.get("maxPerStart")
         if (
             not isinstance(reverse, str)
-            or not isinstance(proved, bool)
             or not (limit is None or (isinstance(limit, int) and not isinstance(limit, bool)))
             or not (family is None or isinstance(family, str))
         ):
@@ -1109,8 +1107,6 @@ def _relationship_rules() -> dict[RelationshipKind, RelationshipRule]:
         rules[kind] = RelationshipRule(
             reverse=reverse,
             side=_declared_side(rule.get("side"), where),
-            sources=_members(rule.get("from"), ENTRY_KINDS, where + "/from"),
-            targets=_members(rule.get("to"), ENTRY_KINDS, where + "/to"),
             attributes=frozenset(attributes),
             required=frozenset(_names(rule.get("required"), where + "/required")),
             key=tuple(_names(rule.get("key"), where + "/key")),
@@ -1120,7 +1116,6 @@ def _relationship_rules() -> dict[RelationshipKind, RelationshipRule]:
                 if isinstance(fragment, dict) and fragment.get("$ref") == ENTRY_ID_REFERENCE
             ),
             family=family,
-            proved_by_build=proved,
             max_per_start=limit,
         )
     return rules
@@ -1153,16 +1148,10 @@ def _command_rules() -> dict[str, CommandRule]:
 ENTRY_RULES: Final[dict[EntryKind, EntryRule]] = _entry_rules()
 RELATIONSHIP_RULES: Final[dict[RelationshipKind, RelationshipRule]] = _relationship_rules()
 COMMAND_RULES: Final[dict[str, CommandRule]] = _command_rules()
-RESOURCE_TYPES: Final[tuple[str, ...]] = tuple(_names(load_registry().get("resourceTypes"), "resourceTypes"))
-"""The controlled list of resource types."""
 REVERSE_NAMES: Final[dict[str, RelationshipKind]] = {rule.reverse: kind for kind, rule in RELATIONSHIP_RULES.items()}
-"""The relationship kind each reverse name reports."""
-VERIFIABLE_KINDS: Final[frozenset[EntryKind]] = frozenset(kind for kind, rule in ENTRY_RULES.items() if rule.verifiable)
-"""The entry kinds that carry the verified mark."""
-BUILD_PROVED_KINDS: Final[frozenset[RelationshipKind]] = frozenset(
-    kind for kind, rule in RELATIONSHIP_RULES.items() if rule.proved_by_build
-)
-"""The relationship kinds that carry the verified mark."""
+"""The relationship kind each reverse name of a declared kind reports."""
+UNDECLARED_REVERSE_SUFFIX: Final = "Reverse"
+"""What follows the name of a relationship kind the registry does not declare in its reverse name."""
 MESSAGE_LIMIT: Final = 300
 """The most characters of one schema failure a problem line carries."""
 PROBLEMS_SHOWN: Final = 20
@@ -1188,21 +1177,56 @@ def entry_kind(text: str) -> EntryKind:
 
 
 def relationship_kind(text: str) -> RelationshipKind:
-    """Accept a string as a relationship kind when the registry declares it.
+    """Accept a string as a relationship kind by its form.
+
+    The registry declares the named kinds, with their reverse names and attributes; any other
+    name of the kind-name form is a kind too, so a link of a new type needs no declaration. A
+    reverse name of a declared kind is not accepted: the link is stated from its other end.
 
     Returns:
         The kind.
 
     Raises:
-        MatrixError: The registry declares no such relationship kind.
+        MatrixError: The text is not of the kind-name form, or it is the reverse name of a
+            declared kind.
 
     """
-    kind: RelationshipKind
-    for kind in RELATIONSHIP_KINDS:
-        if kind == text:
-            return kind
-    message: str = f"{text!r} is not a relationship kind; the kinds are {', '.join(RELATIONSHIP_KINDS)}"
-    raise MatrixError(message)
+    message: str
+    if KIND_NAME_PATTERN.fullmatch(text) is None:
+        message = (
+            f"{text!r} is not a relationship kind: a kind is lowerCamelCase letters ({KIND_NAME_PATTERN.pattern}); "
+            f"the declared kinds are {', '.join(RELATIONSHIP_KINDS)}"
+        )
+        raise MatrixError(message)
+    if text in REVERSE_NAMES:
+        declared: RelationshipKind = REVERSE_NAMES[text]
+        message = f"{text!r} is the reverse name of {declared}; state the link from its other end as {declared}"
+        raise MatrixError(message)
+    return RelationshipKind(text)
+
+
+def relationship_rule(kind: RelationshipKind) -> RelationshipRule:
+    """Name what the registry declares for a relationship kind.
+
+    Returns:
+        The declared rule; for a kind the registry does not declare, a rule with no attributes,
+        no key, no side, no family and no limit, reported from its end under the kind's name
+        followed by ``UNDECLARED_REVERSE_SUFFIX``.
+
+    """
+    declared: RelationshipRule | None = RELATIONSHIP_RULES.get(kind)
+    if declared is not None:
+        return declared
+    return RelationshipRule(
+        reverse=kind + UNDECLARED_REVERSE_SUFFIX,
+        side=None,
+        attributes=frozenset(),
+        required=frozenset(),
+        key=(),
+        references=frozenset(),
+        family=None,
+        max_per_start=None,
+    )
 
 
 def as_side(text: str) -> Side:
@@ -1251,13 +1275,12 @@ def _definitions() -> dict[str, JsonValue]:
     """Assemble the definitions an attribute of a kind may reference.
 
     Returns:
-        The registry's own definitions, the entry id and the controlled resource types.
+        The registry's own definitions and the entry id.
 
     """
     return {
         **_object(load_registry().get("$defs"), "$defs"),
         "entryId": _object(load_schema().get("$defs"), "$defs").get("entryId"),
-        "resourceType": {"enum": list(RESOURCE_TYPES)},
     }
 
 
@@ -1265,10 +1288,12 @@ def _attribute_validator(table: str, kind: str, required: Sequence[str]) -> Draf
     """Build the validator of the attributes one kind declares.
 
     Returns:
-        A validator that accepts exactly the declared attributes, with the required ones present.
+        A validator that accepts exactly the declared attributes, with the required ones present;
+        for a relationship kind the registry does not declare, one that accepts no attribute.
 
     """
-    rule: dict[str, JsonValue] = _object(_object(load_registry().get(table), table).get(kind), f"{table}/{kind}")
+    declared: JsonValue = _object(load_registry().get(table), table).get(kind, {"attributes": {}})
+    rule: dict[str, JsonValue] = _object(declared, f"{table}/{kind}")
     schema: dict[str, JsonValue] = {
         "type": "object",
         "additionalProperties": False,
@@ -1301,7 +1326,7 @@ def _relationship_validator(kind: RelationshipKind) -> Draft202012Validator:
         The validator.
 
     """
-    return _attribute_validator("relationshipKinds", kind, sorted(RELATIONSHIP_RULES[kind].required))
+    return _attribute_validator("relationshipKinds", kind, sorted(relationship_rule(kind).required))
 
 
 @cache
@@ -1355,6 +1380,27 @@ def schema_problems(value: object, definition: str | None = None) -> list[str]:
     return _failures(_shape_validator(definition), value)
 
 
+def definition_problems(name: str, value: object) -> list[str]:
+    """Check a value against one definition of the kinds registry, such as ``resourceType``.
+
+    Args:
+        name: The definition's name under the registry's ``$defs``.
+        value: The decoded value.
+
+    Returns:
+        One "<path>: <message>" per failure; empty when the value conforms.
+
+    Raises:
+        ValueError: The registry defines no such definition.
+
+    """
+    definitions: dict[str, JsonValue] = _definitions()
+    if name not in definitions:
+        message: str = f"the matrix kinds registry defines no {name!r}"
+        raise ValueError(message)
+    return _failures(Draft202012Validator({"$ref": "#/$defs/" + name, "$defs": definitions}), value)
+
+
 def entry_problems(entry: Entry) -> list[str]:
     """Check one entry against the kind the registry declares for it.
 
@@ -1362,8 +1408,8 @@ def entry_problems(entry: Entry) -> list[str]:
         One sentence per way the entry breaks its kind: an id of another form or another kind, or
         of the form the kind's entries have on the other side; a side the kind is never recorded
         with; an empty name, an empty or repeated alias, a missing purpose, an attribute the kind
-        does not declare or a value it does not allow, or a verified mark on a kind that carries
-        none. Empty when the entry conforms.
+        does not declare or a value it does not allow, or a flag that names no commit or Epic.
+        Empty when the entry conforms.
 
     """
     rule: EntryRule = ENTRY_RULES[entry.kind]
@@ -1379,8 +1425,6 @@ def entry_problems(entry: Entry) -> list[str]:
         problems.append(f"{entry.id}: an alias is empty or repeated")
     if rule.purpose_required and not entry.purpose.strip():
         problems.append(f"{entry.id}: a {entry.kind} must state its purpose")
-    if entry.verified is not None and not rule.verifiable:
-        problems.append(f"{entry.id}: a {entry.kind} carries no verified mark")
     if entry.verified is not None and not entry.verified.commit:
         problems.append(f"{entry.id}: the verified mark names no commit")
     if entry.approved is not None and not entry.approved.epic:
@@ -1398,7 +1442,7 @@ def relationship_key(relationship: Relationship) -> str:
         Text that is equal for two relationships of one kind exactly when their key attributes are.
 
     """
-    values: list[JsonValue] = [relationship.attributes.get(name) for name in RELATIONSHIP_RULES[relationship.kind].key]
+    values: list[JsonValue] = [relationship.attributes.get(name) for name in relationship_rule(relationship.kind).key]
     return json.dumps(values, sort_keys=True, ensure_ascii=False)
 
 
@@ -1415,21 +1459,19 @@ def relationship_label(relationship: Relationship) -> str:
 def relationship_problems(relationship: Relationship) -> list[str]:
     """Check one relationship against the kind the registry declares for it.
 
-    Whether its ends exist, and are of kinds it may join, is the store's to check.
+    Whether its ends exist is the store's to check; it joins any two entries.
 
     Returns:
         One sentence per attribute the kind does not declare or value it does not allow, for a
-        side the kind is never recorded with, and for a verified mark on a kind no build proves.
-        Empty when the relationship conforms.
+        side the kind is never recorded with, and for a flag that names no commit or Epic. Empty
+        when the relationship conforms.
 
     """
-    rule: RelationshipRule = RELATIONSHIP_RULES[relationship.kind]
+    rule: RelationshipRule = relationship_rule(relationship.kind)
     label: str = relationship_label(relationship)
     problems: list[str] = []
     if rule.side is not None and relationship.side != rule.side:
         problems.append(f"{label}: a {relationship.kind} relationship is always on the {rule.side} side")
-    if relationship.verified is not None and not rule.proved_by_build:
-        problems.append(f"{label}: a {relationship.kind} relationship carries no verified mark")
     if relationship.verified is not None and not relationship.verified.commit:
         problems.append(f"{label}: the verified mark names no commit")
     if relationship.approved is not None and not relationship.approved.epic:

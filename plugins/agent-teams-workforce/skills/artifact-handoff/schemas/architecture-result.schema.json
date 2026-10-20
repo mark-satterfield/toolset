@@ -502,13 +502,12 @@
       "description": "architecture-maintainer's result for one write request.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["headingsChanged", "headingsCreated", "linksAdded", "restatementsRemoved", "belowArchitectureLevel", "notApplied", "summary"],
+      "required": ["headingsChanged", "headingsCreated", "linksAdded", "restatementsRemoved", "notApplied", "summary"],
       "properties": {
         "headingsChanged": {"type": "array", "items": {"$ref": "#/$defs/Citation"}},
         "headingsCreated": {"type": "array", "items": {"$ref": "#/$defs/Citation"}},
         "linksAdded": {"description": "Each place a link to a home heading was added.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
         "restatementsRemoved": {"type": "array", "items": {"$ref": "#/$defs/Citation"}},
-        "belowArchitectureLevel": {"description": "Always empty: an entry too detailed for arc42 is written into its document under `detailed/`.", "type": "array", "items": {"$ref": "#/$defs/UnappliedEntry"}},
         "notApplied": {"description": "Entries that could not be applied for any other reason.", "type": "array", "items": {"$ref": "#/$defs/UnappliedEntry"}},
         "summary": {"type": "string", "minLength": 1}
       }

@@ -40,12 +40,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifac
 import beadgraph
 from matrix_contract import (
     AUTHORITY_SIDE,
+    KIND_COMPONENT,
+    KIND_CONSTRAINT,
     KIND_DOCUMENT,
     KIND_EPIC,
+    KIND_EVENT,
+    KIND_FEATURE,
+    KIND_INFRASTRUCTURE,
+    KIND_LAYER,
+    KIND_PACKAGE,
     KIND_REQUIREMENT,
+    KIND_SERVICE,
+    KIND_STACK,
     REL_DESCRIBED_BY,
     REL_HAS_REQUIREMENT,
-    RELATIONSHIP_RULES,
     SIDE_ARCHITECTURE,
     Entry,
     EntryId,
@@ -93,7 +101,17 @@ GROUP_LEVEL: Final = 3
 REQUIREMENT_LEVEL: Final = 4
 FIRST_SECTION: Final = 1
 LAST_SECTION: Final = 12
-DESCRIBED_KINDS: Final[frozenset[EntryKind]] = RELATIONSHIP_RULES[REL_DESCRIBED_BY].sources
+DESCRIBED_KINDS: Final[frozenset[EntryKind]] = frozenset({
+    KIND_FEATURE,
+    KIND_CONSTRAINT,
+    KIND_SERVICE,
+    KIND_COMPONENT,
+    KIND_INFRASTRUCTURE,
+    KIND_EVENT,
+    KIND_STACK,
+    KIND_PACKAGE,
+    KIND_LAYER,
+})
 """The kinds of entry a document may describe."""
 _HEADING: Final[re.Pattern[str]] = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 _SECTION: Final[re.Pattern[str]] = re.compile(r"^(\d{2})-")

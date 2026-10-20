@@ -27,6 +27,7 @@ came from and, where set, its approved flag and its verified flag. The walks are
 """
 
 import sys
+from collections import deque
 from collections.abc import Collection, Sequence
 from pathlib import Path
 from typing import Final, NotRequired, TypedDict
@@ -43,6 +44,7 @@ from matrix_contract import (
     KIND_EPIC,
     KIND_EVENT,
     KIND_FEATURE,
+    KIND_FILE,
     KIND_INFRASTRUCTURE,
     KIND_LAYER,
     KIND_SERVICE,
@@ -52,11 +54,11 @@ from matrix_contract import (
     REL_COVERS,
     REL_DESCRIBED_BY,
     REL_HAS_REQUIREMENT,
+    REL_PART_OF,
+    REL_READS,
     REL_REALIZED_BY,
     REL_SERVED_BY,
     REL_USES_LAYER,
-    RELATIONSHIP_RULES,
-    RESOURCE_TYPES,
     SIDE_REPOSITORY,
     Entry,
     EntryId,
@@ -64,9 +66,12 @@ from matrix_contract import (
     JsonValue,
     MatrixError,
     Relationship,
+    RelationshipKind,
     Side,
+    definition_problems,
     entry_json,
     relationship_json,
+    relationship_rule,
 )
 from matrixstore import Matrix, approved_by, name_key
 from matrixtraverse import (
@@ -94,6 +99,7 @@ from matrixtraverse import (
     epic_reach,
     epic_touches,
     held,
+    holder,
     holding,
     impact,
     stack_type,
@@ -129,6 +135,17 @@ REALIZER_KINDS: Final[frozenset[EntryKind]] = frozenset({
     KIND_LAYER,
 })
 """The kinds of entry an arc42 heading that covers an Epic's requirement names as realizing a feature."""
+FOUND_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_COMPONENT, KIND_INFRASTRUCTURE, KIND_LAYER, KIND_STACK})
+"""The kinds of entry read from a repository that an architecture-side entry corresponds to."""
+RESOURCE_SSM_PARAMETER: Final = "ssm-parameter"
+"""The resource type of an SSM parameter: its home is the stack that writes it, and ``reads`` joins each reader."""
+DOCUMENT_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_DOCUMENT, KIND_FILE})
+"""The kinds of entry that are documents: an architecture or design document in the vault, or a file in a repository."""
+LINK_OUT: Final = "out"
+LINK_IN: Final = "in"
+LINK_BOTH: Final = "both"
+LINK_DIRECTIONS: Final[tuple[str, ...]] = (LINK_OUT, LINK_IN, LINK_BOTH)
+"""Which ends :func:`links_view` follows from each entry it reaches."""
 DIRECTION_OF: Final = "of"
 DIRECTION_ON: Final = "on"
 
@@ -1180,7 +1197,7 @@ def node_view(matrix: Matrix, entry_id: EntryId) -> NodeView:
     for relationship in matrix.outgoing(entry_id):
         relationships.setdefault(relationship.kind, []).append(_related(matrix, relationship, relationship.end))
     for relationship in matrix.incoming(entry_id):
-        relationships.setdefault(RELATIONSHIP_RULES[relationship.kind].reverse, []).append(
+        relationships.setdefault(relationship_rule(relationship.kind).reverse, []).append(
             _related(matrix, relationship, relationship.start),
         )
     return {"entry": _entry_view(entry), "relationships": relationships}
@@ -1237,11 +1254,13 @@ def stacks_view(
         holds on each side.
 
     Raises:
-        MatrixError: ``resource_type`` is not in the controlled list of resource types.
+        MatrixError: ``resource_type`` is not of the form of a resource type (the kinds
+            registry's ``resourceType`` definition).
 
     """
-    if resource_type is not None and resource_type not in RESOURCE_TYPES:
-        message: str = f"{resource_type!r} is not a resource type; the types are {', '.join(RESOURCE_TYPES)}"
+    problems: list[str] = [] if resource_type is None else definition_problems(ATTR_RESOURCE_TYPE, resource_type)
+    if problems:
+        message: str = f"{resource_type!r} is not a resource type: {'; '.join(problems)}"
         raise MatrixError(message)
     stacks: list[StackView] = []
     stack: Entry
@@ -1474,13 +1493,13 @@ def _no_architecture(matrix: Matrix) -> list[EntryId]:
     """List the repository-side entries with no architecture-side counterpart.
 
     Returns:
-        The id of every repository-side entry, of a kind ``correspondsTo`` may end at, that no
-        ``correspondsTo`` ends at, in id order.
+        The id of every repository-side entry of the kinds found in a repository
+        (``FOUND_KINDS``) that no ``correspondsTo`` ends at, in id order.
 
     """
     return sorted(
         entry.id
-        for entry in matrix.entries(RELATIONSHIP_RULES[REL_CORRESPONDS_TO].targets)
+        for entry in matrix.entries(FOUND_KINDS)
         if entry.side == SIDE_REPOSITORY and not matrix.incoming(entry.id, (REL_CORRESPONDS_TO,))
     )
 
@@ -1586,3 +1605,277 @@ def approval_view(matrix: Matrix, bead: str) -> ApprovalView:
         "relationships": len(scope.relationships),
         "approvedRelationships": sum(1 for held in scope.relationships if held.approved is not None),
     }
+
+
+def _with_stack(matrix: Matrix, entry_id: EntryId) -> View:
+    """Render one entry with the stack that holds it and that stack's repository.
+
+    Returns:
+        The entry as the end of a relationship renders it, with ``stack`` (the architecture-side
+        home, else the repository-side one) and ``repository`` where they are recorded.
+
+    """
+    view: View = _brief(matrix, entry_id)
+    stack: EntryId | None = holder(matrix, entry_id)
+    if stack is not None:
+        view["stack"] = stack
+        repository: JsonValue = matrix.entry(stack).attributes.get(ATTR_REPOSITORY)
+        if isinstance(repository, str):
+            view["repository"] = repository
+    return view
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def resources_view(matrix: Matrix, bead: str) -> View:
+    """Return the AWS resources an Epic reaches, with their stacks and repositories.
+
+    What the Epic reaches is what ``epic --closure`` walks (``epic_reach``): the entries its
+    features lead to, what is in a repository for each, and the far end of every dependency of
+    their stacks (a Lambda function's VPC, subnets and security groups among them), together with
+    every entry the Epic links to itself. An AWS resource is an entry that states ``resourceType``.
+
+    Args:
+        matrix: The matrix.
+        bead: The Epic's beads id.
+
+    Returns:
+        ``resources``: each resource with its stack and repository; ``stacks``: each stack that
+        holds one, with its repository and the resources it holds; ``noStack``: the resources no
+        stack holds.
+
+    """
+    epic: EntryId = epic_id(bead)
+    reach: EpicReach = epic_reach(matrix, epic)
+    reached: dict[EntryId, None] = dict.fromkeys(reach.ways)
+    reached.update(
+        dict.fromkeys(corresponding.end for found in reach.counterparts.values() for corresponding in found),
+    )
+    reached.update(dict.fromkeys(dependency.far for dependency in reach.dependencies))
+    reached.update(dict.fromkeys(linked.end for linked in matrix.outgoing(epic)))
+    resources: list[View] = []
+    stacks: dict[EntryId, list[JsonValue]] = {}
+    no_stack: list[JsonValue] = []
+    entry_id: EntryId
+    for entry_id in sorted(reached):
+        if not isinstance(matrix.entry(entry_id).attributes.get(ATTR_RESOURCE_TYPE), str):
+            continue
+        resources.append(_with_stack(matrix, entry_id))
+        stack: EntryId | None = holder(matrix, entry_id)
+        if stack is None:
+            no_stack.append(entry_id)
+        else:
+            stacks.setdefault(stack, []).append(entry_id)
+    return {
+        "command": "resources",
+        "epic": epic,
+        "resources": list(resources),
+        "stacks": [
+            {
+                "stack": stack,
+                "repository": matrix.entry(stack).attributes.get(ATTR_REPOSITORY),
+                "resources": held_ids,
+            }
+            for stack, held_ids in sorted(stacks.items())
+        ],
+        "noStack": no_stack,
+    }
+
+
+def _parameter(matrix: Matrix, parameter: EntryId) -> View:
+    """Render one SSM parameter with the entries that read it.
+
+    Returns:
+        The parameter with the stack that writes it and its repository, and ``readBy``: each
+        ``reads`` relationship that ends at it, with the reader, its stack and its repository.
+
+    """
+    view: View = _with_stack(matrix, parameter)
+    view["readBy"] = [
+        {"relationship": relationship_json(reading), "entry": _with_stack(matrix, reading.start)}
+        for reading in matrix.incoming(parameter, (REL_READS,))
+    ]
+    return view
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def parameters_view(matrix: Matrix, stack: EntryId) -> View:
+    """Return the SSM parameters a stack writes and those it reads.
+
+    An SSM parameter is an entry of ``resourceType`` ``ssm-parameter``; the stack that holds it
+    (``homeIn``) writes it, and each entry that reads it states ``reads``. A stack's reads are
+    those of the stack and of every entry it holds.
+
+    Args:
+        matrix: The matrix.
+        stack: The stack's id.
+
+    Returns:
+        ``writes``: each parameter the stack holds, with the entries that read it; ``reads``:
+        each parameter the stack or an entry it holds reads, with the stack that writes it.
+
+    Raises:
+        MatrixError: The entry is not a stack.
+
+    """
+    if matrix.entry(stack).kind != KIND_STACK:
+        message: str = f"{stack} is not a stack"
+        raise MatrixError(message)
+    writes: list[JsonValue] = [
+        _parameter(matrix, inside)
+        for inside in held(matrix, stack)
+        if matrix.entry(inside).attributes.get(ATTR_RESOURCE_TYPE) == RESOURCE_SSM_PARAMETER
+    ]
+    readers: list[EntryId] = [stack, *held(matrix, stack)]
+    reads: list[JsonValue] = [
+        {"relationship": relationship_json(reading), "entry": _with_stack(matrix, reading.end)}
+        for reader in readers
+        for reading in matrix.outgoing(reader, (REL_READS,))
+        if matrix.entry(reading.end).attributes.get(ATTR_RESOURCE_TYPE) == RESOURCE_SSM_PARAMETER
+    ]
+    return {"command": "parameters", "stack": _brief(matrix, stack), "writes": writes, "reads": reads}
+
+
+def _parts(matrix: Matrix, entry_id: EntryId) -> list[EntryId]:
+    """Name an entry and what belongs to it.
+
+    Returns:
+        The entry, every entry that is part of it (``partOf``) to any depth and, for a stack,
+        every entry it holds, each once.
+
+    """
+    found: dict[EntryId, None] = {entry_id: None}
+    queue: deque[EntryId] = deque([entry_id])
+    while queue:
+        current: EntryId = queue.popleft()
+        inside: list[EntryId] = [part.start for part in matrix.incoming(current, (REL_PART_OF,))]
+        if matrix.entry(current).kind == KIND_STACK:
+            inside.extend(held(matrix, current))
+        fresh: list[EntryId] = [item for item in inside if item not in found]
+        found.update(dict.fromkeys(fresh))
+        queue.extend(fresh)
+    return list(found)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def documents_view(matrix: Matrix, entry_id: EntryId) -> View:
+    """Return every architecture and design document related to an entry, such as a service.
+
+    The entry stands for itself and what belongs to it (:func:`_parts`). A document is related
+    when any relationship, of any kind and either side, joins it to one of those: an arc42 or
+    detailed design document that describes them, or a file such as a saved OpenAPI document.
+
+    Args:
+        matrix: The matrix.
+        entry_id: The entry's id.
+
+    Returns:
+        ``documents``: each related document once, with its kind, lifecycle where it has one, and
+        ``links``: each relationship that joins it, with the entry at the other end.
+
+    """
+    documents: dict[EntryId, list[JsonValue]] = {}
+    member: EntryId
+    for member in _parts(matrix, entry_id):
+        relationship: Relationship
+        for relationship in matrix.outgoing(member):
+            if matrix.entry(relationship.end).kind in DOCUMENT_KINDS:
+                documents.setdefault(relationship.end, []).append(
+                    {"relationship": relationship_json(relationship), "entry": member},
+                )
+        for relationship in matrix.incoming(member):
+            if matrix.entry(relationship.start).kind in DOCUMENT_KINDS:
+                documents.setdefault(relationship.start, []).append(
+                    {"relationship": relationship_json(relationship), "entry": member},
+                )
+    rendered: list[JsonValue] = []
+    document: EntryId
+    for document in sorted(documents):
+        entry: Entry = matrix.entry(document)
+        view: View = {"id": document, "kind": entry.kind, "name": entry.name, "side": entry.side}
+        lifecycle: JsonValue = entry.attributes.get(ATTR_LIFECYCLE)
+        if lifecycle is not None:
+            view["lifecycle"] = lifecycle
+        view["links"] = documents[document]
+        rendered.append(view)
+    return {"command": "documents", "entry": _brief(matrix, entry_id), "documents": rendered}
+
+
+def _steps(matrix: Matrix, entry_id: EntryId, direction: str) -> list[tuple[Relationship, EntryId]]:
+    """List the relationships one step of :func:`links_view` follows from an entry.
+
+    Returns:
+        Each relationship with the entry at its far end: those that start at the entry for
+        ``out`` and ``both``, those that end at it for ``in`` and ``both``.
+
+    """
+    steps: list[tuple[Relationship, EntryId]] = []
+    if direction in {LINK_OUT, LINK_BOTH}:
+        steps.extend((relationship, relationship.end) for relationship in matrix.outgoing(entry_id))
+    if direction in {LINK_IN, LINK_BOTH}:
+        steps.extend((relationship, relationship.start) for relationship in matrix.incoming(entry_id))
+    return steps
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def links_view(
+    matrix: Matrix,
+    entry_id: EntryId,
+    *,
+    depth: int | None = None,
+    direction: str = LINK_OUT,
+    kinds: tuple[RelationshipKind, ...] = (),
+) -> View:
+    """Follow an entry's links to any depth.
+
+    The walk is breadth first: each entry is reached once, by the first relationship that reaches
+    it, so a link to an entry already reached is listed and not followed again.
+
+    Args:
+        matrix: The matrix.
+        entry_id: The entry the walk starts at.
+        depth: The most relationships from the start; None follows to any depth.
+        direction: ``out`` follows the relationships that start at each entry, ``in`` those that
+            end at it, ``both`` either.
+        kinds: The relationship kinds to follow; empty follows every kind.
+
+    Returns:
+        ``links``: each relationship followed, with its depth, which end the walk came from
+        (``direction``) and the entry at the far end; ``reached``: how many entries were reached.
+
+    Raises:
+        MatrixError: The direction is not one of ``LINK_DIRECTIONS`` or the depth is below 1.
+
+    """
+    message: str
+    if direction not in LINK_DIRECTIONS:
+        message = f"{direction!r} is not a direction; the directions are {', '.join(LINK_DIRECTIONS)}"
+        raise MatrixError(message)
+    if depth is not None and depth < 1:
+        message = "the depth is a whole number of 1 or more"
+        raise MatrixError(message)
+    start: View = _brief(matrix, entry_id)
+    seen: set[EntryId] = {entry_id}
+    links: list[JsonValue] = []
+    frontier: list[EntryId] = [entry_id]
+    level: int = 0
+    while frontier and (depth is None or level < depth):
+        level += 1
+        following: list[EntryId] = []
+        current: EntryId
+        for current in frontier:
+            relationship: Relationship
+            far: EntryId
+            for relationship, far in _steps(matrix, current, direction):
+                if kinds and relationship.kind not in kinds:
+                    continue
+                links.append({
+                    "depth": level,
+                    "direction": LINK_OUT if relationship.start == current else LINK_IN,
+                    "relationship": relationship_json(relationship),
+                    "entry": _brief(matrix, far),
+                })
+                if far not in seen:
+                    seen.add(far)
+                    following.append(far)
+        frontier = following
+    return {"command": "links", "start": start, "links": links, "reached": len(seen) - 1}

@@ -41,6 +41,8 @@ from matrix_contract import (
     KIND_EVENT,
     KIND_FEATURE,
     KIND_INFRASTRUCTURE,
+    KIND_LAYER,
+    KIND_PACKAGE,
     KIND_SERVICE,
     KIND_STACK,
     REL_APPLIES_TO,
@@ -54,7 +56,6 @@ from matrix_contract import (
     REL_SERVED_BY,
     REL_STATED_IN,
     REL_SUPPORTED_BY,
-    RELATIONSHIP_RULES,
     Entry,
     EntryId,
     EntryKind,
@@ -80,11 +81,23 @@ ATTR_RESOURCE_TYPE: Final = "resourceType"
 ATTR_SELECTOR: Final = "selector"
 SELECTOR_STACK_TYPE: Final = "stackType"
 """The selector value that is computed from a stack's name and stored nowhere."""
-HOMED_KINDS: Final[frozenset[EntryKind]] = RELATIONSHIP_RULES[HOME_RELATIONSHIP].sources
-"""The kinds of entry that have a home in code."""
-COUNTERPART_KINDS: Final[frozenset[EntryKind]] = RELATIONSHIP_RULES[REL_CORRESPONDS_TO].sources
+HOMED_KINDS: Final[frozenset[EntryKind]] = frozenset({
+    KIND_SERVICE,
+    KIND_COMPONENT,
+    KIND_INFRASTRUCTURE,
+    KIND_LAYER,
+    KIND_PACKAGE,
+})
+"""The kinds of entry that are built in code with a home in a stack; one the Epic reaches with none is in noStack."""
+COUNTERPART_KINDS: Final[frozenset[EntryKind]] = frozenset({
+    KIND_SERVICE,
+    KIND_COMPONENT,
+    KIND_INFRASTRUCTURE,
+    KIND_EVENT,
+    KIND_LAYER,
+})
 """The kinds of entry the architecture describes that something in a repository may correspond to."""
-CODE_KINDS: Final[frozenset[EntryKind]] = RELATIONSHIP_RULES[REL_REALIZED_BY].targets | HOMED_KINDS
+CODE_KINDS: Final[frozenset[EntryKind]] = HOMED_KINDS | {KIND_EVENT, KIND_STACK}
 """The kinds of entry an Epic reaches from a feature: what realizes a feature and what has a home in code."""
 SHARED_KINDS: Final[frozenset[EntryKind]] = frozenset({
     KIND_FEATURE,

@@ -464,7 +464,6 @@ class WriteResult(TypedDict):
     headingsCreated: list[Citation]
     linksAdded: list[Citation]
     restatementsRemoved: list[Citation]
-    belowArchitectureLevel: list[UnappliedEntry]
     notApplied: list[UnappliedEntry]
     summary: str
 

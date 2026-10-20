@@ -1,6 +1,6 @@
 {
   "title": "SkillSpoke matrix kinds registry",
-  "description": "What kinds of entry and relationship the matrix holds. A new kind is one declaration here. matrix.schema.json validates the generic shape of the matrix file; every entry and relationship is validated against the kind declared here. Each attribute is a JSON Schema fragment; a fragment may reference #/$defs/<name> of this file, #/$defs/entryId (the id of an entry, which rename and remove follow) or #/$defs/resourceType (a member of resourceTypes). In an entry kind's required list, purpose means the common purpose member must not be empty; an entry kind's requiredOne lists attributes of which an entry carries exactly one. Every entry and relationship carries side (matrix.schema.json $defs/side); a kind that declares side is always recorded with that side. An entry kind that declares repositoryIdPattern has two id forms: an entry on the side that is the authority matches idPattern, and an entry on the other side matches repositoryIdPattern, whose rest is the name of the stack that holds it, a slash and the slug of its name. matrix_contract.py is generated from this file and matrix.schema.json.",
+  "description": "What kinds of entry and relationship the matrix holds. A new kind is one declaration here. matrix.schema.json validates the generic shape of the matrix file; every entry and relationship is validated against the kind declared here. Each attribute is a JSON Schema fragment; a fragment may reference #/$defs/<name> of this file, #/$defs/entryId (the id of an entry, which rename and remove follow). In an entry kind's required list, purpose means the common purpose member must not be empty; an entry kind's requiredOne lists attributes of which an entry carries exactly one. Every entry and relationship carries side (matrix.schema.json $defs/side); a kind that declares side is always recorded with that side. An entry kind that declares repositoryIdPattern has two id forms: an entry on the side that is the authority matches idPattern, and an entry on the other side matches repositoryIdPattern, whose rest is the name of the stack that holds it, a slash and the slug of its name. Any entry may link to any other: a relationship kind names no entry kinds. A relationship kind declared here carries its reverse name, attributes, key, side, family and limit; any other relationship kind of the kind-name form (matrix.schema.json $defs/kindName) is accepted too, with no attributes, reported from its end under its name followed by Reverse. Every entry and relationship may carry the approved and the verified flag (matrix.schema.json $defs/Approved, $defs/Verified), and none must. matrix_contract.py is generated from this file and matrix.schema.json.",
   "operatorRole": "operator",
   "roles": ["operator", "script", "solutions-architect", "repository-steward", "decider", "build-driver", "build-workflow"],
   "homeRelationship": "homeIn",
@@ -9,6 +9,11 @@
     "executionUse": {
       "description": "executable: a service, a Lambda, anything run or called. imported: code other code imports.",
       "enum": ["executable", "imported"]
+    },
+    "resourceType": {
+      "description": "The kind of one actual AWS resource, named by its AWS service and resource type in lowercase words joined by hyphens (for example dynamodb-table, lambda-function, ssm-parameter, kms-key). Checked by its form, not by a list: a resource of a kind the matrix has not held yet is named the same way. It names one AWS resource: a bundle or set of resources, a code construct, a module, a package, an agent, a data set, an event type or an SSM parameter path is not a resource type. Nothing routes a specialist by it.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
     },
     "app": {"description": "The project the stack belongs to: an open token, lowercase words joined by hyphens.", "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"},
     "anchor": {
@@ -69,7 +74,6 @@
     "epic": {
       "idPattern": "^epic:[A-Za-z0-9][A-Za-z0-9._-]*$",
       "side": "architecture",
-      "verifiable": false,
       "required": [],
       "attributes": {
         "prd": {
@@ -86,7 +90,6 @@
     "requirement": {
       "idPattern": "^requirement:[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$",
       "side": "architecture",
-      "verifiable": false,
       "required": ["hash"],
       "attributes": {
         "group": {"description": "The ### heading above the requirement.", "type": "string"},
@@ -96,7 +99,6 @@
     "feature": {
       "idPattern": "^feature:[a-z0-9]+(-[a-z0-9]+)*$",
       "side": "architecture",
-      "verifiable": false,
       "required": [],
       "attributes": {
         "provides": {"description": "What a shared capability provides.", "type": "array", "items": {"$ref": "#/$defs/provides"}}
@@ -105,7 +107,6 @@
     "constraint": {
       "idPattern": "^constraint:[a-z0-9]+(-[a-z0-9]+)*$",
       "description": "A rule that binds entries. A rule an arc42 heading or a PRD states carries its statement; a technical requirement of an Epic's TRD carries trd, a pointer to the requirement, and no statement.",
-      "verifiable": false,
       "required": [],
       "requiredOne": ["statement", "trd"],
       "attributes": {
@@ -116,7 +117,6 @@
     },
     "document": {
       "idPattern": "^document:[^/\\s].*$",
-      "verifiable": false,
       "required": ["lifecycle", "headings", "hash"],
       "attributes": {
         "lifecycle": {"description": "Mirrors the document's front matter.", "enum": ["effective", "in-review", "draft"]},
@@ -130,7 +130,6 @@
     },
     "service": {
       "idPattern": "^service:[a-z0-9]+(-[a-z0-9]+)*$",
-      "verifiable": true,
       "required": [],
       "attributes": {
         "executionUse": {"$ref": "#/$defs/executionUse"}
@@ -139,7 +138,6 @@
     "component": {
       "idPattern": "^component:[a-z0-9]+(-[a-z0-9]+)*$",
       "repositoryIdPattern": "^component:[A-Za-z0-9][A-Za-z0-9._-]*/[a-z0-9]+(-[a-z0-9]+)*$",
-      "verifiable": true,
       "required": [],
       "attributes": {
         "resourceType": {"$ref": "#/$defs/resourceType"},
@@ -149,7 +147,6 @@
     "infrastructure": {
       "idPattern": "^infrastructure:[a-z0-9]+(-[a-z0-9]+)*$",
       "repositoryIdPattern": "^infrastructure:[A-Za-z0-9][A-Za-z0-9._-]*/[a-z0-9]+(-[a-z0-9]+)*$",
-      "verifiable": true,
       "required": [],
       "attributes": {
         "resourceType": {"$ref": "#/$defs/resourceType"},
@@ -159,7 +156,6 @@
     "event": {
       "idPattern": "^event:\\S.*$",
       "description": "An event is a fact with a meaning: its name (the event type), the services or components that publish it (publishes), and its purpose. On the architecture side its purpose and its publishers mirror the event catalog in arc42 section 6 (atw-matrix sync-events): the purpose is the catalog's description of the event. An event has no homeIn: its stack is its publisher's architecture-side stack.",
-      "verifiable": true,
       "required": [],
       "attributes": {
         "externalSource": {"type": "string", "minLength": 1, "description": "The system outside SkillSpoke that publishes the event (for example Stripe); only for an event no SkillSpoke service or component publishes."}
@@ -167,7 +163,6 @@
     },
     "stack": {
       "idPattern": "^stack:[A-Za-z0-9][A-Za-z0-9._-]*$",
-      "verifiable": true,
       "required": ["purpose"],
       "attributes": {
         "repository": {"description": "The repository that holds the stack; absent while none does.", "type": "string", "minLength": 1},
@@ -186,7 +181,6 @@
     },
     "package": {
       "idPattern": "^package:[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$",
-      "verifiable": true,
       "required": ["origin"],
       "attributes": {
         "origin": {"enum": ["project", "third-party"]}
@@ -195,13 +189,19 @@
     "layer": {
       "idPattern": "^layer:[a-z0-9]+(-[a-z0-9]+)*$",
       "repositoryIdPattern": "^layer:[A-Za-z0-9][A-Za-z0-9._-]*/[a-z0-9]+(-[a-z0-9]+)*$",
-      "verifiable": true,
       "required": [],
       "attributes": {}
     },
+    "file": {
+      "idPattern": "^file:[A-Za-z0-9][A-Za-z0-9._-]*/\\S+$",
+      "description": "A file in a repository that the architecture or design names and that is not a document in the vault, such as a service's saved OpenAPI document. Its id is file:, the name of the stack that holds it, a slash and its path in that stack's repository; it has homeIn that stack.",
+      "required": ["path"],
+      "attributes": {
+        "path": {"description": "The file's path in the repository of the stack that holds it.", "type": "string", "minLength": 1}
+      }
+    },
     "disagreement": {
       "idPattern": "^disagreement:[a-z0-9]+(-[a-z0-9]+)*$",
-      "verifiable": false,
       "required": [],
       "attributes": {
         "stands": {"description": "The statement that stands, once ruled.", "$ref": "#/$defs/anchor"},
@@ -214,279 +214,203 @@
     "hasRequirement": {
       "reverse": "requirementOf",
       "side": "architecture",
-      "from": ["epic"],
-      "to": ["requirement"],
       "attributes": {},
       "required": [],
-      "key": [],
-      "provedByBuild": false
+      "key": []
     },
     "servedBy": {
       "reverse": "serves",
       "side": "architecture",
-      "from": ["requirement"],
-      "to": ["feature"],
       "attributes": {},
       "required": [],
-      "key": [],
-      "provedByBuild": false
+      "key": []
     },
     "supportedBy": {
       "reverse": "supports",
       "side": "architecture",
-      "from": ["feature"],
-      "to": ["feature"],
       "attributes": {
         "relies": {"description": "The ids of the provides items relied on.", "type": "array", "items": {"type": "string"}, "uniqueItems": true}
       },
       "required": [],
-      "key": [],
-      "provedByBuild": false
+      "key": []
     },
     "realizedBy": {
       "reverse": "realizes",
-      "from": ["feature"],
-      "to": ["service", "component", "infrastructure", "event", "stack"],
       "attributes": {},
       "required": [],
-      "key": [],
-      "provedByBuild": false
+      "key": []
     },
     "describedBy": {
       "reverse": "describes",
-      "from": ["feature", "constraint", "service", "component", "infrastructure", "event", "stack", "package", "layer"],
-      "to": ["document"],
       "attributes": {
         "heading": {"type": "string", "minLength": 1}
       },
       "required": [],
-      "key": ["heading"],
-      "provedByBuild": false
+      "key": ["heading"]
     },
     "covers": {
       "reverse": "coveredBy",
-      "from": ["document"],
-      "to": ["requirement"],
       "attributes": {
         "heading": {"type": "string", "minLength": 1},
         "via": {"description": "The feature that connects the document and the requirement.", "$ref": "#/$defs/entryId"}
       },
       "required": ["heading", "via"],
-      "key": ["heading", "via"],
-      "provedByBuild": false
+      "key": ["heading", "via"]
     },
     "statedIn": {
       "reverse": "states",
-      "from": ["constraint"],
-      "to": ["document"],
       "attributes": {
         "heading": {"type": "string", "minLength": 1}
       },
       "required": [],
-      "key": ["heading"],
-      "provedByBuild": false
+      "key": ["heading"]
     },
     "appliesTo": {
       "reverse": "constrainedBy",
-      "from": ["constraint"],
-      "to": ["epic", "feature", "stack", "service", "component", "infrastructure", "event"],
       "attributes": {},
       "required": [],
-      "key": [],
-      "provedByBuild": false
+      "key": []
     },
     "homeIn": {
       "reverse": "holds",
-      "from": ["service", "component", "infrastructure", "layer", "package"],
-      "to": ["stack"],
       "attributes": {},
       "required": [],
       "key": [],
-      "maxPerStart": 1,
-      "provedByBuild": true
+      "maxPerStart": 1
     },
     "partOf": {
       "reverse": "hasPart",
-      "from": ["component", "infrastructure"],
-      "to": ["service"],
       "attributes": {},
       "required": [],
-      "key": [],
-      "provedByBuild": true
+      "key": []
     },
     "correspondsTo": {
       "reverse": "correspondedBy",
       "side": "repository",
-      "from": ["service", "component", "infrastructure", "event", "layer"],
-      "to": ["component", "infrastructure", "layer", "stack"],
       "attributes": {},
       "required": [],
-      "key": [],
-      "provedByBuild": false
+      "key": []
     },
     "distributedAs": {
       "reverse": "distributes",
-      "from": ["stack"],
-      "to": ["package"],
       "attributes": {},
       "required": [],
-      "key": [],
-      "provedByBuild": true
+      "key": []
     },
     "contains": {
       "reverse": "containedIn",
-      "from": ["layer"],
-      "to": ["package"],
       "attributes": {},
       "required": [],
-      "key": [],
-      "provedByBuild": true
+      "key": []
     },
     "imports": {
       "reverse": "importedBy",
-      "from": ["stack", "service", "component"],
-      "to": ["stack"],
       "attributes": {
         "through": {"description": "The package or layer that brings the library.", "$ref": "#/$defs/entryId"}
       },
       "required": [],
       "key": [],
-      "family": "dependency",
-      "provedByBuild": true
+      "family": "dependency"
     },
     "usesLayer": {
       "reverse": "layerUsedBy",
-      "from": ["component"],
-      "to": ["layer"],
       "attributes": {},
       "required": [],
       "key": [],
-      "family": "dependency",
-      "provedByBuild": true
+      "family": "dependency"
     },
     "calls": {
       "reverse": "calledBy",
-      "from": ["stack", "service", "component"],
-      "to": ["service"],
       "attributes": {
         "interface": {"description": "The operation or API.", "type": "string", "minLength": 1}
       },
       "required": [],
       "key": [],
-      "family": "dependency",
-      "provedByBuild": true
+      "family": "dependency"
     },
     "publishes": {
       "reverse": "publishedBy",
-      "from": ["service", "component"],
-      "to": ["event"],
       "attributes": {},
       "required": [],
       "key": [],
-      "family": "dependency",
-      "provedByBuild": true
+      "family": "dependency"
     },
     "onBus": {
       "reverse": "busFor",
       "description": "An EventBridge rule (an infrastructure entry of resourceType eventbridge-rule) and the one event bus (resourceType eventbridge-bus) it belongs to; the rule sees only the events put on that bus.",
-      "from": ["infrastructure"],
-      "to": ["infrastructure"],
       "attributes": {},
       "required": [],
       "key": [],
       "maxPerStart": 1,
-      "family": "dependency",
-      "provedByBuild": true
+      "family": "dependency"
     },
     "matches": {
       "reverse": "matchedBy",
       "description": "An EventBridge rule and one event type its event pattern matches. A rule whose pattern matches every event states matchesAllEvents instead. An event may be matched by zero, one or many rules; its producers know nothing about them.",
-      "from": ["infrastructure"],
-      "to": ["event"],
       "attributes": {},
       "required": [],
       "key": [],
-      "family": "dependency",
-      "provedByBuild": true
+      "family": "dependency"
     },
     "routesTo": {
       "reverse": "targetOf",
       "description": "An EventBridge rule and one of its targets, which receives every event the rule matches. A rule has at most five targets (the EventBridge limit).",
-      "from": ["infrastructure"],
-      "to": ["service", "component", "infrastructure"],
       "attributes": {},
       "required": [],
       "key": [],
       "maxPerStart": 5,
-      "family": "dependency",
-      "provedByBuild": true
+      "family": "dependency"
     },
     "reads": {
       "reverse": "readBy",
-      "from": ["stack", "service", "component"],
-      "to": ["infrastructure"],
+      "description": "The entry reads a value another stack stored, such as an SSM parameter: an infrastructure entry of resourceType ssm-parameter whose home is the stack that writes it.",
       "attributes": {},
       "required": [],
       "key": [],
-      "family": "dependency",
-      "provedByBuild": true
+      "family": "dependency"
     },
     "runsIn": {
       "reverse": "hosts",
-      "from": ["stack", "service", "component"],
-      "to": ["infrastructure"],
+      "description": "The entry runs in shared infrastructure, such as a Lambda function in its VPC, subnets and security groups, which another stack holds.",
       "attributes": {},
       "required": [],
       "key": [],
-      "family": "dependency",
-      "provedByBuild": true
+      "family": "dependency"
     },
     "drives": {
       "reverse": "drivenBy",
-      "from": ["epic"],
-      "to": ["feature", "document"],
       "attributes": {
         "heading": {"description": "For a document: the heading that holds the decision.", "type": "string", "minLength": 1}
       },
       "required": [],
-      "key": ["heading"],
-      "provedByBuild": false
+      "key": ["heading"]
     },
     "restsOn": {
       "reverse": "supportsEpic",
-      "from": ["epic"],
-      "to": ["feature", "document", "stack", "service", "component", "infrastructure"],
       "attributes": {
         "heading": {"description": "For a document: the heading that holds the decision.", "type": "string", "minLength": 1}
       },
       "required": [],
-      "key": ["heading"],
-      "provedByBuild": false
+      "key": ["heading"]
+    },
+    "specifiedBy": {
+      "reverse": "specifies",
+      "description": "The entry (for example an API Gateway API) is specified by this file or document, such as its saved OpenAPI document.",
+      "attributes": {
+        "heading": {"description": "For a document: the heading that holds the specification.", "type": "string", "minLength": 1}
+      },
+      "required": [],
+      "key": ["heading"]
     },
     "disputes": {
       "reverse": "disputedBy",
-      "from": ["disagreement"],
-      "to": ["document"],
       "attributes": {
         "heading": {"type": "string", "minLength": 1}
       },
       "required": ["heading"],
-      "key": ["heading"],
-      "provedByBuild": false
+      "key": ["heading"]
     }
   },
-  "resourceTypes": [
-    "acm-certificate", "agent", "api", "api-and-handlers", "asset-library", "cdk-construct",
-    "cloudfront-distribution", "cloudtrail-trail", "cloudwatch-alarms", "cloudwatch-log-group",
-    "cognito-user-pool", "component", "config-recorder", "data-component", "database", "dataset",
-    "dns-firewall", "dynamodb-export", "dynamodb-table", "elasticache-replication-group",
-    "eventbridge-bus", "eventbridge-rule", "eventbridge-schedule", "gateway",
-    "handler", "iam-role", "kms-key", "lambda-function", "lambda-layer", "network", "package",
-    "package-component", "rest-api", "rest-api-route", "s3-bucket", "secrets-manager-secret",
-    "security-groups", "sns-subscription", "sns-topic", "sqs-queue", "sqs-queue-and-alarm",
-    "sqs-queue-and-dlq", "ssm-parameter", "ssm-parameter-set", "subnets",
-    "verified-permissions-policy-store", "vpc", "vpc-endpoints", "waf"
-  ],
   "commands": {
     "epic": {"writes": false, "anyRole": true},
     "find": {"writes": false, "anyRole": true},
@@ -494,6 +418,10 @@
     "deps": {"writes": false, "anyRole": true},
     "stacks": {"writes": false, "anyRole": true},
     "layers": {"writes": false, "anyRole": true},
+    "resources": {"writes": false, "anyRole": true},
+    "parameters": {"writes": false, "anyRole": true},
+    "documents": {"writes": false, "anyRole": true},
+    "links": {"writes": false, "anyRole": true},
     "impact": {"writes": false, "anyRole": true},
     "related": {"writes": false, "anyRole": true},
     "uses": {"writes": false, "anyRole": true},

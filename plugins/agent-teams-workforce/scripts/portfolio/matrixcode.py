@@ -28,7 +28,6 @@ from typeguard import CollectionCheckStrategy, typechecked
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 from matrix_contract import (
-    BUILD_PROVED_KINDS,
     Entry,
     EntryId,
     JsonValue,
@@ -59,7 +58,7 @@ class EpicVerified(TypedDict):
     entries: list[EntryId]
     """Each stack and entry the Epic's Stories built, which now carries the flag; empty when not complete."""
     relationships: list[dict[str, JsonValue]]
-    """Each relationship a build proves that starts at one of them, with the flag."""
+    """Each relationship that starts at one of them, with the flag."""
     changed: int
     """How many entries and relationships took the flag or had its commit replaced."""
     unmatched: list[str]
@@ -75,9 +74,10 @@ def verify(
     """Set the verified flag on what an Epic's Stories built.
 
     Each stack and entry the ``built`` reads return takes the flag with the commit, and so does
-    each relationship a build proves (the kinds the registry declares ``provedByBuild``) that
-    starts at one of them. A flag already there has its commit replaced. Nothing else changes: an
-    entry a read lists as not built, and an id that matches no entry, are left as they are.
+    every relationship, of any kind and either side, that starts at one of them: the
+    architecture and relationships of the Epic are verified together. A flag already there has
+    its commit replaced. Nothing else changes: an entry a read lists as not built, and an id
+    that matches no entry, are left as they are.
 
     Args:
         matrix: The matrix, changed in place.
@@ -108,7 +108,7 @@ def verify(
             matrix.put(replace(entry, verified=mark))
             changed += 1
         relationship: Relationship
-        for relationship in matrix.outgoing(entry_id, BUILD_PROVED_KINDS):
+        for relationship in matrix.outgoing(entry_id):
             if relationship.verified != mark:
                 matrix.link(replace(relationship, verified=mark))
                 changed += 1

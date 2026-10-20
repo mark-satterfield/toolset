@@ -28,8 +28,14 @@ import beadgraph
 import beads_contract
 from matrix_contract import (
     HOME_RELATIONSHIP,
+    KIND_COMPONENT,
+    KIND_EVENT,
+    KIND_FILE,
+    KIND_INFRASTRUCTURE,
+    KIND_LAYER,
+    KIND_PACKAGE,
+    KIND_SERVICE,
     KIND_STACK,
-    VERIFIABLE_KINDS,
     Entry,
     EntryId,
     EntryKind,
@@ -49,6 +55,17 @@ TASK_TYPE: Final = "task"
 """The beads issue type of a Task."""
 STORY_TYPE: Final = "story"
 """The beads issue type of a Story."""
+BUILT_KINDS: Final[frozenset[EntryKind]] = frozenset({
+    KIND_SERVICE,
+    KIND_COMPONENT,
+    KIND_INFRASTRUCTURE,
+    KIND_EVENT,
+    KIND_PACKAGE,
+    KIND_LAYER,
+    KIND_FILE,
+})
+"""The kinds of entry, other than a stack, that a Task builds; any other id a Task names, such as a shared
+capability it uses, is listed as not built."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,7 +130,7 @@ class BuiltRead(TypedDict):
     """Every Task of the Story, whatever its status."""
     stacks: list[BuiltEntry]
     entries: list[BuiltEntry]
-    """The entries, other than stacks, of the kinds that carry the verified mark."""
+    """The entries, other than stacks, of the kinds a build produces (``BUILT_KINDS``)."""
     notBuilt: list[BuiltEntry]
     """Entries the Tasks name of a kind no build produces, such as a shared capability a Task uses."""
     unmatched: list[UnmatchedId]
@@ -312,7 +329,7 @@ def built(matrix: Matrix, tasks: Sequence[TaskBead], story: str) -> BuiltRead:
             read["unmatched"].append({"id": named, "tasks": sorted(naming[named])})
         elif entry.kind == KIND_STACK:
             read["stacks"].append(_row(entry, naming[named]))
-        elif entry.kind in VERIFIABLE_KINDS:
+        elif entry.kind in BUILT_KINDS:
             read["entries"].append(_row(entry, naming[named]))
         else:
             read["notBuilt"].append(_row(entry, naming[named]))

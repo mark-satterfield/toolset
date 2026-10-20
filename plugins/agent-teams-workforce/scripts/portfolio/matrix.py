@@ -11,7 +11,8 @@ variable names another.
 
 Every sub-command prints one JSON object on stdout. This module holds the reads, which answer
 from the file and change nothing (``epic``, ``find``, ``node``, ``deps``, ``stacks``,
-``layers``, ``impact``, ``related``, ``uses``, ``story-scope``, ``review-scope``, ``summary``),
+``layers``, ``resources``, ``parameters``, ``documents``, ``links``, ``impact``, ``related``,
+``uses``, ``story-scope``, ``review-scope``, ``summary``),
 and ``check``, which reports every way the file fails its contract. ``matrixcli`` holds the
 sub-commands that change the matrix, bring it up to date, seed it and mark it. The registry's
 command table says which role may run each; the role is the value of the role variable, and the
@@ -32,21 +33,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
 from driver_surface_types import ARCH_PATH_ENV, CONTROL_REPO_ENV, PRD_DIR_ENV
-from matrix_contract import COMMAND_RULES, ENTRY_KINDS, EntryKind, entry_kind
+from matrix_contract import COMMAND_RULES, ENTRY_KINDS, EntryKind, RelationshipKind, entry_kind, relationship_kind
 from matrixcall import EXIT_OK, EXIT_REFUSED, PROGRAM, Call, Outcome
 from matrixcli import COMMANDS as CHANGE_COMMANDS
 from matrixcli import add_parsers
 from matrixquery import (
     DEFAULT_LIMIT,
+    LINK_DIRECTIONS,
+    LINK_OUT,
     EpicView,
     deps_view,
+    documents_view,
     epic_view,
     find,
     impact_view,
     layers_view,
+    links_view,
     node_view,
+    parameters_view,
     realizers_view,
     related_view,
+    resources_view,
     stacks_view,
     story_scope,
     summarize,
@@ -177,6 +184,57 @@ def _run_stacks(call: Call) -> Outcome:
     )
 
 
+def _run_resources(call: Call) -> Outcome:
+    """Run ``resources``.
+
+    Returns:
+        The AWS resources the Epic reaches, with their stacks and repositories.
+
+    """
+    return Outcome(resources_view(read_matrix(call.matrix()), call.required("epic")))
+
+
+def _run_parameters(call: Call) -> Outcome:
+    """Run ``parameters``.
+
+    Returns:
+        The SSM parameters the stack writes, with the entries that read each, and those it reads.
+
+    """
+    return Outcome(parameters_view(read_matrix(call.matrix()), call.entry("stack")))
+
+
+def _run_documents(call: Call) -> Outcome:
+    """Run ``documents``.
+
+    Returns:
+        Every architecture and design document related to the entry and what belongs to it.
+
+    """
+    return Outcome(documents_view(read_matrix(call.matrix()), call.entry("id")))
+
+
+def _run_links(call: Call) -> Outcome:
+    """Run ``links``.
+
+    Returns:
+        The entry's links followed to the depth asked, or to any depth.
+
+    """
+    kinds: tuple[RelationshipKind, ...] = tuple(
+        relationship_kind(name.strip()) for name in (call.text("kinds") or "").split(KIND_SEPARATOR) if name.strip()
+    )
+    return Outcome(
+        links_view(
+            read_matrix(call.matrix()),
+            call.entry("id"),
+            depth=call.number("depth"),
+            direction=call.text("direction") or LINK_OUT,
+            kinds=kinds,
+        ),
+    )
+
+
 def _run_layers(call: Call) -> Outcome:
     """Run ``layers``.
 
@@ -269,6 +327,10 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     "deps": _run_deps,
     "stacks": _run_stacks,
     "layers": _run_layers,
+    "resources": _run_resources,
+    "parameters": _run_parameters,
+    "documents": _run_documents,
+    "links": _run_links,
     "impact": _run_impact,
     "related": _run_related,
     "uses": _run_uses,
@@ -279,6 +341,45 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     **CHANGE_COMMANDS,
 }
 """Every sub-command, by the name the registry's command table gives it."""
+
+
+def _walk_parsers(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+    where: argparse.ArgumentParser,
+) -> None:
+    """Add the reads that walk out from an Epic, a stack or any entry: resources, parameters, documents, links."""
+    resources: argparse.ArgumentParser = commands.add_parser(
+        "resources",
+        parents=[where],
+        help="the AWS resources an Epic reaches, with their stacks and repositories",
+    )
+    resources.add_argument("--epic", required=True, help="the Epic's beads id")
+    parameters: argparse.ArgumentParser = commands.add_parser(
+        "parameters",
+        parents=[where],
+        help="the SSM parameters a stack writes, with their readers, and those it reads",
+    )
+    parameters.add_argument("--stack", required=True, help="the stack's id")
+    documents: argparse.ArgumentParser = commands.add_parser(
+        "documents",
+        parents=[where],
+        help="every architecture and design document related to an entry, such as a service",
+    )
+    documents.add_argument("--id", required=True, help="the entry's id")
+    links: argparse.ArgumentParser = commands.add_parser(
+        "links",
+        parents=[where],
+        help="an entry's links followed to any depth",
+    )
+    links.add_argument("--id", required=True, help="the id of the entry the walk starts at")
+    links.add_argument("--depth", type=int, help="the most relationships from the entry; default: any depth")
+    links.add_argument(
+        "--direction",
+        choices=LINK_DIRECTIONS,
+        default=LINK_OUT,
+        help="follow the links that start at each entry (out), end at it (in) or either (both); default: out",
+    )
+    links.add_argument("--kinds", help="the relationship kinds to follow, separated by commas; default: every kind")
 
 
 def _read_parsers(
@@ -316,6 +417,7 @@ def _read_parsers(
     stacks.add_argument("--repository", help="only the stacks this repository holds")
     stacks.add_argument("--resource-type", help="only the stacks that hold an entry of this resource type")
     commands.add_parser("layers", parents=[where], help="every layer with its packages and the components that use it")
+    _walk_parsers(commands, where)
     impact: argparse.ArgumentParser = commands.add_parser("impact", parents=[where], help="what a change reaches")
     impact.add_argument("--id", required=True, help="the id of the entry to be changed")
     related: argparse.ArgumentParser = commands.add_parser(

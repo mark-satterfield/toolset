@@ -72,6 +72,10 @@ Each question below is answered from the matrix alone, without reading documents
 | Q21 | What does this stack publish and deploy, and which commands test, publish and deploy it? | Whether it publishes a package, deploys with CDK, or both, and the three commands. |
 | Q22 | Which stacks hold infrastructure of a given resource type? | A list of stacks, each with the matching infrastructure. |
 | Q24 | Which stacks does this repository hold? | A list of stacks. |
+| Q27 | Which AWS resources does this Epic reach, and which stacks and repositories hold them? | A list of resources, each with its resource type, its stack and that stack's repository; the stacks grouped with their repositories; the resources no stack holds. |
+| Q28 | Which SSM parameters does this stack write, and which stacks read each? Which does it read, and which stack writes each? | For each parameter the stack writes, its name and the entries that read it with their stacks; for each parameter it reads, its name and the stack that writes it. |
+| Q29 | Which architecture and design documents relate to this service, or to any entry? | Every document related to the entry or to what belongs to it, each with the relationships that join it. |
+| Q30 | Where do this entry's links lead? | Its links followed to any depth, in either direction, each with its type and the entry at the far end. |
 
 Illustration (invented, to show the use; it specifies nothing): a PRD asks for an email to
 be sent to a recruiter. The matrix already has a feature for sending an email to a person.
@@ -94,6 +98,8 @@ This list is not complete.
 | Technical requirement or constraint | One obligation that architecture places on a design, including one that comes from an arc42 document other than the one that describes the feature. |
 | Architecture document | One arc42 document. |
 | Service, component, infrastructure | One thing the architecture documents describe. |
+| SSM parameter | One parameter in SSM Parameter Store, named by its path: a piece of infrastructure held by the stack that writes it and read by other stacks (R59). |
+| File | A file in a repository that the architecture or design names, such as a service's saved OpenAPI document (R60). |
 | Stack | The home in code of services, components and infrastructure. The primary reference point for everything implemented. |
 | App | One sub-folder of the project's apps directory. The scope a stack belongs to. An attribute of a stack. |
 | Package | One Python package: a custom library published to CodeArtifact, or a third-party package. |
@@ -134,7 +140,9 @@ or merged:
 
 ### 3.2 The relationships
 
-Any kind can relate to many of any other. That is why it is a matrix.
+Any kind can relate to many of any other. That is why it is a matrix. Any entry can link to
+any other, and every link has a type. A type is named, and a new type needs no list of which
+kinds it may join.
 
 - A requirement is served by one or more features. A feature commonly serves several
   requirements, of one Epic or of different Epics.
@@ -157,8 +165,8 @@ Any kind can relate to many of any other. That is why it is a matrix.
   encapsulated code and helper functions to get and refresh OAuth2 tokens from client ids
   and secrets, and to wrap calling APIs with common features such as trapping and handling
   errors and retries with backoff.
-- Its type: the last token of its name, as the naming conventions document defines it
-  (service, infra, lib, mobile, web and so on).
+- Its type: the last token of its name, which the `resource-naming` command (the command in
+  `ATW_NAMING_COMMAND`) knows as a stack type (service, infra, lib, mobile, web and so on).
 - Its app: the one app it belongs to (section 3.4).
 - Its execution use (section 3.4).
 - Its repository.
@@ -237,6 +245,23 @@ the pipeline assumes, and it never blocks a step:
   a hint, and a difference between that code and an arc42 document is not a finding.
 - **Verified** means "this is real". The entry or relationship describes something that
   exists. The pipeline counts on it existing, and its code is trusted.
+
+### 3.6 What the owner said the matrix holds and links
+
+The owner:
+
+- "The matrix is like an index that help map requirement, architecture, services, repos, and more together, so that agents do not need the scan a perform complicated searches over and over just to figure out answer to simple questions like, "this repository contains the stack for this service?""
+- "Regarding the matrix: It's entire purpose is to mintain a mapping (a matrix) between things to every step of every pipeline doesn't need to research and scan or rediscover what pertains the task that step is performing."
+- "For an Epic, I should be able to instantly know what AWS resources are invalidated and what stacks and repos those AWS resources are in. And for each stack, I should be able to see what SSM parameters it would write. And if an AWS resource was a lambda function, I wold be able to see that the stack owns the vpc and subnets and service groups, and their SSM parameters. If a stack is a service, and the service as an AWS resource that is an AWS API Gateway API, and the OpenAI document was saved, then I should see the link to that file. I should be able to go to a service in the matrix, and find all architecture and design documents that are related to that service."
+- "This is the entire concept of the matrix. I should be able to drill down into any relationships."
+- "Not onnly are most connections or dependencies netween things not through events, the most are probably because of imports or API calls.  Event a lambda's connection with a VPC and subnets and security groups need to show in the matrix, especially since theVPC and subnets and security grous are in their own stact and repo."
+- "Your question should be, "How can stack-B know what ssm stack-A is saving (or will saved once deployed)?" The answer for that is, it should look in the matrix."
+- "Everything should be linkable to eerything else."
+- "So think of nodes. A node can a have a type. And a node can link to anything else. That lonkage can also have a type. The linkage could have a verified flag. The node could have a verified flag. Neither wold be required for every situation."
+- "So a node for a lambda could link to VPV (runsIn) and that VPC could be linked to a stack and that stack could be linked to it's contents, so forth and so on."
+- "The entire point is that the matrix should be able to help in multiple use cases in different ways. It doesn't prevent the need to perform scans, or review or research code, or perform gap analasys beween an architectual solution and a PRD, but once we know things, and then approve and verify them, the matrix should reflect that for the next agent or pipeline to use."
+- "We seeded everything with what we know today, which should eliminate hours of unnecessary research, analysis, and searching in the pipelines."
+- "If resourceType is only resources, thats fine. How is it being used, that's what matters. Like I wouldn't use resourceType for and event type, or a SSM Paramater path. These slightly different. But if it's an actual AWS resource, then of course, that fine in the matrix. I just didn't likle if for routering a specialist agent."
 
 ## 4. How the matrix is kept
 
@@ -392,9 +417,9 @@ so nothing is seeded as verified.
   recorded, including one that contains only third-party packages; the third-party packages
   inside it are recorded only as the contents of that layer and have no relationships of
   their own.
-- **R18.** The matrix takes a stack's type from the last token of its name, as the naming
-  conventions document defines it. The list of types is extended in that document; the
-  matrix defines no type of its own. Scope, execution use and distribution are not types.
+- **R18.** The matrix takes a stack's type from the last token of its name, which the
+  `resource-naming` command (the command in `ATW_NAMING_COMMAND`) knows as a stack type. The
+  types are extended in that command; the matrix defines no type of its own. Scope, execution use and distribution are not types.
 - **R19.** The matrix records scope, execution use and distribution as three facts, separate
   from a stack's type and from each other (section 3.4). "Shared" is a scope, "library" is
   an execution use and "layer" is a distribution method; none is a value of another fact or
@@ -591,3 +616,26 @@ so nothing is seeded as verified.
   built for the Epic passed its tests with its deployment working. When a later Epic's
   architecture changes that content, the flag is cleared until that Epic's architecture and
   design are approved. No session sets it by hand. Nothing is approved today.
+
+### Links and resources
+
+- **R58.** Any entry can link to any other, and every link has a type (section 3.6). A link
+  type is named and checked by its form, never by a list of the kinds it may join or of the
+  types that exist, so a link of a new type is recorded the day it is needed and a misspelt
+  type is still caught. A type the matrix declares carries its reverse name and attributes; one
+  it does not declare is recorded with no attributes.
+- **R59.** Each SSM parameter is its own entry, named by its path, held by the stack that
+  writes it and linked from each entry that reads it (`reads`), so that a stack that needs
+  another stack's value finds its name in the matrix (Q28).
+- **R60.** The matrix records the links section 3.6 names: a Lambda function to the VPC,
+  subnets and security groups it runs in (`runsIn`), each held by its own stack and that
+  stack's repository; imports and API calls between any two entries (`imports`, `calls`); an
+  API Gateway API to its saved OpenAPI document (`specifiedBy`, to a document or to a file in a
+  repository); a service to every related architecture and design document; and an Epic to
+  the AWS resources it reaches, with their stacks and repositories.
+- **R61.** `resourceType` names the kind of one actual AWS resource, and nothing else: not a
+  bundle or set of resources, a code construct, a module, a package, a data set, an event
+  type or an SSM parameter path. It is checked by its form, not by a list, so a resource of a
+  kind not held before is named the same way. Nothing routes a specialist agent by it.
+- **R62.** The matrix answers Q27 to Q30 from the matrix alone, without a scan (R1).
+

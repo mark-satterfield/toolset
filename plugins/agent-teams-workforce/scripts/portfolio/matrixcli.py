@@ -170,7 +170,7 @@ def _is_text(spec: Mapping[str, JsonValue] | None) -> bool:
 
     Returns:
         True for a vocabulary, for a string, and for a reference to a definition the registry
-        does not hold itself (an entry id and a resource type, which are strings).
+        does not hold itself (an entry id, which is a string).
 
     """
     return spec is None or "enum" in spec or spec.get("type") == "string"

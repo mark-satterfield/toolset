@@ -50,10 +50,7 @@ from matrix_contract import (
     OPERATOR_ROLE,
     REL_DESCRIBED_BY,
     REL_MATCHES,
-    REL_ON_BUS,
     REL_PUBLISHES,
-    REL_ROUTES_TO,
-    RELATIONSHIP_RULES,
     ROLE_ENV,
     ROLES,
     STACK_KIND,
@@ -76,6 +73,7 @@ from matrix_contract import (
     relationship_key,
     relationship_label,
     relationship_problems,
+    relationship_rule,
 )
 
 DEFAULT_LOCK_WAIT: Final = 60.0
@@ -94,11 +92,8 @@ ATTR_EXTERNAL_SOURCE: Final = "externalSource"
 ATTR_RESOURCE_TYPE: Final = "resourceType"
 RESOURCE_EVENTBRIDGE_RULE: Final = "eventbridge-rule"
 """The resource type of an EventBridge rule: it belongs to one bus, matches events and routes them to targets."""
-RESOURCE_EVENTBRIDGE_BUS: Final = "eventbridge-bus"
 ATTR_MATCHES_ALL_EVENTS: Final = "matchesAllEvents"
 """The rule attribute that says its event pattern matches every event on its bus."""
-RULE_RELATIONSHIPS: Final[tuple[RelationshipKind, ...]] = (REL_ON_BUS, REL_MATCHES, REL_ROUTES_TO)
-"""The relationships only an EventBridge rule starts."""
 PROBLEMS_SHOWN: Final = 20
 """The most problems an error message lists."""
 ATTR_LIFECYCLE: Final = "lifecycle"
@@ -610,7 +605,7 @@ class Matrix:
         for relationship in self.outgoing(entry_id):
             named.setdefault(relationship.kind, []).append(relationship)
         for relationship in self.incoming(entry_id):
-            named.setdefault(RELATIONSHIP_RULES[relationship.kind].reverse, []).append(relationship)
+            named.setdefault(relationship_rule(relationship.kind).reverse, []).append(relationship)
         return named
 
     def home(self, entry_id: EntryId, side: Side | None = AUTHORITY_SIDE) -> EntryId | None:
@@ -717,36 +712,6 @@ class Matrix:
             for problem in self._one_event_problems(event)
         ]
 
-    def _is_resource(self, entry_id: EntryId, resource_type: str) -> bool:
-        """Report whether an entry is infrastructure of one resource type.
-
-        Returns:
-            True when the matrix holds the entry as infrastructure of that resource type.
-
-        """
-        entry: Entry | None = self._entries.get(entry_id)
-        return (
-            entry is not None
-            and entry.kind == KIND_INFRASTRUCTURE
-            and entry.attributes.get(ATTR_RESOURCE_TYPE) == resource_type
-        )
-
-    def _rule_link_problems(self, relationship: Relationship) -> list[str]:
-        """Check one relationship only an EventBridge rule starts.
-
-        Returns:
-            One sentence when it starts at something other than an EventBridge rule, and one when
-            it is an onBus relationship that ends at something other than an event bus.
-
-        """
-        label: str = relationship_label(relationship)
-        problems: list[str] = []
-        if not self._is_resource(relationship.start, RESOURCE_EVENTBRIDGE_RULE):
-            problems.append(f"{label}: only infrastructure of resourceType {RESOURCE_EVENTBRIDGE_RULE} starts it")
-        if relationship.kind == REL_ON_BUS and not self._is_resource(relationship.end, RESOURCE_EVENTBRIDGE_BUS):
-            problems.append(f"{label}: it must end at infrastructure of resourceType {RESOURCE_EVENTBRIDGE_BUS}")
-        return problems
-
     def _one_rule_problems(self, entry: Entry) -> list[str]:
         """Check one infrastructure entry's event pattern: matchesAllEvents only on a rule, never with matches.
 
@@ -763,44 +728,30 @@ class Matrix:
         return []
 
     def _rule_problems(self) -> list[str]:
-        """Check the EventBridge rules: what starts their relationships and their patterns.
+        """Check the event pattern each infrastructure entry states.
 
         Returns:
-            The problems of every rule relationship and every infrastructure entry, in order.
+            The problems of every infrastructure entry, in order.
 
         """
-        link_problems: list[str] = [
-            problem
-            for relationship in self.relationships()
-            if relationship.kind in RULE_RELATIONSHIPS
-            for problem in self._rule_link_problems(relationship)
-        ]
-        entry_problems_found: list[str] = [
-            problem for entry in self.entries((KIND_INFRASTRUCTURE,)) for problem in self._one_rule_problems(entry)
-        ]
-        return [*link_problems, *entry_problems_found]
+        return [problem for entry in self.entries((KIND_INFRASTRUCTURE,)) for problem in self._one_rule_problems(entry)]
 
     def _between_problems(self, relationship: Relationship) -> list[str]:
         """Check one relationship against the entries it names.
 
+        Any entry may link to any other, so only the entries' existence is checked.
+
         Returns:
-            One sentence per end or referenced entry the matrix does not hold, and per end of a
-            kind the relationship's kind may not join.
+            One sentence per end or referenced entry the matrix does not hold.
 
         """
-        rule: RelationshipRule = RELATIONSHIP_RULES[relationship.kind]
+        rule: RelationshipRule = relationship_rule(relationship.kind)
         label: str = relationship_label(relationship)
         problems: list[str] = []
-        start: Entry | None = self._entries.get(relationship.start)
-        end: Entry | None = self._entries.get(relationship.end)
-        if start is None:
+        if relationship.start not in self._entries:
             problems.append(f"{label}: {relationship.start} is not an entry")
-        elif start.kind not in rule.sources:
-            problems.append(f"{label}: a {relationship.kind} relationship may not start at a {start.kind}")
-        if end is None:
+        if relationship.end not in self._entries:
             problems.append(f"{label}: {relationship.end} is not an entry")
-        elif end.kind not in rule.targets:
-            problems.append(f"{label}: a {relationship.kind} relationship may not end at a {end.kind}")
         name: str
         for name in sorted(rule.references):
             named: JsonValue = relationship.attributes.get(name)
@@ -825,7 +776,7 @@ class Matrix:
             problems.extend(
                 f"{start}: starts {count} {kind} relationships on the {side} side; at most {limit} are allowed"
                 for (kind, side), count in sorted(counts.items())
-                if (limit := RELATIONSHIP_RULES[kind].max_per_start) is not None and count > limit
+                if (limit := relationship_rule(kind).max_per_start) is not None and count > limit
             )
         return problems
 
@@ -846,8 +797,8 @@ class Matrix:
 
         Returns:
             One sentence per entry that breaks its kind or whose id names a stack the matrix does
-            not hold; per relationship that breaks its kind, names an entry the matrix does not
-            hold or joins kinds it may not join; and per entry that starts more relationships of
+            not hold; per relationship that breaks its kind or names an entry the matrix does not
+            hold; and per entry that starts more relationships of
             a kind on one side than the kind allows. Empty when the matrix conforms.
 
         """
@@ -913,7 +864,7 @@ class Matrix:
                 already has that many others of the kind.
 
         """
-        limit: int | None = RELATIONSHIP_RULES[relationship.kind].max_per_start
+        limit: int | None = relationship_rule(relationship.kind).max_per_start
         if limit is None:
             return
         others: list[Relationship] = [
@@ -995,7 +946,7 @@ class Matrix:
             relationship: Relationship = self._relationships[identity]
             names: list[str] = [
                 name
-                for name in sorted(RELATIONSHIP_RULES[identity.kind].references)
+                for name in sorted(relationship_rule(identity.kind).references)
                 if relationship.attributes.get(name) == entry_id
             ]
             if names:
@@ -1063,7 +1014,7 @@ class Matrix:
         identity: RelationshipId
         for identity in sorted(touched):
             relationship: Relationship = self._relationships[identity]
-            references: frozenset[str] = RELATIONSHIP_RULES[identity.kind].references
+            references: frozenset[str] = relationship_rule(identity.kind).references
             moved.append(
                 replace(
                     relationship,
@@ -1124,7 +1075,7 @@ class Matrix:
             names: list[str]
             for identity, names in self._referring(gone):
                 relationship: Relationship = self._relationships[identity]
-                rule: RelationshipRule = RELATIONSHIP_RULES[identity.kind]
+                rule: RelationshipRule = relationship_rule(identity.kind)
                 self._drop(identity)
                 if not set(names) & {*rule.key, *rule.required}:
                     kept: dict[str, JsonValue] = {
