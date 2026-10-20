@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/prd-validation-analysis.schema.json",
   "title": "PRD validation analysis",
-  "description": "The analysis the prd-validation-analyst writes in the prd-validation workflow: the candidate <artifacts.dir>/candidates/prd-validation.json, which jsonartifact.py validates against Analysis here (TracedAnalysis when the run names a BRD) and publishes as <artifacts.dir>/prd-validation.json. The workflow then records each technical rule no document states in the matrix and fails the PRD only on a blocker finding. Every issue, question and detail field stays under 40 words.",
+  "description": "The prd-validation workflow's contracts. Each lens is one specialist's job and its result is one $defs entry here: requirement-classifier (ClassificationResult), ambiguity-detector (AmbiguityResult), completeness-checker (CompletenessResult), requirements-conflict-detector (ConflictResult), constraint-extractor (ConstraintResult), domain-boundary-validator (BoundaryResult), requirements-clarifier (ClarificationResult) and, when the run names a BRD, brd-traceability-auditor (TraceabilityResult). Each writes its candidate, which jsonartifact.py validates and publishes. The workflow merges the lens results into Analysis (TracedAnalysis when the run names a BRD), published as <artifacts.dir>/prd-validation.json; it then records each technical rule no document states in the matrix and fails the PRD only on a blocker finding. Every issue, question and detail field stays under 40 words.",
   "$ref": "#/$defs/Analysis",
   "$defs": {
     "Severity": {"description": "`blocker` fails the PRD; `info` is for an absence that may legitimately arrive as its own later PRD.", "type": "string", "enum": ["blocker", "major", "minor", "info"]},
@@ -33,6 +33,48 @@
         "archRefs": {"description": "Technical and covered: the id of each entry that states the rule, a document as `<id>#<heading>`. Otherwise [].", "type": "array", "items": {"type": "string"}}
       }
     },
+    "Conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirements", "contradiction", "severity"],
+      "properties": {
+        "requirements": {"type": "array", "items": {"type": "string"}},
+        "contradiction": {"type": "string"},
+        "severity": {"$ref": "#/$defs/Severity"}
+      }
+    },
+    "Constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["constraint", "kind", "explicit"],
+      "properties": {
+        "constraint": {"type": "string"},
+        "kind": {"type": "string"},
+        "explicit": {"type": "boolean"},
+        "source": {"description": "Where the PRD states or implies it.", "type": "string"}
+      }
+    },
+    "BoundaryFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement", "boundaryCrossed", "severity"],
+      "properties": {
+        "requirement": {"type": "string"},
+        "boundaryCrossed": {"type": "string"},
+        "severity": {"$ref": "#/$defs/Severity"},
+        "detail": {"type": "string"}
+      }
+    },
+    "Clarification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement", "question"],
+      "properties": {
+        "requirement": {"type": "string"},
+        "question": {"type": "string"},
+        "reason": {"type": "string"}
+      }
+    },
     "Traceability": {
       "description": "Informational only, never a judgment of the PRD: the mapping of each PRD requirement to the BRD objective(s) it serves. A requirement that traces to no objective is never a defect.",
       "type": "object",
@@ -46,85 +88,108 @@
             "type": "object",
             "additionalProperties": false,
             "required": ["requirement", "objectives"],
-            "properties": {"requirement": {"type": "string"}, "objectives": {"type": "array", "items": {"type": "string"}}}
+            "properties": {
+              "requirement": {"type": "string"},
+              "objectives": {"type": "array", "items": {"type": "string"}}
+            }
           }
         },
         "orphanRequirements": {"description": "Requirements that map to no objective.", "type": "array", "items": {"type": "string"}},
         "unimplementedObjectives": {"description": "Objectives no requirement serves, only where this single PRD could plausibly have served them.", "type": "array", "items": {"type": "string"}}
       }
     },
+    "ClassificationResult": {
+      "description": "What the requirement-classifier writes: the candidate <artifacts.dir>/candidates/prd-validation-requirement-class.json, published as <artifacts.dir>/prd-validation/requirement-class.json.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirementClasses"],
+      "properties": {
+        "requirementClasses": {"$ref": "#/$defs/Analysis/properties/requirementClasses"}
+      }
+    },
+    "AmbiguityResult": {
+      "description": "What the ambiguity-detector writes: the candidate <artifacts.dir>/candidates/prd-validation-ambiguity.json, published as <artifacts.dir>/prd-validation/ambiguity.json.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ambiguities"],
+      "properties": {
+        "ambiguities": {"$ref": "#/$defs/Analysis/properties/ambiguities"}
+      }
+    },
+    "CompletenessResult": {
+      "description": "What the completeness-checker writes: the candidate <artifacts.dir>/candidates/prd-validation-completeness.json, published as <artifacts.dir>/prd-validation/completeness.json.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["completenessGaps"],
+      "properties": {
+        "completenessGaps": {"$ref": "#/$defs/Analysis/properties/completenessGaps"}
+      }
+    },
+    "ConflictResult": {
+      "description": "What the requirements-conflict-detector writes: the candidate <artifacts.dir>/candidates/prd-validation-conflict.json, published as <artifacts.dir>/prd-validation/conflict.json.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conflicts"],
+      "properties": {
+        "conflicts": {"$ref": "#/$defs/Analysis/properties/conflicts"}
+      }
+    },
+    "ConstraintResult": {
+      "description": "What the constraint-extractor writes: the candidate <artifacts.dir>/candidates/prd-validation-constraints.json, published as <artifacts.dir>/prd-validation/constraints.json.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["constraints"],
+      "properties": {
+        "constraints": {"$ref": "#/$defs/Analysis/properties/constraints"}
+      }
+    },
+    "BoundaryResult": {
+      "description": "What the domain-boundary-validator writes: the candidate <artifacts.dir>/candidates/prd-validation-boundary.json, published as <artifacts.dir>/prd-validation/boundary.json.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["boundaryFindings"],
+      "properties": {
+        "boundaryFindings": {"$ref": "#/$defs/Analysis/properties/boundaryFindings"}
+      }
+    },
+    "ClarificationResult": {
+      "description": "What the requirements-clarifier writes: the candidate <artifacts.dir>/candidates/prd-validation-clarification.json, published as <artifacts.dir>/prd-validation/clarification.json.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clarifications"],
+      "properties": {
+        "clarifications": {"$ref": "#/$defs/Analysis/properties/clarifications"}
+      }
+    },
+    "TraceabilityResult": {
+      "description": "What the brd-traceability-auditor writes when the run names a BRD: the candidate <artifacts.dir>/candidates/prd-validation-traceability.json, published as <artifacts.dir>/prd-validation/traceability.json.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["traceability"],
+      "properties": {
+        "traceability": {"$ref": "#/$defs/Traceability"}
+      }
+    },
     "Analysis": {
+      "description": "The merged analysis the workflow writes from the lens results (<artifacts.dir>/prd-validation.json).",
       "type": "object",
       "additionalProperties": false,
       "required": ["requirementClasses", "ambiguities", "completenessGaps", "conflicts", "constraints", "boundaryFindings", "clarifications", "summary"],
       "properties": {
-        "requirementClasses": {"description": "Every requirement the PRD states, once each (lens 0).", "type": "array", "items": {"$ref": "#/$defs/RequirementClass"}},
-        "ambiguities": {"description": "Requirements whose user-observable behavior is genuinely unclear, contradictory or open to two incompatible readings, each with a concrete clarification (lens 1).", "type": "array", "items": {"$ref": "#/$defs/Finding"}},
-        "completenessGaps": {"description": "Requirements missing an actor, a trigger, an observable user outcome or behavioral acceptance criteria, and missing user-observable paths (lens 2).", "type": "array", "items": {"$ref": "#/$defs/Finding"}},
-        "conflicts": {
-          "description": "Sets of requirements whose WHAT cannot all hold (lens 3).",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["requirements", "contradiction", "severity"],
-            "properties": {
-              "requirements": {"type": "array", "items": {"type": "string"}},
-              "contradiction": {"type": "string"},
-              "severity": {"$ref": "#/$defs/Severity"}
-            }
-          }
-        },
-        "constraints": {
-          "description": "The explicit and implied constraints the PRD imposes: regulatory, business, platform, policy (lens 4).",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["constraint", "kind", "explicit"],
-            "properties": {
-              "constraint": {"type": "string"},
-              "kind": {"type": "string"},
-              "explicit": {"type": "boolean"},
-              "source": {"description": "Where the PRD states or implies it.", "type": "string"}
-            }
-          }
-        },
-        "boundaryFindings": {
-          "description": "Requirements that make this feature own behavior another feature or service owns, or that sit in more than one bounded context (lens 5).",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["requirement", "boundaryCrossed", "severity"],
-            "properties": {
-              "requirement": {"type": "string"},
-              "boundaryCrossed": {"type": "string"},
-              "severity": {"$ref": "#/$defs/Severity"},
-              "detail": {"type": "string"}
-            }
-          }
-        },
-        "clarifications": {
-          "description": "Open BUSINESS questions the author must answer before the PRD can be specified, unresolved (lens 6). A technical gap is never one.",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["requirement", "question"],
-            "properties": {"requirement": {"type": "string"}, "question": {"type": "string"}, "reason": {"type": "string"}}
-          }
-        },
+        "requirementClasses": {"description": "Every requirement the PRD states, once each, classified by the requirement-classifier.", "type": "array", "items": {"$ref": "#/$defs/RequirementClass"}},
+        "ambiguities": {"description": "Requirements whose user-observable behavior is genuinely unclear, contradictory or open to two incompatible readings, each with a concrete clarification, found by the ambiguity-detector.", "type": "array", "items": {"$ref": "#/$defs/Finding"}},
+        "completenessGaps": {"description": "Requirements missing an actor, a trigger or action, an observable user outcome or a behavioral acceptance criterion, found by the completeness-checker.", "type": "array", "items": {"$ref": "#/$defs/Finding"}},
+        "conflicts": {"description": "Sets of requirements whose WHAT cannot all hold, found by the requirements-conflict-detector.", "type": "array", "items": {"$ref": "#/$defs/Conflict"}},
+        "constraints": {"description": "The explicit and implied constraints the PRD imposes: regulatory, business, platform, policy, extracted by the constraint-extractor.", "type": "array", "items": {"$ref": "#/$defs/Constraint"}},
+        "boundaryFindings": {"description": "Requirements that make this feature own behavior another feature or service owns, or that sit in more than one bounded context, found by the domain-boundary-validator.", "type": "array", "items": {"$ref": "#/$defs/BoundaryFinding"}},
+        "clarifications": {"description": "Open BUSINESS questions the author must answer before the PRD can be specified, unresolved, raised by the requirements-clarifier. A technical gap is never one.", "type": "array", "items": {"$ref": "#/$defs/Clarification"}},
         "traceability": {"$ref": "#/$defs/Traceability"},
-        "summary": {"description": "A plain-language readout, under 120 words, of the PRD's readiness for downstream specification.", "type": "string"}
+        "summary": {"description": "A plain-language readout, under 120 words, of the PRD's readiness for downstream specification: the counts of classified requirements and of findings by severity, which the workflow composes from the lens results.", "type": "string"}
       }
     },
     "TracedAnalysis": {
       "description": "The analysis of a run that names a BRD: `traceability` is required.",
-      "allOf": [
-        {"$ref": "#/$defs/Analysis"},
-        {"required": ["traceability"]}
-      ]
+      "allOf": [{"$ref": "#/$defs/Analysis"}, {"required": ["traceability"]}]
     }
   }
 }

@@ -45,9 +45,11 @@ contracts too; no Epic session produces or reads them.
 ## Agents no Epic step starts
 
 A script step writes the Story document, so no step starts story-bead-writer (DESIGN 11.5).
-prd-validation-analyst, filing-clerk, advantage-evaluator, phase-gate-enforcer, wsjf-scorer,
-epic-dependency-assessor, stakeholder-request-intake-writer, feature-persona-writer, feature-objective-writer, prd-writer
-and prd-alignment-verifier are started by their own workflows or by a person. No Epic step starts
+filing-clerk, advantage-evaluator, phase-gate-enforcer, wsjf-scorer,
+epic-dependency-assessor, stakeholder-request-intake-writer, feature-persona-writer, feature-objective-writer, prd-writer,
+prd-alignment-verifier, requirement-classifier, ambiguity-detector, completeness-checker,
+requirements-conflict-detector, constraint-extractor, domain-boundary-validator, requirements-clarifier
+and brd-traceability-auditor are started by their own workflows or by a person. No Epic step starts
 architecture-fitness-function-author or ubiquitous-language-writer. built-architecture-comparer and
 architecture-conformance-reviewer are started by the built-version workflow. No step starts
 architecture-pattern-challenger, architecture-tradeoff-skeptic, architecture-boundary-guardian,
@@ -125,4 +127,5 @@ A `<workDir>` or `<artifacts.dir>` row belongs to an owner-run workflow and is n
 | `<workDir>/apply-edges.json` (or `apply-edges-dry-run.json`) | apply-edges | python | python | none | `<plugin>/scripts/portfolio/edgeset.py` `ApplyResult` |
 | `<workDir>/scoring/` | as the wsjf-scoring rows | python | as the wsjf-scoring rows | none | as the wsjf-scoring rows |
 | `<workDir>/request.json`, `intake.json`, `persona.json`, `okrs.json`, `drafts/pass-<n>.md` (the PRD) and `drafts/pass-<n>.json`, `alignment/pass-<n>.json`, `ruling.json` | prd-creation | python (the request),stakeholder-request-intake-writer,feature-persona-writer,feature-objective-writer,prd-writer,prd-alignment-verifier,review-dispute-decider | the next agent of the chain,python | artifact-handoff `schemas/prd-creation.schema.json` | prd-creation (one `$defs` entry each; `ruling.json` is `#/$defs/DeadlockRuling`, the prd-deadlock-ruling) |
-| `<artifacts.dir>/prd-validation.json` | prd-validation-analysis | prd-validation-analyst | python | artifact-handoff `schemas/prd-validation-analysis.schema.json` | prd-validation-analysis (`#/$defs/Analysis`, `#/$defs/TracedAnalysis`) |
+| `<artifacts.dir>/prd-validation/<lens>.json` | prd-validation-lens | requirement-classifier,ambiguity-detector,completeness-checker,requirements-conflict-detector,constraint-extractor,domain-boundary-validator,requirements-clarifier,brd-traceability-auditor | python | artifact-handoff `schemas/prd-validation-analysis.schema.json` | prd-validation-analysis (one `$defs` entry per lens) |
+| `<artifacts.dir>/prd-validation.json` | prd-validation-analysis | python | python | artifact-handoff `schemas/prd-validation-analysis.schema.json` | prd-validation-analysis (`#/$defs/Analysis`, `#/$defs/TracedAnalysis`) |

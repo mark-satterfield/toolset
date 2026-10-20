@@ -1,8 +1,8 @@
 export const meta = {
   name: 'prd-validation',
   description:
-    'Leaf mini — PRD Validation. One read-only analyst session inspects a PRD through seven lenses (requirement class, ambiguity, completeness, conflict, constraints, domain boundaries, clarifications), plus an informational BRD traceability mapping when args.brdPath names a BRD file; the PRD (args.prd.path), the BRD and the boundary notes (args.contextPath) are handed by path and the analysis is written to its contract file (skills/artifact-handoff/schemas/prd-validation-analysis.schema.json); the script consolidates the findings and fails the PRD only on a blocker finding. The requirement-class lens classifies every requirement as business or technical and asks the matrix whether the architecture already states each technical rule (atw-matrix find --kinds constraint,document, then node); a technical requirement is a major finding, since a PRD keeps business requirements only. The script records in the matrix each technical rule no document states, as a constraint that applies to the Epic and is stated in no document (atw-matrix put constraint, then link appliesTo), and the validation fails when a rule is not recorded.',
-  phases: [{ title: 'Validate', detail: 'one analyst session inspects the PRD through every lens' }],
+    'Leaf mini — PRD Validation. Seven read-only specialists, one per lens, inspect a PRD in parallel: requirement-classifier (requirement class), ambiguity-detector, completeness-checker, requirements-conflict-detector, constraint-extractor, domain-boundary-validator and requirements-clarifier, plus brd-traceability-auditor for an informational BRD traceability mapping when args.brdPath names a BRD file. Each specialist\'s method is in its own definition; the PRD (args.prd.path), the BRD and the boundary notes (args.contextPath) are handed by path, and each writes its result to its $defs entry of skills/artifact-handoff/schemas/prd-validation-analysis.schema.json. The script merges the results into one analysis file, consolidates the findings and fails the PRD only on a blocker finding. The requirement-classifier classifies every requirement as business or technical and asks the matrix whether the architecture already states each technical rule (atw-matrix find --kinds constraint,document, then node); a technical requirement is a major finding, since a PRD keeps business requirements only. The script records in the matrix each technical rule no document states, as a constraint that applies to the Epic and is stated in no document (atw-matrix put constraint, then link appliesTo), and the validation fails when a rule is not recorded.',
+  phases: [{ title: 'Validate', detail: 'one specialist per lens inspects the PRD, in parallel; the script merges and judges' }],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
 // skills/pipeline-contracts/schemas/driver-surface.schema.json, inlined by shared-blocks.mjs. DRIVER_SURFACE maps
@@ -678,7 +678,7 @@ async function settleAgent(prompt, opts) {
 //           recorded constraint applies to), script, phase, inputs?, beadId? },
 //         pluginRoot | relay: { runner, dir? } (the checked relay: relayrun.py, given directly or as
 //           <pluginRoot>/scripts/portfolio/relayrun.py; the script checks and records prd-validation.json) }
-// The PRD, the BRD and the notes are handed to the analyst by path and read there; none is pasted.
+// The PRD, the BRD and the notes are handed to the lens specialists by path and read there; none is pasted.
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 
 function artifactsFrom(x) {
@@ -711,12 +711,8 @@ const MATRIX = shq(MATRIX_BIN)
 const MATRIX_RECORD_ROLE = 'script'
 
 const prdHeader = `PRD ${prdId} ${prdTitle}`.trim()
-const prdBlock = `${prdHeader ? prdHeader + '\n\n' : ''}The authoritative PRD is the document at ${prdPath}. Read it in full before applying any lens.`
 
 phase('Validate')
-
-const classLens = `REQUIREMENT CLASS (\`requirementClasses\`): classify EVERY requirement the PRD states, once each, as \`business\` or \`technical\` as the contract's \`class\` description defines them, with a one-line \`reason\`. A requirement that states both is two entries with the same \`id\`.
-For a technical requirement, state \`governs\` and \`rule\` as their descriptions say. Then ask the matrix whether the architecture states the rule: \`${MATRIX} find --kinds constraint,document --text "<the rule, and the kind of thing it governs, in words>"\`, then \`${MATRIX} node <id>\` for each match that bears on it. A read needs no role, and every command prints one JSON object. A constraint entry carries its \`statement\` and the document and heading it is \`statedIn\`; a document entry carries its \`lifecycle\` and its headings. Read the heading the matrix names, in that document and no other, when the entry alone does not say whether it states the rule${archPath ? ` (a document's id is \`document:\` and the document's path under ${archPath})` : ''}. Set \`archCoverage\` and \`archRefs\` as their descriptions define. Search no arc42 folder, front matter or section 2 for what the matrix returns.`
 
 /** Returns the classification entries of a structured result, each with its fields normalized. */
 function classesOf(result) {
@@ -737,50 +733,82 @@ function classesOf(result) {
 }
 
 if (!ART || !RELAY_RUNNER) return dispatchOutcome({ ok: false, stage: 'input', reason: 'Validation requires an artifact directory and relay runner for its authoritative findings.' })
-if (!prdPath) return dispatchOutcome({ ok: false, stage: 'input', reason: 'Validation requires prd.path, the absolute path of the PRD file: the analyst reads the PRD there.' })
+if (!prdPath) return dispatchOutcome({ ok: false, stage: 'input', reason: 'Validation requires prd.path, the absolute path of the PRD file: each lens specialist reads the PRD there.' })
 const candidateFile = `${ART.dir}/candidates/prd-validation.json`
+const relayDir = typeof relayArg.dir === 'string' && relayArg.dir.trim().startsWith('/') ? relayArg.dir.trim().replace(/\/+$/, '') : `${ART.dir}/relay/prd-validation`
+const analysisFile = `${ART.dir}/prd-validation.json`
 const inputBinding = await relayKit.artifactRevision(settleAgent, { label: 'validation:inputs', phase: 'Validate', runner: RELAY_RUNNER, files: [...new Set([...(ART.inputs || []), prdPath, brdPath, contextPath, archPath].filter(p => typeof p === 'string' && p.trim()))], relayFile: `${ART.dir}/relay/validation-inputs.json`, context: { prd: { id: prdId, title: prdTitle, path: prdPath }, brdPath, contextPath } })
 if (!inputBinding.ok) return dispatchOutcome({ ok: false, stage: 'Validate', reason: inputBinding.error })
 const inputRevision = inputBinding.revision
-const analyze = () => settleAgent(
-  `You are an INDEPENDENT PRD validation analyst. You did not author this PRD and you never rewrite it — you only inspect it, applying EVERY lens below in one pass. Shared ground rules for all lenses:
-- This is a WHAT-level PRD. A requirement that names a desired outcome without naming its implementation mechanism is NOT defective — never flag absent mechanism, thresholds, schemas, or quantified NFRs.
-- This PRD is one slice of a decomposed set and names no other PRD: ordering between features is carried by Epic dependency edges, not by the PRD. Behavior another feature provides is not a gap in this one.
-- The product is built ITERATIVELY: an absence that may legitimately arrive as its own later PRD is scheduling, not a defect — report it at INFO severity only.
-- Report findings, not essays, and do not restate one finding as several.
 
-Write the analysis to its contract, named below; the descriptions there define every member and its length limit.
-
-Lens 0 — ${classLens}
-Lens 1 — AMBIGUITY (\`ambiguities\`).
-Lens 2 — COMPLETENESS (\`completenessGaps\`).
-Lens 3 — CONFLICT (\`conflicts\`), citing the requirements in tension.
-Lens 4 — CONSTRAINTS (\`constraints\`).
-Lens 5 — DOMAIN BOUNDARIES (\`boundaryFindings\`).
-Lens 6 — CLARIFICATION REQUESTS (\`clarifications\`): do not resolve them; the architecture team decides every technical gap.
-${brdPath ? `Lens 7 — BRD TRACEABILITY (\`traceability\`), INFORMATIONAL ONLY: map each PRD requirement to the objectives of the BRD at ${brdPath}. A requirement mapping to a stated objective or guiding principle is traced; the BRD states objectives, not features. THIS LENS NEVER PRODUCES A DEFECT: a requirement that traces to no BRD objective is never reported as a problem, a gap, an ambiguity or a conflict through this or any other lens.
-` : ''}
-${contextPath ? `Bounded-context / service-boundary notes for lens 5: ${contextPath}.` : 'No bounded-context / service-boundary notes are supplied.'}
-
-Repository under consideration: ${repo}
-
-PRD under validation:
-${prdBlock}
-
-READING BUDGET: the PRD is the entire object of every lens. Read nothing else but ${[brdPath, contextPath].filter(Boolean).length ? 'the files named above, ' : ''}what Lens 0 asks the matrix, and then only a heading the matrix names. Do not survey the repository, the architecture folders or the polyrepo.${relayKit.artifactBrief(candidateFile, ANALYSIS_CONTRACT, inputRevision, RELAY_RUNNER.replace(/[^/]+$/, 'artifactcontract.py'))}`,
-  {
-    agentType: 'prd-validation-analyst', // model: its definition's front matter sets it (sonnet)
-    label: 'validate:all-lenses',
-    effort: 'low',
-    phase: 'Validate',
-    schema: relayKit.ARTIFACT_SCHEMA,
-  }
-)
-
+// ── ONE SPECIALIST PER LENS ─────────────────────────────────────────────────────
+//
+// Each lens is the job of the specialist named for it, and its method lives in that agent's own
+// definition; a brief carries only this run's data. The specialists run in parallel, each writing
+// its result to its own $defs entry of the analysis contract, and an accepted result whose inputs
+// are unchanged is reused on a rerun. The script then merges the results into the one analysis
+// file, records the technical rules no document states, and judges the blockers itself.
+const LENS_CONTRACT_FILE = 'skills/artifact-handoff/schemas/prd-validation-analysis.schema.json'
+const prdData = `The PRD under validation${prdHeader ? ` (${prdHeader})` : ''} is the document at ${prdPath}.\nRepository under consideration: ${repo}`
+const lensDispatch = { effort: 'low', phase: 'Validate' } // model: each specialist's front matter sets it
+const LENSES = [
+  { key: 'requirement-class', contract: 'ClassificationResult', data: `The matrix command: ${MATRIX}.${archPath ? `\nThe architecture root a document's id is a path under: ${archPath}.` : ''}`,
+    run: (brief) => settleAgent(brief, { agentType: 'requirement-classifier', label: 'validate:requirement-class', ...lensDispatch, schema: relayKit.ARTIFACT_SCHEMA }) },
+  { key: 'ambiguity', contract: 'AmbiguityResult', data: '',
+    run: (brief) => settleAgent(brief, { agentType: 'ambiguity-detector', label: 'validate:ambiguity', ...lensDispatch, schema: relayKit.ARTIFACT_SCHEMA }) },
+  { key: 'completeness', contract: 'CompletenessResult', data: '',
+    run: (brief) => settleAgent(brief, { agentType: 'completeness-checker', label: 'validate:completeness', ...lensDispatch, schema: relayKit.ARTIFACT_SCHEMA }) },
+  { key: 'conflict', contract: 'ConflictResult', data: '',
+    run: (brief) => settleAgent(brief, { agentType: 'requirements-conflict-detector', label: 'validate:conflict', ...lensDispatch, schema: relayKit.ARTIFACT_SCHEMA }) },
+  { key: 'constraints', contract: 'ConstraintResult', data: '',
+    run: (brief) => settleAgent(brief, { agentType: 'constraint-extractor', label: 'validate:constraints', ...lensDispatch, schema: relayKit.ARTIFACT_SCHEMA }) },
+  { key: 'boundary', contract: 'BoundaryResult', data: contextPath ? `The bounded-context and service-boundary notes: ${contextPath}.` : 'No bounded-context or service-boundary notes are supplied.',
+    run: (brief) => settleAgent(brief, { agentType: 'domain-boundary-validator', label: 'validate:boundary', ...lensDispatch, schema: relayKit.ARTIFACT_SCHEMA }) },
+  { key: 'clarification', contract: 'ClarificationResult', data: '',
+    run: (brief) => settleAgent(brief, { agentType: 'requirements-clarifier', label: 'validate:clarification', ...lensDispatch, schema: relayKit.ARTIFACT_SCHEMA }) },
+  ...(brdPath
+    ? [{ key: 'traceability', contract: 'TraceabilityResult', data: `The BRD: ${brdPath}.`,
+        run: (brief) => settleAgent(brief, { agentType: 'brd-traceability-auditor', label: 'validate:traceability', ...lensDispatch, schema: relayKit.ARTIFACT_SCHEMA }) }]
+    : []),
+]
+const lensFile = (lens) => `${ART.dir}/prd-validation/${lens.key}.json`
+const ARTIFACT_HELPER = RELAY_RUNNER.replace(/[^/]+$/, 'artifactcontract.py')
+const lensResults = await parallel(LENSES.map((lens) => () => {
+  const candidate = `${ART.dir}/candidates/prd-validation-${lens.key}.json`
+  const contract = `${LENS_CONTRACT_FILE}#/$defs/${lens.contract}`
+  return relayKit.authorArtifact(settleAgent, { label: `save:${lens.key}`, phase: 'Validate', runner: RELAY_RUNNER, candidate, file: lensFile(lens), contract, revision: inputRevision, relayFile: `${relayDir}/accepted-${lens.key}.json` },
+    () => lens.run(`${prdData}${lens.data ? `\n${lens.data}` : ''}${relayKit.artifactBrief(candidate, contract, inputRevision, ARTIFACT_HELPER)}`), () => !!dispatchInterruption)
+}))
 if (dispatchInterruption) return dispatchOutcome({ ok: false, stage: 'Validate', reason: 'Validation interrupted.' })
-const relayDir = typeof relayArg.dir === 'string' && relayArg.dir.trim().startsWith('/') ? relayArg.dir.trim().replace(/\/+$/, '') : `${ART.dir}/relay/prd-validation`
-const analysisFile = `${ART.dir}/prd-validation.json`
-const saved = await relayKit.authorArtifact(settleAgent, { label: 'save:prd-validation', phase: 'Validate', runner: RELAY_RUNNER, candidate: candidateFile, file: analysisFile, contract: ANALYSIS_CONTRACT, revision: inputRevision, relayFile: `${relayDir}/accepted-prd-validation.json`, keys: ['requirementClasses.id', 'requirementClasses.class', 'requirementClasses.governs', 'requirementClasses.rule', 'requirementClasses.archCoverage', 'requirementClasses.archRefs', 'ambiguities.requirement', 'ambiguities.severity', 'completenessGaps.requirement', 'completenessGaps.severity', 'conflicts.requirements', 'conflicts.severity', 'boundaryFindings.requirement', 'boundaryFindings.severity', 'clarifications.requirement'] }, analyze, () => !!dispatchInterruption)
+const missingLenses = LENSES.map((lens, at) => ({ lens, result: lensResults[at] })).filter(({ result }) => !result || !result.ok)
+if (missingLenses.length) {
+  return dispatchOutcome({ ok: false, stage: 'Validate', reason: `The result of ${missingLenses.length} lens(es) was not accepted: ${missingLenses.map(({ lens, result }) => `${lens.key}: ${(result && result.error) || 'not saved'}`).join('; ')}` })
+}
+
+// The merge reads each accepted lens result, adds the summary composed from their counts, and writes
+// the analysis candidate, which jsonartifact.py validates against the analysis contract and publishes.
+const MERGE_PY = `import json, os
+candidate, parts = ARGS[0], json.loads(ARGS[1])
+merged = {}
+for part in parts:
+    with open(part, encoding="utf-8") as handle:
+        merged.update(json.load(handle))
+classes = merged.get("requirementClasses", [])
+technical = sum(1 for entry in classes if entry.get("class") == "technical")
+counts = {"blocker": 0, "major": technical, "minor": 0, "info": 0}
+for key in ("ambiguities", "completenessGaps", "conflicts", "boundaryFindings"):
+    for finding in merged.get(key, []):
+        counts[finding.get("severity", "info")] = counts.get(finding.get("severity", "info"), 0) + 1
+questions = len(merged.get("clarifications", []))
+ready = "not ready: a blocker finding stands" if counts["blocker"] else "ready for specification: no blocker finding"
+merged["summary"] = f"{len(classes)} requirement(s) classified, {technical} technical. Findings: {counts['blocker']} blocker, {counts['major']} major, {counts['minor']} minor, {counts['info']} info; {questions} clarification question(s); {len(merged.get('constraints', []))} constraint(s) extracted. The PRD is {ready}."
+os.makedirs(os.path.dirname(candidate), exist_ok=True)
+with open(candidate, "w", encoding="utf-8") as handle:
+    json.dump(merged, handle, ensure_ascii=False)
+emit({"written": candidate, "lenses": len(parts)})`
+const merged = await relayKit.inline(settleAgent, { label: 'merge:prd-validation', phase: 'Validate', code: MERGE_PY, args: [candidateFile, JSON.stringify(LENSES.map(lensFile))] })
+if (!merged.ok) return dispatchOutcome({ ok: false, stage: 'Validate', reason: `The lens results were not merged: ${merged.error}` })
+const saved = await relayKit.acceptArtifact(settleAgent, { label: 'save:prd-validation', phase: 'Validate', runner: RELAY_RUNNER, candidate: candidateFile, file: analysisFile, contract: ANALYSIS_CONTRACT, revision: inputRevision, relayFile: `${relayDir}/accepted-prd-validation.json`, returned: merged.view, keys: ['requirementClasses.id', 'requirementClasses.class', 'requirementClasses.governs', 'requirementClasses.rule', 'requirementClasses.archCoverage', 'requirementClasses.archRefs', 'ambiguities.requirement', 'ambiguities.severity', 'completenessGaps.requirement', 'completenessGaps.severity', 'conflicts.requirements', 'conflicts.severity', 'boundaryFindings.requirement', 'boundaryFindings.severity', 'clarifications.requirement'] })
 if (!saved.ok) {
   return dispatchOutcome({ ok: false, stage: 'Validate', reason: `The authoritative validation was not accepted: ${saved.error || 'not saved'}` })
 }
@@ -901,8 +929,8 @@ return dispatchOutcome({
     phase: 'prd-validation',
     beadId: null,
     subject: prdId || null,
-    chosen: ['validation-analyst-combined' + (brdPath ? '+brd-traceability' : '')],
-    mode: 'combined',
+    chosen: LENSES.map((lens) => lens.key),
+    mode: 'per-lens',
     ok: validationVerdict === 'pass',
   },
 })

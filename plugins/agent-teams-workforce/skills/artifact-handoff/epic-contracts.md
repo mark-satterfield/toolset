@@ -117,7 +117,8 @@ These are owner-run workflows, not Epic elaboration. Their files are in the run'
 | Artifact | Writer | Readers | Contract |
 |---|---|---|---|
 | prd-creation request, intake, persona, objectives, draft record, alignment verdict and deadlock ruling | the workflow; `stakeholder-request-intake-writer`; `feature-persona-writer`; `feature-objective-writer`; `prd-writer`; `prd-alignment-verifier`; `review-dispute-decider` | the next agent of the chain; the workflow | `prd-creation.schema.json` (one `$defs` entry each) |
-| prd-validation analysis | `prd-validation-analyst` | the workflow | `prd-validation-analysis.schema.json` |
+| prd-validation lens results: `<artifacts.dir>/prd-validation/<lens>.json` | `requirement-classifier`, `ambiguity-detector`, `completeness-checker`, `requirements-conflict-detector`, `constraint-extractor`, `domain-boundary-validator`, `requirements-clarifier` and, when a BRD is named, `brd-traceability-auditor` | the workflow, which merges them | `prd-validation-analysis.schema.json` (one `$defs` entry per lens) |
+| prd-validation analysis: `<artifacts.dir>/prd-validation.json` | the workflow | the workflow | `prd-validation-analysis.schema.json` (`$defs/Analysis`, `$defs/TracedAnalysis`) |
 | assessment context: `<workDir>/context.json` | `depscore.py assess-context` | `epic-dependency-assessor`; `task-dependency-mapper` | `dependency-assessment.schema.json` (`$defs/EpicContext`, `$defs/TaskContext`) |
 | Epic edge proposal: `<workDir>/edges.json` | `epic-dependency-assessor` | the dependency-assessment workflow | `epic-edge-proposal.schema.json` |
 | Task edge proposal: `<workDir>/edges.json` | `task-dependency-mapper` | the task-dependency-assessment workflow | `task-edge-proposal.schema.json` |

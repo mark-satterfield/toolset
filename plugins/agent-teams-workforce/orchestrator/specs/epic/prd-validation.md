@@ -4,18 +4,20 @@ Failure handling: bounded transient retries and quota pauses remain. An ordinary
 
 ## What it is
 
-`workflows/prd-validation.js` is a leaf workflow in which one read-only analyst session (agent
-`prd-validation-analyst`) inspects a PRD through seven lenses (requirement class, ambiguity,
-completeness, conflict, constraints, domain boundaries, clarifications), with an informational
-BRD traceability mapping when `args.brdPath` names a BRD file. The PRD (`args.prd.path`), the BRD
-and the boundary notes (`args.contextPath`) are handed by path, and the analysis is written to
-`skills/artifact-handoff/schemas/prd-validation-analysis.schema.json`. The script fails the PRD only on a blocker
-finding, and treats a technical requirement as a major finding. It runs on its own, when a person
-dispatches it.
+`workflows/prd-validation.js` is a leaf workflow in which one read-only specialist per lens
+inspects a PRD, in parallel: `requirement-classifier` (requirement class), `ambiguity-detector`,
+`completeness-checker`, `requirements-conflict-detector`, `constraint-extractor`,
+`domain-boundary-validator` and `requirements-clarifier`, with `brd-traceability-auditor` for an
+informational BRD traceability mapping when `args.brdPath` names a BRD file. Each specialist's
+method is in its own definition. The PRD (`args.prd.path`), the BRD and the boundary notes
+(`args.contextPath`) are handed by path, and each specialist writes its result to its `$defs`
+entry of `skills/artifact-handoff/schemas/prd-validation-analysis.schema.json`. The script merges
+the results into one analysis file, fails the PRD only on a blocker finding, and treats a
+technical requirement as a major finding. It runs on its own, when a person dispatches it.
 
 ## The Epic pipeline does not run it
 
-No step of an Epic's journal runs `prd-validation` or starts `prd-validation-analyst`.
+No step of an Epic's journal runs `prd-validation` or starts its lens specialists.
 `prd-validation-lead` is manual-only by its own definition, and nothing starts it. The driver
 names the workflow in no module.
 
