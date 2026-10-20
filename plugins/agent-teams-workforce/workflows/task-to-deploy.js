@@ -1349,11 +1349,10 @@ async function author(file, schema, agentType, prompt) {
   return relayKit.acceptArtifact(guardedAgent, { label: `regression:${agentType}`, phase: currentPhase, runner: RELAY.runner, revision, candidate, file, schema,
     relayFile: relayFileIn(stepDir(), 'regression-artifact'), returned })
 }
-const regressionBrief = (contract, previous, final) => `Task contract (source references are authoritative): ${JSON.stringify(contract)}
-Previous cumulative requirements/mappings: ${previous}. Repository: ${contract.repoPath}.
-Read current product requirement sources and connected component/consumer contracts, including prior PRDs. Take the prior ledger as complete for what it records and discover from actual sources the requirements this change affects beyond it; search past the prior ledger for what it already records only where the Task changes a universal or shared component (a shared library, layer, chassis or service other repositories or components consume). Cite searched sources and concrete component bindings. List the absolute physical source files actually read in sourceFiles (including vault note backing files), separately from section references; the helper fingerprints their bytes. Missing or unreadable sources block. Explicitly assess unit, contract, integration and nonfunctional layers. Mark impacted only for requirements this change can affect, with impactReason evidence; retain unrelated prior requirements/mappings with impacted=false, not an unnecessary fleet rerun. Include previously retained requirements; never drop or weaken prior mappings without accepted source supersession. Greenfield means positively evidenced no prior obligations, not a missing ledger. Cross-repository tests use their actual repository paths; do not create or reinterpret Epic dependency edges. Missing source or report capability is a blocker.
-${final ? `Read approved scope ${contract.regressionPlanPath}; keep components/discovery/requirements/sourceFiles exactly unchanged. Finalize only mappings/runs from actual saved test files. Stable test IDs use JUnit classname::name. A legitimate rename/consolidation uses replacements with requirementId,kind,oldTestId,newTestIds,reason; retain equivalent assertion coverage, never invent requirement supersession for a test rename. Every required layer needs concrete tests and an executable command producing a fresh JUnit XML report under its repo/.agent-workforce/reports/. Do not run tests yourself. Do not change any tests/source.` : 'Produce the impact scope before Red. Mappings/runs may be empty for tests still to be authored. Preserve known existing test identities. Do not edit product files or tests.'}`
-const regressionReviewBrief = (plan, previous, final) => `Independently review ${plan} against actual current product sources, code/tests and previous ${previous}. Verify discovery includes affected existing PRDs and cross-repository contracts. Check every layer applicability, no unapproved supersession or test weakening/removal. ${final ? 'Independently verify every test replacement preserves the old requirement/assertion semantics. Check concrete tests actually assert the obligations and commands collect the mapped tests; a green subset is insufficient.' : 'Check planned regression boundaries are complete before test authoring.'} Never approve based only on assessor prose. Return findings for missing evidence. Read source references directly; write only review candidate/checkpoint.`
+const regressionBrief = (contract, previous, final) => `${final ? `Finalize mode: the approved scope is ${contract.regressionPlanPath}.` : 'Plan mode: write the impact scope before Red.'}
+Task contract (source references are authoritative): ${JSON.stringify(contract)}
+Previous cumulative requirements and mappings: ${previous}. Repository: ${contract.repoPath}.`
+const regressionReviewBrief = (plan, previous, final) => `${final ? 'Mapping review' : 'Plan review'} of ${plan}. Previous cumulative requirements and mappings: ${previous}.`
 
 // ── cds audit: the cds plugin's tools/audit-app.py over the files the Task changed (uncommitted
 // against HEAD, untracked included: the Task commits only at the end), then a judgment session on
@@ -2138,12 +2137,8 @@ async function judgeReuse(tree, items) {
   let judged = null
   try {
     judged = await guardedAgent(
-      `Rule on definitions a deterministic reuse check could not rule on. Each is in a file this Task changed in the work tree at ${tree}, and is paired with one provides entry of a shared capability: a behaviour its consumers obtain from it and do not implement themselves.
-
-Items, one per line (file:line, the finding, the capability, its provides entry, then the definition, the words it shares and the provided behaviour):
-${items.map(reuseText).join('\n')}
-
-Return one ruling per item, with its file, line, capability (feature) and provides entry exactly as given, the ruling (duplicate or not-duplicate), and a one-sentence reason.`,
+      `Items, in the work tree at ${tree}, one per line (file:line, the finding, the capability, its provides entry, then the definition, the words it shares and the provided behaviour):
+${items.map(reuseText).join('\n')}`,
       { agentType: 'shared-capability-reviewer', label: 'reuse-audit:judge', phase: currentPhase || phaseTitle('reuse-audit'), schema: REUSE_JUDGMENT_SCHEMA }
     )
   } catch (err) {

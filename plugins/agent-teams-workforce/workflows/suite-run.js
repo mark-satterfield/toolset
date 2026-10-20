@@ -818,25 +818,15 @@ const PARSE_SCHEMA = {
   },
 }
 
-const resolvePrompt = `Find the command this repository declares for running its whole test suite. Do not run it: the workflow runs it.
+const resolvePrompt = `Find the command this repository declares for running its whole test suite.
 
-Repository tree: ${repoPath}
-
-1. Read \`${repoPath}/AGENTS.md\` and \`${repoPath}/CLAUDE.md\` (either may be absent). When one states the command that runs the tests, that is the command.
-2. Otherwise, when \`${repoPath}/Taskfile.yml\` or \`${repoPath}/Taskfile.yaml\` defines a \`test\` task, the command is \`task test\`.
-3. Otherwise the repository declares none: return command "" and resolveError naming the files you read. A command inferred from the tooling you see (pyproject.toml, package.json, a tests directory) is not declared by the repository, so it is not used.
-
-Return the command exactly as declared, as it would be typed in a shell at the repository root. Run nothing, change nothing.`
+Repository tree: ${repoPath}`
 
 const parsePrompt = (cmd, exitCode, file) => `The test command \`${cmd}\` ran once in ${repoPath} and exited ${exitCode}. Everything it printed is saved, as JSON, in this file: \`result.stdout\` and \`result.stderr\` hold its output verbatim.
 
 ${file}
 
-Read that file (it can be long: read it whole, in parts if you must) and report:
-- failing: one entry per failure the output names, whatever the test runner. \`kind\` is \`test\` for a test that ran and failed or errored, and \`load\` for a test file the runner could not load, import, compile or collect, so none of its tests ran. \`file\` is the test file's path as the output prints it; \`test\` is the test's name without the file (empty for \`load\`); \`line\` is the output line that names the failure, verbatim. Empty when nothing failed.
-- summary: the runner's final summary line, verbatim, or "" when it printed none.
-
-Run no command other than reading that file, and change nothing.`
+Report the failures and the summary it prints.`
 
 phase('Run')
 

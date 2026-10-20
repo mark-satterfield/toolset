@@ -235,8 +235,6 @@ const taskBlock = `${c.bead ? `${isBugContract ? 'Bug' : 'Task'} ${c.bead.id || 
 
 Affected files: ${(c.affectedFiles || []).join(', ') || 'n/a'}
 
-Unit tests mock the AWS services the code calls; no test reaches AWS. A criterion about the repository's CDK stacks is encoded as a failing \`cdk synth\` assertion test, written with the assertions library of the language the repository's CDK app is written in, in the repository's existing synth test module where there is one: it asserts the synthesized template's resources and their properties, the cross-stack references the stacks write and read, and the IAM permissions the criteria require.
-
 Acceptance criteria to encode as tests:
 ${ac.length ? ac.map(acLine).join('\n') : isBugContract ? '(none — derive minimal coverage from the reproduction)' : '(none — derive minimal coverage from the spec documents and the description above)'}`
 
@@ -314,36 +312,27 @@ const RED_SCHEMA = {
 const issueLine = (x, i) =>
   `${i + 1}. ${str(x.testId)} (${str(x.kind) || 'unclassified'}): ${str(x.reason) || 'no reason given'}${str(x.contractRef) ? ` — contract: ${str(x.contractRef)}` : ''}`
 
-const authorPrompt = (w) => `Write the failing test(s) that encode the expected behavior below, then RUN them and confirm they FAIL for the intended reason (Red). Write test code ONLY — do not change production code. You are '${w}' — author only the tests of your specialty.
+const authorPrompt = (w) => `Write the failing tests of your specialty that encode the expected behavior below, and confirm Red.
 
 Every file you create or modify is under this tree, and every git command runs as \`git -C "${repo}"\`:
-${repo}
-
-Add to the existing test file that covers this module or behavior, matching its imports, fixtures, naming and helpers; create a new file only when none covers this area. Where an existing test already encodes a criterion, keep it and do not duplicate it. Tests synthesize, build or render the thing under test during the run; they never read a committed build output.${turnBlock(w)}
+${repo}${turnBlock(w)}
 
 ${taskBlock}
-${c.regressionPlanPath ? `Cumulative regression scope: ${c.regressionPlanPath}. Read the actual approved artifact and requirement sources. Author missing tests for impacted requirements/layers assigned to your specialty in this repository, preserving prior tests. Unavailable cross-repository test changes are an explicit blocked dependency, not permission to edit another checkout. Retain stable JUnit classname::name identities for existing tests; record concrete test names for new coverage.` : ''}
+${c.regressionPlanPath ? `Cumulative regression scope: ${c.regressionPlanPath}` : ''}
 ${strategyBlock}${suiteBlock}${priorTestsBlock}
 ${a.feedback ? `\nFeedback from the previous attempt — address it:\n${a.feedback}` : ''}
 
 Deliver: the test file paths you created or modified, whether Red is confirmed, and the captured failing output as evidence.`
 
-const updatePrompt = (w) => `The implementer building the Task below reports that these existing tests stand between the code and the contract. It may not change tests; you own them. Rule on each one:
+const updatePrompt = () => `Update mode: the implementer building the Task below names these existing tests as standing between the code and the contract. Rule on each one:
 
 ${testIssues.map(issueLine).join('\n')}
-
-For each named test choose one action and cite the contract (an acceptance criterion, a spec section, or an architecture view below) in the reason:
-- update — the test encodes behaviour or configuration the contract changes: rewrite it to encode what the contract states.
-- delete — the test encodes behaviour the contract removes, and no criterion needs it.
-- keep — the test is right under the contract; the production code must change to pass it. Say what it requires.
-
-Change test code and nothing else: the implementer owns the production code. You are '${w}'.
 
 Every file you modify is under this tree, and every git command runs as \`git -C "${repo}"\`:
 ${repo}
 
 ${taskBlock}
-${c.regressionPlanPath ? `Read cumulative requirements at ${c.regressionPlanPath}; no existing test may be removed or weakened merely because the new PRD omits the prior requirement. Require explicit accepted supersession source.` : ''}
+${c.regressionPlanPath ? `Cumulative regression scope: ${c.regressionPlanPath}` : ''}
 ${suiteBlock}${priorTestsBlock}
 ${a.feedback ? `\nThe last suite run:\n${a.feedback}` : ''}
 
@@ -353,7 +342,7 @@ Deliver: one decision per named test, the test file paths you modified, the capt
 const writerResultsRaw = []
 for (const w of writersRun) {
   writerResultsRaw.push(
-    await settleAgent(updateMode ? updatePrompt(w) : authorPrompt(w), {
+    await settleAgent(updateMode ? updatePrompt() : authorPrompt(w), {
       label: `red:${updateMode ? 'update:' : ''}${w}`,
       phase: 'Red',
       agentType: w,

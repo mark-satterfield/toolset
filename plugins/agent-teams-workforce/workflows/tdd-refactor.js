@@ -847,26 +847,15 @@ const snapshotTree = str(snap.facts.tree) || null
 
 const suiteCommand = str(c.suiteCommand)
 const refactor = await settleAgent(
-  `Refactor the code changed by the fix for clarity and to reduce complexity and duplication, WITHOUT changing behavior.
+  `Refactor the files the change touched, without changing behavior.
 
-Every file you read, write or run is under this absolute path; run shell commands as \`cd "${repo}" && …\` and git as \`git -C "${repo}" …\`, and report file paths relative to it:
+Tree (absolute path):
 ${repo}
 
 Changed files from the fix: ${changedFromGreen}${contractBlock}
 ${a.feedback ? `\nFeedback to address:\n${a.feedback}` : ''}
 
-The workflow recorded the tree before you start (snapshot ${snapshotTree}) and restores it itself when needed: do not snapshot, stash, reset or restore anything.
-
-GitNexus is required for this refactor, without exception (the graphrag-lookup skill says how to call each tool; name the indexed repository as \`repo\` in every call):
-- Before changing any function, class or method, run \`impact\` on it with \`direction: "upstream"\`, and record its blast radius (direct callers, affected execution flows, risk level) in blastRadius.
-- Rename every symbol with \`rename\`, \`dry_run: true\` first, then \`dry_run: false\`; never rename with find-and-replace or by hand.
-- Before finishing, run \`detect_changes\` with \`scope: "all"\` and \`worktree\` set to the absolute path above, compare the symbols and flows it reports with the ones you intended to change, fix or revert any difference, and record the comparison in detectChanges.
-- If GitNexus does not answer, or its index is stale and re-indexing as graphrag-lookup says does not fix it, stop at once and return gitnexusBlocker naming the tool, the repository and the error: the workflow puts the tree back at the snapshot. Never refactor without GitNexus.
-
-Steps:
-1. If these files need no refactoring, change nothing.
-2. Otherwise refactor through GitNexus as above, then run the test suite${suiteCommand ? ` with exactly \`cd "${repo}" && ${suiteCommand}\`, the command the run judges the suite by` : ''}.
-3. If the suite is not green and you cannot make it green without changing behavior, stop and return reverted=true: the workflow puts the tree back at the snapshot.
+Snapshot the workflow recorded: ${snapshotTree}.${suiteCommand ? `\nSuite command the run judges by: \`cd "${repo}" && ${suiteCommand}\`` : ''}
 
 Deliver whether tests are green, whether the tree must be reverted, the captured test output, the blast radius and detect_changes comparison, and a GitNexus blocker if one stopped you.`,
   {

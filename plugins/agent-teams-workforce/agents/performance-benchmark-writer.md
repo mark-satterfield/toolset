@@ -9,7 +9,7 @@ disallowedTools: AskUserQuestion
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa, agent-teams-workforce:cumulative-regression, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa, agent-teams-workforce:load-testing, agent-teams-workforce:cumulative-regression, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, agent-teams-workforce:graphrag-lookup]
 effort: medium
 color: red
 mcpServers:
@@ -56,7 +56,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 - A testing agent reports findings; it never fixes what it finds — NFR defects go upstream as structured findings.
 - Collaborate through explicit artifacts — benchmark files, the budget table, Red evidence, traceability mappings. The durable record is the artifact.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in every deliverable.
-- Prefer the skills and tools provided to you over internal training.
+- Prefer the skills and tools provided to you over internal training: test type, load model, percentile thresholds that set the exit code, warm-up and the serverless quotas a benchmark must account for come from `load-testing`.
 - Review your own work for correctness, completeness, and risk before handoff.
 
 ## Cumulative regression evidence
