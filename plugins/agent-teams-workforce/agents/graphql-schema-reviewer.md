@@ -13,7 +13,7 @@ mcpServers:
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:effective-architecture]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:effective-architecture, agent-teams-workforce:appsync-graphql]
 effort: low
 isolation: worktree
 color: purple

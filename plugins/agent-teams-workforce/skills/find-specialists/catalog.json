@@ -1842,7 +1842,8 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:api-design-reviewer",
-        "agent-teams-workforce:effective-architecture"
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:appsync-graphql"
       ],
       "mcpServers": [
         "aws-mcp"
