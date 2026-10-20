@@ -36,10 +36,9 @@ SAFETY_HOOKS = frozenset({
     "aws-profile-required.sh",
 })
 
-SPAWN_DEPTH_ENV: Final = "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH"
 BACKGROUND_TASKS_ENV: Final = "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"
-SESSION_ENV: Final[Mapping[str, str]] = MappingProxyType({SPAWN_DEPTH_ENV: "1", BACKGROUND_TASKS_ENV: "1"})
-"""Every session's settings: an agent it starts starts none, and every start blocks."""
+SESSION_ENV: Final[Mapping[str, str]] = MappingProxyType({BACKGROUND_TASKS_ENV: "1"})
+"""Every session's settings: every start blocks."""
 BASH_OUTPUT_KEY: Final = "bashOutputMaxChars"
 BASH_OUTPUT_LIMIT: Final = 128_000
 """Claude Code's largest inline command output, so a command's output is not cut to a preview."""

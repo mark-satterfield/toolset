@@ -466,8 +466,7 @@ claude -p --output-format stream-json --verbose --session-id <uuid>
   `no-verify-blocker.sh`, `pipeline-run-blocker.sh`, `bd-init-blocker.sh`,
   `aws-profile-required.sh` (a constant list, matched by script file name, so the hook commands
   themselves are read from the owner's file); one `PostToolUse` hook on `Write|Edit` that runs
-  `<orch>/hooks/python-quality.py`; `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1` and
-  `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, so a started agent starts none and every start
+  `<orch>/hooks/python-quality.py`; `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, so every start
   blocks; and `bashOutputMaxChars` at Claude Code's largest value, so a command's output reaches
   the session whole. The settings are the same for every session; none depends on the agent.
 - **Plugins and skills.** `--plugin-dir <plugin>` loads `agent-teams-workforce` and no other
@@ -524,7 +523,7 @@ definitions state, never by name, so the roster of a role is the set of definiti
 | `task-dependency-mapper` | | by the script, under Task edges, when the span has two or more repositories |
 
 An agent whose front matter gives it the Agent tool starts, by its instructions, only agents with
-the roles its `startsRoles` lists, at depth one; an agent started by another agent starts no one. `ATW_MATRIX_ROLE` is the
+the roles its `startsRoles` lists. `ATW_MATRIX_ROLE` is the
 launched agent's role, which decides the `atw-matrix` commands it may run.
 
 ### 5.5 Agents declaring `model: fable` (QUESTIONS 1)
