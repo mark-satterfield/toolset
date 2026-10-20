@@ -107,16 +107,14 @@
     },
     {
       "name": "api-contract-designer",
-      "description": "Answer a question or do a bounded piece of design for the solutions architect on REST interfaces, which block exposes each, who may call it and how it stays compatible.",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on REST APIs on Amazon API Gateway (REST API): which building block exposes each interface, its resources and methods, who may call it and how the caller is authorized, request validation, throttling and usage plans, errors, and how it stays compatible.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:api-design-reviewer",
+        "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:effective-architecture",
-        "aws-core:aws-serverless",
         "agent-teams-workforce:graphrag-lookup",
-        "aws-core:aws-well-architected-review",
-        "aws-core:aws-security",
-        "aws-core:aws-billing-and-cost-management",
+        "agent-teams-workforce:api-gateway",
+        "agent-teams-workforce:api-design-reviewer",
         "aws-core:aws-auth"
       ],
       "mcpServers": [
@@ -495,17 +493,19 @@
     },
     {
       "name": "bounded-context-mapper",
-      "description": "Answer a question or do a bounded piece of design for the solutions architect on bounded contexts, domain responsibilities and service ownership.",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on bounded contexts: their boundaries, domain responsibilities, which service owns each, the relationships between contexts and the published language each exposes.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:senior-architect",
+        "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:effective-architecture",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:senior-architect"
       ],
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus"
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -545,21 +545,16 @@
     },
     {
       "name": "cdk-infrastructure-designer",
-      "description": "Answer a question or do a bounded piece of design for the solutions architect on repositories, CDK stacks, where each block runs and shared infrastructure.",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on which repository and which CDK stack hold each resource and building block, how stacks share values, which shared infrastructure must exist first, and construct and parameter names; and express the infrastructure the architecture records for a build Task as CDK provisioning intent.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:aws-cdk-development",
-        "agent-teams-workforce:resource-naming",
+        "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:effective-architecture",
-        "aws-core:aws-cdk",
-        "agent-teams-workforce:aurora-postgresql",
         "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:aws-cdk-development",
+        "aws-core:aws-cdk",
         "agent-teams-workforce:cdk-coding",
-        "aws-core:aws-well-architected-review",
-        "aws-core:aws-security",
-        "aws-core:aws-billing-and-cost-management",
-        "aws-core:aws-cloudformation",
-        "aws-core:aws-networking"
+        "agent-teams-workforce:resource-naming"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -1031,18 +1026,20 @@
     },
     {
       "name": "domain-event-modeler",
-      "description": "Answer a question or do a bounded piece of design for the solutions architect on domain events as facts, who owns each and what triggers it.",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on domain events as facts: which fact each event states, the bounded context and aggregate that owns it, what triggers it, the causal flow it belongs to and the business meaning of the data it carries.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:aws-serverless-eda",
+        "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:skillspoke-events",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:senior-architect"
       ],
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus"
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -1238,18 +1235,15 @@
     },
     {
       "name": "event-routing-designer",
-      "description": "Answer a question or do a bounded piece of design for the solutions architect on event types, their producers, and the routing rules (event pattern, targets, owning stack) with per-target retry and DLQ.",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on Amazon EventBridge: event type names and their registry entries, the payload schema of a new event type, buses, routing rules (event pattern, targets, owning stack), each rule target's retry policy and dead-letter queue, and EventBridge Scheduler schedules.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:aws-serverless-eda",
-        "agent-teams-workforce:eventbridge",
+        "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:effective-architecture",
-        "agent-teams-workforce:skillspoke-events",
-        "aws-core:aws-messaging-and-streaming",
         "agent-teams-workforce:graphrag-lookup",
-        "aws-core:aws-well-architected-review",
-        "aws-core:aws-security",
-        "aws-core:aws-billing-and-cost-management"
+        "agent-teams-workforce:eventbridge",
+        "agent-teams-workforce:skillspoke-events",
+        "aws-core:aws-serverless"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -1401,16 +1395,14 @@
     },
     {
       "name": "graphql-api-designer",
-      "description": "Answer a question or do a bounded piece of design for the solutions architect on GraphQL interfaces, which block exposes and resolves each operation and who may call it.",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on GraphQL APIs on AWS AppSync: schema, operations and types, which block resolves each field from which owned data, resolvers and data sources, authorization modes, subscriptions, caching and compatibility.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:api-design-reviewer",
+        "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:graphrag-lookup",
-        "aws-core:aws-well-architected-review",
-        "aws-core:aws-security",
-        "aws-core:aws-billing-and-cost-management",
-        "aws-core:aws-serverless"
+        "agent-teams-workforce:appsync-graphql",
+        "aws-core:aws-auth"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -1486,18 +1478,16 @@
     },
     {
       "name": "integration-pattern-architect",
-      "description": "Answer a question or do a bounded piece of design for the solutions architect on service boundaries, synchronous and event integration, and delivery and failure behaviour.",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on how building blocks interact: which interactions are synchronous calls and which are events, the delivery path each takes (direct call, EventBridge rule, SNS fan-out, SQS buffer, Step Functions), and its end- to-end delivery guarantee, ordering, idempotency and failure behaviour.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:senior-architect",
-        "agent-teams-workforce:aws-serverless-eda",
+        "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:effective-architecture",
-        "aws-core:aws-serverless",
-        "aws-core:aws-messaging-and-streaming",
         "agent-teams-workforce:graphrag-lookup",
-        "aws-core:aws-well-architected-review",
-        "aws-core:aws-security",
-        "aws-core:aws-billing-and-cost-management"
+        "agent-teams-workforce:skillspoke-events",
+        "agent-teams-workforce:aws-serverless-eda",
+        "agent-teams-workforce:senior-architect",
+        "aws-core:aws-messaging-and-streaming"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -2143,20 +2133,13 @@
     },
     {
       "name": "security-architecture-designer",
-      "description": "Answer a question or do a bounded piece of design for the solutions architect on trust boundaries, identities, authorization, IAM, encryption and threat mitigation.",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on trust boundaries, the threat model of a design and the mitigation of each threat across those boundaries: who may cross each boundary and what each runtime may reach.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:senior-security",
-        "agent-teams-workforce:iam",
-        "agent-teams-workforce:secrets-manager",
+        "agent-teams-workforce:design-specialist-contract",
         "agent-teams-workforce:effective-architecture",
-        "aws-core:aws-iam",
-        "aws-core:aws-auth",
         "agent-teams-workforce:graphrag-lookup",
-        "aws-core:aws-well-architected-review",
-        "aws-core:aws-security",
-        "aws-core:aws-billing-and-cost-management",
-        "aws-core:aws-secrets-manager"
+        "agent-teams-workforce:senior-security"
       ],
       "mcpServers": [
         "aws-mcp",
