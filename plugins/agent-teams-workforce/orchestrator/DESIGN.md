@@ -511,7 +511,7 @@ records the model in `run.json`; it passes no effort.
 |---|---|---|
 | `aws-solutions-architect` | `solutions-architect` | by the script: its first step, a correction, a competing design, its "Finish" |
 | Any agent the `find-specialists` catalog lists that has no row here (for example `persistence-architecture-specialist`, `c4-diagram-author`, `polyrepo-steward`) | its own, if any | by the architect in its own session, by the name it chose from the catalog; by the script when the architect names it in its result's `requests`, when it was left running, or when the lead asks it for an opinion |
-| `trd-author` | | by the architect in its own session; by the script when left running |
+| `trd-author` | | by the script: the TRD initial write, the first step of the Architecture container; by the architect in its own session for each update; by the script when left running |
 | `architecture-maintainer` | | by the architect in its own session; by the script when left running |
 | `architecture-team-lead` | `architecture-lead` | by the script, only when the architect's result is unsettled |
 | `architecture-decider` | `decider` | by the script, only for a step the lead plans |
@@ -940,8 +940,12 @@ result carries only error text, section 6.1).
 
 ### 11.4 The TRD
 
-`trd-author` writes the TRD at the path the architecture context names, at the architect's
-request: drafted as soon as the architect's state file exists, then updated in place. It reads the
+`trd-author` writes the TRD at the path the architecture context names. The TRD initial write
+is the first step of the Architecture container, from a request the script writes: the
+requirements not considered functional, many of them pre-written in arc42. Once the higher-level
+architecture is in arc42, the architect has it make the TRD architecture update with the
+technical or architecture decisions that impact the detailed design; the detailed design reads the
+TRD, and the architect has it updated in place as the design settles. It reads the
 Epic's constraints from `atw-matrix epic <id> --constraints`, the set the architect reads, and the
 PRD requirement headings `atw-matrix epic <id>` names. Its answer lists every requirement each
 write added or changed, and the step that accepts the answer records one constraint for each as

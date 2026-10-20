@@ -79,7 +79,7 @@ its own.
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| trd-author | execute | Writes and keeps current the Technical Requirements Document at the solutions architect's request: the technical obligations of this PRD and its architecture, each with a checkable value, a source and the element it applies to. It cites the architecture rather than restating it. |
+| trd-author | execute | Writes the Technical Requirements Document as one of the very first steps of the architecture, the requirements not considered functional, many pre-written in arc42, and updates it at the solutions architect's request: the TRD architecture update once the higher-level architecture is in arc42, then as the detailed design settles. Each requirement has a checkable value, a source and the element it applies to. It cites the architecture rather than restating it. |
 | prd-trd-traceability-verifier | test | Builds and checks the TRD's source traceability matrix: every TRD requirement anchored to a PRD requirement or an architecture view, every PRD requirement needing elaboration answered, genuine scope drift flagged. Not a 1:1 relation. No workflow currently dispatches it. |
 | trd-decider | approve | Rules on competing TRD approaches, maker-checker deadlocks, and checker conflicts routed by whoever delegated the task. No workflow currently dispatches it. |
 

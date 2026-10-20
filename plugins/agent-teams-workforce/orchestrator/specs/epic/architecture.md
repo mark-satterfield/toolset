@@ -34,19 +34,30 @@ architect's state and result files, the review log beside the result (`reviewLog
 TRD, and the folder for requests to helpers;
 with the vault commit the document entries are synced to and the name of the matrix command. It
 records the file `prd`, the value `matrix epic entry` and the file `context`, and plans, under the
-Architecture container, the architect's step and the check that follows it. Those two plans are
-also registered as what the lane plans under the container, so a check step planned under an
+Architecture container, the TRD initial write, the architect's step and the check that follows it.
+Those three plans are also registered as what the lane plans under the container, so a check step planned under an
 earlier key is replanned to the current key when the run opens the journal, even while the
 architect's step is still pending and the open-run step plans nothing new.
 
 Every later step of the container is handed the context file through the journal and derives no
 path of its own.
 
+## The TRD initial write
+
+Agent `trd-author`, step "TRD initial write: the requirements not considered functional, many
+pre-written in arc42", the first step of the Architecture container: the TRD is written as one of
+the very first steps, before the architect starts. The launch builder (`architecture.trd_author`)
+writes the request itself from the context file, mode `initial`, at
+`<helpersFolder>/trd-initial.request.json` with the answer beside it
+(`trd-initial.answer.json`), and launches `trd-author` from it. The step records what a
+`trd-author` step records (the table below) and is an input of the architect's step, so the
+architect is handed its answer as `answer` on its first step.
+
 ## The architect and the agents it starts
 
 Agent `aws-solutions-architect`, step "Decide what the architecture should be for this PRD".
 Its brief (`agent-brief.schema.json`) names exactly the files its definition names: `prd`,
-`context`, `state` (its state file), and, in a later step, the
+`context`, `state` (its state file), on its first step the TRD initial write's `answer`, and, in a later step, the
 `findings` (check results), `answer` and `ruling` files that step is handed. No file
 is written from the matrix for it: the architect reads the Epic live, with
 `atw-matrix epic <id>`, `atw-matrix epic <id> --realizers` and `atw-matrix epic <id> --constraints`
@@ -107,7 +118,11 @@ ends, the runner reads the journal again:
 | `trd-author` | `request` | the answer path the request names; the TRD at the path the request names is kept and updated in place | the request, file `TRD`, file `answer`, value `obligations with no source`, value `constraints recorded`. The step records one `constraint` for each requirement the answer lists under `requirements` (every requirement that write added or changed), as a pointer `trd` (the Epic and the requirement id, a heading of the TRD) with no copy of its text, with `statedIn` and `appliesTo`, removes the constraint of each id the answer lists under `removed`, and records one with no `statedIn` for each `noSource` obligation; it fails when the matrix refuses one |
 | `architecture-maintainer` | `write request` or `request` | the result path the request names | the request, file `what was written`, value `documents synced`. The session is granted the architecture root, where it writes; the step sets each document written that exists `in-review` in its front matter (`matrixsync.set_lifecycle`), so the check and the promotion of this run reach it, then runs `sync-documents --paths` on the documents written |
 
-The TRD is drafted early by `trd-author` at the architect's request and updated in place.
+The TRD is written, then updated, during the architecture: the TRD initial write is the first step
+of the container; once the higher-level architecture is in arc42, the architect has `trd-author`
+make the TRD architecture update (mode `update`) with the technical or architecture decisions
+that impact the detailed design; the detailed design reads the TRD, and the architect has it
+updated in place as the design adds technical requirements.
 
 ## Earlier work on this PRD
 

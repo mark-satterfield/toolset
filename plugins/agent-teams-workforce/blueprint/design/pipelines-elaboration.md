@@ -354,6 +354,7 @@ TRD as a source of information that impacts any detailed design and build decisi
 ```mermaid
 sequenceDiagram
     autonumber
+    participant WF as Elaboration workflow
     participant SA as aws-solutions-architect
     participant TRD as trd-author
     participant B as Build pipeline
@@ -363,12 +364,13 @@ sequenceDiagram
         participant T as TRD file (vault)
     end
 
-    Note over SA,TRD: TRD - Initial write<br/>one of the very first steps
-    SA->>TRD: write the TRD for the Epic
+    Note over WF,TRD: TRD - Initial write<br/>one of the very first steps, before the architect starts
+    WF->>TRD: write the TRD for the Epic
     TRD->>A42: reads the NFRs, many already pre-written in arc42
     TRD->>G: pulls in the human-written Epic-specific guidance
     TRD-)T: TRD written - requirements not considered functional
-    TRD-->>SA: the TRD
+    TRD-->>WF: the TRD
+    WF->>SA: Epic id and PRD path, with the TRD
     Note over SA,TRD: the higher-level architecture,<br/>the architecture that goes in arc42 - section 2
     Note over SA,TRD: TRD Architecture Update, once the<br/>higher-level architecture is complete
     SA->>TRD: the completed higher-level architecture

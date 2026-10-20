@@ -186,6 +186,7 @@ sequenceDiagram
         participant G as git / GitHub
         participant MX as matrix
         participant SP as Spec files (vault)
+        participant T as TRD file (vault)
         participant A42 as arc42 (vault)
     end
 
@@ -207,6 +208,7 @@ sequenceDiagram
     WF->>AG: the path of the build brief
     AG->>SP: reads the spec, its acceptance criteria and its OpenAPI document where the component has an API
     AG->>A42: reads the full architecture and design of its component, by the links in the spec
+    AG->>T: reads the Epic's TRD, the path the Task's journal hands as TRD, as a source of information for its decisions
     opt a step of the build finds a matrix fact or an architecture document wrong
         AG->>AR: what is wrong, recorded against the element
         Note over AR: architecture-maintainer corrects the document<br/>in-review, then effective when approved, and the matrix

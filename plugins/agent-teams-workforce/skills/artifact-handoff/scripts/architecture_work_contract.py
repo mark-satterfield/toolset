@@ -20,7 +20,7 @@ type Conclusion = Literal["no-change-needed", "changes-designed", "unsettled"]
 type CriterionStatus = Literal["satisfied", "not-applicable"]
 type UnsettledKind = Literal["technical-choice", "business-conflict"]
 type RequestKind = Literal["question", "task"]
-type TrdMode = Literal["draft", "update"]
+type TrdMode = Literal["initial", "update"]
 type TrdChangeKind = Literal["add", "change", "remove"]
 type RequirementKind = Literal["obligation", "reuse"]
 type Routing = Literal["reject", "correct", "opinion", "competing-design", "decider"]
@@ -43,7 +43,7 @@ UNSETTLED_TECHNICAL_CHOICE: Final[Literal["technical-choice"]] = "technical-choi
 UNSETTLED_BUSINESS_CONFLICT: Final[Literal["business-conflict"]] = "business-conflict"
 REQUEST_QUESTION: Final[Literal["question"]] = "question"
 REQUEST_TASK: Final[Literal["task"]] = "task"
-TRD_MODE_DRAFT: Final[Literal["draft"]] = "draft"
+TRD_MODE_INITIAL: Final[Literal["initial"]] = "initial"
 TRD_MODE_UPDATE: Final[Literal["update"]] = "update"
 TRD_CHANGE_ADD: Final[Literal["add"]] = "add"
 TRD_CHANGE_CHANGE: Final[Literal["change"]] = "change"
@@ -87,7 +87,7 @@ REQUEST_KINDS: Final[tuple[RequestKind, ...]] = (
     REQUEST_TASK,
 )
 TRD_MODES: Final[tuple[TrdMode, ...]] = (
-    TRD_MODE_DRAFT,
+    TRD_MODE_INITIAL,
     TRD_MODE_UPDATE,
 )
 TRD_CHANGE_KINDS: Final[tuple[TrdChangeKind, ...]] = (
@@ -354,13 +354,6 @@ class TrdChange(TypedDict):
     appliesTo: str
 
 
-class HeadingCitation(TypedDict):
-    """Typed form of #/$defs/HeadingCitation in architecture-result.schema.json."""
-
-    source: str
-    heading: str
-
-
 class TrdRequest(TypedDict):
     """Typed form of #/$defs/TrdRequest in architecture-result.schema.json."""
 
@@ -368,8 +361,6 @@ class TrdRequest(TypedDict):
     epic: str
     prdPath: str
     trdPath: str
-    statePath: str
-    approvedHeadings: list[HeadingCitation]
     sharedCapabilities: list[SharedUse]
     changes: list[TrdChange]
     answerPath: str

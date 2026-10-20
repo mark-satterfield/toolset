@@ -293,6 +293,7 @@ const specBlock = (() => {
     s && strList(s.specSections).length ? `Spec sections defining this work: ${strList(s.specSections).join(', ')}` : '',
     s && strList(s.requirementIds).length ? `Requirements satisfied: ${strList(s.requirementIds).join(', ')}` : '',
     decisionIds.length ? `Architecture views this work is designed against (paths relative to the arc42 folder): ${decisionIds.join(', ')}` : '',
+    str(c.trdPath) ? `The Epic's TRD, its technical requirements not considered functional; read it as a source of information for the decisions this work makes: ${str(c.trdPath)}` : '',
     s && strList(s.definitionOfDone).length ? `Definition of Done:\n${strList(s.definitionOfDone).map((d) => `  - ${d}`).join('\n')}` : '',
   ].filter(Boolean)
   return lines.length ? `\n\n${lines.join('\n')}` : ''

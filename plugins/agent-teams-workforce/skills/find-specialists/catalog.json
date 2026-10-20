@@ -2423,7 +2423,7 @@
     },
     {
       "name": "trd-author",
-      "description": "Write and keep current the technical obligations of this PRD and its architecture.",
+      "description": "Write the TRD as one of the very first steps of the architecture, the requirements not considered functional, many pre-written in arc42, and update it as the architecture is decided.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:effective-architecture"

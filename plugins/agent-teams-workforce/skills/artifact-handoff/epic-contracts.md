@@ -47,11 +47,11 @@ The PRD and portfolio workflows run their commands and accept agent files throug
 | Artifact | Writer | Readers | Contract |
 |---|---|---|---|
 | architecture context: `<arch-work>/context.json` | step `prd_to_spec.open_run` | `aws-solutions-architect` (as `context`); the architecture steps | `architecture-context.schema.json` |
-| architecture state: `<arch-work>/state.json` | `aws-solutions-architect` | `trd-author`; `aws-solutions-architect` | `architecture-state.schema.json` |
+| architecture state: `<arch-work>/state.json` | `aws-solutions-architect` | `aws-solutions-architect` | `architecture-state.schema.json` |
 | architecture result: `<arch-work>/result.json` | `aws-solutions-architect` | the check step; `architecture-team-lead`; the span step | `architecture-result.schema.json` |
 | specialist request | `aws-solutions-architect`; `architecture-team-lead` | the design specialist, diagram author or `polyrepo-steward` asked | `specialist-request.schema.json` |
 | specialist answer | the agent asked | `aws-solutions-architect`; `architecture-team-lead` | `specialist-answer.schema.json` |
-| TRD request | `aws-solutions-architect` | `trd-author` | `trd-request.schema.json` |
+| TRD request | the script, for the TRD initial write (mode `initial`); `aws-solutions-architect`, for each update | `trd-author` | `trd-request.schema.json` |
 | TRD answer | `trd-author` | `aws-solutions-architect`; the step that accepts it, which records each requirement in the matrix as a `trd` pointer | `trd-answer.schema.json` |
 | write request | `aws-solutions-architect` | `architecture-maintainer` | `write-request.schema.json` |
 | write result | `architecture-maintainer` | `aws-solutions-architect` | `write-result.schema.json` |

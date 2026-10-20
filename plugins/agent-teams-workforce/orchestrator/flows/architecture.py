@@ -1,7 +1,11 @@
 """The solutions architect's steps, and the sessions of the agents it left running.
 
-One agent, the solutions architect, decides what the architecture should be for a PRD. The script
-starts the agent's session, hands it the files its definition names and records what it returns.
+One agent, the solutions architect, decides what the architecture should be for a PRD. Before it
+starts, the TRD initial write runs as one of the very first steps of the architecture: ``trd-author``
+writes the requirements not considered functional, many of them already pre-written in arc42, from a
+request the script writes. The architect is handed that step's answer, works from the TRD, and has
+it updated once the higher-level architecture is in arc42, before the detailed design. The script
+starts the architect's session, hands it the files its definition names and records what it returns.
 The architect always reads the PRD it is handed; the arc42 documents and the matrix are its
 starting point, both input and output, possibly incomplete or wrong and possibly empty for the
 Epic. It reads what the matrix holds for the Epic itself, live, with ``atw-matrix``, so nothing it
@@ -29,6 +33,7 @@ from typing import TYPE_CHECKING, Final
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "find-specialists" / "scripts"))
 from architecture_work_contract import (
+    TRD_MODE_INITIAL,
     ArchitectureWorkError,
     validate_architecture_result,
     validate_specialist_answer,
@@ -132,6 +137,16 @@ if TYPE_CHECKING:
 ARCHITECT_DESCRIPTION: Final = "Decide what the architecture should be for this PRD"
 ARCHITECT_PURPOSE: Final = "One agent is responsible for the architecture this PRD needs, and reviews and approves it"
 ARCHITECT_REF: Final = "architect"
+TRD_INITIAL_DESCRIPTION: Final = (
+    "TRD initial write: the requirements not considered functional, many pre-written in arc42"
+)
+TRD_INITIAL_PURPOSE: Final = (
+    "The TRD is written as one of the very first steps; the architecture and the detailed design read it"
+)
+TRD_INITIAL_REF: Final = "trd-initial"
+TRD_INITIAL_FILE: Final = "trd-initial"
+"""The stem of the request and answer files of the TRD initial write, in the helpers folder."""
+ANSWER_SUFFIX: Final = ".answer.json"
 NO_SOURCE: Final = "obligations with no source"
 NO_FEATURE: Final = "requirements with no feature"
 SYNCED: Final = "documents synced"
@@ -185,10 +200,27 @@ def _architect_plan(architect: str, inputs: list[str]) -> StepPlan:
     }
 
 
-def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
-    """Plan the architect's step and the check after it, under the Architecture container.
+def _trd_initial_plan(inputs: list[str]) -> StepPlan:
+    """Plan the TRD initial write.
 
-    The same two plans are registered as what this lane plans under the container
+    Returns:
+        The plan of ``trd-author``'s step, handed the steps ``inputs`` names.
+
+    """
+    return {
+        "ref": TRD_INITIAL_REF,
+        "description": TRD_INITIAL_DESCRIPTION,
+        "purpose": TRD_INITIAL_PURPOSE,
+        "agent": TRD_AUTHOR,
+        "inputs": inputs,
+    }
+
+
+def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
+    """Plan the TRD initial write, the architect's step and the check, under the Architecture container.
+
+    The TRD initial write comes first, so the architect starts from the TRD and is handed its
+    answer. The same three plans are registered as what this lane plans under the container
     (``journal_registry.plan_under``). A journal written before the check's key was renamed
     therefore has its planned check step replanned to the current ``CHECK`` when the run opens
     the journal (``journal_run.replan_unhandled``), whether or not a step of the architect is
@@ -200,13 +232,18 @@ def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
         architect: The agent that plays the solutions architect.
 
     Returns:
-        The architect's step and the check that follows it, as the container's last child steps.
+        The TRD initial write, the architect's step and the check that follows it, as the
+        container's last child steps.
         The group is left out when the container already holds a step of the architect that is
         not done.
 
     """
     return StepGroup(
-        (NewStep(_architect_plan(architect, [opened])), check_step([ARCHITECT_REF], corrections=0)),
+        (
+            NewStep(_trd_initial_plan([opened])),
+            NewStep(_architect_plan(architect, [opened, TRD_INITIAL_REF])),
+            check_step([ARCHITECT_REF], corrections=0),
+        ),
         UNDER_CONTAINER,
         container,
         unless_agent=architect,
@@ -215,6 +252,7 @@ def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
 
 plan_under(
     ARCHITECTURE,
+    _trd_initial_plan([]),
     _architect_plan(ARCHITECT, []),
     check_step([ARCHITECT_REF], corrections=0).plan,
 )
@@ -228,8 +266,8 @@ def _handed_files(run: StepRun, context: ArchitectureContext, prd: Path) -> tupl
 
     Returns:
         The PRD, the context file and the state path; then each mechanical check result the
-        step is handed, as findings; then each specialist's answer and each ruling the step is
-        handed.
+        step is handed, as findings; then each answer the step is handed (the TRD initial
+        write's answer on the first step, a specialist's answer later) and each ruling.
 
     """
     findings: list[Path] = list(run.inputs.files(ARTIFACT_CHECK))
@@ -766,21 +804,52 @@ def _record_trd(bead: str, arch: Path, answer: TrdAnswer) -> Recorded:
     return update_matrix(matrix_file(), change)
 
 
-@agent_step(TRD_AUTHOR)
-def trd_author(run: StepRun) -> AgentLaunch:
-    """Build the session of the TRD author the architect left running.
-
-    The accepted answer is recorded in the matrix: one constraint for each technical requirement
-    the answer states, none for each it lists as removed, and one for each obligation it lists
-    with no source.
+def _initial_request(run: StepRun) -> Path:
+    """Write the request of the TRD initial write from the architecture context.
 
     Returns:
-        The launch from the saved request file; the TRD it names is kept and updated in place.
+        The request file, in the helpers folder: mode ``initial`` for the Epic, its PRD, the TRD
+        path the context names, and the answer path beside the request.
+
+    """
+    context: ArchitectureContext = read_context(run)
+    helpers: Path = Path(context["helpersFolder"])
+    asked: Path = helpers / (TRD_INITIAL_FILE + REQUEST_SUFFIX)
+    request: TrdRequest = {
+        "mode": TRD_MODE_INITIAL,
+        "epic": context["bead"],
+        "prdPath": context["prdPath"],
+        "trdPath": context["trdPath"],
+        "sharedCapabilities": [],
+        "changes": [],
+        "answerPath": str(helpers / (TRD_INITIAL_FILE + ANSWER_SUFFIX)),
+    }
+    write_json(asked, request)
+    return asked
+
+
+@agent_step(TRD_AUTHOR)
+def trd_author(run: StepRun) -> AgentLaunch:
+    """Build the session of the TRD author: the TRD initial write, or an update left running.
+
+    The TRD initial write is one of the very first steps of the architecture, before the
+    architect's: the script writes its request (:func:`_initial_request`). An update, the TRD
+    architecture update among them, is requested by the architect in its own session, and is
+    launched here only when it was left running, from the request file the architect saved. The
+    accepted answer is recorded in the matrix: one constraint for each technical requirement the
+    answer states, none for each it lists as removed, and one for each obligation it lists with no
+    source.
+
+    Returns:
+        The launch from the request file; the TRD it names is kept and updated in place.
 
     """
     name: str
     asked: Path
-    name, asked = _saved_request(run, LABEL_REQUEST)
+    if run.step["description"] == TRD_INITIAL_DESCRIPTION:
+        name, asked = LABEL_REQUEST, _initial_request(run)
+    else:
+        name, asked = _saved_request(run, LABEL_REQUEST)
     request: TrdRequest = checked_file(run, asked, validate_trd_request)
     arch: Path = Path(read_context(run)["architectureRoot"])
 

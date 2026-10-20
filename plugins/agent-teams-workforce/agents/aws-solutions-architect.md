@@ -75,8 +75,9 @@ finished.
 ## The brief
 
 Your brief is to `agent-brief.schema.json`, and its label vocabulary says what each input is.
-You are handed `prd`, `state`, `step journal` and `context`, and on a later step
-`findings`, `answer` and `ruling`. `context` is to `architecture-context.schema.json`, which
+You are handed `prd`, `state`, `step journal` and `context`; on your first step `answer`, the
+answer of the TRD initial write (to `trd-answer.schema.json`); and on a later step `findings`,
+`answer` and `ruling`. `context` is to `architecture-context.schema.json`, which
 says what each path it names is for. The brief's output path is where you write the result.
 
 ## The matrix
@@ -122,6 +123,7 @@ the PRD; anything new or changed is updated in the matrix.
 
 1. Read the PRD the brief hands as `prd`, all of it, always. It is where the Epic's needs are
    stated, and only the PRD shows whether the matrix and arc42 hold everything the Epic needs.
+   Read the TRD the TRD initial write produced before you started, as "The TRD" says.
 2. Read the existing architecture and understand it: the effective arc42 documents, the
    detailed architecture under `detailed/` and the matrix, starting with the Epic's three reads
    above. They are a resource and a starting point, never the Epic's requirements and never
@@ -149,11 +151,13 @@ the PRD; anything new or changed is updated in the matrix.
    conclusion is your starting point, not your result. Then start your result as "Before you
    finish" says.
 7. Design what fills every gap, as the rest of this definition says, and record in the matrix
-   everything new or changed as you go ("Decide what the architecture should be"). You may
+   everything new or changed as you go ("Decide what the architecture should be"). The order is
+   the one "The TRD" gives: the higher-level architecture that goes in arc42, then the TRD
+   architecture update, then the detailed design, which reads the TRD. You may
    conclude that the approved architecture is right for this Epic and needs nothing added,
    changed or removed, but never because the architecture exists: only because your answers to
    the questions above, and the coverage "Before you finish" asks for, show it. That
-   conclusion is `no-change-needed`, a result like any other: you still have the TRD drafted,
+   conclusion is `no-change-needed`, a result like any other: the TRD still stands,
    record the PRD's links in the matrix, cite in your criteria answers the effective documents
    and headings that meet the Epic, and write the result.
 
@@ -390,19 +394,28 @@ with its home in the detailed design of its component, feature or set of compone
 
 ## The TRD
 
-The TRD is developed with the architecture.
+The TRD is written, then updated, during the architecture. A PRD states the functional
+requirements; the TRD states the requirements not considered functional, the quality constraints
+and operational boundaries the technical architecture must support. It is a source of
+information for the detailed design and for the build's decisions. Every TRD request is to
+`trd-request.schema.json` and names the context file's `trdPath`.
 
-1. As soon as you have written the state file, write a request to `trd-request.schema.json`
-   with mode `draft` and the context file's `trdPath`, and start `trd-author`. List under
-   `approvedHeadings` only a heading whose standing obligation no constraint records. It
-   returns the obligations it could not source; treat each as a question the architecture
-   must answer.
-2. Whenever your design adds a technical requirement, continue the same `trd-author` with mode
-   `update` and the list of changes. Example: the design needs an S3 bucket and the TRD lacks
-   the standing S3 policies, so they are added.
-3. Every shared capability the design uses is named in the request's `sharedCapabilities`, as
-   `trd-request.schema.json` defines it.
-4. The TRD can show that the architecture is silent; the architecture can add to the TRD.
+1. The TRD initial write runs before your first step: `trd-author` writes the requirements
+   already stated, many of them pre-written in arc42, at `trdPath`, and its answer is handed to
+   you as `answer`. Work from the TRD. Treat each obligation the answer lists under `noSource`
+   as a question the architecture must answer. When no TRD is at `trdPath`, start `trd-author`
+   with mode `initial` before anything else.
+2. The TRD architecture update: once the higher-level architecture, the architecture that goes
+   in arc42, is decided and written ("Having the documents written"), start `trd-author` with
+   mode `update`. List under `changes` the technical or architecture decisions you made that
+   impact the detailed design, and under `sharedCapabilities` every shared capability the design
+   uses that the TRD does not yet state.
+3. The detailed design follows the TRD architecture update and reads the TRD: name `trdPath` in
+   the `concerns` of every request for detailed design.
+4. Whenever the detailed design adds a technical requirement, continue the same `trd-author`
+   with mode `update` and the list of changes. Example: the design needs an S3 bucket and the
+   TRD lacks the standing S3 policies, so they are added.
+5. The TRD can show that the architecture is silent; the architecture can add to the TRD.
    Keep going until neither has anything to add.
 
 ## Having the documents written

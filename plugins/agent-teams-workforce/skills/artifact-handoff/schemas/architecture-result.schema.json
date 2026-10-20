@@ -35,9 +35,9 @@
       "enum": ["question", "task"]
     },
     "TrdMode": {
-      "description": "`draft`: write the TRD from the PRD and the approved architecture material. `update`: apply the listed changes and nothing else.",
+      "description": "`initial`: the TRD initial write, one of the very first steps of the architecture: the requirements not considered functional (the quality constraints and operational boundaries the technical architecture must support), many of them already pre-written in arc42. `update`: apply the listed changes and nothing else; the TRD architecture update, once the higher-level architecture is in arc42, is one.",
       "type": "string",
-      "enum": ["draft", "update"]
+      "enum": ["initial", "update"]
     },
     "TrdChangeKind": {
       "type": "string",
@@ -364,30 +364,18 @@
         "appliesTo": {"description": "The matrix id of the element.", "type": "string"}
       }
     },
-    "HeadingCitation": {
-      "description": "One heading of an architecture document: never a whole document.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["source", "heading"],
-      "properties": {
-        "source": {"description": "The architecture document's path relative to the architecture root.", "type": "string", "minLength": 1},
-        "heading": {"description": "The heading as `atw-matrix node document:<path>` lists it.", "type": "string", "minLength": 1}
-      }
-    },
     "TrdRequest": {
-      "description": "What the solutions architect asks of trd-author. The constraints that apply to the Epic are not listed here: trd-author reads them, with their statements and the headings they are stated in, from `atw-matrix epic <epic> --constraints`, the same command the architect reads them from.",
+      "description": "What trd-author is asked. The script writes the request of the initial write, from the architecture context, before the solutions architect starts; the solutions architect writes every request of mode `update`. The constraints that apply to the Epic are not listed here: trd-author reads them, with their statements and the headings they are stated in, from `atw-matrix epic <epic> --constraints`, the same command the architect reads them from.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode", "epic", "prdPath", "trdPath", "statePath", "approvedHeadings", "sharedCapabilities", "changes", "answerPath"],
+      "required": ["mode", "epic", "prdPath", "trdPath", "sharedCapabilities", "changes", "answerPath"],
       "properties": {
         "mode": {"$ref": "#/$defs/TrdMode"},
         "epic": {"description": "The Epic's beads id, which `atw-matrix epic` takes.", "type": "string", "minLength": 1},
         "prdPath": {"description": "The PRD file. trd-author reads the requirement headings `atw-matrix epic <epic>` names (each requirement's `name` is its PRD heading), not the whole file.", "type": "string", "minLength": 1},
         "trdPath": {"description": "The absolute path of the TRD file.", "type": "string", "minLength": 1},
-        "statePath": {"description": "The absolute path of the architect's state file, whose `needs` name the PRD requirement headings each need comes from.", "type": "string", "minLength": 1},
-        "approvedHeadings": {"description": "For `draft`, each effective architecture heading that states a standing obligation the design relies on and that no constraint `atw-matrix epic <epic> --constraints` returns records; empty for `update`. A heading whose rules the matrix records as constraints is not listed: the command returns them.", "type": "array", "items": {"$ref": "#/$defs/HeadingCitation"}},
-        "sharedCapabilities": {"description": "For `draft`, each shared capability the design uses, to be written as one requirement of kind `reuse`; empty for `update`.", "type": "array", "items": {"$ref": "#/$defs/SharedUse"}},
-        "changes": {"description": "For `update`, the changes to apply; empty for `draft`.", "type": "array", "items": {"$ref": "#/$defs/TrdChange"}},
+        "sharedCapabilities": {"description": "For `update`, each shared capability the design uses that the TRD does not yet state, to be written as one requirement of kind `reuse`; empty for `initial`, which comes before any design.", "type": "array", "items": {"$ref": "#/$defs/SharedUse"}},
+        "changes": {"description": "For `update`, the changes to apply; empty for `initial`.", "type": "array", "items": {"$ref": "#/$defs/TrdChange"}},
         "answerPath": {"description": "The absolute path the answer is written to.", "type": "string", "minLength": 1}
       }
     },
@@ -422,9 +410,9 @@
       "required": ["mode", "requirementIds", "requirements", "removed", "noSource", "summary"],
       "properties": {
         "mode": {"$ref": "#/$defs/TrdMode"},
-        "requirementIds": {"description": "For `draft`, every requirement id in the TRD; for `update`, the ids added, changed and removed.", "type": "array", "items": {"type": "string"}},
-        "removed": {"description": "For `update`, the ids of the requirements removed from the TRD; empty for `draft`.", "type": "array", "items": {"type": "string", "minLength": 1}},
-        "requirements": {"description": "Every requirement this answer's TRD write added or changed, exactly as the TRD now states it: for `draft`, every requirement the TRD states, one entry for each id in `requirementIds`; for `update`, each requirement added or changed. A removed requirement is named in `requirementIds` only. The script records the matrix's constraints, each a pointer to its requirement, from these entries and from no other file.", "type": "array", "items": {"$ref": "#/$defs/TrdRequirement"}},
+        "requirementIds": {"description": "For `initial`, every requirement id in the TRD; for `update`, the ids added, changed and removed.", "type": "array", "items": {"type": "string"}},
+        "removed": {"description": "For `update`, the ids of the requirements removed from the TRD; empty for `initial`.", "type": "array", "items": {"type": "string", "minLength": 1}},
+        "requirements": {"description": "Every requirement this answer's TRD write added or changed, exactly as the TRD now states it: for `initial`, every requirement the TRD states, one entry for each id in `requirementIds`; for `update`, each requirement added or changed. A removed requirement is named in `requirementIds` only. The script records the matrix's constraints, each a pointer to its requirement, from these entries and from no other file.", "type": "array", "items": {"$ref": "#/$defs/TrdRequirement"}},
         "noSource": {"type": "array", "items": {"$ref": "#/$defs/NoSource"}},
         "summary": {"type": "string", "minLength": 1}
       }

@@ -1298,6 +1298,10 @@ function contractAt(step) {
   const suiteCommand = String(J.latest('suiteCommand', step, '') || '').trim()
   const shared = J.latest('sharedCapabilities', step)
   if (Array.isArray(shared)) contract.sharedCapabilities = shared
+  // The Epic's TRD, which elaboration hands the Task's journal as the artifact `TRD`: a source of
+  // information for the build's decisions, read by the test writers and the implementers.
+  const trd = J.latest('TRD', step)
+  if (typeof trd === 'string' && trd) contract.trdPath = trd
   if (suiteCommand) {
     contract.suiteCommand = suiteCommand
     // Read by the implementer selection and implementation briefs: explicit authority to repair the baseline.
