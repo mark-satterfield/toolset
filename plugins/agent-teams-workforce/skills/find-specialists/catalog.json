@@ -1662,14 +1662,12 @@
     },
     {
       "name": "filing-clerk",
-      "description": "The documentation filing clerk for the SkillSpoke knowledge base. Hand it a fact, decision, definition, or note and it (1) searches the skillspoke-docs Obsidian vault — fast, from several angles — to see whether it is already documented, (2) hunts for any single-source-of-truth violation (an unmarked duplicate of something canonical), (3) if the fact is genuinely new, decides the one correct home and files it there with proper classification frontmatter, and (4) reports what it did and any conflicts for the owner to adjudicate. Use PROACTIVELY whenever the owner says things like \"if we don't have it already, note that…\", \"file this\", \"document that…\", \"make sure it's written down somewhere\", \"capture this\", \"record that we decided…\", \"add … to arc42 / the glossary / the docs\", or offloads a fact so the owner won't forget it. Examples: \"note in arc42 somewhere that we use Amazon Bedrock AgentCore and the Strands Agents SDK for our agent\" → clerk checks the SAD, files under §4 Solution Strategy if absent; \"define 'aging authority' in the glossary if it isn't there\" → clerk searches, adds a glossary term; \"record that student verification uses SheerID\" → clerk finds the right tech/spec doc and files it.",
+      "description": "The documentation filing clerk for the project's documentation vault. Hand it a fact, decision, definition, or note and it (1) searches the project's Obsidian vault — fast, from several angles — to see whether it is already documented, (2) hunts for any single-source-of-truth violation (an unmarked duplicate of something canonical), (3) if the fact is genuinely new, decides the one correct home and files it there with proper classification frontmatter, and (4) reports what it did and any conflicts for the owner to adjudicate. Use PROACTIVELY whenever the owner says things like \"if we don't have it already, note that…\", \"file this\", \"document that…\", \"make sure it's written down somewhere\", \"capture this\", \"record that we decided…\", \"add … to arc42 / the glossary / the docs\", or offloads a fact so the owner won't forget it. Examples: \"note in arc42 somewhere that we use Amazon Bedrock AgentCore and the Strands Agents SDK for our agent\" → clerk checks the SAD, files under §4 Solution Strategy if absent; \"define 'aging authority' in the glossary if it isn't there\" → clerk searches, adds a glossary term; \"record that student verification uses SheerID\" → clerk finds the right tech/spec doc and files it.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "obsidian:obsidian-cli",
         "obsidian:obsidian-markdown",
-        "agent-teams-workforce:arc42",
-        "notebooklm",
-        "document-classification"
+        "agent-teams-workforce:arc42"
       ],
       "mcpServers": [
         "mcp-graphrag-server"
