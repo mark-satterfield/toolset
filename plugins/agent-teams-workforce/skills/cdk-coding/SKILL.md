@@ -91,11 +91,12 @@ and `typescript-coding` for a TypeScript app, and follow both skills. This skill
 - Accept the interface type of a resource in props (`dynamodb.ITable`, `s3.IBucket`, `iam.IRole`), not the concrete
   class. The reason: a construct that accepts the interface works with an imported resource as well as one created
   in the same app, and the caller decides which.
-- Let CloudFormation generate physical names unless a name is required by something outside the app. A hard-coded
-  physical name blocks any change that needs replacement (the new resource cannot take the old name while the old
-  one exists) and collides across environments. When a physical name is required, write the one the architecture, the task or its spec
-  gives; where none of them records it, build it with the project's naming tool or skill when one exists (for
-  example `resource-naming`), never by hand.
+- Physical names: write every name the architecture records (including where the matrix, the Task or its spec
+  carries it) into the code explicitly, exactly as given, on the construct's name property (`stack_name`,
+  `function_name`, `table_name`, `rest_api_name`, `queue_name` and the like); never change, shorten or rebuild it. A
+  resource the architecture names nothing for (an internal role, a log group a construct creates) may keep the name
+  CloudFormation generates. When something outside the app needs a name the architecture does not record, build it
+  with the project's naming tool (the `resource-naming` skill), never by hand.
 - When the project has a shared construct library (a wrapped function, API or table with the project's defaults
   already applied), build from it instead of from the raw construct. The reason: the library already carries the
   decisions this skill describes, and a second copy drifts.

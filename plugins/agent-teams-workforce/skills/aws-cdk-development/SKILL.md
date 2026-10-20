@@ -56,7 +56,7 @@ Use this skill when:
 
 ### Resource Naming
 
-Write every stack and resource name as the architecture, the matrix, the task or its spec gives it, and do not change it. A name is built only where it is first decided and none of those records it: then the resource-naming skill builds it with the project's naming command (`printenv ATW_NAMING_COMMAND` prints it; `name build <kind> ...`, checked with `name check <name> --kind <kind>`). Never compose a name by hand, and never leave a name for CDK to generate. When the project configures no naming command (`printenv ATW_NAMING_COMMAND` prints nothing), say so in your result and leave the name unmade, as the resource-naming skill says.
+Name stacks and resources by the physical-name rule in `cdk-coding` (under "Structure"); it is stated only there.
 
 ### Lambda Function Development
 

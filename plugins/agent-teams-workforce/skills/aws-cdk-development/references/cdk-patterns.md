@@ -14,7 +14,7 @@ This reference provides patterns, anti-patterns, and best practices for AWS CDK 
 
 ## Naming Conventions
 
-Use the resource-naming skill: stack, API, function, table, bucket, role and SSM parameter names all come from the project's naming command (`name build <kind> ...`), and `name check <name> --kind <kind>` verifies one. Never type a name by hand and never leave it for CDK to generate. When the project configures no naming command, say so in your result and leave the name unmade.
+Name stacks and resources by the physical-name rule in `cdk-coding` (under "Structure"); it is stated only there.
 
 ## Construct Patterns
 
@@ -225,10 +225,6 @@ bucket = s3.Bucket(
 ```
 
 ## Anti-Patterns
-
-### Ad-hoc Names
-
-A name typed in by hand, copied from a neighbouring stack, or left for CDK to generate is wrong. Generate names with the naming command's `name build`.
 
 ### Overly Broad IAM Permissions
 
