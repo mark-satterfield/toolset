@@ -1,6 +1,6 @@
 ---
 name: "rag-architect"
-description: "RAG Architect - POWERFUL"
+description: "Retrieval-augmented generation design - chunking strategies, embedding model choice, vector store choice on AWS (S3 Vectors, OpenSearch, Aurora pgvector, Neptune Analytics), dense, sparse and hybrid retrieval, re-ranking, query transformation, context assembly, RAG evaluation (faithfulness, context precision and recall), caching, cost and safety. Use when designing or reviewing a RAG pipeline."
 ---
 
 # RAG Architect - POWERFUL
@@ -69,49 +69,32 @@ The RAG (Retrieval-Augmented Generation) Architect skill provides comprehensive 
 - **1024-1536 dimensions**: High quality, better for complex domains, higher cost
 - **2048+ dimensions**: Maximum quality, specialized use cases, significant resources
 
-#### Speed vs Quality Tradeoffs
-- **Fast models**: sentence-transformers/all-MiniLM-L6-v2 (384 dim, ~14k tokens/sec)
-- **Balanced models**: sentence-transformers/all-mpnet-base-v2 (768 dim, ~2.8k tokens/sec)
-- **Quality models**: amazon.titan-embed-text-v2:0 (1024 dim, Amazon Bedrock API)
-- **Specialized models**: Domain-specific fine-tuned models
-
-#### Model Categories
-- **General purpose**: all-MiniLM, all-mpnet, Universal Sentence Encoder
-- **Code embeddings**: CodeBERT, GraphCodeBERT, CodeT5
-- **Scientific text**: SciBERT, BioBERT, ClinicalBERT
-- **Multilingual**: LaBSE, multilingual-e5, paraphrase-multilingual
+#### Embedding models on Amazon Bedrock
+- **Amazon Titan Text Embeddings V2** (`amazon.titan-embed-text-v2:0`): 256, 512 or 1024 dimensions, optional normalisation; the usual default for text
+- **Cohere Embed v4**: multilingual text embeddings
+- **Amazon Nova Multimodal Embeddings**: text, image and other modalities in one vector space
+- Embeddings models are called with `InvokeModel`, not Converse; check the current model IDs, dimensions and Regions with the AWS documentation tools (Bedrock User Guide, supported models) before choosing
+- The index dimension must equal the model's output dimension, and the distance metric is the one the model documents; changing the model means re-embedding the corpus
 
 ### 3. Vector Database Selection
 
-**SkillSpoke stores vectors in Aurora PostgreSQL Serverless v2 with pgvector, reached through the RDS Data API and owned by the service whose data it is** (see `aurora-postgresql` and `pgvector-semantic-search`). Pinecone, Weaviate, Qdrant and Chroma are outside SkillSpoke's stack; the comparison below is general knowledge for other systems. Embeddings come from an Amazon Bedrock embeddings model through `skillSpoke-ai-lib`, since all SkillSpoke inference runs on Bedrock; self-hosted sentence-transformers models are not part of the stack.
+**SkillSpoke stores vectors in Aurora PostgreSQL Serverless v2 with pgvector, reached through the RDS Data API and owned by the service whose data it is** (see `aurora-postgresql` and `pgvector-semantic-search`). The other AWS stores below are the alternatives a design weighs it against. Embeddings come from an Amazon Bedrock embeddings model through `skillSpoke-ai-lib`, since all SkillSpoke inference runs on Bedrock; self-hosted sentence-transformers models are not part of the stack.
 
-#### Pinecone
-- **Managed service**: Fully hosted, auto-scaling
-- **Features**: Metadata filtering, hybrid search, real-time updates
-- **Pricing**: $70/month for 1M vectors (1536 dim), pay-per-use scaling
-- **Best for**: Production applications, when managed service is preferred
-- **Cons**: Vendor lock-in, costs can scale quickly
+#### Amazon S3 Vectors
+- **Managed vector buckets and indexes** (`s3vectors` API): lowest cost for large, infrequently queried corpora; dimension, metric and non-filterable metadata keys are immutable after index creation
+- **Best for**: RAG storage and long-term vectors at modest query rates (`aws-data-analytics:storing-and-querying-vectors`)
+- **Cons**: Not for hundreds or thousands of sustained queries per second; limited filter operators
 
-#### Weaviate
-- **Open source**: Self-hosted or cloud options available
-- **Features**: GraphQL API, multi-modal search, automatic vectorization
-- **Scaling**: Horizontal scaling, HNSW indexing
-- **Best for**: Complex data types, when GraphQL API is preferred
-- **Cons**: Learning curve, requires infrastructure management
+#### Amazon OpenSearch Service and OpenSearch Serverless (vector engine)
+- **k-NN with HNSW or IVF (Faiss, Lucene)**, quantisation, hybrid lexical and semantic search through search pipelines
+- **Best for**: High query rates, hybrid search, rich filtering and aggregations (`aws-data-analytics:amazon-opensearch-service`)
+- **Cons**: Always-on cost floor (Serverless OCUs or domain instances)
 
-#### Qdrant
-- **Rust-based**: High performance, low memory footprint
-- **Features**: Payload filtering, clustering, distributed deployment
-- **API**: REST and gRPC interfaces
-- **Best for**: High-performance requirements, resource-constrained environments
-- **Cons**: Smaller community, fewer integrations
+#### Amazon Neptune Analytics
+- **Graph plus vector similarity** for GraphRAG over connected data
+- **Best for**: Retrieval that must follow relationships, not only similarity
 
-#### Chroma
-- **Embedded database**: SQLite-based, easy local development
-- **Features**: Collections, metadata filtering, persistence
-- **Scaling**: Limited, suitable for prototyping and small deployments
-- **Best for**: Development, testing, small-scale applications
-- **Cons**: Not suitable for production scale
+Bedrock Knowledge Bases can manage chunking, embedding and ingestion into these stores and into Aurora PostgreSQL; the decision table is in `aws-core:amazon-bedrock` (`references/knowledge-bases-setup.md`).
 
 #### pgvector (PostgreSQL)
 - **SQL integration**: Leverage existing PostgreSQL infrastructure
