@@ -5,8 +5,8 @@ description: >-
   usage rules — as a maintained glossary. Use for Architecture Analysis
   work requiring domain glossary authoring,
   terminology consistency, and language-to-code alignment.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
-disallowedTools: AskUserQuestion, Agent
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100

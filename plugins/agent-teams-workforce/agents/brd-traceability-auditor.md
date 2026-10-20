@@ -5,8 +5,8 @@ description: >-
   a BRD, when one is supplied — a correspondence, never a verdict on the PRD.
   Use for PRD Validation work requiring optional requirement-to-objective
   mapping.
-tools: Read, Glob, Grep, Bash, Write, Skill
-disallowedTools: AskUserQuestion, Edit, Agent
+tools: Read, Glob, Grep, Bash, Write, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 24

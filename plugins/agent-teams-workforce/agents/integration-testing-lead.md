@@ -5,8 +5,8 @@ description: >-
   unavailable. Chooses the fewest applicable suites and whether provisioning
   must precede them, returning suites, provisionEnv and rationale. Does not
   dispatch workers, run tests, aggregate results, classify failures or judge gates.
-tools: Read, Glob, Grep, Skill
-disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash, Agent, SendMessage
+tools: Read, Glob, Grep, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash, SendMessage
 model: sonnet
 permissionMode: default
 maxTurns: 150

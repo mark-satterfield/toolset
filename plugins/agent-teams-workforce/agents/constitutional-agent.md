@@ -6,8 +6,8 @@ description: >-
   spirit of the system) and records rulings as reusable precedent. Use for
   Governance work requiring constitutional interpretation, conflict
   resolution, and precedent recording.
-tools: Read, Glob, Grep, Write, Skill
-disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
+tools: Read, Glob, Grep, Write, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit, Bash, NotebookEdit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 60

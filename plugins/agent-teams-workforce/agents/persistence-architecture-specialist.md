@@ -24,8 +24,8 @@ tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation,
   mcp__plugin_aws-agents_awsknowledge__aws___list_regions,
   mcp__plugin_aws-agents_awsknowledge__aws___get_regional_availability,
   mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_converter,
-  mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator
-disallowedTools: AskUserQuestion, Edit, Agent, NotebookEdit
+  mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit, NotebookEdit
 mcpServers:
 - aws-mcp
 - awslabs-dynamodb-mcp-server

@@ -6,8 +6,8 @@ description: >-
   constraint's pointer survives every compaction, so no constraint is ever
   copied or summarized away. Use for Governance work requiring context-index
   assembly, compaction-safe constraint preservation, and manifest maintenance.
-tools: Read, Write, Edit, Glob, Grep, Skill
-disallowedTools: AskUserQuestion, Bash, Agent, NotebookEdit
+tools: Read, Write, Edit, Glob, Grep, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Bash, NotebookEdit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100

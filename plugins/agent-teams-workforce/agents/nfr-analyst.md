@@ -5,8 +5,8 @@ description: >-
   implied NFRs; never resolves or quantifies them. Use for PRD Validation
   work requiring NFR extraction, implied-NFR detection,
   and quality-attribute analysis.
-tools: Read, Glob, Grep, Write, Skill
-disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
+tools: Read, Glob, Grep, Write, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit, Bash, NotebookEdit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 80

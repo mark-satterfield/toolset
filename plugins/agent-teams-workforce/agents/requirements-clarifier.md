@@ -5,8 +5,8 @@ description: >-
   returning structured clarification requests without resolving them. Use
   for PRD Validation work requiring requirements
   analysis and clarification drafting.
-tools: Read, Glob, Grep, Write, Skill
-disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
+tools: Read, Glob, Grep, Write, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit, Bash, NotebookEdit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 24

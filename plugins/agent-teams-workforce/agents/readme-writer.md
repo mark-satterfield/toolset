@@ -5,8 +5,8 @@ description: >-
   shipped code and pipelines. Use for cross-cutting Documentation team work
   requiring README authoring, setup documentation, and onboarding flow
   writing.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
-disallowedTools: AskUserQuestion, Agent
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100

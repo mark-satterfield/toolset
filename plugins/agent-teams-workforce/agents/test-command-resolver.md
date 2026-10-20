@@ -1,8 +1,8 @@
 ---
 name: test-command-resolver
 description: Resolves the applicable test command from repository instructions and configuration without running tests.
-tools: Read, Glob, Grep, Skill
-disallowedTools: Agent, SendMessage, AskUserQuestion, Write, Edit, NotebookEdit
+tools: Read, Glob, Grep, Skill, Agent, Workflow
+disallowedTools: SendMessage, AskUserQuestion, Write, Edit, NotebookEdit
 model: sonnet
 maxTurns: 80
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:test-failure-mindset]

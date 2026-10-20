@@ -5,8 +5,8 @@ description: >-
   objectives, key results, leading vs. lagging indicators. Use for PRD
   Creation work requiring goal cascading, key-result
   quantification, and indicator classification.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
-disallowedTools: AskUserQuestion, Agent
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100

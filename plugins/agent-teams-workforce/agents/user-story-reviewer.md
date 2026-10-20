@@ -4,8 +4,8 @@ description: >-
   Validates every user story is complete, testable, and scoped to its single
   task; reports findings, never fixes. Use for Task Decomposition work requiring story validation, testability auditing, and scope
   challenge.
-tools: Read, Glob, Grep, Bash, Write, Skill
-disallowedTools: AskUserQuestion, Edit, Agent
+tools: Read, Glob, Grep, Bash, Write, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90

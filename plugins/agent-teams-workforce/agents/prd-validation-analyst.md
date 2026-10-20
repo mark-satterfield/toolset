@@ -1,8 +1,8 @@
 ---
 name: prd-validation-analyst
 description: Independently checks a PRD against the caller supplied requirement lenses, with no authoring authority.
-tools: Read, Write, Bash, Glob, Grep, Skill
-disallowedTools: Agent, SendMessage, AskUserQuestion, Edit, NotebookEdit
+tools: Read, Write, Bash, Glob, Grep, Skill, Agent, Workflow
+disallowedTools: SendMessage, AskUserQuestion, Edit, NotebookEdit
 model: sonnet
 maxTurns: 80
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:artifact-handoff]

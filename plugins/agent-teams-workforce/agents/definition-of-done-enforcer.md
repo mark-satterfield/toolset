@@ -5,8 +5,8 @@ description: >-
   true/false statements rather than checklists. Use for Spec Authoring
   work requiring DoD authoring, verifiability
   discipline, and completion semantics.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
-disallowedTools: AskUserQuestion, Agent
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100

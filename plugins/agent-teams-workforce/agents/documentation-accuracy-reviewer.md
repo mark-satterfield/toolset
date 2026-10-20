@@ -5,8 +5,8 @@ description: >-
   with cited evidence. Use for cross-cutting Documentation team work requiring
   accuracy verification, claim-by-claim checking, and completeness review.
   No workflow currently dispatches it.
-tools: Read, Glob, Grep, Bash, Write, Skill
-disallowedTools: AskUserQuestion, Edit, Agent
+tools: Read, Glob, Grep, Bash, Write, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90

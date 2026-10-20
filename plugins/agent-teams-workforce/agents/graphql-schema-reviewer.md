@@ -5,8 +5,8 @@ description: >-
   AppSync contract patterns — resolver mappings, authorization directives. Use
   for Spec Authoring work requiring GraphQL conformance
   review, AppSync pattern checking, and decision-drift detection.
-tools: Read, Glob, Grep, Bash, Write, Skill
-disallowedTools: AskUserQuestion, Edit, Agent
+tools: Read, Glob, Grep, Bash, Write, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90

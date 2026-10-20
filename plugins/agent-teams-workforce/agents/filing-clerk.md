@@ -19,7 +19,7 @@ description: >-
   student verification uses SheerID" → clerk finds the right tech/spec doc and
   files it.
 model: sonnet
-tools: Read, Write, Edit, Bash, Grep, Glob, Skill, Agent, mcp__mcp-graphrag-server
+tools: Read, Write, Edit, Bash, Grep, Glob, Skill, Agent, mcp__mcp-graphrag-server, Workflow
 disallowedTools: AskUserQuestion
 skills:
   - agent-teams-workforce:subagent-contract

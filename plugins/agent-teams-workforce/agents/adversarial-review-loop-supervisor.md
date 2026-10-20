@@ -6,7 +6,7 @@ description: >-
   rules on findings, which route back until pass or loop-limit escalation.
   Use for Adversarial Validation phase work requiring attack-wave
   orchestration, finding routing, and loop-limit enforcement.
-tools: Read, Glob, Grep, Agent, SendMessage, Skill
+tools: Read, Glob, Grep, Agent, SendMessage, Skill, Workflow
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default

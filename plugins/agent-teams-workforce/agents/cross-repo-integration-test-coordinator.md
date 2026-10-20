@@ -6,8 +6,8 @@ description: >-
   integration-testing-lead. Coordinates only — runs no tests. Use for
   Integration Testing work requiring cross-repo
   sequencing, environment alignment, and result routing.
-tools: Read, Glob, Grep, SendMessage, Skill
-disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash, Agent
+tools: Read, Glob, Grep, SendMessage, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default
 maxTurns: 80

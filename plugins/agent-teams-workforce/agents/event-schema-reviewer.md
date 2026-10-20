@@ -5,8 +5,8 @@ description: >-
   schema — event type names, passed values, publishing conditions, consumer obligations,
   retry/DLQ behavior. Use for Spec Authoring work requiring standard-event conformance, event
   contract validation, and failure-semantics checks.
-tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill
-disallowedTools: AskUserQuestion, Edit, Agent
+tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit
 mcpServers:
   - aws-mcp
 model: opus

@@ -2,8 +2,8 @@
 name: workflow-command-runner
 description: Executes one workflow-supplied checksum-guarded deterministic command and returns its exact compact machine receipt; never interprets or authors its payload.
 model: sonnet
-tools: Bash, Skill
-disallowedTools: Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion
+tools: Bash, Skill, Agent, Workflow
+disallowedTools: Read, Write, Edit, Glob, Grep, AskUserQuestion
 skills: [agent-teams-workforce:artifact-handoff]
 maxTurns: 16
 effort: low

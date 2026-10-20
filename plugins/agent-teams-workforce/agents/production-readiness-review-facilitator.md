@@ -6,8 +6,8 @@ description: >-
   decides readiness. Use for Deployment team work
   requiring review coordination, reviewer routing, and readiness packet
   assembly.
-tools: Read, Glob, Grep, SendMessage, Skill
-disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash, Agent
+tools: Read, Glob, Grep, SendMessage, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default
 maxTurns: 80

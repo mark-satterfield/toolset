@@ -6,8 +6,8 @@ description: >-
   defects, never fixes. Use for Task Decomposition work requiring Beads
   format validation, field completeness, and traceability checks.
   No workflow currently dispatches it.
-tools: Read, Glob, Grep, Bash, Write, Skill
-disallowedTools: AskUserQuestion, Edit, Agent
+tools: Read, Glob, Grep, Bash, Write, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 90

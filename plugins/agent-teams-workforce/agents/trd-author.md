@@ -3,8 +3,8 @@ name: trd-author
 description: Write the TRD as one of the very first steps of the architecture, the requirements not considered functional, many pre-written in arc42, and update it as the architecture is decided.
 tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
-  Skill
-disallowedTools: AskUserQuestion, Agent
+  Skill, Agent, Workflow
+disallowedTools: AskUserQuestion
 mcpServers:
 - aws-mcp
 model: fable

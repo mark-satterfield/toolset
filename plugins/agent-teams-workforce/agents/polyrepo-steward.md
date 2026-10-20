@@ -21,7 +21,7 @@ description: >-
 role: repository-steward
 model: sonnet
 effort: high
-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent, mcp__gitnexus__query, mcp__gitnexus__context, mcp__mcp-graphrag-server__search
+tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent, mcp__gitnexus__query, mcp__gitnexus__context, mcp__mcp-graphrag-server__search, Workflow
 mcpServers:
 - gitnexus
 - mcp-graphrag-server

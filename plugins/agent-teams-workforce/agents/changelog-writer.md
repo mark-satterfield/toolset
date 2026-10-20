@@ -5,8 +5,8 @@ description: >-
   into semantic version notes. Use for cross-cutting Documentation team work
   requiring conventional commit parsing, changelog drafting, and version note
   generation.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
-disallowedTools: AskUserQuestion, Agent
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100

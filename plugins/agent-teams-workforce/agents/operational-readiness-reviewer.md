@@ -4,8 +4,8 @@ description: Review the unapproved architecture and TRD content of one Epic agai
 role: architecture-reviewer
 tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
-  Skill, mcp__mcp-graphrag-server
-disallowedTools: AskUserQuestion, Edit, Agent
+  Skill, mcp__mcp-graphrag-server, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit
 mcpServers:
 - aws-mcp
 - mcp-graphrag-server

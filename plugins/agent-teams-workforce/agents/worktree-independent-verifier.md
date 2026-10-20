@@ -8,8 +8,8 @@ description: >-
   segregation of duties: it is dispatched separately from whoever provisioned the
   tree, is never told what that provisioner claimed, and reports only what git
   printed so the calling script can compare the two accounts.
-tools: Read, Glob, Grep, Bash, Skill
-disallowedTools: AskUserQuestion, Edit, Write, Agent
+tools: Read, Glob, Grep, Bash, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit, Write
 # Reports exact git facts for independent comparison by the calling script.
 # Precision matters even though the agent makes no acceptance decision.
 model: sonnet

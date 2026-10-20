@@ -2,8 +2,8 @@
 name: architecture-team-lead
 description: Route what the solutions architect could not settle, so that the team settles it with the least further work.
 role: architecture-lead
-tools: Read, Glob, Grep, Bash, Write
-disallowedTools: AskUserQuestion, Edit, NotebookEdit, Agent, SendMessage, Skill
+tools: Read, Glob, Grep, Bash, Write, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit, NotebookEdit, SendMessage, Skill
 model: sonnet
 effort: medium
 maxTurns: 40

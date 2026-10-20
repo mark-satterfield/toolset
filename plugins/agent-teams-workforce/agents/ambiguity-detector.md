@@ -5,8 +5,8 @@ description: >-
   unstated assumptions; reports findings, never fixes. Use for PRD Validation
   work requiring ambiguity scanning, boundary-condition
   checks, and severity rating.
-tools: Read, Glob, Grep, Bash, Write, Skill
-disallowedTools: AskUserQuestion, Edit, Agent
+tools: Read, Glob, Grep, Bash, Write, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 24

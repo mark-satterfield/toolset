@@ -4,8 +4,8 @@ description: >-
   Writes the ONE Story bead a Spec pairs with — a single-repository container
   with a title, a description and the out-of-repo work the Epic's closure in the matrix holds.
   Use for Spec Authoring work requiring the Story that pairs with a Spec.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
-disallowedTools: AskUserQuestion, Agent
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100

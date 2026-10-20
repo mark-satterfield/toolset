@@ -6,8 +6,8 @@ description: >-
   work requiring scoring validation, consistency
   auditing, and prioritization challenge.
   No workflow currently dispatches it.
-tools: Read, Glob, Grep, Bash, Write, Skill
-disallowedTools: AskUserQuestion, Edit, Agent
+tools: Read, Glob, Grep, Bash, Write, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 90

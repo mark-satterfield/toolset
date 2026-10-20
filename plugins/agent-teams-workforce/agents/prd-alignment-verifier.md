@@ -4,8 +4,8 @@ description: >-
   Independently judges whether a draft PRD aligns with the intake brief,
   persona and objective it was written from, and is template-conformant and
   WHAT-not-HOW. Use as the checker of the PRD draft in prd-creation.
-tools: Read, Glob, Grep, Bash, Write, Skill
-disallowedTools: AskUserQuestion, Edit, Agent
+tools: Read, Glob, Grep, Bash, Write, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 90

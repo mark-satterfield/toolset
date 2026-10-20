@@ -1,8 +1,8 @@
 ---
 name: architecture-maintainer
 description: Write the solutions architect's decisions into the arc42 documents, each fact in its one home.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
-disallowedTools: AskUserQuestion, Agent
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 200

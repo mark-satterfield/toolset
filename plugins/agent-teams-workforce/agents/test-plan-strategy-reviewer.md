@@ -5,8 +5,8 @@ description: >-
   environment needs; reports findings only. Use for Test Design work
   requiring strategy review, pyramid balance assessment, and risk coverage
   validation.
-tools: Read, Glob, Grep, Bash, Write, Skill
-disallowedTools: AskUserQuestion, Edit, Agent
+tools: Read, Glob, Grep, Bash, Write, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90

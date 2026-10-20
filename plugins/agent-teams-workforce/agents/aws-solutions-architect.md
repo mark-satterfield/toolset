@@ -14,7 +14,7 @@ tools: Read, Glob, Grep, Bash, Write, Skill, Agent, SendMessage, mcp__aws-mcp__a
   mcp__plugin_aws-agents_awsknowledge__aws___read_documentation,
   mcp__plugin_aws-agents_awsknowledge__aws___retrieve_skill,
   mcp__plugin_aws-agents_awsknowledge__aws___list_regions,
-  mcp__plugin_aws-agents_awsknowledge__aws___get_regional_availability, mcp__aws-mcp__aws___run_script
+  mcp__plugin_aws-agents_awsknowledge__aws___get_regional_availability, mcp__aws-mcp__aws___run_script, Workflow
 disallowedTools: AskUserQuestion, Edit, NotebookEdit
 mcpServers:
 - aws-mcp

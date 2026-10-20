@@ -8,8 +8,8 @@ description: >-
   revision). Use for Governance work requiring advantage-principle
   evaluation, speculative-execution oversight, commit-or-revert verdicts, and
   gate-exhaustion rulings.
-tools: Read, Glob, Grep, Write, Skill
-disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
+tools: Read, Glob, Grep, Write, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit, Bash, NotebookEdit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 60

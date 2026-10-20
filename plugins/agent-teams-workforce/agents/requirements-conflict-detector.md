@@ -4,8 +4,8 @@ description: >-
   Identifies PRD requirements that contradict each other, returning
   a structured conflict report; never resolves. Use for PRD Validation
   work requiring contradiction analysis and conflict classification.
-tools: Read, Glob, Grep, Bash, Write, Skill
-disallowedTools: AskUserQuestion, Edit, Agent
+tools: Read, Glob, Grep, Bash, Write, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 24

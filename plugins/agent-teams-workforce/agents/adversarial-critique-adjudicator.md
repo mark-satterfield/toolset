@@ -6,8 +6,8 @@ description: >-
   whose rulings implementers cannot downgrade. Use for Adversarial
   Validation phase work requiring finding adjudication and
   constitutive-vs-competitive classification.
-tools: Read, Glob, Grep, Write, Skill
-disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
+tools: Read, Glob, Grep, Write, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit, Bash, NotebookEdit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 60

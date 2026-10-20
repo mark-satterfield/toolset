@@ -6,8 +6,8 @@ description: >-
   analysis. Use for TRD Authoring work requiring
   decision adjudication, deadlock resolution, and rationale recording.
   No workflow currently dispatches it.
-tools: Read, Glob, Grep, Write, Skill
-disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
+tools: Read, Glob, Grep, Write, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit, Bash, NotebookEdit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 60

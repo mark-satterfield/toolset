@@ -4,8 +4,8 @@ description: >-
   Judges Epic or Task WSJF inputs against the caller-selected rubric, using
   authoritative requirements and existing-work evidence. Supplies scores and
   uncertainty; deterministic scripts compute rankings and persist metadata.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
-disallowedTools: AskUserQuestion, Agent
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100

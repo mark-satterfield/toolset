@@ -5,8 +5,8 @@ description: >-
   steps, and disaster recovery. Use for Deployment team work requiring runbook authoring, incident response design, and
   rollback documentation.
   No workflow currently dispatches it.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
-disallowedTools: AskUserQuestion, Agent
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, Agent, Workflow
+disallowedTools: AskUserQuestion
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100

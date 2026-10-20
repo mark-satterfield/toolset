@@ -2,8 +2,8 @@
 name: built-architecture-comparer
 description: Compare the code one Story built with the approved architecture for its elements and record each difference.
 role: built-comparer
-tools: Read, Glob, Grep, Bash, Write, Skill, mcp__gitnexus__query, mcp__gitnexus__context, mcp__gitnexus__impact, mcp__gitnexus__detect_changes, mcp__gitnexus__trace, mcp__gitnexus__explain, mcp__gitnexus__api_impact, mcp__gitnexus__route_map, mcp__gitnexus__tool_map, mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query, mcp__gitnexus__cypher, mcp__gitnexus__check, mcp__gitnexus__list_repos, mcp__gitnexus__group_list
-disallowedTools: AskUserQuestion, Edit, Agent, NotebookEdit
+tools: Read, Glob, Grep, Bash, Write, Skill, mcp__gitnexus__query, mcp__gitnexus__context, mcp__gitnexus__impact, mcp__gitnexus__detect_changes, mcp__gitnexus__trace, mcp__gitnexus__explain, mcp__gitnexus__api_impact, mcp__gitnexus__route_map, mcp__gitnexus__tool_map, mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query, mcp__gitnexus__cypher, mcp__gitnexus__check, mcp__gitnexus__list_repos, mcp__gitnexus__group_list, Agent, Workflow
+disallowedTools: AskUserQuestion, Edit, NotebookEdit
 model: opus
 effort: medium
 maxTurns: 80

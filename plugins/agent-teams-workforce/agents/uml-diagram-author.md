@@ -1,10 +1,10 @@
 ---
 name: uml-diagram-author
 description: Draw one UML diagram of a settled design for the solutions architect.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, Agent, Workflow
 mcpServers:
 - mcp-graphrag-server
-disallowedTools: AskUserQuestion, Agent
+disallowedTools: AskUserQuestion
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 100

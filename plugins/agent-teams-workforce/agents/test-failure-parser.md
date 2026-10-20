@@ -1,8 +1,8 @@
 ---
 name: test-failure-parser
 description: Extracts concrete failing test identifiers and errors from a saved test log without rerunning tests.
-tools: Read, Skill
-disallowedTools: Agent, SendMessage, AskUserQuestion, Write, Edit, NotebookEdit
+tools: Read, Skill, Agent, Workflow
+disallowedTools: SendMessage, AskUserQuestion, Write, Edit, NotebookEdit
 model: sonnet
 maxTurns: 80
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:test-failure-mindset]

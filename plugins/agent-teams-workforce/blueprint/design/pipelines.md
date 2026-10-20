@@ -87,6 +87,11 @@ Notes on the diagram:
 - A Bug is not pipeline work; a person triages it into an Epic, a Task or a closure
   ([requirements/pipelines.md](../requirements/pipelines.md), "Bugs").
 - The wait loop exits when the last Story of the Epic is deployed and tested.
+- An agent in any pipeline may start subagents and workflows when its work needs them, choosing
+  the plugin's own agents from the `find-specialists` catalog; every agent definition with a
+  `tools` list grants `Agent` and `Workflow` and denies neither
+  ([requirements/pipelines.md](../requirements/pipelines.md), "Agents may start agents";
+  `skills/subagent-contract/SKILL.md`, "Starting subagents and workflows").
 
 ## Where the stores are read and written
 
