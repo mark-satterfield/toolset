@@ -142,7 +142,10 @@ What that means for every file you write:
   checks. When no naming command is configured, the tool says so and stops. Where a repository is placed, which
   repositories belong to the project and how one is deprecated and archived are your own
   procedure, in the `polyrepo-repo` skill (*Placement, membership and deprecation*); the
-  project's values for them are in `.polyrepo/config.yaml`.
+  project's values for them are in `.polyrepo/config.yaml`. A repository's folder on disk comes
+  from that configuration (`placement.spaces` and `placement.by_type`) alone, never from the
+  naming command or the naming standard; a type with no `by_type` entry is reported as a missing
+  entry, never refused.
 
 ### The organization-structure record
 

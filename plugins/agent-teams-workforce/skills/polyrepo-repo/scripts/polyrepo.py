@@ -649,50 +649,70 @@ class Config:
         """
         return _map(self.raw.get("placement") or {}, "config placement")
 
-    def placement_folder(self, space: str, name: str, *, required: bool = True) -> str:
+    def placement_folder(self, space: str, name: str) -> str:
         """Return the folder inside an app space where a repository of this name is placed.
 
         A space the config's `placement.by_type` lists places each repository one folder deeper,
-        in the folder its type (the type token the naming command reads in its name) maps to;
-        every other space holds its repositories directly, and so does a by-type space for a name
-        with no type or a type it maps no folder to when the folder is not required.
+        in the folder its type (the type token the naming command reads in its name) maps to.
+        Every other space holds its repositories directly, and so does a by-type space for a name
+        whose type it maps no folder to; `placement_missing` reports that missing entry.
 
         Args:
             space: The app space.
             name: The repository name; of a deprecated repository, the name it was made from.
-            required: Whether a by-type space must map a folder to the name's type; a new
-                name requires one, an existing repository does not.
 
         Returns:
-            The folder, empty when the space holds its repositories directly.
+            The folder, empty when the space holds the repository directly.
 
-        Raises:
-            PolyrepoError: when the folder is required, the space places by type and the config
-                maps no folder to this type (a missing entry), or the naming command reads no
-                type in the name.
+        """
+        folders = self._by_type_folders(space)
+        if folders is None:
+            return ""
+        repo_type = self.repository_type(name)
+        folder = folders.get(repo_type) if repo_type is not None else None
+        return folder if isinstance(folder, str) else ""
+
+    def placement_missing(self, space: str, name: str) -> str | None:
+        """Report the config entry a by-type space lacks for this name's type.
+
+        Args:
+            space: The app space.
+            name: The repository name; of a deprecated repository, the name it was made from.
+
+        Returns:
+            The missing entry, stated with the fix; None when the space holds its repositories
+            directly or the config maps a folder to the name's type.
+
+        """
+        folders = self._by_type_folders(space)
+        if folders is None:
+            return None
+        repo_type = self.repository_type(name)
+        if repo_type is None:
+            return (
+                f"the naming command reads no repository type in {name}, so config placement.by_type.{space} "
+                f"places it directly in space {space}"
+            )
+        folder = folders.get(repo_type)
+        if isinstance(folder, str) and folder:
+            return None
+        return (
+            f"config placement.by_type.{space} has no entry for the type {repo_type!r} of {name} "
+            f"(it maps the types {', '.join(folders)}), so {name} is placed directly in space {space}; "
+            "add the entry to place it in a folder"
+        )
+
+    def _by_type_folders(self, space: str) -> dict[str, object] | None:
+        """Return the folder each type maps to in a by-type space.
+
+        Returns:
+            The space's `placement.by_type` entries; None when the space is not by type.
 
         """
         by_type = _map(self._placement().get("by_type") or {}, "config placement.by_type")
         if space not in by_type:
-            return ""
-        folders = _map(by_type[space], f"config placement.by_type.{space}")
-        repo_type = self.repository_type(name)
-        if repo_type is None:
-            if not required:
-                return ""
-            msg = f"the naming command reads no repository type in {name}, so no folder of space {space} places it"
-            raise PolyrepoError(msg)
-        folder = folders.get(repo_type)
-        mapped = isinstance(folder, str) and bool(folder)
-        if not mapped and not required:
-            return ""
-        if not isinstance(folder, str) or not mapped:
-            msg = (
-                f"config placement.by_type.{space} has no entry for the type {repo_type!r} of {name} "
-                f"(it maps the types {', '.join(folders)}); add the entry"
-            )
-            raise PolyrepoError(msg)
-        return folder
+            return None
+        return dict(_map(by_type[space], f"config placement.by_type.{space}"))
 
     def repository_type(self, name: str) -> str | None:
         """Return the type the naming command reads in a repository name, asked once per name and run.
@@ -2732,12 +2752,9 @@ def cmd_naming(args: argparse.Namespace, cfg: Config) -> int:
     name: str = args.name
     check = cfg.check(name)
     space = cfg.expected_space(name)
-    folder: str | None = None
-    folder_note: str | None = None
-    try:
-        folder = cfg.placement_folder(space, cfg.deprecated_base(name), required=False)
-    except PolyrepoError as exc:
-        folder_note = str(exc)
+    base = cfg.deprecated_base(name)
+    folder = cfg.placement_folder(space, base) if check.valid else ""
+    missing = cfg.placement_missing(space, base) if check.valid else None
     repo_type = cfg.repository_type(cfg.deprecated_base(name)) if check.valid else None
     data: dict[str, object] = {
         "name": name,
@@ -2747,7 +2764,7 @@ def cmd_naming(args: argparse.Namespace, cfg: Config) -> int:
         "type": repo_type,
         "space": space,
         "folder": folder,
-        "folder_note": folder_note,
+        "placement_missing": missing,
         "problem": None if check.valid else check.problem,
     }
     emit(
@@ -2758,6 +2775,7 @@ def cmd_naming(args: argparse.Namespace, cfg: Config) -> int:
             + (f", type {repo_type}" if repo_type else "")
             + f"; space {space}"
             + (f", folder {folder}" if folder else "")
+            + (f"\nmissing placement entry: {missing}" if missing else "")
             if check.valid
             else f"{name}: refused, {check.problem}"
         ),
@@ -3837,6 +3855,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         "space": args.space,
         "template": args.template,
         "path": str(dest),
+        "placement_missing": None if args.dir is not None else cfg.placement_missing(args.space, name),
         "dry_run": args.dry_run,
         "steps": [
             f"render the {args.template} template into {dest}",
@@ -3903,6 +3922,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
                 + (f"; matrix update failed: {res['matrix_error']}" if res.get("matrix_error") else "")
                 + (f"; beads setup failed: {res['beads_error']}" if res.get("beads_error") else "")
                 + (f"; GitNexus index failed: {res['gitnexus_error']}" if res.get("gitnexus_error") else ""),
+                *_placement_lines(res),
                 *_records_line(res),
             ],
         ),
@@ -3939,6 +3959,7 @@ def _create_dry_run(
         res,
         lambda: "\n".join(
             [f"dry run: {name} -> {dest}"]
+            + _placement_lines(res)
             + [f"  {s}" for s in _strs(res["steps"], "steps")]
             + [f"  template renders {len(_seq(res['rendered_files'], 'rendered_files'))} files"],
         ),
@@ -4905,14 +4926,15 @@ def _beads_setup_run(
 # clone -----------------------------------------------------------------------------------------
 
 
-def _clone_dest(cfg: Config, name: str, *, new_name: bool = False) -> Path:
+def _clone_dest(cfg: Config, name: str) -> Path:
     """Return the one folder a clone of this repo belongs in, from the config's placement.
+
+    A by-type space whose config maps no folder to the name's type holds the clone directly;
+    `Config.placement_missing` reports that missing entry.
 
     Args:
         cfg: The project settings.
         name: The repository name.
-        new_name: Whether the name is a rename's new name, which must have a placement folder
-            for its type; an existing repository is placed whatever its name.
 
     Returns:
         The destination path: the app space, then the folder the config places its type in.
@@ -4926,8 +4948,29 @@ def _clone_dest(cfg: Config, name: str, *, new_name: bool = False) -> Path:
     if not space_dir.is_dir():
         msg = f"no app space folder {space_dir}"
         raise PolyrepoError(msg)
-    sub = cfg.placement_folder(space, cfg.deprecated_base(name), required=new_name)
+    sub = cfg.placement_folder(space, cfg.deprecated_base(name))
     return space_dir / sub / name if sub else space_dir / name
+
+
+def _placement_missing_of(cfg: Config, name: str) -> str | None:
+    """Report the placement entry the config lacks for a repository name, if any.
+
+    Returns:
+        The missing entry, stated with the fix; None when nothing is missing.
+
+    """
+    return cfg.placement_missing(cfg.expected_space(name), cfg.deprecated_base(name))
+
+
+def _placement_lines(res: dict[str, object]) -> list[str]:
+    """Return the report line of a missing placement entry recorded in a result.
+
+    Returns:
+        One line when the result records a missing entry, else none.
+
+    """
+    missing = res.get("placement_missing")
+    return [f"missing placement entry: {missing}"] if isinstance(missing, str) and missing else []
 
 
 def _clone_conflicts(cfg: Config, name: str) -> list[Path]:
@@ -4970,13 +5013,18 @@ def cmd_clone(args: argparse.Namespace, cfg: Config) -> int:
     name = args.repo
     dest = _clone_dest(cfg, name)
     here = _clone_conflicts(cfg, name)
-    res: dict[str, object] = {"repo": name, "path": str(dest), "cloned": False}
+    res: dict[str, object] = {
+        "repo": name,
+        "path": str(dest),
+        "cloned": False,
+        "placement_missing": _placement_missing_of(cfg, name),
+    }
     wrong = [p for p in here if p != dest]
     if wrong:
         msg = f"refusing to clone {name} into {dest}: it already exists at " + ", ".join(str(p) for p in wrong)
         raise PolyrepoError(msg)
     if dest in here:
-        emit(args, res, lambda: f"{name}: already at {dest}")
+        emit(args, res, lambda: "\n".join([f"{name}: already at {dest}", *_placement_lines(res)]))
         return 0
     if dest.exists():
         msg = f"{dest} exists and is not a git clone"
@@ -5000,7 +5048,12 @@ def cmd_clone(args: argparse.Namespace, cfg: Config) -> int:
     emit(
         args,
         res,
-        lambda: f"{name}: cloned to {dest}" + (f"; GitNexus setup failed: {res['gitnexus_error']}" if failures else ""),
+        lambda: "\n".join(
+            [
+                f"{name}: cloned to {dest}" + (f"; GitNexus setup failed: {res['gitnexus_error']}" if failures else ""),
+                *_placement_lines(res),
+            ],
+        ),
     )
     return 1 if failures else 0
 
@@ -5130,7 +5183,7 @@ def _renamed_path(cfg: Config, path: Path, new: str) -> Path:
     """
     if cfg.is_deprecated_name(new):
         return path.with_name(new)
-    return _clone_dest(cfg, new, new_name=True)
+    return _clone_dest(cfg, new)
 
 
 def _rename_local_steps(cfg: Config, r: LocalRepo, new: str, url: str, steps: list[str]) -> Path:
@@ -5155,6 +5208,8 @@ def _rename_local_steps(cfg: Config, r: LocalRepo, new: str, url: str, steps: li
             msg = f"{new_path} already exists"
             raise PolyrepoError(msg)
         steps.append(f"move {r.path} to {new_path}")
+    if not cfg.is_deprecated_name(new) and (missing := _placement_missing_of(cfg, new)) is not None:
+        steps.append(f"missing placement entry: {missing}")
     if r.origin_url != url:
         steps.append(f"point origin at {url}")
     return new_path
