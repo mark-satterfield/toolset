@@ -34,8 +34,14 @@ EXIT_REFUSED: Final = 1
 """The naming command's exit codes for a produced value or valid name, and for a refusal."""
 KIND_REPOSITORY: Final = "repository"
 """The kind of a repository name of the form project, domain, type: the one kind that holds a stack."""
+KIND_REPOSITORY_DEPRECATED: Final = "repository-deprecated"
+"""The kind of the name a deprecated repository is renamed to."""
 ROLE_TYPE: Final = "type"
 """The token that says what kind of component a repository holds."""
+ROLE_PROJECT: Final = "project"
+"""The token that names the project a repository belongs to."""
+ROLE_ORIGINAL_NAME: Final = "originalName"
+"""The token of a deprecated repository name that holds the name it was made from."""
 
 type JsonObject = dict[str, object]
 
@@ -169,6 +175,102 @@ def produced(answer: NamingAnswer, key: str = "name") -> str | None:
     return _text(answer.document, key) if answer.ok else None
 
 
+@dataclass(frozen=True, slots=True)
+class RepositoryCheck:
+    """What `name check-repository` answered for one repository name.
+
+    `kind` is the repository kind the name matched (for example `repository` or
+    `repository-deprecated`), None when it matched none; `tokens` maps each token role of the
+    match to its value; `problem` joins the violations of a refused name.
+    """
+
+    name: str
+    valid: bool
+    kind: str | None
+    tokens: dict[str, str]
+    problem: str
+
+
+def _tokens(matched: Mapping[str, object]) -> dict[str, str]:
+    """Map the token roles of a matched kind to their values.
+
+    Returns:
+        Each role with its non-empty string value.
+
+    """
+    found = matched.get("tokens")
+    out: dict[str, str] = {}
+    for token in found if isinstance(found, list) else []:
+        if isinstance(token, dict):
+            role, value = token.get("role"), token.get("value")
+            if isinstance(role, str) and isinstance(value, str) and value:
+                out[role] = value
+    return out
+
+
+def check_repository(name: str, environ: Mapping[str, str] | None = None) -> RepositoryCheck:
+    """Check a repository name and read the kind and tokens it matched.
+
+    Args:
+        name: The repository name.
+        environ: The environment to read the command from.
+
+    Returns:
+        Whether the name is valid, the kind it matched with its tokens, and the violations of a
+        refused name.
+
+    """
+    answer = run_naming(["name", "check-repository", name], environ)
+    matched = answer.document.get("matched")
+    if not answer.ok or not isinstance(matched, dict):
+        return RepositoryCheck(name, valid=False, kind=None, tokens={}, problem=violations_text(answer.document))
+    kind = matched.get("kind")
+    return RepositoryCheck(
+        name,
+        valid=True,
+        kind=kind if isinstance(kind, str) else None,
+        tokens=_tokens({str(k): v for k, v in matched.items()}),
+        problem="",
+    )
+
+
+def deprecated_repository_name(name: str, environ: Mapping[str, str] | None = None) -> str:
+    """Return the name a repository takes when it is deprecated.
+
+    Args:
+        name: The repository name.
+        environ: The environment to read the command from.
+
+    Returns:
+        The deprecated repository name the naming command builds from it.
+
+    Raises:
+        NamingCommandError: The command refused to build it.
+
+    """
+    answer = run_naming(["name", "convert", name, "--to", KIND_REPOSITORY_DEPRECATED], environ)
+    value = produced(answer)
+    if value is None:
+        msg = f"the naming command gives {name} no deprecated name: {violations_text(answer.document)}"
+        raise NamingCommandError(msg)
+    return value
+
+
+def type_problem(value: str, environ: Mapping[str, str] | None = None) -> str | None:
+    """Check one value as the type token of a repository name.
+
+    Args:
+        value: The type, for example `service`.
+        environ: The environment to read the command from.
+
+    Returns:
+        None when the value is a type the naming command accepts; else its violations.
+
+    """
+    answer = run_naming(["token", "check", value, "--role", ROLE_TYPE, "--in", KIND_REPOSITORY], environ)
+    return None if answer.ok else violations_text(answer.document) or f"{value!r} is not a repository type"
+
+
 def repository_type(name: str, environ: Mapping[str, str] | None = None) -> str | None:
     """Read the type token of a repository name that holds a stack.
 
@@ -181,16 +283,8 @@ def repository_type(name: str, environ: Mapping[str, str] | None = None) -> str 
         (project, domain, type); None for any other name.
 
     """
-    answer = run_naming(["name", "check-repository", name], environ)
-    matched = answer.document.get("matched")
-    if not answer.ok or not isinstance(matched, dict) or matched.get("kind") != KIND_REPOSITORY:
-        return None
-    tokens = matched.get("tokens")
-    for token in tokens if isinstance(tokens, list) else []:
-        if isinstance(token, dict) and token.get("role") == ROLE_TYPE:
-            value = token.get("value")
-            return value if isinstance(value, str) and value else None
-    return None
+    check = check_repository(name, environ)
+    return check.tokens.get(ROLE_TYPE) if check.kind == KIND_REPOSITORY else None
 
 
 def repository_names(name: str, environ: Mapping[str, str] | None = None) -> RepositoryNames | None:

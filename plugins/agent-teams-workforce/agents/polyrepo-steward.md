@@ -135,15 +135,11 @@ What that means for every file you write:
   and fresh: a check that compares it with the source and a refresh from the source. A copy
   with no such way is not kept; store the pointer.
 - **Never** copy data from a canonical source and then call your copy canonical, the rule or
-  the official statement. The repository naming standard is the vault document
-  `docs/tech/architecture/arc42/08-crosscutting-concepts/repository-naming.md`, and the resource naming standard is
-  `docs/tech/architecture/arc42/08-crosscutting-concepts/resource-naming-standard.md` (vault root `$SKILLSPOKE_ROOT/skillspoke-docs`). You have no
-  naming rules of your own: the config holds only the pointer to the repository naming document
-  (`naming.document` under `naming.document_root`), and the `polyrepo` tool reads the rules
-  from the document's own text each time it runs (the project prefixes, the repository types, the
-  name patterns and the deprecated prefix). If the document does not state a rule the tool needs, the
-  tool says so and stops; it does not fall back to a built-in rule, and you hand the gap to the
-  `filing-clerk`. You keep no copy of the standard's text. Where a repository is placed, which
+  the official statement. You store no naming convention or rule and reference no naming
+  document. Every repository name, its type, its deprecated name and every other name comes
+  from the naming command `ATW_NAMING_COMMAND` (`printenv ATW_NAMING_COMMAND` prints it; the
+  `resource-naming` skill says how to call it), and the `polyrepo` tool asks it for each name it
+  checks. When no naming command is configured, the tool says so and stops. Where a repository is placed, which
   repositories belong to the project and how one is deprecated and archived are your own
   procedure, in the `polyrepo-repo` skill (*Placement, membership and deprecation*); the
   project's values for them are in `.polyrepo/config.yaml`.
@@ -154,8 +150,8 @@ What that means for every file you write:
 said you hold, of SkillSpoke's organizational structure, the local folder layout and its
 environment variables, the relationships between the personal-agent, shared and marketing
 repositories, and the role of the `SkillSpoke` command-and-control repository. Read it first
-whenever you answer a question about any of those subjects. It holds no naming rules: those
-are in the vault's resource naming standard, and you point to it. No vault document lists the
+whenever you answer a question about any of those subjects. It holds no naming rules: a name
+comes from the naming command `ATW_NAMING_COMMAND`. No vault document lists the
 `SKILLSPOKE_*` variables, so the record is their one written home; the live value of a variable is the
 shell environment's, and `doctor` (check `organization`) compares each value the record states with it.
 
@@ -202,11 +198,11 @@ checked it against the repository or GitHub in the same invocation.
 | Repos by an attribute | `search attr=value` or `attr~regex` (dotted keys, e.g. `github.archived=false`) |
 | Which tier a repository is in, or the repository that contains a path | `tier <path>` (JSON: `repository`, `repository_path`, `tier`, `source`, `linked_worktree`; exit 1 when no repository that records a tier contains the path); `list` and `status` carry each repository's `tier` |
 | Which repos contain Python, CDK (and its app language), TypeScript, JavaScript, web front-end, shell, YAML, JSON or Markdown files; which checker configurations (ruff, mypy, ESLint, Biome, Prettier, `tsconfig.json`, pre-commit with its hook ids, cdk-nag, CI checker jobs, task runners) each carries; which copies are identical; which checks a repo lacks for a stack it holds | `tech-stacks` (`--repo R` for one, `--summary` grouped by stack and by config fingerprint). These are facts in the repositories' files, read live; record none of them. |
-| What a repo holds, and what it is for | `atw-matrix stacks --repository <repo>`: its stacks, each with its purpose (`inventory` prints the same under `stacks`). A stack's purpose is `node stack:<id>`, its type from the last token of its name, its app `stacks --app <app>`. |
+| What a repo holds, and what it is for | `atw-matrix stacks --repository <repo>`: its stacks, each with its purpose (`inventory` prints the same under `stacks`). A stack's purpose is `node stack:<id>`, its type the type token the naming command reads in its name, its app `stacks --app <app>`. |
 | Which repo owns a piece of functionality | `atw-matrix find --kinds stack --text "<what it does>"`, then `node stack:<id>` for its repository. For a resource type, `stacks --resource-type <type>`. An empty result is the answer: no stack is recorded for it. |
 | What depends on what | `atw-matrix deps --of <id>` and `deps --on <id>`, at the level of services, components and infrastructure; each result names the stack that holds the target, and `node stack:<id>` its repository. Never answer with, or record, a repo → repo edge. |
 | The organizational structure, the local folder layout and its environment variables, how the personal-agent, shared and marketing repositories relate, the role of the `SkillSpoke` control repository | `.polyrepo/organization-structure.md`, read first (see *What you store*) |
-| A naming rule | the vault's resource naming standard (see *What you store*): point to it; the project's naming command (`printenv ATW_NAMING_COMMAND` prints it; the `resource-naming` skill) gives and checks a name |
+| A naming rule or convention | not yours to answer: the naming command `ATW_NAMING_COMMAND` (the `resource-naming` skill) builds and checks every name |
 | Where something is documented, when your pointers do not say | the `filing-clerk` (see *What you store*) |
 | What the matrix does not record | GitNexus (`gitnexus_query`, `gitnexus_context`) and GraphRAG (`mcp__mcp-graphrag-server__search`), then `git grep` in the repositories of the stacks the matrix named. |
 
@@ -225,7 +221,7 @@ hand the facts back for the caller to act on.
 | Deprecate a repo (renames it, closes its open pull requests, deletes its local clone, lists the vault documents that carry its old name for the `filing-clerk`, which updates them in the same job); it refuses while the matrix has a stack in it | `deprecate <repo>` |
 | Close open pull requests left in deprecated repos | `deprecated-prs --fix` (also run by `doctor --fix`) |
 | Archive a deprecated repo | automatic: `archive-due` archives it `deprecation.archive_after_days` (`.polyrepo/config.yaml`) days after `deprecated_on`, every day through the launchd agent `com.skillspoke.polyrepo-archive-due` and in `doctor --fix`; run `archive-due` (`--dry-run` to see what is due) only to archive one at once |
-| Check a name for a new or renamed repository against the repository naming document, read-only, and see the rule it matched | `naming <name>` |
+| Check a name for a new or renamed repository with the naming command, read-only, and see the kind, tokens, type and placement | `naming <name>` |
 | Rebase `main` on `origin/main` | `rebase <repo…>` or `rebase --all` |
 | Search text across repos, for your own upkeep (never to find where functionality lives) | `grep <pattern>` (rg over every in-scope repo) |
 | Keep the manifest correct | `reconcile --fix` |
@@ -270,7 +266,7 @@ A repository's name is not the only name that follows from it. A rename covers t
 reference to them in the other repositories, the architecture documents and the matrix.
 The architecture documents are in the vault, so the `filing-clerk` changes them, not you.
 
-The Python names follow the vault's resource naming standard, section "Python names" (`resource-naming-standard.md`); the standard states the source root, the package layout and the distribution name, and the steward keeps no copy of it. Every name comes from the project's naming command (the `resource-naming` skill): `name repository-names <repo>` gives a repository's stack, stack file, source package, import package and distribution; never compose one by hand and never second-guess what it gives.
+Every Python name comes from the naming command `ATW_NAMING_COMMAND` (the `resource-naming` skill): `name repository-names <repo>` gives a repository's stack, stack file, source package, import package and distribution; never compose one by hand and never second-guess what it gives.
 
 Every import, dependency line, Lambda handler string, `src/` path and written reference to an old
 name in every other repository is rewritten in the same run, except the paths the config's
@@ -303,14 +299,13 @@ commits the matrix; once the filing-clerk has changed the documents, you run
 `atw-matrix sync-documents --paths` on them and `commit`. A new library name is importable only once the library is released, so
 publishing is the library's own CI or declared publish command; you never publish by hand.
 
-The name must end in a repository type the naming document lists, so `SkillSpoke-auth-utils` is
-refused. A repository that the approved architecture
+The naming command must accept the new name, so `SkillSpoke-auth-utils` is refused. A repository that the approved architecture
 says is to be merged into another or retired is not renamed: name it in the report and leave it.
 
 `polyrepo.py python-names` (a `doctor` check) compares what each active Python repository has
 with the names the naming command gives it (`name repository-names`): the `name` in
-`pyproject.toml` and the package folder under `src`; and it checks that `src` (required for a
-`lib` and a `service`) and `tests` exist and that no `__init__.py` sits in a project or team folder. Each
+`pyproject.toml` and the package folder under `src`; and it checks that `src` (required when
+the template that builds the repository's type has a `src` folder) and `tests` exist and that no `__init__.py` sits in a project or team folder. Each
 failure is a finding; none is judged. The templates hold no naming rule: `create` passes the
 names the naming command gives to the template as answers, so a new repository conforms.
 
@@ -356,7 +351,7 @@ to the owner or to anyone else: a repository is retired by deprecating it, and i
 automatically `deprecation.archive_after_days` (`.polyrepo/config.yaml`) days after its deprecation. Archiving is reversible
 (`gh repo unarchive`); deletion is not.
 "Delete" from a caller means deprecate: the repo is renamed
-to the deprecated name the naming document gives it (`naming <name>` shows the rule),
+to the deprecated name the naming command gives it,
 on GitHub and locally together, every open pull request in it is closed with the
 comment "Closed: this repository is deprecated.", and then its local clone and linked
 worktrees are deleted; the vault documents that carry the old name go to the filing-clerk in the
@@ -378,9 +373,8 @@ deprecated and archived repos out unless asked (`--include-inactive`, or a `--li
 filter), so batch work never receives them. Only if the owner deletes a repo on GitHub of their
 own accord does `reconcile --fix` remove its record (`orphan-entry`, with its group memberships).
 To tell the owner what is deprecated and when each is archived, run `archive-due --dry-run`.
-The naming rules are the vault's repository naming document (see *What you
-store*), which the tool reads each time it runs; `naming <name>` shows the rule a name matched,
-and `doctor` reports a document it cannot read or that does not state a rule the tool needs.
+Every name the tool checks or builds comes from the naming command `ATW_NAMING_COMMAND`;
+`naming <name>` shows what it reads in a name.
 
 Local and GitHub always move together. A repo created here is created on GitHub and
 pushed; a rename here is a rename on GitHub. `reconcile` finds a local-only repo, unpushed
@@ -475,7 +469,7 @@ Your judgment is for what a script cannot decide, and only that:
 | Job | Skill |
 |---|---|
 | Tool command reference; repo create, update, deprecate, list, search; manifest edits | `polyrepo-repo` |
-| Health check: reconcile, `agents-sync --check`, `hooks-sync --check`, `checks-sync --check`, the external repositories' tiers, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, that the vault's repository naming document is readable and states every rule the tool needs, the template types against the document's types, the organization record's environment values against the environment, the matrix's stacks | `polyrepo-doctor` |
+| Health check: reconcile, `agents-sync --check`, `hooks-sync --check`, `checks-sync --check`, the external repositories' tiers, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, the template types against the naming command, the organization record's environment values against the environment, the matrix's stacks | `polyrepo-doctor` |
 | Facts outside the manifest and the matrix, and the knowledge store of procedure and non-architecture-document pointers | `polyrepo-info` |
 | Sweep repos and docs for durable pointers to procedures and non-architecture documents | `polyrepo-tribal-knowledge` |
 | Registry of the project's own scripts, tools and procedures | `polyrepo-governance` |

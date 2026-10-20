@@ -3,9 +3,8 @@ name: polyrepo-info
 description: >-
   Create, update, deprecate, list, or search information about the repositories that lives
   OUTSIDE the manifest and the matrix — derived facts and tribal knowledge about procedures
-  and non-architecture documents. Answers questions like "what's the naming convention?" or
-  "where is the deployment order kept?" by searching LIVE (never by pre-storing every
-  answer), and curates a small store of durable, hard-won pointers. Where functionality
+  and non-architecture documents. Answers questions like "where is the deployment order
+  kept?" by searching LIVE (never by pre-storing every answer), and curates a small store of durable, hard-won pointers. Where functionality
   lives and which repository owns it are not here: they are the matrix's. First
   token may be a CUDLS verb (create | update | delete | deprecate | list | search); if
   absent, infer.
@@ -47,9 +46,9 @@ functionality lives. Entry shape:
 schema_version: 1
 knowledge:
   - id: <slug>
-    topic: <the question or subject, e.g. "repository naming convention">
+    topic: <the question or subject, e.g. "deployment wave order">
     kind: location | fact | pointer
-    value: <where/how to find the answer, e.g. "vault: docs/tech/architecture/arc42/08-crosscutting-concepts/resource-naming-standard.md">
+    value: <where/how to find the answer, e.g. "deployment/waves.yaml in the control repo">
     resolves: <for a location or pointer: the path it points at; environment variables allowed>
     source: <how it was learned>
 # No date field — git history is the audit trail for when an entry changed.

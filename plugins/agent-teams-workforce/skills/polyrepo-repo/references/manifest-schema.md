@@ -159,7 +159,7 @@ name (`entry-unkeyed`).
 ```
 
 A **group** is a named set of repos the steward chose by judgment. A set that a repository's
-type (the last token of its name) gives is not stored: `search name~-service$` answers it
+type (the type token the naming command reads in its name) gives is not stored: `search name~-service$` answers it
 live. A set that its imports or dependencies would give is not stored either: a dependency is
 between services, components and infrastructure, and the matrix answers it.
 

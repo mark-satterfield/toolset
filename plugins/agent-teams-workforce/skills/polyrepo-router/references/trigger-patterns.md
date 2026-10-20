@@ -36,8 +36,8 @@ These are unambiguous. Activate without hesitation.
   repo.
 - The user mentions a new dependency between services or components,
   or a new contract or shared schema.
-- The user mentions a new architectural rule, naming convention,
-  branching rule, or release rule that should apply across the
+- The user mentions a new architectural rule, branching rule, or
+  release rule that should apply across the
   project.
 
 ## Likely-fire patterns

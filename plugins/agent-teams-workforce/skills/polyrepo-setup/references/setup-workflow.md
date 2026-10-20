@@ -82,8 +82,8 @@ is the full set of things you must end up knowing — order is flexible.
 - Do the repos fall into natural *groups* or classes — sets you would
   refer to collectively, like "the backend services", "the mobile
   clients", "the infra repos"? Capture each as a named group with its
-  members. Do not record a class that a repository's type (the last token of its
-  name) already gives, or one that its imports or dependencies would give: those are
+  members. Do not record a class that a repository's type (the type token the
+  naming command reads in its name) already gives, or one that its imports or dependencies would give: those are
   answered live.
 - How are the repos arranged on the human's filesystem?
   - All siblings under one parent directory?

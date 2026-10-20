@@ -130,6 +130,8 @@ from gitnexus_setup import (
     sync_group,
 )
 from name_sweep import (
+    PYPROJECT,
+    SRC_FOLDER,
     NameChange,
     NameSweepError,
     SweepTarget,
@@ -146,8 +148,19 @@ from name_sweep import (
     read_facts,
     sweep_repo,
 )
-from naming_command import NamingCommandError, repository_names, repository_type
-from naming_rules import NamingPattern, NamingRules, NamingRulesError, read_rules, type_of
+from naming_command import (
+    KIND_REPOSITORY,
+    KIND_REPOSITORY_DEPRECATED,
+    ROLE_ORIGINAL_NAME,
+    ROLE_PROJECT,
+    ROLE_TYPE,
+    NamingCommandError,
+    RepositoryCheck,
+    check_repository,
+    deprecated_repository_name,
+    repository_names,
+    type_problem,
+)
 from stack_scan import scan_markdown, scan_repository, summarize, summary_markdown
 
 if TYPE_CHECKING:
@@ -579,49 +592,53 @@ class Config:
     raw: dict[str, object] = dataclasses.field(default_factory=dict)
     changes: list[str] = dataclasses.field(default_factory=list)
     change_lines: list[str] = dataclasses.field(default_factory=list)
-    types_cache: dict[str, str | None] = dataclasses.field(default_factory=dict)
+    checks_cache: dict[str, RepositoryCheck] = dataclasses.field(default_factory=dict)
     names_cache: dict[str, RepositoryNames | None] = dataclasses.field(default_factory=dict)
-    rules_cache: NamingRules | None = None
 
-    @property
-    def rules(self) -> NamingRules:
-        """The repository naming rules, read once per run from the vault's naming note.
-
-        The note is `naming.document` under `naming.document_root` in the config. The tool keeps
-        no copy of its rules.
+    def check(self, name: str) -> RepositoryCheck:
+        """Return what the naming command answers for a repository name, asked once per name and run.
 
         Returns:
-            The rules the note states.
+            Whether the name is valid, the repository kind it matched and its tokens.
 
         Raises:
-            PolyrepoError: when the config does not point at the note, or the note cannot be read
-                or does not state a rule the tool needs.
+            PolyrepoError: when no naming command is configured or it does not answer.
 
         """
-        if self.rules_cache is None:
+        if name not in self.checks_cache:
             try:
-                self.rules_cache = read_rules(self.naming_note())
-            except NamingRulesError as exc:
+                self.checks_cache[name] = check_repository(name)
+            except NamingCommandError as exc:
                 raise PolyrepoError(str(exc)) from exc
-        return self.rules_cache
+        return self.checks_cache[name]
 
-    def naming_note(self) -> Path:
-        """Resolve the path of the repository naming note from the config.
+    @staticmethod
+    def deprecated_name(name: str) -> str:
+        """Return the name the naming command gives a repository when it is deprecated.
 
         Returns:
-            The path `naming.document` names under `naming.document_root`.
+            The deprecated repository name.
 
         Raises:
-            PolyrepoError: when the config names no document.
+            PolyrepoError: when the naming command gives the name none.
 
         """
-        section = _map(self.raw.get("naming") or {}, "config naming")
-        document, root = section.get("document"), section.get("document_root")
-        if not document:
-            msg = "config naming.document does not point at the repository naming note"
-            raise PolyrepoError(msg)
-        base = Path(expand_env(str(root))).expanduser() if root else self.file.parent
-        return base / str(document)
+        try:
+            return deprecated_repository_name(name)
+        except NamingCommandError as exc:
+            raise PolyrepoError(str(exc)) from exc
+
+    def deprecated_base(self, name: str) -> str:
+        """Return the name a deprecated repository name was made from, as the naming command reads it.
+
+        Returns:
+            The original name the deprecated name holds; any other name unchanged.
+
+        """
+        check = self.check(name)
+        if check.kind == KIND_REPOSITORY_DEPRECATED:
+            return check.tokens.get(ROLE_ORIGINAL_NAME, name)
+        return name
 
     def _placement(self) -> dict[str, object]:
         """Return the config's `placement` section.
@@ -636,13 +653,13 @@ class Config:
         """Return the folder inside an app space where a repository of this name is placed.
 
         A space the config's `placement.by_type` lists places each repository one folder deeper,
-        in the folder its type (the last token of its name) maps to; every other space holds its
-        repositories directly, and so does a by-type space for a type it maps no folder to when
-        the folder is not required.
+        in the folder its type (the type token the naming command reads in its name) maps to;
+        every other space holds its repositories directly, and so does a by-type space for a name
+        with no type or a type it maps no folder to when the folder is not required.
 
         Args:
             space: The app space.
-            name: The repository name, without the deprecated prefix.
+            name: The repository name; of a deprecated repository, the name it was made from.
             required: Whether a by-type space must map a folder to the name's type; a new
                 name requires one, an existing repository does not.
 
@@ -651,22 +668,28 @@ class Config:
 
         Raises:
             PolyrepoError: when the folder is required, the space places by type and the config
-                maps no folder to this type.
+                maps no folder to this type (a missing entry), or the naming command reads no
+                type in the name.
 
         """
         by_type = _map(self._placement().get("by_type") or {}, "config placement.by_type")
         if space not in by_type:
             return ""
         folders = _map(by_type[space], f"config placement.by_type.{space}")
-        repo_type = type_of(name)
+        repo_type = self.repository_type(name)
+        if repo_type is None:
+            if not required:
+                return ""
+            msg = f"the naming command reads no repository type in {name}, so no folder of space {space} places it"
+            raise PolyrepoError(msg)
         folder = folders.get(repo_type)
         mapped = isinstance(folder, str) and bool(folder)
         if not mapped and not required:
             return ""
         if not isinstance(folder, str) or not mapped:
             msg = (
-                f"config placement.by_type.{space} maps a folder only to the types {', '.join(folders)}; "
-                f"it maps none to the type {repo_type!r} of {name}"
+                f"config placement.by_type.{space} has no entry for the type {repo_type!r} of {name} "
+                f"(it maps the types {', '.join(folders)}); add the entry"
             )
             raise PolyrepoError(msg)
         return folder
@@ -678,16 +701,9 @@ class Config:
             The type token (for example `service` or `lib`) when the naming command reads the
             name as a repository that holds a stack; None for any other name.
 
-        Raises:
-            PolyrepoError: when no naming command is configured or it does not answer.
-
         """
-        if name not in self.types_cache:
-            try:
-                self.types_cache[name] = repository_type(name)
-            except NamingCommandError as exc:
-                raise PolyrepoError(str(exc)) from exc
-        return self.types_cache[name]
+        check = self.check(name)
+        return check.tokens.get(ROLE_TYPE) if check.kind == KIND_REPOSITORY else None
 
     def repository_names(self, name: str) -> RepositoryNames | None:
         """Return the names the naming command gives a repository name, asked once per name and run.
@@ -733,48 +749,57 @@ class Config:
         rel = _map(self.raw.get(section) or {}, f"config {section}").get(key) or default
         return (self.file.parent / str(rel)).resolve()
 
-    def classify(self, name: str) -> NamingPattern | None:
-        """Return the first pattern of the naming note that the name matches.
-
-        An application name must also end in a repository type the note lists (`service`,
-        `infra`, `lib`, ...): `SkillSpoke-auth-utils` is refused.
+    def is_valid_name(self, name: str) -> bool:
+        """Tell whether the naming command accepts a name as a repository name of any kind.
 
         Returns:
-            The pattern, or None when no pattern matches or the last token is no listed type.
+            True when the name is valid.
 
         """
-        return self.rules.classify(name)
+        return self.check(name).valid
+
+    def is_application_name(self, name: str) -> bool:
+        """Tell whether the naming command reads a name as a repository of a project (project, domain, type).
+
+        Returns:
+            True when the name matched the `repository` kind.
+
+        """
+        return self.check(name).kind == KIND_REPOSITORY
 
     def naming_problem(self, name: str) -> str:
-        """Say why a name is refused: no pattern of the naming note matches, or its last token is no listed type.
+        """Say why the naming command refuses a name, or which kind it read instead of a project repository.
 
         Returns:
-            One sentence naming the rule the name breaks.
+            The naming command's violations, or the kind the name matched.
 
         """
-        return self.rules.problem(name)
+        check = self.check(name)
+        if not check.valid:
+            return check.problem or "the naming command refuses it"
+        return f"the naming command reads it as a {check.kind} name, not a repository of a project"
 
     def is_deprecated_name(self, name: str) -> bool:
-        """Tell whether a repo name carries the deprecated prefix the naming note gives.
+        """Tell whether the naming command reads a repo name as a deprecated repository name.
 
         Returns:
-            True when the name starts with the prefix.
+            True when the name matched the deprecated repository kind.
 
         """
-        return self.rules.is_deprecated(name)
+        return self.check(name).kind == KIND_REPOSITORY_DEPRECATED
 
     def expected_space(self, name: str) -> str:
         """Return the app space a repo of this name lives in; a deprecated repo keeps its space.
 
-        The space is the folder under the root named by the first token of the name (of a
-        deprecated name, after the deprecated prefix), or the folder the config's
-        `placement.spaces` maps that token to; tokens are compared without case.
+        The space is the folder under the root named by the first hyphen-separated part of the
+        name (of a deprecated name, of the name the naming command reads it was made from), or the
+        folder the config's `placement.spaces` maps that part to, compared without case.
 
         Returns:
             The space name.
 
         """
-        base = self.rules.deprecated_base(name) if self.is_deprecated_name(name) else name
+        base = self.deprecated_base(name)
         token = base.partition("-")[0]
         spaces = _map(self._placement().get("spaces") or {}, "config placement.spaces")
         mapped = next((v for k, v in spaces.items() if k.lower() == token.lower()), None)
@@ -1422,7 +1447,6 @@ MATRIX_ROLE = "repository-steward"
 MATRIX_ROLE_ENV = "ATW_MATRIX_ROLE"
 MATRIX_FILE_ENV = "ATW_MATRIX"
 MATRIX_TIMEOUT = 300
-LIBRARY_STACK_TYPE = "lib"
 EXECUTION_IMPORTED = "imported"
 EXECUTION_EXECUTABLE = "executable"
 PURPOSE_NOT_STATED = "The purpose is not stated."
@@ -1540,12 +1564,37 @@ def holds_stack(cfg: Config, name: str) -> bool:
     return cfg.repository_type(name) is not None
 
 
+def _execution_use(cfg: Config, name: str) -> str:
+    """Return the execution use of the stack a repository holds, from the template kind that builds its type.
+
+    Returns:
+        The kind's `execution_use` (imported or executable); executable when the kind states
+        none, no kind builds the type, or the naming command reads no type in the name.
+
+    Raises:
+        PolyrepoError: when a template kind states an execution use that is neither.
+
+    """
+    repo_type = cfg.repository_type(name)
+    kinds = _map(_templates(cfg)[1].get("kinds") or {}, "templates kinds")
+    spec = next((v for v in kinds.values() if repo_type is not None and repo_type in _kind_types(v)), None)
+    use = _map(spec or {}, "template kind").get("execution_use") or EXECUTION_EXECUTABLE
+    if use not in {EXECUTION_IMPORTED, EXECUTION_EXECUTABLE}:
+        msg = (
+            f"config templates.kinds states the execution use {use!r}; "
+            f"it is {EXECUTION_IMPORTED} or {EXECUTION_EXECUTABLE}"
+        )
+        raise PolyrepoError(msg)
+    return str(use)
+
+
 def record_stack(cfg: Config, name: str, space: str, known: list[MatrixStack]) -> str:
     """Record in the matrix the stack a repository named `name` holds (S1).
 
     The stack takes the repository's name. A stack the matrix already holds under that id gets
     its `repository`; one it does not hold is recorded on the repository side with its app, its
-    execution use (imported for a library, else executable) and the purpose not stated.
+    execution use (the `execution_use` of the config's template kind that builds its type,
+    executable when that kind states none or no kind builds the type) and the purpose not stated.
 
     An `atw-matrix` refusal propagates as the PolyrepoError of `matrix_run`.
 
@@ -1558,7 +1607,7 @@ def record_stack(cfg: Config, name: str, space: str, known: list[MatrixStack]) -
     if any(s.id == sid for s in known):
         matrix_run(cfg, args)
         return f"matrix: {sid} now names {name} as its repository"
-    use = EXECUTION_IMPORTED if cfg.repository_type(name) == LIBRARY_STACK_TYPE else EXECUTION_EXECUTABLE
+    use = _execution_use(cfg, name)
     matrix_run(cfg, [*args, "--name", name, "--app", space, "--execution-use", use, "--purpose", PURPOSE_NOT_STATED])
     return f"matrix: recorded {sid} ({use}, app {space}), purpose not stated"
 
@@ -2209,7 +2258,7 @@ def _name_mismatch(st: State, name: str, gh_name: str) -> Finding:
 
     """
     taken = st.gh.resolve(name)
-    if taken is None and st.cfg.classify(name) is not None:
+    if taken is None and st.cfg.is_valid_name(name):
         return Finding(
             "name-mismatch",
             name,
@@ -2424,7 +2473,7 @@ def _deprecation_start(e: Mapping[str, object]) -> dt.date | None:
 
 def _local_only(st: State, name: str, r: LocalRepo) -> Finding:
     cfg = st.cfg
-    if cfg.classify(name) is None:
+    if not cfg.is_valid_name(name):
         return Finding(
             "local-only",
             name,
@@ -2671,51 +2720,49 @@ def tier_of_path(repos: list[TierRepo], paths: tuple[Path, ...]) -> TierAnswer:
 
 
 def cmd_naming(args: argparse.Namespace, cfg: Config) -> int:
-    """Check one repository name against the vault's repository naming note, and show the rule it matched.
+    """Check one repository name with the naming command, and show the kind and tokens it read.
 
-    Read-only. The rules are read from the note on every call; the report names the note, the
-    section and the pattern line of the rule the name matched, and the space and folder the
-    config's placement gives the name.
+    Read-only. The naming command (`ATW_NAMING_COMMAND`) answers the check; the report adds the
+    space and folder the config's placement gives the name.
 
     Returns:
-        0 when the name matches a pattern of the note, else 1.
+        0 when the naming command accepts the name as a repository name, else 1.
 
     """
-    rules = cfg.rules
     name: str = args.name
-    pat = rules.classify(name)
+    check = cfg.check(name)
     space = cfg.expected_space(name)
     folder: str | None = None
     folder_note: str | None = None
     try:
-        folder = cfg.placement_folder(space, rules.deprecated_base(name))
+        folder = cfg.placement_folder(space, cfg.deprecated_base(name), required=False)
     except PolyrepoError as exc:
         folder_note = str(exc)
+    repo_type = cfg.repository_type(cfg.deprecated_base(name)) if check.valid else None
     data: dict[str, object] = {
         "name": name,
-        "valid": pat is not None,
-        "pattern": pat["name"] if pat else None,
-        "kind": pat["kind"] if pat else None,
-        "section": pat["section"] if pat else None,
-        "rule": pat["rule"] if pat else None,
-        "document": str(rules.document),
-        "type": type_of(rules.deprecated_base(name)) if pat else None,
-        "types": list(rules.types),
+        "valid": check.valid,
+        "kind": check.kind,
+        "tokens": check.tokens,
+        "type": repo_type,
         "space": space,
         "folder": folder,
         "folder_note": folder_note,
-        "problem": None if pat else rules.problem(name),
+        "problem": None if check.valid else check.problem,
     }
     emit(
         args,
         data,
         lambda: (
-            f"{name}: matches {pat['name']} ({pat['kind']}), {pat['rule']}  [{rules.document.name}, {pat['section']}]"
-            if pat
-            else f"{name}: refused, {data['problem']}  [{rules.document.name}]"
+            f"{name}: valid {check.kind} name"
+            + (f", type {repo_type}" if repo_type else "")
+            + f"; space {space}"
+            + (f", folder {folder}" if folder else "")
+            if check.valid
+            else f"{name}: refused, {check.problem}"
         ),
     )
-    return 0 if pat else 1
+    return 0 if check.valid else 1
 
 
 def cmd_tier(args: argparse.Namespace, cfg: Config) -> int:
@@ -3620,19 +3667,17 @@ def _templates(cfg: Config) -> tuple[Path, dict[str, object]]:
 def _service_name(cfg: Config, name: str) -> str:
     """Return the template's service_name: the repo name without its project prefix.
 
-    The prefix is the first token of a name an application naming pattern matches, so every
-    project (SkillSpoke-, shared-, marketing-, employer-) is stripped the same way, and the
+    The prefix is the project token the naming command reads in a repository of a project, so
+    every project (SkillSpoke-, shared-, marketing-, employer-) is stripped the same way, and the
     camelCase domain keeps its case because the templates' validators require it.
 
     Returns:
-        The name after the project prefix, or the name unchanged when no application
-        pattern matches it.
+        The name after the project prefix, or the name unchanged when the naming command reads
+        it as no repository of a project.
 
     """
-    pattern = cfg.classify(name)
-    if pattern and pattern.get("kind") == "application" and "-" in name:
-        return name.split("-", 1)[1]
-    return name
+    project = cfg.check(name).tokens.get(ROLE_PROJECT) if cfg.is_application_name(name) else None
+    return name.removeprefix(f"{project}-") if project else name
 
 
 def _template_data(cfg: Config, name: str) -> dict[str, str]:
@@ -3682,7 +3727,7 @@ def _exclude_worktrees(repo: Path) -> None:
 
 
 def _kind_types(spec: object) -> list[str]:
-    """Return the repository types (the last token of a name) a template kind builds.
+    """Return the repository types a template kind builds.
 
     Returns:
         The `types` of the kind in the config; none when the kind lists none.
@@ -3694,23 +3739,30 @@ def _kind_types(spec: object) -> list[str]:
 def _template_of_name(cfg: Config, name: str) -> str:
     """Name the template a repo is created from, from the template whose types include the type of its name.
 
+    The type is the type token the naming command reads in the name.
+
     Returns:
         The template's name.
 
     Raises:
-        PolyrepoError: when no template builds the type of the name.
+        PolyrepoError: when the naming command reads no type in the name, or no template kind
+            in the config lists its type (a missing entry).
 
     """
+    repo_type = cfg.repository_type(name)
+    if repo_type is None:
+        msg = f"the naming command reads no repository type in {name}: {cfg.naming_problem(name)}"
+        raise PolyrepoError(msg)
     kinds = _map(_templates(cfg)[1].get("kinds") or {}, "templates kinds")
     for kind, spec in kinds.items():
-        if type_of(name) in _kind_types(spec):
+        if repo_type in _kind_types(spec):
             return str(kind)
-    msg = f"no template builds the type {type_of(name)} of {name}"
+    msg = f"config templates.kinds has no entry for the type {repo_type} of {name}; add the entry"
     raise PolyrepoError(msg)
 
 
 def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path]:
-    """Validate a create request against the naming rules, the templates, disk and GitHub.
+    """Validate a create request against the naming command, the templates, disk and GitHub.
 
     Returns:
         (template folder, destination folder).
@@ -3720,13 +3772,12 @@ def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path]:
 
     """
     name, space, template = args.name, args.space, args.template
-    pat = cfg.classify(name)
-    if pat is None or pat["kind"] != "application":
+    if not cfg.is_application_name(name):
         msg = f"{name} is refused as an application repository: {cfg.naming_problem(name)}"
         raise PolyrepoError(msg)
     want = cfg.expected_space(name)
     if want != space:
-        msg = f"a {pat['name']} repo belongs in space {want}, not {space}"
+        msg = f"{name} belongs in space {want}, not {space}"
         raise PolyrepoError(msg)
     troot, tset = _templates(cfg)
     tdir = troot / template
@@ -3734,8 +3785,9 @@ def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path]:
         msg = f"no template {template!r} in {troot}"
         raise PolyrepoError(msg)
     types = _kind_types(_map(tset.get("kinds") or {}, "templates kinds").get(template))
-    if types and type_of(name) not in types:
-        msg = f"a {template} repo name must end in one of {', '.join(types)}"
+    repo_type = cfg.repository_type(name)
+    if types and repo_type not in types:
+        msg = f"the {template} template builds the types {', '.join(types)}, not the type {repo_type} of {name}"
         raise PolyrepoError(msg)
     sub = args.dir
     if sub is None:
@@ -4240,7 +4292,7 @@ def setup_environment(path: Path, synth: bool) -> EnvResult:
 
 def _env_kind(cfg: Config, r: LocalRepo) -> str | None:
     _troot, tset = _templates(cfg)
-    kind, _how, _answers = _template_for(r, _map(tset.get("kinds") or {}, "templates kinds"))
+    kind, _how, _answers = _template_for(cfg, r, _map(tset.get("kinds") or {}, "templates kinds"))
     return kind
 
 
@@ -4368,7 +4420,7 @@ def _template_ignore_lines(cfg: Config, r: LocalRepo) -> list[str]:
 
     """
     troot, tset = _templates(cfg)
-    kind, _how, _answers = _template_for(r, _map(tset.get("kinds") or {}, "templates kinds"))
+    kind, _how, _answers = _template_for(cfg, r, _map(tset.get("kinds") or {}, "templates kinds"))
     f = troot / kind / ".gitignore" if kind else None
     if f is None or not f.is_file():
         return []
@@ -4871,7 +4923,7 @@ def _clone_dest(cfg: Config, name: str, *, new_name: bool = False) -> Path:
     if not space_dir.is_dir():
         msg = f"no app space folder {space_dir}"
         raise PolyrepoError(msg)
-    sub = cfg.placement_folder(space, cfg.rules.deprecated_base(name), required=new_name)
+    sub = cfg.placement_folder(space, cfg.deprecated_base(name), required=new_name)
     return space_dir / sub / name if sub else space_dir / name
 
 
@@ -5024,7 +5076,7 @@ def _rename_plan(
     if old == new:
         msg = f"{old} is already named {new}"
         raise PolyrepoError(msg)
-    if new != cfg.rules.deprecated_name(old) and cfg.classify(new) is None:
+    if not cfg.is_valid_name(new):
         msg = f"{new} is refused: {cfg.naming_problem(new)}"
         raise PolyrepoError(msg)
     r = st.local.get(old) or st.local.get(new)
@@ -6203,8 +6255,8 @@ def delete_clone(
 
     `clone` is where the clone is now and `final` where it is after the rename (the same
     path once the rename is done). `final` must be under the repository root and its name
-    must carry the deprecated prefix the naming note gives. Records the outcome in res["clone"]; the caller notes
-    the steps of a deletion for the commit message.
+    must be a deprecated repository name, as the naming command reads it. Records the outcome
+    in res["clone"]; the caller notes the steps of a deletion for the commit message.
 
     Returns:
         False when the clone was left in place or could not be deleted, and the steps taken or planned.
@@ -6214,7 +6266,7 @@ def delete_clone(
     bad = (
         f"{final} is not under {cfg.root}"
         if not final.is_relative_to(cfg.root) or final == cfg.root
-        else f"{final.name} does not start with {cfg.rules.deprecated_prefix}"
+        else f"the naming command does not read {final.name} as a deprecated repository name"
         if not cfg.is_deprecated_name(final.name)
         else None
     )
@@ -6292,7 +6344,7 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
     if cfg.is_deprecated_name(name):
         msg = f"{name} is already deprecated"
         raise PolyrepoError(msg)
-    new = cfg.rules.deprecated_name(name)
+    new = cfg.deprecated_name(name)
     r = st.local.get(name) or st.local.get(new)
 
     def after(res: dict[str, object], steps: list[str]) -> bool:
@@ -7754,10 +7806,13 @@ def _read_yaml(f: Path) -> dict[str, object]:
 
 
 def _template_for(
+    cfg: Config,
     r: LocalRepo,
     kinds: Mapping[str, object],
 ) -> tuple[str | None, str | None, dict[str, object]]:
-    """Decide which template a repo was built from: Copier answers, then repo.status.yaml, then its name.
+    """Decide which template a repo was built from: Copier answers, then repo.status.yaml, then the type of its name.
+
+    The type is the type token the naming command reads in the name.
 
     Returns:
         (template, how it was decided, Copier answers).
@@ -7772,7 +7827,7 @@ def _template_for(
         if stype and stype in _seq(_map(k or {}, "template kind").get("status_types") or [], "status_types"):
             return t, "repo.status.yaml", answers
     for t, k in kinds.items():
-        if type_of(r.name) in _kind_types(k):
+        if cfg.repository_type(r.name) in _kind_types(k):
             return t, "name", answers
     return None, None, answers
 
@@ -7903,7 +7958,7 @@ def cmd_templates_check(args: argparse.Namespace, cfg: Config) -> int:
     for r in _local_repos(cfg):
         if cfg.is_deprecated_name(r.name):
             continue
-        t, how, answers = _template_for(r, kinds)
+        t, how, answers = _template_for(cfg, r, kinds)
         if t is None:
             kind = r.name.rsplit("-", 1)[-1].lower() if "-" in r.name else r.name
             untemplated.setdefault(kind, []).append(r.name)
@@ -8361,6 +8416,22 @@ def cmd_archive_due(args: argparse.Namespace, cfg: Config) -> int:
 PYTHON_NAMES_TEXT = 110
 
 
+def _template_has_src(cfg: Config, name: str) -> bool:
+    """Tell whether the template that builds a repository's type renders a Python `src` folder.
+
+    Returns:
+        True when that template renders a `pyproject.toml` and a `src` folder, and when no
+        template kind builds the type or the naming command reads no type in the name.
+
+    """
+    try:
+        kind = _template_of_name(cfg, name)
+    except PolyrepoError:
+        return True
+    tdir = _templates(cfg)[0] / kind
+    return (tdir / SRC_FOLDER).is_dir() and any(tdir.glob(f"{PYPROJECT}*"))
+
+
 def python_names_findings(st: State, only: list[str] | None = None) -> list[Finding]:
     """Check every active Python repo's names and layout against the naming standard.
 
@@ -8389,11 +8460,12 @@ def python_names_findings(st: State, only: list[str] | None = None) -> list[Find
         try:
             names = cfg.repository_names(r.name)
             facts = read_facts(_sweep_git, r.path, project_folders(names))
+            requires_src = _template_has_src(cfg, r.name)
         except (NameSweepError, PolyrepoError) as exc:
             return [Finding("python-names", r.name, str(exc))]
         return [
             Finding(p.check if p.check.startswith("python-") else f"python-{p.check}", r.name, p.detail)
-            for p in python_problems(facts, names)
+            for p in python_problems(facts, names, requires_src=requires_src)
         ]
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
@@ -8664,51 +8736,31 @@ def _knowledge_findings(cfg: Config) -> list[DoctorFinding]:
     return out
 
 
-def _naming_doc_findings(cfg: Config) -> list[DoctorFinding]:
-    """Check that the vault's repository naming note is readable and states every rule the tool needs.
-
-    The tool keeps no copy of the note's rules: every command reads them from the note
-    (`naming.document` under `naming.document_root`), so there is nothing to compare. This check
-    reads the note the way every command does.
-
-    Returns:
-        One finding when the note is missing, unreadable, or does not state a rule; else none.
-
-    """
-    try:
-        _ = cfg.rules
-    except PolyrepoError as exc:
-        return [_finding("naming-doc", "-", "unreadable", str(exc))]
-    return []
-
-
 def _template_type_findings(cfg: Config) -> list[DoctorFinding]:
-    """Check that every repository type the config maps to a template is a type the naming note lists.
+    """Check that every repository type the config maps to a template is a type the naming command accepts.
 
     The config's `templates.kinds[].types` is the steward's own map from repository types to the
-    template that builds them; the types themselves are the naming note's. A listed type the note
-    no longer has is a stale copy.
+    template that builds them; whether each is a repository type is the naming command's answer.
 
     Returns:
-        One finding per kind and type the naming note does not list.
+        One finding per kind and type the naming command refuses.
+
+    Raises:
+        PolyrepoError: when no naming command is configured or it does not answer.
 
     """
-    try:
-        known = set(cfg.rules.types)
-    except PolyrepoError:
-        return []
     kinds = _map(_templates(cfg)[1].get("kinds") or {}, "templates kinds")
-    return [
-        _finding(
-            "templates",
-            kind,
-            "type-unknown",
-            f"template kind {kind} lists the type {t}, which the naming note does not",
-        )
-        for kind, spec in kinds.items()
-        for t in _kind_types(spec)
-        if t not in known
-    ]
+    out: list[DoctorFinding] = []
+    for kind, spec in kinds.items():
+        for t in _kind_types(spec):
+            try:
+                problem = type_problem(t)
+            except NamingCommandError as exc:
+                raise PolyrepoError(str(exc)) from exc
+            if problem is not None:
+                detail = f"template kind {kind} lists the type {t}: {problem}"
+                out.append(_finding("templates", kind, "type-unknown", detail))
+    return out
 
 
 ORGANIZATION_RECORD = "organization-structure.md"
@@ -8960,8 +9012,8 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     due. The checks are reconcile, agents-sync --check, the beads fleet audit, the beads fleet
     list, open pull requests in deprecated repos and `archive-due --dry-run` (in
     parallel, each its own process), the governance
-    entries, the knowledge-store pointers, the repository-naming document, the template types
-    against the naming note's types, the organization record's environment variables against
+    entries, the knowledge-store pointers, the template types against the naming command, the
+    organization record's environment variables against
     the environment, and the matrix's stacks against the repositories (repaired under --fix,
     and the matrix committed).
 
@@ -8995,7 +9047,6 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
         findings.extend(_doctor_findings(name, data))
     findings.extend(_governance_findings(cfg))
     findings.extend(_knowledge_findings(cfg))
-    findings.extend(_naming_doc_findings(cfg))
     findings.extend(_template_type_findings(cfg))
     findings.extend(_organization_findings(cfg))
     matrix_fixed, matrix_open = _matrix_doctor(cfg, args.fix, args.no_cache)
@@ -9003,13 +9054,12 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     if args.fix:
         repairs["matrix"] = {"exit": 0, "fixed": matrix_fixed, "records": None, "error": None}
     counts: dict[str, int] = dict.fromkeys(
-        [*DOCTOR_CHECKS, "governance", "knowledge", "naming-doc", "templates", "organization", "matrix"],
+        [*DOCTOR_CHECKS, "governance", "knowledge", "templates", "organization", "matrix"],
         0,
     )
     for f in findings:
         counts[f["check"]] = counts.get(f["check"], 0) + 1
     report: dict[str, object] = {
-        "naming_note": cfg.rules.summary() if not any(f["check"] == "naming-doc" for f in findings) else None,
         "repairs": repairs,
         "findings": findings,
         "counts": counts,
@@ -9019,7 +9069,7 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     }
 
     def text() -> str:
-        lines = [f"{len(findings)} findings in {report['elapsed_s']}s", f"  naming rules read from {cfg.naming_note()}"]
+        lines = [f"{len(findings)} findings in {report['elapsed_s']}s"]
         lines.extend(
             f"  repair {n}: exit {r['exit']}"
             + (f", {r['fixed']} fixed" if r.get("fixed") is not None else "")
@@ -9199,7 +9249,7 @@ def _add_repo_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
     )
     s.add_argument(
         "--dir",
-        help="folder inside the space (default: the folder the naming note places the type in)",
+        help="folder inside the space (default: the folder the config's placement maps the name's type to)",
     )
     s.add_argument("--dry-run", action="store_true", help="check and render only")
     s.set_defaults(func=cmd_create)
@@ -9262,7 +9312,7 @@ def _add_tier_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
     """Add the tier commands: tier, tiers and set-tier."""
     s = add(
         "naming",
-        "check one repository name against the vault's repository naming note and show the rule it matched",
+        "check one repository name with the naming command and show the kind, tokens and placement",
     )
     s.add_argument("name", help="a repository name")
     s.set_defaults(func=cmd_naming)

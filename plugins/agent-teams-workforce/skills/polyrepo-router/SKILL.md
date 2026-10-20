@@ -6,7 +6,7 @@ description: >-
   of functionality, whether a repo has uncommitted files or is up to date with GitHub
   `main`, when it was last updated, which repos contain Python, CDK, TypeScript, JavaScript
   or web code and which linter, type-check, pre-commit and CI checker configurations each
-  carries, the naming convention, creating, renaming,
+  carries, creating, renaming,
   deprecating or rebasing a repo, searching across repos, or any knowledge about the
   project's repositories. It instantiates the `polyrepo-steward` agent and hands the
   request to it; the steward answers and does the repository work itself.

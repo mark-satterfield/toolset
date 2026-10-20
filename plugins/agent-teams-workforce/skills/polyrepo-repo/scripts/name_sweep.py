@@ -60,7 +60,6 @@ STACK_FOLDER = "cdk/stacks"
 GREP_LIST_FOUND = 0
 GREP_LIST_NONE = 1
 STACK_DEPTH = 3
-SOURCE_TYPES: tuple[str, ...] = ("lib", "service")
 MYPY_SECTION = re.compile(r"(?m)^\[tool\.mypy\][ \t]*\r?\n")
 MYPY_PATH_SRC = '"src"'
 MYPY_PATH_SRC_CDK = '["src", "cdk"]'
@@ -787,6 +786,7 @@ def python_problems(
     facts: HolderFacts,
     names: RepositoryNames | None,
     *,
+    requires_src: bool = True,
     unit_tests: bool = True,
 ) -> list[PythonProblem]:
     """Check what a repository has against the Python names the naming command gives it.
@@ -794,7 +794,8 @@ def python_problems(
     `names` is what the naming command gives the repository name (`name repository-names`), None
     for a name it does not read as a repository holding a stack. The distribution (the `name` in
     `pyproject.toml`), the import package and the source folder path must be those names. The rest
-    is the layout: `src` is the source root, `tests` the unit test root, and no `__init__.py` sits
+    is the layout: `src` is the source root (required when `requires_src`: the caller decides it
+    from the template that builds the repository), `tests` the unit test root, and no `__init__.py` sits
     in a project or team folder. A repository with several source packages has none of the package
     checks run, because there is no one package to check.
 
@@ -806,7 +807,7 @@ def python_problems(
     if facts.distribution is None:
         out.append(PythonProblem("python-distribution", "pyproject.toml names no project"))
     if not facts.has_src:
-        if names is None or names.component_type in SOURCE_TYPES:
+        if requires_src:
             out.append(PythonProblem("src", "no src folder: the source root is src"))
     elif len(facts.packages) != 1:
         found = ", ".join(facts.packages) or "none"
