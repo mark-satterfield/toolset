@@ -1,6 +1,6 @@
 ---
 name: architecture-decider
-description: Rule on a matter the architecture team could not settle.
+description: Rule between the positions on an architecture matter the solutions architect and the architecture team lead could not settle, from the evidence each position carries, and record the ruling in the matrix as the settlement of the disagreement.
 role: decider
 tools: Read, Glob, Grep, Write, Bash, Skill, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
   mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Agent, Workflow

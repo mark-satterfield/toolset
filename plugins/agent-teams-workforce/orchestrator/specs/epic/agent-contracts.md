@@ -61,14 +61,18 @@ contracts too; no Epic session produces or reads them.
 ## Agents no Epic step starts
 
 A script step writes the Story document, so no step starts story-bead-writer (DESIGN 11.5).
-prd-validation-analyst, filing-clerk, advantage-evaluator, phase-gate-enforcer, wsjf-scorer,
+prd-validation-analyst, filing-clerk, phase-gate-enforcer, exhausted-gate-ruler, wsjf-scorer,
 epic-dependency-assessor, stakeholder-request-intake-writer, feature-persona-writer, feature-objective-writer, prd-writer
 and prd-alignment-verifier are started by their own workflows or by a person. No Epic step starts
-architecture-fitness-function-author or ubiquitous-language-writer. built-architecture-comparer and
+advantage-evaluator, constitutional-agent, context-curator, architecture-impact-analyst,
+architecture-fitness-function-author, ubiquitous-language-writer or root-cause-analyst; a caller
+chooses them through the find-specialists catalog. built-architecture-comparer and
 architecture-conformance-reviewer are started by the built-version workflow. No step starts
 architecture-pattern-challenger, architecture-tradeoff-skeptic, architecture-boundary-guardian,
 operational-readiness-reviewer, failure-mode-analyst, new-resource-cost-reviewer or
-changed-resource-cost-reviewer: the solutions architect reviews and approves its own architecture.
+changed-resource-cost-reviewer: the solutions architect reviews and approves its own architecture,
+and may choose one of them through the find-specialists catalog and ask it a review question in
+its own session, as it asks any specialist.
 workflow-command-runner is never an Epic session.
 
 ## Artifacts

@@ -1,6 +1,6 @@
 ---
 name: uml-diagramming
-description: Authors UML diagrams — class, sequence, state, component, and deployment — as Mermaid source for GitHub and Docusaurus, and places each one as a view in the arc42 section its scope and view type name (structure of a domain, service or component → 5, runtime flows → 6, deployment → 7, a pattern used across services → 8, the detailed design of a component, a feature or components working together → its detailed/ folder), with the catalog frontmatter every view carries. Use when the user asks to draw a UML diagram, model a domain or class structure, sketch a sequence or interaction, model a state machine, diagram components or building blocks, show deployment topology, or place a diagram into an arc42 architecture document.
+description: Authors UML diagrams — class, sequence, state, component, and deployment — as Mermaid source for GitHub and Docusaurus, and places each one, or names where it is placed, as a view in the arc42 section its scope and view type name (structure of a domain, service or component → 5, runtime flows → 6, deployment → 7, a pattern used across services → 8, the detailed design of a component, a feature or components working together → its detailed/ folder), with the catalog frontmatter every view carries. Use when the user asks to draw a UML diagram, model a domain or class structure, sketch a sequence or interaction, model a state machine, diagram components or building blocks, show deployment topology, or place a diagram into an arc42 architecture document.
 triggers:
   - draw a UML diagram
   - class diagram
@@ -38,8 +38,7 @@ non-UML types), the Mermaid kind and conventions for each, and the rendered-read
 its required verification — render every diagram to PNG, look at it, fix until nothing
 overlaps. Load it and follow it for every UML view; this skill adds the UML semantics. Record
 rendering, visual readability and semantic self-checks separately in the caller's result schema.
-A successful parse is not a readability check; unavailable inspection is reported, not passed. Consumed by: aws-solutions-architect, which reviews and approves the architecture, and architecture-decider — check the
-current view evidence before approval.
+A successful parse is not a readability check; unavailable inspection is reported, not passed.
 
 ## Workflow
 
@@ -47,7 +46,7 @@ current view evidence before approval.
 
 2. **Author the Mermaid source.** Write a fenced `mermaid` block using the correct grammar for that diagram type (`classDiagram`, `sequenceDiagram`, `stateDiagram-v2`, and the flowchart-based approximations Mermaid uses for component and deployment views). The established class, sequence, state, component and deployment types have worked, copy-ready examples in `references/mermaid-uml-syntax.md` — that reference file is the only place mermaid code fences live. Read it, adapt the closest example, and keep the diagram focused on one question.
 
-3. **Place it as a view.** A diagram is placed by its scope (system, domain, cross-component, service, component, feature, concept) and its view type, as the architecture documentation model in the architecture directory's `reference/` folder sets out. Structure of a domain, service or component (domain model, component, class, data model, and a component's state machine) → section 5 (Building Block View), in the subject's folder. A service's or the system's important flows (sequence, state machine, activity) → section 6 (Runtime View). Deployment → section 7 (Deployment View). A pattern used across many services → section 8 (Crosscutting Concepts). The detailed design (a class or object diagram with attributes and types, a physical data model, the state machine of one entity, the flows of one feature or of components working together) → its folder under `detailed/` (`components/<component>/`, `features/<feature>/`, `cross-component/`, `system/`), linked from the arc42 view of its subject. Search the catalog first so an existing view of the same subject is updated, not duplicated, and give the view its catalog frontmatter (`view_type`, `scope`, `subject`, `shows`, `lifecycle_state`). The full placement table is in `references/arc42-section-mapping.md`.
+3. **Place it as a view.** A diagram is placed by its scope (system, domain, cross-component, service, component, feature, concept) and its view type, as the architecture documentation model in the architecture directory's `reference/` folder sets out. Structure of a domain, service or component (domain model, component, class, data model, and a component's state machine) → section 5 (Building Block View), in the subject's folder. A service's or the system's important flows (sequence, state machine, activity) → section 6 (Runtime View). Deployment → section 7 (Deployment View). A pattern used across many services → section 8 (Crosscutting Concepts). The detailed design (a class or object diagram with attributes and types, a physical data model, the state machine of one entity, the flows of one feature or of components working together) → its folder under `detailed/` (`components/<component>/`, `features/<feature>/`, `cross-component/`, `system/`), linked from the arc42 view of its subject. Search the catalog first so an existing view of the same subject is updated, not duplicated. When you write the document, give the view its catalog frontmatter (`view_type`, `scope`, `subject`, `shows`, `lifecycle_state`); when you return the diagram for someone else to place (a diagram author writes no document), name this home, the view type and the elements it shows instead. The full placement table is in `references/arc42-section-mapping.md`.
 
 4. **Verify the rendered image.** Render each diagram to PNG, look at it, and fix until nothing overlaps, as `architecture-diagramming` (`references/readability.md`) requires. GitHub and Docusaurus setup, and where Mermaid is weaker than PlantUML, are in `references/rendering-targets.md`. Stay Mermaid-first; only note the PlantUML tradeoff when a diagram genuinely exceeds Mermaid's reach.
 
@@ -62,7 +61,7 @@ current view evidence before approval.
 ## What you do NOT do
 
 - You do not deliver images. The view is Mermaid text; the PNGs you render to check readability are verification evidence in a scratch directory, never committed.
-- You do not author the surrounding arc42 sections — you produce the diagram, the catalog frontmatter of its view, and the section and subject folder it belongs in.
+- You do not author the surrounding arc42 sections — you produce the diagram and the section and subject folder it belongs in, and, when you write the document, the catalog frontmatter of its view.
 - You do not switch tools silently. This skill is Mermaid-first; if a diagram truly needs PlantUML, say so explicitly and explain the tradeoff (see `references/rendering-targets.md`) rather than quietly emitting PlantUML.
 - You do not invent UML semantics. Class, sequence, state, component, and deployment diagrams have defined meanings; follow them.
 

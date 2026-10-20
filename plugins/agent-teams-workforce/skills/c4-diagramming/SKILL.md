@@ -43,7 +43,10 @@ this body.
 - A placement: the arc42 section and subject folder the view belongs in, by its scope, and the
   catalog frontmatter of the view (`view_type`, `scope`, `subject`, `shows`,
   `lifecycle_state`), which the matrix reads, so every view can be found from the elements it
-  shows (`atw-matrix node <entry id>`).
+  shows (`atw-matrix node <entry id>`). Who writes them depends on who writes the documents:
+  the agent that writes the architecture documents places the view and writes its
+  frontmatter; a diagram author, which writes no document, returns the diagram with the home
+  this skill places it in, its view type and the elements it shows, and writes neither.
 
 ## Project coverage and validation
 
@@ -58,8 +61,7 @@ the Mermaid conventions, and the rendered-readability rule with its required ver
 render every diagram to PNG, look at it, fix until nothing overlaps. Load it and follow it for
 every C4 view. Record rendering, visual readability and semantic self-checks separately in the
 caller's result schema. A successful parse is not a readability check; unavailable inspection is
-reported, not passed. Consumed by: aws-solutions-architect, which reviews and approves the
-architecture, and architecture-decider — check the current view evidence before approval.
+reported, not passed.
 
 ## Workflow
 
@@ -102,7 +104,9 @@ architecture, and architecture-decider — check the current view evidence befor
    updated rather than duplicated: `atw-matrix find --text "<name>"` returns the entry's id,
    and `atw-matrix node <entry id>` names under `describedBy` each document and heading that
    describes it, with the document's `lifecycle`. An entry with no `describedBy` has no view.
-   Then write the view's catalog frontmatter.
+   Then, when you write the document, write the view's catalog frontmatter; when you return
+   the diagram for someone else to place, name this home, the view type and the elements it
+   shows, and write no document.
 
 6. **Verify the rendered image.** Render each diagram to PNG, look at it, and fix until nothing
    overlaps, as `architecture-diagramming` (`references/readability.md`) requires. The Mermaid
@@ -132,7 +136,7 @@ architecture, and architecture-decider — check the current view evidence befor
 - You do not place fenced Mermaid blocks in this SKILL.md. Every runnable example lives in
   `references/mermaid-c4-syntax.md`.
 - You do not produce arc42 prose for unrelated sections; this skill owns the diagrams and
-  their placement, not the full document.
+  where they are placed, not the full document.
 
 ## References
 
