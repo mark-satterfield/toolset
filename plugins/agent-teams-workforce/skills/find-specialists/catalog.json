@@ -1404,19 +1404,15 @@
     },
     {
       "name": "github-actions-pipeline-implementer",
-      "description": "Implements GitHub Actions workflows: OIDC authentication, caching, build, test, and deploy stages. Use for Deployment team work requiring CI/CD pipeline implementation, OIDC auth wiring, and deploy configuration.",
+      "description": "Writes and changes a repository's GitHub Actions workflows: OIDC authentication to AWS with no stored credentials, dependency and build caching, and the build, test, lint and deploy jobs the repository's own commands define. A specialist a caller chooses when a repository's CI/CD workflows must be created or changed.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-devops",
-        "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:software-engineering",
         "agent-teams-workforce:shell-coding"
       ],
-      "mcpServers": [
-        "mcp-graphrag-server",
-        "gitnexus"
-      ]
+      "mcpServers": []
     },
     {
       "name": "glue-etl-implementer",
@@ -2575,6 +2571,19 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "worktree-lander",
+      "description": "Lands the work in a git worktree: commits every change through the repository's hooks (fixing every finding they report, never bypassing them), and when asked pushes the branch and opens its pull request with the project's PR command. Never pushes to the default branch and never merges.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:typescript-coding",
+        "agent-teams-workforce:shell-coding"
       ],
       "mcpServers": []
     },
