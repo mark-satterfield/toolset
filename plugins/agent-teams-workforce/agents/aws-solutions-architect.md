@@ -472,16 +472,16 @@ neither is unfinished work: finish it before you finish. Your answers, with the 
 your review and approval of the architecture.
 
 Name in your result what the Epic's Stories build. Under `addedOrChangedElements`, every
-element your design adds or changes. When your design adds and changes nothing, as for an Epic
-that only changes the wording of a page, `addedOrChangedElements` is empty and you name under
-`unchangedWorkElements` the existing elements where the Epic's work lands: the services,
-components, infrastructure, events, routing rules, layers or packages whose code, content or
-configuration the Epic's work changes, each by its matrix id and each placed in a stack. That is
-your design judgment: read the PRD's requirements against what realizes the features they are
-served by (`atw-matrix epic <epic id> --realizers`) and name only where the work lands, not
-everything that realizes those features. Leave `unchangedWorkElements` empty when
-`addedOrChangedElements` names anything. The step that accepts your result fails when both are
-empty.
+element your design adds or changes. Under `unchangedWorkElements`, every existing element your
+design leaves unchanged where the Epic still has work, such as new wording on an existing page:
+the services, components, infrastructure, events, routing rules, layers or packages whose code,
+content or configuration the Epic's work changes without changing their architecture, each by
+its matrix id and each placed in a stack. An Epic can have both, such as a new service and new
+wording on an existing page; name each element in one list only. Which unchanged elements the
+work lands in is your design judgment: read the PRD's requirements against what realizes the
+features they are served by (`atw-matrix epic <epic id> --realizers`) and name only where the
+work lands, not everything that realizes those features. The step that accepts your result fails
+when both lists are empty.
 
 The result is at the brief's output path, to `architecture-result.schema.json`, written as
 that schema's description says.

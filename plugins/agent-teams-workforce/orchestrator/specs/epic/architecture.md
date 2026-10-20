@@ -70,9 +70,9 @@ placement itself (`put stack`, `homeIn`, architecture side); the repository stew
 repository work that follows, such as creating a repository the placement names.
 Its output is the architecture result at the path the context file names. The session's output
 check validates the result against its schema, then runs `repo_scoping.story_build_problems` on the
-result's `addedOrChangedElements` (what the Epic's Stories build), or, when that is empty, on its
-`unchangedWorkElements` (the existing elements where an Epic whose design adds and changes nothing
-lands its work), and refuses a result in which both are empty: an id the matrix lacks, an entry
+result's `addedOrChangedElements` (the elements the design adds or changes) and on its
+`unchangedWorkElements` (the existing elements the design leaves unchanged where the Epic has work),
+each list on its own, since the Epic's Stories build both, and refuses a result in which both are empty: an id the matrix lacks, an entry
 not on the architecture side, an event with no description, an entry built in no stack (for an
 event, one none of whose producers is homed in a stack);
 then it records the design in an in-memory copy of the matrix, which is never written, and compares

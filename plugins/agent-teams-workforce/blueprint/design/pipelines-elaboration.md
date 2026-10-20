@@ -427,8 +427,8 @@ creates it" follows the SkillSpoke rule `.claude/rules/keep-polyrepo-steward-cur
 
 **Subject:** what the spec covers and carries, and what reaches the build.
 **Scope:** from approved architecture to the Tasks in beads.
-**Purpose:** a spec's work comes from what is not yet verified, an Epic with no architecture change
-still gets a spec, the spec links to the full architecture and design, and the build trusts what
+**Purpose:** a spec's work comes from what is not yet verified, work in an element the Epic's
+architecture leaves unchanged still gets a spec, with or without an architecture change elsewhere, the spec links to the full architecture and design, and the build trusts what
 it is given.
 **Boundary:** the build itself is in [build](pipelines-build.md).
 **Sources:** The owner: "A spec's delta NEVER was supposed to come from an architecture
@@ -467,7 +467,7 @@ sequenceDiagram
         WF->>SW: work = the change since that verified version
     else the element is not verified, for example v1.1.2 and v1.1.3 unbuilt
         WF->>SW: work = everything since the last verified version, to bring the build up to the approved architecture
-    else the Epic needs no architecture change, for example wording on a web page
+    else the architecture leaves the element unchanged and the Epic has work in it, for example wording on a web page
         WF->>SW: work = the instructions for the change
     end
     SW->>A42: reads the approved architecture and design of each component
@@ -491,9 +491,9 @@ Notes on the diagram:
 - The workflow's reads are `spec_authoring.entry_scope` (the spec context's `buildScope`:
   `delta` or `full` from each entry's verified flag), `spec_authoring.component_documents`
   (`atw-matrix documents`, whose links `spec_authoring.link_documents` puts at the end of every
-  spec document), and, for an Epic with no architecture change, the existing elements the
-  solutions architect names in its result as where the Epic's work lands
-  (`unchangedWorkElements`, which the span step in `repo_scoping` reads). Which elements those
+  spec document), and the existing elements the solutions architect names in its result as where
+  Epic work that leaves their architecture unchanged lands (`unchangedWorkElements`, which the
+  span step in `repo_scoping` reads beside `addedOrChangedElements`). Which elements those
   are is the architect's design decision; no script picks them.
 - Task decomposition is drawn in section 8.
 - One Spec and one Story per repository, and Tasks under each Story, are stated by
