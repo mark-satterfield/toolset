@@ -1,7 +1,7 @@
 export const meta = {
   name: 'deploy',
   description:
-    'Shared-tail mini — Deploy. Refuses a contract with no repoPath. The smoke-test-author writes a smoke suite (or the smokeTestFiles passed in are reused), then one cdk-stack-author session deploys the one repository the contract names to AWS dev and runs the smoke tests against the deployed endpoints. Given relay { runner, dir }, the session instead names the command that runs the smoke tests, and the script runs it through relayrun.py: its exit status decides smokePassed. Returns { deployedToDev, smokePassed, smokeTestFiles, rollout, deployedToProd: false, ledger }, with dispatchFailed when a session returned nothing. Opens no pull request; never deploys to qa or prod.',
+    'Shared-tail mini — Deploy. Refuses a contract with no repoPath. The smoke-test-author writes a smoke suite (or the smokeTestFiles passed in are reused), then one dev-deployer session deploys the one repository the contract names to AWS dev and runs the smoke tests against the deployed endpoints. Given relay { runner, dir }, the session instead names the command that runs the smoke tests, and the script runs it through relayrun.py: its exit status decides smokePassed. Returns { deployedToDev, smokePassed, smokeTestFiles, rollout, deployedToProd: false, ledger }, with dispatchFailed when a session returned nothing. Opens no pull request; never deploys to qa or prod.',
   phases: [{ title: 'Deploy-readiness', detail: 'author smoke tests, deploy to AWS dev, run the smoke tests' }],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -734,7 +734,7 @@ const priorSmokeFiles = (Array.isArray(a.smokeTestFiles) ? a.smokeTestFiles : []
 const smoke = priorSmokeFiles.length
   ? { smokeTestFiles: priorSmokeFiles, reused: true }
   : await settleAgent(
-      `Author post-deployment smoke tests that verify the fixed behavior against a deployed endpoint. Do not deploy.
+      `Write the smoke tests for this change.
 
 ${pinTree}
 
@@ -771,23 +771,17 @@ if (!smoke) {
 const smokeTestFiles = (Array.isArray(smoke.smokeTestFiles) ? smoke.smokeTestFiles : []).map((f) => String(f || '').trim()).filter(Boolean)
 
 const rollout = await settleAgent(
-  `Deploy this change to the DEV environment with the dev AWS profile (\`--profile dev\`): the account and region are the profile's, resolved at deploy time; write none of them into the code.
+  `Deploy this repository to AWS dev.
 
 ${pinTree}
 
-Deploy just this repo against dev, using the mechanism this repo actually deploys by: \`cdk deploy\` of the affected stack(s) when the repo has a CDK app; otherwise the repo's own deploy path (Taskfile, package.json scripts, deploy script). For a static site that is a build, \`aws s3 sync\` and a CloudFront invalidation; wait for the invalidation to report Completed before smoke-testing. A task NAMED cdk:deploy may run no CDK operation — read what it executes.
-
-${RELAY ? `Do NOT run the smoke tests (${smokeTestFiles.join(', ') || 'none were authored'} — paths relative to the tree above) yourself: the workflow runs them once you return. Return \`smokeCommand\`: ONE shell command line that /bin/sh runs from the tree root above, which runs exactly those smoke tests against the endpoints you deployed (set any endpoint or environment value they need inline in the command) and exits non-zero when any of them fails. An empty \`smokeCommand\` is a failed rollout.
-
-Report \`deployed\` and \`smokeCommand\`. Also report the stacks you changed and the commit SHA you deployed (\`git -C "${repo}" rev-parse HEAD\`).` : `Then RUN the smoke tests (${smokeTestFiles.join(', ') || 'none were authored'} — paths relative to the tree above) against the deployed endpoints and report their literal output. A deploy that succeeds while its smoke test fails is a FAILED rollout.
-
-Report \`deployed\`, \`smokePassed\`, and \`smokeCases\`: one row per smoke case with its name, whether it passed, and its literal output. Also report the stacks you changed and the commit SHA you deployed (\`git -C "${repo}" rev-parse HEAD\`).`}
-
-HARD LIMITS: dev ONLY — never qa, never prod. Do not delete or replace data. If a deploy errors, stop and report where and why.`,
+Smoke tests (paths relative to the tree above): ${smokeTestFiles.join(', ') || 'none were authored'}
+${RELAY ? 'Smoke tests: name the command that runs them (`smokeCommand`); do not run them.' : 'Smoke tests: run them and report `smokePassed` and `smokeCases`.'}
+Change: ${changeLabel}${smoke.notes ? `\nThe smoke test author's notes (the environment variables the tests read): ${smoke.notes}` : ''}`,
   {
     label: 'deploy:rollout-dev',
     phase: 'Deploy-readiness',
-    agentType: 'cdk-stack-author',
+    agentType: 'dev-deployer',
     schema: {
       type: 'object',
       additionalProperties: false,
@@ -854,7 +848,7 @@ const ledger = {
   phase: 'deploy',
   stage: deployedToDev ? 'deployed-to-dev' : 'not-deployed',
   beadId,
-  chosen: [...(priorSmokeFiles.length ? [] : ['smoke-test-author']), 'cdk-stack-author'],
+  chosen: [...(priorSmokeFiles.length ? [] : ['smoke-test-author']), 'dev-deployer'],
   mode: 'fixed',
   env: 'dev',
   deployedToDev,

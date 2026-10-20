@@ -169,11 +169,10 @@
     },
     {
       "name": "api-documentation-writer",
-      "description": "Writes human-readable API docs from OpenAPI and GraphQL specs for shipped APIs — guides, examples, SDK snippets. Use for cross-cutting Documentation team work requiring API reference writing, example generation, and SDK snippet authoring.",
+      "description": "Updates the human-readable API reference documents of shipped APIs from their OpenAPI and GraphQL specifications: endpoint and operation guides, request, response and error examples, SDK snippets. Never edits a specification file.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:api-design-reviewer"
+        "agent-teams-workforce:validation-protocol"
       ],
       "mcpServers": []
     },
@@ -705,22 +704,22 @@
     },
     {
       "name": "cdk-infrastructure-drift-detector",
-      "description": "Detects drift between deployed infrastructure and its CDK stacks, reporting divergences with evidence. Use for Deployment team work requiring CDK validation, drift detection, and template diffing.",
+      "description": "Detects drift between a repository's deployed CloudFormation stacks and its CDK app (cdk diff, CloudFormation drift detection, template comparison) and reports each divergence with evidence; read-only, never remediates. A specialist a caller chooses to check deployed infrastructure against its code.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:aws-cdk-development",
         "agent-teams-workforce:cloudformation",
         "aws-core:aws-cdk",
-        "agent-teams-workforce:graphrag-lookup"
+        "aws-core:aws-cloudformation"
       ],
       "mcpServers": [
-        "gitnexus"
+        "aws-mcp"
       ]
     },
     {
       "name": "cdk-stack-author",
-      "description": "Authors AWS CDK stacks in Python matching the approved architecture. Use for Deployment team work requiring CDK stack authoring, construct composition, synth validation, and infrastructure as code.",
+      "description": "Writes AWS CDK stacks, constructs and app wiring in Python for an infrastructure Task, as the Task, its spec, the provisioning intent and the architecture give them, with the minimum change that makes the failing synth assertion tests pass. Never deploys.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -729,7 +728,6 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-cdk",
-        "agent-teams-workforce:aurora-postgresql",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:cdk-coding"
       ],
@@ -802,7 +800,7 @@
     },
     {
       "name": "changelog-writer",
-      "description": "Generates changelog entries from merged work, parsing conventional commits into semantic version notes. Use for cross-cutting Documentation team work requiring conventional commit parsing, changelog drafting, and version note generation.",
+      "description": "Writes the changelog entries for a change before it merges, from the change and the conventional commits on its branch, in the project's changelog format, flagging breaking changes and recommending the semantic version increment. Never decides, sets or bumps a version.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -1181,8 +1179,28 @@
       "mcpServers": []
     },
     {
+      "name": "deploy-failure-fixer",
+      "description": "Diagnoses a failed package publish, cdk synth, cdk deploy to AWS dev or stack verification from its output and the CloudFormation stack events, fixes the CDK (or whatever else the deploy needs) in the Story's worktree, runs the repository's synth assertion tests, corrects a test the fix proves wrong, and names the command that runs them. Never deploys, commits or publishes.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:cdk-coding",
+        "agent-teams-workforce:aws-cdk-development",
+        "aws-core:aws-cdk",
+        "aws-core:aws-cloudformation",
+        "agent-teams-workforce:cloudformation",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:test-failure-mindset"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "gitnexus"
+      ]
+    },
+    {
       "name": "deployment-lead",
-      "description": "Routes the feature deployment sequence, validates preconditions per step, and reports evidence to Gate 5. Use for Deployment team work requiring delegation, sequencing discipline, and gate reporting.",
+      "description": "Routes the feature deployment sequence, validates preconditions per step, and assembles the deployment evidence packet. Use for Deployment team work requiring delegation, sequencing discipline, and evidence assembly.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:agent-orchestration"
@@ -1191,14 +1209,44 @@
     },
     {
       "name": "deployment-strategy-decider",
-      "description": "Decides deployment strategy from received analyses — rollout, risk, FinOps — with recorded rationale; generates no analysis. Use for Deployment team work requiring decision adjudication, evidence weighing, and rationale recording. No workflow currently dispatches it.",
+      "description": "Decides one repository's deployment strategy (rollout mechanism such as Lambda alias traffic shifting, canary, blue-green or all-at-once; canary health criteria; rollback triggers) from analyses others produced (rollout options and risk, FinOps, SLO design, drift), with a recorded rationale; produces no analysis. A specialist a caller chooses when a rollout must be decided.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-devops",
-        "agent-teams-workforce:cove-prompt-design"
+        "aws-core:aws-serverless"
       ],
-      "mcpServers": []
+      "mcpServers": [
+        "aws-mcp"
+      ]
+    },
+    {
+      "name": "dev-deployer",
+      "description": "Deploys one repository to AWS dev by the mechanism the repository deploys by (cdk deploy of the affected stacks, or the repository's own deploy path such as a static-site build, S3 sync and CloudFront invalidation), then runs its smoke tests or names the one command that runs them. Never deploys to any other environment and never writes code.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:senior-devops",
+        "agent-teams-workforce:aws-cdk-development",
+        "aws-core:aws-cdk",
+        "agent-teams-workforce:cdk-coding",
+        "agent-teams-workforce:python-coding"
+      ],
+      "mcpServers": [
+        "aws-mcp"
+      ]
+    },
+    {
+      "name": "developer-documentation-writer",
+      "description": "Updates a repository's internal and technical documents so they match the shipped code: developer guides, design and implementation notes, module and service documentation, configuration references and contributing guides. Not READMEs, changelogs, API reference documents, user guides or specification files.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:software-engineering"
+      ],
+      "mcpServers": [
+        "gitnexus"
+      ]
     },
     {
       "name": "dns-and-edge-designer",
@@ -1236,7 +1284,7 @@
     },
     {
       "name": "documentation-accuracy-reviewer",
-      "description": "Reviews documentation against actual shipped behavior, reporting findings with cited evidence. Use for cross-cutting Documentation team work requiring accuracy verification, claim-by-claim checking, and completeness review. No workflow currently dispatches it.",
+      "description": "Reviews the documents a documentation writer updated for a change against the behaviour the change ships, claim by claim, and reports each inaccurate claim and each uncovered behaviour with cited evidence. Read-only; never fixes.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol"
@@ -1245,7 +1293,7 @@
     },
     {
       "name": "documentation-currency-auditor",
-      "description": "Audits that documentation was updated when code shipped, flagging stale or missing docs per artifact with cited evidence, and names the writer that owns each stale doc. Use for cross-cutting Documentation team work requiring currency auditing, staleness detection, and coverage mapping.",
+      "description": "Audits which documents a change leaves stale or missing, with cited evidence, and assigns each stale document to the documentation writer whose kind covers it (API reference, README, changelog, user guide, or internal and technical documents); names the specification files the change contradicts. Read-only.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol"
@@ -1254,7 +1302,7 @@
     },
     {
       "name": "documentation-lead",
-      "description": "Routes documentation work for shipped changes, tracks artifacts lacking current docs, and reports doc currency to the production readiness review. Use for cross-cutting Documentation team work requiring delegation, currency tracking, and readiness reporting.",
+      "description": "Routes documentation work for shipped changes, tracks artifacts lacking current docs, and reports documentation currency. Use for cross-cutting Documentation team work requiring delegation, currency tracking, and currency reporting.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:agent-orchestration"
@@ -1626,14 +1674,14 @@
     },
     {
       "name": "finops-analyst",
-      "description": "Analyzes pre-deployment feature cost posture — unit economics, scaling cost curves, budget impact — recommendations only, never decisions. Use for Deployment team work requiring cost analysis, unit economics modeling, and budget impact assessment. No workflow currently dispatches it.",
+      "description": "Models what a feature costs to run on AWS before it ships — unit economics, scaling cost curves across load scenarios, budget impact, cost cliffs — and ranks cost recommendations; decides nothing. A specialist a caller chooses for a pre-deployment cost analysis.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:aws-cost-operations",
         "aws-core:aws-billing-and-cost-management"
       ],
       "mcpServers": [
-        "aws-mcp"
+        "aws-mcp",
+        "awslabs-dynamodb-mcp-server"
       ]
     },
     {
@@ -1706,19 +1754,15 @@
     },
     {
       "name": "github-actions-pipeline-implementer",
-      "description": "Implements GitHub Actions workflows: OIDC authentication, caching, build, test, and deploy stages. Use for Deployment team work requiring CI/CD pipeline implementation, OIDC auth wiring, and deploy configuration.",
+      "description": "Writes and changes a repository's GitHub Actions workflows: OIDC authentication to AWS with no stored credentials, dependency and build caching, and the build, test, lint and deploy jobs the repository's own commands define. A specialist a caller chooses when a repository's CI/CD workflows must be created or changed.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-devops",
-        "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:software-engineering",
         "agent-teams-workforce:shell-coding"
       ],
-      "mcpServers": [
-        "mcp-graphrag-server",
-        "gitnexus"
-      ]
+      "mcpServers": []
     },
     {
       "name": "glue-etl-implementer",
@@ -1819,7 +1863,7 @@
     },
     {
       "name": "incident-response-runbook-designer",
-      "description": "Produces operational runbooks: incident response procedures, rollback steps, and disaster recovery. Use for Deployment team work requiring runbook authoring, incident response design, and rollback documentation. No workflow currently dispatches it.",
+      "description": "Writes a deployed feature's operational runbooks — incident response keyed to its alarms and SLIs, rollback steps that match its deployment strategy, and disaster recovery (backup, restore, failover) for its AWS resources — with every referenced command and resource verified. A specialist a caller chooses when a feature needs runbooks.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -1827,7 +1871,9 @@
         "agent-teams-workforce:observability-designer",
         "aws-core:aws-observability"
       ],
-      "mcpServers": []
+      "mcpServers": [
+        "aws-mcp"
+      ]
     },
     {
       "name": "infrastructure-security-scanner",
@@ -2500,7 +2546,7 @@
     },
     {
       "name": "production-readiness-review-facilitator",
-      "description": "Coordinates the production readiness review: collects artifacts, routes them to reviewers, assembles the readiness packet; facilitates only, never decides readiness. Use for Deployment team work requiring review coordination, reviewer routing, and readiness packet assembly.",
+      "description": "Coordinates a production readiness review: checks the required artifacts exist (rollout result, smoke test results, drift report, SLO design, runbooks), routes each to the reviewer charged with it, and assembles the readiness packet with the reviewers' findings verbatim; never decides readiness. A coordinator a caller chooses before a production deployment.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:agent-orchestration"
@@ -2787,7 +2833,7 @@
     },
     {
       "name": "slo-error-budget-designer",
-      "description": "Designs SLOs and error budgets: SLIs, targets, burn-rate alerts, budget policies. Use for Deployment team work requiring SLO design, error budget policy, SLI selection, and CloudWatch alerting design. No workflow currently dispatches it.",
+      "description": "Designs a deployed service's SLOs and error budgets: SLIs from the CloudWatch metrics it emits, targets and windows traced to its NFRs, error budget policy and multi-window burn-rate CloudWatch alarms; recommends, never adopts. A specialist a caller chooses when a service needs SLOs.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:observability-designer",
@@ -2800,12 +2846,13 @@
     },
     {
       "name": "smoke-test-author",
-      "description": "Writes post-deployment smoke tests verifying the feature's critical paths against live endpoints. Use for Deployment team work requiring smoke test authoring, post-deployment verification, and critical-path coverage.",
+      "description": "Writes, before the deploy, the smoke tests that verify a change's critical paths against the endpoints of a deployment, parameterized by environment variables so the deploy session can run them against AWS dev once it has deployed. Never deploys and never runs them against a deployment.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-qa",
+        "agent-teams-workforce:api-test-suite-builder",
         "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:typescript-coding",
         "agent-teams-workforce:software-engineering",
         "agent-teams-workforce:graphrag-lookup"
       ],
@@ -3107,11 +3154,10 @@
     },
     {
       "name": "user-guide-writer",
-      "description": "Writes user-facing feature guides from specs and shipped behavior. Use for cross-cutting Documentation team work requiring feature guide writing, task-oriented walkthroughs, and audience-appropriate explanation.",
+      "description": "Updates user-facing feature guides and walkthroughs, for the people who use the product, from the spec and the shipped behaviour. Not internal or technical documents, READMEs, changelogs or API reference documents.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:roadmap-communicator"
+        "agent-teams-workforce:validation-protocol"
       ],
       "mcpServers": []
     },
@@ -3218,6 +3264,19 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol"
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "worktree-lander",
+      "description": "Lands the work in a git worktree: commits every change through the repository's hooks (fixing every finding they report, never bypassing them), and when asked pushes the branch and opens its pull request with the project's PR command. Never pushes to the default branch and never merges.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:typescript-coding",
+        "agent-teams-workforce:shell-coding"
       ],
       "mcpServers": []
     },

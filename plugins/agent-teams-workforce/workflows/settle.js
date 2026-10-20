@@ -792,7 +792,7 @@ const COMMIT_SCHEMA = {
   },
 }
 
-const commitSteps = `Commit every change as \`git -C "${wt}" add -A\` and one commit whose message is \`type(scope): description\`${message ? ` (the change: ${message})` : ''}, with NO Co-Authored-By header. \`--no-verify\` is forbidden; when a hook fails, fix every finding, stage the fixes and commit again; if a finding cannot be fixed, abort with NO commit and name it in \`blocked\`.`
+const changeLine = message ? `\nThe change: ${message}` : ''
 
 async function commitRun() {
   if (!wt) return { status: 'not-applicable', reason: 'the run established no repo path, so nothing was written' }
@@ -806,12 +806,9 @@ async function commitRun() {
     }
     if (before.dirty !== true) return { status: 'reported', treeClean: true, hasWork: false, branch, commit: before.head || '', blocked: [] }
     const reported = await settleAgent(
-      `The worktree ${wt} has uncommitted changes on its branch ${branch}. Commit them, or say exactly why they could not be committed.
-
-Run every git command as \`git -C "${wt}"\`. ${commitSteps} Do not push, do not open a pull request, and do not merge.
-
-Report \`blocked\`: one short sentence for each thing that stopped the commit; empty when it is committed.`,
-      { label: 'settle:commit', rethrow: true, phase: 'Settle', agentType: 'github-actions-pipeline-implementer', schema: COMMIT_SCHEMA }
+      `Commit only. Worktree: ${wt}
+Branch: ${branch} (it has uncommitted changes)${changeLine}`,
+      { label: 'settle:commit', rethrow: true, phase: 'Settle', agentType: 'worktree-lander', schema: COMMIT_SCHEMA }
     )
     if (!reported) return { status: 'error', error: 'the commit agent returned no result' }
     const after = await treeFacts('settle-after', [])
@@ -856,13 +853,11 @@ async function settleRun() {
     const hasWork = before.dirty === true || ahead === null || ahead > 0
     if (!hasWork) return { status: 'reported', treeClean: true, hasWork: false, branch, prUrl: '', commit: before.head || '', blocked: [] }
     const reported = await settleAgent(
-      `Land the work in the worktree ${wt} (branch ${branch}), or say exactly why it could not be landed.
-
-Run every git command as \`git -C "${wt}"\`, and \`cd "${wt}"\` before the PR command.
-1. ${before.dirty === true ? `The tree has uncommitted changes. ${commitSteps}` : 'The tree has no uncommitted changes; commit nothing.'}
-2. \`cd "${wt}" && ${prCommand} --title "<type(scope): description>" --body "<what changed>"\`. It pushes the branch and opens the pull request. Never push to ${baseRef}, never open the PR another way and never merge it. A PR that already exists for this head is success; report its URL. Exit status 0 means the PR is open; any other exit status means no PR was opened.
-3. Report the PR URL as \`prUrl\`, and in \`blocked\` one short sentence for each thing that stopped you (empty when the PR is open).`,
-      { label: 'settle:land-work', rethrow: true, phase: 'Settle', agentType: 'github-actions-pipeline-implementer', schema: LAND_SCHEMA }
+      `Land the work. Worktree: ${wt}
+Branch: ${branch} (${before.dirty === true ? 'it has uncommitted changes' : 'it has no uncommitted changes; commit nothing'})
+Base branch: ${baseRef}
+PR command: ${prCommand}${changeLine}`,
+      { label: 'settle:land-work', rethrow: true, phase: 'Settle', agentType: 'worktree-lander', schema: LAND_SCHEMA }
     )
     if (!reported) return { status: 'error', error: 'the settle agent returned no result' }
     const after = await treeFacts('settle-after', [])

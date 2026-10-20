@@ -86,7 +86,7 @@ flowchart TD
     pubOk -->|"no"| fix
     dep --> works{"Every stack complete and the smoke tests passing?"}
     works -->|"yes"| merge2
-    works -->|"no"| fix["story-deploy-fix: a CDK specialist, for example cdk-stack-author - section 4"]
+    works -->|"no"| fix["story-deploy-fix: deploy-failure-fixer - section 4"]
     fix --> fixed{"Fixed and committed on the Story's branch?"}
     fixed -->|"yes"| what
     fixed -->|"no: three attempts spent"| released(["Story released, cause recorded"])
@@ -299,7 +299,7 @@ report." and "`git commit --no-verify` / `git push --no-verify` / `git commit -n
 
 ```mermaid
 flowchart TD
-    in(["A failed publish, synth, deploy or deployment check, with its output"]) --> who["Start a CDK specialist, for example cdk-stack-author - OPEN Q4: how it is chosen"]
+    in(["A failed publish, synth, deploy or deployment check, with its output"]) --> who["Start deploy-failure-fixer"]
     who --> ctx["The fixer reads the output, the Task and spec, and the full architecture of the component through the spec's links in arc42 (vault)"]
     ctx --> cause{"What does the failure need?"}
     cause -->|"a change within the design the task and spec give"| change["Change the code or CDK in the Story's worktree"]
@@ -322,8 +322,8 @@ flowchart TD
 
 Notes on the diagram:
 
-- The fixer is a CDK specialist (for example `cdk-stack-author`), who diagnoses and fixes in the
-  Story's worktree, because deploy failures are CDK and infrastructure work.
+- The fixer is `deploy-failure-fixer`, which diagnoses and fixes in the Story's worktree with the
+  CDK and CloudFormation skills, because deploy failures are CDK and infrastructure work.
 - A fix that would change the design is not made in the deploy; the finding goes to the
   architecture stage, because architecture owns design.
 - The inner loop from "Tests passing?" back to the change ends when the tests pass, or when the
@@ -667,9 +667,9 @@ knows to deploy a story."; `ops/sdlc-automation/keeper.py`, `supervisor.py`, `se
 |---|---|---|
 | Starts the deploy of a Story, closes the Story bead, and starts the Epic's verification | The deploy lane of `supervisor.py`, which `keeper.py` runs (the owner: "keeper is what knows to deploy a story"; `selection.select_deploy`, `storydeploy.py`) | Knows the Story's Tasks are all built, and is the one setter of bead states |
 | Runs the publish command and `cdk deploy` | A script | Running a named command needs no reasoning; the commands come from the matrix |
-| Writes the smoke tests | For example `smoke-test-author` | Its subject: "post-deployment smoke tests verifying the feature's critical paths against live endpoints" |
+| Writes the smoke tests | `smoke-test-author`, before the deploy | Its subject: smoke tests of a change's critical paths, parameterized by environment variables so they run against the deployment |
 | Decides that the deployment works | A script: every stack complete and the smoke tests passing | Deploy success alone does not show the code runs |
-| Fixes a failed deploy | A CDK specialist, for example `cdk-stack-author` | Its subject: "AWS CDK stacks in Python matching the approved architecture", with synth validation |
+| Fixes a failed deploy | `deploy-failure-fixer` | Its subject: diagnosing a failed publish, synth, deploy or verification and fixing it in the worktree, with the synth assertion tests |
 | Records what was built where it differs | For example `built-architecture-comparer` | Its subject: "Compare the code one Story built with the approved architecture for its elements and record each difference" |
 | Corrects arc42 and the matrix from the built record, and takes a design-changing finding | `architecture-maintainer`, in the architecture stage | The arc42 writer; architecture has one approver |
 | Approves that correction | The architecture agent responsible for approving the architecture | An `effective` document is an approved one |
@@ -682,11 +682,11 @@ knows to deploy a story."; `ops/sdlc-automation/keeper.py`, `supervisor.py`, `se
 
 Q1 to Q16 are the owner's questions from the elaboration plan.
 
-- **Q4. How are specialists chosen?** Appears in the legend and section 4 (the fixer).
+- **Q4. How are specialists chosen?** Appears in the legend. Section 4's fixer is one fixed
+  specialist, `deploy-failure-fixer`, whose subject is every deploy failure.
   Recommendation, as the plan gives it: the step that has the reasoning names the subjects that
   need a specialist, with the reason for each, and the workflow sends the work to the specialist
-  for each named subject, from a list of subjects and specialists the owner approves. Here, the
-  failure's output and the deploy step that failed name the subject. Reason: the owner: "What I do
+  for each named subject, from a list of subjects and specialists the owner approves. Reason: the owner: "What I do
   not want is python code deciding which specialists to use" and "Ever agent needs to have a
   reason to be used."
 - **Q15. How is an SSM parameter recorded in the matrix?** Appears in section 3. Recommendation,

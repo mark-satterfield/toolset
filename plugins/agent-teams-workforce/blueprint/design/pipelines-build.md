@@ -550,8 +550,9 @@ sequenceDiagram
     end
 
     WF->>DW: the changed files
-    Note over DW: for example documentation-currency-auditor<br/>names stale docs and the writer that owns each
+    Note over DW: documentation-currency-auditor names stale docs and the writer whose kind covers each<br/>(API reference, README, changelog, user guide, or internal and technical documents)
     DW-)G: the repository's documents the change made stale, updated
+    Note over DW: documentation-accuracy-reviewer checks each writer's documents against the change;<br/>on findings the writer corrects once and the reviewer checks again
     WF->>G: script: runs lint, format, strict type checks and the pre-commit hooks
     G-->>WF: pass, or the findings
     alt every gate passes
@@ -579,6 +580,10 @@ Notes on the diagram:
 
 - Documentation the Task's change makes stale is updated in the same Task, because docs ship with
   the code. The arc42 documents are corrected only through the architecture stage (section 2).
+- A specification file (OpenAPI, GraphQL schema and the like) is not documentation: no writer
+  edits it, because spec authoring owns the contract; one the change contradicts is reported.
+- A reviewer other than the writer checks every updated document, because a maker does not check
+  its own work.
 - Gate findings are fixed and the gates rerun at most three times; then the build aborts with no
   commit and reports, because a gate is never bypassed.
 - The build commits at each checkpoint that leaves the suite green (after Green, after Refactor
