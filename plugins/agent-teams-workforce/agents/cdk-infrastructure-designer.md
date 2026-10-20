@@ -95,8 +95,6 @@ rationale).
 - The design of each resource's service settings: the specialist of that service (for example
   `vpc-network-designer`, `lambda-function-designer`, `queue-and-topic-designer`,
   `monitoring-and-tracing-designer`, `audit-and-compliance-designer`, `dns-and-edge-designer`).
-- Creating a repository a placement names: `polyrepo-steward` does that repository work.
-- Writing the CDK code: `cdk-stack-author`.
 
 ## Sources
 

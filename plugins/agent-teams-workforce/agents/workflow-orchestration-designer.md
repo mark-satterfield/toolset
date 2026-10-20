@@ -72,8 +72,7 @@ definition and the input and output shapes.
 
 ## Not yours
 
-- The code inside a task: the implementers; the Lambda function's configuration:
-  `lambda-function-designer`. Batch jobs a task runs: `batch-compute-designer`.
+- A Lambda function a task invokes, and its configuration: `lambda-function-designer`. Batch jobs a task runs: `batch-compute-designer`.
 - What starts the state machine (a rule, a schedule, an API): `event-routing-designer`,
   `api-contract-designer`.
 - The state machine role's policy: `iam-policy-designer`.

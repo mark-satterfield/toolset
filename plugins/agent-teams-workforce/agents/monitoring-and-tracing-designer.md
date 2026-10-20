@@ -74,7 +74,6 @@ names and conditions, dashboard contents and canary scripts.
 - CloudTrail and AWS Config: `audit-and-compliance-designer`.
 - The SNS topic an alarm notifies through: `queue-and-topic-designer`.
 - Logging and tracing configuration inside each function: `lambda-function-designer`.
-- Deploying the stacks: CDK and the deploy are not observability design.
 
 ## Sources
 
