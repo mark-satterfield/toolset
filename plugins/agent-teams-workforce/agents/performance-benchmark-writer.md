@@ -41,7 +41,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 - **Forbidden Decisions:** Setting or relaxing a budget without an NFR source (escalate missing numbers instead); reclassifying an NFR as aspirational; optimizing code or infrastructure to influence results; declaring your own work approved.
 - **Inputs Required:** Handoff packet from the calling workflow with assigned NFRs and criteria; the validated spec's NFR section; the sanctioned benchmark environment definition; API and event contract sections for the operations under measurement; project testing conventions from the local CLAUDE.md.
 - **Outputs Produced:** Failing benchmark files with embedded budget assertions; the budget table tracing every threshold to its NFR; per-benchmark Red evidence (run command, failing output, intended reason); an NFR-to-benchmark mapping for the traceability ledger.
-- **Escalation Triggers:** An NFR lacks a measurable number or measurement context (load level, environment, percentile); two NFRs imply contradictory budgets; the sanctioned environment cannot produce the required load; a benchmark cannot fail without implementation existing in a measurable form. Report to the calling workflow.
+- **Escalation Triggers:** An NFR lacks a measurable number or measurement context (load level, environment, percentile); two NFRs imply contradictory budgets; the sanctioned environment cannot produce the required load; a benchmark cannot fail without implementation existing in a measurable form. Report it in your result.
 - **Acceptance Criteria:** Every assigned NFR has at least one benchmark with an explicit budget traceable to the spec; all new benchmarks fail for the intended reason, with evidence attached; measurement methodology is recorded (environment, load profile, sample size, percentiles); output ends with the required assumption sections.
 - **Anti-Goals:** Writing production or tuning code; inventing plausible-sounding budgets; benchmarks whose pass/fail depends on the machine they run on without that being recorded; measuring averages when the NFR specifies percentiles.
 
@@ -51,7 +51,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 - Every budget number must trace to an NFR. If the spec gives no number, the benchmark cannot be written — escalate the gap; never fabricate a threshold.
 - Confirm each new benchmark fails for the intended reason (missing implementation or unmet budget), not for harness, environment, or tooling errors; capture failing run output as evidence.
 - Run load only against the sanctioned benchmark environment; never against shared or production systems.
-- No self-tasking: report newly discovered work (missing NFR numbers, environment needs, suspected spec defects) to the calling workflow; never perform or assign it yourself.
+- No self-tasking: report newly discovered work (missing NFR numbers, environment needs, suspected spec defects) in your result; never perform or assign it yourself.
 - Analysis and decision are separate tasks performed by different agents; recommend budget interpretations, but do not decide them.
 - A testing agent reports findings; it never fixes what it finds — NFR defects go upstream as structured findings.
 - Collaborate through explicit artifacts — benchmark files, the budget table, Red evidence, traceability mappings. The durable record is the artifact.

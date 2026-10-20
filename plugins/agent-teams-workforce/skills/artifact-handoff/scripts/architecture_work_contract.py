@@ -128,7 +128,6 @@ WRITE_RESULT_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "write-result.schema.json"
 LEAD_ROUTING_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "lead-routing.schema.json"
 ARCHITECTURE_QUESTION_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "architecture-question.schema.json"
 ARCHITECTURE_RULING_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "architecture-ruling.schema.json"
-BUILT_COMPARISON_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "built-comparison.schema.json"
 
 
 class Citation(TypedDict):
@@ -473,24 +472,6 @@ class ArchitectureRuling(TypedDict):
     reason: str
     losingPositionChanges: str
     ownerConcerns: list[OwnerConcern]
-    summary: str
-
-
-class BuiltDifference(TypedDict):
-    """Typed form of #/$defs/BuiltDifference in architecture-result.schema.json."""
-
-    element: str
-    code: Citation
-    architecture: Citation
-    difference: str
-    document: str
-
-
-class BuiltComparison(TypedDict):
-    """Typed form of #/$defs/BuiltComparison in architecture-result.schema.json."""
-
-    differences: list[BuiltDifference]
-    filesWritten: list[str]
     summary: str
 
 
@@ -920,31 +901,4 @@ def validate_architecture_ruling(value: object, where: str = "ArchitectureRuling
         return value
     problems: str = "; ".join(schema_problems(value, "ArchitectureRuling"))
     message: str = f"{where} does not satisfy ArchitectureRuling: {problems}"
-    raise ArchitectureWorkError(message)
-
-
-def is_built_comparison(value: object) -> TypeIs[BuiltComparison]:
-    """Tell whether a value satisfies the BuiltComparison definition.
-
-    Returns:
-        True when the schema accepts the value.
-
-    """
-    return not schema_problems(value, "BuiltComparison")
-
-
-def validate_built_comparison(value: object, where: str = "BuiltComparison") -> BuiltComparison:
-    """Validate a decoded BuiltComparison document.
-
-    Returns:
-        The value, typed.
-
-    Raises:
-        ArchitectureWorkError: The value does not satisfy the BuiltComparison definition.
-
-    """
-    if is_built_comparison(value):
-        return value
-    problems: str = "; ".join(schema_problems(value, "BuiltComparison"))
-    message: str = f"{where} does not satisfy BuiltComparison: {problems}"
     raise ArchitectureWorkError(message)

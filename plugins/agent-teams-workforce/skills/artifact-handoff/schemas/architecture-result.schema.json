@@ -522,30 +522,6 @@
         "ownerConcerns": {"type": "array", "items": {"$ref": "#/$defs/OwnerConcern"}},
         "summary": {"type": "string", "minLength": 1}
       }
-    },
-    "BuiltDifference": {
-      "description": "One difference between code a Story built and the approved architecture and design.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["element", "code", "architecture", "difference", "document"],
-      "properties": {
-        "element": {"description": "The matrix id of the element.", "type": "string", "minLength": 1},
-        "code": {"description": "Where the code shows it: repository, revision and file:line.", "$ref": "#/$defs/Citation"},
-        "architecture": {"description": "The approved architecture or design heading it differs from.", "$ref": "#/$defs/Citation"},
-        "difference": {"description": "What the code does and what the architecture says, in one or two sentences.", "type": "string", "minLength": 1},
-        "document": {"description": "The path, relative to the architecture root, of the built-difference document written for it.", "type": "string", "minLength": 1}
-      }
-    },
-    "BuiltComparison": {
-      "description": "built-architecture-comparer's result for one Story. An empty differences list means the code the Story built matches the approved architecture.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["differences", "filesWritten", "summary"],
-      "properties": {
-        "differences": {"type": "array", "items": {"$ref": "#/$defs/BuiltDifference"}},
-        "filesWritten": {"type": "array", "items": {"type": "string"}},
-        "summary": {"type": "string", "minLength": 1}
-      }
     }
   }
 }

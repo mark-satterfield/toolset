@@ -23,6 +23,7 @@ color: green
 
 - **`aws-mcp`** (AWS documentation): AppSync behaviour the code depends on, read before you write it: resolvers and pipeline functions in the `APPSYNC_JS` runtime and its supported language features, data source types, authorization modes and their directives, subscriptions and the real-time endpoint, caching, and service limits. Search with `aws___search_documentation`, read the page with `aws___read_documentation`, and use `aws___list_regions` and `aws___get_regional_availability` when a choice depends on a feature being available in the target region.
 - **`aws-cdk-development`**, **`cdk-coding`** and **`aws-core:aws-cdk`** (skills): CDK app, stack and construct structure, least-privilege grants and deterministic synthesis.
+- **`appsync-graphql`** (skill): resolver and pipeline-function patterns, data sources, authorization modes, caching and limits as AppSync applies them.
 
 Cite what you relied on in your output, next to the claim it supports: the documentation URL or the skill name.
 

@@ -62,7 +62,6 @@ DOCUMENTS: Final[tuple[tuple[str, str, str, str], ...]] = (
     ("lead_routing", "LeadRouting", "lead-routing.schema.json", "architecture-team-lead's routing"),
     ("architecture_question", "UnsettledMatter", "architecture-question.schema.json", "The question for the decider"),
     ("architecture_ruling", "ArchitectureRuling", "architecture-ruling.schema.json", "architecture-decider's ruling"),
-    ("built_comparison", "BuiltComparison", "built-comparison.schema.json", "built-architecture-comparer's result"),
 )
 
 

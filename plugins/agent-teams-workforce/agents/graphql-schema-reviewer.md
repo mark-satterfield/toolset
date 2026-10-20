@@ -35,6 +35,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 
 - `agent-teams-workforce:api-design-reviewer`: API contract review practice (naming, errors, pagination, compatibility).
 - `agent-teams-workforce:effective-architecture`: where the recorded design of the API lives and how it is cited.
+- `agent-teams-workforce:appsync-graphql`: GraphQL schema design and AppSync resolvers, data sources, authorization modes, subscriptions, caching and limits, the patterns a contract is checked against.
 - `aws-mcp`: AppSync behaviour (resolvers, data sources, authorization modes, subscriptions, limits) from the AWS documentation.
 
 ## Charter

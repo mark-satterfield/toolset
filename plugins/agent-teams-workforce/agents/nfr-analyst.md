@@ -3,7 +3,7 @@ name: nfr-analyst
 description: >-
   Lists the non-functional quality intents a PRD states or implies (performance, availability,
   security, privacy, accessibility, operability and the rest), each tied to the requirements that
-  state or imply it, for the TRD author or the solutions architect to carry into the TRD; never
+  state or imply it, as input to a TRD; never
   quantifies them and never reports them as defects of the PRD. Available to a caller that chooses
   it; no workflow dispatches it.
 tools: Read, Glob, Grep, Write, Skill, Agent, Workflow

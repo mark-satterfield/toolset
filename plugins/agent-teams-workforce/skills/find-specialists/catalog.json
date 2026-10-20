@@ -61,7 +61,7 @@
     },
     {
       "name": "adversarial-critique-adjudicator",
-      "description": "Rules on each adversarial finding's severity and whether it is real or not, its severity, and whether it is constitutive (a hard stop) or competitive (a tradeable concern), with a rationale per finding; the referee whose rulings implementers cannot downgrade. Use for Adversarial Validation phase work requiring finding adjudication and constitutive-vs-competitive classification.",
+      "description": "Rules on each adversarial finding whether it is real, its severity, and whether it is constitutive (a hard stop) or competitive (a tradeable concern), with a rationale per finding; the referee whose rulings implementers cannot downgrade. Use for Adversarial Validation phase work requiring finding adjudication and constitutive-vs-competitive classification.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -481,7 +481,6 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:test-failure-mindset",
         "agent-teams-workforce:cumulative-regression",
         "agent-teams-workforce:graphrag-lookup"
       ],
@@ -1704,7 +1703,6 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:test-failure-mindset",
         "agent-teams-workforce:find-cause",
         "agent-teams-workforce:graphrag-lookup"
       ],
@@ -2278,7 +2276,7 @@
     },
     {
       "name": "nfr-analyst",
-      "description": "Lists the non-functional quality intents a PRD states or implies (performance, availability, security, privacy, accessibility, operability and the rest), each tied to the requirements that state or imply it, for the TRD author or the solutions architect to carry into the TRD; never quantifies them and never reports them as defects of the PRD. Available to a caller that chooses it; no workflow dispatches it.",
+      "description": "Lists the non-functional quality intents a PRD states or implies (performance, availability, security, privacy, accessibility, operability and the rest), each tied to the requirements that state or imply it, as input to a TRD; never quantifies them and never reports them as defects of the PRD. Available to a caller that chooses it; no workflow dispatches it.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:prd-writer"

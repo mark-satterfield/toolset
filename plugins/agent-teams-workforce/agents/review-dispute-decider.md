@@ -70,6 +70,9 @@ WHAT-not-HOW rule of `prd-writer`:
 - `reject` when the PRD must not proceed. The rationale names the blocking gap its writer must
   close.
 
+When the brief says the latest verdict names nothing the writer could act on, rule on the PRD as it
+stands against the same measures.
+
 Write the ruling to `#/$defs/DeadlockRuling` of that file, at the candidate path the brief names,
 with the checkpoint commands it gives.
 

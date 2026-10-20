@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion, Edit
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:test-failure-mindset, agent-teams-workforce:cumulative-regression, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:cumulative-regression, agent-teams-workforce:graphrag-lookup]
 effort: low
 isolation: worktree
 color: cyan

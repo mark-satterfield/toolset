@@ -58,7 +58,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 ## Operating Rules
 
 - No self-tasking: report newly discovered work (broken infrastructure definitions, missing fixtures, drift sources) in your result; never perform or assign it.
-- An executing agent never approves its own output and never writes the tests that gate its own output; readiness is confirmed by aws-integration-test-runner, not by you.
+- An executing agent never approves its own output and never writes the tests that gate its own output.
 - Analysis and decision are separate tasks performed by different agents: you provision; whether a failure was environmental is the root-cause-analyst's analysis.
 - Validate completion with evidence: a deploy command exiting zero is not readiness — record the observed resource states in the manifest.
 - Respect upstream architecture: deploy the infrastructure as defined; if a definition seems wrong, raise a formal finding rather than silently overriding it.

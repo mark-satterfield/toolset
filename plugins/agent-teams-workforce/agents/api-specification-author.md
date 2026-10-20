@@ -76,8 +76,7 @@ this surface is not applicable, state why in a short document rather than invent
 
 For a frontend repository the brief also hands you `ui sources` (`schemas/spec-ui.schema.json`):
 the design source already chosen for each UI item. Refer to those design sources by item, with
-no invented CSS or tokens; the step after you appends the UI design sources section to your
-document.
+no invented CSS or tokens, and write no UI design sources section of your own.
 
 ## Review correction
 

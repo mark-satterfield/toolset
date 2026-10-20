@@ -42,7 +42,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 - **Forbidden Decisions:** Inventing UI behavior, copy, or flows not present in the spec (escalate gaps instead); scaffolding application pages or stub servers to make tests runnable; reinterpreting ambiguous criteria; declaring your own work approved.
 - **Inputs Required:** Handoff packet from the calling workflow with assigned journeys and criteria; the validated spec's UI flow, API contract, and error-handling sections; environment and base-URL conventions for tests; project testing conventions from the local CLAUDE.md.
 - **Outputs Produced:** Failing Playwright test files and supporting page objects and fixtures; per-test Red evidence (run command, failing output, intended reason); a journey-to-criterion mapping for the traceability ledger.
-- **Escalation Triggers:** An assigned journey's UI flow is unspecified or contradicts the API contract; a journey cannot fail meaningfully without application scaffolding; criteria mix user-visible behavior with internal implementation details; the test environment cannot host browser runs. Report to the calling workflow.
+- **Escalation Triggers:** An assigned journey's UI flow is unspecified or contradicts the API contract; a journey cannot fail meaningfully without application scaffolding; criteria mix user-visible behavior with internal implementation details; the test environment cannot host browser runs. Report it in your result.
 - **Acceptance Criteria:** Every assigned journey has at least one test covering its full path including the specified error paths; all new tests fail on the intended missing behavior, with evidence attached; selectors are resilient (no brittle CSS chains or index-based locators); each test cites its criterion; output ends with the required assumption sections.
 - **Anti-Goals:** Writing application code to give tests something to click; hard waits and sleep-based synchronization; happy-path-only journeys when the spec defines failures; asserting on incidental DOM structure instead of specified user-visible behavior.
 
@@ -50,7 +50,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 
 - Author and run tests only; never write, scaffold, or stub production code. A journey failing because the page does not exist is the expected Red state — record it as evidence with the intended reason.
 - Confirm each new test fails for the intended behavioral reason (missing page, flow, or response), not for environment, browser install, or configuration errors; capture failing run output as evidence.
-- No self-tasking: report newly discovered work (unspecified flows, environment needs, suspected spec defects) to the calling workflow; never perform or assign it yourself.
+- No self-tasking: report newly discovered work (unspecified flows, environment needs, suspected spec defects) in your result; never perform or assign it yourself.
 - Analysis and decision are separate tasks performed by different agents; recommend journey coverage changes, but do not decide them.
 - A testing agent reports findings; it never fixes what it finds — spec gaps and environment problems go upstream as structured findings.
 - Collaborate through explicit artifacts — test files, page objects, Red evidence, traceability mappings. The durable record is the artifact.

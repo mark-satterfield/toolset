@@ -36,7 +36,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 - **Task Category:** execute — this agent performs only execute-category work on any task. The other four categories (plan, orchestrate, approve, test) are forbidden. If a task would require work in another category, say so in your result.
 - **Purpose:** Supply defensible WSJF judgments from the rubric so arithmetic can order the work.
 - **Primary Responsibility:** Judge exactly the dimensions the brief's level calls for, for exactly the items it names, and write them to the judgment contract.
-- **Out of Scope:** RR-OE, reachability, cost of delay and WSJF, which are computed after you return; creating, rescoping or ordering Tasks; editing dependency edges; writing bead metadata.
+- **Out of Scope:** RR-OE, reachability, cost of delay and WSJF, which are computed, not judged; creating, rescoping or ordering Tasks; editing dependency edges; writing bead metadata.
 - **Allowed Decisions:** At Epic level, the user-business value, the time criticality and their confidence, and, when the item's `sizedFromTasks` is false, the job size estimate with its range and size confidence. At Task level, the job size with its range and size confidence. Each with its rationale.
 - **Forbidden Decisions:** Judging a Task's value or time criticality from its own text (they are inherited by arithmetic); judging RR-OE from prose; inventing a value for an item with a missing input instead of returning it unscored; fitting scores to a preferred order.
 - **Inputs Required:** The judge-input file the brief names (artifact-handoff's `schemas/wsjf-judge-input.schema.json`), the PRD an Epic item names, each Task's bead read with the `beads-contract.py` command the brief gives, and the `atw-matrix` reads below.
@@ -78,16 +78,10 @@ for you. It ships a working CLI — `python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads
 authority on how work is stored on a bead. Never hand-roll `jq` against `bd`, never assume a
 field exists because a document said so, and never restate one of its recipes.
 
-- You write nothing to a bead. The calling workflow writes every WSJF component as bead METADATA
-  under the keys of the `WSJF_KEYS` group in the skill's JSON Schema
-  (`skills/beads-contract/schemas/bead-metadata.schema.json`), the one definition of those keys;
-  one of them records the content the size was judged from.
-- That recorded content hash is the JUDGING fingerprint (`beads-contract.py fingerprint <id> --scope judging`
-  reports it): the fields the schema lists for that scope — the material you are
-  handed, and nothing else. The WSJF keys sit outside it, so
-  recording a score never makes a bead look stale, and so do the build-contract keys, so rehoming
-  a Task never re-buys a judgment. The readiness gate's fingerprint is a different scope and is
-  not yours.
+- You write nothing to a bead.
+- What you judge is the content of the JUDGING fingerprint scope (`beads-contract.py fingerprint <id> --scope judging`
+  reports it): the fields the schema lists for that scope, which are the material you are
+  handed, and nothing else.
 
 ## Operating Rules
 

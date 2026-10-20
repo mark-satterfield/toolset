@@ -294,8 +294,8 @@ The subjects are whatever the design needs, never a fixed list.
 ### Asking
 
 Prefer a question; most needs are one question and one answer. For example, to
-`persistence-architecture-specialist`: "Is the existing table design still correct for this
-new use case?", with the requirement and the table's headings in `concerns`. Write the request
+`dynamodb-table-designer`: "Is the existing table design still correct for this new use
+case?", with the requirement and the table's headings in `concerns`. Write the request
 file to `specialist-request.schema.json` under the context file's `helpersFolder`, with `kind`
 `task` only when a bounded piece of design or a diagram is needed. In `concerns`, point to
 what the specialist is to read: PRD sections, arc42 headings, an earlier answer file. Never

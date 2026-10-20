@@ -125,9 +125,3 @@ These are owner-run workflows, not Epic elaboration. Their files are in the run'
 | Task edge proposal: `<workDir>/edges.json` | `task-dependency-mapper` | the task-dependency-assessment workflow | `task-edge-proposal.schema.json` |
 | WSJF judge input: `<workDir>/judge-input-<level>.json` | `depscore.py judge-input` | `wsjf-scorer` | `wsjf-judge-input.schema.json` |
 | WSJF judgment: `<workDir>/judgments/<level>/<key>.json` | `wsjf-scorer` | `depscore.py record` | `wsjf-judgment.schema.json` |
-
-## built-comparison
-
-Schema: [built-comparison.schema.json](schemas/built-comparison.schema.json).
-
-Fields and interpretation: differences, each with the element, the code location, the approved heading, the difference and the built-difference document written for it; filesWritten. `built-architecture-comparer` writes it for one Story. An empty differences list means the code the Story built matches the approved architecture.

@@ -25,6 +25,7 @@ color: green
 - **`aws-mcp`** (AWS documentation): the AppSync real-time protocol (the WebSocket endpoint, the connection and subscription messages, keep-alive, the authorization header of each mode) and subscription filtering, read before you rely on them. Search with `aws___search_documentation` and read the page with `aws___read_documentation`.
 - **`context7`** (`resolve-library-id`, then `query-docs`): before relying on an API of the GraphQL client library the project uses (for example AWS Amplify or Apollo Client), read its current documentation at the version the project's package manifest declares.
 - **`web-frontend-coding`** and **`typescript-coding`** (skills): effects that subscribe and clean up, and typed client state.
+- **`appsync-graphql`** (skill): subscriptions, enhanced filtering and invalidation, and the real-time protocol as AppSync applies them.
 
 ## Environment Discovery:
 Before executing any write or build tools, read the repository's `AGENTS.md` (or `CLAUDE.md`) for its build and test commands. Where the repository's hooks run lint, format and type checks after each edit and at commit, fix every finding they report and do not run those checks yourself.
