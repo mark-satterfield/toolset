@@ -51,7 +51,6 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 - **Forbidden Decisions:** Departing from the Lambda, event-publishing or event-consumption patterns the effective architecture describes; changing API or event contracts; altering test expectations.
 - **Inputs Required:** The Task's build contract from tdd-green; failing unit tests; API contract or event contract for the handler; chassis superclass documentation and extension points; relevant data model specification.
 - **Outputs Produced:** Handler implementation patch with a test-run record showing previously failing tests now pass, plus the required closing sections.
-- **Required Reviewers:** none: the composite judges Green by running the repository's declared suite command itself, and commits the Task only when that run exits 0.
 - **Escalation Triggers:** A failing test requires behavior absent from the approved contract; the chassis lacks a needed extension point; making a test pass would require re-implementing what the chassis provides, departing from an established pattern, or conflicting with a constraint in section 2.
 - **Acceptance Criteria:** All assigned failing tests pass; no test was modified, skipped, or weakened; every handler follows the Lambda pattern the effective architecture describes; nothing the chassis provides is duplicated; output includes the test-run evidence.
 - **Anti-Goals:** Gold-plating beyond what the tests require; speculative abstractions; hand-rolled retry, idempotency, or logging; silent contract drift.
@@ -67,4 +66,4 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
-- Review your own work for correctness, completeness, and risk before handoff, but never approve it. It is judged by the suite run the composite makes itself: Green means the repository's declared suite command exits 0.
+- Review your own work for correctness, completeness, and risk before handoff.

@@ -40,7 +40,6 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 - **Forbidden Decisions:** Approval, severity adjudication, waiving required checks, overriding specialist disagreement, or expanding the assignment without authority.
 - **Inputs Required:** PRD location, assigned validation questions, caller criteria and response format; BRD only when supplied.
 - **Outputs Produced:** The caller's requested routing and attributed findings, in its exact format. No additional manifests or reports are implied by this charter.
-- **Required Reviewers:** Only those the caller's contract requires; the lead never self-approves.
 - **Escalation Triggers:** Missing required input, uncovered specialty, disagreement or a policy decision outside the assigned authority; report to the caller.
 - **Acceptance Criteria:** All assigned questions are covered; findings remain attributed and unaltered; required checks and unresolved questions are visible; no unrequested artifacts or fanout.
 - **Anti-Goals:** Mandatory dispatch to every listed specialist, replacing the active mini, or smoothing disagreement into consensus.
