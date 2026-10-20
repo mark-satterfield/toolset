@@ -81,6 +81,29 @@
       "mcpServers": []
     },
     {
+      "name": "ai-agent-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on custom AI agents - Amazon Bedrock AgentCore Runtime and Harness, agent frameworks such as Strands, AgentCore Memory, tools through AgentCore Gateway and MCP, multi-agent and A2A, AgentCore Identity and Cedar policies, and agent bounds.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:aws-agentic-ai",
+        "aws-agents:agents-get-started",
+        "aws-agents:agents-build",
+        "aws-agents:agents-connect",
+        "aws-agents:agents-harden",
+        "agent-teams-workforce:mcp-server-builder",
+        "aws-core:amazon-bedrock"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
       "name": "ambiguity-detector",
       "description": "Scans the raw PRD for vague quantifiers, missing boundary conditions, and unstated assumptions; reports findings, never fixes. Use for PRD Validation work requiring ambiguity scanning, boundary-condition checks, and severity rating.",
       "skills": [
@@ -189,6 +212,22 @@
       "mcpServers": [
         "aws-mcp",
         "gitnexus"
+      ]
+    },
+    {
+      "name": "applied-ai-services-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on the AWS pre-trained AI services - Amazon Textract document extraction, Amazon Rekognition image and video analysis, and Amazon Comprehend text analysis and PII detection - their operations, synchronous or asynchronous paths, limits, confidence handling and cost.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -506,14 +545,11 @@
     },
     {
       "name": "bedrock-integration-implementer",
-      "description": "Implements Bedrock foundation-model integrations; writes minimum code to pass failing unit tests. Use for Implementation work requiring model invocation clients, prompt assembly, embeddings generation, and inference error handling.",
+      "description": "Implements the code that calls Amazon Bedrock foundation models - Converse and ConverseStream calls, prompt assembly from specified templates, guardrail and prompt-cache settings on the call, structured-output parsing, and inference error handling - writing minimum code to pass failing tests. Embeddings calls belong to vector-search-embeddings-implementer.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:bedrock",
-        "agent-teams-workforce:senior-ml-engineer",
-        "agent-teams-workforce:senior-prompt-engineer",
-        "agent-teams-workforce:aws-agentic-ai",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
@@ -533,14 +569,14 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-data-engineer",
-        "agent-teams-workforce:senior-data-scientist",
-        "agent-teams-workforce:product-analytics",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:python-coding",
-        "agent-teams-workforce:software-engineering"
+        "agent-teams-workforce:software-engineering",
+        "aws-core:aws-sdk-python-usage"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
+        "aws-mcp",
         "gitnexus"
       ]
     },
@@ -1592,6 +1628,24 @@
       ]
     },
     {
+      "name": "foundation-model-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on Amazon Bedrock foundation models - model and inference profile choice per task, Converse API calls, maxTokens and timeouts, quotas and throughput, prompt caching, attaching guardrails to a model call, and inference cost.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:bedrock",
+        "aws-core:amazon-bedrock"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
       "name": "frontend-performance-optimizer",
       "description": "Optimizes frontend performance in green-tested code without breaking tests. Use for Code Quality work requiring bundle trimming, render-path optimization, and Core Web Vitals improvement.",
       "skills": [
@@ -1606,6 +1660,25 @@
       "mcpServers": [
         "context7",
         "gitnexus"
+      ]
+    },
+    {
+      "name": "generative-ai-pattern-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on generative AI flow patterns - prompt chaining, routing, parallelisation, orchestrator and workers, evaluator-optimiser loops, prompt structure, structured output, chain of verification, LLM-as-judge evaluation, human in the loop and applying guardrails to a flow.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:senior-prompt-engineer",
+        "agent-teams-workforce:cove-prompt-design",
+        "aws-core:amazon-bedrock"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -1898,9 +1971,6 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-ml-engineer",
-        "agent-teams-workforce:observability-designer",
-        "agent-teams-workforce:senior-prompt-engineer",
-        "agent-teams-workforce:aws-agentic-ai",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
@@ -1931,19 +2001,17 @@
     },
     {
       "name": "matching-algorithm-implementer",
-      "description": "Implements matching and recommendation algorithms for ML features; writes minimum code to pass failing unit tests. Use for Implementation work requiring matching logic, scoring and ranking functions, and recommendation pipelines.",
+      "description": "Implements matching algorithms - scoring functions, ranking and tie-breaking, candidate filtering, score normalisation and the composition of these stages into the specified matcher - writing minimum code to pass failing tests. Use for Implementation work requiring matching logic and scoring and ranking functions.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-ml-engineer",
+        "agent-teams-workforce:recommendation-ranking",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:python-coding",
-        "agent-teams-workforce:software-engineering",
-        "agent-teams-workforce:aurora-postgresql"
+        "agent-teams-workforce:software-engineering"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
-        "pg-aiguide",
         "gitnexus"
       ]
     },
@@ -1955,7 +2023,6 @@
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:mcp-server-builder",
         "agent-teams-workforce:aws-agentic-ai",
-        "agent-teams-workforce:aws-mcp-setup",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
@@ -1977,6 +2044,7 @@
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-ml-engineer",
         "agent-teams-workforce:senior-data-scientist",
+        "agent-teams-workforce:recommendation-ranking",
         "agent-teams-workforce:cumulative-regression",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
@@ -1984,6 +2052,62 @@
       ],
       "mcpServers": [
         "gitnexus"
+      ]
+    },
+    {
+      "name": "ml-feature-pipeline-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on machine learning features - feature definitions and engineering, batch or streaming computation, SageMaker Feature Store online and offline stores, SageMaker Data Wrangler data preparation, training-serving consistency and feature drift.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:senior-data-scientist",
+        "agent-teams-workforce:senior-ml-engineer",
+        "agent-teams-workforce:senior-data-engineer"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
+      "name": "ml-inference-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on serving trained models on Amazon SageMaker AI - real-time, serverless and asynchronous endpoints, batch transform, multi-model and multi-container endpoints, scaling, deployment guardrails and shadow tests, and Model Monitor.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-ai-ml",
+        "agent-teams-workforce:senior-ml-engineer"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
+      ]
+    },
+    {
+      "name": "ml-training-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on training and fine-tuning models on Amazon SageMaker AI - base model and technique (SFT, DPO, RLVR, RLAIF), training data, training jobs, managed Spot and checkpointing, hyperparameter tuning, evaluation and acceptance, experiment tracking and retraining.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "aws-core:aws-ai-ml",
+        "agent-teams-workforce:senior-data-scientist",
+        "agent-teams-workforce:senior-ml-engineer"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge"
       ]
     },
     {
@@ -2382,6 +2506,30 @@
       ]
     },
     {
+      "name": "rag-architecture-designer",
+      "description": "Answer a question or do a bounded piece of design for the solutions architect on retrieval-augmented generation and semantic search - Bedrock Knowledge Bases, chunking, embeddings models, vector stores (Aurora pgvector, S3 Vectors, OpenSearch, Neptune Analytics), hybrid retrieval, re-ranking, metadata filtering and retrieval evaluation.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:design-specialist-contract",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:rag-architect",
+        "agent-teams-workforce:pgvector-semantic-search",
+        "agent-teams-workforce:aurora-postgresql",
+        "agent-teams-workforce:recommendation-ranking",
+        "aws-data-analytics:storing-and-querying-vectors",
+        "aws-data-analytics:amazon-opensearch-service",
+        "aws-core:amazon-bedrock"
+      ],
+      "mcpServers": [
+        "aws-mcp",
+        "mcp-graphrag-server",
+        "gitnexus",
+        "plugin_aws-agents_awsknowledge",
+        "pg-aiguide"
+      ]
+    },
+    {
       "name": "react-native-implementer",
       "description": "Implements React Native cross-platform mobile features; writes minimum code to pass failing Detox and Maestro tests. Use for Implementation work requiring React Native components, navigation and state wiring, and native module integration.",
       "skills": [
@@ -2414,16 +2562,15 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-ml-engineer",
+        "agent-teams-workforce:recommendation-ranking",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
-        "agent-teams-workforce:aurora-postgresql"
+        "aws-core:aws-sdk-python-usage"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
-        "pg-aiguide",
-        "awslabs-amazon-neptune-mcp-server",
+        "aws-mcp",
         "gitnexus"
       ]
     },
@@ -2945,7 +3092,6 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:rag-architect",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
@@ -2956,9 +3102,9 @@
       ],
       "mcpServers": [
         "mcp-graphrag-server",
+        "aws-mcp",
         "pg-aiguide",
         "awslabs-postgres-mcp-server",
-        "awslabs-amazon-neptune-mcp-server",
         "gitnexus"
       ]
     },

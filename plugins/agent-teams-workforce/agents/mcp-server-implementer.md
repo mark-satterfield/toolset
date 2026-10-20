@@ -15,7 +15,7 @@ mcpServers:
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:mcp-server-builder, agent-teams-workforce:aws-agentic-ai, agent-teams-workforce:aws-mcp-setup, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, aws-core:amazon-bedrock, aws-core:aws-cdk]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:mcp-server-builder, agent-teams-workforce:aws-agentic-ai, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, aws-core:amazon-bedrock, aws-core:aws-cdk]
 effort: medium
 color: green
 ---
@@ -55,6 +55,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 
 - Write the minimum code needed to make the failing tests pass. Never modify, weaken, skip, or delete a test: when a test contradicts the contract, leave it as it is, name it in `testIssues` with the contract reference, and continue with the rest of the work.
 - The tool contract is the only source of tool names, schemas, and behavior; build from it, never from memory of similar MCP servers.
+- Sources for the work: `mcp-server-builder` for tool definitions, input and output schema validation, auth and safety, and versioning; `aws-agentic-ai` (`services/gateway`) and `aws-core:amazon-bedrock` (`references/agentcore-gateway.md`) for AgentCore Gateway targets and their outbound credentials; `aws-core:aws-cdk` for the CDK wiring; `context7` for the current MCP SDK API of the language the server is written in; the AWS documentation tools for every AWS behaviour the code relies on.
 - Gateway-fronted servers stay gateway-fronted: never expose a direct endpoint around an AgentCore Gateway decision, even temporarily.
 - The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
 - Read the effective views the catalog lists for the server's hosting and the patterns it uses before you write, and build to them. Credentials are retrieved at runtime by name, and idempotency where applicable comes from what the Lambda pattern provides; neither is inlined or re-implemented.
