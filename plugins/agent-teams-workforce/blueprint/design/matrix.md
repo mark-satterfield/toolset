@@ -493,8 +493,8 @@ those lanes only as far as slices 29 and 31 of section 6 state.
 
 | Step | Where | Reads | Records |
 |---|---|---|---|
-| D1 Mechanism | `storydeploy.py` `_mechanism_step`, `mechanism_of`; `workflows/deploy-mechanism.js` | The stack's `executionUse`, `distributedAs`, `commands.publish`, `commands.deploy` (Q21). The steward session runs only when one is absent. | Nothing. The steward records an absent value in its own repository work (S5), not in the deploy. |
-| D2 Publish | `storydeploy.py` `_publish_step` | `distributedAs`. | Nothing. |
+| D1 Mechanism | `storydeploy.py` `_mechanism_step`, `mechanism_of`, `_usable`; `workflows/deploy-mechanism.js` | none. `mechanism_of` reads nothing from the matrix: unless the repository is the control repository or the repository that holds the architecture documentation (`_excluded_repositories`), which publish and deploy nothing, it always starts one `polyrepo-steward` session, which rules whether the repository publishes and deploys and names its publish command. | Nothing in the matrix. The ruling is recorded in the Story's step journal. |
+| D2 Publish | `storydeploy.py` `_publish_step`, `_library_tests_fail`; `matrixmarks.shared_library` | Only the shared-library check: the repository's stacks (`atw-matrix stacks --repository`), whether one has `executionUse` `imported`, and that stack's `commands.test`. The publish command is the steward's ruling from D1, not read from the matrix. | Nothing. |
 | D3 Synth and SSM check | `storydeploy.py` `_synth_step`, `_ssm_check_step`, `stacks_in`, `ssm_reads` | none; the assembly is the build's own output, read to deploy and check this Story. | Nothing. A missing parameter fails the step. |
 | D4 Deploy and stack verification | `workflows/deploy.js`; `storydeploy.py` `_verify_step` | The stack's `commands.deploy` (Q21) and the stacks D3 synthesized. | Nothing. Passing is a condition of D8 and is in the step journal. |
 | D5 Deploy fix | `storydeploy.py` `_fix_step`; `workflows/story-deploy-fix.js` | `node stack:<id>` and `deps --of` for the failed stacks (Q9). | Nothing. |
