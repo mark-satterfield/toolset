@@ -223,24 +223,23 @@ and arc42 are filled out or corrected for it.
 
 ### 1.4.2 The verified flag
 
-`verified` holds one member, `commit`. It says every Task of every Story of an Epic that
-built the entry or relationship was built and tested, including CI/CD and CDK, with the
-deployment working.
+`verified` holds one member, `commit`: the commit whose test passed. It says the entry or
+relationship was built and tested, the CI checks and the test that its CDK deployment works
+included. The deployment may be removed again after that test.
 
 - **When it is set.** The driver runs `atw-matrix verify --story <beads id> --commit <sha>`,
-  as the role `build-driver`, when GitHub reports a Story's pull request merged: the Story's
-  Tasks have closed and its deploy to AWS dev was verified, and the Story has not yet closed.
-  `matrixcode.record_verified` reads the Story's Epic, its Stories and every Task in one read
-  of beads (`matrixtasks.epic_work`). The merge completes the Epic when every Task of the
-  Epic is closed and every other Story of the Epic is closed; then the flag is set, and
-  `commit` is that Story's merge commit. Otherwise nothing is written, and the command
-  returns `complete: false` with `openStories` and `openTasks`.
-- **What it covers.** Each stack and entry any Story of the Epic built, as the Task script's
-  `built` read returns them for each Story (section 1.5), and every relationship, of any kind
-  and either side, that starts at one of them. `built` lists as built the stacks and the
-  entries of the kinds a Task builds (`matrixtasks.BUILT_KINDS`: service, component,
-  infrastructure, event, package, layer, file); any other id a Task names, such as a shared
-  capability it uses, is listed under `notBuilt` and takes no flag.
+  as the role `build-driver`, when the Story's test passes: its deploy to AWS dev was verified
+  working (D4) and the CI checks on the Story's branch pass. `commit` is the commit those
+  checks passed on. It runs before, and apart from, the merge of the Story's pull request,
+  which follows as a separate step: no merge and no branch decides the flag.
+- **What it covers.** Each stack and entry the Story built, as the Task script's `built` read
+  returns them for the Story (section 1.5), and every relationship, of any kind and either
+  side, that starts at one of them. `built` lists as built the stacks and the entries of the
+  kinds a Task builds (`matrixtasks.BUILT_KINDS`: service, component, infrastructure, event,
+  package, layer, file); any other id a Task names, such as a shared capability it uses, is
+  listed under `notBuilt` and takes no flag, because what a Task only uses was verified when it
+  was itself built and tested. The flag belongs to the entry or relationship and holds for
+  every Epic that relates to it: it is not set per Epic and waits for no other Story.
 - For a stack with no CDK app, the publish of its package to CodeArtifact stands where the
   CDK deploy does. A Story that closes with no pull request runs no `verify`.
 - When an Epic's architecture change to verified content is approved, the flag stays, with its
@@ -256,7 +255,7 @@ deployment working.
   and another Epic's approved flag. `verify` leaves that one not verified, clearing a flag it
   carries, and lists it under `unbuiltEntries` or `unbuiltRelationships`, so that the next spec
   for it covers all the work. Entries and relationships an
-  Epic adds are not verified until that Epic is verified. The spec step reads the flag of each
+  Epic adds are not verified until the build that builds them passes its test. The spec step reads the flag of each
   entry a Story builds to decide what the spec covers (`spec_authoring.entry_scope`).
 - `verify` takes no stack, element or repository name. It adds, changes and removes no entry
   and no relationship: the flag is the only thing the build pipeline writes in the matrix
@@ -487,7 +486,7 @@ those lanes only as far as slices 29 and 31 of section 6 state.
 | B4 Regression | `workflows/task-to-deploy.js` `regressionBrief`, `regressionReviewBrief`; `agents/regression-impact-assessor.md`; `skills/cumulative-regression/SKILL.md` | `impact --id` for each entry the Task states (Q19, Q15). | Nothing. The per-repository `regression.json` holds test mappings and execution evidence only. |
 | B5 Reuse audit | `stepReuseAudit`, `judgeReuse` | `check-reuse --ids <ids> --worktree <path>` with the shared capability ids the Task states. | Nothing. A signal the reviewer rules wrong is in the step's result. |
 | B6 Suite run | `workflows/suite-run.js` `resolvePrompt` | The stack's `commands.test` (Q21). The resolving session runs only when it is empty. | Nothing. |
-| B7 Commit and Task close | `stepCommit`; `ops/sdlc-automation/lane.py` `_settle_build` | none | Nothing. No flag is set before the Epic is verified. |
+| B7 Commit and Task close | `stepCommit`; `ops/sdlc-automation/lane.py` `_settle_build` | none | Nothing. No flag is set before the Story's test passes (D8). |
 
 ### Deploy (the driver's `storydeploy.py` and its workflows)
 
@@ -500,7 +499,7 @@ those lanes only as far as slices 29 and 31 of section 6 state.
 | D5 Deploy fix | `storydeploy.py` `_fix_step`; `workflows/story-deploy-fix.js` | `node stack:<id>` and `deps --of` for the failed stacks (Q9). | Nothing. |
 | D6 Built comparison | `workflows/built-version.js` `stepCompare`; `agents/built-architecture-comparer.md`; `storydeploy.py` `_built_subject`, `built_args` | `built --story <id>`, then `story-scope` for those entries: the documents and headings that describe each (Q18). | Nothing. A difference is a file under `built/<subject>/` until D7 corrects the documents in the same run. |
 | D7 Built correction | `workflows/built-version.js` correct, conformance and approve steps; `agents/architecture-maintainer.md`; `skills/arc42-maintain/SKILL.md` step 8; `storydeploy.py` `_built_version_step` | `node <entry>` for every document that describes a changed entry (Q18). | Nothing. The corrected documents are effective in the vault; the next run's E1 `sync-documents` mirrors them. |
-| D8 Merge and close | `storydeploy.py` `_merge_wait_step`, `_close_step`; `ops/sdlc-automation/matrixmarks.py`; `scripts/portfolio/matrixcode.py` | none | `verify --story <id> --commit <merge commit>`, then `commit --bead`. `verify` sets the verified flag on what the Epic's Stories built only when this merge completes the Epic (section 1.4.2), and otherwise records nothing. The close step is done only when both calls succeed. |
+| D8 Verify, merge and close | `storydeploy.py` `_merge_wait_step`, `_close_step`; `ops/sdlc-automation/matrixmarks.py`; `scripts/portfolio/matrixcode.py` | none | `verify --story <id> --commit <tested commit>` when the Story's deploy test (D4) and its CI checks have passed, before the merge; `commit --bead` at the close, after the merge. `verify` sets the verified flag on what this Story built (section 1.4.2). The close step is done only when both calls have succeeded. |
 | D9 Close with no pull request | `storydeploy.py` `_close_step` | none | Nothing; no flag. |
 | D10 Driver dispatch and dashboard | `ops/sdlc-automation/workitems.py`, `reposcope.py`, `storyorder.py`, `decisions.py` | `epic <id>` for the PRD (Q1); the stack id a Story's Tasks state, then `node stack:<id>` for the repository (Q10); `epic <id> --closure` for the repository view (Q12). | Nothing. |
 
@@ -633,7 +632,7 @@ The Proof column names the command of a slice's sanity check where one fits.
 | 28 | Sequencing and readiness instructions (R1, R2, R13, R17, R19, R22) | `agents/epic-dependency-assessor.md`, `architecture-impact-analyst.md`, `story-bead-writer.md`, `task-decomposer.md`, `root-cause-analyst.md`, `prd-writer.md`, `skills/epic-sequencing`, `epic-ready`, `task-ready` | The sanity check, lint and strict type checking on the changed files | 24 |
 | 29 | Build and deploy workflows, the minimum needed now: each call to an `atw-matrix` command that no longer exists is removed, or changed to the command of section 2 that returns the same thing, and every statement of the three older code marks is removed. Everything else in the Build and Deploy tables of section 4 is done in the rewrite of those lanes | The files under `workflows/` that call a removed command or state an older mark, among `task-to-deploy.js`, `tdd-green.js`, `infra-intent.js`, `suite-run.js`, `deploy-mechanism.js`, `deploy.js`, `story-deploy-fix.js`, `built-version.js` | `node scripts/check-workflow-syntax.mjs` | 24 |
 | 30 | Assessment workflows and commands (R13, R17, R18; A1 to A4) | `workflows/dependency-assessment.js`, `task-dependency-assessment.js`, `prd-validation.js`, `prd-creation.js`, `commands/dependency-assessment.md` | `node scripts/check-workflow-schemas.mjs` | 24 |
-| 31 | Driver deploy code, the minimum needed now: the three older code marks and the calls to `atw-matrix` commands that no longer exist are removed, and the one verified mark is set at the end of a Story with `verify --story --commit`, then `commit --bead` (D8, D9). Everything else in the Build and Deploy tables of section 4 is done in the rewrite of those lanes | `ops/sdlc-automation/matrixmarks.py`, `lane.py`, `storydeploy.py` | `python3 orchestrator/check_driver_contracts.py` | 9 |
+| 31 | Driver deploy code, the minimum needed now: the three older code marks and the calls to `atw-matrix` commands that no longer exist are removed, and the one verified mark is set when the Story's test passes, before its merge, with `verify --story --commit`, then `commit --bead` at the close (D8, D9). Everything else in the Build and Deploy tables of section 4 is done in the rewrite of those lanes | `ops/sdlc-automation/matrixmarks.py`, `lane.py`, `storydeploy.py` | `python3 orchestrator/check_driver_contracts.py` | 9 |
 | 32 | Driver: work items (R1, R2; D10) | `ops/sdlc-automation/workitems.py`, `reposcope.py`, `storyorder.py`, `selection.py`, `storyview.py`, `startup.py` | The sanity check, lint and strict type checking on the changed files | 9 |
 | 33 | Driver: environment, decisions (R3, R16) | `ops/sdlc-automation/atw.py`, `decisions.py`, `CLAUDE.md` | The sanity check, lint and strict type checking on the changed files | 9 |
 | 34 | Second records and close, one script run once and not kept: the `prd:` labels on the open Epics and the `**Epic:**` lines in their PRDs are removed; the plugin version rises | beads, the vault PRDs, `plugin.json`, `marketplace.json` | `atw-matrix epic <id>` returns the PRD of every open Epic | 1 to 33 |
@@ -682,19 +681,17 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
    change before the first is built clears the flag. The owner: "Now when the spec is written
    for an Epic, it sees that the architecture for that service is no longer verified." The
    clearing is settled at approval, where the Epic is known, so the same Epic's rerun does not
-   clear its own flag. When an Epic's build is verified, `verify` sets no flag on what carries
+   clear its own flag. When a build is verified, `verify` sets no flag on what carries
    another Epic's approved change that build did not build (its flag's `changedBy` names another
    Epic, or it has no flag and another Epic's approved flag), and clears a flag it carries: that
    build does not match the approved version, and the next spec for it covers all the work.
-10. **When and on what the verified flag is set.** On the stacks and entries every Story of
-    an Epic built, as the Task script returns them (R42), and the build-proved relationships
-    that start at them, once every Task of every Story of the Epic has been built and tested
-    with its deployment working (requirements section 3.5, R25). The driver's call after each
-    Story's merge sets it only when that merge completes the Epic, at that merge commit:
-    continuous integration, the CDK checks and the Story's deploy have passed by then, and
-    the commit recorded exists on `main`. One flag for the whole Epic, not one per Story,
-    because the owner requires the Epic's architecture and relationships to be verified
-    together.
+10. **When and on what the verified flag is set.** On the stacks and entries a Story built, as
+    the Task script returns them (R42), and the build-proved relationships that start at them,
+    when the Story's test passes: its CI checks and the test that its CDK deployment works
+    (requirements section 3.5, R25). The test passing is the trigger; the merge that follows is
+    a separate step and decides nothing, and no branch is named, so the flag holds whatever
+    branching the project uses. The flag is the entry's own, valid for every Epic that relates
+    to it, because an Epic owns no stack or component.
 11. **Concurrent changes.** Every change is one locked read-modify-write of the file, so two
     runs that write at the same moment both land.
 12. **Disagreements between documents.** An entry while the documents disagree, with the

@@ -6,8 +6,9 @@ The deploy pipeline runs once per Story. It takes a Story whose Tasks are all bu
 code and tests on the Story's branch in the Story's worktree, and produces the Story's repository
 published (each custom Python library to CodeArtifact) and deployed to AWS dev with CDK, the
 deployment working, and one pull request that GitHub merges once the shepherd has its checks
-passing and its threads resolved. When every Story of an Epic is closed, all of the Epic's
-architecture and relationships are set verified in the matrix. This document draws the deploy
+passing and its threads resolved. When the Story's test passes (its CI checks and the test that its
+CDK deployment works), what the Story built and tested is set verified in the matrix, before and
+apart from the merge. This document draws the deploy
 **as the owner wants it**. The sources are the owner's messages of 2026-10-19 (Part 1 of the
 elaboration plan, items 1.8, 1.11 and 1.13, and its questions), the vault's `docs/sdlc/sdlc.md`,
 the SkillSpoke repository's root `AGENTS.md` and `.claude/rules/git-conventions.md`, and
@@ -53,8 +54,8 @@ how it is chosen is plan question 4.
 ## 1. One Story, through deploy
 
 **Subject:** the deploy of one Story.
-**Scope:** from a Story whose Tasks are all built to its pull request merged and the Story closed,
-and, for the last Story of an Epic, the Epic's verification.
+**Scope:** from a Story whose Tasks are all built to what it built set verified, its pull request
+merged and the Story closed.
 **Purpose:** the order of the steps, what each needs before it starts, and where each loop ends.
 **Boundary:** the build of each Task is in [build](pipelines-build.md); each step here is drawn in
 detail in the sections that follow.
@@ -96,13 +97,10 @@ flowchart TD
     built --> pr["Push the Story's branch and open one pull request with skillspoke-pr from the Story's worktree - section 6"]
     pr --> shep["The shepherd fixes until checks pass and threads resolve"]
     shep --> ok{"Checks passing and threads resolved?"}
-    ok -->|"yes"| gh["GitHub auto-merge merges the pull request"]
+    ok -->|"yes"| ver["A deterministic step sets what the Story built and tested verified in the matrix - section 7"]
+    ver --> gh["GitHub auto-merge merges the pull request, a separate step after the test"]
     ok -->|"no: the shepherd cannot fix what is left"| blocked2(["Pull request and Story stay open, cause reported to the owner"])
-    gh --> doneS["Merged and the deploy verified working: the deploy lane closes the Story bead"]
-    doneS --> all{"Every Story of the Epic closed?"}
-    all -->|"no"| wait(["Other Stories still in build or deploy"])
-    all -->|"yes"| ver["A deterministic step sets all of the Epic's architecture and relationships verified in the matrix - section 7"]
-    ver --> fin(["Epic verified"])
+    gh --> doneS(["Merged and the deploy verified working: the deploy lane closes the Story bead"])
 ```
 
 Notes on the diagram:
@@ -223,7 +221,7 @@ the deployment working.
 **Purpose:** where a stack finds another stack's SSM parameter, in what order stacks deploy, how
 values known only at deploy time are handled, and what decides that the deployment works.
 **Boundary:** a failed deploy goes to section 4. What the deploy records in the matrix is only
-the verified flag, at the end of the Epic (section 7).
+the verified flag, when the Story's test passes (section 7).
 **Sources:** `AGENTS.md`: "Anything deployed to AWS dev can be torn down and redeployed" and
 "Cross-stack references: do not use CDK/CloudFormation exports or imports to share values between
 stacks. The producing stack stores the value in an SSM Parameter Store parameter; the consuming
@@ -478,13 +476,14 @@ Notes on the diagram:
 
 ## 7. Verification: the matrix's verified marks
 
-**Subject:** the verified marks of one Epic.
-**Scope:** from the last Story of the Epic closed to all of the Epic's architecture and
-relationships set verified.
+**Subject:** the verified marks of what one Story built and tested.
+**Scope:** from the Story's test passing (its deploy verified working and its CI checks passing) to
+what it built and tested set verified.
 **Purpose:** when verified is set, by what, on what, and what it does not touch.
 **Boundary:** the states of an entry over time, and what a later spec reads from the last
 verified version, are in [architecture and matrix states](pipelines-architecture-states.md),
-sections 2 and 4.
+sections 2 and 4. The requirement is [requirements/matrix.md](../requirements/matrix.md),
+section 3.5 and R25.
 **Sources:** the owner: "Once all of the tasks for all of the stories for and Epic have been built
 and tested (including CI (CDK), which means deployemen must also work), then all of the
 architecture and rellationships for the Epic can be set to verified.", "The verified flag remain
@@ -492,61 +491,54 @@ false or unverified. This means we have an approved, but unverified architecture
 documented in the matrix, but none of has been verofied by building and testing.", "The linkage
 could have a verified flag. The node could have a verified flag. Neither wold be required for
 every situation." and "For an Epic, I should be able to instantly know what AWS resources are
-invalidated and what stacks and repos those AWS resources are in."; `AGENTS.md`: "A Story or Epic
-is never closed because its Tasks are closed, and an open Epic is never a condition for other
-work." For who closes the Story, the code: `ops/sdlc-automation/supervisor.py` and the
-`deploy:close` step of `storydeploy.py`.
+invalidated and what stacks and repos those AWS resources are in."; the owner's later statement of
+the requirement, recorded in [requirements/matrix.md](../requirements/matrix.md) section 3.5: the
+test passing is the trigger, not a merge, and verified belongs to each stack and component, valid
+for every Epic that relates to it; `AGENTS.md`: "A Story or Epic is never closed because its Tasks
+are closed, and an open Epic is never a condition for other work."
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant K as keeper.py - supervisor.py deploy lane
     participant VS as Verification step - deterministic
+    participant GH as GitHub
     box Stores
-        participant BD as beads
         participant MX as matrix
     end
 
-    K-)BD: the Story closed - merged and its deploy verified working
-    K->>BD: the Epic's Stories
-    BD-->>K: the state of each Story
-    alt the last Story of the Epic closed
-        K->>VS: verify the Epic
-        VS->>MX: every entry and relationship the Epic reaches
-        MX-->>VS: entries and links, approved, not verified
-        alt a later Epic has changed an entry since this Epic built it
-            VS-)MX: verified set on what this Epic built and tested, the later change stays not verified
-        else unchanged since this Epic built it
-            VS-)MX: verified set
-        end
-        VS-->>K: the Epic's architecture and relationships verified
-    else any Story of the Epic still open
-        Note over MX: stays approved, not verified
+    K->>GH: the Story's checks
+    GH-->>K: passing, on the tested commit; the deploy test passed before the pull request opened
+    K->>VS: verify what the Story built, at the tested commit
+    VS->>MX: the stacks and entries the Story's Tasks state they built, and the relationships starting there
+    MX-->>VS: entries and links, with their flags
+    alt an entry carries an approved change this build did not build
+        VS-)MX: verified set on what this Story built and tested, that change stays not verified
+    else otherwise
+        VS-)MX: verified set
     end
+    VS-->>K: what the Story built is verified
+    Note over K,GH: the merge follows as a separate step and decides nothing about verified
 ```
 
 Notes on the diagram:
 
-- A deterministic step, which runs when the last Story of the Epic closes, sets all of the Epic's
-  architecture and relationships verified, because the condition is factual and needs no
-  judgment. Today it is `atw-matrix verify`, which the driver runs after every Story's merge,
-  before the Story's close: it sets the flag only when every Task of the Epic and every other
-  Story of the Epic is closed, so the merge of the last Story is the one that sets it
+- A deterministic step sets the flag when the Story's test passes, because the condition is
+  factual and needs no judgment. It runs before and apart from the merge, and names no branch
   ([the matrix design](matrix.md), section 1.4.2).
-- Verified is set only on what was built and tested; an entry a later Epic changed stays not
-  verified for that change, because verified says built, nothing more.
+- The flag is set per Story on what that Story built and tested, and waits for no other Story of
+  any Epic, because an Epic owns no stack or component.
+- Verified is set only on what was built and tested; an entry carrying another approved change
+  stays not verified for that change, because verified says built, nothing more.
 - Verification writes only the matrix. It changes no arc42 document; `effective` is the
   architecture agent's approval, not a build result.
-- What the Epic reaches is followed through the matrix's links (plan item 1.13): its AWS
-  resources, their stacks and repositories, the SSM parameters the stacks write and read, and the
-  documents related to them.
 - The flags are `approved` and `verified` on every entry and relationship
   ([the matrix design](matrix.md), section 1.4).
 
 ## 8. The states of a Story through deploy
 
 **Subject:** one Story bead.
-**Scope:** from its last Task built to the Story closed, and the Epic's verification.
+**Scope:** from its last Task built to the Story closed, and what it built set verified.
 **Purpose:** every state the deploy moves a Story through, and what moves it.
 **Boundary:** the states of the matrix entries are in
 [architecture and matrix states](pipelines-architecture-states.md), section 2.
@@ -562,6 +554,7 @@ stateDiagram-v2
     state "fixing - story-deploy-fix" as fixing
     state "built record, differences sent to the architecture stage" as record
     state "pull request open, shepherd working" as shepherding
+    state "tested - what it built set verified" as verifiedS
     state "merged" as merged
     state "closed" as closed
     state "released - cause recorded" as released
@@ -586,16 +579,17 @@ stateDiagram-v2
     fixing --> design : the fix would change the design
     record --> shepherding : branch pushed, pull request opened with skillspoke-pr
     shepherding --> shepherding : the shepherd pushes a fix / checks re-run
-    shepherding --> merged : checks pass and threads resolve / GitHub auto-merge
+    shepherding --> verifiedS : checks pass / what the Story built and tested set verified
+    verifiedS --> merged : threads resolve / GitHub auto-merge
     shepherding --> stuck : the shepherd cannot fix what is left
     merged --> closed : the deploy lane closes the Story bead
-    closed --> [*] : when it is the Epic's last, the Epic's architecture and relationships set verified
+    closed --> [*]
 ```
 
 ## 9. Where the stores are read and written
 
 **Subject:** every read and write the deploy makes.
-**Scope:** one Story's deploy, and the Epic's verification.
+**Scope:** one Story's deploy, and the verified flag on what it built.
 **Purpose:** which step touches beads, the matrix, arc42 (vault), the vault, git / GitHub and AWS
 dev, and how.
 **Boundary:** the order of the reads and writes is in sections 2 to 7.
@@ -640,9 +634,8 @@ sequenceDiagram
     AM-)MX: corrects to match
     PR-)G: pushes the branch, one pull request, merged by GitHub
     PR-)BD: records the pull request
+    VF-)MX: sets verified on what the Story built and tested, when its checks pass and before the merge
     KP-)BD: closes the Story bead
-    KP->>BD: reads the Epic's Stories
-    VF-)MX: sets verified on the Epic's entries and relationships
 ```
 
 Notes on the diagram:
@@ -656,7 +649,7 @@ Notes on the diagram:
 ## 10. The agents and roles the deploy starts
 
 **Subject:** every role that does work in the deploy.
-**Scope:** one Story's deploy and the Epic's verification.
+**Scope:** one Story's deploy and the verified flag on what it built.
 **Purpose:** each role, whether an agent or a script fills it, and the subject that gives a named
 agent a reason to be used.
 **Boundary:** how a specialist is chosen is plan question 4.
@@ -668,7 +661,7 @@ knows to deploy a story."; `ops/sdlc-automation/keeper.py`, `supervisor.py`, `se
 
 | Role | Who fills it | Reason it is used |
 |---|---|---|
-| Starts the deploy of a Story, closes the Story bead, and starts the Epic's verification | The deploy lane of `supervisor.py`, which `keeper.py` runs (the owner: "keeper is what knows to deploy a story"; `selection.select_deploy`, `storydeploy.py`) | Knows the Story's Tasks are all built, and is the one setter of bead states |
+| Starts the deploy of a Story, starts the verification of what it built, and closes the Story bead | The deploy lane of `supervisor.py`, which `keeper.py` runs (the owner: "keeper is what knows to deploy a story"; `selection.select_deploy`, `storydeploy.py`) | Knows the Story's Tasks are all built, and is the one setter of bead states |
 | Rules what the repository publishes and deploys, and names its publish command | `polyrepo-steward`, through the `deploy-mechanism` workflow | Its subject: the project's repositories and what each declares |
 | Runs the publish command and `cdk deploy` | A script | Running a named command needs no reasoning |
 | Writes the smoke tests | `smoke-test-author`, before the deploy | Its subject: smoke tests of a change's critical paths, parameterized by environment variables so they run against the deployment |
@@ -680,7 +673,7 @@ knows to deploy a story."; `ops/sdlc-automation/keeper.py`, `supervisor.py`, `se
 | Opens the pull request | `skillspoke-pr`, run by the deploy in the Story's worktree | `git-conventions.md` |
 | Gets the pull request to merge | The shepherd | `git-conventions.md`: "fixes until checks pass and threads resolve" |
 | Merges | GitHub auto-merge | `git-conventions.md`: "Never ask the owner to merge, and never merge yourself." |
-| Sets the Epic's architecture and relationships verified | A deterministic step, run when the last Story of the Epic closes | The condition is factual |
+| Sets what the Story built and tested verified | A deterministic step, run when the Story's test passes, before the merge | The condition is factual |
 
 ## Open questions
 

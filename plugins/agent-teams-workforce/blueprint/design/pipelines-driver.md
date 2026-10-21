@@ -300,10 +300,10 @@ stateDiagram-v2
     eSigned --> [*]: the driver closes the Epic
 ```
 
-When the last Story of the Epic closes, a deterministic step sets all of the Epic's architecture
-and relationships in the matrix verified, because the condition is factual (the owner: "Once all
-of the tasks for all of the stories for and Epic have been built and tested ... then all of the
-architecture and rellationships for the Epic can be set to verified."). The Epic closes only after
+The matrix's verified flag is not an Epic state: a deterministic step sets it on what each Story
+built and tested when that Story's test passes, before its merge, because verified belongs to each
+stack and component and holds for every Epic that relates to it
+([requirements/matrix.md](../requirements/matrix.md), section 3.5). The Epic closes only after
 a person has tested it and signed off, never because its Stories closed, because closure records
 proof, not counting. An open Epic is never a condition for other work: its Stories and Tasks are
 worked while it is open (`AGENTS.md`).
@@ -462,11 +462,10 @@ sequenceDiagram
     S->>DE: a Story
     DE->>BD: the Story and its Tasks
     DE->>MX: the stacks and resources its Tasks state
-    DE-->>S: deploy verified working, pull request merged
+    DE-->>S: deploy verified working, CI checks passing
+    V-)MX: what the Story built and tested set verified
+    DE-->>S: pull request merged, a separate step after the test
     S-)BD: the Story closed
-    opt the closed Story is the last Story of its Epic
-        V-)MX: all of the Epic's architecture and relationships set verified
-    end
     Note over BD,MX: no Story, no Task and nothing about what is deployed is written to the matrix
 ```
 
@@ -481,5 +480,5 @@ Notes on the diagram:
 - `keeper.py` reads and writes no bead itself: it runs `supervisor.py`, whose lanes do.
 - The driver writes each bead state from the run's result, and the pipelines write content, because
   code sets a state the same way every time (section 4).
-- A deterministic step that runs when the last Story of an Epic closes sets all of the Epic's
-  architecture and relationships verified, because the condition is factual.
+- A deterministic step that runs when a Story's test passes sets verified on what the Story built
+  and tested, because the condition is factual; the merge that follows decides nothing.

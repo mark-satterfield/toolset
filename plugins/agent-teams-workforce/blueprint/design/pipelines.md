@@ -74,10 +74,8 @@ flowchart TD
     build -->|"code and tests on the Story's branch, whole suite passing"| join1(("join: every Task of the Story built"))
     join1 --> deploy["Deploy, once per Story - pipelines-deploy.md"]
     fork0 -->|"deploy lane"| deploy
-    deploy -->|"deployed to AWS dev and tested, CI and CDK working, one pull request merged"| allS{"Every Story of the Epic deployed and tested?"}
-    allS -->|"no: other Stories still in build or deploy"| waitS["Wait for the next Story to finish"]
-    waitS --> allS
-    allS -->|"yes"| ver(["The Epic's architecture and relationships set verified in the matrix"])
+    deploy -->|"deployed to AWS dev and tested, CI checks and CDK deployment test passing"| ver["What the Story built and tested set verified in the matrix"]
+    ver --> merged(["The Story's pull request merged, a separate step after the test"])
 ```
 
 Notes on the diagram:
@@ -86,7 +84,9 @@ Notes on the diagram:
   [pipelines-driver.md](pipelines-driver.md).
 - A Bug is not pipeline work; a person triages it into an Epic, a Task or a closure
   ([requirements/pipelines.md](../requirements/pipelines.md), "Bugs").
-- The wait loop exits when the last Story of the Epic is deployed and tested.
+- Verified is set per Story when its test passes, on what it built and tested; it waits for no
+  other Story and for no merge, because verified belongs to each stack and component, not to an
+  Epic ([requirements/matrix.md](../requirements/matrix.md), section 3.5).
 - An agent in any pipeline may start subagents and workflows when its work needs them, choosing
   the plugin's own agents from the `find-specialists` catalog; every agent definition with a
   `tools` list grants `Agent` and `Workflow` and denies neither
@@ -137,9 +137,10 @@ flowchart LR
     BU -->|"commits on the Story's branch in its worktree"| G
     DE -->|"deploys and tests"| AWS
     DE -->|"pushes, one pull request, auto-merge"| G
-    DE -->|"sets the Epic verified once every Story is done"| MX
+    DE -->|"sets verified on what the Story built once its test passes"| MX
     DE -->|"Story state"| BD
 ```
 
-A deterministic step sets the Epic's architecture and relationships verified when the last Story of
-the Epic closes ([pipelines-architecture-states.md](pipelines-architecture-states.md), section 3).
+A deterministic step sets verified on what a Story built and tested when the Story's test passes,
+before and apart from its merge ([pipelines-architecture-states.md](pipelines-architecture-states.md),
+section 3).

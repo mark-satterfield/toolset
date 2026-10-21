@@ -198,19 +198,21 @@ sequenceDiagram
     end
     loop each Story
         DE->>BD: the Story, every Task built
-        DE-->>BD: deployed and tested, CI and CDK passing
-    end
-    alt all Tasks of all Stories of the Epic built and tested, deployment working
-        DE-)MX: all of the Epic's architecture and relationships set verified
-    else any Task or Story not yet done
-        Note over MX: stays approved, not verified
+        alt the Story's test passes: CI checks and the CDK deployment test
+            DE-)MX: what the Story built and tested set verified
+        else the test has not passed
+            Note over MX: stays approved, not verified
+        end
+        DE-->>BD: tested; the merge follows as a separate step
     end
 ```
 
-A deterministic step that runs when the last Story of the Epic closes sets the verified flag, with
-no agent judgment, because the owner's condition is factual (all Tasks of all Stories built and
-tested, CI and CDK deployment working) and the owner wants "contracs being deterministic in files
-and code".
+A deterministic step that runs when a Story's test passes sets the verified flag on what that
+Story built and tested, with no agent judgment, because the condition is factual (built and tested,
+the CI checks and the test that the CDK deployment works included) and the owner wants "contracs
+being deterministic in files and code". The test passing is the trigger, not the merge that follows
+it, and the flag belongs to each stack and component, valid for every Epic that relates to it
+([requirements/matrix.md](../requirements/matrix.md), section 3.5).
 
 ## 4. Versions, and what a spec covers
 

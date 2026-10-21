@@ -149,12 +149,10 @@ Notes on the diagram:
 - The loop back to Red exits when every new test fails for the intended reason. The gate loop
   exits when every gate passes, or after the third fix round, when the build aborts with no commit,
   because a gate is never bypassed.
-- The build writes no verified flag. Verified is set for the Epic once all the Tasks of all its
-  Stories are built and tested, including CI (CDK), which means deployment must also work. The
-  owner: "Once all of the tasks for all of the stories for and Epic have been built and tested
-  (including CI (CDK), which means deployemen must also work), then all of the architecture and
-  rellationships for the Epic can be set to verified." A deterministic step sets it when the last
-  Story of the Epic closes, as drawn in [deploy](pipelines-deploy.md) and in
+- The build of a Task writes no verified flag. Verified is set on what a Story built and tested
+  when the Story's test passes: its CI checks and the test that its CDK deployment works
+  ([requirements/matrix.md](../requirements/matrix.md), section 3.5). A deterministic step sets it
+  before and apart from the merge, as drawn in [deploy](pipelines-deploy.md) and in
   [architecture and matrix states](pipelines-architecture-states.md).
 
 ## 2. The worktree, and what the build reads
@@ -247,8 +245,8 @@ Notes on the diagram:
 - A matrix fact the build finds wrong is recorded against the element and sent to the architecture
   stage, where `architecture-maintainer` corrects the document and the matrix; the build itself
   changes nothing in the matrix, because the architecture stage is the one corrector and approver
-  of architecture. The verified mark is set by the step that runs when the Epic's last Story
-  closes.
+  of architecture. The verified mark is set by the step that runs when a Story's test
+  passes.
 
 ## 3. Red: failing tests first
 

@@ -131,13 +131,35 @@ feature with no covering document), `requirementsReachNothing`, `requirementsNoS
 | Field | On | Meaning | Who sets it, when, how |
 |---|---|---|---|
 | `approved: {epic}` | any entry or relationship | The architecture and design of that Epic are approved, and the matrix and arc42 are filled out or corrected for it. Similar to, not the same as, `effective`. | Only the promotion step of elaboration (`orchestrator/flows/architecture_promotion.py`, calling `matrixwrite.approve` as role `script`) on the Epic's approval scope (`atw-matrix approval --epic <id>` shows it), once its reviews pass. No `atw-matrix` command and no session sets it. Any later change to the entry or relationship, or to a document that describes it, clears it. |
-| `verified: {commit, changedBy?}` | any entry or relationship | Every Task of every Story of the Epic that built it was built and tested, CI/CD and CDK included, with the deploy working. Verified = real, its code trusted; not verified = still to be made real, used like anything else. | Only the build driver (`ops/sdlc-automation/matrixmarks.py`, at the Story's `deploy:close`) when GitHub reports a Story's PR merged: `atw-matrix verify --story <id> --commit <sha>` as role `build-driver`, then `atw-matrix commit --bead <id>`. It writes only when that merge completes the Epic (all its Tasks and other Stories closed), on what the Stories' Tasks state they built (`built`) and the relationships starting there. A first approved change by another Epic keeps it with `changedBy`; a second clears it. |
+| `verified: {commit, changedBy?}` | any entry or relationship | It was built and tested: the CI checks and the test that its CDK deployment works (the deployment may be removed again after the test). A property of the stack or component itself, valid for every Epic that relates to it. Verified = real, its code trusted; not verified = still to be made real, used like anything else. | Only the build driver (`ops/sdlc-automation/matrixmarks.py`), when a Story's test passes: `atw-matrix verify --story <id> --commit <the tested commit>` as role `build-driver`, on what the Story's Tasks state they built (`built`) and the relationships starting there. A merge never sets it; the merge is a separate step after the test. A first approved change by another Epic keeps it with `changedBy`; a second clears it. |
 | `lifecycle` | `document` | Mirrors the arc42 front matter: `effective` (approved as of now), `in-review`, `draft`. | `atw-matrix sync-documents`; the promotion step after `depscore.py arch-approve`. |
 | `side` | everything | `architecture` (authority) or `repository` (hint). | Whoever records the fact: `put` and `link` take `--side`. |
 
 Nothing is seeded approved or verified, and nothing in the live matrix is either yet. No
 deployed or merged mark exists. Neither flag ever blocks reading, linking or designing on an
 entry.
+
+The verified flag, as [the matrix requirements](../../blueprint/requirements/matrix.md)
+section 3.5 and R25 state it:
+
+- It is set when an item has been built and tested, the CDK deployment test included. The
+  test passing is the trigger. No merge and no branch sets or clears it.
+- It belongs to the stack or component, not to an Epic. An Epic owns no stack and no
+  component; it is a vehicle for requirements, and many Epics relate to many stacks and
+  components. So never read verified as "this Epic's architecture is done".
+- At the start nothing is verified, so the first builds verify everything they build. After
+  that, only changes are not verified, and only changes become Tasks.
+- What a stack or Task only uses (a shared library, a layer, a chassis) was verified when it
+  was itself built and tested; using it verifies nothing.
+
+Reading the flags to decide what is planned and what exists:
+
+- Verified: it exists as recorded. Build on it and trust its code. A spec covers only the
+  approved change to it (`changedBy` names the Epic whose change that is).
+- Approved, not verified: it is the agreed design but is not built yet, or was changed again
+  before it was built. Plan the work that brings the build up to the approved design.
+- Neither: a planned or seeded fact, or a repository-side hint. Use it, check it, and do not
+  count on code for it existing.
 
 ## Writing
 
