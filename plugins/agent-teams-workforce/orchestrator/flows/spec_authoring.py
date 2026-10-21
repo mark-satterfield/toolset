@@ -422,29 +422,27 @@ def _scope_documents(arch: Path, scopes: Sequence[StoryScope]) -> list[JsonValue
     return rows
 
 
-def entry_scope(matrix: Matrix, epic: str, entry_id: EntryId) -> dict[str, JsonValue]:
+def entry_scope(matrix: Matrix, entry_id: EntryId) -> dict[str, JsonValue]:
     """Decide what a spec covers for one entry the Story builds, from its verified state.
 
     Args:
         matrix: The matrix.
-        epic: The Epic the spec is written for.
         entry_id: The entry.
 
     Returns:
-        The entry, its verified commit (None when not verified) and its scope: ``delta`` when the
-        build is verified at the version before this Epic's change (the flag names no change, or
-        names this Epic's), so the spec covers this Epic's change alone; ``full`` when it is not
-        verified, or an approved change of another Epic is still not built, so the spec covers all
-        the work that brings the build up to the entry's approved architecture.
+        The entry, its verified commit (None when not verified) and its scope: ``delta`` when it
+        is verified, so nothing it must be built as has changed since its last build and test and
+        the spec covers this Epic's own work for it alone; ``full`` when it is not verified (a
+        change cleared the flag, or it was never built), so the spec covers all the work that
+        brings the build up to the entry's approved architecture.
 
     """
     found: Entry | None = matrix.find(entry_id)
     verified: Verified | None = None if found is None else found.verified
-    current: bool = verified is not None and verified.changed_by in {None, epic}
     return {
         "entry": entry_id,
         "verified": None if verified is None else verified.commit,
-        "scope": SCOPE_DELTA if current else SCOPE_FULL,
+        "scope": SCOPE_FULL if verified is None else SCOPE_DELTA,
     }
 
 
@@ -590,7 +588,7 @@ def context(run: StepRun) -> Completion:
     prd: Path = Path(check_type(json_object(run.context.args[dispatch.KEY_PRD])[dispatch.PRD_PATH], str)).resolve()
     stacked: list[JsonValue] = [{"stack": stack, "entries": list(built)} for stack, built in stacks.items()]
     entries: list[EntryId] = list(dict.fromkeys(entry for built in stacks.values() for entry in built))
-    scoped: list[JsonValue] = [entry_scope(matrix, str(run.bead), entry) for entry in entries]
+    scoped: list[JsonValue] = [entry_scope(matrix, entry) for entry in entries]
     component: list[JsonValue] = component_documents(architecture_root(run), matrix, [*stacks, *entries])
     dependencies: list[JsonValue] = [json_object(dependency) for dependency in depended["dependsOn"]]
     path: Path = write_contract(

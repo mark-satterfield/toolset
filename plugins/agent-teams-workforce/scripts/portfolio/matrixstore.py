@@ -94,10 +94,10 @@ ATTR_MATCHES_ALL_EVENTS: Final = "matchesAllEvents"
 """The rule attribute that says its event pattern matches every event on its bus."""
 PROBLEMS_SHOWN: Final = 20
 """The most problems an error message lists."""
-ATTR_LIFECYCLE: Final = "lifecycle"
-LIFECYCLE_EFFECTIVE: Final = "effective"
-DOCUMENT_CONTENT: Final[tuple[str, ...]] = ("hash", "headings")
-"""The attributes of a document entry that change when the document's text changes."""
+ATTR_HEADING_HASHES: Final = "headingHashes"
+"""The document attribute that holds the hash of each heading's own text, by heading."""
+ATTR_HEADING: Final = "heading"
+"""The ``describedBy`` attribute that names the heading whose text describes the entry."""
 _NOT_SLUG: Final[re.Pattern[str]] = re.compile(r"[^a-z0-9]+")
 
 
@@ -312,17 +312,19 @@ def relationship_id(relationship: Relationship) -> RelationshipId:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def unapproved[T: (Entry, Relationship)](item: T) -> T:
-    """Take the approved flag off an entry or a relationship.
+def dirtied[T: (Entry, Relationship)](item: T) -> T:
+    """Take both flags off an entry or a relationship a change affects.
 
     Args:
         item: An entry or a relationship of any kind.
 
     Returns:
-        The item without the flag; the item itself when it carries none.
+        The item without the approved and the verified flag; the item itself when it carries neither.
 
     """
-    return item if item.approved is None else replace(item, approved=None)
+    if item.approved is None and item.verified is None:
+        return item
+    return replace(item, approved=None, verified=None)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -355,43 +357,44 @@ def approved_by(item: Entry | Relationship) -> str | None:
     return None if item.approved is None else item.approved.epic
 
 
-def _approval_settled[T: (Entry, Relationship)](held: T | None, item: T) -> T:
-    """Decide the approved flag an entry or a relationship carries once it replaces the one held.
+def _flags_settled[T: (Entry, Relationship)](held: T | None, item: T) -> T:
+    """Decide the flags an entry or a relationship carries once it replaces the one held.
+
+    Each flag is a dirty bit settled on its own. A change that leaves everything but the flags
+    as it was keeps both flags the held item carries. Any other change clears the approved flag.
+    It clears the verified flag only when the item is on the architecture side, because only that
+    side states what the item must be built as; a repository-side change keeps it. Flags the
+    replacing item states are not taken: only :meth:`Matrix.set_flags` sets a flag.
 
     Returns:
-        The item as given when it is new; without the flag when anything but its flags changed;
-        otherwise with the flag it states, or the held one's flag when it states none.
+        The item as given when it is new; otherwise the item with the flags settled as above.
 
     """
     if held is None:
         return item
-    if not same_content(held, item):
-        return unapproved(item)
-    if item.approved is not None or held.approved is None:
-        return item
-    return replace(item, approved=held.approved)
+    if same_content(held, item):
+        return replace(item, approved=held.approved, verified=held.verified)
+    authority: bool = AUTHORITY_SIDE in {held.side, item.side}
+    return replace(item, approved=None, verified=None if authority else held.verified)
 
 
-def _document_rewritten(held: Entry | None, entry: Entry) -> bool:
-    """Tell whether a document entry's change is a change to the document's text.
+def _changed_headings(held: Entry | None, entry: Entry) -> frozenset[str] | None:
+    """Name the headings whose own text a change to a document entry changed.
 
-    The step that promotes reviewed architecture changes the document's lifecycle line to
-    effective, which changes its hash; that alone is not a change to what it describes.
+    The front matter belongs to no heading, so the move of a document to effective changes none.
 
     Returns:
-        True when the entry is a document the matrix held, its hash or headings changed, and the
-        change is not the move of a document that was not effective to effective.
+        None when the entry is not a document the matrix held; otherwise each heading whose hash
+        differs, or that one of the two has and the other lacks.
 
     """
-    if held is None or entry.kind != KIND_DOCUMENT:
-        return False
-    if all(held.attributes.get(name) == entry.attributes.get(name) for name in DOCUMENT_CONTENT):
-        return False
-    promoted: bool = (
-        held.attributes.get(ATTR_LIFECYCLE) != LIFECYCLE_EFFECTIVE
-        and entry.attributes.get(ATTR_LIFECYCLE) == LIFECYCLE_EFFECTIVE
-    )
-    return not promoted
+    if held is None or entry.kind != KIND_DOCUMENT or held.kind != KIND_DOCUMENT:
+        return None
+    before: JsonValue = held.attributes.get(ATTR_HEADING_HASHES)
+    after: JsonValue = entry.attributes.get(ATTR_HEADING_HASHES)
+    old: dict[str, JsonValue] = before if isinstance(before, dict) else {}
+    new: dict[str, JsonValue] = after if isinstance(after, dict) else {}
+    return frozenset(heading for heading in {*old, *new} if old.get(heading) != new.get(heading))
 
 
 def _selected[T](kinds: Collection[T] | None, kind: T) -> bool:
@@ -427,7 +430,7 @@ class Matrix:
     is what a stack's repository holds today (:func:`id_stack`), and the event kind with its
     publishes relationship: an event's stack is its publisher's (:meth:`publisher_stacks`), and
     an authority-side event states when it is triggered (:meth:`_event_problems`); and, for the
-    approved flag, the documents that describe an entry (:meth:`put`).
+    approved and verified flags, the documents that describe an entry (:meth:`put`).
 
     The two sides are kept apart. A relationship is stored once for each side that states it. An
     entry on the authority side never becomes a repository-side entry (:meth:`put`).
@@ -655,22 +658,59 @@ class Matrix:
         homes: list[EntryId | None] = [self.home(publisher) for publisher in self.publishers(event_id)]
         return frozenset(home for home in homes if home is not None)
 
-    def _unapprove(self, entry_id: EntryId) -> None:
-        """Clear the approved flag of one entry; an entry without it stays as it is."""
+    def _dirty(self, entry_id: EntryId) -> None:
+        """Clear both flags of one entry a change affects; an entry without them stays as it is."""
         held: Entry | None = self._entries.get(entry_id)
         if held is not None:
-            self._entries[entry_id] = unapproved(held)
+            self._entries[entry_id] = dirtied(held)
 
-    def _unapprove_described(self, document_id: EntryId) -> None:
-        """Clear the mark of every entry the architecture side says a document describes."""
-        described: set[EntryId] = {
-            describing.start
-            for describing in self.incoming(document_id, (REL_DESCRIBED_BY,))
-            if describing.side == AUTHORITY_SIDE
-        }
+    def _dirty_described(self, document_id: EntryId, headings: frozenset[str]) -> None:
+        """Clear both flags of each entry whose describing text in a document changed.
+
+        An architecture-side ``describedBy`` that names a heading is affected when that heading's
+        text changed; one that names no heading is described by the whole document, and is
+        affected when any heading's text changed. The other entries the document describes keep
+        their flags.
+        """
+        if not headings:
+            return
+        described: set[EntryId] = set()
+        describing: Relationship
+        for describing in self.incoming(document_id, (REL_DESCRIBED_BY,)):
+            heading: JsonValue = describing.attributes.get(ATTR_HEADING)
+            if describing.side == AUTHORITY_SIDE and (not isinstance(heading, str) or heading in headings):
+                described.add(describing.start)
         start: EntryId
         for start in sorted(described):
-            self._unapprove(start)
+            self._dirty(start)
+
+    def set_flags(self, item: Entry | Relationship) -> None:
+        """Replace the flags of an entry or a relationship the matrix holds, and nothing else.
+
+        Only ``matrixwrite.approve`` (the approved flag) and ``matrixcode.verify`` (the verified
+        flag) call it; each states the other flag as the item holds it.
+
+        Args:
+            item: The held entry or relationship with the flags it is to carry.
+
+        Raises:
+            MatrixRefusedError: The matrix holds no such item, or it differs from the held one in
+                more than its flags.
+
+        """
+        message: str = f"{item}: setting a flag needs the held item and changes nothing else"
+        if isinstance(item, Entry):
+            held: Entry | None = self._entries.get(item.id)
+            if held is None or not same_content(held, item):
+                raise MatrixRefusedError(message)
+            self._entries[item.id] = item
+            return
+        identity: RelationshipId = relationship_id(item)
+        before: Relationship | None = self._relationships.get(identity)
+        if before is None or not same_content(before, item):
+            raise MatrixRefusedError(message)
+        self._drop(identity)
+        self._add(item)
 
     def _one_event_problems(self, event: Entry) -> list[str]:
         """Check one authority-side event's publishers.
@@ -820,12 +860,14 @@ class Matrix:
         An entry that breaks its kind, or whose id names a stack the matrix does not hold, raises
         ``MatrixError`` and changes nothing.
 
-        The approved flag: an entry that replaces another and differs from it in anything but its
-        approved and verified flags loses the approved flag; one that differs in nothing else
-        carries the approved flag it states, or the held entry's when it states none. When the text
-        of a document changes (its hash or headings, other than by the move of a document that was
-        not effective to effective), every entry the architecture side says it describes loses the
-        approved flag.
+        The flags are dirty bits, settled each on its own (:func:`_flags_settled`): an entry that
+        replaces another and differs from it in anything but its flags loses the approved flag, and
+        loses the verified flag when it is on the architecture side; one that differs in nothing
+        else keeps the held entry's flags. Flags the entry states are not taken. When the text under
+        a heading of a document changes, each entry an architecture-side ``describedBy`` says that
+        heading describes loses both flags, and the other entries the document describes keep theirs
+        (:meth:`_dirty_described`); the front matter is under no heading, so the move of a document
+        to effective changes no entry's flags.
 
         Args:
             entry: The entry, of any registered kind, with the side it came from.
@@ -848,11 +890,12 @@ class Matrix:
                 f"Keep its side when changing it"
             )
             raise MatrixRefusedError(message)
-        stored: Entry = _approval_settled(held, entry)
+        stored: Entry = _flags_settled(held, entry)
         _raise_problems([*entry_problems(stored), *self._id_stack_problems(stored)], f"the entry {entry.id}")
         self._entries[entry.id] = stored
-        if _document_rewritten(held, stored):
-            self._unapprove_described(stored.id)
+        headings: frozenset[str] | None = _changed_headings(held, stored)
+        if headings is not None:
+            self._dirty_described(stored.id, headings)
 
     def _refuse_over_limit(self, relationship: Relationship, identity: RelationshipId) -> None:
         """Refuse a new relationship that would exceed the most its kind allows from one start on one side.
@@ -887,10 +930,10 @@ class Matrix:
         matrix does not hold or joins kinds it may not join raises ``MatrixError`` and changes
         nothing. A new relationship of a kind that limits the relationships from an entry on a
         side, when on its side the start already has that many others, raises
-        ``MatrixRefusedError`` (:meth:`_refuse_over_limit`) and changes nothing. The approved
-        flag is settled as :meth:`put` settles an entry's. An architecture-side relationship that
-        is added, or changed in anything but its approved and verified flags, clears the approved
-        flag of the entry it starts from.
+        ``MatrixRefusedError`` (:meth:`_refuse_over_limit`) and changes nothing. The flags are
+        settled as :meth:`put` settles an entry's. An architecture-side relationship that is added,
+        or changed in anything but its approved and verified flags, clears both flags of the entry
+        it starts from.
 
         Args:
             relationship: The relationship, of any registered kind, with the side that states it.
@@ -903,12 +946,12 @@ class Matrix:
         identity: RelationshipId = relationship_id(relationship)
         self._refuse_over_limit(relationship, identity)
         before: Relationship | None = self._relationships.get(identity)
-        stored: Relationship = _approval_settled(before, relationship)
+        stored: Relationship = _flags_settled(before, relationship)
         if before is not None:
             self._drop(identity)
         self._add(stored)
         if relationship.side == AUTHORITY_SIDE and (before is None or not same_content(before, stored)):
-            self._unapprove(relationship.start)
+            self._dirty(relationship.start)
 
     def unlink(self, relationship: Relationship) -> bool:
         """Remove the relationship with the same kind, ends, key attributes and side.
@@ -920,7 +963,7 @@ class Matrix:
 
         Returns:
             True when the matrix held it and it was removed; an architecture-side relationship
-            removed clears the approved flag of the entry it started from.
+            removed clears both flags of the entry it started from.
 
         """
         identity: RelationshipId = relationship_id(relationship)
@@ -928,7 +971,7 @@ class Matrix:
             return False
         self._drop(identity)
         if identity.side == AUTHORITY_SIDE:
-            self._unapprove(identity.start)
+            self._dirty(identity.start)
         return True
 
     def _referring(self, entry_id: EntryId) -> list[tuple[RelationshipId, list[str]]]:
@@ -1036,7 +1079,9 @@ class Matrix:
 
         A relationship that names a removed entry in an attribute is removed when the attribute is
         one of its kind's key or required attributes, and otherwise loses the attribute. An entry
-        that does not exist raises ``MatrixError`` from :meth:`entry`.
+        that is left and starts an architecture-side relationship removed or changed this way loses
+        both flags, as :meth:`unlink` clears them. An entry that does not exist raises
+        ``MatrixError`` from :meth:`entry`.
 
         Args:
             entry_id: The entry's id.
@@ -1065,15 +1110,20 @@ class Matrix:
                 dict.fromkeys(relationship.start for relationship in self.incoming(entry_id, (HOME_RELATIONSHIP,))),
             )
             removed.update(dict.fromkeys(named))
+        touched: set[EntryId] = set()
         gone: EntryId
         for gone in list(removed):
             identity: RelationshipId
             for identity in sorted({*self._starting.get(gone, set()), *self._ending.get(gone, set())}):
+                if identity.side == AUTHORITY_SIDE:
+                    touched.add(identity.start)
                 self._drop(identity)
             names: list[str]
             for identity, names in self._referring(gone):
                 relationship: Relationship = self._relationships[identity]
                 rule: RelationshipRule = relationship_rule(identity.kind)
+                if identity.side == AUTHORITY_SIDE:
+                    touched.add(identity.start)
                 self._drop(identity)
                 if not set(names) & {*rule.key, *rule.required}:
                     kept: dict[str, JsonValue] = {
@@ -1083,6 +1133,9 @@ class Matrix:
             del self._entries[gone]
             self._starting.pop(gone, None)
             self._ending.pop(gone, None)
+        start: EntryId
+        for start in sorted(touched - set(removed)):
+            self._dirty(start)
         return sorted(removed)
 
 

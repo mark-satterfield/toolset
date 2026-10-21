@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema and composites.json this module was generated from.
-SOURCE_SHA256: Final[str] = "4b6c4f0e2c133898ba0a8f8704382f66916569a6615dedff0c0cb9797efd26c7"
+SOURCE_SHA256: Final[str] = "5c197b79b56b517e2b627a80d3c18baae1835ca5073857d194b22eef1f6b799c"
 
 #: Every composite id, active then retired.
 type CompositeId = Literal[
@@ -76,6 +76,7 @@ type PhaseId = Literal[
     "fix",
     "built",
     "pull-request",
+    "mark-verified",
     "merge-wait",
     "close",
     "ask",
@@ -183,6 +184,7 @@ COMPOSITES: Final[Mapping[CompositeId, CompositeSpec]] = MappingProxyType({
             {"id": "fix", "title": "Fix"},
             {"id": "built", "title": "Built"},
             {"id": "pull-request", "title": "Pull Request"},
+            {"id": "mark-verified", "title": "Mark Verified"},
             {"id": "merge-wait", "title": "Merge Wait"},
             {"id": "close", "title": "Close"},
         ),

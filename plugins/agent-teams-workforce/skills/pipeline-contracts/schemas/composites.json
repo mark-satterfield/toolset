@@ -59,6 +59,7 @@
         {"id": "fix", "title": "Fix"},
         {"id": "built", "title": "Built"},
         {"id": "pull-request", "title": "Pull Request"},
+        {"id": "mark-verified", "title": "Mark Verified"},
         {"id": "merge-wait", "title": "Merge Wait"},
         {"id": "close", "title": "Close"}
       ]

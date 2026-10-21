@@ -38,10 +38,12 @@ own work approved.
 The matrix has two flags, `approved` and `verified`. The step that promotes an Epic's reviewed
 architecture and design sets `approved` on the matrix content the Epic reaches, once the matrix
 and arc42 are filled out or corrected for it; it is similar to, and not the same as, an arc42
-document's `effective`. The build driver sets `verified`, with a commit, on what an Epic's
-Stories built, once every Task of every Story of the Epic has been built and tested, including
-its CI/CD and its CDK, with its deployment working. No agent sets either. No deployed mark and
-no merged mark exists; absent means not approved and not verified. Verified means
+document's `effective`. The build driver sets `verified`, with the tested commit, on what one
+Story built when that Story's test passes: its CI checks and the test that its CDK deployment
+works, before and apart from any merge. Each flag belongs to the item, valid for every Epic that
+relates to it, and works as a dirty bit: a change that affects the item clears it on that item
+alone, each flag independently of the other. No agent sets either. No deployed mark and no merged
+mark exists; absent means not approved and not verified. Verified means
 real: the entry or relationship exists, and its code is trusted and is expected to match the
 architecture. Not verified means it still has to be made real: use it like any other, and
 assume it may still have to be built. Existing code for it is a hint of how something was once

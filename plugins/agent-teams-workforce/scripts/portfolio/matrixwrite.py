@@ -16,15 +16,17 @@ writes, so several sessions can record at once and none loses another's change.
 - :func:`move_repository` gives every stack of one repository another repository's name.
 - :func:`commit` commits the matrix file alone in the repository that holds it, and pushes it.
 
-Nothing here sets or clears the verified flag: an entry or a relationship that is added carries
-none, and one that is changed keeps the flag it has (``matrixcode`` sets it).
+Nothing here sets the verified flag (``matrixcode`` sets it), and :func:`approve` leaves it as it
+is. The two flags are dirty bits, each cleared on its own: a change to an entry or a relationship
+clears its approved flag, and a change on the architecture side clears its verified flag too
+(``matrixstore.Matrix.put`` and ``Matrix.link``).
 
 The approved flag is set by :func:`approve` alone, which only the script role may run: the step
 that promotes an Epic's reviewed architecture and design runs it on the matrix content the Epic
 reaches (``matrixtraverse.approval_scope``). :func:`put` and :func:`link` take attributes only,
-so neither can state a flag. A change to an approved entry or relationship, to a relationship
-an entry starts, or to a document that describes it, clears the flag (``matrixstore.Matrix.put``
-and ``Matrix.link``).
+so neither can state a flag. A change to an entry or relationship, to an architecture-side
+relationship an entry starts, or to the text under the document heading that describes it, clears
+the flag on that item alone (``matrixstore.Matrix.put`` and ``Matrix.link``).
 """
 
 import shutil
@@ -62,7 +64,6 @@ from matrix_contract import (
     RelationshipKind,
     Role,
     Side,
-    Verified,
     entry_json,
     relationship_json,
 )
@@ -380,8 +381,8 @@ def put(  # ruff: ignore[too-many-arguments] - One keyword per member of an entr
     one held, except that the members of an object are laid over the held object's and the items
     of a list join the held list, where an object with the ``id`` of a held one replaces it; an
     attribute stated as null is removed.
-    The approved and verified flags are never stated. The verified flag is left as it is; a call
-    that changes an approved entry clears its approved flag (``Matrix.put``). A call that states
+    The approved and verified flags are never stated. A call that changes an entry clears its
+    approved flag, and on the architecture side its verified flag too (``Matrix.put``). A call that states
     what the entry already holds changes nothing. An entry that then breaks its
     kind raises ``MatrixError`` from ``Matrix.put`` and changes nothing.
 
@@ -483,9 +484,11 @@ def link(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] - T
     A relationship is the same relationship when its kind, both ends, its kind's key attributes
     and its side are the same: each side that states a relationship holds its own, and stating
     it for one side leaves the other side's as it is. Stating it again lays the stated attributes
-    over the ones held, as :func:`put` does, and leaves its verified mark as it is. A relationship that breaks its
-    kind, names an entry the matrix does not hold or joins kinds it may not join raises
-    ``MatrixError`` from ``Matrix.link`` and changes nothing; so does a second relationship, on one
+    over the ones held, as :func:`put` does; a change clears its approved flag, and on the
+    architecture side its verified flag and both flags of the entry it starts from
+    (``Matrix.link``). A relationship that breaks its kind, names an entry the matrix does not
+    hold or joins kinds it may not join raises ``MatrixError`` from ``Matrix.link`` and changes
+    nothing; so does a second relationship, on one
     side, of a kind an entry may start only one of (``MatrixRefusedError``: unlink the first).
 
     Args:
@@ -645,47 +648,6 @@ def settle(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] -
     return {"id": entry_id, "stands": stands, "rule": rule.strip(), "entry": entry_json(settled)}
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def verified_after_change[T: (Entry, Relationship)](item: T, epic: str) -> Verified | None:
-    """Settle the verified flag of an entry or a relationship an Epic's approved architecture changed.
-
-    The flag says the build matches a version of the architecture. An approved change keeps it
-    and names the Epic that made the change (``changedBy``): the version before the change is
-    built, so that Epic's Stories build the change alone. A change approved for another Epic
-    while that change is still not built clears it: the version before this change was never
-    built, so the item is no longer verified. Setting the flag after a build (``matrixcode``)
-    writes it again without ``changedBy``.
-
-    Args:
-        item: The entry or relationship as held, carrying no approved flag because it changed
-            since it was last approved, or was never approved.
-        epic: The beads id of the Epic whose architecture is being approved.
-
-    Returns:
-        The verified flag the item carries once the change is approved.
-
-    """
-    held: Verified | None = item.verified
-    if held is None:
-        return None
-    if held.changed_by is None:
-        return replace(held, changed_by=epic)
-    return held if held.changed_by == epic else None
-
-
-def _approved[T: (Entry, Relationship)](item: T, flag: Approved) -> T:
-    """Give an entry or a relationship an Epic's approved flag.
-
-    Returns:
-        The item with the flag; one that was changed since its last approval, or never
-        approved, also has its verified flag settled (:func:`verified_after_change`).
-
-    """
-    if item.approved is not None:
-        return replace(item, approved=flag)
-    return replace(item, approved=flag, verified=verified_after_change(item, flag.epic))
-
-
 def approve(matrix: Matrix, bead: str, role: Role) -> ApproveResult:
     """Set the approved flag on the matrix content an Epic's elaboration reaches.
 
@@ -694,10 +656,10 @@ def approve(matrix: Matrix, bead: str, role: Role) -> ApproveResult:
     that the matrix and arc42 are filled out or corrected for the Epic first. The content is
     ``matrixtraverse.approval_scope``: the Epic, its requirements and every architecture-side
     entry it reaches, with the architecture-side relationships between them. The flag names the
-    Epic. An entry or relationship that already carries the Epic's flag is left as it is. One
-    that carries no approved flag was changed since it was last approved (or never was), and its
-    verified flag is settled for that change (:func:`verified_after_change`). An Epic the matrix
-    does not hold raises ``MatrixError``.
+    Epic. An entry or relationship that already carries the Epic's flag is left as it is. Only
+    the approved flag is set: the verified flag each item carries is left as it is, because
+    approving the architecture says nothing about what is built (``Matrix.set_flags``). An Epic
+    the matrix does not hold raises ``MatrixError``.
 
     Args:
         matrix: The matrix, changed in place.
@@ -726,13 +688,13 @@ def approve(matrix: Matrix, bead: str, role: Role) -> ApproveResult:
     unmarked: list[Relationship] = [held for held in scope.relationships if held.approved != flag]
     relationship: Relationship
     for relationship in unmarked:
-        matrix.link(_approved(relationship, flag))
+        matrix.set_flags(replace(relationship, approved=flag))
     marked: list[EntryId] = []
     entry_id: EntryId
     for entry_id in scope.entries:
         entry: Entry = matrix.entry(entry_id)
         if entry.approved != flag:
-            matrix.put(_approved(entry, flag))
+            matrix.set_flags(replace(entry, approved=flag))
             marked.append(entry_id)
     return {
         "epic": epic,

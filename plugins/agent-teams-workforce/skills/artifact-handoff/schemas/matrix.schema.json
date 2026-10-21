@@ -43,7 +43,7 @@
       "enum": ["architecture", "repository"]
     },
     "Approved": {
-      "description": "The approved flag: the architecture and design of the Epic that reaches this entry or relationship are approved, and the matrix and arc42 are filled out or corrected for that Epic. Similar to, but not the same as, the effective lifecycle of an arc42 document. Absent means not approved; nothing seeded is approved. A later change to the entry or relationship clears it until an Epic that reaches it is approved again.",
+      "description": "The approved flag, a dirty bit: the architecture and design of the Epic that reaches this entry or relationship are approved, and the matrix and arc42 are filled out or corrected for that Epic. Similar to, but not the same as, the effective lifecycle of an arc42 document. Absent means not approved; nothing seeded is approved. Any change that affects the entry or relationship itself clears it on that item alone, independently of the verified flag, until an Epic that reaches it is approved again.",
       "type": "object",
       "additionalProperties": false,
       "required": ["epic"],
@@ -52,13 +52,12 @@
       }
     },
     "Verified": {
-      "description": "The verified flag: every Task of every Story of an Epic that built this was built and tested, including its CI/CD and CDK, with its deployment working. Absent means not verified; nothing seeded is verified. An approved architecture change made before the previous approved change was built clears it.",
+      "description": "The verified flag, a dirty bit: this entry or relationship was built and tested, the CI checks and the test that its CDK deployment works included (the deployment need not remain). Set by the build pipeline on what one Story built when its test passes, before and apart from any merge; it belongs to the item, valid for every Epic that relates to it. Absent means not verified; nothing seeded is verified. A change to what the item must be built as clears it on that item alone, independently of the approved flag, until the next build and test of the item sets it again.",
       "type": "object",
       "additionalProperties": false,
       "required": ["commit"],
       "properties": {
-        "commit": {"description": "The merge commit of the Story whose merge completed the Epic.", "type": "string", "minLength": 1},
-        "changedBy": {"description": "The beads id of the Epic whose approved architecture changed this after the commit was verified: the build is verified at the version before that Epic's change, and that change is not built yet. Absent when no approved change has been made since the commit. A second Epic's approved change before the first is built clears the verified flag.", "type": "string", "minLength": 1}
+        "commit": {"description": "The commit of the Story's branch whose test passed.", "type": "string", "minLength": 1}
       }
     },
     "Entry": {

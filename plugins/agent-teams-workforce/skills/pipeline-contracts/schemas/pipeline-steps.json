@@ -489,7 +489,7 @@
             {"name": "commitsAhead", "kind": "value", "holds": "the number of commits ahead of the default branch, an integer"}
           ],
           "adds": [
-            {"kinds": ["deploy:built-version", "deploy:pull-request", "deploy:merge-wait"], "when": "the branch holds commits"}
+            {"kinds": ["deploy:built-version", "deploy:pull-request", "deploy:mark-verified", "deploy:merge-wait"], "when": "the branch holds commits"}
           ]
         },
         "deploy:built-version": {
@@ -591,6 +591,17 @@
             {"name": "pullRequest", "kind": "value", "holds": "the pull request URL, a string"}
           ],
           "adds": []
+        },
+        "deploy:mark-verified": {
+          "description": "Set what the Story built verified in the matrix once its CI checks pass",
+          "purpose": "The Story's test has passed when its deploy to AWS dev was verified working and every check on its pull request's head commit passed; what it built is then built and tested, before and apart from the merge, which decides nothing about verified",
+          "runBy": "driver",
+          "reads": ["pullRequest"],
+          "records": [
+            {"name": "matrixVerified", "kind": "value", "holds": "{ commit, entries, unmatched }: the head commit whose checks passed, the ids that carry the flag and the ids that matched no entry; commit is null and nothing is marked when the pull request merged with a check that did not pass"}
+          ],
+          "adds": [],
+          "waits": "a check on the pull request's head commit has not finished, or failed while the pull request is open"
         },
         "deploy:merge-wait": {
           "description": "Wait for the Story's pull request to merge",

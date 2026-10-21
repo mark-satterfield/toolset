@@ -37,7 +37,7 @@
       }
     },
     "buildScope": {
-      "description": "What the spec covers for each entry the Story builds, decided from the entry's verified state in the matrix, never from an architecture delta. `delta`: the build is verified at the version before this Epic's change, so the spec covers this Epic's change alone (for an Epic whose architecture changes nothing, the Epic's own work, such as the wording of a page). `full`: the entry is not verified, or another Epic's approved change to it is still not built, so the spec covers all the work that brings the build up to the entry's approved architecture.",
+      "description": "What the spec covers for each entry the Story builds, decided from the entry's verified state in the matrix, never from an architecture delta. `delta`: the entry is verified, so nothing it must be built as has changed since its last build and test, and the spec covers this Epic's own work for it alone (such as the wording of a page). `full`: the entry is not verified (a change cleared the flag, or it was never built), so the spec covers all the work that brings the build up to the entry's approved architecture.",
       "type": "array",
       "items": {
         "type": "object",

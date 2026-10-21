@@ -678,8 +678,8 @@ def _run_verify(call: Call) -> Outcome:
     """Run ``verify``.
 
     Returns:
-        Whether the Story's merge completed its Epic and, when it did, the entries and
-        relationships of the Epic that carry the verified flag at the commit.
+        The entries and relationships the Story built that carry the verified flag at the
+        commit, and what was left not verified.
 
     """
     return Outcome(
@@ -963,10 +963,10 @@ def _build_parsers(
     verified: argparse.ArgumentParser = commands.add_parser(
         COMMAND_VERIFY,
         parents=[where, control],
-        help="set the verified flag on what an Epic's Stories built, once the merge of this Story completes the Epic",
+        help="set the verified flag on what one Story built, when its test has passed",
     )
     verified.add_argument("--story", required=True, help="the Story's beads id")
-    verified.add_argument("--commit", required=True, help="the merge commit of the Story's pull request")
+    verified.add_argument("--commit", required=True, help="the commit of the Story's branch whose test passed")
     story: argparse.ArgumentParser = commands.add_parser(
         COMMAND_BUILT,
         parents=[where, control],

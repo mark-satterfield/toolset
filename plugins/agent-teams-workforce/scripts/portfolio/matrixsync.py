@@ -142,6 +142,9 @@ class DocumentRead:
     """The heading texts, in document order; a text that repeats is ``<text> (2)`` and so on."""
     digest: str
     """The hash of the whole file."""
+    heading_digests: dict[str, str]
+    """The hash of each heading's own text, by heading, with the text before the first heading under
+    :data:`PREAMBLE` when it is not blank; the front matter is under none."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -460,7 +463,7 @@ def parse_document(relative: str, text: str) -> DocumentRead:
         text: The whole file.
 
     Returns:
-        The document's lifecycle, catalog keys, heading texts and hash. A document whose front
+        The document's lifecycle, catalog keys, heading texts, hash and per-heading hashes. A document whose front
         matter states no lifecycle is a draft; one that states a lifecycle other than effective,
         in-review or draft has none the matrix holds.
 
@@ -495,6 +498,7 @@ def parse_document(relative: str, text: str) -> DocumentRead:
         shows=shows,
         headings=tuple(key for key in headings if key != PREAMBLE),
         digest=hashlib.sha256(text.encode()).hexdigest(),
+        heading_digests={key: hashlib.sha256(body.encode()).hexdigest() for key, body in headings.items()},
     )
 
 
@@ -581,12 +585,18 @@ def _document_entry(document: DocumentRead, lifecycle: Lifecycle, existing: Entr
     """Build the entry of a document from the document as it is now.
 
     Returns:
-        The entry: the document's front matter, heading texts and hash, with the aliases and the
-        purpose the entry already has.
+        The entry: the document's front matter, heading texts, hash and the hash of each heading's
+        own text, with the aliases and the purpose the entry already has.
 
     """
     headings: list[JsonValue] = list(document.headings)
-    attributes: dict[str, JsonValue] = {"lifecycle": lifecycle, "headings": headings, "hash": document.digest}
+    digests: dict[str, JsonValue] = dict(document.heading_digests)
+    attributes: dict[str, JsonValue] = {
+        "lifecycle": lifecycle,
+        "headings": headings,
+        "hash": document.digest,
+        "headingHashes": digests,
+    }
     if document.section is not None:
         attributes["section"] = document.section
     if document.view_type is not None:

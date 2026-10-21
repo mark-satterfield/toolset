@@ -127,7 +127,7 @@
     },
     "document": {
       "idPattern": "^document:[^/\\s].*$",
-      "required": ["lifecycle", "headings", "hash"],
+      "required": ["lifecycle", "headings", "hash", "headingHashes"],
       "attributes": {
         "lifecycle": {"description": "Mirrors the document's front matter.", "enum": ["effective", "in-review", "draft"]},
         "section": {"type": "integer", "minimum": 1, "maximum": 12},
@@ -135,7 +135,8 @@
         "scope": {"type": "string"},
         "subject": {"type": "string"},
         "headings": {"description": "The heading texts.", "type": "array", "items": {"type": "string"}},
-        "hash": {"type": "string"}
+        "hash": {"type": "string"},
+        "headingHashes": {"description": "The hash of each heading's own text (its heading line and everything up to the next heading), by heading as `headings` names it, with the text before the first heading under `(preamble)`; the front matter is under no heading. A changed hash clears the approved and verified flags of each entry a describedBy names that heading for.", "type": "object", "additionalProperties": {"type": "string"}}
       }
     },
     "service": {
