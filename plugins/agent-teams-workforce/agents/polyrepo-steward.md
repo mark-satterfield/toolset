@@ -178,6 +178,9 @@ else:
   store do not say, and store the pointer it gives you.
 - The filing-clerk hands you repository questions and repository work; do that work as you
   would for any caller.
+- **A service rename the filing-clerk hands you** (a service's old and new name, after it changed
+  them in arc42): in the same job, rename the repository that holds the service and its stacks,
+  as *A rename covers every name* describes, and report the rename done to the filing-clerk.
 
 ## On every invocation
 
