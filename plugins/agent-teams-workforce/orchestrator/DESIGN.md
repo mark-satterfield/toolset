@@ -468,8 +468,10 @@ claude -p --output-format stream-json --verbose --session-id <uuid>
   every `PreToolUse` hook of `<config>/settings.json` whose command names one of
   `no-verify-blocker.sh`, `pipeline-run-blocker.sh`, `bd-init-blocker.sh`,
   `aws-profile-required.sh` (a constant list, matched by script file name, so the hook commands
-  themselves are read from the owner's file); one `PostToolUse` hook on `Write|Edit` that runs
-  `<orch>/hooks/python-quality.py`; `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, so every start
+  themselves are read from the owner's file); every `PostToolUse` hook group of
+  `<control>/.claude/settings.json` (`<control>` is `ATW_CONTROL_REPO`), so an edit is checked by
+  the edit hook the control repository declares for its own sessions and by no other copy;
+  `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, so every start
   blocks; and `bashOutputMaxChars` at Claude Code's largest value, so a command's output reaches
   the session whole. The settings are the same for every session; none depends on the agent.
 - **Plugins and skills.** `--plugin-dir <plugin>` loads `agent-teams-workforce` and no other

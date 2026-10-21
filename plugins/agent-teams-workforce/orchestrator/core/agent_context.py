@@ -11,7 +11,6 @@ from __future__ import annotations
 import functools
 import json
 import shlex
-import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,6 +27,7 @@ import strictschema
 from .frontmatter import split_front_matter
 from .io import JsonValue, json_object, write_json
 from .models import AgentStep
+from .tool_locks import control_repo
 
 SAFETY_HOOKS = frozenset({
     "no-verify-blocker.sh",
@@ -158,11 +158,12 @@ def launch_model(agent: AgentDefinition, launch: Launch) -> str:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def safety_settings(config: Path, plugin: Path) -> dict[str, JsonValue]:
-    """Select safety hooks and add the mandatory Python edit checks.
+def safety_settings(config: Path) -> dict[str, JsonValue]:
+    """Select the owner's safety hooks and take the control repository's edit hooks.
 
     Returns:
-        Session settings containing selected pre-tool and post-tool hooks.
+        Session settings holding the selected pre-tool hooks of ``<config>/settings.json`` and
+        every post-tool hook group ``<control>/.claude/settings.json`` declares.
 
     """
     hooks = json_object(read_json(config / "settings.json").get("hooks", {})).get("PreToolUse", [])
@@ -183,32 +184,24 @@ def safety_settings(config: Path, plugin: Path) -> dict[str, JsonValue]:
                 keep.append(hook)
         if keep:
             selected.append({**group, "hooks": keep})
-    quality_hook = plugin.resolve() / "orchestrator" / "hooks" / "python-quality.py"
-    return {
-        "hooks": {
-            "PreToolUse": selected,
-            "PostToolUse": [
-                {
-                    "matcher": "Write|Edit",
-                    "hooks": [
-                        {
-                            "type": "command",
-                            "command": f"{shlex.quote(sys.executable)} {shlex.quote(str(quality_hook))}",
-                            "timeout": 400,
-                        },
-                    ],
-                },
-            ],
-        },
-    }
+    project_hooks = json_object(read_json(control_repo() / ".claude" / "settings.json").get("hooks", {}))
+    edit_hooks: list[JsonValue] = list(
+        check_type(
+            project_hooks.get("PostToolUse", []),
+            list[dict[str, JsonValue]],
+            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        ),
+    )
+    return {"hooks": {"PreToolUse": selected, "PostToolUse": edit_hooks}}
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def session_settings(config: Path, plugin: Path) -> dict[str, JsonValue]:
+def session_settings(config: Path) -> dict[str, JsonValue]:
     """Build the settings file of one session.
 
-    Every session has the safety hooks, is limited to one layer of started agents, each started
-    in the foreground, and takes a command's output whole.
+    Every session has the safety hooks and the control repository's edit hooks, is limited to
+    one layer of started agents, each started in the foreground, and takes a command's output
+    whole.
 
     Returns:
         The session's settings.
@@ -217,10 +210,10 @@ def session_settings(config: Path, plugin: Path) -> dict[str, JsonValue]:
         TypeError: An argument violates the declared input contract.
 
     """
-    if not isinstance(config, Path) or not isinstance(plugin, Path):
-        argument_error: str = "session_settings requires two Paths"
+    if not isinstance(config, Path):
+        argument_error: str = "session_settings requires the config Path"
         raise TypeError(argument_error)
-    settings: dict[str, JsonValue] = safety_settings(config, plugin)
+    settings: dict[str, JsonValue] = safety_settings(config)
     settings["env"] = dict(SESSION_ENV)
     settings[BASH_OUTPUT_KEY] = BASH_OUTPUT_LIMIT
     return settings
@@ -246,7 +239,7 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
         raise TypeError(message)
     launched: AgentDefinition = load_agent(plugin, step.agent)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    write_json(directory / "settings.json", session_settings(config, plugin))
+    write_json(directory / "settings.json", session_settings(config))
     command: list[str] = [
         "--agent",
         step.agent,
