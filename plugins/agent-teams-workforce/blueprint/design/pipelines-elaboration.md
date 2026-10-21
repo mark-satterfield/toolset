@@ -464,10 +464,8 @@ sequenceDiagram
 
     WF->>MX: for each element the Epic reaches, its last verified version and its approved architecture
     MX-->>WF: verified or not verified, with the documents that describe it
-    alt the element's version before this Epic's change is verified
-        WF->>SW: work = the change since that verified version
-    else the element is not verified, for example v1.1.2 and v1.1.3 unbuilt
-        WF->>SW: work = everything since the last verified version, to bring the build up to the approved architecture
+    alt the element is not verified: a change cleared it, or it was never built
+        WF->>SW: work = bring the build, from the code there, up to the approved architecture
     else the architecture leaves the element unchanged and the Epic has work in it, for example wording on a web page
         WF->>SW: work = the instructions for the change
     end
@@ -490,7 +488,7 @@ Notes on the diagram:
   writes from the recorded design without designing, because the owner's spec writer "was supposed
   to be a specialest that could write a spec document".
 - The workflow's reads are `spec_authoring.entry_scope` (the spec context's `buildScope`:
-  `delta` or `full` from each entry's verified flag), `spec_authoring.component_documents`
+  work for each entry that is not verified, none for a verified one), `spec_authoring.component_documents`
   (`atw-matrix documents`, whose links `spec_authoring.link_documents` puts at the end of every
   spec document), and the existing elements the solutions architect names in its result as where
   Epic work that leaves their architecture unchanged lands (`unchangedWorkElements`, which the

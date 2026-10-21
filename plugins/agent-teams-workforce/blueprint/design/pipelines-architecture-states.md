@@ -139,7 +139,7 @@ stateDiagram-v2
     [*] --> NANV : recorded by an Epic's elaboration
     NANV --> NANV : elaboration fills out or corrects it
     NANV --> ANV : the Epic's architecture and design approved and the matrix filled out or corrected for it / arc42 corrected too
-    ANV --> AV : all Tasks of all Stories of the Epic built and tested, including CI and CDK, deployment working
+    ANV --> AV : built and tested, CI checks and the CDK deployment test passing
     ANV --> CH : a later Epic's elaboration changes it before the build
     AV --> CH : a later Epic's elaboration changes it
     CH --> ANV : that Epic's architecture and design approved
@@ -151,11 +151,10 @@ Notes on the diagram:
   ([requirements/matrix.md](../requirements/matrix.md) R26). Not approved means the architecture
   agents do due diligence on it; not verified means it may still have to be built.
 - In "changed by a later Epic", the last verified version stays known. That is what a spec reads
-  (section 4). An approved change to a verified element keeps its verified flag and names the
-  Epic that made the change (`changedBy`); an approved change by another Epic before that change is
-  built clears the flag, because the version before it was never built. A build verified while
-  an element carries another Epic's approved change it did not build leaves the element not
-  verified ([design/matrix.md](matrix.md) decision 9).
+  (section 4). A change to a verified element clears its verified flag, as a change clears
+  approved, and the next build and test of the element sets it again. A build verified while an
+  element carries an approved change it did not build leaves the element not verified
+  ([design/matrix.md](matrix.md) decision 9).
 - The matrix does not record Stories or Tasks, and does not record what is deployed. The owner:
   "The matrix does not include stories and tasks (it isn't a build tracker), and it doesn't care
   about what has actually been deployed."
@@ -250,10 +249,10 @@ sequenceDiagram
     SVC-->>SP: nothing
     SP->>BU: spec - bring the build up to v1.0.0
     BU-)SVC: v1.0.0 verified
-    B-)SVC: architecture v1.0.1, approved, not verified, last verified v1.0.0
+    B-)SVC: architecture v1.0.1, approved, verified cleared by the change
     SP->>SVC: what is verified?
-    SVC-->>SP: v1.0.0
-    SP->>BU: spec - the delta from v1.0.0 to v1.0.1
+    SVC-->>SP: not verified; the code built at v1.0.0 is there
+    SP->>BU: spec - bring the build from the code there up to v1.0.1
     opt if v1.0.1 is built before Epic C
         BU-)SVC: v1.0.1 verified
     end
@@ -261,18 +260,17 @@ sequenceDiagram
     Note over C,BU: no build of v1.1.2
     D-)SVC: architecture v1.1.3, approved, not verified
     SP->>SVC: what is verified?
-    SVC-->>SP: no longer verified, last verified v1.0.0 or v1.0.1
+    SVC-->>SP: not verified; the code built at v1.0.0 or v1.0.1 is there
     SP->>BU: spec - everything since the last verified version, up to v1.1.3
 ```
 
 The version numbers are the owner's illustration ("Think of the everuything in terms of version
-numbers"). The matrix records, on each element, the verified flag with the commit it was proved at
-and, once an Epic's approved change is made after that commit, `changedBy`, the Epic that made it.
-When Epic C's change is approved, v1.0.1 (or v1.0.0) is verified, so the flag stays with
-`changedBy` C and Epic C's spec covers C's change alone. When Epic D's change is approved, the flag
-names C's change, which is not built, so the flag is cleared: the service is no longer verified,
-and Epic D's spec covers all the work that brings the build up to v1.1.3. Should Epic C's build
-be verified before Epic D's, the service stays not verified, because D's approved change is not
-built, and the next spec for it covers all the work. The spec step reads
-this from the flag of each element it builds (`spec_authoring.entry_scope`, the spec context's
-`buildScope`): `delta` while the flag names no change or the spec's own Epic, `full` otherwise.
+numbers"). The matrix records, on each element, the verified flag with the commit it was proved
+at, and a change clears it ([requirements/matrix.md](../requirements/matrix.md), section 3.5). When
+Epic B's change is approved, the service is no longer verified, and B's spec covers the work that
+brings the build, from the code built at v1.0.0, up to v1.0.1: that work is B's change. When Epic
+C's and then Epic D's changes are approved with no build between them, the service stays not
+verified, and the next spec covers the work that brings the build, from the code there, up to
+v1.1.3. Elements a change does not touch stay verified and get no work, so only changes become
+Tasks. The spec step reads this from the flag of each element it builds
+(`spec_authoring.entry_scope`, the spec context's `buildScope`).

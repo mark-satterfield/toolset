@@ -255,13 +255,14 @@ At the start nothing is verified, so the first builds verify everything they bui
 that, Epics and builds are incremental: the matrix holds the verified current state, only
 changes show up as not verified, and only changes become Tasks.
 
-Verification is the only way to prove that the architecture is likely to work. When an
-Epic's approved architecture changes something that is verified, the flag stays and names
-that Epic, because the version before the change is built and the Epic's spec covers the
-change alone. When another Epic's approved change reaches the same thing before that change
-is built, it is no longer verified (the owner's version example under "The spec" in
-[pipelines.md](pipelines.md)). A build leaves not verified anything that carries an approved
-change the build did not build and test. The verified
+Verification is the only way to prove that the architecture is likely to work. Verified
+works much like approved: a change clears it, and the next build and test sets it again. When
+the architecture changes something that is verified (for example, an existing service needs a
+new feature), that item's verified flag is cleared. When the change has been built and tested,
+the CDK deployment test included, the item is set to verified again. Any number of changes may
+be made before the next build; the item stays not verified until a build and test covers them
+all. A build leaves not verified anything that carries an approved change the build did not
+build and test. The verified
 flag is available on every entry and every relationship, and required on none. No deployed
 mark and no merged mark exists. Whether something is currently deployed is not recorded: the
 environment is a development environment where stacks are deployed and torn down freely.
@@ -488,7 +489,9 @@ so nothing is seeded as verified.
   the CI checks and the CDK, and testing the CDK means testing that its deployment works; the
   deployment may be removed again after the test. The test passing is the trigger: a merge is
   not, and neither a merge nor a branch decides verified. The flag is a property of the stack
-  or component, valid for every Epic that relates to it, and is never set per Epic.
+  or component, valid for every Epic that relates to it, and is never set per Epic. A change
+  the architecture makes to a verified item clears its flag, and the next build and test of
+  the item sets it again.
   Nothing else sets it. No deployed mark and no merged mark exists. No elaboration step reads code to
   decide whether something is built. Whether something is currently deployed is not recorded
   and has no bearing on verified.

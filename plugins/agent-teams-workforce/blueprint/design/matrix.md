@@ -242,19 +242,15 @@ included. The deployment may be removed again after that test.
   every Epic that relates to it: it is not set per Epic and waits for no other Story.
 - For a stack with no CDK app, the publish of its package to CodeArtifact stands where the
   CDK deploy does. A Story that closes with no pull request runs no `verify`.
-- When an Epic's architecture change to verified content is approved, the flag stays, with its
-  commit, and names that Epic in `changedBy`: the build is verified at the version before the
-  change. When another Epic's architecture change to the same content is approved while
-  `changedBy` names a different Epic, the flag is cleared: that earlier change was never built,
-  so the content is no longer verified. `matrixwrite.approve` settles this
-  (`verified_after_change`) on each entry and relationship of the approval scope that carries no
-  approved flag, that is, that changed since it was last approved; the change itself cleared the
-  approved flag. `verify` writes the flag again without `changedBy`, except on an entry or
-  relationship that carries another Epic's approved change this build did not build
-  (`matrixcode.unbuilt_change`): its flag names another Epic in `changedBy`, or it carries no flag
-  and another Epic's approved flag. `verify` leaves that one not verified, clearing a flag it
-  carries, and lists it under `unbuiltEntries` or `unbuiltRelationships`, so that the next spec
-  for it covers all the work. Entries and relationships an
+- **When it clears.** A change clears it, as a change clears `approved` (section 1.4.1):
+  `Matrix.put` and `Matrix.link` clear it on an entry or relationship replaced by one that differs
+  in anything but its flags; a change to a document's text clears it on every entry the
+  architecture side says the document describes; an architecture-side relationship added,
+  changed or removed clears it on the entry it starts from. Setting `approved` leaves it as it
+  is. The next `verify` that covers the item sets it again.
+- `verify` leaves not verified an entry or relationship that carries an approved change this
+  build did not build (`matrixcode.unbuilt_change`), and lists it under `unbuiltEntries` or
+  `unbuiltRelationships`, so that the next spec for it covers that change. Entries and relationships an
   Epic adds are not verified until the build that builds them passes its test. The spec step reads the flag of each
   entry a Story builds to decide what the spec covers (`spec_authoring.entry_scope`).
 - `verify` takes no stack, element or repository name. It adds, changes and removes no entry
@@ -459,7 +455,7 @@ arc42 documents, the next run's E1 mirrors them, and the architect records what 
 | E10 Repository scoping | `repo_scoping.py` `span()`, `story_builds()`, `story_build_problems()`, `repository_name()`, `_ruling()`, `shared_capabilities()` | The architect's result (`addedOrChangedElements` and `unchangedWorkElements`, the existing elements the architect names as where the Epic's work that leaves them unchanged lands); per entry its `authority_holder` and that stack's `repository`, its `describedBy`, an event's architecture-side publishers, and the architecture-side dependency relationships between the entries; the stack type (Q11); the naming rules for a stack with no `repository`; `uses`. | The `repository` the naming rules give a stack a Story builds in that names none (architecture side). The step fails on each `story_build_problems` sentence. |
 | M1 Event checks | `matrixstore.Matrix._event_problems()` in `problems()` (`atw-matrix check` and every write); `matrixwrite._side_kept`, `matrixwrite.unlink` | Each architecture-side event. | Nothing. A problem for an architecture-side event that states `externalSource` and has an architecture-side publisher; that has neither; or whose publishers are homed in more than one stack, unless one is in a stack whose `executionUse` is `imported` (skipped until the owner rules). A repository-side put that states `externalSource` on an architecture-side event is refused, and unlinking the last architecture-side publisher of an event with no `externalSource` is refused. |
 | E11 Repository creation | `repo_scoping.py` `create_repositories()`, `_create()` | The stack's `repository` (Q10) and `purpose` (Q7); `polyrepo inventory --name` for the clone path. | `put stack --repository` when the created repository's name differs from the one recorded. `polyrepo create` records the rest (S1). |
-| E12 Story and Spec | `spec_authoring.py` `context()`, `story_bead()`, `spec_document()` accept, `story_document()`; `agents/story-bead-writer.md`; `depscore.py` `write-story` | `story-scope` for the stack and the entries the Story builds: documents and headings, constraints, shared capabilities. `documents --id` (Q29) for every architecture and design document of the stacks and entries, which every spec links to. Each entry's verified flag (Q14) for what the spec covers: the change alone where the build is verified at the version before it, otherwise all the work that brings the build up to the approved architecture. The stacks outside the Story come from `epic <id> --closure`. | One `describedBy` per document heading the Spec cites for an entry the Story builds, where absent. Nothing for the Story itself: beads holds it (R40). |
+| E12 Story and Spec | `spec_authoring.py` `context()`, `story_bead()`, `spec_document()` accept, `story_document()`; `agents/story-bead-writer.md`; `depscore.py` `write-story` | `story-scope` for the stack and the entries the Story builds: documents and headings, constraints, shared capabilities. `documents --id` (Q29) for every architecture and design document of the stacks and entries, which every spec links to. Each entry's verified flag (Q14) for what the spec covers: a verified entry needs no work to match its architecture; a not-verified entry needs the work that brings its build, from the code already there, up to the approved architecture. The stacks outside the Story come from `epic <id> --closure`. | One `describedBy` per document heading the Spec cites for an entry the Story builds, where absent. Nothing for the Story itself: beads holds it (R40). |
 | E13 Tasks | `task_decomposition.py` `context()`, `write_task()`, `retire()`; `agents/task-decomposer.md`; `depscore.py` `write-task` | `work --id <stack id> --not-epic <epic id>` for other Epics' open Tasks that touch the stack (R42); `uses --ids` for the shared capabilities of the entries each Task builds. | Nothing in the matrix. `write-task` writes into each Task the ids of its stack, its components and its shared capabilities, in its text and its `matrix_elements` key (R41). |
 | E14 Task edges | `task_edges.py` `closure()`, `mapper()` accept, `write()` | The dependency relationships between what the Tasks build (Q9). | A dependency the mapper finds between two stacks that the matrix lacks: `link` of its kind between the stacks. |
 
@@ -675,16 +671,12 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
    the document it comes from and what it applies to, and one constraint applies to many
    things. A `selector` covers a rule that binds a whole class: Q5 has to return such a rule
    for a stack an Epic adds, which has no relationship to the rule yet.
-9. **A verified flag when verified code changes.** An approved architecture change to verified
-   content keeps the flag and names the changing Epic (`changedBy`), because the version before
-   the change is built and the Epic's spec covers the change alone. A second Epic's approved
-   change before the first is built clears the flag. The owner: "Now when the spec is written
-   for an Epic, it sees that the architecture for that service is no longer verified." The
-   clearing is settled at approval, where the Epic is known, so the same Epic's rerun does not
-   clear its own flag. When a build is verified, `verify` sets no flag on what carries
-   another Epic's approved change that build did not build (its flag's `changedBy` names another
-   Epic, or it has no flag and another Epic's approved flag), and clears a flag it carries: that
-   build does not match the approved version, and the next spec for it covers all the work.
+9. **A verified flag when verified code changes.** An architecture change to verified content
+   clears the flag, as a change clears approved, and the next build and test that covers the
+   content sets it again, because verified says the current architecture of the item is built
+   and tested. The owner: "Now when the spec is written for an Epic, it sees that the
+   architecture for that service is no longer verified." A build sets no flag on what carries an
+   approved change that build did not build, so its next spec covers that change.
 10. **When and on what the verified flag is set.** On the stacks and entries a Story built, as
     the Task script returns them (R42), and the build-proved relationships that start at them,
     when the Story's test passes: its CI checks and the test that its CDK deployment works
