@@ -133,7 +133,7 @@ stateDiagram-v2
     state "not approved, not verified" as NANV
     state "approved, not verified" as ANV
     state "approved, verified" as AV
-    state "changed by a later Epic - not approved, this version not verified" as CH
+    state "changed by a later Epic - each flag cleared only by a change that affects it" as CH
 
     [*] --> NANV : seeded from arc42 and the repositories
     [*] --> NANV : recorded by an Epic's elaboration
@@ -150,9 +150,12 @@ Notes on the diagram:
 - Everything in the matrix is used, approved or not, verified or not
   ([requirements/matrix.md](../requirements/matrix.md) R26). Not approved means the architecture
   agents do due diligence on it; not verified means it may still have to be built.
-- In "changed by a later Epic", the last verified version stays known. That is what a spec reads
-  (section 4). A change to a verified element clears its verified flag, as a change clears
-  approved, and the next build and test of the element sets it again. A build verified while an
+- Both flags are dirty bits on the individual element, each cleared by its own kind of change
+  and never one because of the other ([requirements/matrix.md](../requirements/matrix.md),
+  section 3.5). Only the element that changes becomes dirty: an unchanged diagram or element
+  keeps both flags. In "changed by a later Epic", the code built for the element is still there,
+  and a spec starts from it (section 4). The next build and test of the element sets verified
+  again. A build verified while an
   element carries an approved change it did not build leaves the element not verified
   ([design/matrix.md](matrix.md) decision 9).
 - The matrix does not record Stories or Tasks, and does not record what is deployed. The owner:

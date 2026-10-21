@@ -224,11 +224,12 @@ side states that the Epic reaches from them, and the architecture-side relations
 those entries. What is read from the repositories is a hint and is never approved. The flag
 names the Epic whose approval set it. The approval clears from an entry or a relationship
 when anything other than its flags changes: when the entry or relationship is replaced by one
-that differs, when the text of a document changes (every entry the document describes loses
-the flag, except when the change is only the move of the document to effective), and when an
-architecture-side relationship is added, changed or removed (the entry it starts from loses
-the flag). It does not matter who makes the change. The flag returns when an Epic that reaches
-the content has its architecture and design approved again.
+that differs, when the text that describes it in a document changes (only the entries whose
+describing text changed lose the flag; the other entries the same document describes keep it,
+and the move of a document to effective changes no text), and when an architecture-side
+relationship is added, changed or removed (the entry it starts from loses the flag). It does
+not matter who makes the change. The flag returns when an Epic that reaches the content has
+its architecture and design approved again.
 
 **Verified.** The matrix has a verified flag. It says an item has been built and tested.
 Tested includes the CI checks and the CDK, and testing the CDK means testing that its
@@ -246,7 +247,8 @@ Requirements, features, documents and constraints are never set to verified by a
 Anything a stack or a Task only uses was already verified when it was itself built and
 tested.
 
-Verified is a property of the stack or component, valid for every Epic that relates to it.
+Verified is a property of the item itself (a stack, a component, or any finer entry or
+relationship), valid for every Epic that relates to it.
 An Epic owns no stack and no component: an Epic is a vehicle for requirements, and many Epics
 relate to many stacks and components. So verified is not a link between an Epic and its
 architecture documents, and it is neither set nor held per Epic.
@@ -255,10 +257,9 @@ At the start nothing is verified, so the first builds verify everything they bui
 that, Epics and builds are incremental: the matrix holds the verified current state, only
 changes show up as not verified, and only changes become Tasks.
 
-Verification is the only way to prove that the architecture is likely to work. Verified
-works much like approved: a change clears it, and the next build and test sets it again. When
-the architecture changes something that is verified (for example, an existing service needs a
-new feature), that item's verified flag is cleared. When the change has been built and tested,
+Verification is the only way to prove that the architecture is likely to work. When the
+architecture or design of something that is verified changes (for example, an existing service
+needs a new feature), that item's verified flag is cleared. When the change has been built and tested,
 the CDK deployment test included, the item is set to verified again. Any number of changes may
 be made before the next build; the item stays not verified until a build and test covers them
 all. A build leaves not verified anything that carries an approved change the build did not
@@ -266,6 +267,17 @@ build and test. The verified
 flag is available on every entry and every relationship, and required on none. No deployed
 mark and no merged mark exists. Whether something is currently deployed is not recorded: the
 environment is a development environment where stacks are deployed and torn down freely.
+
+**How the two flags change.** Both work like dirty bits. A known change clears a flag and
+marks the item dirty; approving the architecture sets approved again; building and testing the
+Story's Tasks, the CDK deployment test included, sets verified again. Each flag clears on its
+own kind of change, independently of the other: approved on any change to what the matrix or a
+document records about the item, verified on a change to what the item must be built as. They
+are separate flags: one change may clear only approved, only verified, or each at a different
+time; clearing one never clears the other. The flags sit on individual items at the finest grain the
+matrix records: architecture items and design details each carry their own flags, and only the
+item that changes becomes dirty. A service-to-service communication diagram that does not change
+stays clean while one detail of one feature that changes in the next Epic becomes dirty.
 
 An Epic can change the architecture at any point, and many Epics can go through elaboration
 with nothing built, so approved and verified apply to every Epic, not only to what was
@@ -489,9 +501,10 @@ so nothing is seeded as verified.
   the CI checks and the CDK, and testing the CDK means testing that its deployment works; the
   deployment may be removed again after the test. The test passing is the trigger: a merge is
   not, and neither a merge nor a branch decides verified. The flag is a property of the stack
-  or component, valid for every Epic that relates to it, and is never set per Epic. A change
-  the architecture makes to a verified item clears its flag, and the next build and test of
-  the item sets it again.
+  or component, or of a finer entry or relationship, valid for every Epic that relates to it,
+  and is never set per Epic. A change to what a verified item must be built as clears its flag
+  on that item alone, independently of the approved flag, and the next build and test of the
+  item sets it again.
   Nothing else sets it. No deployed mark and no merged mark exists. No elaboration step reads code to
   decide whether something is built. Whether something is currently deployed is not recorded
   and has no bearing on verified.
@@ -655,9 +668,9 @@ so nothing is seeded as verified.
   approval mark exists beside it. It is set on the architecture-side matrix content an Epic's
   elaboration reaches once the Epic's architecture and design are approved and the matrix and
   arc42 are filled out or corrected for that Epic. It is separate from verified, which says
-  an item was built and tested, the test that its deployment works included. Any change to an
-  entry or a relationship other than to its flags clears it there, whoever makes the change, as
-  section 3.5 states, until an Epic that reaches that content has its architecture and design
+  an item was built and tested, the test that its deployment works included, and each clears
+  on its own kind of change. Any change to an entry or a relationship other than to its flags
+  clears it on that item alone, whoever makes the change, as section 3.5 states, until an Epic that reaches that content has its architecture and design
   approved again. No session sets it by hand. Nothing is approved today.
 
 ### Links and resources

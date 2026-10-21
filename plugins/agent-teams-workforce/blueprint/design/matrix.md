@@ -209,11 +209,13 @@ and arc42 are filled out or corrected for it.
 - **When it clears.** `Matrix.put` and `Matrix.link` clear it on an entry or relationship
   replaced by one that differs in anything but its flags, and keep it when nothing else
   differs (so `sync-epics` leaves an unchanged requirement approved, and setting `verified`
-  leaves `approved` as it is). When a document's text changes (its `hash` or `headings`,
-  other than by the move of a document that was not effective to effective, which is the
-  promotion's own lifecycle change), every entry the architecture side says the document
-  describes (`describedBy`) loses it. An architecture-side relationship added, changed or
-  removed clears it on the entry it starts from. It returns when an Epic that reaches the
+  leaves `approved` as it is). When a document's text changes, only the entries whose
+  describing text changed lose it: each `describedBy` names the heading that describes its
+  entry, the document entry records a hash per heading, and an entry loses the flag when the
+  text under its heading changed. The other entries the document describes keep it, and the
+  move of a document that was not effective to effective changes no heading text. An
+  architecture-side relationship added, changed or removed clears it on the entry it starts
+  from. It returns when an Epic that reaches the
   content has its architecture and design approved again.
 - **Where it shows.** Every read that returns an entry or a relationship returns it where
   set; `summary` counts it by kind (`approvedByKind`, `approvedRelationshipsByKind`);
@@ -242,12 +244,13 @@ included. The deployment may be removed again after that test.
   every Epic that relates to it: it is not set per Epic and waits for no other Story.
 - For a stack with no CDK app, the publish of its package to CodeArtifact stands where the
   CDK deploy does. A Story that closes with no pull request runs no `verify`.
-- **When it clears.** A change clears it, as a change clears `approved` (section 1.4.1):
-  `Matrix.put` and `Matrix.link` clear it on an entry or relationship replaced by one that differs
-  in anything but its flags; a change to a document's text clears it on every entry the
-  architecture side says the document describes; an architecture-side relationship added,
-  changed or removed clears it on the entry it starts from. Setting `approved` leaves it as it
-  is. The next `verify` that covers the item sets it again.
+- **When it clears.** A known change to what the item must be built as clears it on that item
+  alone, as a dirty bit, settled separately from `approved` (one clearing never implies the
+  other): `Matrix.put` and `Matrix.link` clear it on an architecture-side entry or relationship
+  replaced by one that differs in anything but its flags; a change to the text under the
+  heading a `describedBy` names clears it on that entry only; an architecture-side relationship
+  added, changed or removed clears it on the entry it starts from. Setting `approved` neither
+  sets nor clears it. The next `verify` that covers the item sets it again.
 - `verify` leaves not verified an entry or relationship that carries an approved change this
   build did not build (`matrixcode.unbuilt_change`), and lists it under `unbuiltEntries` or
   `unbuiltRelationships`, so that the next spec for it covers that change. Entries and relationships an
@@ -672,7 +675,7 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
    things. A `selector` covers a rule that binds a whole class: Q5 has to return such a rule
    for a stack an Epic adds, which has no relationship to the rule yet.
 9. **A verified flag when verified code changes.** An architecture change to verified content
-   clears the flag, as a change clears approved, and the next build and test that covers the
+   clears the flag on that item alone, as a dirty bit settled separately from approved, and the next build and test that covers the
    content sets it again, because verified says the current architecture of the item is built
    and tested. The owner: "Now when the spec is written for an Epic, it sees that the
    architecture for that service is no longer verified." A build sets no flag on what carries an

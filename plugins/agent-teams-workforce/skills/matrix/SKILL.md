@@ -130,8 +130,8 @@ feature with no covering document), `requirementsReachNothing`, `requirementsNoS
 
 | Field | On | Meaning | Who sets it, when, how |
 |---|---|---|---|
-| `approved: {epic}` | any entry or relationship | The architecture and design of that Epic are approved, and the matrix and arc42 are filled out or corrected for it. Similar to, not the same as, `effective`. | Only the promotion step of elaboration (`orchestrator/flows/architecture_promotion.py`, calling `matrixwrite.approve` as role `script`) on the Epic's approval scope (`atw-matrix approval --epic <id>` shows it), once its reviews pass. No `atw-matrix` command and no session sets it. Any later change to the entry or relationship, or to a document that describes it, clears it. |
-| `verified: {commit}` | any entry or relationship | It was built and tested: the CI checks and the test that its CDK deployment works (the deployment may be removed again after the test). A property of the stack or component itself, valid for every Epic that relates to it. Verified = real, its code trusted; not verified = still to be made real, used like anything else. | Only the build driver (`ops/sdlc-automation/matrixmarks.py`), when a Story's test passes: `atw-matrix verify --story <id> --commit <the tested commit>` as role `build-driver`, on what the Story's Tasks state they built (`built`) and the relationships starting there. A merge never sets it; the merge is a separate step after the test. Any architecture change to the entry or relationship, or to a document that describes it, clears it, as a change clears `approved`; the next build and test sets it again. |
+| `approved: {epic}` | any entry or relationship | The architecture and design of that Epic are approved, and the matrix and arc42 are filled out or corrected for it. Similar to, not the same as, `effective`. | Only the promotion step of elaboration (`orchestrator/flows/architecture_promotion.py`, calling `matrixwrite.approve` as role `script`) on the Epic's approval scope (`atw-matrix approval --epic <id>` shows it), once its reviews pass. No `atw-matrix` command and no session sets it. Any later change to the entry or relationship, or to the heading text that describes it, clears it on that item alone. |
+| `verified: {commit}` | any entry or relationship | It was built and tested: the CI checks and the test that its CDK deployment works (the deployment may be removed again after the test). A property of the stack or component itself, valid for every Epic that relates to it. Verified = real, its code trusted; not verified = still to be made real, used like anything else. | Only the build driver (`ops/sdlc-automation/matrixmarks.py`), when a Story's test passes: `atw-matrix verify --story <id> --commit <the tested commit>` as role `build-driver`, on what the Story's Tasks state they built (`built`) and the relationships starting there. A merge never sets it; the merge is a separate step after the test. A known change to what the item must be built as (the entry or relationship itself, the heading text that describes it, or an architecture-side relationship starting at it) clears it on that item alone; the next build and test sets it again. |
 | `lifecycle` | `document` | Mirrors the arc42 front matter: `effective` (approved as of now), `in-review`, `draft`. | `atw-matrix sync-documents`; the promotion step after `depscore.py arch-approve`. |
 | `side` | everything | `architecture` (authority) or `repository` (hint). | Whoever records the fact: `put` and `link` take `--side`. |
 
@@ -151,6 +151,13 @@ section 3.5 and R25 state it:
   that, only changes are not verified, and only changes become Tasks.
 - What a stack or Task only uses (a shared library, a layer, a chassis) was verified when it
   was itself built and tested; using it verifies nothing.
+
+Both flags are dirty bits on individual items, at the finest grain the matrix records: a known
+change clears a flag on the item it touches and nothing else; approval sets `approved` again,
+and building and testing the Story's Tasks (the CDK deployment test included) sets `verified`
+again. They are separate flags: each clears on a change that affects it, independently of the
+other; one change may clear only `approved`, only `verified`, or each at a different time.
+Never infer one flag from the other.
 
 Reading the flags to decide what is planned and what exists:
 
