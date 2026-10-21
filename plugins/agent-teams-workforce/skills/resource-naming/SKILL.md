@@ -5,12 +5,12 @@ description: >-
   project's naming command, so no agent composes a name by hand. Use whenever you name, rename
   or review the name of a repository, CDK stack or stack file, Lambda function, DynamoDB table,
   S3 bucket, API Gateway API, IAM role, log group, state machine, EventBridge bus, rule or
-  schema, SQS queue, secret, SSM parameter, VPC, subnet, security group, KMS alias, Cognito
-  user pool or app client, Powertools service or metrics namespace, environment variable,
-  Python module, package or distribution, or any other name the project's naming standard
-  covers. Find the command with `printenv ATW_NAMING_COMMAND`, then run it (`<command> name
-  build ...`, `name convert ...`, `name check ...`); never type a name from memory or by
-  copying a neighbour.
+  schema, SQS queue, SNS topic, CloudWatch alarm, DynamoDB global secondary index, secret,
+  SSM parameter, VPC, subnet, security group, KMS alias, Cognito user pool or app client,
+  Powertools service or metrics namespace, environment variable, Python module, package or
+  distribution, or any other name the project's naming standard covers. Find the command with
+  `printenv ATW_NAMING_COMMAND`, then run it (`<command> name build ...`, `name convert ...`,
+  `name check ...`); never type a name from memory or by copying a neighbour.
 allowed-tools: [Bash]
 ---
 
@@ -39,7 +39,7 @@ The plugin's scripts (`polyrepo.py`, the elaboration steps) read it the same way
   `service`, file names). Check any existing or hand-edited name with `name check`.
 - **Never hand-compose a name**, never "fix up" a printed name, and never copy a name from a
   neighbouring stack as the pattern. A name the command refuses is wrong, however it reads.
-- **Trust what it returns.** A name the command built, converted or swapped is correct, and a
+- **Trust what it returns.** A name the command built, converted or swapped (`swap-tokens`) is correct, and a
   check that reported valid is final; do not check it again.
 - When the command refuses an input, read the violations it lists and change the input (the
   words of a token, the token you gave), not the name.
@@ -61,9 +61,9 @@ the text, which may be reworded.
 | list the kinds, each with its pattern | `<command> name build --help` |
 | see the tokens one kind takes | `<command> name build <kind> --help` |
 | build a name from its tokens | `<command> name build <kind> --<role> <value> ...` |
-| turn an existing name into a name of another kind | `<command> name convert <name> --to <kind> [--from <kind>] [--with <role>=<value> ...]` |
-| replace one token of an existing name | `<command> name swap <name> --set <role>=<value> ... [--kind <kind>]` |
-| check a name as a kind | `<command> name check <name> --kind <kind> [--expect <role>=<value> ...]` |
+| turn an existing name into a name of another kind | `<command> name convert <name> --to <kind> [--from <kind>] [--extra <role>=<value> ...]` |
+| replace tokens of an existing name | `<command> name swap-tokens <name> --replacements <role>=<value> ... [--kind <kind>]` |
+| check a name as a kind | `<command> name check <name> --kind <kind> [--expected <role>=<value> ...]` |
 | list the kinds a name is valid as | `<command> name identify <name>` |
 | check a repository name | `<command> name check-repository <name>` |
 | get the stack, stack file and Python names a repository name determines | `<command> name repository-names <repository>` |
@@ -75,7 +75,7 @@ Token values may be given in any normal form (`"career profile"`, `career-profil
 ```bash
 <command> name build cdk-stack --project Acme --domain "career profile" --type service -q
 <command> name convert Acme-dataAccess-lib --to python-distribution -q
-<command> name convert acme-image-service --to lambda-function --with action=resize -q
+<command> name convert acme-image-service --to lambda-function --extra action=resize -q
 <command> name check acme-careerProfile-service --kind cdk-stack
 <command> name repository-names Acme-careerProfile-service --json
 ```

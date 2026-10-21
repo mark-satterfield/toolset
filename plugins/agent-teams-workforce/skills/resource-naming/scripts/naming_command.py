@@ -226,11 +226,11 @@ def _text(document: Mapping[str, object], key: str) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def produced(answer: NamingAnswer, key: str = "name") -> str | None:
+def produced(answer: NamingAnswer, key: str = "value") -> str | None:
     """Read the value a producing command gave.
 
     Args:
-        answer: The answer of a `name build`, `name convert` or `name swap` call.
+        answer: The answer of a `name build`, `name convert` or `name swap-tokens` call.
         key: The field that holds the value.
 
     Returns:
@@ -332,7 +332,7 @@ def type_problem(value: str, environ: Mapping[str, str] | None = None) -> str | 
         None when the value is a type the naming command accepts; else its violations.
 
     """
-    answer = run_naming(["token", "check", value, "--role", ROLE_TYPE, "--in", KIND_REPOSITORY], environ)
+    answer = run_naming(["token", "check", value, "--role", ROLE_TYPE, "--where", KIND_REPOSITORY], environ)
     return None if answer.ok else violations_text(answer.document) or f"{value!r} is not a repository type"
 
 
@@ -413,7 +413,7 @@ def convert_repository(
         NamingCommandError: The command refused to convert it.
 
     """
-    extra = [arg for role, value in (tokens or {}).items() for arg in ("--with", f"{role}={value}")]
+    extra = [arg for role, value in (tokens or {}).items() for arg in ("--extra", f"{role}={value}")]
     answer = run_naming(["name", "convert", name, "--from", KIND_REPOSITORY, "--to", kind, *extra], environ)
     value = produced(answer)
     if value is None:

@@ -220,7 +220,7 @@ its tokens, its type and its deprecated name come from the naming command `ATW_N
 (the `resource-naming` skill says how to call it), which the tool asks once per name and run:
 `name check-repository` for a check and the kind and tokens, `name convert --to
 repository-deprecated` for a deprecated name, `name repository-names` for the stack and Python
-names, and `token check --role type --in repository` for a template type. A name is checked only
+names, and `token check --role type --where repository` for a template type. A name is checked only
 when it is new: when a repository is created or renamed. No other command checks or reports the
 name of an existing repository; cloning and deprecating ask the command only to place a
 repository and to give its deprecated name. `create` takes a name the command reads as a
