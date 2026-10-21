@@ -177,10 +177,11 @@ class RestoreResult(TypedDict):
 
 
 class PullRequest(TypedDict):
-    """A pull request's number and state, as gh reports them."""
+    """A pull request's number, state and head commit, as gh reports them."""
 
     number: int
     state: str
+    head: str
 
 
 class CleanupResult(TypedDict):
@@ -205,6 +206,7 @@ class SweptBranch(TypedDict):
     worktree: str | None
     pr: int | None
     prState: str | None
+    prHead: str | None
     ownCommits: int | None
     landed: str | None
     kept: str | None
@@ -870,7 +872,7 @@ def gh_head_pr(repo: str, branch: str) -> PullRequest | None:
     slug: str = github_slug(repo)
     shown: str = f"gh pr list --head {branch} --state all --repo {slug}"
     argv: list[str] = [executable, "pr", "list", "--head", branch, "--state", "all", "--repo", slug]
-    argv += ["--json", "number,state", "--limit", "100"]
+    argv += ["--json", "number,state,headRefOid", "--limit", "100"]
     done: subprocess.CompletedProcess[str] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Resolved gh executable and separate argv; shell disabled.
         argv,
         capture_output=True,
@@ -887,7 +889,12 @@ def gh_head_pr(repo: str, branch: str) -> PullRequest | None:
         msg = f"{shown} printed no JSON: {exc}"
         raise GitError(msg) from exc
     prs: list[PullRequest] = [
-        {"number": int(str(p.get("number", 0))), "state": str(p.get("state", ""))} for p in listed
+        {
+            "number": int(str(p.get("number", 0))),
+            "state": str(p.get("state", "")),
+            "head": str(p.get("headRefOid", "")),
+        }
+        for p in listed
     ]
     return max(prs, key=pr_number, default=None)
 
@@ -1068,11 +1075,41 @@ def cmd_cleanup_merged_pr(args: argparse.Namespace) -> CleanupResult:
         return result
     result["pr"] = current["number"]
     result["state"] = current["state"]
-    if current["state"] == "MERGED":
+    if current["state"] == "MERGED" and not merged_head_holds(repo, branch, current):
+        result["notes"].append(
+            f"{branch} has commits after pull request #{current['number']}'s head that the default branch lacks;"
+            " nothing deleted",
+        )
+    elif current["state"] == "MERGED":
         clean_merged(repo, worktree, branch, result)
     else:
         result["notes"].append(f"pull request #{current['number']} is {current['state']}; nothing deleted")
     return result
+
+
+def merged_head_holds(repo: str, ref: str, pr: PullRequest) -> bool:
+    """Whether a merged pull request carried everything on the ref.
+
+    True when the ref is the pull request's head commit or an ancestor of it, or when the default
+    branch holds the ref's content anyway; False when the ref has commits made after the head.
+
+    Args:
+        repo: The repository.
+        ref: The branch, or origin/<branch>.
+        pr: The merged pull request whose head is that branch.
+
+    Returns:
+        True when deleting the ref loses nothing.
+
+    """
+    head: str = pr["head"]
+    tip: str | None = out(repo, "rev-parse", "--verify", "--quiet", ref)
+    if tip is None or tip == head:
+        return True
+    if head and git(repo, "merge-base", "--is-ancestor", tip, head, check=False).returncode == 0:
+        return True
+    base: str | None = default_branch(repo)
+    return base is not None and content_landed(repo, f"origin/{base}", ref)
 
 
 def content_landed(repo: str, base_ref: str, ref: str) -> bool:
@@ -1140,13 +1177,17 @@ def landing(repo: str, base_ref: str, entry: SweptBranch) -> str | None:
     if pr is not None:
         entry["pr"] = pr["number"]
         entry["prState"] = pr["state"]
+        entry["prHead"] = pr["head"]
     own: str | None = out(repo, "rev-list", "--count", f"{base_ref}..{branch}")
     entry["ownCommits"] = int(own) if own is not None and own.isdigit() else None
     if pr is not None and pr["state"] == "OPEN":
         entry["kept"] = f"pull request #{pr['number']} is OPEN"
         return None
     if pr is not None and pr["state"] == "MERGED":
-        return "pr-merged"
+        if merged_head_holds(repo, branch, pr):
+            return "pr-merged"
+        entry["kept"] = f"it has commits after pull request #{pr['number']}'s head that {base_ref} lacks"
+        return None
     if entry["ownCommits"] == 0:
         return "no-own-commits"
     if content_landed(repo, base_ref, branch):
@@ -1247,6 +1288,7 @@ def cmd_sweep_merged(args: argparse.Namespace) -> SweepResult:
             "worktree": tree_of.get(branch),
             "pr": None,
             "prState": None,
+            "prHead": None,
             "ownCommits": None,
             "landed": None,
             "kept": None,
@@ -1259,7 +1301,14 @@ def cmd_sweep_merged(args: argparse.Namespace) -> SweepResult:
         entry["landed"] = landing(repo, base_ref, entry)
         if entry["landed"] is None:
             continue
-        if entry["landed"] != "pr-merged" and remote_holds_work(repo, base_ref, branch):
+        if remote_holds_work(repo, base_ref, branch) and not (
+            entry["landed"] == "pr-merged"
+            and merged_head_holds(
+                repo,
+                f"origin/{branch}",
+                {"number": entry["pr"] or 0, "state": "MERGED", "head": entry["prHead"] or ""},
+            )
+        ):
             entry["kept"] = f"origin/{branch} holds work {base_ref} lacks"
             continue
         remove_landed(repo, entry, own=branch in named)
