@@ -5978,7 +5978,10 @@ def _names_lines(plan: _NamesPlan) -> list[str]:
     for name in order:
         line = f"pull request {name}: one worktree, one commit, opened with the project's PR command"
         if name in plan.waits_on:
-            line += f"; waits on {', '.join(plan.waits_on[name])}, whose new package is not importable until released"
+            line += (
+                f"; waits on {', '.join(plan.waits_on[name])}, whose new package exists only once it is published "
+                "to CodeArtifact; its lock file is refreshed then, never edited"
+            )
         lines.append(line)
     for why, rows in sorted(plan.held_back.items()):
         what = {
@@ -6339,7 +6342,15 @@ def _pr_text(plan: _NamesPlan, name: str) -> tuple[str, str]:
         if s.new == name or change_label(c) in used
     ]
     if name in plan.waits_on:
-        lines.append(f"\nWaits on {', '.join(plan.waits_on[name])}: a new package name is importable once released.")
+        held = plan.waits_on[name]
+        dists = sorted({c.new for s in plan.subjects if s.new in held for c in s.changes if c.kind == "distribution"})
+        refresh = " ".join(f"--upgrade-package {d}" for d in dists or ["<library>"])
+        lines.append(
+            f"\nWaits on {', '.join(held)}: a new package name exists only once that library is published to "
+            "CodeArtifact. Its lock file is not edited here; once the library is published, run "
+            f"`uv lock {refresh}` on this branch. Never edit a pin, a lock file or a library version to get ahead "
+            "of CodeArtifact.",
+        )
     return title, "\n".join(lines)
 
 

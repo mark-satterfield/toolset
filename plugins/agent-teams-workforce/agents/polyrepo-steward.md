@@ -282,10 +282,13 @@ is moved with `git mv`, an `__init__.py` in an app folder is removed, and the pa
 and type check settings of `pyproject.toml` are set for the nested layout (setuptools scans
 namespaces; mypy gets `explicit_package_bases` and `mypy_path = "src"`). `rename --dry-run` prints
 all of it before anything changes: the name changes, the moves, the files edited in each
-repository, and which repository's pull request waits on which library's release. A real run puts each repository's changes in one
+repository, and which repository's pull request waits on which library's publish. A real run puts each repository's changes in one
 worktree, one commit and one pull request opened with the command `$ATW_PR_COMMAND` names. The repository's own
 `lint`, `typecheck` and `test` tasks run first; for a repository waiting on a library's renamed
-package only `ruff check` runs, because that package cannot be installed until it is released.
+package only `ruff check` runs, because that package cannot be installed until it is published to
+CodeArtifact. A consumer's lock file is never edited: its pull request asks for the lock file to be
+refreshed once the library is published. The project's library versioning rules, in its
+`AGENTS.md` (*Library versions*), hold throughout.
 A check that fails is written in the pull request body and the report, and the pull request is
 still opened, so a failure the change caused is fixed on its branch and one that was there before
 is reported. Nothing is merged. `--skip-repo R` is for
@@ -303,8 +306,9 @@ documents it changed. The rename or deprecation is not finished, and you do not 
 until the filing-clerk has updated and pushed every listed document. The tool re-keys in the matrix each
 published package it holds (`atw-matrix rename --from package:<old> --to package:<new>`) and
 commits the matrix; once the filing-clerk has changed the documents, you run
-`atw-matrix sync-documents --paths` on them and `commit`. A new library name is importable only once the library is released, so
-publishing is the library's own CI or declared publish command; you never publish by hand.
+`atw-matrix sync-documents --paths` on them and `commit`. A new library name is importable only once the library is published to
+CodeArtifact, so publishing is the library's own declared publish command, which you never run by
+hand.
 
 The naming command must accept the new name, so a name it refuses is never used. A repository that the approved architecture
 says is to be merged into another or retired is not renamed: name it in the report and leave it.

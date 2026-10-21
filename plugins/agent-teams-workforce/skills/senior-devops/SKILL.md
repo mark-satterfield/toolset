@@ -124,7 +124,7 @@ cdk deploy --profile dev <stack-name>
 
 ### 2. Package Publication
 
-A shared library publishes a new version to CodeArtifact with the publish command its repository declares; a consuming service then raises its dependency to that version.
+A shared library publishes a new version to CodeArtifact with the publish command its repository declares. How a library is versioned and how a consumer pins it and picks up a published version are the project's rules (its `AGENTS.md`); where the project states none, never edit a pin, a lock file or a library version to reach a version that is not yet published.
 
 ### 3. Rollback
 

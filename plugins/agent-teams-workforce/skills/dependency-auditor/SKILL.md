@@ -13,6 +13,8 @@ description: "Dependency Auditor"
 
 The **Dependency Auditor** is a comprehensive toolkit for analyzing, auditing, and managing dependencies across multi-language software projects. This skill provides deep visibility into your project's dependency ecosystem, enabling teams to identify vulnerabilities, ensure license compliance, optimize dependency trees, and plan safe upgrades.
 
+**The project's own libraries are out of scope for version advice.** A library the project builds and publishes itself is versioned and pinned by the project's own versioning rules, not by this skill. The pinning and upgrade guidance below, and the reporting of outdated pins and floating version specifiers, apply to third-party dependencies only.
+
 In modern software development, dependencies form complex webs that can introduce significant security, legal, and maintenance risks. A single project might have hundreds of direct and transitive dependencies, each potentially introducing vulnerabilities, license conflicts, or maintenance burden. This skill addresses these challenges through automated analysis and actionable recommendations.
 
 ## Core Capabilities
