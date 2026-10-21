@@ -52,6 +52,19 @@ Commands:
         removed, and every failure with git's exact message; it exits 0 whatever the PR's
         state, and 2 only when it could not run (gh missing, origin naming no GitHub
         repository, gh failing).
+    sweep-merged --repo R [--branch B ...] [--fetch]
+        Remove every local branch of R whose work is already on the default branch, with its
+        worktree and its GitHub branch. A branch has landed when its most recent pull request
+        is MERGED, when it has commits of its own whose content origin/<default> already holds
+        (`git cherry` shows none missing, or merging it into origin/<default> changes no file:
+        work landed as new commits), or when it has no commits of its own. It is kept when its
+        pull request is OPEN, when it or origin/<branch> holds work the default branch lacks,
+        or when its worktree has uncommitted changes. A worktree whose git index or HEAD
+        changed in the last hour is kept too (a session may be working in it), except for the
+        branches named with --branch, which are the caller's own. `--fetch` runs `git fetch
+        origin --prune` first. The primary working tree, main, the default branch and the
+        primary tree's branch are never touched. Reports, per branch, why it landed or was
+        kept and what was removed.
 """
 
 from __future__ import annotations
@@ -75,6 +88,7 @@ DOC_SUFFIXES: Final[tuple[str, ...]] = (".md", ".mdx", ".rst", ".adoc")
 WORKTREES_DIRNAME: Final[str] = ".worktrees"
 POLL_INTERVAL_SECONDS: Final[int] = 60
 PR_ENDED: Final[frozenset[str]] = frozenset({"MERGED", "CLOSED"})
+RECENT_SECONDS: Final[int] = 3600
 GITHUB_URL: Final[re.Pattern[str]] = re.compile(r"github\.com[:/](?P<owner>[^/]+)/(?P<name>[^/]+?)(?:\.git)?/?$")
 
 
@@ -184,6 +198,31 @@ class CleanupResult(TypedDict):
     failures: list[str]
 
 
+class SweptBranch(TypedDict):
+    """One local branch the `sweep-merged` command judged, and what it removed."""
+
+    branch: str
+    worktree: str | None
+    pr: int | None
+    prState: str | None
+    ownCommits: int | None
+    landed: str | None
+    kept: str | None
+    removedWorktree: bool
+    deletedBranch: bool
+    deletedRemote: bool
+    failures: list[str]
+
+
+class SweepResult(TypedDict):
+    """What the `sweep-merged` command found and removed in one repository."""
+
+    repo: str
+    defaultBranch: str
+    branches: list[SweptBranch]
+    notes: list[str]
+
+
 class ErrorResult(TypedDict):
     """The payload a command that could not do its work prints."""
 
@@ -192,7 +231,14 @@ class ErrorResult(TypedDict):
 
 
 type CommandResult = (
-    TreeFacts | ProvisionResult | HashFilesResult | SnapshotResult | ChangedResult | RestoreResult | CleanupResult
+    TreeFacts
+    | ProvisionResult
+    | HashFilesResult
+    | SnapshotResult
+    | ChangedResult
+    | RestoreResult
+    | CleanupResult
+    | SweepResult
 )
 
 
@@ -1029,6 +1075,198 @@ def cmd_cleanup_merged_pr(args: argparse.Namespace) -> CleanupResult:
     return result
 
 
+def content_landed(repo: str, base_ref: str, ref: str) -> bool:
+    """Whether the default branch already holds every change a ref makes, however it got there.
+
+    `git cherry` finds commits applied as the same patch; a merge of the ref into the base that
+    changes no file finds work squashed or landed as new commits.
+
+    Args:
+        repo: The repository.
+        base_ref: The default branch's remote ref (origin/<default>).
+        ref: The branch ref.
+
+    Returns:
+        True when nothing in the ref is missing from the base.
+
+    """
+    cherry: str | None = out(repo, "cherry", base_ref, ref)
+    if cherry is not None and not any(line.startswith("+") for line in cherry.splitlines()):
+        return True
+    merged: subprocess.CompletedProcess[str] = git(repo, "merge-tree", "--write-tree", base_ref, ref, check=False)
+    if merged.returncode != 0:
+        return False
+    lines: list[str] = merged.stdout.splitlines()
+    return bool(lines) and lines[0].strip() == out(repo, "rev-parse", f"{base_ref}^{{tree}}")
+
+
+def recently_active(worktree: str) -> bool:
+    """Whether the worktree's git index or HEAD changed within RECENT_SECONDS.
+
+    Args:
+        worktree: The linked worktree.
+
+    Returns:
+        True when a session may be working in it.
+
+    """
+    git_dir: str | None = absolute(worktree, out(worktree, "rev-parse", "--git-dir"))
+    if git_dir is None:
+        return False
+    stamps: list[float] = [
+        (Path(git_dir) / name).stat().st_mtime for name in ("index", "HEAD") if (Path(git_dir) / name).exists()
+    ]
+    return bool(stamps) and time.time() - max(stamps) < RECENT_SECONDS
+
+
+def landing(repo: str, base_ref: str, entry: SweptBranch) -> str | None:
+    """Decide whether a branch has landed, recording the evidence on the entry.
+
+    Args:
+        repo: The repository.
+        base_ref: origin/<default>.
+        entry: The branch being judged; its pr, prState, ownCommits and kept are filled in.
+
+    Returns:
+        How it landed (pr-merged, content-on-default, no-own-commits), or None when it is kept.
+
+    """
+    branch: str = entry["branch"]
+    try:
+        pr: PullRequest | None = gh_head_pr(repo, branch)
+    except GitError as exc:
+        entry["failures"].append(str(exc))
+        pr = None
+    if pr is not None:
+        entry["pr"] = pr["number"]
+        entry["prState"] = pr["state"]
+    own: str | None = out(repo, "rev-list", "--count", f"{base_ref}..{branch}")
+    entry["ownCommits"] = int(own) if own is not None and own.isdigit() else None
+    if pr is not None and pr["state"] == "OPEN":
+        entry["kept"] = f"pull request #{pr['number']} is OPEN"
+        return None
+    if pr is not None and pr["state"] == "MERGED":
+        return "pr-merged"
+    if entry["ownCommits"] == 0:
+        return "no-own-commits"
+    if content_landed(repo, base_ref, branch):
+        return "content-on-default"
+    entry["kept"] = f"{entry['ownCommits']} commit(s) hold work {base_ref} lacks"
+    return None
+
+
+def remote_holds_work(repo: str, base_ref: str, branch: str) -> bool:
+    """Whether origin/<branch> exists and holds work the default branch lacks.
+
+    Args:
+        repo: The repository.
+        base_ref: origin/<default>.
+        branch: The branch.
+
+    Returns:
+        True when deleting the GitHub branch would lose work.
+
+    """
+    remote: str = f"refs/remotes/origin/{branch}"
+    if out(repo, "rev-parse", "--verify", "--quiet", remote) is None:
+        return False
+    ahead: str | None = out(repo, "rev-list", "--count", f"{base_ref}..{remote}")
+    return ahead not in {None, "0"} and not content_landed(repo, base_ref, remote)
+
+
+def remove_landed(repo: str, entry: SweptBranch, *, own: bool) -> None:
+    """Remove a landed branch's worktree, local branch and GitHub branch, or record why it is kept.
+
+    Args:
+        repo: The repository.
+        entry: The landed branch; what was removed or kept is recorded on it.
+        own: The caller named the branch, so a recently active worktree is still removed.
+
+    """
+    branch: str = entry["branch"]
+    tree: str | None = entry["worktree"]
+    if tree and Path(tree).is_dir():
+        # Before git status, which rewrites the index and so its timestamp.
+        if not own and recently_active(tree):
+            entry["kept"] = f"its worktree {tree} changed in the last {RECENT_SECONDS // 60} minutes"
+            return
+        if status_lines(tree):
+            entry["kept"] = f"its worktree {tree} has uncommitted changes"
+            return
+        removal: tuple[str, ...] = ("worktree", "remove", "--force", tree)
+        removed: subprocess.CompletedProcess[str] = git(repo, *removal, check=False)
+        if removed.returncode != 0:
+            entry["failures"].append(failure_message(repo, removal, removed))
+            return
+        entry["removedWorktree"] = True
+    git(repo, "worktree", "prune", check=False)
+    deleted: subprocess.CompletedProcess[str] = git(repo, "branch", "-D", branch, check=False)
+    if deleted.returncode != 0:
+        entry["failures"].append(failure_message(repo, ("branch", "-D", branch), deleted))
+        return
+    entry["deletedBranch"] = True
+    if out(repo, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}") is None:
+        return
+    push: tuple[str, ...] = ("push", "origin", "--delete", branch)
+    pushed: subprocess.CompletedProcess[str] = git(repo, *push, check=False)
+    if pushed.returncode == 0:
+        entry["deletedRemote"] = True
+    else:
+        entry["failures"].append(failure_message(repo, push, pushed))
+
+
+def cmd_sweep_merged(args: argparse.Namespace) -> SweepResult:
+    """Run the `sweep-merged` command.
+
+    Args:
+        args: The parsed arguments.
+
+    Returns:
+        Every branch judged, why it landed or was kept, and what was removed.
+
+    """
+    repo: str = registered_worktrees(os.path.realpath(args.repo))[0]["worktree"]
+    default: str = require_default_branch(repo)
+    base_ref: str = f"origin/{default}"
+    result: SweepResult = {"repo": repo, "defaultBranch": default, "branches": [], "notes": []}
+    if args.fetch:
+        fetched: subprocess.CompletedProcess[str] = git(repo, "fetch", "origin", "--prune", check=False)
+        if fetched.returncode != 0:
+            result["notes"].append(failure_message(repo, ("fetch", "origin", "--prune"), fetched))
+    trees: list[Worktree] = registered_worktrees(repo)
+    protected: set[str] = protected_branches(repo, trees)
+    tree_of: dict[str, str] = {t["branch"]: t["worktree"] for t in trees if t["branch"]}
+    named: list[str] = args.branch or []
+    listed: str = git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads").stdout
+    for branch in named or listed.split():
+        if branch in protected:
+            result["notes"].append(f"{branch} is main, the default branch or the primary tree's branch; untouched")
+            continue
+        entry: SweptBranch = {
+            "branch": branch,
+            "worktree": tree_of.get(branch),
+            "pr": None,
+            "prState": None,
+            "ownCommits": None,
+            "landed": None,
+            "kept": None,
+            "removedWorktree": False,
+            "deletedBranch": False,
+            "deletedRemote": False,
+            "failures": [],
+        }
+        result["branches"].append(entry)
+        entry["landed"] = landing(repo, base_ref, entry)
+        if entry["landed"] is None:
+            continue
+        if entry["landed"] != "pr-merged" and remote_holds_work(repo, base_ref, branch):
+            entry["kept"] = f"origin/{branch} holds work {base_ref} lacks"
+            continue
+        remove_landed(repo, entry, own=branch in named)
+    git(repo, "worktree", "prune", check=False)
+    return result
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser.
 
@@ -1068,6 +1306,10 @@ def build_parser() -> argparse.ArgumentParser:
     clean: argparse.ArgumentParser = sub.add_parser("cleanup-merged-pr", help="remove a merged pull request's worktree")
     clean.add_argument("--worktree", required=True, help="the pull request's linked worktree")
     clean.add_argument("--wait", type=int, default=0, help="seconds to wait for an OPEN pull request to end")
+    sweep: argparse.ArgumentParser = sub.add_parser("sweep-merged", help="remove branches whose work has landed")
+    sweep.add_argument("--repo", required=True, help="the repository, or any of its worktrees")
+    sweep.add_argument("--branch", action="append", help="judge only this branch (repeatable): the caller's own")
+    sweep.add_argument("--fetch", action="store_true", help="git fetch origin --prune first")
     return parser
 
 
@@ -1079,6 +1321,7 @@ COMMANDS: Final[dict[str, Callable[[argparse.Namespace], CommandResult]]] = {
     "changed": cmd_changed,
     "restore": cmd_restore,
     "cleanup-merged-pr": cmd_cleanup_merged_pr,
+    "sweep-merged": cmd_sweep_merged,
 }
 
 
