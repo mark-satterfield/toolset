@@ -115,6 +115,10 @@ from checks_sync import (
     restore_changes,
 )
 from checks_sync import load_spec as load_checks_spec
+from control_pointers import ControlPointerError, Pointer
+from control_pointers import environment as control_pointer_environment
+from control_pointers import patterns as control_pointer_patterns
+from control_pointers import scan as control_pointer_scan
 from driver_surface_types import CONTROL_REPO_ENV
 from gitnexus_setup import (
     GitHookSpec,
@@ -167,6 +171,11 @@ from naming_command import (
 )
 from rulesets import RulesetSpec, RulesetSpecError, applies, load_rulesets, workflow_checks
 from technology_scan import scan_markdown, scan_repository, summarize, summary_markdown
+from tooling_sync import Copy, ToolingSpec, ToolingSyncError
+from tooling_sync import apply as apply_tooling
+from tooling_sync import copy_of as tooling_copy_of
+from tooling_sync import load_spec as load_tooling_spec
+from tooling_sync import plan as plan_tooling
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -4189,6 +4198,7 @@ def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dic
         if env_res["problems"]:
             res["environment_error"] = "; ".join(env_res["problems"])
     res["gitnexus_files"] = gitnexus_install(cfg, dest)
+    res["tooling_files"] = write_tooling(cfg, dest, name, args.space)
     # The template's output is formatted as the repo's own checkers format it, so the first
     # commit carries no formatting findings and the commit hook has nothing to rewrite.
     format_problems = format_rendered(dest)
@@ -4654,6 +4664,8 @@ BEADS_GITIGNORE = (
     ".beads/issues.jsonl",
     "*.gate.lock*",
 )
+# Tool caches every repo ignores: each checker writes its cache in the folder it runs from, the root.
+TOOL_CACHE_GITIGNORE = (".ruff_cache/", ".mypy_cache/", ".pytest_cache/")
 BEADS_TRACKED = (
     ".beads/config.yaml",
     ".beads/metadata.json",
@@ -4692,7 +4704,7 @@ def gitignore_missing(cfg: Config, r: LocalRepo) -> list[str]:
     """
     f = r.path / ".gitignore"
     have = {_ignore_key(ln) for ln in f.read_text().splitlines()} if f.is_file() else set()
-    want = [*BEADS_GITIGNORE, *_template_ignore_lines(cfg, r)]
+    want = [*BEADS_GITIGNORE, *TOOL_CACHE_GITIGNORE, *_template_ignore_lines(cfg, r)]
     out: list[str] = []
     for w in want:
         if _ignore_key(w) not in have and w not in out:
@@ -7360,7 +7372,10 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
 # registers in its own `.claude/settings.json`. A handler the block owns is identified by the script
 # path that follows the environment variable in a block command (`"$VAR/ops/x.sh"` owns `ops/x.sh`),
 # so a repo's older registration of the same script, through any variable, is replaced; every other
-# key, event, matcher group and handler a repo has is kept.
+# key, event, matcher group and handler a repo has is kept. The block's `retired` list names scripts
+# whose handlers are removed from every repo. With `hooks_sync.script_source`, each owned script's
+# master copy is that folder's file at the same path, and every repo gets its own copy, so its hooks
+# run from the repo itself (`$CLAUDE_PROJECT_DIR/<path>`) and point back to no other repository.
 
 CLAUDE_SETTINGS = ".claude/settings.json"
 HOOKS_SYNC_SUBJECT = "chore(claude): sync the shared hook registrations"
@@ -7378,6 +7393,8 @@ class HooksBlock:
     owned: frozenset[str]
     exclude: frozenset[str]
     exclude_spaces: frozenset[str]
+    retired: frozenset[str] = frozenset()
+    scripts: tuple[tuple[str, Path], ...] = ()
 
     def applies_to(self, name: str, space: str) -> bool:
         """Say whether a repo receives the block.
@@ -7398,7 +7415,17 @@ class HooksBlock:
         if not isinstance(handler, dict):
             return False
         command = str(handler.get("command") or "")
-        return any(f"/{path}" in command for path in self.owned)
+        return any(f"/{path}" in command for path in self.owned | self.retired)
+
+    def script_copies(self, repo: Path) -> dict[str, Copy]:
+        """Return the owned scripts the repo's copy of lacks or holds stale, with their master's content.
+
+        Returns:
+            Repository-relative path to the copy it should hold; empty when every copy is current or
+            the block names no script source.
+
+        """
+        return {rel: c for rel, master in self.scripts if (c := tooling_copy_of(master, repo / rel)) is not None}
 
 
 def _hook_events(value: object, what: str) -> HookEvents:
@@ -7456,11 +7483,23 @@ def _hooks_block(cfg: Config) -> HooksBlock | None:
     if len(owned) == 0 or len({c for c in commands if HOOK_SCRIPT_PATH.search(c)}) != len(commands):
         msg = f"hooks_sync block {f}: every command must run a script through an environment variable path"
         raise PolyrepoError(msg)
+    retired = frozenset(_strs(_map(parsed, "hooks block").get("retired") or [], "hooks block retired"))
+    scripts: list[tuple[str, Path]] = []
+    if spec.get("script_source"):
+        source = (cfg.file.parent / str(spec["script_source"])).resolve()
+        for rel in sorted(owned):
+            master = source / rel
+            if not master.is_file():
+                msg = f"hooks_sync: the block runs {rel}, but its master copy {master} does not exist"
+                raise PolyrepoError(msg)
+            scripts.append((rel, master))
     return HooksBlock(
         events,
         owned,
         frozenset(_strs(spec.get("exclude") or [], "hooks_sync exclude")),
         frozenset(_strs(spec.get("exclude_spaces") or [], "hooks_sync exclude_spaces")),
+        retired,
+        tuple(scripts),
     )
 
 
@@ -7534,8 +7573,10 @@ def write_hooks(cfg: Config, dest: Path, name: str, space: str) -> bool:
         return False
     path = dest / CLAUDE_SETTINGS
     cur, want = _settings_text(path, block)
+    copies = block.script_copies(dest)
+    apply_tooling(dest, copies)
     if cur == want:
-        return False
+        return bool(copies)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(want, encoding="utf-8")
     return True
@@ -7562,23 +7603,30 @@ def _hooks_sync_one(
         cur, want = _settings_text(path, block)
     except PolyrepoError as exc:
         return {"repo": r.name, "state": "invalid", "status": "skipped", "detail": str(exc)}
-    state = "current" if cur == want else ("missing-file" if cur is None else "outdated")
-    res: dict[str, object] = {"repo": r.name, "state": state}
+    copies = block.script_copies(r.path)
+    state = "current" if cur == want and not copies else ("missing-file" if cur is None else "outdated")
+    res: dict[str, object] = {"repo": r.name, "state": state, "scripts": sorted(copies)}
     if state == "current" or not write:
         return res
-    if git_out(r.path, "status", "--porcelain", "--", CLAUDE_SETTINGS):
-        return {**res, "status": "skipped", "detail": f"{CLAUDE_SETTINGS} has uncommitted changes"}
+    if git_out(r.path, "status", "--porcelain", "--", CLAUDE_SETTINGS, *copies):
+        return {**res, "status": "skipped", "detail": f"{CLAUDE_SETTINGS} or a hook script has uncommitted changes"}
     if (stopped := _advance_for_sync(cfg, r)) is not None:
         return {**res, **stopped}
     branch = git_out(r.path, "symbolic-ref", "--short", "-q", "HEAD")
     if branch != cfg.default_branch:
         return {**res, "status": "skipped", "detail": f"on {branch}, not {cfg.default_branch}"}
     cur, want = _settings_text(path, block)
-    return {**res, **_commit_hooks(cfg, r, (cur, want), trailer)}
+    return {**res, **_commit_hooks(cfg, r, (cur, want), trailer, block.script_copies(r.path))}
 
 
-def _commit_hooks(cfg: Config, r: LocalRepo, texts: tuple[str | None, str], trailer: str | None) -> dict[str, object]:
-    """Write the settings file, commit it on main and push.
+def _commit_hooks(
+    cfg: Config,
+    r: LocalRepo,
+    texts: tuple[str | None, str],
+    trailer: str | None,
+    copies: dict[str, Copy],
+) -> dict[str, object]:
+    """Write the settings file and the hook script copies, commit them on main and push.
 
     Returns:
         The status (`pushed`, `committed` when the push failed, `failed`) and any detail.
@@ -7588,9 +7636,11 @@ def _commit_hooks(cfg: Config, r: LocalRepo, texts: tuple[str | None, str], trai
     path = r.path / CLAUDE_SETTINGS
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(want, encoding="utf-8")
+    paths = [CLAUDE_SETTINGS, *apply_tooling(r.path, copies)]
     try:
-        _commit_paths(r.path, [CLAUDE_SETTINGS], _with_trailer(HOOKS_SYNC_SUBJECT, trailer))
+        _commit_paths(r.path, paths, _with_trailer(HOOKS_SYNC_SUBJECT, trailer))
     except GitFailedError as exc:
+        _undo_written(r.path, paths[1:])
         git(r.path, "reset", "-q", "--", CLAUDE_SETTINGS)
         if cur is None:
             path.unlink(missing_ok=True)
@@ -8501,6 +8551,215 @@ def cmd_gitnexus_sync(args: argparse.Namespace, cfg: Config) -> int:
     return 1 if bad or group_bad or queued else 0
 
 
+# tooling-sync ---------------------------------------------------------------------------------
+# The config's `tooling_sync.files` names the tooling the control repo holds the master copy of and
+# copies into every repo (tooling_sync.py plans it), so each repo is self-contained: it runs its own
+# GitNexus scripts, its own project skills and, for a library, its own release script, and nothing in
+# it points back to the control repo. Everything copied is tier 2 tooling, committed on main.
+
+TOOLING_SYNC_SUBJECT = "chore(tooling): sync the repository's own copies of the shared tooling"
+
+
+def _tooling_spec(cfg: Config) -> ToolingSpec | None:
+    """Read the config's `tooling_sync` section.
+
+    Returns:
+        The spec, or None when the config has none.
+
+    Raises:
+        PolyrepoError: when the section is malformed.
+
+    """
+    try:
+        return load_tooling_spec(cfg.raw.get("tooling_sync"), cfg.file.parent)
+    except ToolingSyncError as exc:
+        raise PolyrepoError(str(exc)) from exc
+
+
+def _tooling_plan(cfg: Config, spec: ToolingSpec, repo: Path, name: str) -> dict[str, Copy]:
+    """Plan one repo's tooling copies, asking the naming command for its type only when an entry needs it.
+
+    Returns:
+        Repository-relative path to the copy it should hold.
+
+    """
+    repo_type = cfg.repository_type(name) if spec.typed else None
+    return plan_tooling(spec, repo, name, repo_type)
+
+
+def _undo_written(repo: Path, paths: list[str]) -> None:
+    """Put back the files a failed commit would have changed: tracked ones from HEAD, new ones removed."""
+    if not paths:
+        return
+    git(repo, "reset", "-q", "--", *paths)
+    tracked = set((git_out(repo, "ls-files", "-z", "--", *paths) or "").split("\0")) - {""}
+    if tracked:
+        git(repo, "checkout", "-q", "--", *sorted(tracked))
+    for rel in set(paths) - tracked:
+        (repo / rel).unlink(missing_ok=True)
+
+
+def write_tooling(cfg: Config, dest: Path, name: str, space: str) -> list[str]:
+    """Write a new repo's tooling copies, committing nothing (used by create).
+
+    Returns:
+        The repository-relative paths written.
+
+    """
+    spec = _tooling_spec(cfg)
+    if spec is None or not spec.applies_to(name, space):
+        return []
+    return apply_tooling(dest, _tooling_plan(cfg, spec, dest, name))
+
+
+def _tooling_sync_one(
+    cfg: Config,
+    spec: ToolingSpec,
+    r: LocalRepo,
+    write: bool,
+    trailer: str | None,
+) -> dict[str, object]:
+    """Bring one repo's tooling copies current, committed on main in its primary tree and pushed.
+
+    Returns:
+        {repo, state, files} plus, when it wrote, the status, commit and any detail.
+
+    """
+    copies = _tooling_plan(cfg, spec, r.path, r.name)
+    res: dict[str, object] = {"repo": r.name, "state": "outdated" if copies else "current", "files": sorted(copies)}
+    if not copies or not write:
+        return res
+    if git_out(r.path, "status", "--porcelain", "--", *copies):
+        return {**res, "status": "skipped", "detail": "files to write have uncommitted changes"}
+    if (stopped := _advance_for_sync(cfg, r)) is not None:
+        return {**res, **stopped}
+    branch = git_out(r.path, "symbolic-ref", "--short", "-q", "HEAD")
+    if branch != cfg.default_branch:
+        return {**res, "status": "skipped", "detail": f"on {branch}, not {cfg.default_branch}"}
+    return {**res, **_land_tooling(cfg, r, apply_tooling(r.path, _tooling_plan(cfg, spec, r.path, r.name)), trailer)}
+
+
+def _land_tooling(cfg: Config, r: LocalRepo, paths: list[str], trailer: str | None) -> dict[str, object]:
+    """Commit the written tooling copies on main and push.
+
+    Returns:
+        The status (`pushed`, `committed` when the push failed, `failed`, `current` when nothing was
+        left to write after main was brought up), the commit and any detail.
+
+    """
+    if not paths:
+        return {"state": "current"}
+    try:
+        _commit_paths(r.path, paths, _with_trailer(TOOLING_SYNC_SUBJECT, trailer))
+    except GitFailedError as exc:
+        _undo_written(r.path, paths)
+        return {"status": "failed", "detail": str(exc)}
+    commit = git_out(r.path, "rev-parse", "--short=8", "HEAD")
+    cp = git(r.path, "push", "origin", cfg.default_branch, timeout=120)
+    if cp.returncode != 0:
+        return {"status": "committed", "commit": commit, "detail": f"push failed: {_last_line(cp)}"}
+    return {"status": "pushed", "commit": commit}
+
+
+def cmd_tooling_sync(args: argparse.Namespace, cfg: Config) -> int:
+    """Copy the control repo's shared tooling into every repo, committing and pushing each repo.
+
+    Returns:
+        0 when every repo is current (or was brought current and pushed), else 1.
+
+    Raises:
+        PolyrepoError: when the config has no `tooling_sync` section.
+
+    """
+    spec = _tooling_spec(cfg)
+    if spec is None:
+        msg = "the polyrepo config has no tooling_sync section"
+        raise PolyrepoError(msg)
+    repos = [
+        r
+        for r in _local_repos(cfg, args.repo, args.space)
+        if not cfg.is_deprecated_name(r.name) and spec.applies_to(r.name, r.space)
+    ]
+    write = not args.check and not args.dry_run
+    with concurrent.futures.ThreadPoolExecutor(max_workers=APPLY_WORKERS if write else WORKERS) as ex:
+        results = list(ex.map(lambda r: _tooling_sync_one(cfg, spec, r, write, args.trailer), repos))
+    bad = [x for x in results if x["state"] != "current" and (not write or x.get("status") not in AGENTS_SYNC_DONE)]
+
+    def text() -> str:
+        rows = [
+            f"  {x['repo']}: {x.get('status', 'would update')}  {x.get('commit', '')}  "
+            f"{', '.join(_strs(x['files'], 'files'))}  {x.get('detail', '')}".rstrip()
+            for x in results
+            if x["state"] != "current"
+        ]
+        return "\n".join([f"{len(results)} repos, {len(rows)} not current", *rows])
+
+    emit(args, {"repos": results, "not_current": len(bad)}, text)
+    return 1 if bad else 0
+
+
+# control-pointers -----------------------------------------------------------------------------
+# Every repo is self-contained: the control repo may reach out to it, never the reverse.
+# control_pointers.py finds each tracked line of a repo that names the control repo's variables,
+# writes its path, or climbs to it (the config's `control_pointers`); the records the config's
+# `rename.sweep_exclude` lists are not searched.
+
+
+def _control_pointer_rows(cfg: Config, r: LocalRepo, control: Path) -> list[dict[str, object]]:
+    """Scan one repo for pointers back to the control repo.
+
+    Returns:
+        One finding row per pointer, or one `scan-failed` row.
+
+    """
+    spec = _map(cfg.raw.get("control_pointers") or {}, "config control_pointers")
+    variables = _strs(spec.get("variables") or [], "control_pointers variables")
+    exclude = _strs(_map(cfg.raw.get("rename") or {}, "config rename").get("sweep_exclude") or [], "sweep_exclude")
+    pats = control_pointer_patterns(control, variables, control_pointer_environment())
+    try:
+        hits: list[Pointer] = control_pointer_scan(r.path, control, pats, variables, exclude)
+    except ControlPointerError as exc:
+        return [{"repo": r.name, "kind": "scan-failed", "detail": str(exc), "status": "open"}]
+    return [
+        {
+            "repo": r.name,
+            "kind": "control-pointer",
+            "path": h.path,
+            "line": h.line,
+            "detail": f"{h.path}:{h.line} points back to the control repo: {h.text[:160]}",
+            "status": "open",
+        }
+        for h in hits
+    ]
+
+
+def cmd_control_pointers(args: argparse.Namespace, cfg: Config) -> int:
+    """Report every tracked line of a repo that points back to the control repo.
+
+    Returns:
+        0 when no repo points back, else 1.
+
+    """
+    control = cfg.file.parent.parent.resolve()
+    repos = [
+        r
+        for r in _local_repos(cfg, args.repo, args.space)
+        if not cfg.is_deprecated_name(r.name) and r.path.resolve() != control
+    ]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        rows = [row for found in ex.map(lambda r: _control_pointer_rows(cfg, r, control), repos) for row in found]
+    by_repo: dict[str, int] = {}
+    for row in rows:
+        by_repo[str(row["repo"])] = by_repo.get(str(row["repo"]), 0) + 1
+
+    def text() -> str:
+        head = f"{len(repos)} repos, {len(rows)} pointer(s) back to the control repo in {len(by_repo)} repo(s)"
+        return "\n".join([head, *(f"  {row['repo']}: {row['detail']}" for row in rows)])
+
+    emit(args, {"repos": len(repos), "findings": rows, "by_repo": by_repo}, text)
+    return 1 if rows else 0
+
+
 # tech-stacks ----------------------------------------------------------------------------------
 
 
@@ -9343,6 +9602,8 @@ DOCTOR_CHECKS: dict[str, list[str]] = {
     "checks-sync": [sys.executable, str(SELF), "checks-sync", "--check", "--json"],
     "rulesets": [sys.executable, str(SELF), "rulesets", "--json"],
     "gitnexus-sync": [sys.executable, str(SELF), "gitnexus-sync", "--check", "--json"],
+    "tooling-sync": [sys.executable, str(SELF), "tooling-sync", "--check", "--json"],
+    "control-pointers": [sys.executable, str(SELF), "control-pointers", "--json"],
     "beads": ["bash", str(BEADS_AUDIT), "--json"],
     "beads-setup": [sys.executable, str(SELF), "beads-setup", "--check", "--json"],
     "beads-fleet": [sys.executable, str(SELF), "beads-fleet", "--json"],
@@ -9359,6 +9620,7 @@ DOCTOR_REPAIRS: dict[str, list[str]] = {
     "checks-sync": [sys.executable, str(SELF), "checks-sync", "--json"],
     "rulesets --fix": [sys.executable, str(SELF), "rulesets", "--fix", "--json"],
     "gitnexus-sync": [sys.executable, str(SELF), "gitnexus-sync", "--json"],
+    "tooling-sync": [sys.executable, str(SELF), "tooling-sync", "--json"],
     "beads-setup --all": [sys.executable, str(SELF), "beads-setup", "--all", "--json"],
     "beads-fleet --fix": [sys.executable, str(SELF), "beads-fleet", "--fix", "--json"],
     "deprecated-prs --fix": [
@@ -9372,6 +9634,7 @@ SYNC_CHECK_DETAIL: dict[str, str] = {
     "agents-sync": "shared AGENTS.md block not current",
     "hooks-sync": "shared hook registrations not current",
     "checks-sync": "canonical checker configurations not current",
+    "tooling-sync": "the repository's copies of the shared tooling not current",
 }
 
 
@@ -9447,6 +9710,7 @@ def _doctor_findings(check: str, data: dict[str, object]) -> list[DoctorFinding]
         "archive-due",
         "beads-fleet",
         "beads-setup",
+        "control-pointers",
         "deprecated-prs",
         "environment",
         "python-names",
@@ -10008,6 +10272,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_inspect_commands(add)
     _add_repo_commands(add)
     _add_upkeep_commands(add)
+    _add_tooling_commands(add)
     _add_rulesets_command(add)
     _add_tier_commands(add)
     return p
@@ -10270,6 +10535,28 @@ def _add_rulesets_command(add: Callable[[str, str], argparse.ArgumentParser]) ->
     s.add_argument("--repo", action="append", help="only this repo (repeatable)")
     s.add_argument("--space", help="only this app space (default: every app space)")
     s.set_defaults(func=cmd_rulesets)
+
+
+def _add_tooling_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> None:
+    """Add tooling-sync and control-pointers."""
+    s = add(
+        "tooling-sync",
+        "copy the control repo's shared tooling (tooling_sync.files) into every repo, so each is self-contained",
+    )
+    s.add_argument("--check", action="store_true", help="report repos out of date")
+    s.add_argument("--dry-run", action="store_true", help="same as --check")
+    s.add_argument("--repo", action="append", help="only this repo (repeatable)")
+    s.add_argument("--space", help="only this app space (default: every app space)")
+    s.add_argument("--trailer", help="a line to end each commit message with")
+    s.set_defaults(func=cmd_tooling_sync)
+
+    s = add(
+        "control-pointers",
+        "report every tracked line of a repo that points back to the control repo",
+    )
+    s.add_argument("--repo", action="append", help="only this repo (repeatable)")
+    s.add_argument("--space", help="only this app space (default: every app space)")
+    s.set_defaults(func=cmd_control_pointers)
 
 
 def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> None:

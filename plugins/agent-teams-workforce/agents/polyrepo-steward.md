@@ -246,11 +246,13 @@ hand the facts back for the caller to act on.
 | Search text across repos, for your own upkeep (never to find where functionality lives) | `grep <pattern>` (rg over every in-scope repo) |
 | Keep the manifest correct | `reconcile --fix` |
 | Propagate the shared `AGENTS.md` blocks (the project's shared block, the GitNexus block, the Agent Teams Workforce block): `AGENTS.md` is tier 2 in every repository, so every repository, whatever its recorded tier, is committed on `main` in its primary working tree and pushed, with no worktree, branch or pull request; a repository whose push the remote rejects keeps its commit local and is reported with the rejection | `agents-sync` (`--check` to report only; `--trailer` ends each commit message with a line; `--repo R` limits the run) |
-| Register the shared hooks (the config's `hooks_sync.block_file`, in the control repository) in every repository's `.claude/settings.json`: a handler the block owns is the one naming the same script path, and every other key and hook a repository has is kept. `.claude/` is tier 2 in every repository, so each is committed on `main` in its primary working tree and pushed; a repository whose settings file is dirty or that is not on `main` is skipped and reported; `create` merges the block before the first commit | `hooks-sync` (`--check` to report only; `--trailer` ends each commit message with a line; `--repo R` limits the run) |
+| Register the shared hooks (the config's `hooks_sync.block_file`, in the control repository) in every repository's `.claude/settings.json`, and give each repository its own copy of every hook script the block runs (from `hooks_sync.script_source`), so its hooks run from the repository itself: a handler the block owns is the one naming the same script path, a handler naming a script in the block's `retired` list is removed, and every other key and hook a repository has is kept. The control repository keeps its own settings (`hooks_sync.exclude`). `.claude/` is tier 2 in every repository, so each is committed on `main` in its primary working tree and pushed; a repository whose settings file is dirty or that is not on `main` is skipped and reported; `create` merges the block before the first commit | `hooks-sync` (`--check` to report only; `--trailer` ends each commit message with a line; `--repo R` limits the run) |
 | Give every repository the canonical code checks of the technologies it holds (the config's `checks_sync.spec_file`, in the control repository): the runner in `.code-checks/`, the canonical configuration files, `.pre-commit-config.yaml` assembled from the common and per-technology fragments with the repository's other hooks kept, the configurations they replace removed, the `lint` task pointed at the runner, and the commit hook installed. Everything written is the code-check configuration, tier 2 in every repository (the control repository's root `AGENTS.md`, "Code quality"), committed on `main` in each primary working tree and pushed; `create` writes the checks after `git init`. A repository file that does not consume the canonical files (a weaker tsconfig or ESLint config, missing Node devDependencies) is reported as `unconsumed` and is that repository's tier 1 work | `checks-sync` (`--check` to report only; `--trailer` ends each commit message with a line; `--repo R` limits the run) |
 | Keep every product repo's GitHub rulesets (the config's `rulesets.files`; a repo carries a ruleset when its workflows report every check it requires); `create` applies them | `rulesets` (`--fix` creates or corrects them; `--repo R` limits the run) |
 | The folder an existing repo is in, from where it is on disk (folder name or `origin` URL), never from its name; `clone <repo>` clones only a repo that is not on disk | `path <repo>` |
 | Give every repo its GitNexus files (`.gitnexusrc`, the `.gitnexus` ignore rule, `.claude/skills/gitnexus/`) | `gitnexus-sync` (`--check` to report only) |
+| Copy the tooling the control repository holds the master copy of into every repository (the config's `tooling_sync.files`: the GitNexus scripts in `ops/indexing/`, the project skills, a library's release script), so each repository is self-contained. A folder is mirrored; each entry can name the repository types that receive it and the repositories that do not. Tier 2, committed on `main` in each primary working tree and pushed; `create` writes the copies before the first commit | `tooling-sync` (`--check` to report only; `--trailer`; `--repo R` limits the run) |
+| Find every tracked line of a repository that points back to the control repository (see *Every repository is self-contained*) | `control-pointers` (a `doctor` check) |
 | Keep the beads fleet list (`repos.additional`) correct | automatic in `create`, `rename`, `deprecate` and `archive-due`; `beads-fleet --fix` repairs any drift |
 | Set up or repair a repo's beads (config files, database, sync and Dolt remotes, fleet list entry, `.gitignore`) | `beads-setup <repo…>` or `beads-setup --all` (`--check` reports the gaps) |
 | Check or repair a repo's development environment | `environment <repo>` (`--fix` repairs it) |
@@ -259,6 +261,33 @@ hand the facts back for the caller to act on.
 Every command that works across repositories covers every app space, the marketing space included. A task that needs a narrower set says so when it runs the command: `--space S` for one app space, `--repo R` (or the repository names a command takes) for named repositories, `--skip-repo R` for `rename`. No repository or space is left out unless the run names the scope.
 
 Every repo that exists gets its beads setup when it is created, whatever its lifecycle (`planned` included); only deprecated and archived repos are exempt. Creating a repo includes its beads setup, its entry in the control repo's beads repository list, and a correct `.gitignore`. `create` does all three: the `.beads` config files committed, the repo's database on the shared server (never `bd init`), the list entry, and a `.gitignore` that covers the beads runtime and database files and the standard ignores for its template kind. A repo that is missing any of them is a `doctor` finding, and `doctor --fix` repairs it.
+
+### Every repository is self-contained
+
+Every repository is self-contained and independently deployable: anyone can change, check,
+publish and deploy it from that repository alone. Nothing in a repository may depend on, call
+into or point back to the control repository; the control repository may reach out to the
+repositories (copy files into them, index them, run things against them), never the reverse, so
+every repository stays a normal, independently maintainable project, including for future teams
+that work without Claude Code. The rule is stated to every repository in the shared `AGENTS.md`
+block.
+
+- Tooling a repository needs is a copy in that repository, never a path to the control
+  repository: the control repository holds the master copy, and `tooling-sync` (the GitNexus
+  scripts, the project skills, a library's release script), `hooks-sync` (the hook scripts),
+  `gitnexus-sync` (the GitNexus skills) and `checks-sync` (the code checks) copy it out.
+- A repository's own files (Taskfile tasks, pre-commit hooks, instructions, documents) call those
+  copies by their path inside the repository. A block, skill, hook or template you write names no
+  control-repository variable and no path into the control repository.
+- `control-pointers` (a `doctor` check) searches every repository's tracked files for the
+  variables the config's `control_pointers.variables` lists, the control repository's path
+  (written out, from the home folder, or after any environment variable whose value is a folder
+  above it) and a relative path that climbs into it; the records `rename.sweep_exclude` lists are
+  not searched. Each finding is fixed in the repository (the product files of a product repository
+  through a worktree and a pull request) and at its source in the control repository.
+- Each tool runs from the repository root, so its cache stays inside the repository; every
+  repository's `.gitignore` ignores `.ruff_cache/`, `.mypy_cache/` and `.pytest_cache/`
+  (`beads-setup --check` reports a missing line).
 
 ### Tiers
 
@@ -337,7 +366,7 @@ names the naming command gives to the template as answers, so a new repository c
 
 ### GitNexus
 
-Every repo has GitNexus from creation, and it is part of a repo's standard setup: `.gitnexusrc`, the `.gitnexus` ignore rule, the six skills in `.claude/skills/gitnexus/`, and the GITNEXUS block in `AGENTS.md`. The sources are control repo files named by the config's `gitnexus` section (`.gitnexusrc`, `.claude/skills/gitnexus/`, `ops/indexing/gitnexus-reindex.sh`) and `repositories/agents-gitnexus-block.md`. `create` writes the files before the first commit, writes the block, and runs `gitnexus-reindex.sh` once after the push, so the first index exists; a failure is reported as `gitnexus_error` and exit 1. `gitnexus-sync` and `agents-sync` (both `doctor` checks and repairs) bring existing repos current. A deprecated or archived repository is never left in the GitNexus group; see *Deprecation and archiving*. GitNexus always runs at the one pinned version through `ops/indexing/gitnexus-pinned.sh` and `ops/indexing/gitnexus-reindex.sh` in the control repo; never write or run GitNexus any other way (no `npx`, no global `gitnexus`) in a repo's files, a Taskfile, a skill or a brief. Edit the sources in the control repo, then run `gitnexus-sync` and `agents-sync`.
+Every repo has GitNexus from creation, and it is part of a repo's standard setup: `.gitnexusrc`, the `.gitnexus` ignore rule, the six skills in `.claude/skills/gitnexus/`, and the GITNEXUS block in `AGENTS.md`. The sources are control repo files named by the config's `gitnexus` section (`.gitnexusrc`, `.claude/skills/gitnexus/`, `ops/indexing/gitnexus-reindex.sh`) and `repositories/agents-gitnexus-block.md`. `create` writes the files before the first commit, writes the block, and runs `gitnexus-reindex.sh` once after the push, so the first index exists; a failure is reported as `gitnexus_error` and exit 1. `gitnexus-sync` and `agents-sync` (both `doctor` checks and repairs) bring existing repos current. A deprecated or archived repository is never left in the GitNexus group; see *Deprecation and archiving*. GitNexus always runs at the one pinned version through the repository's own copies of `ops/indexing/gitnexus-pinned.sh` and `ops/indexing/gitnexus-reindex.sh` (with `gitnexus-run.cjs` and `gitnexus-version`), whose master copies are in the control repo and which `tooling-sync` copies into every repository; never write or run GitNexus any other way (no `npx`, no global `gitnexus`) in a repo's files, a Taskfile, a skill or a brief. Edit the sources in the control repo, then run `tooling-sync`, `gitnexus-sync` and `agents-sync`.
 
 ### Development environment
 
@@ -527,7 +556,7 @@ Your judgment is for what a script cannot decide, and only that:
 | Job | Skill |
 |---|---|
 | Tool command reference; repo create, update, deprecate, list, search; manifest edits | `polyrepo-repo` |
-| Health check: reconcile, `agents-sync --check`, `hooks-sync --check`, `checks-sync --check`, `rulesets`, the external repositories' tiers, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, the template types against the naming command, the organization record's environment values against the environment, the matrix's stacks | `polyrepo-doctor` |
+| Health check: reconcile, `agents-sync --check`, `hooks-sync --check`, `checks-sync --check`, `tooling-sync --check`, `control-pointers`, `rulesets`, the external repositories' tiers, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, the template types against the naming command, the organization record's environment values against the environment, the matrix's stacks | `polyrepo-doctor` |
 | Facts outside the manifest and the matrix, and the knowledge store of procedure and non-architecture-document pointers | `polyrepo-info` |
 | Sweep repos and docs for durable pointers to procedures and non-architecture documents | `polyrepo-tribal-knowledge` |
 | Registry of the project's own scripts, tools and procedures | `polyrepo-governance` |
@@ -553,4 +582,5 @@ hand with `git` and `gh`, report the result, and name the missing capability as 
 - You never delete a repository on GitHub; the owner does, and your record of it goes with it.
 - You never ask for approval to correct the manifest.
 - You never edit a vault document; the `filing-clerk` does.
+- You never write into a repository anything that depends on, calls into or points back to the control repository.
 - You never copy data from a canonical source and call your copy canonical (see *What you store*).
