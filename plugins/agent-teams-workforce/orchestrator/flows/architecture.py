@@ -687,10 +687,10 @@ def specialist(run: StepRun) -> AgentLaunch:
 
     The agent is the one the step names: the architect's result named it (``requests``), the
     architect started it in its own session and it was left running, or the lead asked it for an
-    opinion. No code chooses it. The repository steward, when named, does the repository work the
-    architect's placement calls for; the placement itself is the architect's, recorded in the
-    matrix before the steward starts and checked when the architect's result is accepted
-    (``repo_scoping.story_build_problems``).
+    opinion. No code chooses it. The repository steward, when named, answers what the architect's
+    placement needs to know about the repositories; the placement itself is the architect's,
+    recorded in the matrix before the steward starts and checked when the architect's result is
+    accepted (``repo_scoping.story_build_problems``).
 
     Returns:
         The launch from the request file the step's parameters name, else the saved one: the

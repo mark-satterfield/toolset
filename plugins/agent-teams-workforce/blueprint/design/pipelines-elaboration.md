@@ -386,7 +386,7 @@ sequenceDiagram
 **Subject:** deciding the repository and stack of every resource and component the design needs.
 **Scope:** the end of the architecture stage.
 **Purpose:** that repositories are decided from the resources and components, not before them.
-**Boundary:** creating a repository is repository work, done by the `polyrepo-steward`.
+**Boundary:** creating a repository is the `span` step's, done with the `polyrepo-steward`'s `polyrepo` tool.
 **Sources:** The owner: "But the architect skips steps when it immediately looks at the
 repositories. Those repositories are only based on the high-level architecure and none of the
 detailed design.", "How would architecture know which repos are needed until it knows which
@@ -394,9 +394,9 @@ resources are needed? I want to remind you that not all repos have stacks.", "Al
 specialest agents that weren't happening until spec writing still have to be done before you
 know what repos can be determined." and "all resources or components or whatever will need a
 repository." The solutions architect decides where each element lives (the architecture decides
-the repository and stack of each element, and the `polyrepo-steward` does the repository work
-that follows, because where an element lives follows from the design and repository work is the
-steward's).
+the repository and stack of each element, and the `span` step creates each repository that
+follows with the `polyrepo-steward`'s `polyrepo` tool, because where an element lives follows from
+the design).
 
 ```mermaid
 flowchart TD

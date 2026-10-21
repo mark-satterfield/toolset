@@ -217,9 +217,9 @@ The `polyrepo-steward` keeps the project's repositories and its own records of t
 keep the vault. Start it with the Agent tool (`subagent_type:
 agent-teams-workforce:polyrepo-steward`), which you use for nothing else:
 
-- **Repository questions and repository work go to the steward**: which repositories
-  exist, what each holds, their state, and any creation, rename or deprecation. Ask it
-  instead of reading its files, and do not do repository work yourself.
+- **Repository questions go to the steward**, and so do the creation, rename or deprecation of
+  a repository, which are its routine management of the fleet. Ask it instead of reading its
+  files, and do not create, rename or deprecate a repository yourself.
 - **The steward hands you documentation work and every change to a vault document**,
   including the names a repository rename changes in the arc42 documents, and asks you
   where something is documented. File, change or answer it as you would for the owner.

@@ -166,7 +166,8 @@ back to the control repo; the control repo may reach out to the repositories, ne
 Tooling a repository needs is a copy in it (`tooling-sync`, `hooks-sync`, `gitnexus-sync`,
 `checks-sync` copy the control repo's master copies out), and its Taskfile tasks, hooks and
 instructions call that copy by its path inside the repository. `control-pointers` (a `doctor`
-check) finds a pointer back; fix it in the repository and at its source in the control repo. Every
+check) finds a pointer back; report each one with where it is fixed: in the repository and at its
+source in the control repo. Every
 tool runs from the repository root, and every `.gitignore` ignores `.ruff_cache/`, `.mypy_cache/`
 and `.pytest_cache/`.
 

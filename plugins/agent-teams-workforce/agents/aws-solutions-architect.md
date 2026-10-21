@@ -269,7 +269,7 @@ A new stack is recorded first, then one `homeIn` for each placed entry. Give `--
 only for a repository that exists, with its name exactly as `atw-matrix node stack:<id>` or the
 repository inventory prints it. For a repository that does not exist yet, leave `--repository`
 out and never type a name for it: the elaboration's `span` step names it with the project's
-naming command and creates it. The placement is yours; the repository work is not.
+naming command and creates it. The placement is yours; creating the repository is not.
 
 ## Delegating to specialists
 
@@ -281,7 +281,7 @@ detail stays in those files.
 You decide which agents are needed; nothing else chooses them. The catalog of the
 `find-specialists` skill lists every agent of the plugin with its description, the skills it
 loads and the MCP servers its tools reach: find there, by subject, the agents this Epic's design
-needs, as the skill says. `polyrepo-steward` does the repository work your placement calls for;
+needs, as the skill says. `polyrepo-steward` answers what your placement needs to know about the repositories;
 `trd-author` and `architecture-maintainer` are started as "The TRD" and "Having the documents
 written" say.
 

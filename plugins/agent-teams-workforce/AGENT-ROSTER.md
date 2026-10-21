@@ -410,7 +410,7 @@ Reached through the `polyrepo-router` skill or the `/polyrepo-steward` command; 
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| polyrepo-steward | execute | The one place to ask about the project's repositories: answers from live git and GitHub facts and the matrix's stacks, and does the repository work itself (create, rename, deprecate, archive, rebase, search, `AGENTS.md` propagation, template upkeep). |
+| polyrepo-steward | execute | The fleet's caretaker and the place to ask about the project's repositories; ask it first whenever work involves more than one repository. Carries out the fleet's routine management and keeps its records true, but never authors or edits a repository's content; it says when its templates, master copies or tool need to change, and specialist agents write the changes. |
 
 ## AWS service coverage
 

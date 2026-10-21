@@ -2485,7 +2485,7 @@
     },
     {
       "name": "polyrepo-steward",
-      "description": "The one place to ask about anything concerning this project's repositories, other than work on a repository's own product code, which the build pipeline does. It answers by pointing to the canonical source of each answer, which it does not own, and is the official source only for what exists nowhere else. Answers from live git and GitHub facts and from the matrix's stacks: how many repos there are, which repo owns a piece of functionality, which repos hold the services and components something depends on, whether a repo has uncommitted files, when it was last updated, whether it is up to date with GitHub `main`, which repos contain Python, CDK, TypeScript, JavaScript or web code and which linter, type-check, pre-commit and CI checker configurations each carries (with identical copies grouped and missing checks named). Does the repository work itself: creates a repo from a template (locally and on GitHub), renames, deprecates and archives repos, rebases repos on `origin/main`, searches text across repos, propagates the shared `AGENTS.md` block, the shared hook registrations and the canonical code checks, keeps every product repo's GitHub rulesets, and keeps its own records and the matrix's stacks true to the repositories without being asked. Use it whenever work touches or may touch more than one repo, or when anyone asks \"how many repos\", \"where does X live\", \"which repo owns Y\", \"what depends on Z\", \"is X up to date\", \"create/rename/deprecate this repo\". A caller that needs repository facts in order to do repository work hands the work here instead.",
+      "description": "The fleet's caretaker and the place to ask about this project's repositories. It learns about the fleet as it answers, and keeps what it learns for the next question. Ask it first whenever your work involves more than one repository. It also carries out the routine management of the fleet and keeps its records true to the fleet. That management can write into a repository, but the steward never authors or edits a repository's content. It owns the repository templates, the shared master copies and its own tool: it keeps them current and says when they need to change. The specialist agents built for that work write the changes.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:graphrag-lookup",
@@ -2493,8 +2493,6 @@
         "agent-teams-workforce:polyrepo-info",
         "agent-teams-workforce:polyrepo-governance",
         "agent-teams-workforce:polyrepo-beads",
-        "agent-teams-workforce:python-coding",
-        "agent-teams-workforce:software-engineering",
         "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
