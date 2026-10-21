@@ -163,6 +163,7 @@ from naming_command import (
     repository_names,
     type_problem,
 )
+from rulesets import RulesetSpec, RulesetSpecError, applies, load_rulesets, workflow_checks
 from technology_scan import scan_markdown, scan_repository, summarize, summary_markdown
 
 if TYPE_CHECKING:
@@ -3961,6 +3962,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
                 "then commit"
             ),
             f"create the private GitHub repo {cfg.owner}/{name} and push {b}",
+            "give a product repo the GitHub rulesets whose required checks its workflows report (rulesets.files)",
             f"add the manifest entry (lifecycle {args.lifecycle}, tier {args.tier or default_tier(cfg, name)})",
             "record the repo's stack in the matrix when its name ends in a stack type (purpose not stated)",
             "set up beads: .beads config files, shared-server database, standard .gitignore; commit and push",
@@ -4007,6 +4009,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
                 + (f"; environment setup failed: {res['environment_error']}" if res.get("environment_error") else "")
                 + (f"; formatting left findings: {res['format_error']}" if res.get("format_error") else "")
                 + (f"; matrix update failed: {res['matrix_error']}" if res.get("matrix_error") else "")
+                + (f"; rulesets failed: {res['ruleset_error']}" if res.get("ruleset_error") else "")
                 + (f"; beads setup failed: {res['beads_error']}" if res.get("beads_error") else "")
                 + (f"; GitNexus index failed: {res['gitnexus_error']}" if res.get("gitnexus_error") else ""),
                 *_placement_lines(res),
@@ -4118,11 +4121,42 @@ def _create_stack_records(cfg: Config, name: str, space: str) -> list[str]:
     return [record_stack(cfg, name, space, known), matrix_commit(cfg)]
 
 
-def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict[str, object]) -> int:
-    """Add the new repo's manifest entry, record its stack in the matrix, set up its beads, log it, and commit.
+def _create_rulesets(
+    args: argparse.Namespace,
+    cfg: Config,
+    dest: Path,
+    res: dict[str, object],
+    log: list[str],
+) -> int:
+    """Give the new repo the rulesets it carries (see `applicable_rulesets`), recording them in res and log.
 
     Returns:
-        0, or 1 when the environment, matrix or beads setup failed.
+        0, or 1 when a ruleset could not be read or created.
+
+    """
+    name = args.name
+    try:
+        wanted = applicable_rulesets(_ruleset_specs(cfg), args.tier or default_tier(cfg, name), dest)
+    except PolyrepoError as exc:
+        res["ruleset_error"] = str(exc)
+        log.append(f"rulesets FAILED: {exc}")
+        return 1
+    failed = [f for f in ruleset_findings(cfg, name, wanted, fix=True) if f.status != "fixed"]
+    res["rulesets"] = [s.name for s in wanted]
+    if failed:
+        res["ruleset_error"] = "; ".join(f"{f.detail}: {f.error}" for f in failed)
+        log.append(f"rulesets FAILED: {res['ruleset_error']}")
+        return 1
+    if wanted:
+        log.append(f"rulesets: {', '.join(s.name for s in wanted)}")
+    return 0
+
+
+def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict[str, object]) -> int:
+    """Add the new repo's manifest entry, record its stack, set its rulesets and beads, and commit.
+
+    Returns:
+        0, or 1 when the environment, matrix, rulesets or beads setup failed.
 
     """
     name = args.name
@@ -4141,6 +4175,7 @@ def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict
         res["matrix_error"] = str(exc)
         log.append(f"matrix update FAILED: {exc}")
         code = 1
+    code = max(code, _create_rulesets(args, cfg, dest, res, log))
     if res.get("environment_error"):
         log.append(f"environment setup FAILED: {res['environment_error']}")
         code = 1
@@ -5243,8 +5278,8 @@ def _placement_lines(res: dict[str, object]) -> list[str]:
     return [f"missing placement entry: {missing}"] if isinstance(missing, str) and missing else []
 
 
-def _clone_conflicts(cfg: Config, name: str) -> list[Path]:
-    """Find every clone of this repo already on disk, by folder name or by origin URL.
+def clones_on_disk(cfg: Config, name: str) -> list[Path]:
+    """Find every clone of this repo already on disk, by folder name or by origin URL (discovery).
 
     Returns:
         The paths of those clones.
@@ -5262,36 +5297,65 @@ def _clone_conflicts(cfg: Config, name: str) -> list[Path]:
     return sorted(found)
 
 
-def cmd_clone(args: argparse.Namespace, cfg: Config) -> int:
-    """Clone a repo into the folder its name and project give it, never anywhere else.
-
-    A new clone of an active repo gets its re-index git hook and GitNexus group entry, and is
-    queued for a background re-index.
+def _one_clone(cfg: Config, name: str) -> Path | None:
+    """Find the one folder an existing repo is in, from discovery.
 
     Returns:
-        0 when the repo is cloned or is already at its correct folder; 1 when its GitNexus setup failed.
+        The clone's path, or None when the repo is not on disk.
 
     Raises:
-        PolyrepoError: when the repo already exists at any other path, is on disk more than
-            once, does not exist on GitHub, or the clone fails.
+        PolyrepoError: when the repo is on disk more than once.
+
+    """
+    here = clones_on_disk(cfg, name)
+    if len(here) > 1:
+        msg = f"{name} is on disk more than once: " + ", ".join(str(p) for p in here)
+        raise PolyrepoError(msg)
+    return here[0] if here else None
+
+
+def cmd_path(args: argparse.Namespace, cfg: Config) -> int:
+    """Report the folder an existing repo is in, from discovery: its folder name or its origin URL.
+
+    Returns:
+        0 when the repo is on disk, 1 when it is not.
 
     """
     name = args.repo
+    found = _one_clone(cfg, name)
+    res: dict[str, object] = {"repo": name, "path": str(found) if found else None}
+    emit(args, res, lambda: f"{name}: {found}" if found else f"{name}: not on disk")
+    return 0 if found else 1
+
+
+def cmd_clone(args: argparse.Namespace, cfg: Config) -> int:
+    """Clone a repo that is not on disk into the folder its name and project give it.
+
+    A repo already on disk is reported where discovery finds it, wherever that is. A new clone of
+    an active repo gets its re-index git hook and GitNexus group entry, and is queued for a
+    background re-index.
+
+    Returns:
+        0 when the repo is cloned or is already on disk; 1 when its GitNexus setup failed.
+
+    Raises:
+        PolyrepoError: when the repo is on disk more than once, does not exist on GitHub, or the
+            clone fails.
+
+    """
+    name = args.repo
+    found = _one_clone(cfg, name)
+    if found is not None:
+        here: dict[str, object] = {"repo": name, "path": str(found), "cloned": False, "placement_missing": None}
+        emit(args, here, lambda: f"{name}: already at {found}")
+        return 0
     dest = _clone_dest(cfg, name)
-    here = _clone_conflicts(cfg, name)
     res: dict[str, object] = {
         "repo": name,
         "path": str(dest),
         "cloned": False,
         "placement_missing": _placement_missing_of(cfg, name),
     }
-    wrong = [p for p in here if p != dest]
-    if wrong:
-        msg = f"refusing to clone {name} into {dest}: it already exists at " + ", ".join(str(p) for p in wrong)
-        raise PolyrepoError(msg)
-    if dest in here:
-        emit(args, res, lambda: "\n".join([f"{name}: already at {dest}", *_placement_lines(res)]))
-        return 0
     if dest.exists():
         msg = f"{dest} exists and is not a git clone"
         raise PolyrepoError(msg)
@@ -7800,6 +7864,158 @@ def cmd_checks_sync(args: argparse.Namespace, cfg: Config) -> int:
     return 1 if bad else 0
 
 
+# rulesets -------------------------------------------------------------------------------------
+# The config's `rulesets.files` name the GitHub repository rulesets (rulesets.py). Which ones a
+# repository carries is `applicable_rulesets`; `create` applies them and `cmd_rulesets` checks them.
+
+RULESET_TIMEOUT = 60
+
+
+def _ruleset_specs(cfg: Config) -> list[RulesetSpec]:
+    """Read the ruleset files the config names.
+
+    Returns:
+        The rulesets; none when the config has no `rulesets` section.
+
+    Raises:
+        PolyrepoError: when a ruleset file is missing or malformed.
+
+    """
+    section = _map(cfg.raw.get("rulesets") or {}, "config rulesets")
+    files = [cfg.file.parent / f for f in _strs(section.get("files") or [], "config rulesets.files")]
+    try:
+        return load_rulesets(files)
+    except RulesetSpecError as exc:
+        raise PolyrepoError(str(exc)) from exc
+
+
+def _gh_json(*args: str) -> object:
+    """Run `gh api` and parse its JSON; a gh failure propagates as the GitFailedError that `must` raises.
+
+    Returns:
+        The parsed output.
+
+    """
+    cp = run(["gh", "api", *args], timeout=RULESET_TIMEOUT)
+    must(cp)
+    return json.loads(cp.stdout or "null")
+
+
+def _repository_rulesets(cfg: Config, name: str) -> dict[str, int]:
+    """List the repository's own rulesets (not the organization's) by name.
+
+    Returns:
+        The ruleset ids by name.
+
+    """
+    listed = _gh_json(f"repos/{cfg.owner}/{name}/rulesets")
+    out: dict[str, int] = {}
+    for item in _seq(listed or [], "rulesets"):
+        entry = _map(item, "ruleset")
+        if entry.get("source_type") == "Repository":
+            out[str(entry.get("name"))] = int(str(entry.get("id")))
+    return out
+
+
+def ruleset_findings(cfg: Config, name: str, specs: Sequence[RulesetSpec], fix: bool) -> list[Finding]:
+    """Compare a repository's rulesets on GitHub with the specs that apply to it, and with fix create or correct them.
+
+    Returns:
+        One finding per ruleset that is missing or differs, with its status after any fix.
+
+    """
+    try:
+        live = _repository_rulesets(cfg, name)
+    except (GitFailedError, PolyrepoError, json.JSONDecodeError, ValueError) as exc:
+        return [Finding("ruleset-unreadable", name, f"could not list its rulesets: {exc}", status="failed")]
+    found: list[Finding] = []
+    for spec in specs:
+        rid = live.get(spec.name)
+        if rid is None:
+            finding = Finding("ruleset-missing", name, f"has no ruleset {spec.name}", fix=f"create {spec.name}")
+            argv = ["-X", "POST", f"repos/{cfg.owner}/{name}/rulesets", "--input", str(spec.path)]
+        else:
+            body = _map(_gh_json(f"repos/{cfg.owner}/{name}/rulesets/{rid}"), "ruleset")
+            fields = spec.differs(body)
+            if not fields:
+                continue
+            finding = Finding(
+                "ruleset-differs",
+                name,
+                f"ruleset {spec.name} differs in {', '.join(fields)}",
+                fix=f"set {spec.name} from {spec.path.name}",
+            )
+            argv = ["-X", "PUT", f"repos/{cfg.owner}/{name}/rulesets/{rid}", "--input", str(spec.path)]
+        if fix:
+            cp = run(["gh", "api", *argv], timeout=RULESET_TIMEOUT)
+            finding.status, finding.error = ("fixed", None) if cp.returncode == 0 else ("failed", _last_line(cp))
+        found.append(finding)
+    return found
+
+
+def applicable_rulesets(specs: Sequence[RulesetSpec], tier: str | None, repo: Path) -> list[RulesetSpec]:
+    """Pick the rulesets a repository carries: a product repository's whose required checks its workflows report.
+
+    Returns:
+        The rulesets; none for a repository that is not product.
+
+    """
+    if tier != TIER_PRODUCT:
+        return []
+    checks = workflow_checks(repo)
+    return [s for s in specs if applies(s, checks)]
+
+
+def cmd_rulesets(args: argparse.Namespace, cfg: Config) -> int:
+    """Check that every product repository carries its rulesets on GitHub; with --fix, create or correct them.
+
+    Returns:
+        0 when every repository carries them (or each was fixed), else 1.
+
+    """
+    specs = _ruleset_specs(cfg)
+    entries = Manifest(cfg.manifest, GitHub(cfg, use_cache=True)).entries()
+    picked = [
+        (r, wanted)
+        for r in _local_repos(cfg, args.repo, args.space)
+        if not cfg.is_deprecated_name(r.name)
+        and (wanted := applicable_rulesets(specs, _tier_of(entries.get(r.name)), r.path))
+    ]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        nested = list(ex.map(lambda p: ruleset_findings(cfg, p[0].name, p[1], args.fix), picked))
+    findings = [f for group in nested for f in group]
+    data: dict[str, object] = {
+        "rulesets": [s.name for s in specs],
+        "repos": [r.name for r, _ in picked],
+        "findings": [f.as_dict() for f in findings],
+        "open": sum(f.status in {"open", "failed"} for f in findings),
+        "fixed": sum(f.status == "fixed" for f in findings),
+    }
+    emit(
+        args,
+        data,
+        lambda: "\n".join(
+            [f"{len(picked)} product repos carry rulesets; {data['open']} open, {data['fixed']} fixed"]
+            + [
+                f"  [{f.kind}] {f.repo}: {f.detail} ({f.status})" + (f": {f.error}" if f.error else "")
+                for f in findings
+            ],
+        ),
+    )
+    return 1 if data["open"] else 0
+
+
+def _tier_of(entry: Mapping[str, object] | None) -> str | None:
+    """Read a manifest entry's tier.
+
+    Returns:
+        The tier, or None when there is no entry or it records none.
+
+    """
+    tier = entry.get("tier") if entry is not None else None
+    return str(tier) if tier is not None else None
+
+
 # GitNexus ---------------------------------------------------------------------------------
 # Every repo has GitNexus: `.gitnexusrc`, the `.gitnexus` ignore rule, the six skills in
 # `.claude/skills/gitnexus/` and the GITNEXUS block in AGENTS.md (an agents-sync block), which are
@@ -8901,6 +9117,7 @@ DOCTOR_CHECKS: dict[str, list[str]] = {
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--check", "--json"],
     "hooks-sync": [sys.executable, str(SELF), "hooks-sync", "--check", "--json"],
     "checks-sync": [sys.executable, str(SELF), "checks-sync", "--check", "--json"],
+    "rulesets": [sys.executable, str(SELF), "rulesets", "--json"],
     "gitnexus-sync": [sys.executable, str(SELF), "gitnexus-sync", "--check", "--json"],
     "beads": ["bash", str(BEADS_AUDIT), "--json"],
     "beads-setup": [sys.executable, str(SELF), "beads-setup", "--check", "--json"],
@@ -8916,6 +9133,7 @@ DOCTOR_REPAIRS: dict[str, list[str]] = {
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--json"],
     "hooks-sync": [sys.executable, str(SELF), "hooks-sync", "--json"],
     "checks-sync": [sys.executable, str(SELF), "checks-sync", "--json"],
+    "rulesets --fix": [sys.executable, str(SELF), "rulesets", "--fix", "--json"],
     "gitnexus-sync": [sys.executable, str(SELF), "gitnexus-sync", "--json"],
     "beads-setup --all": [sys.executable, str(SELF), "beads-setup", "--all", "--json"],
     "beads-fleet --fix": [sys.executable, str(SELF), "beads-fleet", "--fix", "--json"],
@@ -9005,6 +9223,7 @@ def _doctor_findings(check: str, data: dict[str, object]) -> list[DoctorFinding]
         "deprecated-prs",
         "environment",
         "python-names",
+        "rulesets",
         "tiers",
     }:
         rows = [_map(f, "finding") for f in _seq(data.get("findings") or [], "findings")]
@@ -9532,6 +9751,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_inspect_commands(add)
     _add_repo_commands(add)
     _add_upkeep_commands(add)
+    _add_rulesets_command(add)
     _add_tier_commands(add)
     return p
 
@@ -9664,10 +9884,17 @@ def _add_repo_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
 
     s = add(
         "clone",
-        "clone a repo into the folder its name gives it; refuse if it exists elsewhere",
+        "clone a repo that is not on disk into the folder its name gives it; report one already on disk",
     )
     s.add_argument("repo")
     s.set_defaults(func=cmd_clone)
+
+    s = add(
+        "path",
+        "the folder an existing repo is in, found by its folder name or origin URL",
+    )
+    s.add_argument("repo")
+    s.set_defaults(func=cmd_path)
 
     s = add(
         "rename",
@@ -9764,6 +9991,18 @@ def _add_checks_sync_command(add: Callable[[str, str], argparse.ArgumentParser])
     s.add_argument("--space", help="only this app space (default: every app space)")
     s.add_argument("--trailer", help="a line to end each commit message with")
     s.set_defaults(func=cmd_checks_sync)
+
+
+def _add_rulesets_command(add: Callable[[str, str], argparse.ArgumentParser]) -> None:
+    """Add rulesets."""
+    s = add(
+        "rulesets",
+        "check that every product repo carries the project's GitHub rulesets (rulesets.files)",
+    )
+    s.add_argument("--fix", action="store_true", help="create or correct each ruleset that is missing or differs")
+    s.add_argument("--repo", action="append", help="only this repo (repeatable)")
+    s.add_argument("--space", help="only this app space (default: every app space)")
+    s.set_defaults(func=cmd_rulesets)
 
 
 def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> None:

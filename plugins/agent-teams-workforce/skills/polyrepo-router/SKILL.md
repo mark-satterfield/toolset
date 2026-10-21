@@ -21,7 +21,7 @@ caller's request to it, and relay its reply.
 ## What the steward does
 
 The polyrepo-steward is the one place to ask about anything concerning a repository, other
-than work inside a repository's contents. It answers by pointing to the canonical source of
+than work on a repository's own product code, which the build pipeline does. It answers by pointing to the canonical source of
 each answer and is not that source's owner; it is the official source only for what exists
 nowhere else, such as its record of the organizational structure:
 
