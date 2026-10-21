@@ -6692,19 +6692,24 @@ def _worktrees(repo: Path) -> list[Worktree]:
     return out
 
 
-def clone_local_work(repo: Path) -> tuple[list[str], list[Path]]:
-    """Find work in a clone that exists only on this machine.
+def clone_local_work(cfg: Config, repo: Path, origin_name: str) -> tuple[list[str], list[Path]]:
+    """Find what would be lost if a clone were deleted: the one guard every clone deletion passes.
 
-    Checks the clone and every linked worktree for uncommitted changes and untracked files
-    outside ignored paths, the clone for a stash, and every local branch and every
-    worktree's HEAD for commits that no remote-tracking branch contains.
+    The clone's `origin` must be the owner's GitHub repository named `origin_name`, and GitHub
+    must hold a repository under exactly that name (not one it only redirects to). After
+    `git fetch --prune origin`, every local branch must exist on origin and hold no commit
+    origin lacks, and every worktree's HEAD must be on origin. The clone and every linked
+    worktree must have no uncommitted changes or untracked files outside ignored paths, and the
+    clone no stash.
 
     Returns:
         The reasons not to delete it (empty when nothing would be lost), and the linked
         worktrees that hold no such work, which may be removed.
 
     """
-    reasons: list[str] = []
+    reasons = _origin_missing(cfg, repo, origin_name)
+    if reasons:
+        return reasons, []
     try:
         wts = _worktrees(repo)
     except GitFailedError as exc:
@@ -6722,8 +6727,35 @@ def clone_local_work(repo: Path) -> tuple[list[str], list[Path]]:
     return reasons, removable
 
 
+def _origin_missing(cfg: Config, repo: Path, origin_name: str) -> list[str]:
+    """Check that a clone's origin is the GitHub repository `origin_name` and that it is current here.
+
+    Returns:
+        The reasons the clone may be the only copy; empty when origin is that repository and
+        `git fetch --prune origin` brought its branches current.
+
+    """
+    want = f"{cfg.owner}/{origin_name}"
+    cp = git(repo, "remote", "get-url", "origin")
+    url = cp.stdout.strip() if cp.returncode == 0 else ""
+    parsed = parse_github_url(url)
+    if parsed is None:
+        return [f"origin is {url or 'not set'}, not the GitHub repository {want}"]
+    if f"{parsed[0]}/{parsed[1]}".lower() != want.lower():
+        return [f"origin names {parsed[0]}/{parsed[1]}, not {want}"]
+    view = run(["gh", "api", f"repos/{want}", "--jq", ".full_name"], timeout=60)
+    if view.returncode != 0:
+        return [f"no repository {want} on GitHub: {_last_line(view)}"]
+    if view.stdout.strip().lower() != want.lower():
+        return [f"GitHub has no repository {want}; it redirects to {view.stdout.strip()}"]
+    fetched = git(repo, "fetch", "--prune", "origin", timeout=120)
+    if fetched.returncode != 0:
+        return [f"git fetch --prune origin failed: {_last_line(fetched)}"]
+    return []
+
+
 def _tree_local_work(t: Path) -> list[str]:
-    """Find uncommitted or untracked files in one working tree, and commits HEAD has on no remote.
+    """Find uncommitted or untracked files in one working tree, and commits of HEAD origin lacks.
 
     Returns:
         The reasons not to delete the tree.
@@ -6739,16 +6771,16 @@ def _tree_local_work(t: Path) -> list[str]:
             + ", ".join(files[:FILES_SHOWN])
             + (" ..." if len(files) > FILES_SHOWN else ""),
         )
-    cp = git(t, "rev-list", "--count", "HEAD", "--not", "--remotes")
-    if cp.returncode == 0 and cp.stdout.strip() not in {"", "0"}:
-        reasons.append(
-            f"{t}: HEAD has {cp.stdout.strip()} commit(s) on no remote branch",
-        )
+    cp = git(t, "rev-list", "--count", "HEAD", "--not", "--remotes=origin")
+    if cp.returncode != 0:
+        reasons.append(f"{t}: rev-list of HEAD failed: {_last_line(cp)}")
+    elif cp.stdout.strip() not in {"", "0"}:
+        reasons.append(f"{t}: HEAD has {cp.stdout.strip()} commit(s) that are not on origin")
     return reasons
 
 
 def _branch_local_work(repo: Path) -> list[str]:
-    """Find local branches with commits that no remote-tracking branch contains.
+    """Find local branches that origin does not have, or that hold commits origin lacks.
 
     Returns:
         The reasons not to delete the clone.
@@ -6764,13 +6796,14 @@ def _branch_local_work(repo: Path) -> list[str]:
     if cp.returncode != 0:
         reasons.append(f"cannot list local branches: {_last_line(cp)}")
     for b in cp.stdout.split() if cp.returncode == 0 else []:
-        n = git(repo, "rev-list", "--count", f"refs/heads/{b}", "--not", "--remotes")
+        if git(repo, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{b}").returncode != 0:
+            reasons.append(f"branch {b} is not on origin")
+            continue
+        n = git(repo, "rev-list", "--count", f"refs/heads/{b}", "--not", "--remotes=origin")
         if n.returncode != 0:
             reasons.append(f"branch {b}: rev-list failed: {_last_line(n)}")
         elif n.stdout.strip() != "0":
-            reasons.append(
-                f"branch {b} has {n.stdout.strip()} commit(s) on no remote branch",
-            )
+            reasons.append(f"branch {b} has {n.stdout.strip()} commit(s) that are not on origin")
     return reasons
 
 
@@ -6787,8 +6820,10 @@ def delete_clone(
 
     `clone` is where the clone is now and `final` where it is after the rename (the same
     path once the rename is done). `final` must be under the repository root and its name
-    must be a deprecated repository name, as the naming command reads it. Records the outcome
-    in res["clone"]; the caller notes the steps of a deletion for the commit message.
+    must be a deprecated repository name, as the naming command reads it. The clone's GitHub
+    origin must have the name of the clone's folder now, the repo's name (`clone_local_work`
+    checks it and everything else that could be lost). Records the outcome in res["clone"]; the
+    caller notes the steps of a deletion for the commit message.
 
     Returns:
         False when the clone was left in place or could not be deleted, and the steps taken or planned.
@@ -6806,7 +6841,7 @@ def delete_clone(
     reasons = [bad] if bad else []
     worktrees: list[Path] = []
     if not bad:
-        reasons, worktrees = clone_local_work(path)
+        reasons, worktrees = clone_local_work(cfg, path, path.name)
     if reasons:
         res["clone"] = {"path": str(final), "status": "refused", "reasons": reasons}
         steps.append(
@@ -6848,12 +6883,13 @@ def delete_clone(
 
 
 def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
-    """Deprecate a repo: rename it, close its pull requests, then delete its local clone.
+    """Deprecate a repo: rename it, close its pull requests, leave the GitNexus group, then delete its local clone.
 
     The rename to its deprecated- name dates the deprecation; every open pull request is
-    closed with the deprecation comment. The vault documents that still carry the old name (in the
-    folders the config's `rename.documents` names) are reported under `documents`, never edited:
-    the filing-clerk changes them.
+    closed with the deprecation comment; its GitNexus group member is removed and the group's
+    contracts rebuilt, so a deprecated repo is never indexed with the fleet. The vault
+    documents that still carry the old name (in the folders the config's `rename.documents`
+    names) are reported under `documents`, never edited: the filing-clerk changes them.
 
     The clone is deleted only when it holds no work that exists only on this machine
     (uncommitted or untracked files, a stash, commits on no remote branch, or such work in
@@ -6884,6 +6920,9 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
         res["documents"] = _documents_record(docs)
         steps.extend(_documents_lines(docs))
         ok = _close_repo_prs(cfg, name if args.dry_run else new, args.dry_run, res, steps)
+        unregistered, group_steps = _unregister_steps(cfg, {name, new}, args.dry_run, res)
+        steps.extend(group_steps)
+        ok = ok and unregistered
         if r is None:
             steps.append("no local clone to delete")
             return ok
@@ -8266,6 +8305,56 @@ def gitnexus_register(cfg: Config, repo: Path, name: str) -> list[str]:
     return failures
 
 
+def gitnexus_unregister(cfg: Config, names: set[str], dry_run: bool) -> tuple[list[str], list[str]]:
+    """Remove a retired repo's members from the GitNexus group and rebuild its contracts.
+
+    A member is the repo's when its registry name or the last segment of its group path is one
+    of `names` (the repo's name before and after its deprecation rename), compared without case:
+    a deprecated name does not keep the case of the name it was made from.
+
+    Returns:
+        The group paths removed (or, on a dry run, to remove), and what failed.
+
+    """
+    try:
+        src = _gitnexus_sources(cfg)
+        current = group_members(src.pinned, src.group)
+    except (GitNexusSetupError, PolyrepoError) as exc:
+        return [], [str(exc)]
+    folded = {n.lower() for n in names}
+    gone = sorted(
+        p for p, n in (current or {}).items() if n.lower() in folded or p.rsplit("/", 1)[-1].lower() in folded
+    )
+    if not gone or dry_run:
+        return gone, []
+    failures = apply_group(src.pinned, src.group, GroupPlan(exists=True, add={}, remove=gone))
+    if not failures and (err := sync_group(src.pinned, src.group)) is not None:
+        failures.append(err)
+    return gone, failures
+
+
+def _unregister_steps(
+    cfg: Config,
+    names: set[str],
+    dry_run: bool,
+    res: dict[str, object],
+) -> tuple[bool, list[str]]:
+    """Take a deprecated or archived repo out of the GitNexus group, recording it in res["gitnexus_group"].
+
+    Returns:
+        False when a removal failed, and the step lines.
+
+    """
+    gone, failures = gitnexus_unregister(cfg, names, dry_run)
+    error = "; ".join(failures)
+    status = "failed" if failures else "planned" if dry_run else "done"
+    res["gitnexus_group"] = {"remove": gone, "status": status, "error": error or None}
+    if failures:
+        return False, [f"GitNexus group member NOT removed: {error}"]
+    verb = "remove" if dry_run else "removed"
+    return True, [f"{verb} GitNexus group member {p}" for p in gone]
+
+
 def gitnexus_queue(cfg: Config, repos: list[Path]) -> str | None:
     """Queue repos for a background re-index through the control repo's fleet script.
 
@@ -8984,6 +9073,7 @@ def _archive_one(st: State, name: str, dry_run: bool, row: dict[str, object]) ->
         return []
     if dry_run:
         row["status"] = "planned"
+        _archive_unregister(st, name, dry_run, row)
         _retire_clone(st, name, dry_run, row)
         return []
     if not on_github:
@@ -8999,7 +9089,23 @@ def _archive_one(st: State, name: str, dry_run: bool, row: dict[str, object]) ->
         + ("GitHub already shows it archived" if on_github else f"archived {cfg.owner}/{name} on GitHub")
         + f" ({row['detail']}); lifecycle archived",
     ]
+    _archive_unregister(st, name, dry_run, row)
     return lines + _retire_clone(st, name, dry_run, row)
+
+
+def _archive_unregister(st: State, name: str, dry_run: bool, row: dict[str, object]) -> None:
+    """Take an archived repo out of the GitNexus group, under its name and the name it was made from.
+
+    The group is local to the machine, so nothing goes into the commit message; the outcome is
+    recorded in row["gitnexus_group"], and a failure becomes an `archive-gitnexus-group` finding.
+
+    """
+    try:
+        names = {name, st.cfg.deprecated_base(name)}
+    except PolyrepoError as exc:
+        row["gitnexus_group"] = {"remove": [], "status": "failed", "error": str(exc)}
+        return
+    _unregister_steps(st.cfg, names, dry_run, row)
 
 
 def _archive_row(st: State, name: str, e: CommentedMap, days: int) -> tuple[dict[str, object], bool]:
@@ -9074,6 +9180,13 @@ def _archive_findings(rows: list[dict[str, object]]) -> list[dict[str, object]]:
                  "mechanical": status == "planned", "fix": None, "status": ARCHIVE_FINDING_STATUS[status],
                  "error": None},
             )  # fmt: skip
+        group = row.get("gitnexus_group")
+        if isinstance(group, dict) and group.get("status") == "failed":
+            out.append(
+                {"kind": "archive-gitnexus-group", "repo": row["repo"],
+                 "detail": f"GitNexus group member not removed: {group.get('error')}",
+                 "mechanical": False, "fix": None, "status": "failed", "error": group.get("error")},
+            )  # fmt: skip
         clone = row.get("clone")
         if isinstance(clone, dict) and clone.get("status") in {"refused", "failed"}:
             why = clone.get("reasons") or [clone.get("error")]
@@ -9089,10 +9202,11 @@ def cmd_archive_due(args: argparse.Namespace, cfg: Config) -> int:
     """Archive every deprecated repo whose deprecation is old enough, keeping its manifest record.
 
     For each due repo: refuse while a matrix stack is in it or a pull request is open (reported,
-    left deprecated), `gh repo archive --yes`, set its lifecycle to archived, drop it from the
-    beads fleet list, and delete its local clone unless work exists only there (uncommitted or
-    untracked files, a stash, commits on no remote branch, or such work in a linked worktree),
-    in which case the clone is kept and reported. Idempotent. Never deletes a repo on GitHub.
+    left deprecated), `gh repo archive --yes`, set its lifecycle to archived, take it out of the
+    GitNexus group, drop it from the beads fleet list, and delete its local clone unless work
+    exists only there (uncommitted or untracked files, a stash, commits on no remote branch, or
+    such work in a linked worktree), in which case the clone is kept and reported. Idempotent.
+    Never deletes a repo on GitHub.
 
     Returns:
         0 when nothing is left kept, undated or failed, else 1.
@@ -9308,10 +9422,13 @@ def _gitnexus_findings(check: str, data: dict[str, object]) -> list[DoctorFindin
         found.append(_finding(check, str(r["repo"]), str(r["state"]), "; ".join(parts)))
     group = _map(data.get("group") or {}, "gitnexus-sync group")
     if group and group.get("state") != "current":
-        detail = (
-            f"GitNexus group {group.get('name')} {group.get('state')}: "
-            f"add {len(_seq(group.get('add') or [], 'add'))}, remove {len(_seq(group.get('remove') or [], 'remove'))}"
+        added, removed = _strs(group.get("add") or [], "add"), _strs(group.get("remove") or [], "remove")
+        stale = (
+            f" (members that are no active clone: {', '.join(removed)}; --fix removes only these group "
+            "entries and deletes no file, index or clone)"
         )
+        detail = f"GitNexus group {group.get('name')} {group.get('state')}: add {len(added)}, remove {len(removed)}"
+        detail += stale if removed else ""
         found.append(_finding(check, str(group.get("name")), str(group.get("state")), detail))
     return found
 
@@ -9492,6 +9609,34 @@ def _template_type_findings(cfg: Config) -> list[DoctorFinding]:
 
 ORGANIZATION_RECORD = "organization-structure.md"
 ORGANIZATION_VARIABLE = re.compile(r"^- ([A-Z][A-Z0-9_]*):.*?set as \"?([^\"\s]+)\"?")
+
+
+def _deprecated_clone_findings(cfg: Config) -> list[DoctorFinding]:
+    """Report every local clone with a deprecated name that may be the only copy of its work.
+
+    Each clone on disk whose name is a deprecated repository name goes through the guard that
+    every clone deletion passes (`clone_local_work`): its origin must be the GitHub repository
+    of that name and hold every local branch and commit, and the clone must hold no uncommitted
+    or untracked work and no stash. `doctor --fix` never acts on these findings.
+
+    Returns:
+        One `only-copy` finding per such clone that fails the guard.
+
+    """
+    local, _ = discover(cfg)
+    clones = [r for name, r in sorted(local.items()) if cfg.is_deprecated_name(name)]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        guarded = list(ex.map(lambda r: (r, clone_local_work(cfg, r.path, r.name)[0]), clones))
+    return [
+        _finding(
+            "deprecated-clones",
+            r.name,
+            "only-copy",
+            f"{r.path} may be the only copy (report only, never deleted automatically): {'; '.join(reasons)}",
+        )
+        for r, reasons in guarded
+        if reasons
+    ]
 
 
 def _organization_findings(cfg: Config) -> list[DoctorFinding]:
@@ -9742,7 +9887,8 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     parallel, each its own process), the governance
     entries, the knowledge-store pointers, the template types against the naming command, the
     organization record's environment variables against
-    the environment, and the matrix's stacks against the repositories (repaired under --fix,
+    the environment, every local clone with a deprecated name that may be the only copy of its
+    work (reported only; no repair acts on it), and the matrix's stacks against the repositories (repaired under --fix,
     and the matrix committed).
 
     Returns:
@@ -9777,12 +9923,13 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     findings.extend(_knowledge_findings(cfg))
     findings.extend(_template_type_findings(cfg))
     findings.extend(_organization_findings(cfg))
+    findings.extend(_deprecated_clone_findings(cfg))
     matrix_fixed, matrix_open = _matrix_doctor(cfg, args.fix, args.no_cache)
     findings.extend(matrix_open)
     if args.fix:
         repairs["matrix"] = {"exit": 0, "fixed": matrix_fixed, "records": None, "error": None}
     counts: dict[str, int] = dict.fromkeys(
-        [*DOCTOR_CHECKS, "governance", "knowledge", "templates", "organization", "matrix"],
+        [*DOCTOR_CHECKS, "governance", "knowledge", "templates", "organization", "deprecated-clones", "matrix"],
         0,
     )
     for f in findings:

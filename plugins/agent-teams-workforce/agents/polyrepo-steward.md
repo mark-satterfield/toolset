@@ -337,7 +337,7 @@ names the naming command gives to the template as answers, so a new repository c
 
 ### GitNexus
 
-Every repo has GitNexus from creation, and it is part of a repo's standard setup: `.gitnexusrc`, the `.gitnexus` ignore rule, the six skills in `.claude/skills/gitnexus/`, and the GITNEXUS block in `AGENTS.md`. The sources are control repo files named by the config's `gitnexus` section (`.gitnexusrc`, `.claude/skills/gitnexus/`, `ops/indexing/gitnexus-reindex.sh`) and `repositories/agents-gitnexus-block.md`. `create` writes the files before the first commit, writes the block, and runs `gitnexus-reindex.sh` once after the push, so the first index exists; a failure is reported as `gitnexus_error` and exit 1. `gitnexus-sync` and `agents-sync` (both `doctor` checks and repairs) bring existing repos current. GitNexus always runs at the one pinned version through `ops/indexing/gitnexus-pinned.sh` and `ops/indexing/gitnexus-reindex.sh` in the control repo; never write or run GitNexus any other way (no `npx`, no global `gitnexus`) in a repo's files, a Taskfile, a skill or a brief. Edit the sources in the control repo, then run `gitnexus-sync` and `agents-sync`.
+Every repo has GitNexus from creation, and it is part of a repo's standard setup: `.gitnexusrc`, the `.gitnexus` ignore rule, the six skills in `.claude/skills/gitnexus/`, and the GITNEXUS block in `AGENTS.md`. The sources are control repo files named by the config's `gitnexus` section (`.gitnexusrc`, `.claude/skills/gitnexus/`, `ops/indexing/gitnexus-reindex.sh`) and `repositories/agents-gitnexus-block.md`. `create` writes the files before the first commit, writes the block, and runs `gitnexus-reindex.sh` once after the push, so the first index exists; a failure is reported as `gitnexus_error` and exit 1. `gitnexus-sync` and `agents-sync` (both `doctor` checks and repairs) bring existing repos current. A deprecated or archived repository is never left in the GitNexus group; see *Deprecation and archiving*. GitNexus always runs at the one pinned version through `ops/indexing/gitnexus-pinned.sh` and `ops/indexing/gitnexus-reindex.sh` in the control repo; never write or run GitNexus any other way (no `npx`, no global `gitnexus`) in a repo's files, a Taskfile, a skill or a brief. Edit the sources in the control repo, then run `gitnexus-sync` and `agents-sync`.
 
 ### Development environment
 
@@ -379,20 +379,26 @@ automatically `deprecation.archive_after_days` (`.polyrepo/config.yaml`) days af
 "Delete" from a caller means deprecate: the repo is renamed
 to the deprecated name the naming command gives it,
 on GitHub and locally together, every open pull request in it is closed with the
-comment "Closed: this repository is deprecated.", and then its local clone and linked
+comment "Closed: this repository is deprecated.", its member is removed from the GitNexus
+group (the group the config's `gitnexus` section names, from which the fleet is indexed), so a
+deprecated or archived repository is never indexed, and then its local clone and linked
 worktrees are deleted; the vault documents that carry the old name go to the filing-clerk in the
-same job (see *A rename covers every name*). The clone is kept, and the path to delete by hand is reported, when
-it holds work that exists only on this machine (uncommitted or untracked files, a stash,
-commits on no remote branch, or such work in a linked worktree); the rest of the
-deprecation stands. A deprecated or archived repo with no local clone is normal, never a
+same job (see *A rename covers every name*). A local clone with a deprecated name must always have an origin of
+the same name on GitHub: the clone is kept, and the path to delete by hand is reported, unless it
+is verifiably a copy of that origin (the guard in the `deprecate` row of the `polyrepo-repo`
+skill, which every command that deletes a clone applies); otherwise it may be the only copy, and
+nothing deletes it automatically. `doctor` reports such a clone (the `polyrepo-doctor` skill).
+The rest of the deprecation stands. A deprecated or archived repo with no local clone is normal, never a
 finding. The rename records the date of deprecation (`deprecated_on`) in the repo's manifest
 record. `archive-due` then archives the repo on GitHub `deprecation.archive_after_days` days after that date, with no one having to ask: the project's scheduled
 `archive-due` job (a launchd agent) runs it every day, and `doctor --fix` runs it too, so a
 missed day catches up. For each repo that is due it archives the repo (`gh repo archive --yes`),
-sets its lifecycle to `archived` and keeps the record, removes it from the beads fleet list, and
-deletes its local clone only when the clone holds no work that exists only on this machine; a
-clone that does is kept and reported. A repo with an open pull request or a matrix stack in it
-is not archived and is reported. A run changes nothing that is already done. For an undated
+sets its lifecycle to `archived` and keeps the record, removes any GitNexus group member it
+still has (as `deprecate` does), removes it from the beads fleet list, and deletes its local clone only when the guard above allows it; a
+clone that fails it is kept and reported. A repo with an open pull request or a matrix stack in it
+is not archived and is reported. A run changes nothing that is already done. A GitNexus group
+member that either step leaves behind is caught by `doctor` (check
+`gitnexus-sync`, in the `polyrepo-doctor` skill). For an undated
 deprecated record, find the real date in the git history of the manifest and record it; never
 record today's date as a stand-in. Deprecated and archived are separate states. `list`, `search` and `inventory` leave
 deprecated and archived repos out unless asked (`--include-inactive`, or a `--lifecycle`
