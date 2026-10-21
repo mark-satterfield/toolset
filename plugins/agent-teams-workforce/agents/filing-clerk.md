@@ -224,6 +224,9 @@ agent-teams-workforce:polyrepo-steward`), which you use for nothing else:
   including the names a repository rename changes in the arc42 documents, and asks you
   where something is documented. File, change or answer it as you would for the owner.
   Work the steward sent you is never handed back to it.
+- **A service rename you make in arc42 goes to the steward in the same job**: hand it the
+  service's old and new name to rename the service's repository and stacks, and report the job
+  done only once the steward reports the rename done.
 - **Never name the steward or any of its records as a source anywhere in the vault**, the
   glossary included. A vault document cites the canonical source itself.
 
