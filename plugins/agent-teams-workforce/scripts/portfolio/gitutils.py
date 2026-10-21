@@ -40,12 +40,14 @@ Commands:
         Clean up after the pull request of the linked worktree W. Reads W's branch and its
         main repository locally with git, and asks GitHub only for the state of the most
         recent pull request whose head is that branch (`gh pr list --head <branch> --state
-        all`, in the repository); an OPEN one is read again every 60 seconds until it is
-        MERGED or CLOSED or SECONDS run out. MERGED: W is removed (`git worktree remove
-        --force`, since anything left in a merged PR's tree is a leftover), then `git
-        worktree prune`, then the local branch is deleted (`git branch -D`, since a
-        squash-merged branch is never an ancestor of main). The GitHub branch is left to
-        GitHub's delete-on-merge. CLOSED, still OPEN after the wait, no pull request, or a
+        all`, in the repository); an OPEN one is read again after 2 minutes, the interval
+        doubling to at most 15 minutes, until it is MERGED or CLOSED or SECONDS run out, so
+        many waiting shepherds stay inside GitHub's hourly API budget. MERGED: W is removed
+        (`git worktree remove --force`, since anything left in a merged PR's tree is a
+        leftover), then `git worktree prune`, then the local branch is deleted (`git branch
+        -D`, since a squash-merged branch is never an ancestor of main), then the GitHub
+        branch when GitHub's delete-on-merge has not already removed it (`git push origin
+        --delete`). CLOSED, still OPEN after the wait, no pull request, or a
         path that is not a linked worktree on a feature branch: nothing is deleted, and the
         notes say why. The primary working tree, main, the default branch and the branch
         the primary tree has checked out are never touched. Reports the state, what was
@@ -86,9 +88,11 @@ if TYPE_CHECKING:
 
 DOC_SUFFIXES: Final[tuple[str, ...]] = (".md", ".mdx", ".rst", ".adoc")
 WORKTREES_DIRNAME: Final[str] = ".worktrees"
-POLL_INTERVAL_SECONDS: Final[int] = 60
+POLL_FIRST_SECONDS: Final[int] = 120
+POLL_MAX_SECONDS: Final[int] = 900
 PR_ENDED: Final[frozenset[str]] = frozenset({"MERGED", "CLOSED"})
 RECENT_SECONDS: Final[int] = 3600
+LS_REMOTE_NO_MATCH: Final[int] = 2
 GITHUB_URL: Final[re.Pattern[str]] = re.compile(r"github\.com[:/](?P<owner>[^/]+)/(?P<name>[^/]+?)(?:\.git)?/?$")
 
 
@@ -195,6 +199,7 @@ class CleanupResult(TypedDict):
     waitedSeconds: int
     removedWorktree: str | None
     deletedBranch: str | None
+    deletedRemote: str | None
     notes: list[str]
     failures: list[str]
 
@@ -923,7 +928,9 @@ def github_slug(repo: str) -> str:
 def await_pr_end(repo: str, branch: str, wait: int) -> tuple[PullRequest | None, int]:
     """Read the branch's pull request until it is MERGED or CLOSED, or the wait runs out.
 
-    A read that fails while wait remains is retried at the next poll; the last read must succeed.
+    The first poll comes after POLL_FIRST_SECONDS and each later interval doubles up to POLL_MAX_SECONDS;
+    the last poll lands on the end of the wait. A read that fails while wait remains is retried at the next
+    poll; the last read must succeed.
 
     Args:
         repo: The main repository.
@@ -938,6 +945,7 @@ def await_pr_end(repo: str, branch: str, wait: int) -> tuple[PullRequest | None,
 
     """
     waited: int = 0
+    interval: int = POLL_FIRST_SECONDS
     while True:
         try:
             current: PullRequest | None = gh_head_pr(repo, branch)
@@ -947,8 +955,10 @@ def await_pr_end(repo: str, branch: str, wait: int) -> tuple[PullRequest | None,
         else:
             if current is None or current["state"] in PR_ENDED or waited >= wait:
                 return current, waited
-        time.sleep(POLL_INTERVAL_SECONDS)
-        waited += POLL_INTERVAL_SECONDS
+        pause: int = min(interval, wait - waited)
+        time.sleep(pause)
+        waited += pause
+        interval = min(interval * 2, POLL_MAX_SECONDS)
 
 
 def protected_branches(repo: str, trees: list[Worktree]) -> set[str]:
@@ -1003,11 +1013,12 @@ def linked_worktree(worktree: str, result: CleanupResult) -> tuple[str, str] | N
 
 
 def clean_merged(repo: str, worktree: str, branch: str, result: CleanupResult) -> None:
-    """Remove a merged pull request's worktree with --force, prune, and delete its local branch with -D.
+    """Remove a merged pull request's worktree, prune, delete its local branch with -D, then its GitHub branch.
 
     A squash-merged branch is never an ancestor of main, so -D; anything left in the tree is a leftover,
     so --force. The branch is kept when the worktree could not be removed, since git refuses to delete
-    a checked-out branch.
+    a checked-out branch. The GitHub branch is deleted only when GitHub still has it (delete-on-merge
+    usually removed it already).
 
     Args:
         repo: The main repository.
@@ -1033,6 +1044,35 @@ def clean_merged(repo: str, worktree: str, branch: str, result: CleanupResult) -
         result["failures"].append(failure_message(repo, ("branch", "-D", branch), deleted))
         return
     result["deletedBranch"] = branch
+    delete_remote_branch(repo, branch, result)
+
+
+def delete_remote_branch(repo: str, branch: str, result: CleanupResult) -> None:
+    """Delete the GitHub branch of a merged pull request when GitHub still has it.
+
+    `git ls-remote --exit-code` exits 2 when origin has no such branch, which is the usual case after
+    GitHub's delete-on-merge.
+
+    Args:
+        repo: The main repository.
+        branch: The pull request's head branch.
+        result: Where what was removed or failed is recorded.
+
+    """
+    lookup: tuple[str, ...] = ("ls-remote", "--exit-code", "--heads", "origin", f"refs/heads/{branch}")
+    listed: subprocess.CompletedProcess[str] = git(repo, *lookup, check=False)
+    if listed.returncode == LS_REMOTE_NO_MATCH:
+        result["notes"].append(f"GitHub had already deleted the branch {branch}")
+        return
+    if listed.returncode != 0:
+        result["failures"].append(failure_message(repo, lookup, listed))
+        return
+    push: tuple[str, ...] = ("push", "origin", "--delete", branch)
+    pushed: subprocess.CompletedProcess[str] = git(repo, *push, check=False)
+    if pushed.returncode != 0:
+        result["failures"].append(failure_message(repo, push, pushed))
+        return
+    result["deletedRemote"] = branch
 
 
 def cmd_cleanup_merged_pr(args: argparse.Namespace) -> CleanupResult:
@@ -1062,6 +1102,7 @@ def cmd_cleanup_merged_pr(args: argparse.Namespace) -> CleanupResult:
         "waitedSeconds": 0,
         "removedWorktree": None,
         "deletedBranch": None,
+        "deletedRemote": None,
         "notes": [],
         "failures": [],
     }

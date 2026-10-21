@@ -100,7 +100,8 @@ flowchart TD
     ok -->|"yes"| ver["A deterministic step sets what the Story built and tested verified in the matrix - section 7"]
     ver --> gh["GitHub auto-merge merges the pull request, a separate step after the test"]
     ok -->|"no: the shepherd cannot fix what is left"| blocked2(["Pull request and Story stay open, cause reported to the owner"])
-    gh --> doneS(["Merged and the deploy verified working: the deploy lane closes the Story bead"])
+    gh --> clean["The shepherd removes the Story's worktree, local branch and GitHub branch immediately after the merge"]
+    clean --> doneS(["Merged and the deploy verified working: the deploy lane closes the Story bead"])
 ```
 
 Notes on the diagram:
@@ -116,6 +117,8 @@ Notes on the diagram:
   failing Story's work is bounded and does not hold up the rest.
 - When the shepherd cannot finish, the pull request and the Story stay open and the cause is
   reported to the owner, because merge is automatic and never forced.
+- The shepherd, which waits for the merge, removes the Story's worktree, local branch and GitHub
+  branch right after it, as the last step of landing, so no leftover branch outlives its work.
 - A Story is done when its pull request has merged and its deploy was verified working, because
   both are proof; the driver then closes the Story bead, in the close step of `storydeploy.py`
   that the deploy lane of `supervisor.py` runs, because the driver is the one setter of bead

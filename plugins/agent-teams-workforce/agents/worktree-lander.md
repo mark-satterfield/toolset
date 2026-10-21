@@ -49,6 +49,7 @@ Before committing, read the repository's `AGENTS.md` (or `CLAUDE.md`) for its co
 2. `cd "<worktree>"`, then run the PR command the task names, as `<PR command> --title "<type(scope): description>" --body "<what changed>"`. It pushes the branch and opens the pull request.
 3. Never push to the base branch, never open the pull request another way and never merge it. A pull request that already exists for this head is success: report its URL.
 4. Exit status 0 from the PR command means the pull request is open; any other exit status means none was opened. Report the URL as `prUrl`, and in `blocked` one short sentence for each thing that stopped you (empty when the pull request is open).
+5. Leave the worktree and its branch in place: whoever waits for the pull request to merge removes them immediately after the merge.
 
 ## Sources
 
