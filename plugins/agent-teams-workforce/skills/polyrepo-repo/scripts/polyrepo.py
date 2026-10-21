@@ -31,6 +31,7 @@ Usage:
   polyrepo.py grep <pattern> [--space S] [--repo R ...] [-i] [-l] [-F] [-w] [--glob G ...]
   polyrepo.py tech-stacks [--repo R ...] [--space S] [--summary]
   polyrepo.py rebase <repo ...|--all>
+  polyrepo.py sweep-branches [--repo R ...] [--space S] [--dry-run] [--no-fetch]
   polyrepo.py create <name> --space S [--template T] [--tier product|tooling] [--dry-run]
   polyrepo.py rename <repo> [<new-name>] [--also R ...] [--dry-run] [--skip-repo R ...] [--trailer TEXT]
                      [--pr-footer TEXT]
@@ -101,6 +102,7 @@ from ruamel.yaml.error import YAMLError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pipeline-contracts" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "resource-naming" / "scripts"))
+from branch_sweep import Branch, RepoSweep, outcome, sweep_all
 from checks_sync import (
     CHECKS_JSON,
     RUNNER_MARK,
@@ -3681,6 +3683,114 @@ def cmd_rebase(args: argparse.Namespace, cfg: Config) -> int:
 
     emit(args, {"repos": results, "stopped": len(bad)}, text)
     return 1 if bad else 0
+
+
+# sweep-branches -------------------------------------------------------------------------------
+
+
+def _branch_record(b: Branch, dry_run: bool) -> dict[str, object]:
+    """Build the JSON record of one judged branch.
+
+    Returns:
+        The branch, its worktree, what happened to it and why.
+
+    """
+    return {
+        "branch": b.name,
+        "worktree": b.worktree,
+        "outcome": outcome(b, dry_run=dry_run),
+        "landed": b.landed,
+        "kept": b.kept,
+        "pr": b.pr,
+        "pr_state": b.pr_state,
+        "removed_worktree": b.removed_worktree,
+        "deleted_branch": b.deleted_branch,
+        "deleted_remote": b.deleted_remote,
+        "failures": b.failures,
+    }
+
+
+def _sweep_lines(rec: dict[str, object]) -> list[str]:
+    """Format one repository's sweep for the text report.
+
+    Returns:
+        The repository's line and one line per branch and note; none when it had nothing to report.
+
+    """
+    branches = [_map(b, "branch") for b in _seq(rec["branches"], "branches")]
+    notes = _strs(rec["notes"], "notes")
+    if not branches and not notes:
+        return []
+    counts: dict[str, int] = {}
+    for b in branches:
+        counts[str(b["outcome"])] = counts.get(str(b["outcome"]), 0) + 1
+    lines = [f"{rec['repo']}: " + (", ".join(f"{k} {v}" for k, v in sorted(counts.items())) or "no branches")]
+    lines.extend(f"    note: {n}" for n in notes)
+    for b in branches:
+        why = b["kept"] or (f"landed ({b['landed']})" if b["landed"] else "")
+        lines.append(f"    {b['outcome']:12} {b['branch']}  {why}".rstrip())
+        lines.extend(f"        failed: {f}" for f in _strs(b["failures"], "failures"))
+    return lines
+
+
+def _sweep_record(s: RepoSweep, dry_run: bool) -> dict[str, object]:
+    """Build the JSON record of one repository's sweep.
+
+    Returns:
+        The repository, its default branch, its notes and its judged branches.
+
+    """
+    return {
+        "repo": s.repo,
+        "default_branch": s.default,
+        "notes": s.notes,
+        "branches": [_branch_record(b, dry_run) for b in s.branches],
+    }
+
+
+def cmd_sweep_branches(args: argparse.Namespace, cfg: Config) -> int:
+    """Remove the finished branches and worktrees of every active repo, or of the named ones.
+
+    A local branch is finished when its work is on origin/<default>. git decides first, from the
+    fetch this command shares with `status` (no second fetch while it is current); one GitHub
+    GraphQL call settles up to 25 of the branches git could not, across repositories. A finished
+    branch loses its worktree, local branch and GitHub branch, unless its worktree has uncommitted
+    changes or changed within the last hour, or GitHub's branch holds work the default branch lacks;
+    open pull requests and unlanded work are kept and listed.
+
+    Returns:
+        0 when nothing failed, else 1.
+
+    """
+    st = gather(cfg, fetch=not args.no_fetch, use_cache=not args.no_cache)
+    names = st.resolve(args.repo) if args.repo else sorted(st.local, key=str.lower)
+    chosen = [n for n in names if n in st.local and st.lifecycle(n) not in LIFECYCLES_INACTIVE]
+    if args.space:
+        chosen = [n for n in chosen if st.local[n].space == args.space]
+    repos: list[tuple[str, Path, str, str | None]] = []
+    for n in chosen:
+        parsed = parse_github_url(st.local[n].origin_url)
+        repos.append((n, st.local[n].path, cfg.default_branch, f"{parsed[0]}/{parsed[1]}" if parsed else None))
+    sweeps, calls = sweep_all(repos, dry_run=args.dry_run)
+    for s in sweeps:
+        if st.local[s.repo].fetch_error:
+            s.notes.append(f"fetch failed: {st.local[s.repo].fetch_error}")
+    recs = [_sweep_record(s, args.dry_run) for s in sweeps]
+    totals: dict[str, int] = {}
+    for s in sweeps:
+        for b in s.branches:
+            key = outcome(b, dry_run=args.dry_run).replace("-", "_")
+            totals[key] = totals.get(key, 0) + 1
+    failed = any(b.failures for s in sweeps for b in s.branches)
+
+    def text() -> str:
+        lines = [ln for rec in recs for ln in _sweep_lines(rec)]
+        summary = ", ".join(f"{k.replace('_', '-')} {v}" for k, v in sorted(totals.items())) or "no branches to judge"
+        lines.append(f"{len(recs)} repos: {summary}; {calls} GitHub call(s) for pull requests")
+        return "\n".join(lines)
+
+    emit(args, {"dry_run": args.dry_run, "github_calls": calls, "totals": totals, "repos": recs}, text)
+    return 1 if failed else 0
 
 
 # create ---------------------------------------------------------------------------------------
@@ -9852,6 +9962,16 @@ def _add_repo_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
     s.add_argument("repos", nargs="*", help="repo names or paths")
     s.add_argument("--all", action="store_true", help="every repo on disk")
     s.set_defaults(func=cmd_rebase)
+
+    s = add(
+        "sweep-branches",
+        "remove the finished branches, worktrees and GitHub branches of every active repo",
+    )
+    s.add_argument("--repo", action="append", help="only this repo (repeatable)")
+    s.add_argument("--space", help="only this app space")
+    s.add_argument("--dry-run", action="store_true", help="judge and list; remove nothing")
+    s.add_argument("--no-fetch", action="store_true", help="skip git fetch")
+    s.set_defaults(func=cmd_sweep_branches)
 
     s = add(
         "create",
