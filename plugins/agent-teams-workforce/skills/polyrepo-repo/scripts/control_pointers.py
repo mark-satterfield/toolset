@@ -120,7 +120,7 @@ def scan(
     for s in _fixed_strings(control, variables):
         argv.extend(["-e", s])
     argv.append("--")
-    argv.extend(f":(exclude,glob){g}" for g in exclude)
+    argv.extend(f":(exclude){g}" for g in exclude)  # fnmatch pathspec: `*` matches across `/`
     cp = subprocess.run(argv, capture_output=True, text=True, timeout=GREP_TIMEOUT, check=False)  # ruff: ignore[subprocess-without-shell-equals-true] - fixed argv, no shell
     if cp.returncode not in {0, GREP_NO_MATCH}:
         msg = f"git grep in {repo} exited {cp.returncode}: {cp.stderr.strip()}"
