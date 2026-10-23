@@ -1734,10 +1734,6 @@ def write_task_edges(
         TypeError: An argument violates the declared input contract.
 
     """
-    slug_of: dict[str, str]
-    _intra: list[tuple[str, str]]
-    elab: dict[str, str]
-    dropped_id: str
     if not all((
         isinstance(graph, Graph),
         isinstance(writer, Writer),
@@ -1746,8 +1742,38 @@ def write_task_edges(
         isinstance(name, str),
     )):
         raise TypeError(_ARGUMENT_ERROR)
-    plan: beadcontracts.EdgePlan = plan_task_edges(span)
-    slug_of, _intra, elab = span_tasks(span)
+    return _write_planned_task_edges(graph, writer, _EdgeScope(epic_id, span, plan_task_edges(span)), name)
+
+
+@dataclass(frozen=True)
+class _EdgeScope:
+    """The Epic, its span and the span's Task edge plan, computed once for every Task written."""
+
+    epic_id: str
+    span: SpanStories
+    plan: beadcontracts.EdgePlan
+
+
+def _write_planned_task_edges(graph: Graph, writer: Writer, scope: _EdgeScope, name: str) -> TaskEdgeWrite:
+    """Write ONE Task's `blocks` edges from an edge plan already computed for its span.
+
+    Args:
+        graph: The tracker graph.
+        writer: The tracker writer; a dry-run writer records the writes instead.
+        scope: The Epic, the span and the span's edge plan.
+        name: The Task, as `S<i>-<local key>`.
+
+    Returns:
+        The result `write_task_edges` returns.
+
+    """
+    slug_of: dict[str, str]
+    _intra: list[tuple[str, str]]
+    elab: dict[str, str]
+    dropped_id: str
+    epic_id: str = scope.epic_id
+    edge_plan: beadcontracts.EdgePlan = scope.plan
+    slug_of, _intra, elab = span_tasks(scope.span)
     warnings: list[str] = []
 
     def bead_named(n: str) -> Bead | None:
@@ -1775,7 +1801,7 @@ def write_task_edges(
                 "standing": 0,
             },
         }
-    wanted: list[str] = [b.id for n in plan["blockers"].get(name, []) if (b := bead_named(n)) is not None]
+    wanted: list[str] = [b.id for n in edge_plan["blockers"].get(name, []) if (b := bead_named(n)) is not None]
     story_of: dict[str, str] = {
         bead.id: story.id
         for story in _children(graph, epic_id, "story")
@@ -1801,7 +1827,7 @@ def write_task_edges(
         "ok": True,
         "epic": epic_id,
         "task": {"name": name, "id": task.id},
-        "edges": [e for e in plan["edges"] if e["to"] == name],
+        "edges": [e for e in edge_plan["edges"] if e["to"] == name],
         "warnings": warnings,
         "dryRun": writer.dry_run,
         "planned": writer.planned,
@@ -1898,13 +1924,14 @@ def write_all_task_edges(
     )):
         raise TypeError(_ARGUMENT_ERROR)
     plan: beadcontracts.EdgePlan = plan_task_edges(span)
+    scope: _EdgeScope = _EdgeScope(epic_id, span, plan)
     names: list[str] = list(
         dict.fromkeys(
             [*plan["blockers"], *also, *_carrying(graph, epic_id, span)],
         ),
     )
     written: list[beadcontracts.TaskEdgeWrite] = [
-        write_task_edges(graph, writer, epic_id, span, name=name) for name in names
+        _write_planned_task_edges(graph, writer, scope, name) for name in names
     ]
     tasks: list[beadcontracts.TaskEdgeSummary] = [w["summary"] for w in written]
     warnings: list[str] = list(
