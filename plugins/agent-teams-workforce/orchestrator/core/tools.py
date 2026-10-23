@@ -22,8 +22,13 @@ from . import portfolio_bootstrap  # ruff: ignore[unused-import] - Imported for 
 
 # isort: split
 import beadgraph
+import portfolio_path  # ruff: ignore[unused-import] - Puts the artifact-handoff contract modules on the path first.
+from beads_contract import ContractError
 from contracts import JsonInput, JsonObject, json_value
 from driver_surface_types import ARCH_PATH_ENV, CONTROL_REPO_ENV
+from hierarchy import HierarchyError
+from matrix_contract import MatrixError
+from matrixstore import MatrixLockTimeoutError
 from typeguard import CollectionCheckStrategy, TypeCheckError, check_type, typechecked
 
 from .handback_contract import (
@@ -37,6 +42,12 @@ from .models import RetryExhaustedError, StepError
 from .tool_locks import bd_gate, seconds
 
 RETRY_CAUSES: frozenset[str] = frozenset({CONTENTION_CAUSE, BD_TIMEOUT_CAUSE, TOOL_TIMEOUT_CAUSE, NETWORK_CAUSE})
+CONTENT_ERRORS: tuple[type[Exception], ...] = (HierarchyError, MatrixError, ContractError, json.JSONDecodeError)
+"""Errors a portfolio call raises for the content it was handed, not for a fault in its code.
+
+They fail the item: the failure is raised without them as its cause, so their ``ValueError``
+base does not class it as a code defect, and their traceback is kept in the evidence.
+"""
 _LOG = logging.getLogger(__name__)
 _MAX_ATTEMPTS = 3
 _IMPORT_LOCK = threading.RLock()
@@ -212,6 +223,22 @@ def _command_arguments(arguments: Sequence[str], timeout: float) -> None:
         raise ValueError(message)
 
 
+def _content_error(exc: Exception) -> bool:
+    """Tell whether an exception reports the content a portfolio call was handed.
+
+    Returns:
+        True for one of :data:`CONTENT_ERRORS`, or an exception raised ``from`` one: its step
+        failure is raised ``from None``, so it is an item failure, not a code defect.
+
+    """
+    current: BaseException | None = exc
+    while current is not None:
+        if isinstance(current, CONTENT_ERRORS):
+            return True
+        current = current.__cause__
+    return False
+
+
 class Tools:
     """One run's deterministic tool boundary and private operation evidence directory."""
 
@@ -250,6 +277,22 @@ class Tools:
             json.dump(json_value(facts), handle, ensure_ascii=False)
         return StepError(stage, cause, (str(path),))
 
+    def _raised(self, stage: str, exc: Exception, facts: Mapping[str, JsonInput]) -> StepError:
+        """Turn an exception a portfolio call raised into the step failure that records it.
+
+        A matrix lock held by another process is contention; a beads graph error keeps its cause.
+
+        Returns:
+            The failure, its evidence holding the facts and the exception's traceback.
+
+        """
+        cause: str = OTHER_CAUSE
+        if isinstance(exc, MatrixLockTimeoutError):
+            cause = CONTENTION_CAUSE
+        elif isinstance(exc, beadgraph.GraphError):
+            cause = exc.cause
+        return self.failure(stage, cause, {**facts, "traceback": traceback.format_exc()})
+
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def command(
         self,
@@ -267,36 +310,65 @@ class Tools:
 
         Raises:
             TypeError: An argument violates the declared input contract.
-            FileNotFoundError: The executable cannot be resolved.
 
         """
         if not (isinstance(stage, str)) or not (isinstance(cwd, Path) or cwd is None) or not (isinstance(check, bool)):
             argument_error: str = "command: arguments do not satisfy the declared input contract"
             raise TypeError(argument_error)
         _command_arguments(argv, timeout)
+        done: subprocess.CompletedProcess[str] = retry_call(lambda: self._attempt(argv, stage, cwd, timeout))
+        return self._finished(argv, stage, done, check=check)
+
+    def _attempt(
+        self,
+        argv: Sequence[str],
+        stage: str,
+        cwd: Path | None,
+        timeout: float,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run an executable once.
+
+        Returns:
+            The completed process, whatever its exit status.
+
+        Raises:
+            FileNotFoundError: The executable cannot be resolved.
+
+        """
         resolved: str | None = shutil.which(argv[0]) if argv else None
         if resolved is None:
             message = f"executable not found: {argv[0] if argv else '<empty argv>'}"
             raise FileNotFoundError(message)
+        try:
+            return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Resolved argv; no shell.
+                [resolved, *argv[1:]],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise self.failure(stage, TOOL_TIMEOUT_CAUSE, {"argv": list(argv), "exception": repr(exc)}) from exc
+        except ConnectionError as exc:
+            raise self.failure(stage, NETWORK_CAUSE, {"argv": list(argv), "exception": repr(exc)}) from exc
+        except OSError as exc:
+            raise self.failure(stage, OTHER_CAUSE, {"argv": list(argv), "exception": repr(exc)}) from exc
 
-        def attempt() -> subprocess.CompletedProcess[str]:
-            try:
-                return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Resolved argv; no shell.
-                    [resolved, *argv[1:]],
-                    cwd=cwd,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout,
-                    check=False,
-                )
-            except subprocess.TimeoutExpired as exc:
-                raise self.failure(stage, TOOL_TIMEOUT_CAUSE, {"argv": list(argv), "exception": repr(exc)}) from exc
-            except ConnectionError as exc:
-                raise self.failure(stage, NETWORK_CAUSE, {"argv": list(argv), "exception": repr(exc)}) from exc
-            except OSError as exc:
-                raise self.failure(stage, OTHER_CAUSE, {"argv": list(argv), "exception": repr(exc)}) from exc
+    def _finished(
+        self,
+        argv: Sequence[str],
+        stage: str,
+        done: subprocess.CompletedProcess[str],
+        *,
+        check: bool,
+    ) -> CommandResult:
+        """Record a completed process as a command result; with ``check``, a non-zero exit fails the step.
 
-        done: subprocess.CompletedProcess[str] = retry_call(attempt)
+        Returns:
+            The result.
+
+        """
         result: CommandResult = CommandResult(tuple(argv), done.returncode, done.stdout, done.stderr)
         if check and result.exit:
             raise self.failure(stage, OTHER_CAUSE, result.to_json())
@@ -334,15 +406,10 @@ class Tools:
         except StepError, TypeCheckError:
             raise
         except Exception as exc:
-            cause: str = exc.cause if isinstance(exc, beadgraph.GraphError) else OTHER_CAUSE
-            raise self.failure(
-                stage,
-                cause,
-                {
-                    "operation": repr(operation),
-                    "traceback": traceback.format_exc(),
-                },
-            ) from exc
+            failure: StepError = self._raised(stage, exc, {"operation": repr(operation)})
+            if _content_error(exc):
+                raise failure from None
+            raise failure from exc
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def bd(self, args: list[str], *, stage: str, stdin: str | None = None) -> str:
@@ -439,7 +506,7 @@ class Tools:
                     check=False,
                 )
                 if ancestor.exit == 1:
-                    self.git(repo, ["pull", "--rebase", remote, branch], stage=stage)
+                    self.git(repo, ["pull", "--rebase", "--autostash", remote, branch], stage=stage)
                     raise self.failure(stage, CONTENTION_CAUSE, result.to_json())
                 if ancestor.exit:
                     raise self.failure(stage, OTHER_CAUSE, ancestor.to_json())
@@ -471,12 +538,10 @@ class Tools:
             except StepError, TypeCheckError:
                 raise
             except Exception as exc:
-                cause: str = exc.cause if isinstance(exc, beadgraph.GraphError) else OTHER_CAUSE
-                raise self.failure(
-                    stage,
-                    cause,
-                    {"traceback": traceback.format_exc()},
-                ) from exc
+                failure: StepError = self._raised(stage, exc, {})
+                if _content_error(exc):
+                    raise failure from None
+                raise failure from exc
 
         return retry_call(attempt)
 
@@ -487,8 +552,13 @@ class Tools:
         *,
         stage: str,
         timeout: float = 300,
+        retry: bool = True,
+        check: bool = True,
     ) -> CommandResult:
         """Run the configured plugin's repository CLI directly.
+
+        With ``retry`` False it runs once, with no transient retry: for a command whose first
+        attempt may have made something a second attempt would find.
 
         Returns:
             The repository CLI result.
@@ -498,15 +568,14 @@ class Tools:
 
         """
         _command_arguments(args, timeout)
-        if not isinstance(stage, str):
+        if not isinstance(stage, str) or not isinstance(retry, bool) or not isinstance(check, bool):
             argument_error: str = "polyrepo: arguments do not satisfy the declared input contract"
             raise TypeError(argument_error)
         script: Path = self.plugin / "skills/polyrepo-repo/scripts/polyrepo.py"
-        return self.command(
-            ["uv", "run", str(script), *args, "--json"],
-            stage=stage,
-            timeout=timeout,
-        )
+        argv: list[str] = ["uv", "run", str(script), *args, "--json"]
+        if retry:
+            return self.command(argv, stage=stage, timeout=timeout, check=check)
+        return self._finished(argv, stage, self._attempt(argv, stage, None, timeout), check=check)
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def cdk(

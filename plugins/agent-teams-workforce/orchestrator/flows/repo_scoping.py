@@ -39,6 +39,8 @@ from matrix_contract import (
     FAMILY_DEPENDENCY,
     KIND_EVENT,
     KIND_STACK,
+    LOCK_DIRECTORY,
+    LOCK_SUFFIX,
     REL_DESCRIBED_BY,
     REL_MATCHES,
     REL_PUBLISHES,
@@ -94,6 +96,7 @@ from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import script_step
 from orchestrator.core.journal_steps import Completion, NewStep, StepGroup, StepRun, file_artifact, value_artifact
 from orchestrator.core.models import StepError
+from orchestrator.core.tool_locks import file_lock, seconds
 from orchestrator.core.tools import Tools, env_path
 from orchestrator.flows.architecture_files import HUMAN_ACTION_STAGE, read_context, read_result
 from orchestrator.flows.elaboration_files import (
@@ -120,6 +123,22 @@ ELEMENTS_FILE: Final = "span-elements.json"
 """The files the span step writes in the Epic's work directory: the placements and the items."""
 CONTEXT_PURPOSE: Final = "The items this repository builds and the steps that specify them are known"
 CREATION_STAGE: Final = "repo-creation"
+CREATE_TIMEOUT_ENV: Final = "ATW_REPO_CREATE_TIMEOUT"
+CREATE_TIMEOUT: Final = 3600.0
+"""Seconds ``polyrepo create`` may take: its own environment setup alone may take 1800 and a synth 900."""
+CREATE_LOCK_PREFIX: Final = "repo-create-"
+"""The lock file of a repository's creation, beside the matrix's lock, is this prefix and the name."""
+PRESENT_WHERE: Final[tuple[str, ...]] = ("disk", "github", "manifest")
+"""Where a repository that exists is present: its clone, GitHub and the manifest."""
+CREATE_PROBLEMS: Final[tuple[str, ...]] = (
+    "environment_error",
+    "format_error",
+    "matrix_error",
+    "ruleset_error",
+    "beads_error",
+    "gitnexus_error",
+)
+"""The steps of ``polyrepo create`` after the push to GitHub whose failure leaves the repository made."""
 WEB_TYPE: Final = "web"
 """The stack type of a web front-end build, as the project's naming standard lists it."""
 KEY_GITHUB: Final = "github"
@@ -191,17 +210,19 @@ def _objects(value: object) -> list[dict[str, JsonValue]]:
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def inventory(tools: Tools, name: str | None = None) -> dict[str, JsonValue]:
-    """Read the repository inventory and validate its row collection.
+    """Read the repository inventory and validate its row collection, without fetching any repository.
 
     Args:
         tools: The step's tools.
-        name: The one repository to read (``polyrepo inventory --name``); None reads every one.
+        name: The one repository to read (``polyrepo inventory --all --name``), wherever it is
+            present; None reads every one on disk.
 
     Returns:
         The inventory object the ``polyrepo`` tool printed.
 
     """
-    result = tools.polyrepo(["inventory", *(["--name", name] if name else [])], stage=REPO_SCOPING_PHASE)
+    named: list[str] = ["--all", "--name", name] if name else []
+    result = tools.polyrepo(["inventory", "--no-fetch", *named], stage=REPO_SCOPING_PHASE)
     value = json_object(json.loads(result.stdout))
     _objects(value["repos"])
     return value
@@ -261,31 +282,72 @@ def _record_repository(stacks: Sequence[EntryId], created: str) -> None:
     update_matrix(matrix_path(None, os.environ), change)
 
 
-def _create(missing: MissingRepo, tools: Tools, home: RepositoryStacks) -> str:
+def _create(missing: MissingRepo, tools: Tools, home: RepositoryStacks) -> dict[str, JsonValue]:
     """Create one repository with the ``polyrepo`` tool, in the app space its stacks name.
 
+    The tool runs once, with no retry: a second attempt finds the repository it half made. Its
+    success is judged from the JSON object it prints, not its exit status: the repository is made
+    when the object names its absolute path and no ``error``, the error of a step that stops
+    before or at the push to GitHub. A later step's failure (:data:`CREATE_PROBLEMS`) leaves the
+    repository made and is kept in the outcome.
+
+    A printed object that is not JSON, or names an ``error`` or no absolute path, fails the step.
+
     Returns:
-        The path of the new clone. A result that names no absolute path fails the step.
+        The path of the new clone, and the problems of the steps after the push.
 
     """
     name: str = missing[KEY_NAME]
     result = tools.polyrepo(
-        [
-            "create",
-            name,
-            "--space",
-            home.apps[0],
-        ],
+        ["create", name, "--space", home.apps[0]],
         stage=CREATION_STAGE,
+        timeout=seconds(CREATE_TIMEOUT_ENV, CREATE_TIMEOUT),
+        retry=False,
+        check=False,
     )
-    value = json_object(json.loads(result.stdout))
+    try:
+        value = json_object(json.loads(result.stdout))
+    except ValueError:
+        raise tools.failure(CREATION_STAGE, OTHER_CAUSE, result.to_json()) from None
     path = check_type(value.get("path"), str | None)
-    if not path or not Path(path).is_absolute():
-        raise tools.failure(CREATION_STAGE, OTHER_CAUSE, {"result": value})
+    if value.get("error") or not path or not Path(path).is_absolute():
+        raise tools.failure(CREATION_STAGE, OTHER_CAUSE, {**result.to_json(), "result": value})
     created = check_type(value.get("repo"), str | None)
     if created and created != name:
         tools.portfolio(CREATION_STAGE, _record_repository, home.stacks, created)
-    return path
+    problems: list[JsonValue] = [f"{key}: {value[key]}" for key in CREATE_PROBLEMS if value.get(key)]
+    return {KEY_REPO_PATH: path, "existed": False, "problems": problems}
+
+
+def _creation_lock(name: str) -> Path:
+    """Name the lock file that one repository's creation holds, beside the matrix's lock.
+
+    Returns:
+        The lock file, named for the repository without case.
+
+    """
+    return matrix_path(None, os.environ).parent / LOCK_DIRECTORY / f"{CREATE_LOCK_PREFIX}{name.casefold()}{LOCK_SUFFIX}"
+
+
+def _present(tools: Tools, name: str) -> dict[str, JsonValue] | None:
+    """Read where a repository is present now, from a fresh inventory of that one name.
+
+    Returns:
+        Its path and where it is present (:data:`PRESENT_WHERE`); None when it is present nowhere.
+
+    """
+    folded: str = name.casefold()
+    record = next(
+        (r for r in _objects(inventory(tools, name)["repos"]) if check_type(r["name"], str).casefold() == folded),
+        None,
+    )
+    if record is None:
+        return None
+    present = json_object(record["present"])
+    where: dict[str, JsonValue] = {place: bool(present.get(place)) for place in PRESENT_WHERE}
+    if not any(where.values()):
+        return None
+    return {**where, KEY_REPO_PATH: record.get("path")}
 
 
 def _ensure_repository(
@@ -296,19 +358,34 @@ def _ensure_repository(
     *,
     preflight_done: bool,
 ) -> tuple[dict[str, JsonValue], bool]:
-    live = inventory(tools, missing[KEY_NAME])
-    name: str = missing[KEY_NAME].casefold()
-    existing = next(
-        (r for r in _objects(live["repos"]) if check_type(r["name"], str).casefold() == name and r.get("path")),
-        None,
-    )
-    if existing:
-        return {KEY_REPO_PATH: existing["path"], "existed": True}, preflight_done
-    if not preflight_done:
-        need = _preflight(tools, owner)
-        if need:
-            return {"error": need, "ownerFact": True}, False
-    return {KEY_REPO_PATH: _create(missing, tools, home), "existed": False}, True
+    """Use the repository when it exists in full, or create it, under the lock of its creation.
+
+    The inventory is read again under the lock, so a repository another Epic created while this
+    one waited is used, not created twice. A repository is used only when it is cloned, on GitHub
+    and in the manifest; one present in only some of them is an owner fact, since creating it
+    again would fail on the part that exists.
+
+    Returns:
+        The outcome (the path, or the owner fact) and whether GitHub access was verified.
+
+    """
+    name: str = missing[KEY_NAME]
+    with file_lock(_creation_lock(name), seconds(CREATE_TIMEOUT_ENV, CREATE_TIMEOUT) * 2):
+        present = _present(tools, name)
+        if present is not None:
+            if all(present[place] for place in PRESENT_WHERE) and present[KEY_REPO_PATH]:
+                return {KEY_REPO_PATH: present[KEY_REPO_PATH], "existed": True}, preflight_done
+            lacking: str = ", ".join(place for place in PRESENT_WHERE if not present[place])
+            fact: str = (
+                f"The repository {name} was made only in part: it is not present on {lacking}. "
+                "Complete it with the polyrepo-steward, or remove what was made, so it can be created again."
+            )
+            return {"error": fact, "ownerFact": True}, preflight_done
+        if not preflight_done:
+            need = _preflight(tools, owner)
+            if need:
+                return {"error": need, "ownerFact": True}, False
+        return _create(missing, tools, home), True
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -943,6 +1020,7 @@ def _ruling(
     run: StepRun,
     items: list[DeltaItem],
     homes: Mapping[str, RepositoryStacks],
+    repositories: Sequence[dict[str, JsonValue]],
 ) -> PlacementRuling:
     """Group what the Stories build by the repository of the stack each item is built in.
 
@@ -955,9 +1033,7 @@ def _ruling(
             created from what its stacks and the polyrepo-steward's records state.
 
     """
-    live: dict[str, dict[str, JsonValue]] = {
-        check_type(repo["name"], str).casefold(): repo for repo in _objects(inventory(run.tools)["repos"])
-    }
+    live: dict[str, dict[str, JsonValue]] = {check_type(repo["name"], str).casefold(): repo for repo in repositories}
     control: Path = env_path(CONTROL_REPO_ENV)
     arch: Path = Path(check_type(run.context.args[dispatch_arguments().KEY_ARCH_PATH], str)).resolve()
     grouped: dict[str, list[str]] = {}
@@ -1023,7 +1099,7 @@ def _spec_steps(run: StepRun, ruling: PlacementRuling, repos: list[str]) -> tupl
     return (StepGroup(tuple(steps)),) if steps else ()
 
 
-def _owner(tools: Tools) -> str:
+def _owner(repositories: Sequence[dict[str, JsonValue]]) -> str:
     """Read the GitHub organisation repositories are created in: the owner of the inventory's repositories on GitHub.
 
     Returns:
@@ -1034,7 +1110,7 @@ def _owner(tools: Tools) -> str:
 
     """
     owners: set[str] = set()
-    for repo in _objects(inventory(tools)["repos"]):
+    for repo in repositories:
         github: JsonValue = repo.get(KEY_GITHUB)
         if isinstance(github, dict) and isinstance(github.get(KEY_URL), str):
             owners.add(urlparse(check_type(github[KEY_URL], str)).path.strip("/").split("/")[0])
@@ -1114,18 +1190,18 @@ def span(run: StepRun) -> Completion:
     matrix, items = _read_story_builds(run)
     work: Path = run.context.work
     homes: dict[str, RepositoryStacks] = run.tools.portfolio(SPAN, repository_stacks, matrix, items)
-    ruling: PlacementRuling = _ruling(run, items, homes)
+    repositories: list[dict[str, JsonValue]] = _objects(inventory(run.tools)["repos"])
+    ruling: PlacementRuling = _ruling(run, items, homes, repositories)
     elements: DeltaResult = {
         "ok": True,
         "refusals": [],
         "summary": {"ok": True, "refusals": [], "items": len(items)},
         "items": items,
     }
-    elements_path: Path = work / ELEMENTS_FILE
-    write_json(elements_path, elements)
-    artifacts = [file_artifact(ARTIFACT_ELEMENTS, elements_path)]
+    write_json(work / ELEMENTS_FILE, elements)
+    artifacts = [file_artifact(ARTIFACT_ELEMENTS, work / ELEMENTS_FILE)]
     if ruling[KEY_MISSING_REPOS]:
-        owner: str = _owner(run.tools)
+        owner: str = _owner(repositories)
         creation: dict[str, JsonValue] = create_repositories(ruling, run.tools, homes, owner, work)
         artifacts.append(file_artifact(ARTIFACT_CREATION, work / "repo-creation.json"))
         failures: list[dict[str, JsonValue]] = _objects(creation["failures"])
