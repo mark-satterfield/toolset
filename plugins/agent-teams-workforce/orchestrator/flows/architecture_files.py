@@ -117,6 +117,8 @@ MAINTAINER: Final = "architecture-maintainer"
 """The agents of the architecture team's fixed steps, by name. The agents the architect or the lead
 chooses for a subject are named in their own files (``architecture-result.schema.json``
 ``requests``; ``lead-routing.schema.json``), never here."""
+PARAM_REQUEST: Final = "request"
+"""The parameter that hands a planned helper step the path of its request file."""
 REVIEW_LOG_FILE: Final = "review-log.json"
 """The name of the Epic's review log, beside the architect's result (``log-architecture-review``)."""
 

@@ -993,16 +993,21 @@ is the first step of the Architecture container, from a request the script write
 requirements not considered functional, many of them pre-written in arc42. Once the higher-level
 architecture is in arc42, the architect has it make the TRD architecture update with the
 technical or architecture decisions that impact the detailed design; the detailed design reads the
-TRD, and the architect has it updated in place as the design settles. It reads the
-Epic's constraints from `atw-matrix epic <id> --constraints`, the set the architect reads, and the
-PRD requirement headings `atw-matrix epic <id>` names. Its answer lists every requirement each
+TRD, and the architect has it updated in place as the design settles. Every session of it is
+handed the Epic's architecture pack (`architecture_pack`): the PRD, the Epic's requirements, the
+constraints that apply and the text of each heading that describes what the Epic reaches; the
+initial write is written from the pack alone. Its answer lists every requirement each
 write added or changed, and the step that accepts the answer records one constraint for each as
 a pointer (`trd`: the Epic and the requirement id, a heading of the TRD), so the requirement's
-text lives in the TRD alone. `trd.confirm` also fails on a constraint whose pointer names a
-requirement the TRD has no heading for. The step
+text lives in the TRD alone. The answer's check fails, for the session's correction, when the
+TRD has no heading for a requirement the answer states or for one a constraint of this TRD
+points at that the answer does not remove. The step
 `trd.confirm` (`flows/trd_authoring.py`) runs after the Architecture container: it checks that the
-TRD has YAML front matter and that every `decisionIds` entry resolves under the architecture root,
-and records the TRD's path and digest on the Epic bead. The driver files the TRD in the vault after
+TRD's front matter and every `decisionIds` entry resolve against the matrix and that every
+constraint's pointer names a requirement heading of the TRD, and records the TRD's path and digest
+on the Epic bead. When a check fails it plans, once, a `trd-author` update of what it found and
+then itself again under it; the second confirmation fails the step when the TRD still does not
+resolve. The driver files the TRD in the vault after
 elaboration is done.
 
 ### 11.5 Spec authoring

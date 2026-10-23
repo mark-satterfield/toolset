@@ -5,7 +5,8 @@ architecture. This step starts no session. It reads the TRD at the path the open
 and recorded in the context file, checks that the matrix holds every document and heading it
 cites, checks that every constraint the matrix holds as a requirement of this TRD (its ``trd``
 pointer) names a requirement heading the TRD has, and records its path and digest on the Epic
-bead. Nothing is recorded in the matrix.
+bead. A TRD that fails a check is corrected once: the step plans one TRD author update of what it
+found, then itself again. Nothing is recorded in the matrix.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ import json
 import os
 import re
 import sys
+from collections.abc import Collection
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -25,6 +27,7 @@ import beadgraph
 import beads_contract
 import strictschema
 import yaml
+from architecture_work_contract import TRD_MODE_UPDATE, validate_trd_request
 from bead_metadata import KEY_ARTIFACT_TRD_PATH, KEY_ARTIFACT_TRD_SHA256
 from driver_surface_types import CONTROL_REPO_ENV, PROJECT_ROOT_ENV
 from jsonschema import ValidationError
@@ -32,15 +35,26 @@ from matrix_contract import KIND_CONSTRAINT, KIND_DOCUMENT, Entry, EntryId, Matr
 from matrixstore import Matrix, make_id, matrix_path, name_key, read_matrix, slug
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
+from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
 from orchestrator.core.handback_contract import TRD_PHASE
-from orchestrator.core.io import JsonValue, json_object
+from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import script_step
-from orchestrator.core.journal_steps import Completion, StepRun, file_artifact, value_artifact
+from orchestrator.core.journal_steps import (
+    UNDER_THIS,
+    Completion,
+    NewStep,
+    StepGroup,
+    StepRun,
+    file_artifact,
+    value_artifact,
+)
 from orchestrator.core.tools import Tools, env_path
 from orchestrator.flows.architecture_files import (
     ARTIFACT_TRD,
     CONFIRM_TRD,
+    PARAM_REQUEST,
+    TRD_AUTHOR,
     ArchitectureContext,
     ArchitectureStepError,
     read_context,
@@ -48,6 +62,9 @@ from orchestrator.flows.architecture_files import (
 from orchestrator.flows.elaboration_support import TRD_AUTHORING_PHASE, enter_phase
 
 if TYPE_CHECKING:
+    from architecture_work_contract import TrdChange, TrdRequest
+    from step_journal_contract import Step, StepPlan
+
     from orchestrator.core.models import RunContext
 
 _ARGUMENT_ERROR: str = "Arguments violate the trd_authoring input contract"
@@ -245,30 +262,72 @@ def document(path: Path, matrix: Matrix, definition: str) -> tuple[list[str], li
     return ids, warnings
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def unresolved_requirements(matrix: Matrix, bead: str, text: str) -> list[str]:
-    """Find the TRD pointers of an Epic's constraints that name no requirement heading of its TRD.
-
-    Args:
-        matrix: The matrix.
-        bead: The Epic's beads id.
-        text: The TRD's text.
+def _dangling(matrix: Matrix, bead: str, headings: set[str], removed: Collection[str]) -> list[tuple[EntryId, str]]:
+    """Find the constraints of an Epic's TRD whose requirement is no heading of the TRD.
 
     Returns:
-        One sentence per constraint whose ``trd`` names this Epic and a requirement id that is no
-        heading of the TRD; empty when every pointer resolves.
+        Each such constraint with the requirement id it points at, in matrix order; a constraint
+        of a requirement in ``removed`` is left out.
 
     """
-    headings: set[str] = {found.strip() for found in MARKDOWN_HEADING.findall(text)}
-    problems: list[str] = []
+    gone: set[str] = {requirement.strip() for requirement in removed}
+    found: list[tuple[EntryId, str]] = []
     entry: Entry
     for entry in matrix.entries((KIND_CONSTRAINT,)):
         pointer: JsonValue = entry.attributes.get(ATTR_TRD)
         if not isinstance(pointer, dict) or pointer.get("epic") != bead:
             continue
-        requirement: JsonValue = pointer.get("requirement")
-        if requirement not in headings:
-            problems.append(f"{entry.id} points at TRD requirement {requirement!r}, which the TRD has no heading for")
+        requirement: str = str(pointer.get("requirement"))
+        if requirement not in headings and requirement not in gone:
+            found.append((entry.id, requirement))
+    return found
+
+
+def _headings(text: str) -> set[str]:
+    """Read the heading texts of a Markdown document.
+
+    Returns:
+        Each heading's text, stripped.
+
+    """
+    return {found.strip() for found in MARKDOWN_HEADING.findall(text)}
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def unresolved_requirements(
+    matrix: Matrix,
+    bead: str,
+    text: str,
+    *,
+    removed: Collection[str],
+    written: Collection[str],
+) -> list[str]:
+    """Find the requirements of an Epic's TRD the matrix would point at that are no heading of the TRD.
+
+    Args:
+        matrix: The matrix.
+        bead: The Epic's beads id.
+        text: The TRD's text.
+        removed: The requirement ids a TRD answer removes; recording the answer removes their
+            constraints, so they are not checked.
+        written: The requirement ids a TRD answer adds or changes; recording the answer points a
+            constraint at each, so each needs a heading.
+
+    Returns:
+        One sentence per constraint whose ``trd`` names this Epic and a requirement id that is no
+        heading of the TRD, and per written id that is no heading; empty when every pointer resolves.
+
+    """
+    headings: set[str] = _headings(text)
+    problems: list[str] = [
+        f"{constraint} points at TRD requirement {requirement!r}, which the TRD has no heading for"
+        for constraint, requirement in _dangling(matrix, bead, headings, removed)
+    ]
+    problems.extend(
+        f"the answer states requirement {requirement!r}, which the TRD has no heading for"
+        for requirement in written
+        if requirement.strip() not in headings
+    )
     return problems
 
 
@@ -299,16 +358,114 @@ def _mark_trd(context: RunContext, tools: Tools, output: Path) -> str:
     return digest
 
 
+CORRECTION_DESCRIPTION: Final = "Correct the TRD where its confirmation found it does not resolve"
+RECONFIRM_DESCRIPTION: Final = "Confirm the TRD after its correction"
+TRD_CORRECTIONS: Final = "TRD corrections requested"
+CORRECTION_FILE: Final = "trd-confirm"
+"""The stem of the request and answer files of the TRD correction, in the helpers folder."""
+REQUEST_SUFFIX: Final = ".request.json"
+ANSWER_SUFFIX: Final = ".answer.json"
+ID_LENGTH: Final = 8
+"""How much of the confirm step's id names its correction's files."""
+
+
+def _dangling_change(trd: Path, constraint: EntryId, requirement: str) -> TrdChange:
+    """State one constraint whose requirement the TRD has no heading for as a change to the TRD.
+
+    Returns:
+        A ``change`` of the requirement that says what is wrong and what correcting it means.
+
+    """
+    return {
+        "change": "change",
+        "id": requirement,
+        "kind": "obligation",
+        "statement": (
+            f"The matrix's constraint {constraint} points at requirement {requirement}, and the TRD has no "
+            f"heading whose text is exactly {requirement}: make that requirement's heading exactly its id, "
+            "or remove the requirement and list it under removed when no source states it any longer."
+        ),
+        "source": {"source": str(trd), "heading": requirement},
+        "appliesTo": "",
+    }
+
+
+def _document_change(trd: Path, problem: str) -> TrdChange:
+    """State a problem of the TRD's front matter or citations as a change to the TRD.
+
+    Returns:
+        A ``change`` with no requirement id that says what is wrong.
+
+    """
+    return {
+        "change": "change",
+        "id": "",
+        "kind": "obligation",
+        "statement": (
+            f"The TRD fails its check: {problem}. Correct the front matter and every decisionIds citation "
+            "so that each names a document and heading the matrix holds, as the architecture pack and "
+            "`atw-matrix node document:<path>` give them."
+        ),
+        "source": {"source": str(trd), "heading": ""},
+        "appliesTo": "",
+    }
+
+
+def _correction(run: StepRun, context: ArchitectureContext, changes: list[TrdChange]) -> Completion:
+    """Plan one TRD author update of what the confirmation found, then the confirmation again.
+
+    Returns:
+        The completion that keeps the step running with the update and the second confirmation
+        under it, and records the changes requested.
+
+    """
+    helpers: Path = Path(context["helpersFolder"])
+    stem: str = f"{CORRECTION_FILE}-{run.step['id'][:ID_LENGTH]}"
+    asked: Path = helpers / (stem + REQUEST_SUFFIX)
+    request: TrdRequest = validate_trd_request(
+        {
+            "mode": TRD_MODE_UPDATE,
+            "epic": context["bead"],
+            "prdPath": context["prdPath"],
+            "trdPath": context["trdPath"],
+            "sharedCapabilities": [],
+            "changes": changes,
+            "answerPath": str(helpers / (stem + ANSWER_SUFFIX)),
+        },
+    )
+    write_json(asked, request)
+    update: StepPlan = {
+        "description": CORRECTION_DESCRIPTION,
+        "purpose": "The TRD's citations and requirement headings resolve against the matrix",
+        "agent": TRD_AUTHOR,
+    }
+    again: StepPlan = {
+        "description": RECONFIRM_DESCRIPTION,
+        "purpose": "The Epic carries one reviewed TRD whose every source resolves",
+        "script": CONFIRM_TRD,
+    }
+    requested: list[JsonValue] = [change["statement"] for change in changes]
+    return Completion(
+        artifacts=(value_artifact(TRD_CORRECTIONS, requested),),
+        add=(StepGroup((NewStep(update, params={PARAM_REQUEST: str(asked)}), NewStep(again)), UNDER_THIS),),
+    )
+
+
 @script_step(CONFIRM_TRD)
 def confirm(run: StepRun) -> Completion:
     """Confirm the reviewed TRD: the matrix holds every source it cites, and the Epic bead carries it.
 
+    A TRD whose front matter or a citation is invalid, or that has no heading for a requirement a
+    constraint of the matrix points at, is corrected once: the step plans one TRD author update
+    of what it found and then itself again under it. The second confirmation corrects nothing.
+
     Returns:
-        The TRD file and the digest recorded on the Epic bead.
+        The TRD file and the digest recorded on the Epic bead; or, for the first confirmation of
+        a TRD that does not resolve, the correction it plans.
 
     Raises:
-        ArchitectureStepError: The TRD is missing, its front matter or a citation is invalid, or
-            a constraint of the matrix points at a requirement the TRD has no heading for.
+        ArchitectureStepError: The TRD is missing or unreadable, or it still does not resolve at
+            the confirmation after its correction.
 
     """
     enter_phase(run.context, run.agents.emit, TRD_AUTHORING_PHASE, CONFIRM_TRD)
@@ -316,12 +473,23 @@ def confirm(run: StepRun) -> Completion:
     trd: Path = Path(context["trdPath"])
     matrix: Matrix = run.tools.portfolio(CONFIRM_TRD, read_matrix, matrix_path(None, os.environ))
     try:
-        warnings: list[str] = document(trd, matrix, TRD_FRONT_MATTER)[1]
-        dangling: list[str] = unresolved_requirements(matrix, str(run.bead), trd.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, DocumentValidationError) as exc:
+        text: str = trd.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
         raise ArchitectureStepError(run, f"{trd}: {exc}") from None
-    if dangling:
-        raise ArchitectureStepError(run, *dangling)
+    warnings: list[str] = []
+    changes: list[TrdChange] = [
+        _dangling_change(trd, constraint, requirement)
+        for constraint, requirement in _dangling(matrix, str(run.bead), _headings(text), ())
+    ]
+    try:
+        warnings = document(trd, matrix, TRD_FRONT_MATTER)[1]
+    except DocumentValidationError as exc:
+        changes.insert(0, _document_change(trd, str(exc)))
+    if changes:
+        above: Step | None = step_journal.parent_step(run.journal(), run.step["id"])
+        if above is None or above.get("script") != CONFIRM_TRD:
+            return _correction(run, context, changes)
+        raise ArchitectureStepError(run, *(change["statement"] for change in changes))
     digest: str = _mark_trd(run.context, run.tools, trd)
     warned: list[JsonValue] = list(warnings)
     return Completion(

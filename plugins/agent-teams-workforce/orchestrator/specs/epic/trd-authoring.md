@@ -22,23 +22,33 @@ decisions.
 3. The detailed design reads the TRD; the architect has it updated in place (mode `update`) as the
    design adds technical requirements.
 
-The architect starts each update inside its own session and records the request file it wrote on
-the helper's step. A `trd-author` step left running when the architect's session stopped is
-launched by the runner as its own session from that request file. The file already at the TRD's
-path is kept for the session to update. When its answer is accepted the step records the request,
-the file `TRD`, the answer, and the value `obligations with no source`.
+Every session of `trd-author` is handed the Epic's architecture pack (artifact `architecture
+pack`); the initial write is written from the pack alone. An update runs as its own step from the
+request file its step is handed: one the architect's result requests, after the architect's
+session, or the correction the confirm step plans. A `trd-author` step left running is launched
+from the request file it holds. The file already at the TRD's path is kept for the session to
+update. The answer's check fails, for the session's correction, when the TRD's front matter or a
+citation does not resolve, or the TRD has no heading for a requirement the answer states or for
+one a constraint of this TRD points at that the answer does not remove. When its answer is
+accepted the step records the request, the file `TRD`, the answer, and the value `obligations
+with no source`.
 
 ## The confirm step
 
 Outermost step "TRD", script `trd.confirm`, after the Architecture container. It starts no session.
 
-1. It reads the TRD at the path the context file names.
-2. It checks the document: it has YAML front matter; `decisionIds` is a list of strings; every
-   entry, without its `#fragment`, names a file under the architecture root or under its `arc42`
-   folder. A TRD that is missing or fails the check fails the step.
-3. It records the TRD's path, relative to the project root, and the SHA-256 of its bytes in the
+1. It reads the TRD at the path the context file names. A TRD that is missing fails the step.
+2. It checks the document: its front matter satisfies `TrdDocument`; every `decisionIds` entry
+   names a document and heading the matrix holds; every constraint whose `trd` pointer names this
+   Epic names a requirement heading of the TRD.
+3. When a check fails, the step plans under itself one `trd-author` update (step "Correct the TRD
+   where its confirmation found it does not resolve"), from a request of mode `update` whose
+   `changes` state each problem, and then itself again ("Confirm the TRD after its correction"),
+   and records the value `TRD corrections requested`. The second confirmation plans no
+   correction: a check that still fails fails the step.
+4. It records the TRD's path, relative to the project root, and the SHA-256 of its bytes in the
    Epic bead's metadata, unless the bead already holds both.
-4. It records the file `TRD`, the value `TRD hash on the Epic bead`, and the value `TRD warnings`
+5. It records the file `TRD`, the value `TRD hash on the Epic bead`, and the value `TRD warnings`
    when `decisionIds` is empty.
 
 The spec steps, and the first step of every Story's and Task's journal, are handed the TRD as the

@@ -102,6 +102,7 @@ from orchestrator.flows.architecture_files import (
     LABEL_RULING,
     LABEL_STATE,
     MAINTAINER,
+    PARAM_REQUEST,
     TRD_AUTHOR,
     WRITE_REQUEST,
     WRITTEN,
@@ -124,7 +125,12 @@ from orchestrator.flows.repo_scoping import (
     story_build_entries,
     story_build_problems,
 )
-from orchestrator.flows.trd_authoring import TRD_FRONT_MATTER, document
+from orchestrator.flows.trd_authoring import (
+    TRD_FRONT_MATTER,
+    DocumentValidationError,
+    document,
+    unresolved_requirements,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -175,8 +181,6 @@ ATTR_EPIC: Final = "epic"
 ATTR_REQUIREMENT: Final = "requirement"
 REQUIREMENT_KEY_SEPARATOR: Final = "/"
 HEADING_MARK: Final = "#"
-PARAM_REQUEST: Final = "request"
-"""The parameter that hands a requested agent's step the path of its request file."""
 REQUEST_SUFFIX: Final = ".request.json"
 """What the request file of an entry of the result's ``requests`` adds to its answer file's stem."""
 ERRORS_SUFFIX: Final = ".errors.txt"
@@ -983,12 +987,15 @@ def trd_author(run: StepRun) -> AgentLaunch:
     """Build the session of the TRD author: the TRD initial write, or an update left running.
 
     The TRD initial write is one of the very first steps of the architecture, before the
-    architect's: the script writes its request (:func:`_initial_request`). An update, the TRD
-    architecture update among them, is requested by the architect in its own session, and is
-    launched here only when it was left running, from the request file the architect saved. The
-    accepted answer is recorded in the matrix: one constraint for each technical requirement the
-    answer states, none for each it lists as removed, and one for each obligation it lists with no
-    source.
+    architect's: the script writes its request (:func:`_initial_request`), and the session writes
+    the TRD from the Epic's architecture pack alone, which every session of the author is handed.
+    An update runs from the request file its step is handed: one the architect's result requests,
+    planned after the architect's session (:func:`_requested`), or one the TRD confirm step plans.
+    A step left running is launched from the request file it holds. The answer is checked against
+    the TRD it names: its front matter and citations, and every constraint that points at a
+    requirement of this TRD names a heading of it once the answer is recorded. The accepted answer
+    is recorded in the matrix: one constraint for each technical requirement the answer states,
+    none for each it lists as removed, and one for each obligation it lists with no source.
 
     Returns:
         The launch from the request file; the TRD it names is kept and updated in place.
@@ -998,7 +1005,8 @@ def trd_author(run: StepRun) -> AgentLaunch:
     asked: Path
     request: TrdRequest
     pack: Path = pack_file(run)
-    if run.step["description"] == TRD_INITIAL_DESCRIPTION:
+    initial: bool = run.step["description"] == TRD_INITIAL_DESCRIPTION
+    if initial:
         name, asked = LABEL_REQUEST, _initial_request(run)
         request = checked_file(run, asked, validate_trd_request)
     else:
@@ -1009,8 +1017,18 @@ def trd_author(run: StepRun) -> AgentLaunch:
 
     def check(output: Path) -> dict[str, JsonValue]:
         answer: dict[str, JsonValue] = strict_json(output)
-        validate_trd_answer(answer, str(output))
-        document(trd, read_matrix(matrix_file()), TRD_FRONT_MATTER)
+        stated: TrdAnswer = validate_trd_answer(answer, str(output))
+        matrix: Matrix = read_matrix(matrix_file())
+        document(trd, matrix, TRD_FRONT_MATTER)
+        dangling: list[str] = unresolved_requirements(
+            matrix,
+            str(run.bead),
+            trd.read_text(encoding="utf-8"),
+            removed=stated["removed"],
+            written=[requirement["id"] for requirement in stated["requirements"]],
+        )
+        if dangling:
+            raise DocumentValidationError("; ".join(dangling))
         return answer
 
     def accept(accepted: StepRun, output: Path) -> Completion:
@@ -1042,7 +1060,11 @@ def trd_author(run: StepRun) -> AgentLaunch:
     return AgentLaunch(
         output=Path(request["answerPath"]),
         validate=check,
-        outcome="The TRD and the answer, each at the path the request names.",
+        outcome=(
+            "The TRD, written from the architecture pack alone, and the answer, each at the path the request names."
+            if initial
+            else "The TRD updated as the request asks, and the answer, each at the path the request names."
+        ),
         accept=accept,
         add_dirs=(run.context.work,),
         files=((LABEL_REQUEST, asked), (ARTIFACT_PACK, pack)),

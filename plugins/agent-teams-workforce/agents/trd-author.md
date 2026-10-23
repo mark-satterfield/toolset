@@ -69,6 +69,13 @@ An update runs as its own step after the solutions architect's session, from the
 wrote: the technical or architecture decisions that impact the detailed design. A correction of
 the architecture may bring another.
 
+The step that confirms the TRD may ask for one update of what it found does not resolve: each
+`change` states the problem in its `statement`. One with an `id` is a requirement a constraint of
+the matrix points at that has no heading whose text is exactly that id: correct the heading, or
+remove the requirement and list it under `removed` when no source states it any longer. One with
+an empty `id` is the front matter or a `decisionIds` citation: correct it to a document and
+heading the pack or `atw-matrix node document:<path>` gives.
+
 ### Every requirement
 
 A requirement is to the `TrdRequirement` definition that `trd-answer.schema.json` refers to;
