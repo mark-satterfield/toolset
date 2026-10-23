@@ -228,7 +228,6 @@ def make_id(kind: EntryKind, rest: str) -> EntryId:
     return as_entry_id(f"{kind}{ID_SEPARATOR}{rest}")
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def kind_of(entry_id: EntryId) -> EntryKind:
     """Read the kind an entry id states.
 
@@ -275,7 +274,6 @@ def repository_side_id(kind: EntryKind, stack: EntryId, name: str) -> EntryId:
     return make_id(kind, f"{stack.partition(ID_SEPARATOR)[2]}{STACK_SEPARATOR}{slug(name)}")
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def id_stack(entry: Entry) -> EntryId | None:
     """Name the stack an entry's id names.
 
@@ -294,7 +292,6 @@ def id_stack(entry: Entry) -> EntryId | None:
     return EntryId(f"{STACK_KIND}{ID_SEPARATOR}{rest.rpartition(STACK_SEPARATOR)[0]}")
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def relationship_id(relationship: Relationship) -> RelationshipId:
     """Name what tells a relationship from every other.
 
@@ -444,7 +441,6 @@ def _raise_problems(problems: list[str], where: str) -> None:
         raise MatrixError(message)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 class Matrix:
     """The matrix in memory: entries by id, relationships once for each side, and an index of both ends.
 

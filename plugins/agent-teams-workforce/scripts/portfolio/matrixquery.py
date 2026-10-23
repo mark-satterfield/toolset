@@ -1372,7 +1372,6 @@ def _touches(ways: Sequence[Touch]) -> list[TouchView]:
     return [{"through": way.through, "heading": way.heading} for way in ways]
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def related_view(matrix: Matrix, bead: str) -> RelatedView:
     """Return the Epics that reach what one Epic reaches.
 

@@ -34,7 +34,16 @@ from edgeset import (
     standing_edges,
     withdrawal_history,
 )
-from matrix_contract import KIND_EPIC, KIND_FEATURE, KIND_REQUIREMENT, KIND_STACK, Entry, EntryId, EntryKind
+from matrix_contract import (
+    KIND_DOCUMENT,
+    KIND_EPIC,
+    KIND_FEATURE,
+    KIND_REQUIREMENT,
+    KIND_STACK,
+    Entry,
+    EntryId,
+    EntryKind,
+)
 from matrixquery import (
     DepsView,
     EpicView,
@@ -62,6 +71,12 @@ ATTR_PRD_PATH: Final = "path"
 """The member of ``prd`` that holds the PRD's path, relative to the vault root."""
 SIMILAR_KINDS: Final[tuple[EntryKind, ...]] = (KIND_REQUIREMENT, KIND_FEATURE)
 """The kinds searched for an Epic no feature serves yet."""
+DECISION_KINDS: Final[frozenset[EntryKind]] = frozenset((KIND_FEATURE, KIND_DOCUMENT))
+"""The kinds of shared entry a related Epic is handed with: the entries that state decisions.
+
+The stacks, services, components and infrastructure two Epics both reach are build facts, and
+every open Epic reaches nearly all of them through the code, so they name no candidate.
+"""
 
 
 class AssessedEpic(TypedDict):
@@ -84,7 +99,7 @@ class RelatedPrd(TypedDict):
     prdPath: str | None
     """Its PRD file in the vault, absolute; None when the matrix names none."""
     shared: list[Shared]
-    """Each entry both Epics reach, with how each reaches it."""
+    """Each feature and document both Epics reach, with how each reaches it."""
 
 
 class EpicContextSummary(TypedDict):
@@ -217,7 +232,8 @@ def _related(matrix: Matrix, vault: Path, related: Sequence[RelatedEpic]) -> lis
     """Render the Epics related to the one assessed, each with its PRD file.
 
     Returns:
-        One row per related Epic, in the order the matrix returned them.
+        One row per related Epic with the features and documents both reach, those sharing the
+        most first, then in the order the matrix returned them.
 
     """
     rows: list[RelatedPrd] = []
@@ -232,9 +248,9 @@ def _related(matrix: Matrix, vault: Path, related: Sequence[RelatedEpic]) -> lis
             "epic": bead,
             "title": name if isinstance(name, str) else "",
             "prdPath": _prd_file(matrix.find(epic_id(bead)), vault),
-            "shared": other["shared"],
+            "shared": [shared for shared in other["shared"] if shared["entry"].get("kind") in DECISION_KINDS],
         })
-    return rows
+    return sorted(rows, key=lambda row: -len(row["shared"]))
 
 
 def _similar(matrix: Matrix, bead: Bead, view: EpicView) -> list[Match]:

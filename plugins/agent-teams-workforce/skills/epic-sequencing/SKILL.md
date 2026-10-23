@@ -3,9 +3,10 @@ name: epic-sequencing
 description: >-
   The edge test for Epic-to-Epic dependency edges, and how to apply it to ONE Epic: read its
   full PRD, answer the foundation-layer checklist (drives, rests on or not touched for each
-  of nine layers) and name the other architecture decisions it drives and rests on, check
-  which of them the matrix holds approved, find the related Epics through the matrix, read the requirements of theirs that bear on each decision, and apply the
-  test in both directions. An Epic is a PRD, a business requirement, and an edge is an ARCHITECTURE
+  of nine layers) and name the other architecture decisions it drives and rests on, the shared
+  capabilities it uses among them, check which of them the matrix holds approved, find the
+  related Epics through the matrix, read the requirements of theirs that bear on each decision,
+  and apply the test to every related Epic in both directions. An Epic is a PRD, a business requirement, and an edge is an ARCHITECTURE
   dependency, a judgment about the order in which architecture is established: it exists
   exactly where an architecture decision one Epic rests on should be designed from another
   Epic's requirements first, and the matrix does not hold that decision approved. Edges decide
@@ -35,9 +36,25 @@ soon as its design will be built on it, however little of the decision it uses.
 
 Build facts are Task dependencies, and they never make an Epic edge. That something must
 exist, be built, be deployed or be testable first; that one requirement presumes a user or a
-record exists; that one reads data from or calls a capability of another — each of those is
-settled among Tasks, which are created after the architecture is settled and carry ordinary
-build dependencies of their own.
+record exists; that one reads a value another Epic's design keeps — each of those is settled
+among Tasks, which are created after the architecture is settled and carry ordinary build
+dependencies of their own. "Data flow, so no edge" holds only when no design decision of the
+other Epic shapes how this Epic works.
+
+### Shared capabilities come first
+
+Everything shared is designed first. An Epic that uses a shared capability — sending its
+messages through notification delivery, publishing or consuming events on the event
+backbone, signing people in through shared identity, keeping files in shared storage, and
+every other capability more than one Epic uses — rests on the design of that capability. Using
+another Epic's mechanism is resting on its design, not a data flow. When the matrix does not
+hold the capability's design approved, the Epic rests on the Epic whose requirements drive that
+design, and that Epic is elaborated first. Without the edge, the using Epic's architecture step
+finds no design and invents a bespoke one of its own: a private notification service beside
+the shared one, its own event path, its own sign-in.
+
+Two Epics that both only use a capability share no decision with each other: each rests on the
+Epic that drives it, and no edge runs between the two users.
 
 A decision the matrix holds approved is designed; no Epic edge is needed for it. As
 elaboration approves more of the architecture, fewer Epic edges exist.
@@ -171,9 +188,13 @@ and its `standing` and `withdrawn` lists are the edges on the Epic.
 2. Answer the foundation checklist: for each of the nine layers, "drives", "rests on" or
    "not touched", with the requirement that decides the answer. No layer is skipped, and
    every answer goes in the written reasoning. Then name every other architecture decision
-   the Epic's requirements should drive or that it rests on. An Epic is a PRD, a WHAT, and
-   its architecture does not exist yet: this takes intuition about what the architecture
-   could be.
+   the Epic's requirements should drive or that it rests on. Among them name every shared
+   capability the Epic uses, including one its PRD states only as an outcome: a message or
+   email is sent, a person is notified, an event is published or reacted to, a file is kept,
+   someone is signed in. Each is a decision the Epic rests on, unless its requirements are
+   the fuller statement of what the capability must serve, and then it drives it (see "Shared
+   capabilities come first"). An Epic is a PRD, a WHAT, and its architecture does not exist
+   yet: this takes intuition about what the architecture could be.
 3. Check each layer and decision against the matrix's `approved` flag, and drop every one
    the matrix holds approved. Find what states each one with `atw-matrix find --kinds
    document,constraint,feature --text "<the decision in words>"`, then `atw-matrix node <id>`
@@ -190,20 +211,33 @@ and its `standing` and `withdrawn` lists are the edges on the Epic.
    yet, and for a layer or decision those do not reach, `atw-matrix find --kinds
    requirement,feature --text "<the layer or decision in words>"` returns the requirements and
    features that match: a requirement's id names its Epic, and a feature is returned with the
-   Epics it serves. For each layer the Epic rests on, the related Epics are those whose
-   requirements drive that layer; for each layer it drives, every Epic that rests on it. The
-   matrix names the candidates; it does not say which way an edge runs.
+   Epics it serves. For each layer or shared capability the Epic rests on, the related Epics
+   are those whose requirements drive it; find them by the capability in words (for example
+   "deliver a notification"), since the matrix may record no entry both Epics reach yet. For
+   each layer it drives, every Epic that rests on it. The context lists first the related
+   Epics that share the most features and documents with this one; one with an empty
+   `shared` list shares no decision the matrix records. The matrix names the candidates; it
+   does not say which way an edge runs.
 5. For every related Epic, and the Epic at the other end of every edge standing on the Epic,
    read the requirements that bear on the layer or decision in question: `atw-matrix epic
    <its id>` names its requirements by their PRD headings. Read those headings and no other
    part, in the file at the `prdPath` the context gives or, for an Epic it does not list, at
    that `prd` path under the vault root. No other PRD is opened and no folder of PRDs is
    searched.
-6. Apply the test in both directions: an edge from another Epic to this one where an
-   architecture decision this Epic rests on should be designed from that Epic's
-   requirements first, and an edge from this Epic to another where an architecture decision
-   that Epic rests on should be designed from this Epic's requirements first. Say the reason
-   in one line, naming the decision and whose requirements should drive it.
+6. Apply the test to every related Epic, in both directions, and answer both questions
+   explicitly for each:
+   - (a) Does the other Epic rest on a decision this Epic drives? Then the edge runs from
+     this Epic to the other.
+   - (b) Does this Epic rest on a decision the other Epic drives, including a shared
+     capability this Epic uses whose design the other Epic's requirements drive? Then the
+     edge runs from the other Epic to this one.
+
+   Answering (a) and leaving (b) unasked is the error this step exists to stop: an Epic
+   that only reads or receives something from this one at run time may still drive the
+   design of a capability this one sends through. "Data flow, so no edge" is the answer only
+   when neither question finds a decision. Say each edge's reason in one line, naming the
+   decision and whose requirements should drive it, and write both answers for every related
+   Epic you judged in the reasoning.
 7. Account for every owned edge standing on the Epic: keep it in the edge file, or withdraw
    it with a reason that answers the reason recorded for it. An edge drawn by hand
    (`owned: false`) is never withdrawn and appears in neither list. An edge an earlier
@@ -238,6 +272,18 @@ invalidates what password reset was elaborated against, or halts for attention. 
 exists to stop that, and an edge that stops nothing of that kind does not exist. Once the
 matrix holds the identity architecture approved, no identity Epic needs an edge for it.
 
+The shared-capability case runs the same way in the other direction. Email Channel Proof and
+Self-Serve Address Correction (ssbd-guuuz) drives the account's email-address aggregate, and
+Multi-Channel Notification Delivery (ssbd-hdqid) reads that address at run time to deliver
+notifications. Asking only question (a) finds that read and calls it a data flow, so no edge.
+Question (b) finds the decision that matters: ssbd-guuuz's own proof-of-control emails are
+messages the product sends, and every message is sent through the notification service, with
+events on the bus and EventBridge rules routing them. Notification delivery is a shared
+capability ssbd-guuuz uses, ssbd-hdqid's requirements drive its design, and the matrix does
+not hold that design approved. So the edge runs from ssbd-hdqid to ssbd-guuuz. Without it,
+ssbd-guuuz's architecture step designs its own way to send its emails, which is how a bespoke
+`securityNotifications-service` appeared in the draft.
+
 ## The edge file
 
 The edge file's one definition is artifact-handoff's `schemas/epic-edge-proposal.schema.json`:
@@ -269,8 +315,11 @@ revises.
 - Every edge survives the test stated out loud. If the reason does not name an architecture
   decision that should be designed from the upstream Epic's requirements and that the
   matrix does not hold approved, delete the edge. A reason about something existing, being built,
-  being deployed, being testable, or being read or called at runtime is a Task dependency;
-  delete the edge.
+  being deployed, being testable, or being read at runtime, with no design decision of the
+  other Epic shaping how this one works, is a Task dependency; delete the edge.
+- Every related Epic judged has both answers written: (a) whether it rests on a decision this
+  Epic drives, and (b) whether this Epic rests on a decision it drives, shared capabilities
+  this Epic uses included.
 
 ## Errors to avoid
 
@@ -280,6 +329,9 @@ revises.
 - Adding an edge to force a total order.
 - Adding an edge for a build fact — existence, deployment, testability, data flow — which
   belongs to Tasks.
+- Calling a dependency a data flow after asking only whether the other Epic rests on this
+  one. Using another Epic's mechanism, such as sending messages through the notification
+  delivery it drives, is resting on its design, and the edge runs from that Epic.
 - Adding an edge for a decision the matrix holds approved.
 - Dropping an edge by citing anything but the matrix's `approved` flag: a matrix entry that
   exists, a document at `lifecycle: effective`, or the wording of a document. None of them is

@@ -967,7 +967,7 @@ Return only the authored candidate reference.${relayKit.artifactBrief(candidateF
 const assess = () => settleAgent(assessPrompt, {
       label: `epic-dependency-assessor:${target}`,
       phase: 'Assess',
-      effort: 'medium',
+      effort: 'low',
       agentType: 'epic-dependency-assessor', // model: its definition's front matter sets it (architecture judgment)
       schema: relayKit.ARTIFACT_SCHEMA,
     })

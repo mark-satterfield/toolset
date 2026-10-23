@@ -79,7 +79,7 @@
           }
         },
         "related": {
-          "description": "Each other Epic the matrix relates to this one (`atw-matrix related --epic`), in the order the matrix returned them.",
+          "description": "Each other Epic the matrix relates to this one (`atw-matrix related --epic`): those sharing the most features and documents first, then in the order the matrix returned them.",
           "type": "array",
           "items": {
             "type": "object",
@@ -90,7 +90,7 @@
               "title": {"type": "string"},
               "prdPath": {"description": "Its PRD file, absolute; null when the matrix names none.", "type": ["string", "null"]},
               "shared": {
-                "description": "Each entry both Epics reach and the relationship each reaches it through (`drives` and `restsOn` included), as `atw-matrix related --epic` prints its `shared` list. Each names the matrix entry; `atw-matrix epic <id>` names the related Epic's requirements and the PRD heading of each.",
+                "description": "Each feature and document both Epics reach and the relationship each reaches it through (`drives` and `restsOn` included), as `atw-matrix related --epic` prints its `shared` list. The stacks, services, components and infrastructure both reach are left out: they are build facts, and nearly every Epic reaches all of them through the code. An empty list says the matrix records no shared decision; the Epic can still share one the matrix does not record yet. Each names the matrix entry; `atw-matrix epic <id>` names the related Epic's requirements and the PRD heading of each.",
                 "type": "array",
                 "items": {"type": "object"}
               }

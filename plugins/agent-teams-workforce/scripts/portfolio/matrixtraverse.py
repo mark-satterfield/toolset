@@ -439,7 +439,6 @@ def epic_id(bead: str) -> EntryId:
     return make_id(KIND_EPIC, bead.strip().removeprefix(prefix))
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def holding(matrix: Matrix, stack: EntryId) -> list[Relationship]:
     """List the home relationships that end at a stack.
 
@@ -455,7 +454,6 @@ def holding(matrix: Matrix, stack: EntryId) -> list[Relationship]:
     return matrix.incoming(stack, (HOME_RELATIONSHIP,))
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def held(matrix: Matrix, stack: EntryId) -> list[EntryId]:
     """List the entries whose home is a stack, as either side states it.
 
@@ -471,7 +469,6 @@ def held(matrix: Matrix, stack: EntryId) -> list[EntryId]:
     return list(dict.fromkeys(relationship.start for relationship in holding(matrix, stack)))
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def holder(matrix: Matrix, entry_id: EntryId) -> EntryId | None:
     """Name the stack an entry belongs to.
 
@@ -499,7 +496,6 @@ def holder(matrix: Matrix, entry_id: EntryId) -> EntryId | None:
     return matrix.home(entry_id, side=None) or id_stack(entry)
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def authority_holder(matrix: Matrix, entry_id: EntryId) -> EntryId | None:
     """Name the stack the architecture side places an entry in: the holder of what is built.
 
@@ -525,7 +521,6 @@ def authority_holder(matrix: Matrix, entry_id: EntryId) -> EntryId | None:
     return next(iter(stacks)) if len(stacks) == 1 else None
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def follow(
     matrix: Matrix,
     starts: Sequence[EntryId],
@@ -560,7 +555,6 @@ def follow(
     return list(followed.values())
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def dependencies(matrix: Matrix, starts: Sequence[EntryId], *, inward: bool = False) -> list[Dependency]:
     """Follow the dependency family from some entries, to any depth.
 
@@ -695,7 +689,6 @@ def _dependencies_from(
     return walked[origin]
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def epic_reach(
     matrix: Matrix,
     epic: EntryId,
@@ -816,7 +809,6 @@ def heading_index(matrix: Matrix) -> dict[Heading, list[EntryId]]:
     return index
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def stacks_of(matrix: Matrix, entry_id: EntryId) -> set[EntryId]:
     """Find the stacks an entry places: itself, its homes, and the homes of what it corresponds to.
 
@@ -1073,7 +1065,6 @@ def _heading(relationship: Relationship) -> str:
     return heading if isinstance(heading, str) else ""
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def epic_touches(
     matrix: Matrix,
     epic: EntryId,

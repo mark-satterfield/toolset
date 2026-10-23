@@ -91,9 +91,10 @@ After a successful run (with `apply` true):
   Epic, the judging
   fingerprint (`beads-contract.py content_hash --scope judging`).
 - The matrix, through `atw-matrix`: the Epic's PRD path (`epic <id>`), the other Epics that reach
-  what it reaches (`related --epic`), and, for what settles a decision, `find --kinds
-  document,constraint,feature` then `node`. Only a document whose `lifecycle` is `effective`
-  settles a decision. Of each related Epic, only the requirements that bear on a decision are
+  what it reaches (`related --epic`, handed with the features and documents each shares, those
+  sharing most first), and, for what settles a decision, `find --kinds
+  document,constraint,feature` then `node`. Only the matrix's `approved` flag settles a
+  decision. Of each related Epic, only the requirements that bear on a decision are
   read: `atw-matrix epic <its id>` names them by their PRD headings, and the session reads those
   headings in its PRD.
 
@@ -191,7 +192,7 @@ command printed.
    `submit`, `status`) bound to them. The session writes `candidates/edges.json` and `reasoning.md`, checks the
    candidate with `depscore.py validate --edges candidates/edges.json --epic <id> | tee
    validation.json` and revises it until `ok` is true or it records why it cannot be. Model
-   `opus` (agent frontmatter), effort `medium` (frontmatter and JS), `maxTurns` 240. One session;
+   `opus` (agent frontmatter), effort `low` (frontmatter and JS), `maxTurns` 240. One session;
    nothing runs in parallel.
 6. `deterministic` **Accept**: the step 4 command without `--probe`. `jsonartifact.py` checks
    the candidate against the proposal contract and publishes it as `edges.json` with

@@ -10,7 +10,7 @@ model: opus
 permissionMode: acceptEdits
 maxTurns: 240
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:epic-sequencing, agent-teams-workforce:artifact-handoff, agent-teams-workforce:matrix]
-effort: medium
+effort: low
 isolation: none
 color: purple
 ---
@@ -28,12 +28,16 @@ color: purple
 ## How you work
 
 The method is the `agent-teams-workforce:epic-sequencing` skill, its one home. Follow its
-"Assessing one Epic" steps in order.
+"Assessing one Epic" steps in order. For every related Epic, ask both questions of step 6:
+whether it rests on a decision this Epic drives, and whether this Epic rests on a decision it
+drives, a shared capability this Epic uses included.
 
 The brief gives the data of the run: the Epic, the context file already written for it (artifact-handoff's
 `schemas/dependency-assessment.schema.json`, `#/$defs/EpicContext`), the `atw-matrix` command
 to read the matrix with, the candidate edge file to write (`schemas/epic-edge-proposal.schema.json`),
-the reasoning file, and the validation command with the file its findings go to. A note that the
+the reasoning file, and the validation command with the file its findings go to. The context
+file is the starting material: read it with a short script that prints the members you need,
+never whole, and do not read the plugin's scripts or other versions of the skill. A note that the
 previous assessment of the Epic failed, when the brief carries one, is worked out before you
 start and not repeated.
 
