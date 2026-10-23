@@ -43,7 +43,7 @@ from orchestrator.core.handback_contract import (
     EventName,
 )
 from orchestrator.core.io import JsonValue, json_object, write_json
-from orchestrator.core.journal_registry import fills, script_step
+from orchestrator.core.journal_registry import children_together, fills, script_step
 from orchestrator.core.journal_run import JournalRunner, open_journal
 from orchestrator.core.journal_steps import Completion, StepRun, file_artifact, value_artifact
 from orchestrator.core.models import RunContext, StepError
@@ -139,6 +139,8 @@ fills(TASKS_CONTAINER, SPAN, STORY_WRITE)
 """The steps that fill the containers :func:`outermost_steps` plans empty: the open-run step plans
 the architecture steps; the span plans the repositories' containers whose Story bead write plans
 each repository's Tasks container."""
+children_together(SPECS_CONTAINER, TASKS_CONTAINER)
+"""The repositories' containers under Specs and Stories, and under Tasks, run at the same time."""
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

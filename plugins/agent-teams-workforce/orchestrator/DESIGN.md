@@ -766,11 +766,16 @@ that are running finish.
 ### 7.1 What runs in parallel
 
 One orchestrator process per Epic dispatch; the driver's lanes keep their slots. Steps run in the
-journal's walk order. The one exception: consecutive sibling steps that each have an agent, have no
-child steps and name only done steps in their inputs run as concurrent sessions
-(`journal_run.concurrent_group`). That is how the
-contracts author and the data-model author of one repository. Repositories run one after another,
-each in its own container of steps.
+journal's walk order, with two exceptions. Consecutive sibling steps that each have an agent, have
+no child steps and name only done steps in their inputs run as concurrent sessions
+(`journal_run.concurrent_group`); that is how the contracts author and the data-model author of one
+repository run together. And the child containers of a container a flow names with
+`journal_registry.children_together` (Specs and Stories, Tasks: one container per repository) run
+at the same time, at most `ATW_ORCH_SESSIONS` of them (`journal_run.concurrent_containers`): each
+runs its own steps in walk order and closes only its own finished steps, and a stale file is
+replanned once every container of the group has ended. Imported portfolio calls stay serialized
+(section 2.2); journal changes are serialized by the journal lock and `bd` calls by
+`bd-gate.lock`.
 
 **The cap.** At most `ATW_ORCH_SESSIONS` agent sessions at once per run (default 4). Steps beyond
 the cap wait. The account-wide number is this cap times the driver's `--elaboration-concurrency`;

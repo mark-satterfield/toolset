@@ -89,7 +89,8 @@ with that failure.
 Steps run in the order the journal lists them. Consecutive sibling steps that each have an agent,
 have no child steps and whose inputs are all done run as concurrent sessions, at most
 `ATW_ORCH_SESSIONS` at a time. This is how the contracts and data-model authors of one repository
-run together. Repositories run one after another.
+run together. The repositories' containers under Specs and Stories, and under Tasks, run at the
+same time, at most `ATW_ORCH_SESSIONS` of them, each running its own steps in order.
 
 ## Task edges
 

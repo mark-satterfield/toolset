@@ -16,6 +16,9 @@ A container a journal plans with no child steps is filled while the run goes, by
 plans steps under it or plans the steps that do. Its flow names the script keys and agents of
 those steps with ``fills``, so a run whose empty container no step can fill any more fails before
 its first step, not when it reaches the container.
+
+A flow names with ``children_together`` the containers whose child containers do not depend on
+each other (one per repository), so the runner runs those child containers at the same time.
 """
 
 from __future__ import annotations
@@ -45,6 +48,7 @@ class Registry:
         self._any_agent: tuple[frozenset[str], AgentBuilder] | None = None
         self._containers: dict[str, tuple[StepPlan, ...]] = {}
         self._fillers: dict[str, frozenset[str]] = {}
+        self._together: set[str] = set()
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def plan_under(self, container: str, *plans: StepPlan) -> None:
@@ -102,6 +106,32 @@ class Registry:
         """
         key: str | None = step.get("script") or step.get("agent")
         return key is not None and key in self._fillers.get(container, frozenset())
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def children_together(self, *containers: str) -> None:
+        """Register containers whose child containers run at the same time.
+
+        Args:
+            containers: The descriptions of the container steps.
+
+        Raises:
+            ValueError: No container is named, or one is blank.
+
+        """
+        if not containers or any(not container.strip() for container in containers):
+            message: str = f"the containers {containers!r} are empty or blank"
+            raise ValueError(message)
+        self._together.update(containers)
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def runs_children_together(self, container: str) -> bool:
+        """Tell whether a container's child containers run at the same time.
+
+        Returns:
+            True when the container's description is registered with ``children_together``.
+
+        """
+        return container in self._together
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def handles(self, step: Step | StepPlan) -> bool:
@@ -251,3 +281,4 @@ agent_step: Final = REGISTRY.agent_step
 any_agent_step: Final = REGISTRY.any_agent_step
 plan_under: Final = REGISTRY.plan_under
 fills: Final = REGISTRY.fills
+children_together: Final = REGISTRY.children_together

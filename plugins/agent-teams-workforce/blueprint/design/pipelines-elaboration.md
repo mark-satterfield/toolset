@@ -533,6 +533,9 @@ Notes on the diagram:
   Story does not need. After the one review at most three rounds follow, each round's sessions
   running together: one correction, the decider on the disputed findings, one revision to the
   ruling.
+- The repositories' containers under Specs and Stories run at the same time, and so do their
+  containers under Tasks, at most `ATW_ORCH_SESSIONS` at once (`journal_run.concurrent_containers`),
+  because no repository's specs or Tasks wait on another's and run time is a goal of the pipeline.
 - Task decomposition is drawn in section 8.
 - One Spec and one Story per repository, and Tasks under each Story, are stated by
   [requirements/pipelines.md](../requirements/pipelines.md) and the vault's `docs/sdlc/sdlc.md`.

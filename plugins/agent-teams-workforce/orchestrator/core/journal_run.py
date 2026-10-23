@@ -20,7 +20,9 @@ A session is continued only when its agent definition and contracts are unchange
 started (``AgentRunner.resumable``, by fingerprint); otherwise the step starts a new one.
 
 Steps run in walk order. Consecutive sibling steps that each have an agent, have no child steps
-and whose inputs are all done run as concurrent sessions under the dispatch's session slots.
+and whose inputs are all done run as concurrent sessions under the dispatch's session slots. The
+child containers of a container the registry names (``Registry.children_together``) run at the
+same time, each its own steps in walk order, at most ``ATW_ORCH_SESSIONS`` of them.
 
 Work that already succeeded is never redone: an agent step whose output file is valid and was
 written since the step started is recorded from that file, and its agent is not started again
@@ -71,7 +73,15 @@ from .journal_steps import (
     is_finish_of,
     stage_of,
 )
-from .models import AgentStep, MalformedRequestError, PipelineDefectError, RunContext, StaleInputError, StepError
+from .models import (
+    AgentStep,
+    MalformedRequestError,
+    PipelineDefectError,
+    RunContext,
+    StaleInputError,
+    StepError,
+    session_cap,
+)
 from .tools import Tools
 
 # isort: split
@@ -127,6 +137,52 @@ def concurrent_group(journal: Journal, first: StepId) -> list[StepId]:
             break
         group.append(sibling["id"])
     return group
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def concurrent_containers(journal: Journal, first: StepId, registry: Registry) -> list[StepId]:
+    """Name the containers that run together with the container that holds the next step.
+
+    Args:
+        journal: The journal.
+        first: The next step, as ``step_journal.next_step`` returns it.
+        registry: The registry, which names the containers whose child containers run together
+            (``Registry.children_together``).
+
+    Returns:
+        The nearest step above ``first`` that is a container (child steps, no agent, no script)
+        directly under a container the registry names, and the containers after it among its
+        siblings that run with it: each is a container that is not done and names only done
+        steps in its inputs; a done sibling is passed over, and the group ends at the first
+        sibling that is not done and does not qualify. At most ``ATW_ORCH_SESSIONS`` of them.
+        Empty when no step above ``first`` is such a container.
+
+    """
+    done: set[StepId] = {step["id"] for step in step_journal.steps_in_order(journal) if step["status"] == STATUS_DONE}
+
+    def container(step: Step) -> bool:
+        return bool(step["steps"]) and "agent" not in step and "script" not in step
+
+    def qualifies(step: Step) -> bool:
+        return container(step) and all(named in done for named in step.get("inputs", []))
+
+    below: Step = step_journal.find_step(journal, first)
+    above: Step | None = step_journal.parent_step(journal, first)
+    while above is not None and not (container(below) and registry.runs_children_together(above["description"])):
+        below, above = above, step_journal.parent_step(journal, above["id"])
+    if above is None or not qualifies(below):
+        return []
+    siblings: list[Step] = above["steps"]
+    position: int = next(index for index, step in enumerate(siblings) if step["id"] == below["id"])
+    group: list[StepId] = [below["id"]]
+    sibling: Step
+    for sibling in siblings[position + 1 :]:
+        if sibling["status"] == STATUS_DONE:
+            continue
+        if not qualifies(sibling):
+            break
+        group.append(sibling["id"])
+    return group[: session_cap()]
 
 
 def _inputs(journal: Journal, step: Step) -> StepInputs:
@@ -214,6 +270,27 @@ def _planned_finish(journal: Journal, step_id: StepId, moment: str) -> Step | No
 
 REQUEST_ERRORS_LABEL: Final = "request errors"
 """The label of the errors file in the brief of a session that corrects a malformed request."""
+
+
+def _running_unclosed(journal: Journal, within: StepId | None) -> list[Step]:
+    """List the running steps whose child steps are all done, at or below ``within`` when given.
+
+    Returns:
+        Those steps in walk order (``step_journal.unclosed_steps``).
+
+    """
+    scope: set[StepId] | None = (
+        None
+        if within is None
+        else {below["id"] for below in step_journal.steps_in_order_from(step_journal.find_step(journal, within))}
+    )
+    return [
+        step
+        for step in step_journal.unclosed_steps(journal)
+        if step["status"] == STATUS_RUNNING and (scope is None or step["id"] in scope)
+    ]
+
+
 JSON_SUFFIX: Final = ".json"
 """The suffix of an output the runner may reuse."""
 
@@ -531,14 +608,39 @@ class JournalRunner:
         first: Step | None = step_journal.next_step(journal)
         if first is None:
             return False
-        group: list[StepId] = concurrent_group(journal, first["id"])
+        containers: list[StepId] = concurrent_containers(journal, first["id"], self.registry)
+        if len(containers) > 1:
+            with contextlib.redirect_stdout(sys.stderr):
+                parallel(self.context, [partial(self._run_container, container) for container in containers])
+        else:
+            self._run_group(journal, first["id"])
+        self._replan_stale()
+        self._close_finished()
+        return True
+
+    def _run_group(self, journal: Journal, first: StepId) -> None:
+        """Run a step, or the steps that run together with it (:func:`concurrent_group`)."""
+        group: list[StepId] = concurrent_group(journal, first)
         if len(group) == 1:
             self._run_step(group[0])
         else:
             parallel(self.context, [partial(self._run_step, step_id) for step_id in group])
-        self._replan_stale()
-        self._close_finished()
-        return True
+
+    def _run_container(self, container: StepId) -> None:
+        """Run the steps of one container until none is left in it, one fails, or a file is stale.
+
+        Each round closes the finished steps inside the container, then runs its first step
+        without child steps that is not done, with the steps that run together with it. A stale
+        file ends the round's container at once: its writer is set back to planned after every
+        container of the group has ended (:meth:`_replan_stale`).
+        """
+        while not self.stale:
+            self._close_finished(within=container)
+            journal: Journal = step_journal.read_journal(self.path)
+            leaf: Step | None = _open_leaf(step_journal.find_step(journal, container))
+            if leaf is None:
+                return
+            self._run_group(journal, leaf["id"])
 
     def _replan_stale(self) -> None:
         """Set the first step that wrote a stale file, and every step after it, back to planned.
@@ -559,8 +661,11 @@ class JournalRunner:
 
         step_journal.update_journal(self.path, change)
 
-    def _close_finished(self) -> None:
+    def _close_finished(self, within: StepId | None = None) -> None:
         """Close every running step whose child steps are all done, the last in walk order first.
+
+        With ``within``, only the steps at or below that step are closed: a container that runs
+        at the same time as its siblings closes its own steps only.
 
         A step with no agent is marked done. An agent step is closed through its "Finish": one
         the runner ran (it holds a session id) was accepted when it ran, so the step is marked
@@ -569,11 +674,7 @@ class JournalRunner:
         Whatever accepting a "Finish" raises continues to the caller once the failure is recorded
         on a new "Finish" of the step (:meth:`_record_failure`).
         """
-        while waiting := [
-            step
-            for step in step_journal.unclosed_steps(step_journal.read_journal(self.path))
-            if step["status"] == STATUS_RUNNING
-        ]:
+        while waiting := _running_unclosed(step_journal.read_journal(self.path), within):
             step: Step = waiting[-1]
             step_id: StepId = step["id"]
             finish: Step | None = _done_finish(step)

@@ -198,11 +198,11 @@ class SessionFacts(TypedDict):
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def session_slots() -> threading.BoundedSemaphore:
-    """Create the shared cap for all nested phase pools of this dispatch.
+def session_cap() -> int:
+    """Read the number of agent sessions a dispatch runs at once.
 
     Returns:
-        A semaphore bounded by ATW_ORCH_SESSIONS.
+        ATW_ORCH_SESSIONS, 4 when it is unset.
 
     Raises:
         ValueError: The configured cap is not positive.
@@ -212,7 +212,18 @@ def session_slots() -> threading.BoundedSemaphore:
     if count < 1:
         message = "ATW_ORCH_SESSIONS must be positive"
         raise ValueError(message)
-    return threading.BoundedSemaphore(count)
+    return count
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def session_slots() -> threading.BoundedSemaphore:
+    """Create the shared cap for all nested phase pools of this dispatch.
+
+    Returns:
+        A semaphore bounded by ATW_ORCH_SESSIONS (:func:`session_cap`).
+
+    """
+    return threading.BoundedSemaphore(session_cap())
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
