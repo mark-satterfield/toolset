@@ -101,6 +101,9 @@ session. The accepting step writes each request beside its answer path
 file is not yet a valid answer, performed by the agent the entry names and handed the request
 file as the parameter `request`; then a step "Finish" of the architect whose inputs are those
 steps, so it is handed each `answer`. The architect's step stays running until they are done.
+A "Finish" whose result requests more work plans another "Finish" below it; the third "Finish"
+in that chain that still requests work fails the step (`MAX_FINISH_GENERATIONS`), because the
+architecture does not converge.
 
 The same launch builder serves every step the architect performs: the first, its "Finish", a
 correction after the mechanical check or after the lead's routing, and a competing design the lead plans.
@@ -197,7 +200,8 @@ asks for an opinion from the `find-specialists` catalog. It writes its routing
 (`<arch-work>/routing-<step>.json`) and adds the steps its routing calls for under its own step,
 with a last child step "Finish": a correction by the architect, a specialist's opinion, a
 competing design, or a ruling. A routing that rejects every matter adds no step. When nothing
-remains, the lead records the value `every item is resolved`, and the check runs again.
+remains, the lead records the value `every item is resolved`, and the check runs again. A fourth
+"Finish" of the lead, each below the one before, is not launched: the step fails.
 
 `architecture-decider` rules only where the lead sends a matter to it. It is handed one question
 file and writes one ruling (`<arch-work>/ruling-<step>.json`, file `ruling`, value `stands`), and

@@ -42,10 +42,12 @@ from orchestrator.flows.architecture_files import (
     LABEL_RESULT,
     LABEL_RULING,
     LEAD,
+    MAX_FINISH_GENERATIONS,
     ArchitectureContext,
     ArchitectureStepError,
     checked_file,
     cited_document,
+    finish_generation,
     is_finish,
     matrix_file,
     output_check,
@@ -76,15 +78,25 @@ def lead(run: StepRun) -> AgentLaunch:
     ends with child steps and nothing is accepted here. A routing that rejects every item needs
     no step. Launched for "Finish", the lead either records that every item is resolved or adds
     the steps that remain. The specialists it asks for an opinion are its own choice, made from
-    the find-specialists skill's catalog, so nothing is listed for it.
+    the find-specialists skill's catalog, so nothing is listed for it. A "Finish" beyond
+    :data:`MAX_FINISH_GENERATIONS` is not launched.
 
     Returns:
         The launch, with exactly the input labels the lead's definition names.
+
+    Raises:
+        ArchitectureStepError: The step is a "Finish" beyond the bound.
 
     """
     context: ArchitectureContext = read_context(run)
     folder: Path = run.context.work / ARCHITECTURE_FOLDER
     finishing: bool = is_finish(run)
+    if finishing and finish_generation(run) > MAX_FINISH_GENERATIONS:
+        raise ArchitectureStepError(
+            run,
+            f"the lead has finished {MAX_FINISH_GENERATIONS} times and each added more steps; "
+            "the routing does not converge",
+        )
     owner: Step | None = step_journal.parent_step(run.journal(), run.step["id"]) if finishing else run.step
     owner_id: str = run.step["id"] if owner is None else owner["id"]
 

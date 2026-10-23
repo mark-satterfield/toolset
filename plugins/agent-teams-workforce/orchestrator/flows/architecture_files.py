@@ -47,7 +47,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from architecture_work_contract import SourceHeading, WriteRequest, WriteResult
-    from step_journal_contract import Artifact, Step
+    from step_journal_contract import Artifact, Journal, Step
 
     from orchestrator.core.io import JsonValue
     from orchestrator.core.journal_steps import StepRun
@@ -454,6 +454,38 @@ def is_finish(run: StepRun) -> bool:
     """
     parent: Step | None = step_journal.parent_step(run.journal(), run.step["id"])
     return parent is not None and is_finish_of(parent, run.step)
+
+
+MAX_FINISH_GENERATIONS: Final = 3
+"""How many "Finish" steps one agent step may run, each below the one before."""
+
+
+def finish_generation(run: StepRun) -> int:
+    """Count the "Finish" generations a step stands in.
+
+    A "Finish" whose result plans more work is followed by another "Finish" below it; the
+    generation is how many of them are chained through the step: each step above it that is the
+    "Finish" of the step above that, the step itself when it is one, and each done "Finish" its
+    last child step is, below it in turn (a "Finish" the agent closed in its own session is
+    accepted on the step above it).
+
+    Returns:
+        The number of "Finish" steps in that chain; 0 for an agent step that is not one and holds none.
+
+    """
+    journal: Journal = run.journal()
+    count: int = 0
+    step: Step = run.step
+    parent: Step | None = step_journal.parent_step(journal, step["id"])
+    while parent is not None and is_finish_of(parent, step):
+        count += 1
+        step = parent
+        parent = step_journal.parent_step(journal, step["id"])
+    step = run.step
+    while step["steps"] and is_finish_of(step, step["steps"][-1]) and step["steps"][-1]["status"] == STATUS_DONE:
+        count += 1
+        step = step["steps"][-1]
+    return count
 
 
 def lead_resolved(run: StepRun, lead: str) -> bool | None:

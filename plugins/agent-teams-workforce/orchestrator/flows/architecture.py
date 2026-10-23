@@ -102,6 +102,7 @@ from orchestrator.flows.architecture_files import (
     LABEL_RULING,
     LABEL_STATE,
     MAINTAINER,
+    MAX_FINISH_GENERATIONS,
     PARAM_REQUEST,
     TRD_AUTHOR,
     WRITE_REQUEST,
@@ -111,6 +112,7 @@ from orchestrator.flows.architecture_files import (
     architecture_folder,
     checked_file,
     cited_document,
+    finish_generation,
     is_finish,
     journal_file,
     matrix_file,
@@ -612,7 +614,8 @@ def architect(run: StepRun) -> AgentLaunch:
     kept for every step: the architect writes its result as the work goes, so a session that
     starts again, for the first step as for any other, continues from the partial result. A
     valid file at the result path is therefore never taken as the step's finished output
-    without the session (``reuse_output`` False).
+    without the session (``reuse_output`` False). A result that still requests work at the
+    :data:`MAX_FINISH_GENERATIONS`-th "Finish" in one chain fails the step.
 
     Returns:
         The launch: the result file as output, the files the definition names, and what the
@@ -626,6 +629,13 @@ def architect(run: StepRun) -> AgentLaunch:
 
     def accept(accepted: StepRun, output: Path) -> Completion:
         result: ArchitectureResult = checked_file(accepted, output, validate_architecture_result)
+        open_requests: list[str] = [entry["agent"] for entry in result["requests"] if not _answered(entry["request"])]
+        if open_requests and finish_generation(accepted) >= MAX_FINISH_GENERATIONS:
+            raise ArchitectureStepError(
+                accepted,
+                f"the architect's Finish {MAX_FINISH_GENERATIONS} times over still requests work of {open_requests}; "
+                "the architecture does not converge",
+            )
         recorded: Recorded = accepted.tools.portfolio(
             accepted.inputs.stage,
             _record_result,
