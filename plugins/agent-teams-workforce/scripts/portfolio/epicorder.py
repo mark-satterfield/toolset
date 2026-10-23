@@ -6,9 +6,10 @@ edge says that one Epic uses an architecture entry another Epic's own requiremen
 user is elaborated after the definer (the driver). Units are as fine as the matrix allows:
 
 1. A feature. Its drivers are the Epics with a ``drives`` relationship to it, or to a document
-   heading (or whole document) that ``describedBy`` names for it. With no such Epic, its drivers
-   are the Epics whose requirements it serves (``hasRequirement`` then ``servedBy``), less those
-   that only rest on it. Its users are the other Epics it serves and the Epics with ``restsOn``
+   heading (or whole document) that ``describedBy`` names for it. With no such Epic, it has a
+   driver only when it serves the requirements of exactly one Epic (``hasRequirement`` then
+   ``servedBy``) and that Epic does not only rest on it; a feature serving several Epics with no
+   ``drives`` has no driver and makes no edge. Its users are the other Epics it serves and the Epics with ``restsOn``
    to it.
 2. A document heading, a whole document or any other entry an Epic ``drives``. Its drivers are
    those Epics; its users are the Epics whose requirements that exact heading ``covers``, and the
@@ -241,7 +242,7 @@ def _feature(matrix: Matrix, feature: EntryId, found: _Links) -> Decision | None
     explicit: set[str] = found.drives.get(feature, set())
     rule: str = RULE_DRIVES if explicit else RULE_DRIVES_HEADING
     drivers: set[str] = explicit | by_heading
-    if not drivers:
+    if not drivers and len(served) == 1:
         rule, drivers = RULE_SERVED, served - rests
     users: set[str] = (served | rests) - drivers
     if not drivers or not users:

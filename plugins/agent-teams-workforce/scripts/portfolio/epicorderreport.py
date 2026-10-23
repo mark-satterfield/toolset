@@ -79,12 +79,33 @@ def _details(summary: str, lines: list[str]) -> list[str]:
     return [f"<details><summary>{summary}</summary>", "", *lines, "", "</details>", ""]
 
 
+def _closing(result: Order, hand: Iterable[Pair]) -> list[Pair]:
+    successors: dict[str, set[str]] = {}
+    for start, end in result.raw:
+        successors.setdefault(start, set()).add(end)
+
+    def reaches(start: str, goal: str) -> bool:
+        seen: set[str] = set()
+        todo: list[str] = [start]
+        while todo:
+            node: str = todo.pop()
+            if node == goal:
+                return True
+            if node not in seen:
+                seen.add(node)
+                todo.extend(successors.get(node, ()))
+        return False
+
+    return sorted(pair for pair in hand if reaches(pair[1], pair[0]))
+
+
 def _diff(analysis: Analysis, result: Order) -> list[str]:
     proposed: set[Pair] = set(result.edges)
     current: Mapping[Pair, bool] = analysis.current
     hand: set[Pair] = {pair for pair, owned in current.items() if not owned}
     owned: set[Pair] = set(current) - hand
     added: list[Pair] = sorted(proposed - set(current))
+    closing: list[Pair] = _closing(result, hand)
     return [
         (
             f"Current `tracks` edges between open Epics: {len(current)} — {len(hand)} made by hand, "
@@ -99,6 +120,12 @@ def _diff(analysis: Analysis, result: Order) -> list[str]:
         "",
         "`--apply` replaces the pipeline-owned edges and never removes a hand-made edge.",
         "",
+        (
+            f"Hand-made edges that run against the proposed edges (the proposed edges lead from the waiting Epic "
+            f"back to the one it waits for, so together they close a cycle): {len(closing)}."
+        ),
+        "",
+        *_details("Hand-made edges that close a cycle with the proposed edges", _listed(analysis, closing)),
         *_details("Hand-made edges also proposed", _listed(analysis, sorted(hand & proposed))),
         *_details("Hand-made edges not proposed", _listed(analysis, sorted(hand - proposed))),
         *_details("Pipeline-owned edges also proposed", _listed(analysis, sorted(owned & proposed))),
@@ -241,8 +268,9 @@ def _method(analysis: Analysis) -> list[str]:
         (
             "- **Drives a feature.** An Epic drives a feature when it has a `drives` relationship to the feature, "
             "or to a document heading (or a whole document) that the feature's `describedBy` names. With no such "
-            "Epic, the Epics whose requirements the feature serves (`hasRequirement` → `servedBy`) drive it, "
-            "except those that only `restsOn` it."
+            "Epic, the feature has a driver only when it serves the requirements of exactly one Epic "
+            "(`hasRequirement` → `servedBy`) that does not only `restsOn` it; a feature serving several Epics with "
+            "no `drives` has no driver and makes no edge (the first Epic elaborated approves it)."
         ),
         ("- **Uses a feature.** The other Epics the feature serves (`servedBy`), and the Epics with `restsOn` to it."),
         (
