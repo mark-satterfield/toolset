@@ -8438,35 +8438,6 @@ def gitnexus_repoint(cfg: Config, old: str, new: str, path: Path) -> list[str]:
             f"added GitNexus group member {added}, re-index queued"]  # fmt: skip
 
 
-def gitnexus_extra_repos(cfg: Config) -> list[LocalRepo]:
-    """Return the repos outside the root that GitNexus indexes too, from the config's `gitnexus.extra_repos`.
-
-    Each entry names a repo (`name`) and its clone (`path`, environment variables allowed). Its
-    group path is the relative path from the root to that path, symlinks unresolved.
-
-    Returns:
-        The repos, as found on disk.
-
-    Raises:
-        PolyrepoError: when an entry lacks a name or an absolute path, or the path is not a git clone.
-
-    """
-    gc = _map(cfg.raw.get("gitnexus") or {}, "config gitnexus")
-    repos: list[LocalRepo] = []
-    for i, raw in enumerate(_seq(gc.get("extra_repos") or [], "gitnexus.extra_repos")):
-        entry = _map(raw, f"gitnexus.extra_repos[{i}]")
-        name, value = entry.get("name"), entry.get("path")
-        if not isinstance(name, str) or not name or not isinstance(value, str) or not value:
-            msg = f"config gitnexus.extra_repos[{i}] needs a name and a path"
-            raise PolyrepoError(msg)
-        path = Path(expand_env(value)).expanduser()
-        if not path.is_absolute() or not (path / ".git").exists():
-            msg = f"config gitnexus.extra_repos[{i}]: {path} is not an absolute path to a git clone"
-            raise PolyrepoError(msg)
-        repos.append(LocalRepo(name, path, ""))
-    return repos
-
-
 def gitnexus_queue(cfg: Config, repos: list[Path]) -> str | None:
     """Queue repos for a background re-index through the control repo's fleet script.
 
@@ -8567,22 +8538,17 @@ def _gitnexus_group_sync(
 def cmd_gitnexus_sync(args: argparse.Namespace, cfg: Config) -> int:
     """Give every repo its GitNexus configuration, skills, re-index git hook and group membership.
 
-    Every repo is each clone under the root that is not deprecated, and each repo the config's
-    `gitnexus.extra_repos` names outside it (the documentation vault). The files are committed
-    and pushed in each repo; the git hook and the group are local to the machine. The group is
-    pruned of members that are no repo only when every repo is considered (no --repo and no
-    --space). With write, every repo whose index is not current is queued for a background
-    re-index.
+    The files are committed and pushed in each repo; the git hook and the group are local to the
+    machine. The group is pruned of members that are no repo only when every repo is considered
+    (no --repo and no --space). With write, every repo whose index is not current is queued for a
+    background re-index.
 
     Returns:
         0 when every repo and the group are current (or were brought current), else 1.
 
     """
     src = _gitnexus_sources(cfg)
-    extra = [x for x in gitnexus_extra_repos(cfg) if not args.space and (not args.repo or x.name in args.repo)]
-    named = [n for n in args.repo or [] if n not in {x.name for x in extra}]
-    picked = _local_repos(cfg, named, args.space) if named or not args.repo else []
-    repos = [r for r in picked if not cfg.is_deprecated_name(r.name)] + extra
+    repos = [r for r in _local_repos(cfg, args.repo, args.space) if not cfg.is_deprecated_name(r.name)]
     write = not args.check and not args.dry_run
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
         results = list(ex.map(lambda r: _gitnexus_sync_one(cfg, src, r, write), repos))

@@ -26,6 +26,10 @@ and they are used together:
 - **GraphRAG** (`mcp__mcp-graphrag-server`) indexes every repository and the project's
   documentation vault for search by meaning. Use it for a passage in a document, a pattern, or a concept the
   matrix records nothing about and whose repository you do not yet know.
+- A project may also index part of its documentation vault in GitNexus, as a repository of its
+  own outside any group (its vault facts name the repository and the folders; `list_repos`
+  shows it). Its graph holds each document, its sections and the links between documents: query
+  it with that repository as `repo` to find the documents about a concept and what links to them.
 
 Cite each matrix entry you rely on by its id, each GitNexus result by repository, symbol and
 file, and each GraphRAG hit by repository and path. When nothing relevant is found, say so in

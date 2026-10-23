@@ -158,6 +158,10 @@ document. A document whose purpose you cannot state is not filed, for example a 
 copy of something maintained elsewhere: report it under Flags with the canonical home
 it copies, instead of filing it.
 
+When the project's vault facts name a graph index of the vault and the command that re-indexes
+it, run that command after every write to the folders it indexes, committed or not, as the last
+step of the write. A failed re-index is reported under Flags with its output; the filing stands.
+
 ### 5. Result (contents below)
 
 ---
@@ -275,7 +279,9 @@ clearly — it is the part the owner most needs to see.
   unstaged and untracked changes are set aside and put back untouched, and push.
   Unstaged and untracked files left by the owner or other sessions are normal; never
   stage them. You do **not** refresh
-  the query layer — that refresh happens elsewhere.
+  the query layer that only corroborates a search (a notebook or GraphRAG): that refresh happens
+  elsewhere. The graph index your vault facts tell you to re-index after a write is the exception
+  (step 4).
 - You file **current-state facts** and classify them. You are not a
   decision-maker: if the owner hands you a decision, record that it was made and its
   current-state outcome, in the right doc — you do not re-litigate it, and you do
