@@ -4,13 +4,16 @@ A session is launched as the predefined agent under the plugin's name,
 ``agent-teams-workforce:<name>``: it loads only project settings, so the user-level agent copies
 are not registered, and Claude Code registers a plugin agent only under that prefix. Claude Code
 loads the agent's definition, preloads the skills its front matter lists, and applies its tools
-and effort. The launcher passes no agent or skill text and computes no flag from them.
+and effort; it ignores the ``mcpServers`` of a plugin agent, so the launcher passes the servers
+the plugin's agents declare as the session's MCP configuration. The launcher passes no agent or
+skill text.
 """
 
 from __future__ import annotations
 
 import functools
 import json
+import os
 import shlex
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -47,6 +50,11 @@ BASH_OUTPUT_LIMIT: Final = 128_000
 """Claude Code's largest inline command output, so a command's output is not cut to a preview."""
 SESSION_LIMIT_KEY: Final = "x-sessionLimit"
 """The agent front-matter key stating the hard limit of the agent's sessions, in seconds."""
+MCP_SERVERS_KEY: Final = "mcpServers"
+"""The agent front-matter key naming the MCP servers the agent's tools reach."""
+CONFIG_DIR_ENV: Final = "CLAUDE_CONFIG_DIR"
+GLOBAL_CONFIG_NAME: Final = ".claude.json"
+"""Claude Code's global configuration file, which holds the user-scope MCP server definitions."""
 BRIEF_SCHEMA: Final[Path] = (
     Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "schemas" / "agent-brief.schema.json"
 )
@@ -233,13 +241,62 @@ def session_settings(config: Path) -> dict[str, JsonValue]:
     return settings
 
 
+@functools.cache
+def declared_servers(plugin: Path) -> tuple[str, ...]:
+    """Name every MCP server some agent of the plugin declares in its front matter ``mcpServers``.
+
+    Claude Code ignores ``mcpServers`` on a plugin agent, and an agent started with the Agent tool
+    reaches only the servers of the session that starts it. Any session may start any agent of the
+    plugin, so every session is given the union of all the agents' servers.
+
+    Returns:
+        The server names, sorted; an agent whose ``mcpServers`` is not a list of names fails the
+        type check.
+
+    """
+    names: set[str] = set()
+    for path in sorted((plugin / "agents").glob("*.md")):
+        fields: dict[str, object]
+        fields, _ = split_front_matter(path.read_text(encoding="utf-8"), f"agent {path.stem}")
+        declared: object = fields.get(MCP_SERVERS_KEY, [])
+        names.update(check_type(declared, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS))
+    return tuple(sorted(names))
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def global_config_file(config: Path) -> Path:
+    """Locate Claude Code's global configuration file for ``config``, the configuration directory.
+
+    Returns:
+        ``<config>/.claude.json`` when ``CLAUDE_CONFIG_DIR`` is set, otherwise ``~/.claude.json``.
+
+    """
+    return config / GLOBAL_CONFIG_NAME if os.environ.get(CONFIG_DIR_ENV) else Path.home() / GLOBAL_CONFIG_NAME
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def session_servers(plugin: Path, config: Path) -> dict[str, JsonValue]:
+    """Build the MCP configuration of one session from the user-scope server definitions.
+
+    A session loads only project settings, so the user-scope servers do not load by themselves.
+    Each server the plugin's agents declare is taken from the global configuration file; a name it
+    does not define is left out, as an interactive session would leave it out.
+
+    Returns:
+        ``{"mcpServers": {name: definition}}`` for every declared server the user defines.
+
+    """
+    defined: dict[str, JsonValue] = json_object(read_json(global_config_file(config)).get(MCP_SERVERS_KEY, {}))
+    return {MCP_SERVERS_KEY: {name: defined[name] for name in declared_servers(plugin) if name in defined}}
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch: Launch) -> list[str]:
     """Write private session settings and construct Claude CLI arguments.
 
     Returns:
         Explicit arguments selecting the agent by its name under the plugin prefix, the model,
-        the settings and the plugin.
+        the settings, the MCP servers and the plugin.
 
     Raises:
         TypeError: Session inputs do not satisfy the preparation contract.
@@ -254,6 +311,7 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
     launched: AgentDefinition = load_agent(plugin, step.agent)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     write_json(directory / "settings.json", session_settings(config))
+    write_json(directory / "mcp.json", session_servers(plugin, config))
     command: list[str] = [
         "--agent",
         f"{AGENT_PREFIX}{step.agent}",
@@ -263,6 +321,8 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
         "project",
         "--settings",
         str(directory / "settings.json"),
+        "--mcp-config",
+        str(directory / "mcp.json"),
         "--plugin-dir",
         str(plugin),
         "--permission-mode",

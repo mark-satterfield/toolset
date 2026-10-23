@@ -430,8 +430,9 @@ brief (section 2.3):
    (`--setting-sources project`), so the user-level agent copies in `~/.claude/agents/` are not
    registered in it, and Claude Code registers a plugin agent only under the plugin prefix.
    Claude Code loads the plugin definition: its body, tools, disallowed tools, model, effort,
-   turn limit and front matter skills; it ignores `mcpServers` on a plugin agent. The launcher
-   writes no agent definition, no skill text and no MCP configuration, and adds no tool or skill.
+   turn limit and front matter skills; it ignores `mcpServers` on a plugin agent, so the launcher
+   writes the session's MCP configuration (section 5.2). The launcher writes no agent definition
+   and no skill text, and adds no tool or skill.
    `--model` is the definition's model, or `opus` in its place on a Fable fallback (section 5.5).
 3. Any agent loads any other skill on demand with the Skill tool, with that skill's scripts and
    relative paths intact. No code reads a skill's text and feeds it to an agent.
@@ -454,10 +455,11 @@ parse, is a session setup failure (classification `setup`) before any session st
 ```
 claude -p --output-format stream-json --verbose
   --session-id <uuid>            (or --resume <uuid> to continue a session)
-  --agent <agent>                (the plain front matter name)
+  --agent agent-teams-workforce:<agent>
   --model <model>
   --setting-sources project
   --settings <session dir>/settings.json
+  --mcp-config <session dir>/mcp.json
   --plugin-dir <plugin>
   --permission-mode bypassPermissions
   --add-dir <each directory the launch names>
@@ -467,8 +469,8 @@ For example, the launch of `aws-solutions-architect`:
 
 ```
 claude -p --output-format stream-json --verbose --session-id <uuid>
-  --agent aws-solutions-architect --model opus --setting-sources project
-  --settings <session dir>/settings.json --plugin-dir <plugin>
+  --agent agent-teams-workforce:aws-solutions-architect --model opus --setting-sources project
+  --settings <session dir>/settings.json --mcp-config <session dir>/mcp.json --plugin-dir <plugin>
   --permission-mode bypassPermissions
 ```
 
@@ -494,8 +496,15 @@ claude -p --output-format stream-json --verbose --session-id <uuid>
 - **Plugins and skills.** `--plugin-dir <plugin>` loads `agent-teams-workforce` and no other
   plugin. The agent's front matter skills load with the agent (section 5.1); any other skill the
   agent loads itself with the Skill tool.
-- **MCP servers.** The launcher passes no MCP flag. The servers an agent's front matter
-  `mcpServers` names load with the agent, from its user-level copy (section 5.1).
+- **MCP servers.** `--mcp-config <session dir>/mcp.json` (`agent_context.session_servers`): every
+  server some agent of the plugin names in its front matter `mcpServers`, with its definition taken
+  from the user-scope `mcpServers` of Claude Code's global configuration file
+  (`<config>/.claude.json` when `CLAUDE_CONFIG_DIR` is set, otherwise `~/.claude.json`); a name the
+  file does not define is left out. Reason: Claude Code ignores `mcpServers` on a plugin agent,
+  `--setting-sources project` does not load the user-scope servers, and an agent the session starts
+  with the Agent tool reaches only the session's servers. Any session may start any agent of the
+  plugin, so every session gets the union of all the agents' servers; each agent's `tools`
+  allow-list still decides which of their tools it may call.
 - **Tools.** An agent's tools are the allow-list its front matter `tools` field states, which
   Claude Code enforces: every tool it does not list is denied. The launcher passes no tool flag,
   so nothing is added to or taken from that list. Which tools an agent gets is the owner's
