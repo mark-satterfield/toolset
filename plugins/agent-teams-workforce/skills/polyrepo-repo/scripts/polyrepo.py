@@ -133,6 +133,7 @@ from gitnexus_setup import (
     load_git_hook,
     plan_group,
     read_group_name,
+    remove_index,
     sync_group,
 )
 from name_sweep import (
@@ -5610,6 +5611,11 @@ def _rename_plan(
     active = lc not in LIFECYCLES_INACTIVE
     if not deprecating:
         steps.append(f"matrix: move-repository, so every stack that names {old} names {new}")
+    if active and not deprecating and new_path:
+        steps.append(
+            f"GitNexus: remove the group member and index of {old}, add {new} at "
+            f"{group_path(cfg.root, new_path)} and queue its re-index",
+        )
     if r and new_path:
         steps.append(
             "beads fleet list (repos.additional): "
@@ -5745,6 +5751,8 @@ def _rename_record(st: State, old: str, new: str, plan: _RenamePlan, done: list[
                 done.extend([f"matrix: {', '.join(str(i) for i in moved)} now name {new}", matrix_commit(cfg)])
         except PolyrepoError as exc:
             done.append(f"matrix NOT updated: {exc}")
+        if plan.active and plan.new_path:
+            done.extend(gitnexus_repoint(cfg, old, new, plan.new_path))
     if plan.r and plan.new_path:
         try:
             done.extend(
@@ -8356,7 +8364,7 @@ def gitnexus_register(cfg: Config, repo: Path, name: str) -> list[str]:
 
 
 def gitnexus_unregister(cfg: Config, names: set[str], dry_run: bool) -> tuple[list[str], list[str]]:
-    """Remove a retired repo's members from the GitNexus group and rebuild its contracts.
+    """Remove a retired repo's members from the GitNexus group, rebuild its contracts and delete its index.
 
     A member is the repo's when its registry name or the last segment of its group path is one
     of `names` (the repo's name before and after its deprecation rename), compared without case:
@@ -8380,6 +8388,9 @@ def gitnexus_unregister(cfg: Config, names: set[str], dry_run: bool) -> tuple[li
     failures = apply_group(src.pinned, src.group, GroupPlan(exists=True, add={}, remove=gone))
     if not failures and (err := sync_group(src.pinned, src.group)) is not None:
         failures.append(err)
+    for registry_name in sorted({current[p] for p in gone} if current else set()):
+        if (err := remove_index(src.pinned, registry_name)) is not None:
+            failures.append(err)
     return gone, failures
 
 
@@ -8403,6 +8414,57 @@ def _unregister_steps(
         return False, [f"GitNexus group member NOT removed: {error}"]
     verb = "remove" if dry_run else "removed"
     return True, [f"{verb} GitNexus group member {p}" for p in gone]
+
+
+def gitnexus_repoint(cfg: Config, old: str, new: str, path: Path) -> list[str]:
+    """Move a renamed repo's GitNexus setup to its new name and path, and queue its re-index.
+
+    The member and the index registered under the old name are removed, the git hook (which moved
+    with the clone's `.git/config`) is checked and the member is added at the new group path; the
+    re-index builds the index afresh at the new path.
+
+    Returns:
+        The step lines; a failure is a line starting "GitNexus NOT".
+
+    """
+    gone, failures = gitnexus_unregister(cfg, {old}, dry_run=False)
+    failures.extend(gitnexus_register(cfg, path, new))
+    if not failures and (err := gitnexus_queue(cfg, [path])) is not None:
+        failures.append(err)
+    if failures:
+        return [f"GitNexus NOT moved to {new}: {'; '.join(failures)}"]
+    added = group_path(cfg.root, path)
+    return [*(f"removed GitNexus group member {p} and its index" for p in gone),
+            f"added GitNexus group member {added}, re-index queued"]  # fmt: skip
+
+
+def gitnexus_extra_repos(cfg: Config) -> list[LocalRepo]:
+    """Return the repos outside the root that GitNexus indexes too, from the config's `gitnexus.extra_repos`.
+
+    Each entry names a repo (`name`) and its clone (`path`, environment variables allowed). Its
+    group path is the relative path from the root to that path, symlinks unresolved.
+
+    Returns:
+        The repos, as found on disk.
+
+    Raises:
+        PolyrepoError: when an entry lacks a name or an absolute path, or the path is not a git clone.
+
+    """
+    gc = _map(cfg.raw.get("gitnexus") or {}, "config gitnexus")
+    repos: list[LocalRepo] = []
+    for i, raw in enumerate(_seq(gc.get("extra_repos") or [], "gitnexus.extra_repos")):
+        entry = _map(raw, f"gitnexus.extra_repos[{i}]")
+        name, value = entry.get("name"), entry.get("path")
+        if not isinstance(name, str) or not name or not isinstance(value, str) or not value:
+            msg = f"config gitnexus.extra_repos[{i}] needs a name and a path"
+            raise PolyrepoError(msg)
+        path = Path(expand_env(value)).expanduser()
+        if not path.is_absolute() or not (path / ".git").exists():
+            msg = f"config gitnexus.extra_repos[{i}]: {path} is not an absolute path to a git clone"
+            raise PolyrepoError(msg)
+        repos.append(LocalRepo(name, path, ""))
+    return repos
 
 
 def gitnexus_queue(cfg: Config, repos: list[Path]) -> str | None:
@@ -8505,17 +8567,22 @@ def _gitnexus_group_sync(
 def cmd_gitnexus_sync(args: argparse.Namespace, cfg: Config) -> int:
     """Give every repo its GitNexus configuration, skills, re-index git hook and group membership.
 
-    The files are committed and pushed in each repo; the git hook and the group are local to the
-    machine. The group is pruned of members that are no repo only when every repo is considered
-    (no --repo and no --space). With write, every repo whose index is not current is queued for a
-    background re-index.
+    Every repo is each clone under the root that is not deprecated, and each repo the config's
+    `gitnexus.extra_repos` names outside it (the documentation vault). The files are committed
+    and pushed in each repo; the git hook and the group are local to the machine. The group is
+    pruned of members that are no repo only when every repo is considered (no --repo and no
+    --space). With write, every repo whose index is not current is queued for a background
+    re-index.
 
     Returns:
         0 when every repo and the group are current (or were brought current), else 1.
 
     """
     src = _gitnexus_sources(cfg)
-    repos = [r for r in _local_repos(cfg, args.repo, args.space) if not cfg.is_deprecated_name(r.name)]
+    extra = [x for x in gitnexus_extra_repos(cfg) if not args.space and (not args.repo or x.name in args.repo)]
+    named = [n for n in args.repo or [] if n not in {x.name for x in extra}]
+    picked = _local_repos(cfg, named, args.space) if named or not args.repo else []
+    repos = [r for r in picked if not cfg.is_deprecated_name(r.name)] + extra
     write = not args.check and not args.dry_run
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
         results = list(ex.map(lambda r: _gitnexus_sync_one(cfg, src, r, write), repos))

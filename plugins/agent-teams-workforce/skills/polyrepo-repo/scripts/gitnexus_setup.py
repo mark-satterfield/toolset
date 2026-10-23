@@ -17,13 +17,11 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import re
 import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - fixed argument lists run git and the pinned GitNexus script
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from pathlib import Path
+from pathlib import Path
 
 CLI_TIMEOUT = 300
 MEMBER_LINE = re.compile(r"^\s+(\S+)\s+->\s+(\S+)\s*$")
@@ -233,6 +231,19 @@ def apply_group(pinned: Path, group: str, plan: GroupPlan) -> list[str]:
     return failures
 
 
+def remove_index(pinned: Path, name: str) -> str | None:
+    """Delete a retired repository's index and its entry in the GitNexus registry.
+
+    `gitnexus remove` is idempotent: a name the registry does not hold succeeds.
+
+    Returns:
+        None on success, else what failed.
+
+    """
+    cp = _run([str(pinned), "remove", "--force", name])
+    return None if cp.returncode == 0 else f"gitnexus remove {name} failed: {_tail(cp)}"
+
+
 def sync_group(pinned: Path, group: str) -> str | None:
     """Rebuild the group's cross-repository contracts.
 
@@ -245,13 +256,18 @@ def sync_group(pinned: Path, group: str) -> str | None:
 
 
 def group_path(root: Path, repo: Path) -> str:
-    """Return a repository's group path: its clone's path under the repository root.
+    """Return a repository's group path: its clone's path relative to the repository root.
+
+    A clone under the root gets its path below it (`personal-agent/SkillSpoke`). A repository the
+    config's `gitnexus.extra_repos` adds from outside the root gets the relative path from the root
+    to the path the config names, symlinks unresolved (`../skillspoke-docs`), so joining the root
+    and the group path still reaches the clone.
 
     Returns:
         The POSIX relative path.
 
     """
-    return repo.resolve().relative_to(root.resolve()).as_posix()
+    return Path(os.path.relpath(repo.absolute(), root.resolve())).as_posix()
 
 
 def enqueue_reindex(fleet: Path, repos: list[Path]) -> str | None:
