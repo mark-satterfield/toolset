@@ -43,6 +43,7 @@ from orchestrator.core.journal_steps import (
     value_artifact,
 )
 from orchestrator.core.models import OutputValidator, StepError
+from orchestrator.flows.architecture_files import ARTIFACT_TRD
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_ELEMENTS,
     ARTIFACT_SPAN,
@@ -52,6 +53,7 @@ from orchestrator.flows.elaboration_files import (
     DECOMPOSER,
     REPOSITORY,
     SPEC,
+    SPEC_PACK,
     STORY,
     STORY_DOCUMENT,
     TASK,
@@ -289,7 +291,7 @@ def decomposer(run: StepRun) -> AgentLaunch:
     sources: Path | None = run.inputs.optional_file(UI_SOURCES)
     if sources is not None:
         files.append((UI_SOURCES, sources))
-    files.extend((label, run.inputs.file(label)) for label in (CONTEXT, TASK_CONTEXT_FILE))
+    files.extend((label, run.inputs.file(label)) for label in (ARTIFACT_TRD, CONTEXT, SPEC_PACK, TASK_CONTEXT_FILE))
     if correcting:
         files.extend((label, run.inputs.file(label)) for label in (TASKS_FILE, TASK_GAPS))
     earlier: Step | None = run.earlier_sibling(DECOMPOSER) if correcting else None
