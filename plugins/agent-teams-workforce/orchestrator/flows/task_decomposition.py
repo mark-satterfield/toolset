@@ -3,7 +3,8 @@
 The Story bead write plans one container per repository under the Tasks container with its first
 step, the decomposition context. That step plans the decomposer session and the plan step. The
 plan step reads the Tasks file the decomposer wrote and plans what the plan calls for: a correction
-session and a second plan step when an item is uncited or a Task is unsized; otherwise one step per
+session and another plan step when an item is uncited or a Task is unsized, at most ``CORRECTIONS``
+times before a gap that remains fails the repository's Tasks as an item; otherwise one step per
 Task bead write, the step that retires the Task beads the plan no longer names, and the written
 record. A Task bead write is its own step, so the journal says which Task beads are written.
 """
@@ -107,6 +108,8 @@ SCHEMAS: Final = "skills/artifact-handoff/schemas"
 TASK_GAPS_SCHEMA: Final = "task-gaps.schema.json"
 """The contract of the gaps file the plan step hands the decomposer's correction."""
 UNCITED_STAGE: Final = "uncited-items"
+CORRECTIONS: Final = 2
+"""How many corrections of a plan's gaps run before a gap that remains fails the repository's Tasks."""
 
 
 def _packages(run: StepRun) -> str | None:
@@ -291,12 +294,14 @@ def decomposer(run: StepRun) -> AgentLaunch:
         files.extend((label, run.inputs.file(label)) for label in (TASKS_FILE, TASK_GAPS))
     earlier: Step | None = run.earlier_sibling(DECOMPOSER) if correcting else None
     name: str = TASK_CORRECTION if correcting else TASKS_FILE
+    turn: int = len(run.inputs.files(TASK_CORRECTION)) + 1
 
     def accept(_accepted: StepRun, output: Path) -> Completion:
         return Completion(artifacts=(file_artifact(name, output),))
 
     return AgentLaunch(
-        output=run.context.work / (f"tasks-{held.slug}.correction.json" if correcting else f"tasks-{held.slug}.json"),
+        output=run.context.work
+        / (f"tasks-{held.slug}.correction-{turn}.json" if correcting else f"tasks-{held.slug}.json"),
         validate=(
             run.tools.plugin / SCHEMAS / "tasks-correction.schema.json"
             if correcting
@@ -335,7 +340,7 @@ def _correction_steps(run: StepRun, name: str) -> StepGroup:
         "description": f"Plan the Task beads of {name} with the correction",
         "purpose": "The Tasks are in build order, every item is cited and every Task is sized",
         "script": TASK_PLAN,
-        "inputs": ["correction", *handed],
+        "inputs": [*handed, "correction"],
     }
     return StepGroup((NewStep(correct, {WORK: WORK_GAPS}), NewStep(again, {})))
 
@@ -376,6 +381,23 @@ def _write_steps(run: StepRun, name: str, planned: TaskPlan) -> StepGroup:
     return StepGroup((*steps, NewStep(retire, {}), NewStep(record, {})))
 
 
+def _gap_detail(planned: TaskPlan, name: str) -> str:
+    """Name the gaps a plan still has after its last correction.
+
+    Returns:
+        What no Task cites, the unsized Tasks, or that the plan has no Task.
+
+    """
+    gaps: list[str] = []
+    if not planned["tasks"]:
+        gaps.append("the plan has no Task")
+    if planned["uncited"]:
+        gaps.append(f"no Task cites {', '.join(planned['uncited'])}")
+    if planned["unsized"]:
+        gaps.append(f"unsized Tasks {', '.join(planned['unsized'])}")
+    return f"{name} after {CORRECTIONS} corrections: {'; '.join(gaps)}"
+
+
 @script_step(TASK_PLAN)
 def plan(run: StepRun) -> Completion:
     """Read the Tasks the decomposer wrote and plan what they call for.
@@ -383,13 +405,14 @@ def plan(run: StepRun) -> Completion:
     A correction the step is handed is merged into the Tasks file first.
 
     Returns:
-        For a plan with an uncited item, an unsized Task or no Task: the gaps file
-        (``task-gaps.schema.json``), with the
-        correction and a second plan step planned. Otherwise the plan's record, with one step
+        For a plan with an uncited item, an unsized Task or no Task, while fewer than
+        ``CORRECTIONS`` corrections have run: the gaps file (``task-gaps.schema.json``), with
+        a correction and another plan step planned. Otherwise the plan's record, with one step
         per Task bead write, the retiring step and the written record planned.
 
     Raises:
-        StepError: The plan still has a gap after the correction.
+        StepError: The plan still has a gap after the last correction: an item failure whose
+            message names the uncited items and the unsized Tasks.
 
     """
     held: Repository = repository(run.inputs)
@@ -412,9 +435,9 @@ def plan(run: StepRun) -> Completion:
     unsized: list[JsonValue] = list(planned["unsized"])
     name: str = Path(held.path).name
     if not planned["tasks"] or uncited or unsized:
-        if correction is not None:
+        if len(run.inputs.files(TASK_CORRECTION)) >= CORRECTIONS:
             stage: str = UNCITED_STAGE if planned["tasks"] else WORK_DECOMPOSE
-            raise StepError(stage, OTHER_CAUSE, (str(files.tasks_file), str(correction), str(merged)))
+            raise StepError(stage, OTHER_CAUSE, (_gap_detail(planned, name), str(files.tasks_file)))
         gaps: Path = write_contract(
             run.context.work / f"tasks-{held.slug}.gaps.json",
             {"uncited": uncited, "unsized": unsized, "empty": not planned["tasks"]},
@@ -429,7 +452,7 @@ def plan(run: StepRun) -> Completion:
         )
     coverage: dict[str, JsonValue] = {}
     if correction is not None:
-        before: dict[str, JsonValue] = json_object(run.inputs.value(GAPS_BEFORE))
+        before: dict[str, JsonValue] = json_object(run.inputs.values(GAPS_BEFORE)[0])
         coverage = {
             "uncitedBefore": before["uncited"],
             "uncitedAfter": uncited,
