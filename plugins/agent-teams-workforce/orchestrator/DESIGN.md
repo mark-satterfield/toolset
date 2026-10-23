@@ -179,9 +179,11 @@ schema with the schema files it references, by path and content) in
 `<work>/sessions/<session id>.json`. A session whose fingerprint differs now, or one with no
 record, starts anew; a plugin release that changes neither file keeps it.
 
-A step that reads a file an earlier step wrote, and finds that it does not satisfy the contract
-the step reads it by (the architecture context the open-run step wrote, a request the step above a
-helper wrote), is not failed (`StaleInputError`): once the steps running with it end, the step
+An architecture context file the open-run step wrote to an earlier contract is written again in
+place to the current one by the step that reads it (`architecture_files.read_context`), and no
+step is set back to planned. A step that reads another file an earlier step wrote, and finds that
+it does not satisfy the contract the step reads it by (a request the step above a helper wrote),
+is not failed (`StaleInputError`): once the steps running with it end, the step
 that wrote the file and every step after it are set back to planned, and the run goes on from
 there, so the file is written again to the current contract. When the same writer is named twice
 in one dispatch, the step fails. A helper's request is stale only when the session of the step

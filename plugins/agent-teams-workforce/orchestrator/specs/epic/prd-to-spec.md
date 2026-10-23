@@ -38,8 +38,11 @@ The runner makes an earlier start of its own in one case: a step reads a file an
 wrote, and the file does not satisfy the contract the step reads it by, because the contract
 changed after the file was written (`StaleInputError`). The step is not failed; the step that
 wrote the file and every step after it are set back to planned, and the run goes on from there.
-The architecture context file is written by the open-run step; a helper's request file by the
-step directly above the helper. The same writer named twice in one dispatch fails the step.
+A helper's request file is written by the step directly above the helper. The same writer named
+twice in one dispatch fails the step. The architecture context file, which the open-run step
+writes, is not handled this way: a step that finds it written to an earlier contract writes it
+again in place to the current one, from the PRD and architecture root the dispatch names and the
+vault commit the file recorded, and sets no step back to planned.
 
 A helper's request file is stale only when the session of the step above the helper was made under
 another agent definition or contracts, or that step holds no session. When that session is one of

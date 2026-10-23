@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from typeguard import CollectionCheckStrategy, typechecked
+from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 from architecture_work_contract import (
@@ -32,13 +32,16 @@ from architecture_work_contract import (
 )
 from matrix_contract import KIND_DOCUMENT, EntryId, MatrixError
 from matrixstore import ID_SEPARATOR, make_id, matrix_path
+from matrixsync import program_output, vault_root
 from step_journal_contract import STATUS_DONE
 
 from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
+from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.handback_contract import OTHER_CAUSE
+from orchestrator.core.io import json_object, write_json
 from orchestrator.core.journal_steps import is_finish_of
-from orchestrator.core.models import StaleInputError, StepError
+from orchestrator.core.models import PipelineDefectError, StepError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -279,34 +282,52 @@ def read_context(run: StepRun) -> ArchitectureContext:
     """Read the context file a step is handed through the journal.
 
     The open-run step is the only writer of the context file. A context file that is missing or is
-    not JSON raises ``ArchitectureStepError``; one that does not satisfy the context contract was
-    written to an earlier contract and raises ``StaleInputError`` naming the open-run step, which
-    runs again and writes it to the current one.
+    not JSON raises ``ArchitectureStepError``. One that does not satisfy the context contract was
+    written to an earlier contract: it is written again in place to the current one
+    (:func:`_rewritten_context`), and no step is set back to planned.
 
     Returns:
         The validated context.
 
     Raises:
-        ArchitectureStepError: The file is missing or is not JSON, or the journal has no open-run step.
-        StaleInputError: The file does not satisfy the current context contract.
+        PipelineDefectError: The context written again does not satisfy the context contract.
 
     """
     path: Path = journal_file(run, LABEL_CONTEXT)
     held: object = checked_file(run, path, lambda value: value)
     try:
         return validate_architecture_context(held)
+    except ArchitectureWorkError:
+        context: ArchitectureContext = _rewritten_context(run, held)
+    try:
+        validate_architecture_context(context)
     except ArchitectureWorkError as exc:
-        opened: Step | None = next(
-            (step for step in step_journal.steps_in_order(run.journal()) if step.get("script") == OPEN_RUN),
-            None,
-        )
-        if opened is None:
-            raise ArchitectureStepError(run, f"{path}: {exc}", "the journal has no open-run step") from None
-        raise StaleInputError(
-            run.inputs.stage,
-            opened["id"],
-            (f"step {run.step['id']} ({run.step['description']}): {path}: {exc}",),
-        ) from None
+        raise PipelineDefectError(run.inputs.stage, exc, (str(path),)) from exc
+    write_json(path, context)
+    return context
+
+
+def _rewritten_context(run: StepRun, held: object) -> ArchitectureContext:
+    """Write the context of the run again to the current contract, as the open-run step writes it.
+
+    The PRD and the architecture root are the ones the dispatch names, as the open-run step reads
+    them; the vault commit is the one the stale file recorded, else the vault's present commit.
+
+    Returns:
+        The context (:func:`new_context`).
+
+    """
+    dispatch: DispatchArguments = dispatch_arguments()
+    args: dict[str, JsonValue] = run.context.args
+    prd: Path = Path(check_type(json_object(args[dispatch.KEY_PRD])[dispatch.PRD_PATH], str)).resolve()
+    arch: Path = Path(check_type(args[dispatch.KEY_ARCH_PATH], str)).resolve()
+    recorded: object = held.get("vaultCommit") if isinstance(held, dict) else None
+    commit: str = (
+        recorded
+        if isinstance(recorded, str) and recorded
+        else program_output("git", ["rev-parse", "HEAD"], vault_root(arch)).strip()
+    )
+    return new_context(run.bead, prd, arch, run.context.work, commit)
 
 
 def read_result(run: StepRun, context: ArchitectureContext) -> ArchitectureResult:
