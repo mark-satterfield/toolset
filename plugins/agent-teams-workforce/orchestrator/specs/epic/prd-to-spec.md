@@ -39,7 +39,8 @@ wrote, and the file does not satisfy the contract the step reads it by, because 
 changed after the file was written (`StaleInputError`). The step is not failed; the step that
 wrote the file and every step after it are set back to planned, and the run goes on from there.
 A helper's request file is written by the step directly above the helper. The same writer named
-twice in one dispatch fails the step. The architecture context file, which the open-run step
+twice in one dispatch fails the step; when that writer is a script step, the failure is a pipeline
+code defect, since its code wrote the file to a contract other than its readers'. The architecture context file, which the open-run step
 writes, is not handled this way: a step that finds it written to an earlier contract writes it
 again in place to the current one, from the PRD and architecture root the dispatch names and the
 vault commit the file recorded, and sets no step back to planned.

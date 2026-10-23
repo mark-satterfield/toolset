@@ -186,7 +186,10 @@ it does not satisfy the contract the step reads it by (a request the step above 
 is not failed (`StaleInputError`): once the steps running with it end, the step
 that wrote the file and every step after it are set back to planned, and the run goes on from
 there, so the file is written again to the current contract. When the same writer is named twice
-in one dispatch, the step fails. A helper's request is stale only when the session of the step
+in one dispatch, the step fails; when that writer is a script step, its code wrote the file to a
+contract other than its readers', and the failure is `PipelineDefectError`. A file a step reads
+that is missing, is not JSON or is refused by its contract is the item's failure; a contract whose
+schema cannot be loaded or applied is a `PipelineDefectError` (`architecture_files.checked_file`). A helper's request is stale only when the session of the step
 above it was made under another agent definition or contracts (or that step holds none); a request
 that session wrote wrongly under the current ones (`MalformedRequestError`) is corrected in place
 by continuing that session with the errors, and the helper runs again, with nothing set back to

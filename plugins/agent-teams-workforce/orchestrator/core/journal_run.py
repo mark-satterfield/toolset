@@ -71,7 +71,7 @@ from .journal_steps import (
     is_finish_of,
     stage_of,
 )
-from .models import AgentStep, MalformedRequestError, RunContext, StaleInputError, StepError
+from .models import AgentStep, MalformedRequestError, PipelineDefectError, RunContext, StaleInputError, StepError
 from .tools import Tools
 
 # isort: split
@@ -600,8 +600,13 @@ class JournalRunner:
         (:meth:`_correct_request`), and the step is not failed, unless that request was corrected
         in this dispatch already.
 
+        A script step that wrote a file stale again after it ran again is pipeline code that
+        failed: its code wrote the file to a contract other than the one its readers check, and
+        the step fails with ``PipelineDefectError``, raised from the ``StaleInputError``.
+
         Raises:
-            StaleInputError: The step that wrote the stale file was planned again in this dispatch already.
+            StaleInputError: The agent step that wrote the stale file was planned again in this
+                dispatch already.
             MalformedRequestError: The malformed request was corrected in this dispatch already.
 
         """
@@ -610,10 +615,16 @@ class JournalRunner:
         try:
             self._perform(journal, step)
         except StaleInputError as stale:
-            if stale.writer in self.replanned:
+            if stale.writer not in self.replanned:
+                self.stale.append(stale)
+                return
+            writer: Step = step_journal.find_step(step_journal.read_journal(self.path), stale.writer)
+            if "script" not in writer:
                 self._record_failure(step_id, stage_of(step), stale)
                 raise
-            self.stale.append(stale)
+            defect: PipelineDefectError = PipelineDefectError(stage_of(step), stale, stale.evidence)
+            self._record_failure(step_id, stage_of(step), defect)
+            raise defect from stale
         except MalformedRequestError as malformed:
             if malformed.request in self.corrected:
                 self._record_failure(step_id, stage_of(step), malformed)

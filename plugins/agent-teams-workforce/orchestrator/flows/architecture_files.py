@@ -240,17 +240,28 @@ class ArchitectureStepError(StepError):
 def checked_file[T](run: StepRun, path: Path, validate: Callable[[object], T]) -> T:
     """Read a JSON file a step was handed and validate it with its contract.
 
+    Only the file's own faults are the item's: a file that is missing or is not JSON, and a
+    document the contract refuses (``ArchitectureWorkError``). A contract whose schema cannot be
+    loaded or applied is pipeline code that failed.
+
     Returns:
         The validated document.
 
     Raises:
         ArchitectureStepError: The file is missing, is not JSON or does not satisfy its contract.
+        PipelineDefectError: The contract's schema could not be loaded or applied.
 
     """
     try:
-        return validate(strict_json(path))
+        document: dict[str, JsonValue] = strict_json(path)
     except (OSError, ValueError) as exc:
         raise ArchitectureStepError(run, f"{path}: {exc}") from None
+    try:
+        return validate(document)
+    except ArchitectureWorkError as exc:
+        raise ArchitectureStepError(run, f"{path}: {exc}") from None
+    except Exception as exc:
+        raise PipelineDefectError(run.inputs.stage, exc, (str(path),)) from exc
 
 
 def journal_file(run: StepRun, name: str) -> Path:
