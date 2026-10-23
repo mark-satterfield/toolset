@@ -683,8 +683,9 @@ def _build_item(matrix: Matrix, placed: Placed, item_id: str, ids: Mapping[Entry
 
     Returns:
         The item: its id, the entry's name and matrix id, the documents that describe it, the
-        stack's repository, the items it requires, and, for an event, its description and its
-        producers in the stack.
+        stack's repository, the items it requires, ``state`` ``built`` when the entry is
+        built and tested as the matrix records it (``hierarchy.STATE_VERIFIED``), and, for
+        an event, its description and its producers in the stack.
 
     """
     item: DeltaItem = {
@@ -698,6 +699,8 @@ def _build_item(matrix: Matrix, placed: Placed, item_id: str, ids: Mapping[Entry
         "requiredBy": [],
         "evidence": [placed.entry_id, EVIDENCE_RESULT],
     }
+    if matrix.entry(placed.entry_id).verified is not None:
+        item["state"] = hierarchy.STATE_VERIFIED
     if matrix.entry(placed.entry_id).kind != KIND_EVENT:
         return item
     return {**item, **_event_facts(matrix, placed, ids)}

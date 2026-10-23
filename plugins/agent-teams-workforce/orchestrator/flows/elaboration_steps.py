@@ -20,6 +20,7 @@ from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_registry import script_step
 from orchestrator.core.journal_steps import Completion, StepRun, value_artifact
 from orchestrator.flows.elaboration_files import (
+    ARTIFACT_REPOSITORIES,
     DONE_RULE,
     DONE_RULE_STEP,
     LIFECYCLE_DONE,
@@ -46,26 +47,31 @@ TASK_SCORES_STAGE: Final = "task-scores"
 
 
 def repository_rows(run: StepRun) -> list[dict[str, JsonValue]]:
-    """Join each repository's Story and its Tasks result, from the artifacts a step is handed.
+    """Join each repository of the span with its Story and its Tasks result, from the artifacts a step is handed.
+
+    The repositories are the ones the span step named (value ``repositories``), so a repository
+    whose Story was never written still has a row, which the done rule reports as missing its Story.
 
     Returns:
-        One row per repository with a Story, in the order the Stories were written: the
-        repository, and its Story and Task results as the done rule reads them.
+        One row per repository of the span, in span order: the repository, and its Story and
+        Task results as the done rule reads them (empty when none was written).
 
     """
     decomposed: dict[str, JsonValue] = {
         check_type(json_object(value).get("repoPath"), str): value for value in run.inputs.values(TASKS_RESULT)
     }
-    rows: list[dict[str, JsonValue]] = []
-    for value in run.inputs.values(STORY):
-        story: dict[str, JsonValue] = json_object(value)
-        repository: str = check_type(story["repoPath"], str)
-        rows.append({
+    stories: dict[str, dict[str, JsonValue]] = {
+        check_type(json_object(value).get("repoPath"), str): json_object(value) for value in run.inputs.values(STORY)
+    }
+    repositories: list[str] = check_type(run.inputs.value(ARTIFACT_REPOSITORIES), list[str])
+    return [
+        {
             "repository": repository,
-            "spec": {"ok": True, "story": story},
+            "spec": {"ok": True, "story": stories[repository]} if repository in stories else {},
             "tasks": decomposed.get(repository, {}),
-        })
-    return rows
+        }
+        for repository in repositories
+    ]
 
 
 def _owner(run: StepRun) -> str:

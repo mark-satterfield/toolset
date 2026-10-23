@@ -30,6 +30,7 @@ design documents of the component it covers, written by :func:`story_document`.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -239,15 +240,49 @@ class Surfaces:
     """The repository is a frontend repository and the Story builds a UI item."""
 
 
-def nonempty(path: Path) -> None:
-    """Require a nonempty authored document.
+CRITERION_PREFIX: Final = "AC"
+DONE_PREFIX: Final = "DOD"
+_CRITERION_LINE: Final[re.Pattern[str]] = re.compile(
+    r"^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?[*`]*"
+    r"(?P<id>(?:AC|DOD)-[A-Za-z0-9][A-Za-z0-9.-]*)[*`]*[:.]?\s*(?P<text>.*)$",
+)
+"""A list item that opens with a criterion id (``AC-<n>``) or a Definition of Done id (``DOD-<n>``)."""
+
+
+def criteria_document(path: Path) -> None:
+    """Require the structure of a criteria document that Tasks cite by id.
+
+    Each acceptance criterion is a list item that opens with its id, ``AC-<n>``, and each
+    Definition of Done statement one that opens with ``DOD-<n>``. The document holds at least one
+    of each, every id once, every id followed by its statement, and a criterion that states a
+    ``Given`` also states its ``When`` and ``Then``.
 
     Raises:
-        ValueError: The document contains no text.
+        ValueError: Every structural problem the document has, one per line.
 
     """
-    if not path.read_text(encoding="utf-8").strip():
-        message: str = f"missing or empty document: {path}"
+    seen: dict[str, int] = {}
+    problems: list[str] = []
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        found: re.Match[str] | None = _CRITERION_LINE.match(line)
+        if found is None:
+            continue
+        criterion: str = found["id"]
+        text: str = found["text"].strip()
+        if criterion in seen:
+            problems.append(
+                f"line {number}: {criterion} is also the id on line {seen[criterion]}; give each its own id",
+            )
+        seen.setdefault(criterion, number)
+        if not text:
+            problems.append(f"line {number}: {criterion} states nothing after its id")
+        elif re.search(r"\bGiven\b", text) and not (re.search(r"\bWhen\b", text) and re.search(r"\bThen\b", text)):
+            problems.append(f"line {number}: {criterion} states a Given with no When and Then")
+    for prefix, what in ((CRITERION_PREFIX, "acceptance criterion"), (DONE_PREFIX, "Definition of Done statement")):
+        if not any(criterion.startswith(f"{prefix}-") for criterion in seen):
+            problems.append(f"no {what}: each is a list item that opens with its id, {prefix}-<n>")
+    if problems:
+        message: str = f"the criteria document {path} is not structured as Tasks cite it:\n" + "\n".join(problems)
         raise ValueError(message)
 
 
@@ -286,11 +321,12 @@ def document_check(run: StepRun, name: str) -> OutputValidator:
 
     Returns:
         The check: every architecture citation of the contracts and of the data model names a
-        document and heading the matrix holds; the criteria are a nonempty document.
+        document and heading the matrix holds; the criteria document has the structure Tasks cite
+        (:func:`criteria_document`).
 
     """
     if name == CRITERIA:
-        return nonempty
+        return criteria_document
     matrix: Matrix = run.tools.portfolio(name, read_matrix, matrix_path(None, os.environ))
     return lambda path: document(path, matrix, SPEC_FRONT_MATTER)
 

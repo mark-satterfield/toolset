@@ -11,7 +11,7 @@
     "repoPath": {"description": "The repository's absolute path.", "type": "string", "minLength": 1},
     "slug": {"description": "The repository's slug.", "type": "string", "minLength": 1},
     "stacks": {
-      "description": "Each stack the Story builds in, with the matrix ids of the entries it builds there. For each stack, `atw-matrix work --id <stack> --not-epic <epic>` prints the open Tasks of other Epics that touch it, the only source of an overlap with another Epic; `atw-matrix uses --ids <entries>` prints the shared capabilities the entries must use.",
+      "description": "Each stack the Story builds in, with the matrix ids of the entries it builds there. For each stack, `atw-matrix work --id <stack> --not-epic <epic>` prints the open Tasks of other Epics that touch it, the only source of an overlap with another Epic. The shared capabilities a Task must use are derived from the items it cites, not stated by the decomposer.",
       "type": "array",
       "items": {"$ref": "spec-context.schema.json#/$defs/StackEntries"}
     },

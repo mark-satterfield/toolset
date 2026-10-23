@@ -30,8 +30,10 @@ The task context (`task-context.schema.json`, which says what each member holds)
 that already exist under the Story and that are started, or that elaboration did not write, so
 the decomposer reuses them. It names the stacks the Story builds in with the entries it builds
 there; the decomposer itself asks the matrix for the open Tasks of other Epics in those stacks
-(`atw-matrix work`), so a Task that needs one of them is blocked by it instead of duplicating it,
-and for the shared capabilities the Tasks must use (`atw-matrix uses`). Its `dependsOn`
+(`atw-matrix work`), so a Task that needs one of them is blocked by it instead of duplicating it.
+A Task cites what it builds by item id; `hierarchy.stated_ids` derives its matrix ids (its stack,
+the entries and the shared capabilities that work must use) from those items, and the decomposer
+states none. Its `dependsOn`
 (`repo_scoping.build_context`) is what the Tasks depend on, never work. A repository-side element
 is a hint read from code: it may tell a Task where existing code sits, never what to build.
 
@@ -46,6 +48,9 @@ the things this Story builds into coherent Tasks".
 A Task is a coherent unit of build work, sized on the wsjf skill's scale: one Task covers several
 of the things the Story builds, every thing the Story builds is cited by some Task, and it is
 never one Task per thing.
+
+A thing the Story builds whose entry carries the verified flag (the span marks its item `state`
+`built`) is not work (`hierarchy.work_items`): no Task has to cite it.
 
 A plan has a gap when it holds no Task, a thing the Story builds is cited by no Task, or a
 Task has no size. One correction is asked for. A correction that is merged a second time adds

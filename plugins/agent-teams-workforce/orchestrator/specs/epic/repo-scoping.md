@@ -68,7 +68,8 @@ repository may hold no product entry (the control repository, the architecture f
 
 The order is fixed, and only the stacks of what the Stories build are reached:
 
-1. The items are built (`story_builds`).
+1. The items are built (`story_builds`); an item whose entry carries the verified flag has
+   `state` `built`.
 2. A stack that names no repository is given the name the naming command gives it
    (`repository_name`: `name convert <stack name> --from cdk-stack --to repository`, run with
    list arguments, not through a shell; for example, for `stack:acme-sms-service` it is

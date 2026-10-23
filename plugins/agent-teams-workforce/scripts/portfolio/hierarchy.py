@@ -91,6 +91,9 @@ from matrixtraverse import capabilities
 
 #: The surfaces a Task may declare; anything else is dropped.
 _ARGUMENT_ERROR: str = "Arguments violate the hierarchy input contract"
+STATE_VERIFIED: Final = "built"
+"""The ``state`` (target-report.schema.json ElementState) of a span item whose entry carries the
+verified flag: built and tested as the matrix records it."""
 
 
 SURFACES = (
@@ -1363,10 +1366,13 @@ def task_grouping_problems(items: Sequence[JsonValue], tasks: Sequence[JsonValue
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def work_items(files: StoryFiles) -> list[str]:
-    """Everything the Story builds is work; no built-state judgment.
+    """Name the work of a Story: what it builds that is not verified.
+
+    An item the span marks verified (``state``, :data:`STATE_VERIFIED`) is built and tested as
+    the matrix records it, so it is not work: no Task has to cite it.
 
     Returns:
-        The ids of the items the span places in the Story's repository.
+        The ids of the items the span places in the Story's repository, less the verified ones.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -1374,7 +1380,11 @@ def work_items(files: StoryFiles) -> list[str]:
     """
     if not (isinstance(files, StoryFiles)):
         raise TypeError(_ARGUMENT_ERROR)
-    return [key for key, item in story_builds(files.scope).items() if item["slug"] == files.slug]
+    return [
+        key
+        for key, item in story_builds(files.scope).items()
+        if item["slug"] == files.slug and item.get("state") != STATE_VERIFIED
+    ]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

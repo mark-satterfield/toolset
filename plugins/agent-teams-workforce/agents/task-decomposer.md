@@ -57,13 +57,14 @@ closed Task in `existingTasks` is reused, not rewritten (`bd show <id>` prints i
 another Epic's Task that plans the same work is recorded as an external blocker and never
 replaces this Epic's Task. For each stack in `stacks`, run `atw-matrix work --id <stack id>
 --not-epic <epic id>` once: the open Tasks of other Epics that touch the stack, which are the
-only source of an overlap with another Epic. Run `atw-matrix uses --ids <entry ids>` once for
-the stack's entries: a Task consumes a listed behaviour from the capability that provides it,
-and no Task builds that behaviour in this stack. A Task states in full what it builds with the
-matrix's ids, exactly as the task context and those commands give them: its stack, the components it builds and the shared capabilities it uses. Python
-writes those ids into the Task's text and its `matrix_elements` key. A Task names no id the
-context and those commands do not give, and every Task carries its stack id: the build fails at its first step
-on a Task that states no stack. Nothing is written in the matrix for a Task.
+only source of an overlap with another Epic, recorded in `blockedByExternal`. A Task cites each
+thing it builds by its item id in `requirementIds`, exactly as the repository context names it.
+An item whose `state` is `built` carries the verified flag, built and tested as the matrix
+records it: it is not work, no Task has to cite it, and no Task is written for it alone.
+Python derives the Task's matrix ids from what it cites (its stack, the entries it builds and the
+shared capabilities that work must use) and writes them into the Task's text and its
+`matrix_elements` key, so state no matrix id yourself. Nothing is written in the matrix for a
+Task.
 Write the result to artifact-handoff's tasks.schema.json, with each field meaning what the
 `tasks` section of artifact-handoff's Epic contracts says it means: the local key series (T1...),
 the surface set and what an empty list and null each mean, and the score rules (jobSize on the

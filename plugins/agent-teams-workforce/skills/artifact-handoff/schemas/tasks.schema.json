@@ -23,6 +23,7 @@
             "type": "string"
           },
           "type": {
+            "description": "The kind of work; a value of the infrastructure vocabulary (infra-vocabulary.schema.json types) marks an infrastructure Task, whose bead is labelled so its build adds Infra Intent. A Task that builds a piece of infrastructure is labelled whatever its type.",
             "type": "string"
           },
           "acceptanceCriteria": {
@@ -135,7 +136,10 @@
         "type": "object",
         "required": [
           "key",
-          "jobSize"
+          "jobSize",
+          "sizeLow",
+          "sizeHigh",
+          "sizeConfidence"
         ],
         "properties": {
           "key": {

@@ -93,7 +93,7 @@ run together. Repositories run one after another.
 | Step | What it does | Records |
 |---|---|---|
 | `elaboration.score` | scores the Epic's Tasks without marking the Epic | value `unscored tasks` |
-| `elaboration.done_rule` | fails unless every repository of the span has its Story, its Tasks with every thing the Story builds cited, and no Task is unscored | value `done rule` |
+| `elaboration.done_rule` | fails unless every repository of the span (the span step's value `repositories`) has its Story, its Tasks with every thing the Story builds cited, and no Task is unscored | value `done rule` |
 | `storyedges.story_edges` | writes the dependency edges between the Epic's Stories | value `story edges` |
 | `elaboration.finish` | marks the Epic elaborated | value `lifecycle done` |
 
