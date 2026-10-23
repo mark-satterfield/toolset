@@ -150,22 +150,13 @@ def story_edges(run: StepRun) -> Completion:
 def mark_done(run: StepRun) -> Completion:
     """Mark the Epic elaborated.
 
-    An Epic that could not be marked done fails the step.
+    The score step scored the Tasks and the done rule checked them, so nothing is scored again
+    here. An Epic another run owns fails the step.
 
     Returns:
         The record that the Epic's lifecycle is done.
 
     """
     enter_phase(run.context, run.agents.emit, FINISH_PHASE, MARK_DONE)
-    finish: Finished = lifecycle(
-        run.context,
-        run.tools,
-        FINISH_PHASE,
-        elaboration.finish,
-        owner=_owner(run),
-        done=True,
-        scope="epic-tasks",
-    )
-    if not finish["summary"]["done"]:
-        raise run.tools.failure(TASK_SCORES_STAGE, OTHER_CAUSE, json_object(finish))
+    lifecycle(run.context, run.tools, FINISH_PHASE, elaboration.mark_elaborated, owner=_owner(run))
     return Completion(artifacts=(value_artifact(LIFECYCLE_DONE, True),))

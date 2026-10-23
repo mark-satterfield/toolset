@@ -25,6 +25,8 @@ At the FINISH, after the Tasks are written:
   beneath it: the Epic's size becomes the sum of its Tasks' sizes with its estimate kept, the
   Epic is rescored, and its Tasks are rescored with value inherited from it and RR-OE counted
   over every Task edge, across Stories;
+* `prd-to-spec` scores the Tasks in its score step and then marks the Epic elaborated with
+  `mark_elaborated`, which writes only the lifecycle below and scores nothing again;
 * with `done`, the Epic's `KEY_ELABORATION_STATE` is set to `ELABORATION_DONE` with the cause
   `CAUSE_DECOMPOSED` and its owner token is cleared. The Epic stays open; it closes
   only when its work is released.
@@ -256,7 +258,6 @@ def finish(
 
     Raises:
         TypeError: An argument violates the declared input contract.
-        LifecycleError: The Epic is owned by another run.
         ValueError: The finish scope is unknown.
 
     """
@@ -268,10 +269,7 @@ def finish(
     owner, done = options["owner"], options["done"]
     scope: str = options.get("scope", "epic-and-tasks")
     epic: beadgraph.Bead = graph.beads[epic_id]
-    recorded: str | None = epic.metadata.get(KEY_ELABORATION_STATE_OWNER) or None
-    if recorded and owner and recorded != owner:
-        msg: str = f"{epic_id} is owned by run {recorded}, not {owner}"
-        raise LifecycleError(msg)
+    _check_owner(epic, owner)
     under: set[str] = _task_ids_under(graph, epic)
     if scope not in {"epic-and-tasks", "epic-tasks"}:
         message: str = f"unknown finish scope: {scope}"
@@ -288,15 +286,7 @@ def finish(
         scored["unscored"] = [row for row in scored["unscored"] if row["id"] in under]
         scored["summary"]["unscored"] = len(scored["unscored"])
         finishing = finishing and bool(under) and not scored["unscored"]
-    lifecycle: dict[str, str] | None = None
-    if finishing:
-        lifecycle = {
-            KEY_ELABORATION_STATE: ELABORATION_DONE,
-            KEY_ELABORATION_STATE_AT: now_iso(),
-            KEY_ELABORATION_STATE_CAUSE: CAUSE_DECOMPOSED,
-            KEY_ELABORATION_STATE_OWNER: "",
-        }
-        writer.metadata(epic.id, lifecycle)
+    lifecycle: dict[str, str] | None = _write_done(writer, epic.id) if finishing else None
     return {
         "ok": True,
         "epic": epic.id,
@@ -322,6 +312,63 @@ def finish(
             "done": lifecycle is not None,
         },
     }
+
+
+def _check_owner(epic: Bead, owner: str | None) -> None:
+    """Refuse an Epic whose recorded owner token is another run's.
+
+    Raises:
+        LifecycleError: The Epic is owned by another run.
+
+    """
+    recorded: str | None = epic.metadata.get(KEY_ELABORATION_STATE_OWNER) or None
+    if recorded and owner and recorded != owner:
+        msg: str = f"{epic.id} is owned by run {recorded}, not {owner}"
+        raise LifecycleError(msg)
+
+
+def _write_done(writer: Writer, epic_id: str) -> dict[str, str]:
+    """Set the Epic's elaboration to done, with the decomposed cause, and clear its owner token.
+
+    Returns:
+        The lifecycle metadata written.
+
+    """
+    lifecycle: dict[str, str] = {
+        KEY_ELABORATION_STATE: ELABORATION_DONE,
+        KEY_ELABORATION_STATE_AT: now_iso(),
+        KEY_ELABORATION_STATE_CAUSE: CAUSE_DECOMPOSED,
+        KEY_ELABORATION_STATE_OWNER: "",
+    }
+    writer.metadata(epic_id, lifecycle)
+    return lifecycle
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def mark_elaborated(graph: Graph, writer: Writer, epic_id: str, *, owner: str | None) -> dict[str, str]:
+    """Mark the Epic elaborated without scoring it again.
+
+    The pipeline's score step has scored the Epic's Tasks and its done rule has checked that
+    every repository has its Story and Tasks and that no Task is unscored, so this only writes
+    the lifecycle.
+
+    Args:
+        graph: The tracker graph.
+        writer: The tracker writer; a dry-run writer records the writes instead.
+        epic_id: The Epic.
+        owner: The run's owner token.
+
+    Returns:
+        The lifecycle metadata written.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
+    """
+    if not (isinstance(graph, Graph)) or not (isinstance(writer, Writer)) or not (isinstance(epic_id, str)):
+        raise TypeError(_ARGUMENT_ERROR)
+    _check_owner(graph.beads[epic_id], owner)
+    return _write_done(writer, epic_id)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
