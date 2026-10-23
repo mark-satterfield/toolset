@@ -33,6 +33,7 @@ import json
 import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Fixed Git argv without a shell.
 import sys
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -115,6 +116,12 @@ GIT_TIMEOUT: Final = 300.0
 COMMIT_MESSAGE: Final = "chore(matrix): record the matrix"
 UPSTREAM_RANGE: Final = "@{upstream}..HEAD"
 """The commits the branch has that the branch it pushes to does not."""
+GIT_ATTEMPTS: Final = 3
+GIT_RETRY_DELAY: Final = 5.0
+"""Attempts at a git command another git process can block, and the pause before the next, in seconds."""
+INDEX_LOCK: Final = "index.lock"
+REBASE_STATES: Final[tuple[str, ...]] = ("rebase-merge", "rebase-apply")
+"""The git paths that exist while a git process holds the index, and while a rebase is stopped."""
 CHANGE_SCHEMA_PATH: Final[Path] = (
     Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "schemas" / "matrix-change.schema.json"
 )
@@ -1114,16 +1121,100 @@ def _git(root: Path, *arguments: str) -> str:
     return result.stdout.strip()
 
 
+def _git_path(root: Path, name: str) -> Path:
+    """Name a path inside the repository's git directory.
+
+    Returns:
+        The path ``git rev-parse --git-path`` gives, resolved against the repository.
+
+    """
+    return root / _git(root, "rev-parse", "--git-path", name)
+
+
+def _git_retried(root: Path, *arguments: str) -> str:
+    """Run one git command, again after a pause while another git process holds the index lock.
+
+    Returns:
+        What the command printed, without the white space around it.
+
+    Raises:
+        MatrixError: The command failed while no git process held the index lock, or on its last attempt.
+
+    """
+    attempt: int
+    for attempt in range(1, GIT_ATTEMPTS + 1):
+        try:
+            return _git(root, *arguments)
+        except MatrixError:
+            if attempt == GIT_ATTEMPTS or not _git_path(root, INDEX_LOCK).exists():
+                raise
+            time.sleep(GIT_RETRY_DELAY * attempt)
+    message: str = f"git {' '.join(arguments)} in {root} made no attempt"
+    raise MatrixError(message)
+
+
+def _rebase(root: Path) -> None:
+    """Rebase the branch on the branch it pushes to, keeping uncommitted changes (``--autostash``).
+
+    A rebase git stops is aborted, which puts the branch and the stashed changes back as they were.
+
+    Raises:
+        MatrixError: The pull failed; the message names what git printed.
+
+    """
+    try:
+        _git_retried(root, "pull", "--rebase", "--autostash")
+    except MatrixError:
+        if any(_git_path(root, state).exists() for state in REBASE_STATES):
+            _git(root, "rebase", "--abort")
+        raise
+
+
+def _push(root: Path, path: Path, file: Path, wait: float) -> bool:
+    """Push the commits of the matrix file, rebasing on the branch it pushes to first.
+
+    Each attempt rebases under the matrix's lock, so no matrix write is stashed or overwritten by
+    the rebase, then pushes outside it. A push the remote rejects, because its branch moved after
+    the rebase, is tried again after a pause and another rebase.
+
+    Returns:
+        False when the branch it pushes to already held every commit of the matrix file.
+
+    Raises:
+        MatrixError: The rebase failed, or the push failed on its last attempt.
+
+    """
+    attempt: int
+    for attempt in range(1, GIT_ATTEMPTS + 1):
+        with matrix_lock(path, wait):
+            if not _git(root, "log", "--format=%H", UPSTREAM_RANGE, "--", str(file)):
+                return False
+            _rebase(root)
+        try:
+            _git_retried(root, "push")
+        except MatrixError:
+            if attempt == GIT_ATTEMPTS:
+                raise
+            time.sleep(GIT_RETRY_DELAY * attempt)
+        else:
+            return True
+    message: str = f"the push of {file} made no attempt"
+    raise MatrixError(message)
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def commit(path: Path, bead: str = "", *, wait: float = DEFAULT_LOCK_WAIT) -> CommitResult:
     """Commit the matrix file alone in the repository that holds it, and push it.
 
     Whatever else the repository has staged or changed is left as it is. The commit is made
-    under the matrix's lock, so it holds the file as one change left it; the push follows. The
-    repository's own commit and push hooks run. A matrix file that is as the last commit holds
-    it is not committed again, and is pushed only when the branch it pushes to lacks a commit of
-    it. A git command that fails raises ``MatrixError`` naming the command and what git printed;
-    a commit already made stays, and the next call pushes it.
+    under the matrix's lock, so it holds the file as one change left it. Before the push the
+    branch is rebased on the branch it pushes to with ``--autostash``, under the matrix's lock;
+    the push follows outside it, and a rejected push is rebased and tried again (:func:`_push`).
+    A git command another git process blocks with the index lock is tried again after a pause.
+    The repository's own commit and push hooks run. A matrix file that is as the last commit
+    holds it is not committed again, and is pushed only when the branch it pushes to lacks a
+    commit of it. A git command that fails raises ``MatrixError`` naming the command and what
+    git printed; a commit already made stays, and the next call pushes it.
 
     Args:
         path: The matrix file.
@@ -1148,9 +1239,7 @@ def commit(path: Path, bead: str = "", *, wait: float = DEFAULT_LOCK_WAIT) -> Co
     with matrix_lock(path, wait):
         committed: bool = bool(_git(root, "status", "--porcelain", "--", str(file)))
         if committed:
-            _git(root, "add", "--", str(file))
-            _git(root, "commit", "-m", subject, "--", str(file))
-    pushed: bool = bool(_git(root, "log", "--format=%H", UPSTREAM_RANGE, "--", str(file)))
-    if pushed:
-        _git(root, "push")
+            _git_retried(root, "add", "--", str(file))
+            _git_retried(root, "commit", "-m", subject, "--", str(file))
+    pushed: bool = _push(root, path, file, wait)
     return {"committed": committed, "pushed": pushed, "head": _git(root, "rev-parse", "HEAD"), "message": subject}

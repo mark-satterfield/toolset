@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Fixed Git argv without a shell.
 import sys
+import time
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
@@ -22,6 +23,9 @@ from driver_surface_types import EXECUTION_ID_ENV
 
 P = ParamSpec("P")
 R = TypeVar("R")
+GIT_ATTEMPTS: int = 3
+GIT_RETRY_DELAY: float = 5.0
+"""Attempts at a git command another git process blocks with the index lock, and the pause before the next."""
 
 
 class ArchitectureGitError(RuntimeError):
@@ -112,6 +116,10 @@ def _commit_message(arguments: list[str], execution_id: str) -> None:
 def run_git(root: str | Path, *argv: str, execution_id: str = "") -> subprocess.CompletedProcess[str]:
     """Run one checked command with a timeout and a pipeline commit trailer.
 
+    A command that fails while another git process holds the repository's index lock (a
+    promotion's commit in the same vault, for one) runs again after a pause, up to
+    ``GIT_ATTEMPTS`` times.
+
     Returns:
         The completed successful Git command.
 
@@ -137,8 +145,45 @@ def run_git(root: str | Path, *argv: str, execution_id: str = "") -> subprocess.
     if executable is None:
         message: str = "Git executable is unavailable"
         raise ArchitectureGitError(arguments[0], None, False, message)
+    result: subprocess.CompletedProcess[str] = _attempt(executable, root, arguments)
+    attempt: int = 1
+    while result.returncode and attempt < GIT_ATTEMPTS and _index_locked(executable, root):
+        time.sleep(GIT_RETRY_DELAY * attempt)
+        attempt += 1
+        result = _attempt(executable, root, arguments)
+    if result.returncode:
+        raise ArchitectureGitError(
+            arguments[0],
+            result.returncode,
+            False,
+            (result.stderr or result.stdout).strip(),
+        )
+    return result
+
+
+def _index_locked(executable: str, root: str | Path) -> bool:
+    """Tell whether another git process holds the repository's index lock.
+
+    Returns:
+        True when the index lock file exists.
+
+    """
+    found: subprocess.CompletedProcess[str] = _attempt(executable, root, ["rev-parse", "--git-path", "index.lock"])
+    return not found.returncode and (Path(root) / found.stdout.strip()).exists()
+
+
+def _attempt(executable: str, root: str | Path, arguments: list[str]) -> subprocess.CompletedProcess[str]:
+    """Run one git command once, with the configured timeout.
+
+    Returns:
+        The completed command, whatever its exit status.
+
+    Raises:
+        ArchitectureGitError: Git timed out or could not be started.
+
+    """
     try:
-        result: subprocess.CompletedProcess[str] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Resolved Git executable and separate argv.
+        return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Resolved Git executable and separate argv.
             [executable, "-C", str(root), *arguments],
             capture_output=True,
             text=True,
@@ -154,11 +199,3 @@ def run_git(root: str | Path, *argv: str, execution_id: str = "") -> subprocess.
         ) from exc
     except OSError as exc:
         raise ArchitectureGitError(arguments[0], None, False, str(exc)) from exc
-    if result.returncode:
-        raise ArchitectureGitError(
-            arguments[0],
-            result.returncode,
-            False,
-            (result.stderr or result.stdout).strip(),
-        )
-    return result
