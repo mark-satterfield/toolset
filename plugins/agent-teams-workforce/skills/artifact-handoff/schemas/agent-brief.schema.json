@@ -60,7 +60,7 @@
     "validation errors": "The errors Python found in the output, on a corrective pass; correct exactly those.",
     "prd": "The PRD of the Epic. Read only the headings a pointer names (a requirement's heading, a TRD requirement's source); a definition says when the whole PRD is read.",
     "criteria": "One repository's acceptance-criteria document. The review criteria are never handed as an input: every agent that works to them reads effective-architecture/review-standard.md through its effective-architecture skill.",
-    "context": "The architecture context file of the Epic (architecture-context.schema.json).",
+    "context": "The architecture context file of the Epic (architecture-context.schema.json).", "architecture pack": "The Epic's architecture pack, pack.json, with pack.md beside it for reading: the PRD, the Epic's reach with each entry's owner, the headings that describe it and their text, and the constraints that apply (orchestrator/flows/architecture_pack.py).",
     "state": "The solutions architect's judgment of the state of the architecture (architecture-state.schema.json).",
     "architecture result": "The solutions architect's result (architecture-result.schema.json).",
     "findings": "A result of the architecture check step that found defects for the solutions architect to correct (check-result.schema.json).",

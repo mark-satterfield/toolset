@@ -27,9 +27,12 @@ from architecture_work_contract import (
     ArchitectureWorkError,
     validate_architecture_context,
     validate_architecture_result,
+    validate_write_request,
+    validate_write_result,
 )
 from matrix_contract import KIND_DOCUMENT, EntryId, MatrixError
 from matrixstore import ID_SEPARATOR, make_id, matrix_path
+from step_journal_contract import STATUS_DONE
 
 from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
@@ -40,12 +43,14 @@ from orchestrator.core.models import StaleInputError, StepError
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from architecture_work_contract import Citation, WriteRequest, WriteResult
     from step_journal_contract import Artifact, Step
 
     from orchestrator.core.io import JsonValue
     from orchestrator.core.journal_steps import StepRun
 
 OPEN_RUN: Final = "prd_to_spec.open_run"
+PACK: Final = "architecture.pack"
 CHECK: Final = "atw-matrix check; atw-matrix review-scope"
 PROMOTE: Final = "atw-matrix sync-documents; atw-matrix commit"
 CONFIRM_TRD: Final = "trd.confirm"
@@ -58,6 +63,15 @@ EARLIER_PREFIX: Final = "earlier work: "
 """What the name of an artifact begins with when an earlier form of the pipeline produced the file."""
 
 ARCHITECTURE_FOLDER: Final = "architecture"
+PACK_FILE: Final = "pack.json"
+PACK_TEXT_FILE: Final = "pack.md"
+"""The Epic's architecture pack, and the same pack written for reading, beside the context file."""
+CHANGE_FILE: Final = "matrix-changes.json"
+"""The architect's matrix change file, beside the context file (``matrix-change.schema.json``)."""
+REVIEWED_FILE: Final = "reviewed.json"
+"""What the Epic's architect reviewed, as it stood when its result was last accepted: each entry of the
+approval scope with its content hash and approved owner, and each heading of each document its
+maintainers wrote with the hash of its text (``architecture_collision``)."""
 MATRIX_COMMAND: Final = "atw-matrix"
 MARKDOWN_SUFFIX: Final = ".md"
 URL_MARK: Final = "://"
@@ -83,6 +97,8 @@ WRITE_REQUEST: Final = "write request"
 WRITTEN: Final = "what was written"
 """The artifacts a document maintainer's step holds: what it was asked to write, and its result."""
 
+ARTIFACT_PACK: Final = "architecture pack"
+ARTIFACT_PACK_TEXT: Final = "architecture pack for reading"
 ARTIFACT_CONCLUSION: Final = "conclusion"
 ARTIFACT_CHECK: Final = "check result"
 ARTIFACT_RESOLVED: Final = "every item is resolved"
@@ -137,6 +153,18 @@ def context_path(work: Path) -> Path:
 
     """
     return work / ARCHITECTURE_FOLDER / "context.json"
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def architecture_folder(work: Path) -> Path:
+    """Name the Epic's architecture work folder: the folder of the context file.
+
+    Returns:
+        The folder inside the run's work folder that holds the context file, the pack, the
+        architect's state, result, review log and change file, and the helpers folder.
+
+    """
+    return work / ARCHITECTURE_FOLDER
 
 
 def matrix_file() -> Path:
@@ -308,6 +336,78 @@ def output_check(validate: Callable[[object, str], object]) -> Callable[[Path], 
         return document
 
     return check
+
+
+def written_paths(arch: Path, request: WriteRequest, written: WriteResult) -> list[str]:
+    """Name the arc42 documents one write request and its result touch.
+
+    Returns:
+        The path under the architecture root of each document the result says was changed or
+        created, and of each home the request names, once, in path order.
+
+    """
+    cited: list[Citation] = [
+        *written["headingsChanged"],
+        *written["headingsCreated"],
+        *written["linksAdded"],
+        *written["restatementsRemoved"],
+        *(fact["home"] for fact in request["facts"]),
+        *(diagram["home"] for diagram in request["diagrams"]),
+        *(
+            place
+            for settlement in request["settlements"]
+            for place in (settlement["stands"], *settlement["corrections"])
+        ),
+    ]
+    documents: set[EntryId] = {
+        document for citation in cited for document in (cited_document(arch, citation["source"]),) if document
+    }
+    return sorted(document_path(document) for document in documents)
+
+
+def held_file(step: Step, *names: str) -> Path | None:
+    """Find a file a step holds under one of some artifact names.
+
+    Returns:
+        The path of the first file artifact with one of the names, in the order the names are
+        given; None when the step holds none.
+
+    """
+    name: str
+    for name in names:
+        held: Artifact
+        for held in step["artifacts"]:
+            if held["name"] == name and held["kind"] != "value":
+                return Path(held["path"])
+    return None
+
+
+def written_documents(run: StepRun, arch: Path) -> list[str]:
+    """List the documents this Epic's document maintainers wrote.
+
+    Every done step under the Epic's Architecture container that holds what a document
+    maintainer wrote and the write request it was launched from counts: a maintainer the script
+    ran and one the architect ran in its own session alike. The documents are those
+    :func:`written_paths` names for each.
+
+    Returns:
+        The path under the architecture root of each document written, once, in path order. A
+        write request or a result a done step holds that cannot be read raises
+        ``ArchitectureStepError`` from :func:`checked_file`.
+
+    """
+    container: Step = run.step_named(ARCHITECTURE)
+    paths: set[str] = set()
+    step: Step
+    for step in step_journal.steps_in_order_from(container):
+        written: Path | None = held_file(step, WRITTEN)
+        asked: Path | None = held_file(step, WRITE_REQUEST, LABEL_REQUEST)
+        if step["status"] != STATUS_DONE or written is None or asked is None:
+            continue
+        request: WriteRequest = checked_file(run, asked, validate_write_request)
+        result: WriteResult = checked_file(run, written, validate_write_result)
+        paths.update(written_paths(arch, request, result))
+    return sorted(paths)
 
 
 def is_finish(run: StepRun) -> bool:

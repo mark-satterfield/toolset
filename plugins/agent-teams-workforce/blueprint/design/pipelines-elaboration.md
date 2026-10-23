@@ -59,7 +59,8 @@ requured, but there still needs to be a spec".
 
 ```mermaid
 flowchart TD
-    start(["Ready Epic and its PRD"]) --> trdInit["TRD initial write, one of the very first steps: NFRs, many pre-written in arc42, and the human-written Epic-specific guidance - section 4"]
+    start(["Ready Epic and its PRD"]) --> pack["Architecture pack, a script step: the PRD, the Epic's reach by the rule of reach with each entry's owner and the Epic's sharing it, the headings that describe each from the vault's last commit, and the constraints that apply"]
+    pack --> trdInit["TRD initial write, one of the very first steps: NFRs, many pre-written in arc42, and the human-written Epic-specific guidance - section 4"]
     trdInit --> readPRD["The solutions architect normally reads the PRD for the Epic"]
     readPRD --> resources["Uses arc42 documents and the matrix as resources"]
     resources --> lookup{"Does the matrix hold anything for this Epic?"}
@@ -74,7 +75,9 @@ flowchart TD
     trdUpdate --> review["The solutions architect reviews and approves its own architecture against the criteria"]
     review --> ok{"Does the check pass the result and the review log?"}
     ok -->|"no: each problem goes back to the architect as a correction"| detailed
-    ok -->|"yes"| writes["arc42 documents set effective. Matrix filled out or corrected for the Epic and set approved, verified stays false"]
+    ok -->|"yes"| edge{"Did another Epic change or approve what this Epic reviewed?"}
+    edge -->|"yes: a missing tracks edge"| missing(["Nothing approved or committed; the architecture is set back to its pack step and the Epic fails with cause missing-edge; the driver re-assesses its edges"])
+    edge -->|"no"| writes["The documents this Epic's maintainers wrote set effective. The Epic's reach in the corrected matrix set approved, verified stays false"]
     writes --> archChange{"Did the Epic need an architecture change?"}
     archChange -->|"yes"| spec["Specs written from what is not yet verified - section 6"]
     archChange -->|"no: for example a wording change on a web page"| specNo["A spec with instructions for the change - section 6"]
@@ -96,6 +99,23 @@ Notes on the diagram:
   considered detail or design)". Section 4 shows both. The update runs as its own step after the
   architect's session, from the request the architect wrote; the detailed design reads the TRD
   together with that request, so it works from the decisions before the TRD file holds them.
+- The architecture pack (`orchestrator/flows/architecture_pack.py`) is written beside the context
+  file as `pack.json` and `pack.md`. The TRD author, the architect and its specialists read it,
+  not the whole matrix and not the vault. The reach is `matrixtraverse.approval_scope`, the one set
+  the pack lists, the check holds the architect's verdicts to and promotion approves.
+- The architect writes its matrix changes to one change file, `matrix-changes.json` beside the
+  context file. The output check applies it to a copy of the matrix and sends each failing
+  operation back for the session's correction; the step that accepts the result applies it in one
+  locked update, then records the result. The check step then recomputes the reach on the
+  corrected matrix: each entry needs a `kept` or `corrected` verdict in the result's `reach`, a
+  `pruned` one must no longer be reached, and each reached service, component, piece of
+  infrastructure or layer with no stack is placed or listed under `excluded`.
+- Promotion sets effective exactly the documents this Epic's maintainers wrote, and commits those
+  and the review log. Before it changes anything, under the matrix's lock, it compares each entry
+  of the reach with the hash and owner recorded when the architect's result was last accepted, a
+  `kept` entry also with the pack's, and each written document's heading hashes with those
+  recorded when they were written (`orchestrator/flows/architecture_collision.py`). A difference is
+  a missing `tracks` edge between this Epic and another; there is no global lock.
 - The solutions architect is the reviewer; no other agent reviews the architecture. The owner:
   "The solutions architect is the reviewer. I do not want to introduce new reviewers in for
   architecture. I already took out reviewers." What the owner requires instead is proof: "what I

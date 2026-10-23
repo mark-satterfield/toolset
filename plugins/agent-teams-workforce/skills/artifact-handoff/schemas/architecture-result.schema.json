@@ -154,6 +154,33 @@
         "reason": {"description": "Why no feature serves it: for example, it states no behaviour of the system.", "type": "string", "minLength": 1}
       }
     },
+    "ReachVerdictKind": {
+      "description": "`kept`: the link that puts the entry in reach is true for this PRD and the entry is used as the pack lists it. `corrected`: it stays in reach and the architect corrected the entry or the link. `pruned`: the link over-reached and the architect removed it, so the entry is no longer in the Epic's reach.",
+      "type": "string",
+      "enum": ["kept", "corrected", "pruned"]
+    },
+    "ReachVerdict": {
+      "description": "The architect's verdict on one entry of the Epic's reach: a row of the architecture pack's `reach`, or an entry the architect's corrections brought into the reach.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "verdict", "via", "contentHash"],
+      "properties": {
+        "id": {"description": "The entry's matrix id, as the pack lists it.", "type": "string", "minLength": 1},
+        "verdict": {"$ref": "#/$defs/ReachVerdictKind"},
+        "via": {"description": "The links that put the entry in reach, as the pack lists them; for an entry the corrections brought in, the link that does.", "type": "string"},
+        "contentHash": {"description": "The entry's content hash as the pack lists it; empty for an entry the corrections brought in. The promotion compares a `kept` entry with it (orchestrator/flows/architecture_collision.py).", "type": "string"}
+      }
+    },
+    "Exclusion": {
+      "description": "One reached service, component, piece of infrastructure or layer that no stack builds, with the reason.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "reason"],
+      "properties": {
+        "id": {"description": "The entry's matrix id.", "type": "string", "minLength": 1},
+        "reason": {"description": "Why no stack builds it: for example, it is a third-party service the Epic only calls.", "type": "string", "minLength": 1}
+      }
+    },
     "SharedUse": {
       "description": "One element that obtains behaviours from a shared capability and does not implement them itself, by pointer: `atw-matrix node <capability>` returns each `provides` item with its `behaviour`, `consumersMust`, `interface`, `useSignals` and `duplicateSignals`.",
       "type": "object",
@@ -271,7 +298,7 @@
       "description": "The solutions architect's result for one Epic, at the context file's `resultPath`. The architect writes it as the work goes, so that a session that stops loses nothing: the members settled so far, written as soon as the state file is written and rewritten in place each time a part settles (a fact and its home, a settlement, a feature, a criterion answer). The file satisfies this schema when the architect finishes; until then it is the partial result a `Finish` step, or a session started again, continues from. The script reads `conclusion`, starts the agent each entry of `requests` names with its request, checks every criterion answer and the review log at the context file's `reviewLogPath`; what is unapproved comes from the matrix, not from this file. The architect reviews and approves its own architecture against the criteria; the promotion step then sets it effective.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["bead", "conclusion", "features", "noFeature", "addedOrChangedElements", "unchangedWorkElements", "sharedCapabilities", "facts", "settledDisagreements", "criteria", "unsettled", "costEvidence", "specialistRecommendations", "requests"],
+      "required": ["bead", "conclusion", "features", "noFeature", "addedOrChangedElements", "unchangedWorkElements", "sharedCapabilities", "facts", "settledDisagreements", "criteria", "unsettled", "costEvidence", "specialistRecommendations", "requests", "reach", "excluded"],
       "properties": {
         "bead": {"description": "The Epic id.", "type": "string", "minLength": 1},
         "conclusion": {"$ref": "#/$defs/Conclusion"},
@@ -286,7 +313,9 @@
         "unsettled": {"description": "Empty unless `conclusion` is `unsettled`.", "type": "array", "items": {"$ref": "#/$defs/UnsettledMatter"}},
         "costEvidence": {"type": "array", "items": {"$ref": "#/$defs/CostEvidence"}},
         "specialistRecommendations": {"description": "Each recommendation to the owner to create or update a specialist agent; empty when the specialists covered every subject.", "type": "array", "items": {"$ref": "#/$defs/SpecialistRecommendation"}},
-        "requests": {"description": "The work the architect has agents do outside its own session, one entry per request; empty when it needs none. Consumed by: the step of orchestrator/flows/architecture.py that accepts the result, which plans below that step one step for each request whose answer file is not yet a valid answer, started as the agent the entry names and handed its request, then the architect's `Finish` step, handed every answer. The script decides nothing about which agent runs. A question or a quick piece of work the architect asks in its own session is not listed here.", "type": "array", "items": {"$ref": "#/$defs/AgentRequest"}}
+        "requests": {"description": "The work the architect has agents do outside its own session, one entry per request; empty when it needs none. Consumed by: the step of orchestrator/flows/architecture.py that accepts the result, which plans below that step one step for each request whose answer file is not yet a valid answer, started as the agent the entry names and handed its request, then the architect's `Finish` step, handed every answer. The script decides nothing about which agent runs. A question or a quick piece of work the architect asks in its own session is not listed here.", "type": "array", "items": {"$ref": "#/$defs/AgentRequest"}},
+        "reach": {"description": "One verdict per entry of the Epic's reach: every row of the architecture pack's `reach`, and every entry the architect's corrections brought into the reach. Consumed by: the check step of orchestrator/flows/architecture_check.py, which recomputes the reach (`matrixtraverse.approval_scope`) on the matrix after the architect's change file is applied and fails each entry in it, other than the Epic and its requirements, with no `kept` or `corrected` verdict, and each `pruned` entry still in it; and the promotion step, which compares each `kept` entry with its `contentHash` before it approves.", "type": "array", "items": {"$ref": "#/$defs/ReachVerdict"}},
+        "excluded": {"description": "Each reached service, component, piece of infrastructure or layer with no home stack that no stack builds, with the reason; empty when every one is placed. Consumed by: the check step of orchestrator/flows/architecture_check.py, which fails each such entry with no stack that is not listed here.", "type": "array", "items": {"$ref": "#/$defs/Exclusion"}}
       }
     },
     "Reason": {

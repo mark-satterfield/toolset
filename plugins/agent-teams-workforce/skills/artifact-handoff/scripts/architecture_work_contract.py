@@ -25,6 +25,7 @@ type TrdChangeKind = Literal["add", "change", "remove"]
 type RequirementKind = Literal["obligation", "reuse"]
 type Routing = Literal["reject", "correct", "opinion", "competing-design", "decider"]
 type OwnerConcernKind = Literal["business-conflict", "section-2-conflict"]
+type ReachVerdictKind = Literal["kept", "corrected", "pruned"]
 type RecommendationAction = Literal["create", "update"]
 
 NEED_APPROVED: Final[Literal["approved"]] = "approved"
@@ -57,6 +58,9 @@ ROUTING_COMPETING_DESIGN: Final[Literal["competing-design"]] = "competing-design
 ROUTING_DECIDER: Final[Literal["decider"]] = "decider"
 OWNER_CONCERN_BUSINESS_CONFLICT: Final[Literal["business-conflict"]] = "business-conflict"
 OWNER_CONCERN_SECTION_2_CONFLICT: Final[Literal["section-2-conflict"]] = "section-2-conflict"
+VERDICT_KEPT: Final[Literal["kept"]] = "kept"
+VERDICT_CORRECTED: Final[Literal["corrected"]] = "corrected"
+VERDICT_PRUNED: Final[Literal["pruned"]] = "pruned"
 RECOMMENDATION_CREATE: Final[Literal["create"]] = "create"
 RECOMMENDATION_UPDATE: Final[Literal["update"]] = "update"
 
@@ -109,6 +113,11 @@ ROUTINGS: Final[tuple[Routing, ...]] = (
 OWNER_CONCERN_KINDS: Final[tuple[OwnerConcernKind, ...]] = (
     OWNER_CONCERN_BUSINESS_CONFLICT,
     OWNER_CONCERN_SECTION_2_CONFLICT,
+)
+VERDICTS: Final[tuple[ReachVerdictKind, ...]] = (
+    VERDICT_KEPT,
+    VERDICT_CORRECTED,
+    VERDICT_PRUNED,
 )
 RECOMMENDATION_ACTIONS: Final[tuple[RecommendationAction, ...]] = (
     RECOMMENDATION_CREATE,
@@ -195,6 +204,22 @@ class NoFeature(TypedDict):
     """Typed form of #/$defs/NoFeature in architecture-result.schema.json."""
 
     requirement: str
+    reason: str
+
+
+class ReachVerdict(TypedDict):
+    """Typed form of #/$defs/ReachVerdict in architecture-result.schema.json."""
+
+    id: str
+    verdict: ReachVerdictKind
+    via: str
+    contentHash: str
+
+
+class Exclusion(TypedDict):
+    """Typed form of #/$defs/Exclusion in architecture-result.schema.json."""
+
+    id: str
     reason: str
 
 
@@ -296,6 +321,8 @@ class ArchitectureResult(TypedDict):
     costEvidence: list[CostEvidence]
     specialistRecommendations: list[SpecialistRecommendation]
     requests: list[AgentRequest]
+    reach: list[ReachVerdict]
+    excluded: list[Exclusion]
 
 
 class Reason(TypedDict):

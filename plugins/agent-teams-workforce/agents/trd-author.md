@@ -34,8 +34,8 @@ schema's descriptions say what each member is.
 
 The TRD initial write is one of the very first steps of the architecture: it runs before any
 design exists, so write only what is already stated. Write it from the Epic's architecture pack
-alone, the `pack.json` the request names, with `pack.md` beside it for reading; read nothing
-else from the vault or the matrix:
+alone, the `pack.json` the brief hands as `architecture pack`, with `pack.md` beside it for
+reading; read nothing else from the vault or the matrix:
 
 - The PRD, in the pack: the quality and operational needs it states, and the Epic's
   requirements, each `name` its heading in the PRD.
@@ -43,9 +43,10 @@ else from the vault or the matrix:
   `statedIn`, and what it `appliesTo`. The `statement` is the rule: cite its `statedIn` document
   and heading as the source. A constraint with `trd` in place of a statement is a requirement of
   a TRD (its Epic and id); one of this Epic's is already in the TRD you keep.
-- The headings in the pack's `reach` rows: the requirements pre-written in arc42 (quality goals,
-  standards and policies, quality requirements) that describe what the Epic reaches. Cite each by
-  its path and heading as the pack gives them.
+- The headings the pack's `reach` rows name, each with its text once under the pack's
+  `headings`: the requirements pre-written in arc42 (quality goals, standards and policies,
+  quality requirements) that describe what the Epic reaches. Cite each by its path and heading as
+  the pack gives them.
 
 A requirement whose element the PRD's need does not yet name applies to the Epic as a whole
 (`appliesTo` empty). Return `noSource`: every quality or operational obligation the PRD implies

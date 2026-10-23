@@ -782,10 +782,10 @@ def approve(matrix: Matrix, bead: str, role: Role) -> ApproveResult:
 class _ChangeRefusedError(MatrixError):
     """At least one operation of a change file failed; raised inside the locked update so nothing is written."""
 
-    def __init__(self, failures: list[ChangeFailure]) -> None:
-        """Hold the failures."""
-        super().__init__(f"{len(failures)} operation(s) of the change file failed")
-        self.failures: list[ChangeFailure] = failures
+    def __init__(self, refused: ApplyResult) -> None:
+        """Hold what was refused, with every failure."""
+        super().__init__(f"{len(refused['failures'])} operation(s) of the change file failed")
+        self.refused: ApplyResult = refused
 
 
 def _text(operation: Mapping[str, JsonValue], member: str) -> str | None:
@@ -992,6 +992,57 @@ def _role_failures(operations: Sequence[Mapping[str, JsonValue]], role: Role) ->
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def apply_changes(matrix: Matrix, change_file: Path, role: Role) -> ApplyResult:
+    """Apply a whole matrix change file to a loaded matrix, and report every failure.
+
+    The file is checked against ``matrix-change.schema.json``, each operation against the
+    schema of its ``op``, and each operation against the registry's command table for the
+    role, as ``atw-matrix`` checks the sub-command of the same name. The operations the checks
+    pass are applied in order to ``matrix``, each as the sub-command of the same name applies
+    it. The operations after a failed one are still tried, against the matrix as the operations
+    before them left it, so a failure that follows from an earlier one is reported too. Nothing
+    is written: a caller that wants the file applied writes the matrix only when no failure is
+    reported (:func:`apply_change_file`), and a caller that only checks it passes a matrix it
+    never writes.
+
+    Args:
+        matrix: The matrix, changed in place, also when a failure is reported.
+        change_file: The change file.
+        role: Who wrote the change file: the role each operation is checked for.
+
+    Returns:
+        The file, how many operations it holds, whether every operation was applied, every
+        failure in index order (those of the file as a whole first) and what each applied
+        operation did.
+
+    """
+    result: ApplyResult = {"file": str(change_file), "operations": 0, "applied": False, "failures": [], "results": []}
+    try:
+        document: JsonValue = json_value(json.loads(change_file.read_text(encoding="utf-8")))
+    except (OSError, ValueError, TypeError) as error:
+        result["failures"] = [_failure(None, None, f"cannot read {change_file}: {error}")]
+        return result
+    operations, failed = _shape_failures(document)
+    failed.extend(_role_failures(operations, role))
+    result["operations"] = len(operations)
+    skipped: set[int] = {failure["index"] for failure in failed if failure["index"] is not None}
+    results: list[Mapping[str, object]] = []
+    index: int
+    operation: dict[str, JsonValue]
+    for index, operation in enumerate(operations):
+        if index in skipped:
+            continue
+        try:
+            results.append(_apply_operation(matrix, operation))
+        except (MatrixError, ValueError, TypeError) as error:
+            failed.append(_failure(index, _text(operation, "op"), str(error)))
+    result["failures"] = sorted(failed, key=_failure_order)
+    result["results"] = results
+    result["applied"] = not failed
+    return result
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def apply_change_file(
     path: Path,
     change_file: Path,
@@ -1001,15 +1052,10 @@ def apply_change_file(
 ) -> ApplyResult:
     """Apply a whole matrix change file in one locked update of the matrix, or none of it.
 
-    The file is checked against ``matrix-change.schema.json``, each operation against the
-    schema of its ``op``, and each operation against the registry's command table for the
-    role, as ``atw-matrix`` checks the sub-command of the same name. Then, under the matrix's
-    lock, the operations the checks pass are applied in order to one read of the matrix, each as
-    the sub-command of the same name applies it, and the matrix is written once. When any check
-    or operation fails, every failure is reported with its operation's index and nothing is
-    written, so one correction of the file can address them all. The operations after a failed
-    one are still tried, against the matrix as the operations before them left it, so a failure
-    that follows from an earlier one is reported too.
+    Under the matrix's lock the file is applied to one read of the matrix as
+    :func:`apply_changes` applies it, and the matrix is written once. When any check or
+    operation fails, every failure is reported with its operation's index and nothing is
+    written, so one correction of the file can address them all.
 
     Args:
         path: The matrix file.
@@ -1019,45 +1065,28 @@ def apply_change_file(
 
     Returns:
         The file, how many operations it holds, whether it was applied, every failure and what
-        each operation did.
+        each operation did; no results when nothing was applied.
 
     """
-    refused: ApplyResult = {"file": str(change_file), "operations": 0, "applied": False, "failures": [], "results": []}
-    try:
-        document: JsonValue = json_value(json.loads(change_file.read_text(encoding="utf-8")))
-    except (OSError, ValueError, TypeError) as error:
-        refused["failures"] = [_failure(None, None, f"cannot read {change_file}: {error}")]
-        return refused
-    operations, checked = _shape_failures(document)
-    checked.extend(_role_failures(operations, role))
-    refused["operations"] = len(operations)
-    skipped: set[int] = {failure["index"] for failure in checked if failure["index"] is not None}
 
-    def change(matrix: Matrix) -> list[Mapping[str, object]]:
-        results: list[Mapping[str, object]] = []
-        failed: list[ChangeFailure] = list(checked)
-        index: int
-        operation: dict[str, JsonValue]
-        for index, operation in enumerate(operations):
-            if index in skipped:
-                continue
-            try:
-                results.append(_apply_operation(matrix, operation))
-            except (MatrixError, ValueError, TypeError) as error:
-                failed.append(_failure(index, _text(operation, "op"), str(error)))
-        if failed:
-            raise _ChangeRefusedError(sorted(failed, key=_failure_order))
-        return results
+    def change(matrix: Matrix) -> ApplyResult:
+        applied: ApplyResult = apply_changes(matrix, change_file, role)
+        if applied["failures"]:
+            raise _ChangeRefusedError(applied)
+        return applied
 
     try:
-        results: list[Mapping[str, object]] = update_matrix(path, change, wait=wait)
+        return update_matrix(path, change, wait=wait)
     except _ChangeRefusedError as error:
-        refused["failures"] = error.failures
-        return refused
+        return {**error.refused, "applied": False, "results": []}
     except MatrixError as error:
-        refused["failures"] = [*checked, _failure(None, None, str(error))]
-        return refused
-    return {**refused, "applied": True, "results": results}
+        return {
+            "file": str(change_file),
+            "operations": 0,
+            "applied": False,
+            "failures": [_failure(None, None, str(error))],
+            "results": [],
+        }
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

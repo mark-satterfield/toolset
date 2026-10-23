@@ -88,8 +88,9 @@ beside it for reading, in the folder of the context file. It holds the PRD; the 
 `atw-matrix epic` gives it; under `reach`, one row for each entry the Epic reaches by the rule of
 reach (the `matrix` skill), each with its `kind`, `approved` (the Epic that approved it, or null),
 `via` (the link that puts it in reach), `sharedWith` (the other Epics that reach it),
-`contentHash`, and the text of each heading that describes it; and the section 2 constraints
-that apply. The pack is your view of the vault and the matrix: read it, not the vault and not
+`contentHash`, and the headings that describe it, each heading's text listed once under
+`headings`; and the constraints that apply: those of section 2 and those that bind a reached
+entry. The pack is your view of the vault and the matrix: read it, not the vault and not
 the whole matrix. The pack lists the Epics that share each entry.
 
 ## The matrix

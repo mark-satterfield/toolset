@@ -1,7 +1,9 @@
 """The script step between the architect and the promotion: what code can check, and what is in review.
 
 It runs the matrix check, checks every criterion answer of the architect's result and the Epic's
-review log (``log-architecture-review``), and reads from the matrix the documents the Epic reaches
+review log (``log-architecture-review``), holds the result's reach verdicts to the Epic's reach as
+the corrected matrix gives it (``matrixtraverse.approval_scope``, the set promotion approves), and
+reads from the matrix the documents the Epic reaches
 that are not effective. It then plans what follows by rule: a mechanical defect goes back to the
 architect, a matter the architect could not settle goes to the lead, and otherwise the promotion
 step follows. Nothing reviews the architect's work: the architect reviews and approves its own
@@ -18,12 +20,26 @@ from typing import TYPE_CHECKING, Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "log-architecture-review" / "scripts"))
-from architecture_work_contract import CONCLUSION_UNSETTLED, CheckResult
-from matrix_contract import MatrixError
+from architecture_work_contract import (
+    CONCLUSION_UNSETTLED,
+    VERDICT_CORRECTED,
+    VERDICT_KEPT,
+    VERDICT_PRUNED,
+    CheckResult,
+)
+from matrix_contract import (
+    KIND_COMPONENT,
+    KIND_EPIC,
+    KIND_INFRASTRUCTURE,
+    KIND_LAYER,
+    KIND_REQUIREMENT,
+    KIND_SERVICE,
+    MatrixError,
+)
 from matrixquery import epic_view
 from matrixreview import ReviewScope, review_scope
 from matrixstore import as_entry_id, file_problems, read_matrix
-from matrixtraverse import epic_id
+from matrixtraverse import approval_scope, epic_id, stacks_of
 from review_criteria import LEVEL_ARCHITECTURE, LEVEL_TECHNICAL_REQUIREMENT, Criteria, load_criteria
 from review_log import ReviewLogError, read_log
 from review_log import problems as review_log_problems
@@ -57,9 +73,10 @@ from orchestrator.flows.spec_review import CRITERIA_FILE
 
 if TYPE_CHECKING:
     from architecture_work_contract import ArchitectureResult
-    from matrix_contract import Entry
+    from matrix_contract import Entry, EntryId, EntryKind
     from matrixquery import EpicView
     from matrixstore import Matrix
+    from matrixtraverse import ApprovalScope
     from step_journal_contract import Artifact, StepPlan
 
 CHECK_DESCRIPTION: Final = "Check what code can check and list what is in review"
@@ -78,6 +95,10 @@ UNLINKED: Final = "links with nothing recorded at the other end"
 CORRECTIONS: Final = "corrections"
 MAX_CORRECTIONS: Final = 3
 """How many times the mechanical check sends its defects back to the architect before the step fails."""
+NO_VERDICT_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_EPIC, KIND_REQUIREMENT})
+"""The entries of the reach that come from the PRD, which need no reach verdict."""
+HOMED_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_SERVICE, KIND_COMPONENT, KIND_INFRASTRUCTURE, KIND_LAYER})
+"""The kinds of reached entry a stack builds: each has a home stack or is listed under ``excluded``."""
 ATTR_RESOURCE_TYPE: Final = "resourceType"
 """The attribute of a matrix entry that names the one AWS resource it is (``matrix-kinds.json``)."""
 
@@ -150,13 +171,53 @@ def _review_log_problems(bead: str, log: Path, matrix: Matrix | None, result: Ar
     return review_log_problems(decoded, bead, resources)
 
 
+def _reach_problems(matrix: Matrix, bead: str, result: ArchitectureResult) -> list[str]:
+    """Hold the architect's reach verdicts and exclusions to the Epic's reach in the corrected matrix.
+
+    The reach is recomputed on the matrix as the architect's change file left it, so the set the
+    architect reviewed and the set promotion approves are one set.
+
+    Returns:
+        One problem for each entry of the reach, other than the Epic and its requirements, with
+        no ``kept`` or ``corrected`` verdict (a ``pruned`` one is still reached); and one for each
+        reached service, component, piece of infrastructure or layer with no home stack that is
+        not listed under ``excluded``.
+
+    """
+    scope: ApprovalScope = approval_scope(matrix, epic_id(bead))
+    verdicts: dict[str, str] = {row["id"]: row["verdict"] for row in result["reach"]}
+    excluded: set[str] = {row["id"] for row in result["excluded"]}
+    problems: list[str] = []
+    entry_id: EntryId
+    for entry_id in scope.entries:
+        entry: Entry = matrix.entry(entry_id)
+        verdict: str | None = verdicts.get(entry_id)
+        if entry.kind not in NO_VERDICT_KINDS and verdict not in {VERDICT_KEPT, VERDICT_CORRECTED}:
+            stated: str = (
+                f"its verdict is {VERDICT_PRUNED} but the link that reaches it is still in the matrix"
+                if verdict == VERDICT_PRUNED
+                else "it has no verdict"
+            )
+            problems.append(
+                f"reach: {entry_id} is in the Epic's reach ({scope.via[entry_id]}) and {stated}: review it and give "
+                f"it a {VERDICT_KEPT} or {VERDICT_CORRECTED} verdict, or remove the link that reaches it",
+            )
+        if entry.kind in HOMED_KINDS and entry_id not in excluded and not stacks_of(matrix, entry_id):
+            problems.append(
+                f"excluded: {entry_id} is in the Epic's reach and has no home stack: place it in a stack, or list "
+                "it under excluded with the reason no stack builds it",
+            )
+    return problems
+
+
 def _mechanical(run: StepRun, result: ArchitectureResult, criteria: Criteria, log: Path) -> CheckResult:
     """Run every check code can make on the matrix, the architect's result and the review log.
 
     Returns:
         The problems ``atw-matrix check`` reports for the matrix file, an Epic the matrix does
-        not hold, each architecture or technical-requirement criterion the result leaves
-        unanswered, and each problem of the Epic's review log.
+        not hold, each reach verdict and exclusion :func:`_reach_problems` finds, each
+        architecture or technical-requirement criterion the result leaves unanswered, and each
+        problem of the Epic's review log.
 
     """
     path: Path = matrix_file()
@@ -164,6 +225,8 @@ def _mechanical(run: StepRun, result: ArchitectureResult, criteria: Criteria, lo
     matrix: Matrix | None = None if problems else read_matrix(path)
     if matrix is not None and matrix.find(epic_id(str(run.bead))) is None:
         problems.append(f"the matrix has no entry for the Epic {run.bead}")
+    elif matrix is not None:
+        problems.extend(_reach_problems(matrix, str(run.bead), result))
     answered: set[str] = {answer["criterion"] for answer in result["criteria"]}
     unanswered: list[str] = [
         entry.id
