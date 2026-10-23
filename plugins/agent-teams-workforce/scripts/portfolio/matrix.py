@@ -508,8 +508,8 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = 
 
     Returns:
         0 after printing the result as one JSON object on stdout; 1 after printing why the
-        matrix refused on stderr. ``check`` prints its JSON object either way and returns 1 for
-        a matrix that does not conform.
+        matrix refused on stderr. ``check`` and ``apply`` print their JSON object either way and
+        return 1 for a matrix that does not conform or a change file that was not applied.
 
     Raises:
         RuntimeError: The sub-commands built and the registry's command table name different commands.
@@ -530,7 +530,7 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = 
         return EXIT_REFUSED
     sys.stdout.write(json.dumps(outcome.result, ensure_ascii=False) + "\n")
     if outcome.status != EXIT_OK:
-        sys.stderr.write(f"{PROGRAM} {command}: the matrix does not conform; see the problems on stdout\n")
+        sys.stderr.write(f"{PROGRAM} {command}: refused; see the problems on stdout\n")
     return outcome.status
 
 

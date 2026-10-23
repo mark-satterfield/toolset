@@ -182,7 +182,9 @@ Reading the flags to decide what is planned and what exists:
   `solutions-architect`, `repository-steward`, `script`. `settle`: `solutions-architect`,
   `decider`. `rename` and `remove`: `solutions-architect`, `repository-steward`, `operator`
   (`remove` also `script`). `move-repository`: `repository-steward`, `operator`. `commit`:
-  `script`, `repository-steward`, `build-driver`, `operator`. Reads need none.
+  `script`, `repository-steward`, `build-driver`, `operator`. `apply`: `solutions-architect`,
+  `repository-steward`, `script`, `decider`, and each operation of the file needs the role its
+  own sub-command needs. Reads need none.
 - Record a new fact:
   `atw-matrix put <kind> --side architecture --name "<name>" --purpose "<one or two sentences>" [kind options]`,
   then `atw-matrix link <kind> --from <id> --to <id> --side architecture [--heading ...]`. A
@@ -190,6 +192,11 @@ Reading the flags to decide what is planned and what exists:
   up with `find` first so one capability is one feature.
 - Keep it current in the same piece of work: `rename --from <id> --to <id>`,
   `remove <id> [--held]`, `move-repository --from <repo> --to <repo>`, `unlink ...`.
+- Many changes in one step: write them to one change file
+  (`skills/artifact-handoff/schemas/matrix-change.schema.json`: `{"operations": [{"op": "put" | "link" | "unlink" | "settle", ...}]}`,
+  each operation with the arguments of its sub-command, attributes under `attributes`) and run
+  `atw-matrix apply --file <path>`: one locked update, all or nothing, every failed operation
+  reported with its index.
 - Commit the file alone with `atw-matrix commit --bead <id>` (it pushes).
 - A seeding or session result file is recorded by a script step (`seed-apply`), never entry by
   entry by the session.

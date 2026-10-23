@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "matrix-change.schema.json",
+  "title": "Matrix change file",
+  "description": "The matrix changes one step makes, written to one file and applied in one locked update of the matrix (matrixwrite.apply_change_file, atw-matrix apply --file). Each operation takes the arguments of the atw-matrix sub-command it is named for. The file is applied whole or not at all: when any operation fails, nothing is written and every failure is reported with its operation's index.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["operations"],
+  "properties": {
+    "operations": {
+      "description": "The operations, applied in order, each to the matrix as the operations before it left it.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/Operation"}
+    }
+  },
+  "$defs": {
+    "EntryId": {"type": "string", "pattern": "^[a-z][A-Za-z]*:.+$"},
+    "Side": {"enum": ["architecture", "repository"]},
+    "Attributes": {
+      "description": "Attributes by the name the kinds registry declares (matrix-kinds.json); null removes one.",
+      "type": "object"
+    },
+    "Names": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "Operation": {
+      "oneOf": [
+        {"$ref": "#/$defs/Put"},
+        {"$ref": "#/$defs/Link"},
+        {"$ref": "#/$defs/Unlink"},
+        {"$ref": "#/$defs/Settle"}
+      ]
+    },
+    "Put": {
+      "description": "Add or change one entry: atw-matrix put.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "kind", "side"],
+      "properties": {
+        "op": {"const": "put"},
+        "kind": {"type": "string", "minLength": 1, "description": "The entry's kind."},
+        "side": {"$ref": "#/$defs/Side"},
+        "id": {"$ref": "#/$defs/EntryId", "description": "The entry's id; absent builds it from the kind and the name."},
+        "name": {"type": "string", "minLength": 1, "description": "The entry's name; needed for an entry that is new."},
+        "aliases": {"$ref": "#/$defs/Names", "description": "Other names the entry is known by; added to those held."},
+        "removeAliases": {"$ref": "#/$defs/Names", "description": "Aliases to remove from the entry."},
+        "purpose": {"type": "string", "minLength": 1, "description": "One or two sentences that identify the entry."},
+        "stack": {"$ref": "#/$defs/EntryId", "description": "The stack that holds a repository-side component, infrastructure or layer; it builds the id."},
+        "publishedBy": {"$ref": "#/$defs/EntryId", "description": "The service or component that publishes an event the architecture side records."},
+        "unset": {"$ref": "#/$defs/Names", "description": "The names of the attributes to remove from the entry."},
+        "attributes": {"$ref": "#/$defs/Attributes"}
+      }
+    },
+    "Link": {
+      "description": "Add one relationship or change its attributes: atw-matrix link.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "kind", "from", "to", "side"],
+      "properties": {
+        "op": {"const": "link"},
+        "kind": {"type": "string", "minLength": 1, "description": "The relationship's kind."},
+        "from": {"$ref": "#/$defs/EntryId"},
+        "to": {"$ref": "#/$defs/EntryId"},
+        "side": {"$ref": "#/$defs/Side"},
+        "attributes": {"$ref": "#/$defs/Attributes"}
+      }
+    },
+    "Unlink": {
+      "description": "Remove one relationship as one side states it: atw-matrix unlink. The attributes name the kind's key attributes, such as the heading of a describedBy.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "kind", "from", "to", "side"],
+      "properties": {
+        "op": {"const": "unlink"},
+        "kind": {"type": "string", "minLength": 1, "description": "The relationship's kind."},
+        "from": {"$ref": "#/$defs/EntryId"},
+        "to": {"$ref": "#/$defs/EntryId"},
+        "side": {"$ref": "#/$defs/Side"},
+        "attributes": {"$ref": "#/$defs/Attributes"}
+      }
+    },
+    "Settle": {
+      "description": "Record which statement of a disagreement stands: atw-matrix settle.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "id", "stands", "rule"],
+      "properties": {
+        "op": {"const": "settle"},
+        "id": {"$ref": "#/$defs/EntryId", "description": "The disagreement's id."},
+        "stands": {
+          "description": "The document (its id, or its path under the architecture root) and the heading of the statement that stands.",
+          "type": "array",
+          "prefixItems": [{"type": "string", "minLength": 1}, {"type": "string", "minLength": 1}],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "rule": {"type": "string", "minLength": 1, "description": "The rule the ruling was made by."},
+        "reason": {"type": "string", "description": "Why, when the rule does not say it all."}
+      }
+    }
+  }
+}

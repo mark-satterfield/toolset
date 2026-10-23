@@ -1,7 +1,8 @@
 """The sub-commands of ``atw-matrix`` that change the matrix, bring it up to date, seed it and mark it.
 
 ``matrix.py`` holds the reads and the command line; this module holds everything else: ``put``,
-``link``, ``unlink``, ``settle``, ``rename``, ``remove``, ``move-repository`` and ``commit``;
+``link``, ``unlink``, ``settle``, ``apply`` (a whole change file of those four in one update),
+``rename``, ``remove``, ``move-repository`` and ``commit``;
 ``sync-epics``, ``sync-documents`` and ``sync-events``; ``seed`` and its steps (``seed-stacks``,
 ``seed-packages``, ``seed-inputs``, ``seed-features``, ``seed-apply``); ``verify`` and the Task
 script's ``built``, ``work`` and ``affected``; ``check-reuse``. Each change is
@@ -39,7 +40,7 @@ from matrix_contract import (
     load_registry,
     relationship_kind,
 )
-from matrixcall import Call, Outcome
+from matrixcall import EXIT_OK, EXIT_REFUSED, Call, Outcome
 from matrixcode import COMMAND_VERIFY, record_verified
 from matrixevents import CATALOG_PATH, CatalogEvent, EventsSynced, read_catalog, sync_events
 from matrixquery import approval_view, impact_view
@@ -79,11 +80,13 @@ from matrixstore import (
 from matrixsync import DocumentsSynced, EpicBead, EpicsSynced, read_epics, sync_documents, sync_epics, vault_root
 from matrixtasks import COMMAND_AFFECTED, COMMAND_BUILT, COMMAND_WORK, TaskBead, affected, built, read_tasks, work
 from matrixwrite import (
+    ApplyResult,
     LinkResult,
     MoveResult,
     PutResult,
     SettleResult,
     UnlinkResult,
+    apply_change_file,
     commit,
     link,
     move_repository,
@@ -434,6 +437,23 @@ def _run_settle(call: Call) -> Outcome:
     return Outcome(update_matrix(call.matrix(), change, wait=call.lock_wait()))
 
 
+def _run_apply(call: Call) -> Outcome:
+    """Run ``apply``.
+
+    Returns:
+        The file, how many operations it holds, whether it was applied, every failed operation
+        with its index, and what each operation did; a refused status when nothing was applied.
+
+    """
+    result: ApplyResult = apply_change_file(
+        call.matrix(),
+        Path(call.required("file")).expanduser(),
+        role_of(call.environ),
+        wait=call.lock_wait(),
+    )
+    return Outcome(result, EXIT_OK if result["applied"] else EXIT_REFUSED)
+
+
 def _run_rename(call: Call) -> Outcome:
     """Run ``rename``.
 
@@ -763,6 +783,7 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     "link": _run_link,
     "unlink": _run_unlink,
     "settle": _run_settle,
+    "apply": _run_apply,
     "rename": _run_rename,
     "remove": _run_remove,
     "move-repository": _run_move_repository,
@@ -863,6 +884,16 @@ def _change_parsers(
     )
     settled.add_argument("--rule", required=True, help="the rule the ruling was made by")
     settled.add_argument("--reason", help="why, when the rule does not say it all")
+    change_file: argparse.ArgumentParser = commands.add_parser(
+        "apply",
+        parents=[where],
+        help="apply a change file of put, link, unlink and settle operations in one update, or none of it",
+    )
+    change_file.add_argument(
+        "--file",
+        required=True,
+        help="the change file (skills/artifact-handoff/schemas/matrix-change.schema.json)",
+    )
     renamed: argparse.ArgumentParser = commands.add_parser(
         "rename",
         parents=[where],

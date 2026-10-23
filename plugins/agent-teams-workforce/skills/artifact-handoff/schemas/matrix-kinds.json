@@ -449,6 +449,7 @@
     "link": {"writes": true, "roles": ["solutions-architect", "repository-steward", "script"]},
     "unlink": {"writes": true, "roles": ["solutions-architect", "repository-steward", "script"]},
     "settle": {"writes": true, "roles": ["solutions-architect", "decider"]},
+    "apply": {"writes": true, "roles": ["solutions-architect", "repository-steward", "script", "decider"]},
     "rename": {"writes": true, "roles": ["solutions-architect", "repository-steward", "operator"]},
     "remove": {"writes": true, "roles": ["solutions-architect", "repository-steward", "script", "operator"]},
     "move-repository": {"writes": true, "roles": ["repository-steward", "operator"]},

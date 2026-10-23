@@ -29,6 +29,7 @@ relationship an entry starts, or to the text under the document heading that des
 the flag on that item alone (``matrixstore.Matrix.put`` and ``Matrix.link``).
 """
 
+import json
 import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Fixed Git argv without a shell.
 import sys
@@ -64,8 +65,12 @@ from matrix_contract import (
     RelationshipKind,
     Role,
     Side,
+    as_side,
     entry_json,
+    entry_kind,
+    json_value,
     relationship_json,
+    relationship_kind,
 )
 from matrixstore import (
     ATTR_EXTERNAL_SOURCE,
@@ -81,9 +86,12 @@ from matrixstore import (
     matrix_lock,
     relationship_id,
     repository_side_id,
+    require_role,
     slug,
+    update_matrix,
 )
 from matrixtraverse import ApprovalScope, approval_scope
+from strictschema import validator
 
 NAMED_ID_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_STACK, KIND_PACKAGE, KIND_EVENT})
 """The kinds whose id is the kind and the entry's name as written: a stack name, a distribution name, a detail type."""
@@ -107,6 +115,15 @@ GIT_TIMEOUT: Final = 300.0
 COMMIT_MESSAGE: Final = "chore(matrix): record the matrix"
 UPSTREAM_RANGE: Final = "@{upstream}..HEAD"
 """The commits the branch has that the branch it pushes to does not."""
+CHANGE_SCHEMA_PATH: Final[Path] = (
+    Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "schemas" / "matrix-change.schema.json"
+)
+"""The schema of a matrix change file."""
+CHANGE_OPERATIONS: Final = "operations"
+"""The member of a change file that holds its operations."""
+CHANGE_DEFINITIONS: Final[dict[str, str]] = {"put": "Put", "link": "Link", "unlink": "Unlink", "settle": "Settle"}
+"""Each operation a change file may hold, with the schema definition of its arguments; each is the atw-matrix
+sub-command of the same name."""
 APPROVING_ROLE: Final[Role] = ROLE_SCRIPT
 """The one role that may set the approved flag: the script step that promotes an Epic's architecture and design."""
 
@@ -176,6 +193,31 @@ class ApproveResult(TypedDict):
     """The entries whose flag names another Epic, left as they are, in id order."""
     keptRelationships: int
     """How many relationships carry another Epic's flag, left as they are."""
+
+
+class ChangeFailure(TypedDict):
+    """One operation of a change file that could not be applied, or a fault of the file as a whole."""
+
+    index: int | None
+    """The operation's index in ``operations``, from 0; None for a fault of the file as a whole."""
+    op: str | None
+    """The operation's ``op``; None when the file or the operation names none."""
+    error: str
+
+
+class ApplyResult(TypedDict):
+    """What :func:`apply_change_file` did."""
+
+    file: str
+    operations: int
+    """How many operations the file holds."""
+    applied: bool
+    """True when every operation was applied and the matrix written; False when nothing was written."""
+    failures: list[ChangeFailure]
+    """Every operation that failed, in index order; empty when the file was applied."""
+    results: list[Mapping[str, object]]
+    """What each operation did, in index order, as the sub-command of the same name prints it; empty when
+    nothing was applied."""
 
 
 class MoveResult(TypedDict):
@@ -726,6 +768,287 @@ def approve(matrix: Matrix, bead: str, role: Role) -> ApproveResult:
             1 for held in scope.relationships if held.approved is not None and held.approved != flag
         ),
     }
+
+
+class _ChangeRefusedError(MatrixError):
+    """At least one operation of a change file failed; raised inside the locked update so nothing is written."""
+
+    def __init__(self, failures: list[ChangeFailure]) -> None:
+        """Hold the failures."""
+        super().__init__(f"{len(failures)} operation(s) of the change file failed")
+        self.failures: list[ChangeFailure] = failures
+
+
+def _text(operation: Mapping[str, JsonValue], member: str) -> str | None:
+    """Read a string member of an operation the schema has checked.
+
+    Returns:
+        The value, or None when the operation does not state it.
+
+    """
+    value: JsonValue = operation.get(member)
+    return value if isinstance(value, str) else None
+
+
+def _texts(operation: Mapping[str, JsonValue], member: str) -> list[str]:
+    """Read a list-of-strings member of an operation the schema has checked.
+
+    Returns:
+        The strings, or an empty list when the operation does not state it.
+
+    """
+    value: JsonValue = operation.get(member)
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+
+def _attributes(operation: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    """Read the attributes an operation states.
+
+    Returns:
+        The attributes by name; empty when it states none.
+
+    """
+    value: JsonValue = operation.get("attributes")
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _entry(operation: Mapping[str, JsonValue], member: str) -> EntryId:
+    """Read an entry id an operation must state.
+
+    Returns:
+        The id.
+
+    Raises:
+        MatrixError: The operation does not state it, or it is not an entry id.
+
+    """
+    stated: str | None = _text(operation, member)
+    if stated is None:
+        message: str = f"the operation states no {member}"
+        raise MatrixError(message)
+    return as_entry_id(stated)
+
+
+def _apply_put(matrix: Matrix, operation: Mapping[str, JsonValue]) -> PutResult:
+    """Apply one ``put`` operation, as ``atw-matrix put`` does.
+
+    Returns:
+        What :func:`put` did.
+
+    Raises:
+        MatrixRefusedError: ``unset`` names an attribute the operation also states, or
+            ``publishedBy`` is stated for another kind than an event or another side than the
+            architecture side.
+
+    """
+    kind: EntryKind = entry_kind(_text(operation, "kind") or "")
+    side: Side = as_side(_text(operation, "side") or "")
+    stated: dict[str, JsonValue] = _attributes(operation)
+    unset: list[str] = _texts(operation, "unset")
+    both: list[str] = sorted(set(unset) & set(stated))
+    message: str
+    if both:
+        message = f"unset names {', '.join(both)}, which the operation also states"
+        raise MatrixRefusedError(message)
+    published_by: EntryId | None = None if _text(operation, "publishedBy") is None else _entry(operation, "publishedBy")
+    if published_by is not None and (kind != KIND_EVENT or side != AUTHORITY_SIDE):
+        message = f"publishedBy is stated only for an event the {AUTHORITY_SIDE} side records"
+        raise MatrixRefusedError(message)
+    result: PutResult = put(
+        matrix,
+        kind,
+        side,
+        entry_id=None if _text(operation, "id") is None else _entry(operation, "id"),
+        name=_text(operation, "name"),
+        aliases=_texts(operation, "aliases"),
+        removed_aliases=_texts(operation, "removeAliases"),
+        purpose=_text(operation, "purpose"),
+        attributes={**stated, **dict.fromkeys(unset)},
+        stack=None if _text(operation, "stack") is None else _entry(operation, "stack"),
+    )
+    if published_by is not None:
+        link(matrix, REL_PUBLISHES, published_by, result["id"], AUTHORITY_SIDE)
+    return result
+
+
+def _apply_operation(matrix: Matrix, operation: Mapping[str, JsonValue]) -> Mapping[str, object]:
+    """Apply one operation of a change file to a loaded matrix.
+
+    Returns:
+        What the operation did, as the sub-command of the same name prints it.
+
+    Raises:
+        MatrixError: The operation names no operation this module applies.
+
+    """
+    op: str | None = _text(operation, "op")
+    if op == "put":
+        return _apply_put(matrix, operation)
+    if op == "settle":
+        stands: list[str] = _texts(operation, "stands")
+        return settle(
+            matrix,
+            _entry(operation, "id"),
+            stands[0],
+            stands[1],
+            _text(operation, "rule") or "",
+            _text(operation, "reason") or "",
+        )
+    if op in {"link", "unlink"}:
+        kind: RelationshipKind = relationship_kind(_text(operation, "kind") or "")
+        start: EntryId = _entry(operation, "from")
+        end: EntryId = _entry(operation, "to")
+        side: Side = as_side(_text(operation, "side") or "")
+        if op == "link":
+            return link(matrix, kind, start, end, side, _attributes(operation))
+        return unlink(matrix, kind, start, end, side, _attributes(operation))
+    message: str = f"{op!r} is not an operation of a change file; it holds {', '.join(CHANGE_DEFINITIONS)}"
+    raise MatrixError(message)
+
+
+def _failure(index: int | None, op: str | None, error: str) -> ChangeFailure:
+    """Name one failure of a change file.
+
+    Returns:
+        The failure.
+
+    """
+    return {"index": index, "op": op, "error": error}
+
+
+def _shape_failures(document: JsonValue) -> tuple[list[dict[str, JsonValue]], list[ChangeFailure]]:
+    """Check a decoded change file against its schema, each operation against the schema of its ``op``.
+
+    Returns:
+        The operations, and a failure for each operation (or for the file) the schema refuses.
+
+    """
+    schema: dict[str, JsonValue] = json.loads(CHANGE_SCHEMA_PATH.read_text(encoding="utf-8"))
+    if not isinstance(document, dict) or not isinstance(document.get(CHANGE_OPERATIONS), list):
+        return [], [_failure(None, None, f"a change file is an object whose {CHANGE_OPERATIONS} is a list")]
+    extra: list[str] = sorted(set(document) - {CHANGE_OPERATIONS})
+    failures: list[ChangeFailure] = []
+    if extra:
+        failures.append(_failure(None, None, f"a change file holds only {CHANGE_OPERATIONS}, not {', '.join(extra)}"))
+    operations: list[dict[str, JsonValue]] = []
+    listed: JsonValue = document[CHANGE_OPERATIONS]
+    index: int
+    item: JsonValue
+    for index, item in enumerate(listed if isinstance(listed, list) else []):
+        operation: dict[str, JsonValue] = item if isinstance(item, dict) else {}
+        operations.append(operation)
+        op: str | None = _text(operation, "op")
+        definition: str | None = CHANGE_DEFINITIONS.get(op or "")
+        if definition is None:
+            failures.append(_failure(index, op, f"op must be one of {', '.join(CHANGE_DEFINITIONS)}"))
+            continue
+        checking = validator(
+            {"$schema": schema["$schema"], "$defs": schema["$defs"], "$ref": f"#/$defs/{definition}"},
+            location=CHANGE_SCHEMA_PATH,
+        )
+        failures.extend(
+            _failure(index, op, f"{'/'.join(str(part) for part in error.absolute_path) or op}: {error.message}")
+            for error in checking.iter_errors(item)
+        )
+    return operations, failures
+
+
+def _failure_order(failure: ChangeFailure) -> int:
+    """Order failures: those of the file as a whole first, then by operation index.
+
+    Returns:
+        The sort key.
+
+    """
+    return -1 if failure["index"] is None else failure["index"]
+
+
+def _role_failures(operations: Sequence[Mapping[str, JsonValue]], role: Role) -> list[ChangeFailure]:
+    """Refuse each operation the role may not run as the sub-command of the same name.
+
+    Returns:
+        A failure for each operation the registry's command table does not allow the role.
+
+    """
+    failures: list[ChangeFailure] = []
+    index: int
+    operation: Mapping[str, JsonValue]
+    for index, operation in enumerate(operations):
+        op: str | None = _text(operation, "op")
+        try:
+            require_role(op or "", role)
+        except MatrixError as error:
+            failures.append(_failure(index, op, str(error)))
+    return failures
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def apply_change_file(
+    path: Path,
+    change_file: Path,
+    role: Role,
+    *,
+    wait: float = DEFAULT_LOCK_WAIT,
+) -> ApplyResult:
+    """Apply a whole matrix change file in one locked update of the matrix, or none of it.
+
+    The file is checked against ``matrix-change.schema.json``, each operation against the
+    schema of its ``op``, and each operation against the registry's command table for the
+    role, as ``atw-matrix`` checks the sub-command of the same name. Then, under the matrix's
+    lock, the operations the checks pass are applied in order to one read of the matrix, each as
+    the sub-command of the same name applies it, and the matrix is written once. When any check
+    or operation fails, every failure is reported with its operation's index and nothing is
+    written, so one correction of the file can address them all. The operations after a failed
+    one are still tried, against the matrix as the operations before them left it, so a failure
+    that follows from an earlier one is reported too.
+
+    Args:
+        path: The matrix file.
+        change_file: The change file.
+        role: Who wrote the change file: the role each operation is checked for.
+        wait: Seconds to wait for the matrix's lock.
+
+    Returns:
+        The file, how many operations it holds, whether it was applied, every failure and what
+        each operation did.
+
+    """
+    refused: ApplyResult = {"file": str(change_file), "operations": 0, "applied": False, "failures": [], "results": []}
+    try:
+        document: JsonValue = json_value(json.loads(change_file.read_text(encoding="utf-8")))
+    except (OSError, ValueError, TypeError) as error:
+        refused["failures"] = [_failure(None, None, f"cannot read {change_file}: {error}")]
+        return refused
+    operations, checked = _shape_failures(document)
+    checked.extend(_role_failures(operations, role))
+    refused["operations"] = len(operations)
+    skipped: set[int] = {failure["index"] for failure in checked if failure["index"] is not None}
+
+    def change(matrix: Matrix) -> list[Mapping[str, object]]:
+        results: list[Mapping[str, object]] = []
+        failed: list[ChangeFailure] = list(checked)
+        index: int
+        operation: dict[str, JsonValue]
+        for index, operation in enumerate(operations):
+            if index in skipped:
+                continue
+            try:
+                results.append(_apply_operation(matrix, operation))
+            except (MatrixError, ValueError, TypeError) as error:
+                failed.append(_failure(index, _text(operation, "op"), str(error)))
+        if failed:
+            raise _ChangeRefusedError(sorted(failed, key=_failure_order))
+        return results
+
+    try:
+        results: list[Mapping[str, object]] = update_matrix(path, change, wait=wait)
+    except _ChangeRefusedError as error:
+        refused["failures"] = error.failures
+        return refused
+    except MatrixError as error:
+        refused["failures"] = [*checked, _failure(None, None, str(error))]
+        return refused
+    return {**refused, "applied": True, "results": results}
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
