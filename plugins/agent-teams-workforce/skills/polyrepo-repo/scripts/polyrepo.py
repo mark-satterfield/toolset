@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --quiet --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["ruamel.yaml>=0.18", "pyyaml>=6", "tomlkit>=0.13"]
+# dependencies = ["ruamel.yaml>=0.18", "pyyaml>=6", "tomlkit>=0.13", "jsonschema>=4.18"]
 # ///
 """polyrepo — live facts about the project's repositories, and the manifest kept true to them.
 
@@ -75,8 +75,10 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
 import dataclasses
 import datetime as dt
+import fcntl
 import fnmatch
 import functools
 import hashlib
@@ -102,6 +104,7 @@ from ruamel.yaml.error import YAMLError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pipeline-contracts" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "resource-naming" / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "artifact-handoff" / "scripts"))
 from branch_sweep import Branch, RepoSweep, outcome, sweep_all
 from checks_sync import (
     CHECKS_JSON,
@@ -136,6 +139,7 @@ from gitnexus_setup import (
     remove_index,
     sync_group,
 )
+from matrix_contract import DEFAULT_MATRIX_PARTS, LOCK_DIRECTORY, LOCK_SUFFIX
 from name_sweep import (
     PYPROJECT,
     SRC_FOLDER,
@@ -179,7 +183,7 @@ from tooling_sync import load_spec as load_tooling_spec
 from tooling_sync import plan as plan_tooling
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Generator, Iterable, Mapping, Sequence
 
     from name_sweep import FileEdit, FileMove, Rule
     from naming_command import RepositoryNames
@@ -1496,6 +1500,8 @@ MATRIX_ROLE = "repository-steward"
 MATRIX_ROLE_ENV = "ATW_MATRIX_ROLE"
 MATRIX_FILE_ENV = "ATW_MATRIX"
 MATRIX_TIMEOUT = 300
+MATRIX_LOCK_WAIT = 120.0
+MATRIX_LOCK_POLL = 0.1
 EXECUTION_IMPORTED = "imported"
 EXECUTION_EXECUTABLE = "executable"
 PURPOSE_NOT_STATED = "The purpose is not stated."
@@ -2589,11 +2595,62 @@ def note_change(cfg: Config, title: str, lines: list[str]) -> None:
     cfg.change_lines.extend(lines)
 
 
+def matrix_file(cfg: Config) -> Path:
+    """Name the matrix file `atw-matrix` works on for this tool (see `matrix_run`).
+
+    Returns:
+        The file `$ATW_MATRIX` names, else the one under `$ATW_CONTROL_REPO`, else the one in the
+        control repository the config sits in.
+
+    """
+    stated = os.environ.get(MATRIX_FILE_ENV, "").strip()
+    if stated:
+        return Path(stated).expanduser()
+    control = os.environ.get(CONTROL_REPO_ENV, "").strip()
+    return (Path(control).expanduser() if control else cfg.file.parent.parent).joinpath(*DEFAULT_MATRIX_PARTS)
+
+
+@contextlib.contextmanager
+def matrix_lock(cfg: Config, wait: float = MATRIX_LOCK_WAIT) -> Generator[None]:
+    """Hold the matrix's lock, the one every `atw-matrix` write holds, while git changes the control repo.
+
+    Yields:
+        Control while the lock is held.
+
+    Raises:
+        GitFailedError: when another process held the lock for the whole wait.
+
+    """
+    path = matrix_file(cfg)
+    lock = path.parent / LOCK_DIRECTORY / f"{path.stem}{LOCK_SUFFIX}"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + wait
+    descriptor = os.open(lock, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError as exc:
+                if time.monotonic() >= deadline:
+                    msg = f"the matrix {path} stayed locked by another process for {wait} seconds"
+                    raise GitFailedError(msg) from exc
+                time.sleep(MATRIX_LOCK_POLL)
+        try:
+            yield
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+    finally:
+        os.close(descriptor)
+
+
 def commit_records(cfg: Config, subject: str, body: list[str] | None = None) -> dict[str, object]:
     """Commit the steward's own files, then pull --rebase and push.
 
     The files are the manifest, knowledge store and fleet list, committed on the default branch
     of the repo that holds them. The body lines, when given, follow the subject in the message.
+    The pull stashes and restores what else the repo has changed, the matrix file among them, so
+    it runs under the matrix's lock: no `atw-matrix` write runs while the file is stashed.
 
     Returns:
         {"status": "clean" | "pushed" | "failed", "files": [...], "error"?: str}.
@@ -2618,11 +2675,12 @@ def commit_records(cfg: Config, subject: str, body: list[str] | None = None) -> 
         return {"status": "clean", "files": []}
     b = cfg.default_branch
     branch = git_out(root, "symbolic-ref", "--short", "-q", "HEAD")
+    message = f"chore(polyrepo): {subject}" + ("\n\n" + "\n".join(f"- {ln}" for ln in body) if body else "")
     try:
         _require_branch(root, branch, b)
-        message = f"chore(polyrepo): {subject}" + ("\n\n" + "\n".join(f"- {ln}" for ln in body) if body else "")
         _commit_paths(root, files, message, force=True)
-        must(git(root, "pull", "--rebase", "--autostash", "--quiet", timeout=120))
+        with matrix_lock(cfg):
+            must(git(root, "pull", "--rebase", "--autostash", "--quiet", timeout=120))
         must(git(root, "push", "origin", b, timeout=120))
     except GitFailedError as exc:
         return {"status": "failed", "files": files, "error": str(exc)}
