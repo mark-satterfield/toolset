@@ -9,7 +9,7 @@ allowed-tools: [Bash, Workflow]
 Assess the architecture dependencies of one Epic in the beads tracker of the repository you
 are standing in, by dispatching the `dependency-assessment` workflow. An edge between two
 Epics is an architecture dependency: an architecture decision one Epic rests on should be
-designed from another Epic's requirements first, and the effective architecture does not already settle it
+designed from another Epic's requirements first, and the matrix does not hold that decision approved
 (`agent-teams-workforce:epic-sequencing`). The workflow writes the Epic's edges to beads and,
 in the matrix, what the Epic drives and rests on, then triggers `wsjf-scoring`, because edges
 decide RR-OE.
@@ -18,7 +18,8 @@ decide RR-OE.
 without it. The epic-dependency-assessor reads that Epic's full PRD, at the path the matrix holds for it,
 and names the architecture decisions its requirements drive and the ones it rests on. It asks
 the matrix what already states each decision (`atw-matrix find --kinds document,constraint,feature`,
-then `atw-matrix node`) and drops those a document the matrix returns as `effective` settles.
+then `atw-matrix node`) and drops only those the matrix holds approved; an entry existing or a
+document at `lifecycle: effective` settles nothing.
 It takes the related Epics from the matrix (`atw-matrix related --epic`, and
 `atw-matrix find --kinds requirement,feature` for an Epic no feature serves yet), reads those
 PRDs in full, and applies the edge test in both directions. It proposes every edge to or from

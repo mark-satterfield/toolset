@@ -4,11 +4,11 @@ description: >-
   The edge test for Epic-to-Epic dependency edges, and how to apply it to ONE Epic: read its
   full PRD, answer the foundation-layer checklist (drives, rests on or not touched for each
   of nine layers) and name the other architecture decisions it drives and rests on, check
-  the effective architecture, find the related Epics through the matrix, read the requirements of theirs that bear on each decision, and apply the
+  which of them the matrix holds approved, find the related Epics through the matrix, read the requirements of theirs that bear on each decision, and apply the
   test in both directions. An Epic is a PRD, a business requirement, and an edge is an ARCHITECTURE
   dependency, a judgment about the order in which architecture is established: it exists
   exactly where an architecture decision one Epic rests on should be designed from another
-  Epic's requirements first, and the effective architecture does not already settle it. Edges decide
+  Epic's requirements first, and the matrix does not hold that decision approved. Edges decide
   ELIGIBILITY (what may be elaborated at all); WSJF decides PRIORITY among what is
   eligible, and computes RR-OE from these edges. Use when proposing, reviewing or
   correcting the architecture dependencies of an Epic.
@@ -22,8 +22,8 @@ produced it.
 ## What an Epic dependency is
 
 An Epic is a PRD: a business requirement, a WHAT and not a HOW. When an Epic is elaborated,
-its architecture is designed, and the design made then becomes part of the effective
-architecture that every later Epic is designed against. So the order Epics are elaborated in decides which
+its architecture is designed and approved, and the approved design is what every later
+Epic is designed against. So the order Epics are elaborated in decides which
 requirements each architecture decision is designed from. An edge between two Epics is an
 architecture dependency, and it answers one question: **which requirements should this
 architecture decision be designed from first?**
@@ -39,42 +39,49 @@ record exists; that one reads data from or calls a capability of another — eac
 settled among Tasks, which are created after the architecture is settled and carry ordinary
 build dependencies of their own.
 
-A decision the effective architecture already settles is designed; no Epic edge is needed
-for it. As the effective architecture grows, fewer Epic edges exist.
+A decision the matrix holds approved is designed; no Epic edge is needed for it. As
+elaboration approves more of the architecture, fewer Epic edges exist.
 
-### Only an `effective` document settles anything
+The first Epic elaborated that needs a decision not yet approved designs and approves it,
+and later Epics design against it; the edges decide which Epic that is: the one whose
+requirements should drive the decision.
 
-An arc42 document settles a decision when, and only when, the matrix returns its entry with
-`lifecycle: effective`. A document at `in-review`, or in any other state, settles NOTHING,
-however normatively it is worded and whatever date it carries.
+### Only the matrix's `approved` flag settles anything
 
-Take the state from the matrix; never infer it. A dated ruling, a MUST, a table of values
-and a confident tone are all properties of the wording, and the wording is what an
-unreviewed document has most of. The matrix's `lifecycle` mirrors the document's own front
-matter, and a document becomes `effective` only through the architecture step of a
-`prd-to-spec` elaboration.
+A decision is settled when, and only when, the matrix entry or relationship that states it
+carries the `approved` flag (the `matrix` skill, "Approved, verified, effective and side",
+says what sets it). Nothing else settles a decision:
 
-What states a decision is found through the matrix, with `atw-matrix`:
+- A matrix entry existing is not approval.
+- A document's `lifecycle: effective` is not approval. A document is an unverified draft
+  unless the matrix holds its decisions approved, whatever lifecycle its front matter states,
+  however normatively it is worded and whatever date it carries.
+
+The draft is still useful: it says which decisions exist, what they may turn out to be, and
+which Epics share them. It never says a decision was made.
+
+Take the flag from the matrix; never infer it. What states a decision is found through the
+matrix, with `atw-matrix`:
 
 ```
 atw-matrix find --kinds document,constraint,feature --text "<the decision in words>"
 atw-matrix node <id>
+atw-matrix approval --epic <beads id>
 ```
 
 `find` ranks the documents, constraints and features that match the words, and an empty
-result means nothing states the decision. `node` returns one entry with its relationships:
-a document with its `lifecycle` and headings, a constraint with the document and heading it
-is `statedIn`, a feature with the documents and headings it is `describedBy`. Read the
-heading the matrix names, in that document and no other, when the entry alone does not say
-whether the decision is settled. The arc42 folders, their front matter and section 2 are
-not searched for this.
+result means nothing states the decision. `node` returns one entry with its relationships;
+an entry or relationship without an `approved` member is not approved. `approval --epic`
+shows which content of an Epic's approval scope is approved. Read the heading the matrix
+names, in that document and no other, when the entry alone does not say what the decision
+is. The arc42 folders, their front matter and section 2 are not searched for this.
 
-So when a document that bears on a decision is not `effective`, the effective architecture
-does not settle that decision, and the edge test proceeds as though the document were
-absent. Record the document id and heading you consulted and the `lifecycle` the matrix
-returned in the edge's `archCheck`, so a later reader can tell a document that settled the
-question from one that only sounded like it did. An assessment that drops an edge by citing
-a document that is not `effective` has ordered the Epics on an unchecked claim.
+So when the entry that states a decision is not approved, the decision is open, and the
+edge test proceeds on it. Record the entry id (and the document heading, for a document)
+you consulted and whether the matrix holds it approved in the edge's `archCheck`, so a later
+reader can tell an approved decision from one that only sounded settled. An assessment that
+drops an edge by citing anything but the `approved` flag has ordered the Epics on an
+unchecked claim.
 
 ## What an edge decides
 
@@ -95,7 +102,7 @@ that passes the test below, and none that does not.
 ## The test
 
 Set an edge from A to B where an architecture decision B rests on should be designed from
-A's requirements first, and the effective architecture does not already settle that decision — and nowhere
+A's requirements first, and the matrix does not hold that decision approved — and nowhere
 else. Not "this feels earlier", not "this is more important", and never "this must exist or
 be built first".
 
@@ -110,16 +117,17 @@ were designed on it.
 Never draw an edge that fails the test. Judge each candidate on the test alone and let the
 count come out wherever it comes out.
 
-**When unsure, draw the edge at `low` confidence.** A missing edge costs more than an extra
-one: a missing edge lets an Epic's architecture be designed from the wrong requirements,
-while an extra one only delays an Epic until its blocker is elaborated.
+**When the two Epics share a decision and you are unsure of the direction or the strength,
+draw the edge at `low` confidence.** Never draw an edge between Epics that share no open
+decision: unrelated Epics elaborate concurrently, and an edge between them delays one for
+nothing. Over-serializing is as wrong as a missing edge.
 
 ### Foundation Epics
 
 A foundation Epic is one whose requirements drive a foundation layer — networking, the
 chassis, identity, the event platform, or any other layer on the checklist below. It is
-upstream of every Epic that rests on that layer, unless an `effective` document already
-settles the layer. Those Epics are ruled by the checklist: an Epic that answers "rests on"
+upstream of every Epic that rests on that layer, unless the matrix holds the layer's
+decisions approved. Those Epics are ruled by the checklist: an Epic that answers "rests on"
 for a layer has an edge from each Epic that answers "drives" for it. The matrix names the
 Epics to answer it for (step 4 below).
 
@@ -166,15 +174,15 @@ and its `standing` and `withdrawn` lists are the edges on the Epic.
    the Epic's requirements should drive or that it rests on. An Epic is a PRD, a WHAT, and
    its architecture does not exist yet: this takes intuition about what the architecture
    could be.
-3. Check each layer and decision against the effective architecture, and drop every one it
-   already settles. Find what states each one with `atw-matrix find --kinds
+3. Check each layer and decision against the matrix's `approved` flag, and drop every one
+   the matrix holds approved. Find what states each one with `atw-matrix find --kinds
    document,constraint,feature --text "<the decision in words>"`, then `atw-matrix node <id>`
-   for each match that bears on it (see "Only an `effective` document settles anything").
-   Record, for each decision you keep, the document id and heading you consulted, the
-   `lifecycle` the matrix returned for it and why it leaves the decision open, or that the
-   lookup returned nothing: that record goes on every edge as `archCheck`, and an edge without
-   one is refused. As the effective architecture grows this becomes the answer for most
-   decisions: the check is the step's purpose, not a formality.
+   for each match that bears on it (see "Only the matrix's `approved` flag settles anything").
+   Record, for each decision you keep, the entry id (and the document heading, for a
+   document) you consulted and that the matrix does not hold it approved, or that the lookup
+   returned nothing: that record goes on every edge as `archCheck`, and an edge without one
+   is refused. As elaboration approves more of the architecture this becomes the answer for
+   most decisions: the check is the step's purpose, not a formality.
 4. Find the related Epics through the matrix: the context's `related` and `similar`, or
    `atw-matrix related --epic <beads id>` without a context, which returns the Epics that
    reach a feature, document, stack, service, component or infrastructure this Epic reaches,
@@ -228,7 +236,7 @@ step finds no identity architecture and designs one from a recovery flow's requi
 alone; sign-up / sign-in then either fits itself onto that minimal design, redesigns it and
 invalidates what password reset was elaborated against, or halts for attention. The edge
 exists to stop that, and an edge that stops nothing of that kind does not exist. Once the
-effective architecture settles the identity architecture, no identity Epic needs an edge for it.
+matrix holds the identity architecture approved, no identity Epic needs an edge for it.
 
 ## The edge file
 
@@ -256,11 +264,11 @@ revises.
   actually drive the decision.
 - No edge onto a closed Epic, and none out of one.
 - The foundation checklist is complete: every layer has an answer, and every layer the Epic
-  rests on has an edge from the Epic that drives it, or cites an `effective` document that
-  settles it.
+  rests on has an edge from the Epic that drives it, or cites the matrix entry that holds it
+  approved.
 - Every edge survives the test stated out loud. If the reason does not name an architecture
   decision that should be designed from the upstream Epic's requirements and that the
-  effective architecture does not already settle, delete the edge. A reason about something existing, being built,
+  matrix does not hold approved, delete the edge. A reason about something existing, being built,
   being deployed, being testable, or being read or called at runtime is a Task dependency;
   delete the edge.
 
@@ -272,14 +280,17 @@ revises.
 - Adding an edge to force a total order.
 - Adding an edge for a build fact — existence, deployment, testability, data flow — which
   belongs to Tasks.
-- Adding an edge for a decision the effective architecture already settles — one whose
-  document the matrix returns with `lifecycle: effective`.
-- Dropping an edge by citing a document that is not `effective`. The wording of an
-  unreviewed document is not evidence that the decision was made, and this is the error that
-  most easily ships as a confident reason nobody re-reads.
+- Adding an edge for a decision the matrix holds approved.
+- Dropping an edge by citing anything but the matrix's `approved` flag: a matrix entry that
+  exists, a document at `lifecycle: effective`, or the wording of a document. None of them is
+  evidence that the decision was made, and this is the error that most easily ships as a
+  confident reason nobody re-reads.
+- Adding an edge between Epics that share no open decision. Unrelated Epics elaborate
+  concurrently.
 - Searching the arc42 folders, their front matter or section 2, or a folder of PRDs, for
   what the matrix returns.
 - Withdrawing a standing edge without a reason that answers the reason recorded for it.
-- Leaving out an edge because you are unsure of it. Draw it at `low` confidence.
+- Leaving out an edge on a shared open decision because you are unsure of it. Draw it at
+  `low` confidence.
 - Scoring anything. Value and size belong to the `wsjf` rubric, and RR-OE is computed from
   the edges.

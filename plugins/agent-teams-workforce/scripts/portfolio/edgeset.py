@@ -86,7 +86,7 @@ class Edge:
     reason: str = ""
     confidence: str = ""
     #: What the architecture was checked for, and its verdict: why the decision this edge
-    #: orders is not one an effective architecture file already settles. Required on every
+    #: orders is not one the matrix holds approved. Required on every
     #: kept edge.
     arch_check: str = ""
     #: The answer to the recorded reason an earlier assessment withdrew this edge for.

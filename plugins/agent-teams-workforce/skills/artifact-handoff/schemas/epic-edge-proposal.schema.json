@@ -25,7 +25,7 @@
   },
   "$defs": {
     "Edge": {
-      "description": "One architecture dependency: an architecture decision `to` rests on should be designed from `from`'s requirements first, and no `effective` document settles it. `from` is elaborated before `to`; both are Epics.",
+      "description": "One architecture dependency: an architecture decision `to` rests on should be designed from `from`'s requirements first, and the matrix does not hold that decision approved. `from` is elaborated before `to`; both are Epics.",
       "type": "object",
       "additionalProperties": false,
       "required": ["from", "to", "reason", "confidence", "archCheck"],
@@ -34,7 +34,7 @@
         "to": {"description": "The beads id of the Epic that rests on the decision.", "type": "string"},
         "reason": {"description": "The architecture decision and whose requirements should drive it, in one line.", "type": "string"},
         "confidence": {"$ref": "dependency-assessment.schema.json#/$defs/Confidence"},
-        "archCheck": {"description": "The document id and heading the matrix returned for the decision this edge orders, the `lifecycle` it returned, and why that leaves the decision open; or that the lookup returned nothing. An edge without it is refused.", "type": "string"},
+        "archCheck": {"description": "The matrix entry id (with the document heading, for a document) that states the decision this edge orders, and that the matrix does not hold it approved; or that the lookup returned nothing. Only the `approved` flag settles a decision: an entry existing or a document at `lifecycle: effective` does not. An edge without it is refused.", "type": "string"},
         "answers": {"description": "Required only on an edge the context's `withdrawn` list covers: why the recorded withdrawal reason is wrong, on the architecture. Without it that edge is refused.", "type": "string"}
       }
     },
