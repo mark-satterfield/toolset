@@ -738,6 +738,31 @@ def children(repo: Path | None, parent: str, kind: str) -> list[JsonObject]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def existing(repo: Path | None, ids: list[str]) -> set[str]:
+    """Name which of the given ids are beads the tracker holds, from one `bd list` call.
+
+    Args:
+        repo: The central repository, or None for the `CONTROL_REPO_ENV` repository.
+        ids: The bead ids to look up.
+
+    Returns:
+        The ids among ``ids`` that the tracker holds, closed ones included; empty when ``ids`` is.
+
+    Raises:
+        GraphError: `bd` failed or did not return an array.
+
+    """
+    if not ids:
+        return set()
+    payload: JsonValue = _bd_json(["list", "--id", ",".join(ids), "--all", "--json", "-n", "0", "--readonly"], repo)
+    if not isinstance(payload, list):
+        msg: str = "`bd list --json` did not return an array"
+        raise GraphError(msg)
+    held: set[str] = {str(record.get("id")) for record in payload if isinstance(record, dict)}
+    return {bead_id for bead_id in ids if bead_id in held}
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def bead_of(record: JsonObject) -> Bead:
     """Normalize one tracker record, allowing omitted unset fields.
 

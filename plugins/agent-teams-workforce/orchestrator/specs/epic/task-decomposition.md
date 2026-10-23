@@ -60,7 +60,11 @@ A write finds the Task under the Story by its elaboration key, and failing that 
 cites and by its title. A Task that exists is updated where it differs, or left as it is once
 building has started; a second Task is never created, so the step is safe to run again after an
 invalidation. A Task's edges onto the Tasks of the same Story it depends on are written with it,
-which is why the steps run in build order.
+which is why the steps run in build order. A blocker outside the Story (`blockedByExternal`) is
+written only when the tracker holds that bead; one it does not hold is left out with a warning.
+A Task whose `type` is in the infrastructure vocabulary (`infra-vocabulary.schema.json`), or that
+builds a piece of infrastructure, carries the label `infrastructure`, so its build adds the Infra
+Intent phase.
 
 A Task's description ends with its build contract. For each event the Task cites, the contract
 lists it the way the Story document does: `E<n>: <name>, published by <publishers>:
@@ -73,7 +77,8 @@ the files `spec`, `data model`, `criteria`, `ui sources` when present, `TRD`, `s
 ## Retiring superseded Tasks
 
 When the decomposer's step runs again and its plan no longer names a Task bead that elaboration
-wrote earlier and nobody has started, step 7 deletes that bead. Before it does, each `blocks` edge
+wrote earlier (its elaboration key is a `task:` key of the Story) and nobody has started, step 7
+deletes that bead. A Task bead under the Story that elaboration did not write is never deleted. Before it does, each `blocks` edge
 from a Task of another Story onto it is added onto every written Task that cites an item it cited.
 An edge with no such Task is reported as a warning. On a first run the step finds nothing to do.
 

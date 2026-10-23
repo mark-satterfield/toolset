@@ -84,8 +84,9 @@ from bead_metadata import (
 )
 
 # isort: split
-from matrix_contract import KIND_STACK, Entry, EntryId
-from matrixstore import Matrix, matrix_path, read_matrix
+from infra_vocabulary import INFRA_TYPES
+from matrix_contract import KIND_INFRASTRUCTURE, KIND_STACK, Entry, EntryId
+from matrixstore import Matrix, as_entry_id, kind_of, matrix_path, read_matrix
 from matrixtraverse import capabilities
 
 #: The surfaces a Task may declare; anything else is dropped.
@@ -460,6 +461,9 @@ class Task:
     matrix_elements: list[str] = field(default_factory=list)
     events: list[str] = field(default_factory=list)
     """Each event the Task cites, as :func:`event_text` renders it."""
+    infrastructure: bool = False
+    """Whether the Task is infrastructure work: its stated type is in the infrastructure vocabulary,
+    or it builds a piece of infrastructure. Its bead is labelled so the build adds Infra Intent."""
 
     def __post_init__(self) -> None:
         """Validate every constructor field, including all collection entries."""
@@ -1202,6 +1206,7 @@ class _TaskDocument:
     surfaces: tuple[str, ...] | None
     reuses: str | None
     blocked_by_external: tuple[str, ...]
+    kind: str
 
     def __post_init__(self) -> None:
         values: tuple[str, ...]
@@ -1222,7 +1227,7 @@ class _TaskDocument:
             not isinstance(self.surfaces, tuple) or any(not isinstance(value, str) for value in self.surfaces)
         ):
             raise TypeError(_ARGUMENT_ERROR)
-        if self.reuses is not None and not isinstance(self.reuses, str):
+        if (self.reuses is not None and not isinstance(self.reuses, str)) or not isinstance(self.kind, str):
             raise TypeError(_ARGUMENT_ERROR)
 
 
@@ -1255,6 +1260,7 @@ def _task_document(value: JsonObject) -> _TaskDocument:
         surfaces=tuple(surfaces) if surfaces is not None else None,
         reuses=check_type(reuses, str).strip() or None if reuses is not None else None,
         blocked_by_external=_task_strings(value.get("blockedByExternal")),
+        kind=check_type(value.get("type") or "", str).strip().casefold(),
     )
 
 
@@ -1305,6 +1311,8 @@ def _read_task(key: str, t: _TaskDocument, sources: _TaskSources) -> Task:
         cds_design_source=source,
         cds_bundles=bundles,
         cds_artifacts=artifacts,
+        infrastructure=t.kind in INFRA_TYPES
+        or any(kind_of(as_entry_id(entry)) == KIND_INFRASTRUCTURE for entry in built),
     )
 
 

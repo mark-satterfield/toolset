@@ -128,6 +128,9 @@ from recon_contract import DESIGN_SOURCES, DesignSource
 from task_deps_contract import KIND_CONTRACT, KIND_DATA, KIND_INFRASTRUCTURE
 
 #: The metadata keys the build lane writes on a Task; any of them set means the Task was started.
+INFRASTRUCTURE_LABEL: Final = "infrastructure"
+"""The label of the infrastructure vocabulary (`infra-vocabulary.schema.json`) that marks an infrastructure Task,
+so its build adds the Infra Intent phase."""
 _BUILD_LANE_KEYS: Final[frozenset[str]] = frozenset((*BUILD_LIFECYCLE_KEYS, *CDS_AUDIT_KEYS))
 
 #: The one status a matched Story or Task is rewritten in.
@@ -1281,7 +1284,7 @@ class _TaskWriter:
                 raise HierarchyError(msg)
             self.blockers.append(blocker.id)
         self.story_ids = {b.id for b in self.keyed.values()}
-        self.outer = list(dict.fromkeys([*self.task.blocked_by_external, *(self.external or [])]))
+        self.outer = self._held(list(dict.fromkeys([*self.task.blocked_by_external, *(self.external or [])])))
         self.inner = [b for b in self.outer if b in self.story_ids]
         if self.inner:
             self.warnings.append(
@@ -1324,6 +1327,19 @@ class _TaskWriter:
             },
         }
 
+    def _held(self, ids: list[str]) -> list[str]:
+        """Keep the blocker ids the tracker holds, with a warning for each it does not.
+
+        Returns:
+            The ids, in order, that name a bead.
+
+        """
+        held: set[str] = beadgraph.existing(self.writer.repo, ids)
+        missing: list[str] = [bead_id for bead_id in ids if bead_id not in held]
+        if missing:
+            self.warnings.append(f"{self.key}: blockers {', '.join(missing)} name no bead; left out")
+        return [bead_id for bead_id in ids if bead_id in held]
+
     def _persist(self) -> None:
         """Create, retain, or refresh the prepared Task and its edges."""
         b: str
@@ -1341,6 +1357,8 @@ class _TaskWriter:
             )
             if self.blockers or self.outer:
                 args += ["--deps", ",".join(f"blocked-by:{b}" for b in [*self.blockers, *self.outer])]
+            if self.task.infrastructure:
+                args += ["--labels", INFRASTRUCTURE_LABEL]
             self.task_id, self.action = (self.writer.create(args, self.task.elab_key or self.key), "created")
             self.edges["added"] = len(self.blockers) + len(self.outer)
             self.outside = self.outer
@@ -1351,6 +1369,8 @@ class _TaskWriter:
             self.action = (
                 "updated" if _refresh(self.writer, self.bead, self.task.title, self.text, self.meta) else "unchanged"
             )
+            if self.task.infrastructure:
+                self.writer.bd(["label", "add", self.bead.id, INFRASTRUCTURE_LABEL])
             add: list[str] = [b for b in [*self.blockers, *self.outer] if b not in self.bead.blockers]
             drop: list[str] = [b for b in self.bead.blockers if b in self.story_ids and b not in self.blockers]
             if add:
@@ -2009,8 +2029,9 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
 ) -> SupersededTasks:
     """Delete the unstarted Task beads a Story's saved Tasks no longer name.
 
-    A Task bead elaboration wrote under the Story that no saved Task matches and that no one has
-    started is superseded. Each `blocks` edge from a Task of another Story onto it is first added
+    A Task bead elaboration wrote under the Story (its elaboration key is a ``task:`` key of the
+    Story) that no saved Task matches and that no one has started is superseded; a Task bead
+    elaboration did not write is never touched. Each `blocks` edge from a Task of another Story onto it is first added
     onto every written Task that cites an item it cited; then the superseded beads are deleted.
     Run again, it adds no edge twice and finds nothing left to delete.
 
@@ -2054,7 +2075,9 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
     left: list[Bead]
     matched, left = _match_tasks(tasks, beads, files.slug, story_builds(files.scope))
     cited: dict[str, set[str]] = {
-        bead.id: set(_cited_ids(bead.metadata.get(KEY_REQUIREMENT_IDS))) for bead in left if not task_started(bead)
+        bead.id: set(_cited_ids(bead.metadata.get(KEY_REQUIREMENT_IDS)))
+        for bead in left
+        if not task_started(bead) and str(bead.metadata.get(KEY_ELAB_KEY) or "").startswith(f"task:{files.slug}:")
     }
     builds: dict[str, set[str]] = {
         matched[task.key].id: set(task.requirement_ids) for task in tasks if task.key in matched
