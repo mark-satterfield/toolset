@@ -9,6 +9,7 @@ journal's artifacts, so it is the same whichever dispatch ran a step.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -23,6 +24,7 @@ import elaboration
 import elaborationcontracts
 from driver_surface_types import ARCH_PATH_ENV, CONTROL_REPO_ENV, PRD_DIR_ENV
 from elaborationcontracts import Finished, Refused, Released, Started
+from matrix_contract import LOCK_DIRECTORY, MatrixError
 from matrixstore import Matrix, matrix_path, update_matrix
 from matrixsync import EpicBead, program_output, read_epics, sync_documents, sync_epics, vault_root
 from matrixtraverse import epic_id
@@ -116,6 +118,8 @@ REGISTERED: Final = (
 )
 """The flow modules imported for the steps they register and nothing else."""
 LOGGER = logging.getLogger(__name__)
+SYNC_RECORD: Final = "documents-synced.json"
+"""The record, beside the matrix's lock, of the vault commit the document entries were last synced at."""
 
 type JsonObject = dict[str, JsonValue]
 
@@ -220,25 +224,101 @@ def outermost_steps() -> list[StepPlan]:
     ]
 
 
+def _sync_record(matrix: Path) -> Path:
+    """Name the record of the vault commit the matrix's document entries were last synced at.
+
+    Returns:
+        The record file, in the matrix's state folder.
+
+    """
+    return matrix.parent / LOCK_DIRECTORY / SYNC_RECORD
+
+
+def _git_names(vault: Path, arguments: list[str]) -> set[str]:
+    """Run one git command in the vault that prints one path per line.
+
+    Returns:
+        The paths it printed, relative to the vault root.
+
+    """
+    return {line for line in program_output("git", arguments, vault).splitlines() if line.strip()}
+
+
+def _uncommitted(vault: Path, scope: str) -> set[str]:
+    """List the files under the architecture root whose working copy differs from the vault's last commit.
+
+    Returns:
+        The changed, deleted and untracked files, relative to the vault root.
+
+    """
+    return _git_names(vault, ["diff", "--name-only", "--no-renames", "HEAD", "--", scope]) | _git_names(
+        vault,
+        ["ls-files", "--others", "--exclude-standard", "--", scope],
+    )
+
+
+def _since_record(record: Path, vault: Path, arch: Path, scope: str) -> set[str] | None:
+    """List the files changed since the recorded sync: committed since its commit, or uncommitted then.
+
+    Returns:
+        The files, relative to the vault root; None when there is no usable record (none, another
+        architecture root, or a commit the vault cannot compare with), so every document is read.
+
+    """
+    try:
+        recorded: object = json.loads(record.read_text(encoding="utf-8"))
+    except FileNotFoundError, ValueError:
+        return None
+    if not isinstance(recorded, dict) or recorded.get("architectureRoot") != str(arch):
+        return None
+    commit: object = recorded.get("vaultCommit")
+    dirty: object = recorded.get("dirty")
+    if not isinstance(commit, str) or not isinstance(dirty, list):
+        return None
+    try:
+        committed: set[str] = _git_names(vault, ["diff", "--name-only", "--no-renames", commit, "HEAD", "--", scope])
+    except MatrixError:
+        return None
+    return committed | {str(name) for name in dirty}
+
+
 def _sync_matrix(epics: list[EpicBead], prd: Path, arch: Path) -> str:
-    """Bring the Epic's entry, its requirements and the document entries up to date.
+    """Bring the Epic's entry, its requirements and the changed document entries up to date.
 
     One matrix change does what ``atw-matrix sync-epics --bead`` and ``sync-documents`` do: the
-    Epic with its PRD path and hash and one requirement per heading; every arc42 document with its
-    lifecycle and headings.
+    Epic with its PRD path and hash and one requirement per heading; and each arc42 document
+    changed since the vault commit the last sync recorded, with its lifecycle and headings. A
+    changed document is one committed since that commit, or one uncommitted then or now. With no
+    usable record every document is read. The record is written under the matrix's lock with the
+    change, and removed when the matrix could not be written, so it never names a commit the
+    matrix does not reflect.
 
     Returns:
         The vault commit the documents were read at.
 
     """
-    commit: str = program_output("git", ["rev-parse", "HEAD"], vault_root(arch)).strip()
+    vault: Path = vault_root(arch)
+    scope: str = arch.relative_to(vault).as_posix() or "."
+    matrix: Path = matrix_path(None, os.environ)
+    record: Path = _sync_record(matrix)
 
-    def change(matrix: Matrix) -> None:
-        sync_epics(matrix, epics, env_path(PRD_DIR_ENV), prd=str(prd))
-        sync_documents(matrix, arch)
+    def change(held: Matrix) -> str:
+        commit: str = program_output("git", ["rev-parse", "HEAD"], vault).strip()
+        dirty: set[str] = _uncommitted(vault, scope)
+        since: set[str] | None = _since_record(record, vault, arch, scope)
+        sync_epics(held, epics, env_path(PRD_DIR_ENV), prd=str(prd))
+        if since is None:
+            sync_documents(held, arch)
+        else:
+            sync_documents(held, arch, paths=sorted(str(vault / name) for name in since | dirty))
+        write_json(record, {"architectureRoot": str(arch), "vaultCommit": commit, "dirty": sorted(dirty)})
+        return commit
 
-    update_matrix(matrix_path(None, os.environ), change)
-    return commit
+    try:
+        return update_matrix(matrix, change)
+    except BaseException:
+        record.unlink(missing_ok=True)
+        raise
 
 
 @script_step(OPEN_RUN)
