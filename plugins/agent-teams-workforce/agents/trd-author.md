@@ -15,7 +15,6 @@ skills:
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:effective-architecture
 - agent-teams-workforce:matrix
-- agent-teams-workforce:python-lambda-packaging
 effort: medium
 color: teal
 ---
