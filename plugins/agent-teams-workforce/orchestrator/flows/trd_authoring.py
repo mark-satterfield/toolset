@@ -75,6 +75,37 @@ class DocumentValidationError(ValueError):
     """An authored document fails its content contract."""
 
 
+class _JsonSafeLoader(yaml.SafeLoader):
+    """A safe YAML loader whose values are all JSON values: a date or a time stays its text."""
+
+
+def _timestamp_text(loader: yaml.SafeLoader, node: yaml.ScalarNode) -> str:
+    """Construct a YAML timestamp as the text it is written as.
+
+    Returns:
+        The scalar's text.
+
+    """
+    return loader.construct_scalar(node)
+
+
+_JsonSafeLoader.add_constructor("tag:yaml.org,2002:timestamp", _timestamp_text)
+
+
+def _json_safe_yaml(text: str) -> object:
+    """Load one YAML document so that every value is a JSON value.
+
+    Returns:
+        The document; a date or a time in it is its text.
+
+    """
+    loader: _JsonSafeLoader = _JsonSafeLoader(text)
+    try:
+        return loader.get_single_data()
+    finally:
+        loader.dispose()
+
+
 def _anchor(heading: str) -> str:
     """Reduce a heading to the form a link to it is written in.
 
@@ -189,7 +220,7 @@ def document(path: Path, matrix: Matrix, definition: str) -> tuple[list[str], li
         message = f"{path}: YAML frontmatter is missing"
         raise DocumentValidationError(message)
     try:
-        raw_front: object = yaml.safe_load(text[4:].split("\n---", 1)[0]) or {}
+        raw_front: object = _json_safe_yaml(text[4:].split("\n---", 1)[0]) or {}
     except yaml.YAMLError as exc:
         message = f"{path}: invalid YAML frontmatter: {exc}"
         raise DocumentValidationError(message) from exc
