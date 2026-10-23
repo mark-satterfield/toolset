@@ -59,6 +59,12 @@ A requirement whose element the PRD's need does not yet name applies to the Epic
 for which neither the PRD nor the effective documents give a source; the TRD holds only sourced
 requirements.
 
+A TRD already at `trdPath` is earlier work on this Epic: update it in place from these sources
+instead of writing it again. Keep each requirement, under its id, whose source still states it;
+correct one whose source has moved or changed; remove one that no source states any longer, as
+"Every requirement" says for a removed id. Add what the sources state that it lacks. The answer
+lists every requirement the TRD then states, as for a first write.
+
 ### Mode `update`
 
 The request lists additions, changes and removals by id, and the shared capabilities the design

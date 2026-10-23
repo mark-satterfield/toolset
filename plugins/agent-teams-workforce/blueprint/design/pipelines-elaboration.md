@@ -338,7 +338,10 @@ gap in the architecture.
 higher-level architecture is complete, and read by detailed design and by the build.
 **Boundary:** TRD validation detail is not drawn. The owner's future separate TRD input document
 is not drawn as a store: the owner said "do not focus on this now"; its place is the initial
-write, where "we would pull in that human-written Epic-epecific guidence".
+write, where "we would pull in that human-written Epic-epecific guidence". A TRD an earlier run
+left for the Epic is updated in place by the initial write, not written again, and a state file
+the solutions architect left is checked and corrected, not judged again from nothing: an
+in-flight Epic picks up where it left off.
 **Sources:** The owner: "I think the TRD actually gets written and updated in a few phases."
 On the initial write: "While a Product Requirements Document (PRD) focuses on what the product
 should do (functional requirements), a TRD focuses on reuirements not considered functional. NFRs

@@ -412,7 +412,7 @@
       "properties": {
         "mode": {"$ref": "#/$defs/TrdMode"},
         "requirementIds": {"description": "For `initial`, every requirement id in the TRD; for `update`, the ids added, changed and removed.", "type": "array", "items": {"type": "string"}},
-        "removed": {"description": "For `update`, the ids of the requirements removed from the TRD; empty for `initial`.", "type": "array", "items": {"type": "string", "minLength": 1}},
+        "removed": {"description": "The ids of the requirements removed from the TRD: for `update`, those the request removes; for `initial`, those a TRD already at `trdPath` held that the write removed, empty when there was none.", "type": "array", "items": {"type": "string", "minLength": 1}},
         "requirements": {"description": "Every requirement this answer's TRD write added or changed, exactly as the TRD now states it: for `initial`, every requirement the TRD states, one entry for each id in `requirementIds`; for `update`, each requirement added or changed. A removed requirement is named in `requirementIds` only. The script records the matrix's constraints, each a pointer to its requirement, from these entries and from no other file.", "type": "array", "items": {"$ref": "#/$defs/TrdRequirement"}},
         "noSource": {"type": "array", "items": {"$ref": "#/$defs/NoSource"}},
         "summary": {"type": "string", "minLength": 1}

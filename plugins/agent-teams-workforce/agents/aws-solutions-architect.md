@@ -150,8 +150,10 @@ the PRD; anything new or changed is updated in the matrix.
    effective statements bear on it and two of them disagree; no effective statement meets it.
    An effective statement that exists is not by that fact enough.
 6. Write the state file at the path the brief gives, to `architecture-state.schema.json`. Its
-   conclusion is your starting point, not your result. Then start your result as "Before you
-   finish" says.
+   conclusion is your starting point, not your result. A state file already at that path is
+   earlier work on this Epic: check each need it judges against the PRD, the TRD and the
+   architecture as they are now, and correct it in place instead of judging from nothing. Then
+   start your result as "Before you finish" says.
 7. Design what fills every gap, as the rest of this definition says, and record in the matrix
    everything new or changed as you go ("Decide what the architecture should be"). The order is
    the one "The TRD" gives: the higher-level architecture that goes in arc42, then the TRD
