@@ -42,7 +42,7 @@ Lambda creates execution environments to run your function. Components:
 
 ### Layers
 
-Reusable packages of libraries, dependencies, or custom runtimes (up to 5 per function).
+Reusable packages of libraries, dependencies, or custom runtimes (up to 5 per function). The function and all its layers together may hold at most 250 MB unzipped.
 
 ## Common Patterns
 
@@ -214,7 +214,7 @@ aws lambda invoke \
 - **Right-size memory**: More memory = more CPU = faster execution
 - **Minimize cold starts**: smaller package and lazy imports, more memory, ARM64, SnapStart where the runtime supports it; Provisioned Concurrency only when a stated latency requirement needs it (see Cold Start Latency)
 - **Optimize package size**: Smaller packages deploy faster
-- **Use layers** for shared dependencies
+- **Decide every dependency's home** as [python-lambda-packaging](../python-lambda-packaging/SKILL.md) sets out
 - **Initialize outside handler**: Reuse connections across invocations
 
 ```python

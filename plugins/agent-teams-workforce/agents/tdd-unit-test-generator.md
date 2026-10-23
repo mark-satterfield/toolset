@@ -12,7 +12,7 @@ disallowedTools: AskUserQuestion
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:tdd-guide, agent-teams-workforce:cumulative-regression, agent-teams-workforce:python-coding, agent-teams-workforce:typescript-coding, agent-teams-workforce:web-frontend-coding, agent-teams-workforce:cdk-coding, agent-teams-workforce:software-engineering, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:tdd-guide, agent-teams-workforce:cumulative-regression, agent-teams-workforce:python-coding, agent-teams-workforce:typescript-coding, agent-teams-workforce:web-frontend-coding, agent-teams-workforce:cdk-coding, agent-teams-workforce:software-engineering, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-lambda-packaging]
 effort: medium
 color: red
 mcpServers:

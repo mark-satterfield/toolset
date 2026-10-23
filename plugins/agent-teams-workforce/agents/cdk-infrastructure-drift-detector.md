@@ -11,7 +11,7 @@ disallowedTools: AskUserQuestion, Edit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-cdk-development, agent-teams-workforce:cloudformation, aws-core:aws-cdk, aws-core:aws-cloudformation]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-cdk-development, agent-teams-workforce:cloudformation, aws-core:aws-cdk, aws-core:aws-cloudformation, agent-teams-workforce:python-lambda-packaging]
 effort: low
 isolation: worktree
 color: pink

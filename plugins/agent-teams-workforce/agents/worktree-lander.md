@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion, NotebookEdit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:software-engineering, agent-teams-workforce:python-coding, agent-teams-workforce:typescript-coding, agent-teams-workforce:shell-coding]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:software-engineering, agent-teams-workforce:python-coding, agent-teams-workforce:typescript-coding, agent-teams-workforce:shell-coding, agent-teams-workforce:python-lambda-packaging]
 effort: medium
 color: pink
 ---

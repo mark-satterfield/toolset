@@ -40,7 +40,10 @@ that holds only this Task's data; how to do the job is here and in your own defi
 3. A value known only at deploy time, such as the account, the region or the environment, is resolved
    at deploy time (a CDK prop or deploy-time reference, or an environment variable the stack sets).
    Write no literal for it and never name it in `upstreamMissing`.
-4. The constraints are the owner's, in arc42 section 2; everything else in the architecture is the
+4. When the change alters what a deliverable imports, declares or packages, follow the
+   `python-lambda-packaging` skill, which states when it applies, and put its packaging record in
+   `notes`.
+5. The constraints are the owner's, in arc42 section 2; everything else in the architecture is the
    design so far, followed as established patterns unless a design states a reason and evidence to
    change it.
 

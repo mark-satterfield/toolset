@@ -35,6 +35,7 @@ skills:
 - agent-teams-workforce:cdk-coding
 - agent-teams-workforce:resource-naming
 - agent-teams-workforce:matrix
+- agent-teams-workforce:python-lambda-packaging
 effort: medium
 isolation: worktree
 color: cyan

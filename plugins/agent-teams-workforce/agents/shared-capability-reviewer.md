@@ -6,7 +6,7 @@ disallowedTools: AskUserQuestion, Edit, Write, Bash, Skill
 model: sonnet
 effort: low
 maxTurns: 20
-skills: [agent-teams-workforce:subagent-contract]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:python-lambda-packaging]
 mcpServers:
   - gitnexus
 ---

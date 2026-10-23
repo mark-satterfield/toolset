@@ -568,6 +568,7 @@ Replace these five recurring habits on sight. Each row points to the section tha
 - Follow KISS: choose the simplest design that meets the requirement, readable without explanation.
 - Prioritize composition over inheritance: give a class the collaborators it needs as attributes, and describe shared behavior with a `Protocol`.
 - Write no global variables. Pass state explicitly, as parameters and return values. One exception: in a Lambda handler module, objects created once in the init phase at module level and never mutated per invocation are allowed, because Lambda reuses them across invocations of the same execution environment (https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html): module-level constants, Powertools instances (`Logger`, `Tracer`, `Metrics`, the idempotency persistence layer) and AWS SDK clients and resources. Everything else stays parameter-passed.
+- Before adding, removing or moving a third-party import or dependency, follow [python-lambda-packaging](../python-lambda-packaging/SKILL.md).
 - Expose an attribute through `@property` in place of explicit getter and setter methods.
 
   Instead of:

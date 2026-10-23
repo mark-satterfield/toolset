@@ -225,6 +225,12 @@ The owner:
 
 The owner, 2026-10-19: "But everything needs should have specialized skills and/or instructions and/or mcp servers. Remember that we have much more from AWS than just the mcp-server. It's an entire toolkit. Let's take advantage of everything AWS has to offer."
 
+#### Python packaging is decided by a procedure, not by training
+
+The owner, 2026-10-22: "No. Not just knowledge. Agents ignore knowledge. I need instructions that tell agents what to do.  This is why I think skills are a good way to teach the agent how to decide what to put in the pyproject.toml files." and "when agents in the plugin need to work on any of the4se repos, I need them to also do better than what they were doing with model training.  And then we need to include the skill in any agent that would code or refactor or build repo, or do anything that would potentially create or make changes to imports, pyproject.toml files, CDKs, or anything else that may be affected by a change in the code or a library or any import or layer."
+
+The skill is `python-lambda-packaging`.
+
 ## Bugs
 
 A Bug bead is a report that something is wrong. It is not pipeline work, and the driver

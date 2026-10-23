@@ -9,8 +9,7 @@ Strategies and patterns for deploying Lambda functions.
 Best for small functions (< 50 MB):
 
 ```bash
-# Package and deploy
-zip -r function.zip . -x "*.git*"
+# function.zip is built as python-lambda-packaging sets out
 
 aws lambda update-function-code \
   --function-name MyFunction \
@@ -19,7 +18,7 @@ aws lambda update-function-code \
 
 ### S3 Deployment
 
-Required for packages > 50 MB (up to 250 MB unzipped):
+Required for packages > 50 MB zipped (the function and all its layers together hold at most 250 MB unzipped):
 
 ```bash
 # Upload to S3
@@ -194,19 +193,13 @@ aws lambda update-alias \
 
 ### Create a Layer
 
-Python dependencies:
+What a layer holds, how it is built for the function's Python version and architecture, and what the functions on it stop declaring are decided by [python-lambda-packaging](../python-lambda-packaging/SKILL.md). Publishing the built zip:
 
 ```bash
-# Structure: python/lib/python3.12/site-packages/
-mkdir -p python
-pip install -t python/ requests boto3
-
-zip -r layer.zip python/
-
 aws lambda publish-layer-version \
   --layer-name my-python-deps \
-  --compatible-runtimes python3.12 \
-  --compatible-architectures x86_64 arm64 \
+  --compatible-runtimes python3.14 \
+  --compatible-architectures arm64 \
   --zip-file fileb://layer.zip
 ```
 
@@ -218,13 +211,6 @@ aws lambda update-function-configuration \
   --function-name MyFunction \
   --layers arn:aws:lambda:us-east-1:177933569100:layer:AWS-Parameters-and-Secrets-Lambda-Extension:11
 ```
-
-### Layer Best Practices
-
-- Keep layers under 50 MB
-- Version layers properly
-- Test compatibility with function runtime
-- Use separate layers for different purposes
 
 ## CI/CD Integration
 
@@ -252,9 +238,11 @@ jobs:
           role-to-assume: arn:aws:iam::123456789012:role/github-actions-role
           aws-region: us-east-1
 
+      - name: Build function.zip
+        run: <the repository's function build command>  # as python-lambda-packaging sets out
+
       - name: Deploy
         run: |
-          zip -r function.zip .
           aws lambda update-function-code \
             --function-name MyFunction \
             --zip-file fileb://function.zip
@@ -309,21 +297,23 @@ aws lambda update-function-configuration \
 import boto3
 import json
 
-secrets = boto3.client('secretsmanager')
+secrets = boto3.client("secretsmanager")
 
 # Cache secret outside handler for reuse
 _secret = None
 
+
 def get_secret():
     global _secret
     if _secret is None:
-        response = secrets.get_secret_value(SecretId='my-secret')
-        _secret = json.loads(response['SecretString'])
+        response = secrets.get_secret_value(SecretId="my-secret")
+        _secret = json.loads(response["SecretString"])
     return _secret
+
 
 def handler(event, context):
     secret = get_secret()
-    db_password = secret['password']
+    db_password = secret["password"]
     # Use secret...
 ```
 
@@ -331,19 +321,7 @@ def handler(event, context):
 
 ### Reduce Package Size
 
-```bash
-# Remove unnecessary files
-zip -r function.zip . \
-  -x "*.git*" \
-  -x "*__pycache__*" \
-  -x "*.pyc" \
-  -x "tests/*" \
-  -x "*.md" \
-  -x "*.txt"
-
-# Use zip with compression
-zip -9 -r function.zip .
-```
+Build the zip with explicit contents as [python-lambda-packaging](../python-lambda-packaging/SKILL.md) sets out; never zip a whole directory and delete by pattern afterwards.
 
 ### Lambda Powertools (Recommended)
 
@@ -354,6 +332,7 @@ from aws_lambda_powertools import Logger, Tracer, Metrics
 logger = Logger()
 tracer = Tracer()
 metrics = Metrics()
+
 
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler

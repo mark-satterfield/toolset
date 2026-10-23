@@ -71,22 +71,32 @@ lambda_.Function(
     function_name=function_name,  # as the architecture names it
     runtime=lambda_.Runtime.PYTHON_3_14,
     architecture=lambda_.Architecture.ARM_64,
-    handler="handler.handler",
+    handler="handlers.handler.handler",  # module path inside the copied package
     code=lambda_.Code.from_asset(
-        "lambda",
+        ".",  # the directory holding pyproject.toml and uv.lock
         bundling=BundlingOptions(
             image=lambda_.Runtime.PYTHON_3_14.bundling_image,
+            platform=lambda_.Architecture.ARM_64.docker_platform,  # the function's architecture
+            environment={"UV_CACHE_DIR": "/tmp/uv-cache"},
             command=[
                 "bash",
                 "-c",
-                "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output",
+                " && ".join([
+                    "python -m pip install --quiet --target /tmp/uvtool uv",
+                    # runtime packages only; add --no-emit-package for each layer-provided package
+                    "/tmp/uvtool/bin/uv export --frozen --no-dev --no-default-groups"
+                    " --no-emit-project -o /tmp/requirements.txt",
+                    "pip install --no-deps --no-compile --only-binary=:all: -r /tmp/requirements.txt -t /asset-output",
+                    "cp -r src/handlers /asset-output/",  # the handler package only
+                    "find /asset-output -name __pycache__ -prune -exec rm -rf {} +",
+                ]),
             ],
         ),
     ),
 )
 ```
 
-Pin the runtime to the latest Python runtime Lambda supports (check with the AWS documentation tools) and use the same runtime for the bundling image, so compiled dependencies match.
+Pin the runtime to the latest Python runtime Lambda supports (check with the AWS documentation tools) and use the same runtime for the bundling image and the function's architecture for its platform, so compiled dependencies match. Which packages the command installs, which it leaves to layers, and what it copies are decided by [python-lambda-packaging](../python-lambda-packaging/SKILL.md).
 
 **Benefits**:
 - Stable `aws-cdk-lib` API, with no alpha module to track

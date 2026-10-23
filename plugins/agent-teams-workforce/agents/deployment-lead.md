@@ -8,7 +8,7 @@ disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default
 maxTurns: 150
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:agent-orchestration]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:agent-orchestration, agent-teams-workforce:python-lambda-packaging]
 effort: medium
 isolation: worktree
 color: pink

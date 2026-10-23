@@ -15,7 +15,7 @@ mcpServers:
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:code-reviewer, agent-teams-workforce:python-coding, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:code-reviewer, agent-teams-workforce:python-coding, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-lambda-packaging]
 effort: low
 isolation: worktree
 color: purple

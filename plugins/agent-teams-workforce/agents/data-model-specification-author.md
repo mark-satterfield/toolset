@@ -29,6 +29,7 @@ skills:
 - agent-teams-workforce:pgvector-semantic-search
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:matrix
+- agent-teams-workforce:python-lambda-packaging
 effort: medium
 isolation: worktree
 color: purple

@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion
 model: opus
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-test-suite-builder, agent-teams-workforce:python-coding, agent-teams-workforce:typescript-coding, agent-teams-workforce:software-engineering, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-test-suite-builder, agent-teams-workforce:python-coding, agent-teams-workforce:typescript-coding, agent-teams-workforce:software-engineering, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-lambda-packaging]
 effort: medium
 isolation: worktree
 color: pink

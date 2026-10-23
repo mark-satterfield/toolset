@@ -32,6 +32,7 @@ skills:
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:lambda
 - aws-core:aws-serverless
+- agent-teams-workforce:python-lambda-packaging
 effort: medium
 isolation: worktree
 color: cyan

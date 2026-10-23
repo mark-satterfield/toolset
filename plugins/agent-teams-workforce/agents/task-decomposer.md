@@ -17,6 +17,7 @@ skills:
 - agent-teams-workforce:artifact-handoff
 - agent-teams-workforce:wsjf
 - agent-teams-workforce:matrix
+- agent-teams-workforce:python-lambda-packaging
 effort: medium
 isolation: worktree
 color: yellow

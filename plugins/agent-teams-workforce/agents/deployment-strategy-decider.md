@@ -12,7 +12,7 @@ disallowedTools: AskUserQuestion, Edit, Bash, NotebookEdit
 model: opus
 permissionMode: acceptEdits
 maxTurns: 60
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-devops, aws-core:aws-serverless]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-devops, aws-core:aws-serverless, agent-teams-workforce:python-lambda-packaging]
 effort: high
 isolation: worktree
 color: pink

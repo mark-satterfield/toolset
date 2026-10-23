@@ -95,7 +95,8 @@
         "aws-agents:agents-harden",
         "aws-core:amazon-bedrock",
         "aws-core:aws-sdk-python-usage",
-        "agent-teams-workforce:implementer-contract"
+        "agent-teams-workforce:implementer-contract",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -166,7 +167,8 @@
         "agent-teams-workforce:android-compose",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:software-engineering"
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -217,7 +219,8 @@
         "aws-core:aws-cdk",
         "aws-core:aws-serverless",
         "aws-core:aws-auth",
-        "agent-teams-workforce:cdk-coding"
+        "agent-teams-workforce:cdk-coding",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -235,7 +238,8 @@
         "agent-teams-workforce:artifact-handoff",
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:matrix"
+        "agent-teams-workforce:matrix",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -269,7 +273,8 @@
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-sdk-python-usage",
         "aws-core:aws-serverless",
-        "agent-teams-workforce:implementer-contract"
+        "agent-teams-workforce:implementer-contract",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -290,7 +295,8 @@
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-cdk",
         "agent-teams-workforce:cdk-coding",
-        "agent-teams-workforce:appsync-graphql"
+        "agent-teams-workforce:appsync-graphql",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -310,7 +316,8 @@
         "agent-teams-workforce:software-engineering",
         "agent-teams-workforce:typescript-coding",
         "agent-teams-workforce:web-frontend-coding",
-        "agent-teams-workforce:appsync-graphql"
+        "agent-teams-workforce:appsync-graphql",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -346,7 +353,8 @@
         "agent-teams-workforce:architecture-diagramming",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:effective-architecture",
-        "agent-teams-workforce:matrix"
+        "agent-teams-workforce:matrix",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -393,7 +401,8 @@
         "agent-teams-workforce:senior-architect",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "gitnexus"
@@ -484,7 +493,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-data-analytics:redshift-guide",
-        "aws-data-analytics:querying-data-lake"
+        "aws-data-analytics:querying-data-lake",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -551,7 +561,8 @@
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-sdk-python-usage",
         "aws-core:aws-serverless",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -626,7 +637,8 @@
         "agent-teams-workforce:software-engineering",
         "aws-core:amazon-bedrock",
         "aws-core:aws-sdk-python-usage",
-        "agent-teams-workforce:implementer-contract"
+        "agent-teams-workforce:implementer-contract",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -645,7 +657,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-sdk-python-usage",
-        "agent-teams-workforce:implementer-contract"
+        "agent-teams-workforce:implementer-contract",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -755,7 +768,8 @@
         "aws-core:aws-cdk",
         "agent-teams-workforce:cdk-coding",
         "agent-teams-workforce:resource-naming",
-        "agent-teams-workforce:matrix"
+        "agent-teams-workforce:matrix",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -773,7 +787,8 @@
         "agent-teams-workforce:aws-cdk-development",
         "agent-teams-workforce:cloudformation",
         "aws-core:aws-cdk",
-        "aws-core:aws-cloudformation"
+        "aws-core:aws-cloudformation",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp"
@@ -792,7 +807,8 @@
         "aws-core:aws-cdk",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:cdk-coding",
-        "agent-teams-workforce:implementer-contract"
+        "agent-teams-workforce:implementer-contract",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -838,7 +854,8 @@
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:software-engineering",
         "agent-teams-workforce:typescript-coding",
-        "agent-teams-workforce:web-frontend-coding"
+        "agent-teams-workforce:web-frontend-coding",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -884,7 +901,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-serverless",
-        "aws-core:aws-sdk-python-usage"
+        "aws-core:aws-sdk-python-usage",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -900,7 +918,8 @@
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:code-reviewer",
         "agent-teams-workforce:python-coding",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -912,7 +931,8 @@
       "description": "Routes refactor work to specialists, verifies tests stay green after every change, and assembles the refactor evidence packet. Use for Code Quality work requiring delegation, refactor sequencing and green-test verification.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:agent-orchestration"
+        "agent-teams-workforce:agent-orchestration",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": []
     },
@@ -925,7 +945,8 @@
         "agent-teams-workforce:code-reviewer",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:python-coding",
-        "agent-teams-workforce:software-engineering"
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -946,7 +967,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-auth",
-        "aws-core:aws-serverless"
+        "aws-core:aws-serverless",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -972,7 +994,8 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:tech-debt-tracker",
         "agent-teams-workforce:python-coding",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "gitnexus"
@@ -1010,7 +1033,8 @@
         "agent-teams-workforce:cumulative-regression",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "gitnexus"
@@ -1159,7 +1183,8 @@
         "agent-teams-workforce:design-postgres-tables",
         "agent-teams-workforce:pgvector-semantic-search",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:matrix"
+        "agent-teams-workforce:matrix",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "awslabs-dynamodb-mcp-server",
@@ -1179,7 +1204,8 @@
         "agent-teams-workforce:cumulative-regression",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "gitnexus"
@@ -1219,7 +1245,8 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:dependency-auditor",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "gitnexus"
@@ -1231,7 +1258,8 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:dependency-auditor"
+        "agent-teams-workforce:dependency-auditor",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": []
     },
@@ -1248,7 +1276,8 @@
         "agent-teams-workforce:cloudformation",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
-        "agent-teams-workforce:test-failure-mindset"
+        "agent-teams-workforce:test-failure-mindset",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -1260,7 +1289,8 @@
       "description": "Routes the feature deployment sequence, validates preconditions per step, and assembles the deployment evidence packet. Use for Deployment team work requiring delegation, sequencing discipline, and evidence assembly.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:agent-orchestration"
+        "agent-teams-workforce:agent-orchestration",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": []
     },
@@ -1271,7 +1301,8 @@
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-devops",
-        "aws-core:aws-serverless"
+        "aws-core:aws-serverless",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp"
@@ -1287,7 +1318,8 @@
         "agent-teams-workforce:aws-cdk-development",
         "aws-core:aws-cdk",
         "agent-teams-workforce:cdk-coding",
-        "agent-teams-workforce:python-coding"
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp"
@@ -1420,7 +1452,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-sdk-python-usage",
-        "aws-core:aws-database"
+        "aws-core:aws-database",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -1440,7 +1473,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-database",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -1475,7 +1509,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-serverless",
-        "aws-core:aws-sdk-python-usage"
+        "aws-core:aws-sdk-python-usage",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -1531,7 +1566,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:typescript-coding",
         "agent-teams-workforce:software-engineering",
-        "aws-core:aws-sdk-python-usage"
+        "aws-core:aws-sdk-python-usage",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -1596,7 +1632,8 @@
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
-        "aws-core:aws-sdk-python-usage"
+        "aws-core:aws-sdk-python-usage",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -1618,7 +1655,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-serverless",
-        "aws-core:aws-sdk-python-usage"
+        "aws-core:aws-sdk-python-usage",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -1637,7 +1675,8 @@
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-messaging-and-streaming",
         "aws-core:aws-sdk-python-usage",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "gitnexus"
@@ -1786,7 +1825,8 @@
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:software-engineering",
         "agent-teams-workforce:typescript-coding",
-        "agent-teams-workforce:web-frontend-coding"
+        "agent-teams-workforce:web-frontend-coding",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "context7",
@@ -1820,7 +1860,8 @@
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-devops",
         "agent-teams-workforce:software-engineering",
-        "agent-teams-workforce:shell-coding"
+        "agent-teams-workforce:shell-coding",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": []
     },
@@ -1836,7 +1877,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-data-analytics:ingesting-into-data-lake",
-        "aws-data-analytics:connecting-to-data-source"
+        "aws-data-analytics:connecting-to-data-source",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -1919,7 +1961,8 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:agent-orchestration",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server"
@@ -1948,7 +1991,8 @@
         "agent-teams-workforce:senior-secops",
         "agent-teams-workforce:aws-cdk-development",
         "aws-core:aws-iam",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -2006,7 +2050,8 @@
         "agent-teams-workforce:ios-swiftui",
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:software-engineering"
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -2027,7 +2072,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-messaging-and-streaming",
-        "aws-core:aws-sdk-python-usage"
+        "aws-core:aws-sdk-python-usage",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -2061,7 +2107,8 @@
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:lambda",
-        "aws-core:aws-serverless"
+        "aws-core:aws-serverless",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -2080,7 +2127,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-serverless",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -2096,7 +2144,8 @@
         "agent-teams-workforce:code-reviewer",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "gitnexus"
@@ -2114,7 +2163,8 @@
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-observability",
         "aws-core:amazon-bedrock",
-        "agent-teams-workforce:implementer-contract"
+        "agent-teams-workforce:implementer-contract",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -2148,7 +2198,8 @@
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
-        "agent-teams-workforce:implementer-contract"
+        "agent-teams-workforce:implementer-contract",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -2168,7 +2219,8 @@
         "agent-teams-workforce:software-engineering",
         "aws-core:amazon-bedrock",
         "aws-core:aws-cdk",
-        "agent-teams-workforce:implementer-contract"
+        "agent-teams-workforce:implementer-contract",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -2189,7 +2241,8 @@
         "agent-teams-workforce:cumulative-regression",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "gitnexus"
@@ -2313,7 +2366,8 @@
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:software-engineering",
         "agent-teams-workforce:typescript-coding",
-        "agent-teams-workforce:web-frontend-coding"
+        "agent-teams-workforce:web-frontend-coding",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -2377,7 +2431,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-serverless",
-        "aws-core:aws-secrets-manager"
+        "aws-core:aws-secrets-manager",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -2397,7 +2452,8 @@
         "agent-teams-workforce:cumulative-regression",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "gitnexus"
@@ -2513,7 +2569,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-sdk-python-usage",
-        "aws-core:aws-database"
+        "aws-core:aws-database",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -2536,7 +2593,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-serverless",
-        "aws-core:aws-observability"
+        "aws-core:aws-observability",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -2663,7 +2721,8 @@
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:software-engineering",
         "agent-teams-workforce:typescript-coding",
-        "agent-teams-workforce:web-frontend-coding"
+        "agent-teams-workforce:web-frontend-coding",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -2691,7 +2750,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-sdk-python-usage",
-        "agent-teams-workforce:implementer-contract"
+        "agent-teams-workforce:implementer-contract",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -2826,7 +2886,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-storage",
-        "aws-core:aws-sdk-python-usage"
+        "aws-core:aws-sdk-python-usage",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -2846,7 +2907,8 @@
         "aws-core:aws-ai-ml",
         "aws-core:aws-sdk-python-usage",
         "agent-teams-workforce:senior-ml-engineer",
-        "agent-teams-workforce:implementer-contract"
+        "agent-teams-workforce:implementer-contract",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -2881,7 +2943,8 @@
         "agent-teams-workforce:cumulative-regression",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:software-engineering",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "gitnexus"
@@ -2891,7 +2954,8 @@
       "name": "shared-capability-reviewer",
       "description": "Rules, for each definition a deterministic reuse check could not rule on, whether a function a Task added duplicates a behaviour a shared capability (a shared library, layer, chassis or service) provides to its consumers — duplicate or not-duplicate, with one sentence of reason. Reads only the named function and the provides entry; changes nothing.",
       "skills": [
-        "agent-teams-workforce:subagent-contract"
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "gitnexus"
@@ -2920,7 +2984,8 @@
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:typescript-coding",
         "agent-teams-workforce:software-engineering",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "gitnexus"
@@ -2967,7 +3032,8 @@
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:dynamodb",
         "agent-teams-workforce:aurora-postgresql",
-        "agent-teams-workforce:design-postgres-tables"
+        "agent-teams-workforce:design-postgres-tables",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -3024,7 +3090,8 @@
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:artifact-handoff",
         "agent-teams-workforce:wsjf",
-        "agent-teams-workforce:matrix"
+        "agent-teams-workforce:matrix",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -3059,7 +3126,8 @@
         "agent-teams-workforce:web-frontend-coding",
         "agent-teams-workforce:cdk-coding",
         "agent-teams-workforce:software-engineering",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "gitnexus"
@@ -3078,7 +3146,8 @@
       "description": "Routes spec acceptance criteria to test writers, confirms Red (every new test fails), and assembles the Red readiness packet. Use for Test Design work requiring delegation and criterion-to-test routing.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:agent-orchestration"
+        "agent-teams-workforce:agent-orchestration",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": []
     },
@@ -3091,7 +3160,8 @@
         "agent-teams-workforce:senior-devops",
         "agent-teams-workforce:aws-mcp-setup",
         "aws-core:aws-cdk",
-        "agent-teams-workforce:aurora-postgresql"
+        "agent-teams-workforce:aurora-postgresql",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -3163,7 +3233,8 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:effective-architecture",
-        "agent-teams-workforce:matrix"
+        "agent-teams-workforce:matrix",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp"
@@ -3264,7 +3335,8 @@
         "aws-core:aws-sdk-python-usage",
         "agent-teams-workforce:aurora-postgresql",
         "agent-teams-workforce:pgvector-semantic-search",
-        "agent-teams-workforce:implementer-contract"
+        "agent-teams-workforce:implementer-contract",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -3302,7 +3374,8 @@
         "agent-teams-workforce:software-engineering",
         "aws-core:aws-auth",
         "agent-teams-workforce:typescript-coding",
-        "agent-teams-workforce:web-frontend-coding"
+        "agent-teams-workforce:web-frontend-coding",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -3346,7 +3419,8 @@
         "agent-teams-workforce:software-engineering",
         "agent-teams-workforce:python-coding",
         "agent-teams-workforce:typescript-coding",
-        "agent-teams-workforce:shell-coding"
+        "agent-teams-workforce:shell-coding",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": []
     },

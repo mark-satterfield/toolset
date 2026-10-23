@@ -13,7 +13,7 @@ mcpServers:
 model: opus
 permissionMode: acceptEdits
 maxTurns: 100
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-cdk-development, agent-teams-workforce:cloudformation, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, aws-core:aws-cdk, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:cdk-coding, agent-teams-workforce:implementer-contract]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-cdk-development, agent-teams-workforce:cloudformation, agent-teams-workforce:python-coding, agent-teams-workforce:software-engineering, aws-core:aws-cdk, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:cdk-coding, agent-teams-workforce:implementer-contract, agent-teams-workforce:python-lambda-packaging]
 effort: medium
 color: pink
 ---

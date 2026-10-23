@@ -12,7 +12,7 @@ disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash, SendMessage
 model: sonnet
 permissionMode: default
 maxTurns: 150
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:agent-orchestration, agent-teams-workforce:graphrag-lookup]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:agent-orchestration, agent-teams-workforce:graphrag-lookup, agent-teams-workforce:python-lambda-packaging]
 effort: medium
 color: green
 ---

@@ -32,7 +32,8 @@ Take the first option that fully works:
    mcp-graphrag-server and gitnexus to search; the `graphrag-lookup` skill says which tool answers which question.
 3. Standard library or a platform feature? Use it, unless the project has its own. A house component beats a native
    widget.
-4. An installed dependency? Use it. Never add a dependency for a few lines.
+4. A dependency the project already declares, or one the environment it runs in already provides? Use it. Never add
+   a dependency for a few lines. The language's coding skill says how to find what the target environment provides.
 5. Can it be one line a reader gets at a glance? One line.
 6. Otherwise: the minimum code that works.
 

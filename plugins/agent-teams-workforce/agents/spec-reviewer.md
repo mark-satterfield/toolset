@@ -16,7 +16,7 @@ mcpServers:
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture, agent-teams-workforce:dynamodb, agent-teams-workforce:aurora-postgresql, agent-teams-workforce:design-postgres-tables]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture, agent-teams-workforce:dynamodb, agent-teams-workforce:aurora-postgresql, agent-teams-workforce:design-postgres-tables, agent-teams-workforce:python-lambda-packaging]
 effort: low
 isolation: worktree
 color: purple
