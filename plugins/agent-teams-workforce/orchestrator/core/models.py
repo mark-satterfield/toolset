@@ -81,6 +81,36 @@ class StaleInputError(StepError):
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+class MalformedRequestError(StepError):
+    """A request the step above a helper wrote does not satisfy the contract it was written under.
+
+    The writer's session (``session``) runs under the same agent definition and contracts the
+    request is read by, so the request is the writer's mistake and not an earlier contract: the
+    writer corrects the request file (``request``) from the errors file (``errors``), and
+    ``check`` judges the corrected file (``journal_run.JournalRunner``).
+    """
+
+    def __init__(  # ruff: ignore[too-many-arguments] - The writer, its session, the file, its errors and its check.
+        self,
+        stage: str,
+        writer: StepId,
+        *,
+        session: str,
+        request: Path,
+        errors: Path,
+        check: OutputValidator,
+        evidence: tuple[str, ...] = (),
+    ) -> None:
+        """Attach the stage, the cause ``other``, the evidence, the writer and what corrects the request."""
+        super().__init__(stage, OTHER_CAUSE, evidence)
+        self.writer = writer
+        self.session = session
+        self.request = request
+        self.errors = errors
+        self.check = check
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 class PipelineDefectError(StepError):
     """Pipeline code failed, not the item's work; it is classified ``pipeline-code-defect``.
 

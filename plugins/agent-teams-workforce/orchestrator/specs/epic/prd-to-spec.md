@@ -41,6 +41,14 @@ wrote the file and every step after it are set back to planned, and the run goes
 The architecture context file is written by the open-run step; a helper's request file by the
 step directly above the helper. The same writer named twice in one dispatch fails the step.
 
+A helper's request file is stale only when the session of the step above the helper was made under
+another agent definition or contracts, or that step holds no session. When that session is one of
+the current agent definition and contracts, the request is its mistake (`MalformedRequestError`):
+the runner writes the errors beside the request, continues that session to correct the request
+file in place (checked against the request's contract, with one corrective resume), and runs the
+helper again. Nothing is set back to planned. The same request malformed twice in one dispatch
+fails the helper's step.
+
 A step continues an agent session only when the session's agent definition and contract schemas
 are unchanged since it started (their fingerprint, recorded when the session started); otherwise
 it starts a new session. A session ended by a timeout is continued by the next dispatch.

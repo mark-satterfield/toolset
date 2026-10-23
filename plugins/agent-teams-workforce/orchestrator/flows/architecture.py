@@ -80,7 +80,7 @@ from orchestrator.core.journal_steps import (
     file_artifact,
     value_artifact,
 )
-from orchestrator.core.models import StaleInputError
+from orchestrator.core.models import MalformedRequestError, StaleInputError
 from orchestrator.flows.architecture_check import check_step
 from orchestrator.flows.architecture_collision import record_review, record_written
 from orchestrator.flows.architecture_files import (
@@ -179,6 +179,8 @@ PARAM_REQUEST: Final = "request"
 """The parameter that hands a requested agent's step the path of its request file."""
 REQUEST_SUFFIX: Final = ".request.json"
 """What the request file of an entry of the result's ``requests`` adds to its answer file's stem."""
+ERRORS_SUFFIX: Final = ".errors.txt"
+"""What the file of a request's validation errors adds to the request file's stem."""
 FINISH_DESCRIPTION: Final = "Finish deciding the architecture with the answers of the agents the architect requested"
 CATALOG_AGENTS: Final[frozenset[str]] = agent_names()
 """Every agent the find-specialists skill's catalog lists: the names a request may give."""
@@ -758,15 +760,21 @@ def _helper_request[T](run: StepRun, asked: Path, validate: Callable[[object], T
     """Read the request a helper step is launched from, written by the step directly above it.
 
     The architect, or the lead, wrote the request in its session or from its result. A request that
-    does not satisfy the current contract was written to an earlier one: the step above the
-    helper runs again and writes its requests to the current contract.
+    does not satisfy the current contract is stale only when the writer's session was made under
+    another agent definition or contracts (``AgentRunner.resumable``), or the writer holds no
+    session: the step above the helper then runs again and writes its requests to the current
+    contract. Otherwise the writer wrote it wrongly under the current contract, and its session
+    corrects the file from the errors written beside it.
 
     Returns:
         The validated request.
 
     Raises:
         ArchitectureStepError: The file is missing or is not JSON, or the helper has no step above it.
-        StaleInputError: The request does not satisfy the current contract.
+        StaleInputError: The request does not satisfy the current contract, and the writer's
+            session is not one of the current agent definition and contracts.
+        MalformedRequestError: The request does not satisfy the current contract, and the
+            writer's session is one of the current agent definition and contracts.
 
     """
     held: object = checked_file(run, asked, lambda value: value)
@@ -776,10 +784,26 @@ def _helper_request[T](run: StepRun, asked: Path, validate: Callable[[object], T
         writer: Step | None = step_journal.parent_step(run.journal(), run.step["id"])
         if writer is None:
             raise ArchitectureStepError(run, f"{asked}: {exc}") from None
-        raise StaleInputError(
+        evidence: tuple[str, ...] = (f"step {run.step['id']} ({run.step['description']}): {asked}: {exc}",)
+        session: str | None = writer.get("session")
+        if session is None or not run.agents.resumable(session):
+            raise StaleInputError(run.inputs.stage, writer["id"], evidence) from None
+        errors: Path = asked.with_name(asked.stem + ERRORS_SUFFIX)
+        errors.write_text(f"{exc}\n", encoding="utf-8")
+
+        def check(path: Path) -> dict[str, JsonValue]:
+            document: dict[str, JsonValue] = strict_json(path)
+            validate(document)
+            return document
+
+        raise MalformedRequestError(
             run.inputs.stage,
             writer["id"],
-            (f"step {run.step['id']} ({run.step['description']}): {asked}: {exc}",),
+            session=session,
+            request=asked,
+            errors=errors,
+            check=check,
+            evidence=evidence,
         ) from None
 
 

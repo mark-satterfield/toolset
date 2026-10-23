@@ -11,7 +11,10 @@ to the caller unchanged. A stop request (the stop file, an interrupt) leaves the
 step that finds a file an earlier step wrote to a contract that has since changed
 (``StaleInputError``) is not failed: the step that wrote the file and every step after it are set
 back to planned, and the loop goes on from there; the same writer named twice in one dispatch
-fails the step.
+fails the step. A file is stale only when its writer's session was made under another agent
+definition or contracts; a request a helper is launched from that its writer's current session
+wrote wrongly (``MalformedRequestError``) is corrected by that session from the errors, and the
+helper runs again; the same request malformed twice in one dispatch fails the step.
 
 A session is continued only when its agent definition and contracts are unchanged since it
 started (``AgentRunner.resumable``, by fingerprint); otherwise the step starts a new one.
@@ -37,6 +40,7 @@ from __future__ import annotations
 import contextlib
 import json
 import sys
+import threading
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -67,7 +71,7 @@ from .journal_steps import (
     is_finish_of,
     stage_of,
 )
-from .models import AgentStep, RunContext, StaleInputError, StepError
+from .models import AgentStep, MalformedRequestError, RunContext, StaleInputError, StepError
 from .tools import Tools
 
 # isort: split
@@ -208,6 +212,8 @@ def _planned_finish(journal: Journal, step_id: StepId, moment: str) -> Step | No
     return step_journal.add_step(journal, _finish_plan(step), moment, parent=step_id) if ready else None
 
 
+REQUEST_ERRORS_LABEL: Final = "request errors"
+"""The label of the errors file in the brief of a session that corrects a malformed request."""
 JSON_SUFFIX: Final = ".json"
 """The suffix of an output the runner may reuse."""
 
@@ -452,6 +458,9 @@ class JournalRunner:
         """The steps planned again in this dispatch because a file they wrote was stale."""
         self.stale: list[StaleInputError] = []
         """The stale files found by the steps of the group that runs now."""
+        self.corrected: set[Path] = set()
+        """The request files whose writer's session was asked in this dispatch to correct them."""
+        self._correcting: threading.Lock = threading.Lock()
 
     @property
     def context(self) -> RunContext:
@@ -586,10 +595,14 @@ class JournalRunner:
         """Run one step and record its failure when it raises.
 
         A stale file the step finds is kept for :meth:`_replan_stale`, and the step is not failed,
-        unless the step that wrote the file was planned again in this dispatch already.
+        unless the step that wrote the file was planned again in this dispatch already. A
+        malformed request the step finds is corrected by its writer's session
+        (:meth:`_correct_request`), and the step is not failed, unless that request was corrected
+        in this dispatch already.
 
         Raises:
             StaleInputError: The step that wrote the stale file was planned again in this dispatch already.
+            MalformedRequestError: The malformed request was corrected in this dispatch already.
 
         """
         journal: Journal = step_journal.read_journal(self.path)
@@ -601,9 +614,56 @@ class JournalRunner:
                 self._record_failure(step_id, stage_of(step), stale)
                 raise
             self.stale.append(stale)
+        except MalformedRequestError as malformed:
+            if malformed.request in self.corrected:
+                self._record_failure(step_id, stage_of(step), malformed)
+                raise
+            self._correct_request(step_id, malformed)
         except Exception as exc:
             self._record_failure(step_id, stage_of(step), exc)
             raise
+
+    def _correct_request(self, step_id: StepId, malformed: MalformedRequestError) -> None:
+        """Continue the session that wrote a malformed request, to correct the request file in place.
+
+        The writer's session is handed the errors file and corrects the request, which the
+        request's check then judges, with the session's one corrective resume. The helper step is
+        left as it stood, so the loop runs it again from the corrected file. Corrections run one
+        at a time: two helpers of one writer never continue its session at once. A writer whose
+        conversation is gone writes its requests again: its step is set back to planned
+        (:meth:`_replan_stale`). A corrected request that still does not satisfy its contract, or
+        a session that fails, fails the helper step with what the session raised.
+        """
+        self.corrected.add(malformed.request)
+        writer: Step = step_journal.find_step(step_journal.read_journal(self.path), malformed.writer)
+        request: AgentStep = AgentStep(
+            stage=malformed.stage,
+            agent=writer.get("agent", ""),
+            inputs=(str(malformed.errors), str(self.path)),
+            output=malformed.request,
+            outcome="The request file corrected in place so that it satisfies its contract.",
+            validate=malformed.check,
+            request=(
+                f"The request file {malformed.request} you wrote for step {step_id} does not satisfy its contract; "
+                "correct that file in place as the errors file states, and change nothing else"
+            ),
+            journal_step=malformed.writer,
+        )
+        labelled: list[tuple[str, Path]] = [(REQUEST_ERRORS_LABEL, malformed.errors), (JOURNAL_LABEL, self.path)]
+        with self._correcting:
+            try:
+                self.agents.run_session(
+                    request,
+                    labelled,
+                    session=malformed.session,
+                    resume=True,
+                    fresh_output=False,
+                )
+            except SessionNotResumedError:
+                self.stale.append(StaleInputError(malformed.stage, malformed.writer, malformed.evidence))
+            except Exception as exc:
+                self._record_failure(step_id, malformed.stage, exc)
+                raise
 
     def _perform(self, journal: Journal, step: Step) -> None:
         """Run a step with the code its script key or its agent name selects.

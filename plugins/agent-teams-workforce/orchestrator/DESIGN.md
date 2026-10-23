@@ -184,7 +184,11 @@ the step reads it by (the architecture context the open-run step wrote, a reques
 helper wrote), is not failed (`StaleInputError`): once the steps running with it end, the step
 that wrote the file and every step after it are set back to planned, and the run goes on from
 there, so the file is written again to the current contract. When the same writer is named twice
-in one dispatch, the step fails. The solutions architect writes its result as the work goes, and every
+in one dispatch, the step fails. A helper's request is stale only when the session of the step
+above it was made under another agent definition or contracts (or that step holds none); a request
+that session wrote wrongly under the current ones (`MalformedRequestError`) is corrected in place
+by continuing that session with the errors, and the helper runs again, with nothing set back to
+planned; the same request malformed twice in one dispatch fails the helper's step. The solutions architect writes its result as the work goes, and every
 step of it keeps a result already at the result path, so a new session continues from the partial
 result and the design work done before the stop is not done again.
 
