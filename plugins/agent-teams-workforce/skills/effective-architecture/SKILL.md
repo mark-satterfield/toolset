@@ -27,12 +27,59 @@ classes, data models, routes and names of one component, is done during architec
 recorded in the architecture documents and in the matrix; the specs and Tasks carry it and
 decide none of it.
 
-Approved means the matrix's `approved` flag on an entry, and nothing else. A document's
-`effective` lifecycle approves nothing: an effective document whose entries are not approved is
-draft. Approved design is not evidence that anything is built, and it is not a permanent
-constraint on a later PRD.
+Approved design (an `effective` document, as "Lifecycle" below defines it) is not evidence that
+anything is built, and it is not a permanent constraint on a later PRD: it iterates.
 
-The matrix records what is approved and what code is trusted. Read it as the `matrix` skill says.
+The matrix records which Epic's elaboration approved each entry and what code is trusted. Read it
+as the `matrix` skill says.
+
+## Lifecycle, the baseline and iteration
+
+This section is the one home of these rules. Every other skill and agent that needs them points
+here instead of restating them.
+
+### Lifecycle
+
+An architecture document (arc42 or `detailed/`) is in one of two working states, `in-review` or
+`effective`; the other `lifecycle_state` values the vault uses, such as `superseded` or
+`withdrawn`, keep their meaning. Approve is an action, not a state between the two.
+
+| From state | Action | To state |
+|---|---|---|
+| any, or none (a new document) | the architect writes, changes or replaces the document | `in-review` |
+| `in-review` | the architect approves it | `effective` |
+| any, or none | the architect writes it and approves it in the same step, with no gap between them | `effective` |
+
+A matrix entry or relationship goes through the
+same states by the same actions: a changed entry is unapproved until the architect approves it.
+The `matrix` skill ("Approved, verified, effective and side") says how its `approved` flag
+records that.
+
+### The starting baseline
+
+The arc42 documents are approved in advance as a baseline covering all Epics, so that work goes
+faster: they are `effective`. On purpose, the matrix shows none of their entries with an
+`approved` flag. Each must be reviewed and approved through an Epic's elaboration, not assumed
+correct; any of them may contain mistakes. The matrix's `approved` flag records which
+Epic's elaboration has reviewed, approved and now owns an entry: the first Epic elaborated that
+reaches it (first come, first elaborated).
+
+### Iteration
+
+For every Epic, every arc42 document and every `detailed/` document may be improved, expanded,
+modified, replaced or deleted to fulfil that Epic's needs. The architecture is not complete or
+perfect in advance: it improves with each Epic, and an Epic may change it substantially, the
+first Epics most of all.
+
+- The architect builds on what is `effective`; it does not derive it again from scratch.
+- The architect changes an `effective` document whenever the Epic needs that or it finds a
+  defect; the change puts the document in `in-review` until the architect approves it.
+- An `in-review` document, such as one in `detailed/` that no architect has approved, is a
+  candidate to review. When it already matches what the architect would approve, the architect approves it
+  (it becomes `effective`) instead of spending tokens recreating it.
+- Nothing is deleted merely for being in `in-review` or for carrying no `approved` flag.
+
+Code and infrastructure iterate the same way, as the `software-engineering` skill says.
 
 ## The files the team hands on
 

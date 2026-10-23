@@ -18,8 +18,9 @@ decide RR-OE.
 without it. The epic-dependency-assessor reads that Epic's full PRD, at the path the matrix holds for it,
 and names the architecture decisions its requirements drive and the ones it rests on. It asks
 the matrix what already states each decision (`atw-matrix find --kinds document,constraint,feature`,
-then `atw-matrix node`) and drops only those the matrix holds approved; an entry existing or a
-document at `lifecycle: effective` settles nothing.
+then `atw-matrix node`) and drops only those an Epic's elaboration has already approved (the
+matrix `approved` flag). An `effective` document is approved content, but it still iterates with
+each Epic, so being effective alone does not remove the need for an edge.
 It takes the related Epics from the matrix (`atw-matrix related --epic`, and
 `atw-matrix find --kinds requirement,feature` for an Epic no feature serves yet), reads those
 PRDs in full, and applies the edge test in both directions. It proposes every edge to or from

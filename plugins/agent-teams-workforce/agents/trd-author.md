@@ -97,6 +97,9 @@ would need a new element is returned in `noSource`. Where the PRD, section 2 and
 documents give no value for an obligation the design needs, take the value from AWS
 documentation and the stated scale, and cite what it rests on.
 
+An `effective` arc42 document is approved content that still iterates with each Epic: the
+`effective-architecture` skill, "Lifecycle, the baseline and iteration".
+
 Write to the technical-requirement criteria of `effective-architecture/review-standard.md`. The
 TRD's fixed form is
 `document-front-matter.schema.json#/$defs/TrdDocument` in the artifact-handoff skill's schemas.

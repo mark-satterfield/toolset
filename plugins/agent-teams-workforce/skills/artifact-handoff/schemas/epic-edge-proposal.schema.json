@@ -34,7 +34,7 @@
         "to": {"description": "The beads id of the Epic that rests on the decision.", "type": "string"},
         "reason": {"description": "The architecture decision and whose requirements should drive it, in one line.", "type": "string"},
         "confidence": {"$ref": "dependency-assessment.schema.json#/$defs/Confidence"},
-        "archCheck": {"description": "The matrix entry id (with the document heading, for a document) that states the decision this edge orders, and that the matrix does not hold it approved; or that the lookup returned nothing. Only the `approved` flag settles a decision: an entry existing or a document at `lifecycle: effective` does not. An edge without it is refused.", "type": "string"},
+        "archCheck": {"description": "The matrix entry id (with the document heading, for a document) that states the decision this edge orders, and that the matrix does not hold it approved; or that the lookup returned nothing. Only the `approved` flag, an Epic's elaboration having approved the decision, removes the need for the edge: an entry existing or a document at `lifecycle: effective` does not, because every document still iterates with each Epic (epic-sequencing). An edge without it is refused.", "type": "string"},
         "answers": {"description": "Required only on an edge the context's `withdrawn` list covers: why the recorded withdrawal reason is wrong, on the architecture. Without it that edge is refused.", "type": "string"}
       }
     },

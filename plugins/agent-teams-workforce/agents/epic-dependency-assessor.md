@@ -30,7 +30,9 @@ color: purple
 The method is the `agent-teams-workforce:epic-sequencing` skill, its one home. Follow its
 "Assessing one Epic" steps in order. For every related Epic, ask both questions of step 6:
 whether it rests on a decision this Epic drives, and whether this Epic rests on a decision it
-drives, a shared capability this Epic uses included.
+drives, a shared capability this Epic uses included. An `effective` document is approved
+content that still iterates with each Epic, so only the matrix's `approved` flag removes the
+need for an edge (the skill's "What removes the need for an edge").
 
 The brief gives the data of the run: the Epic, the context file already written for it (artifact-handoff's
 `schemas/dependency-assessment.schema.json`, `#/$defs/EpicContext`), the `atw-matrix` command

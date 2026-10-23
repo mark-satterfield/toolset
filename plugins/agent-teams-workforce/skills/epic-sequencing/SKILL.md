@@ -87,25 +87,29 @@ the reasoning.
 - An edge that would close a cycle is handled as step 8 of "Assessing one Epic" says.
 - When the driver's elaboration is done and the matrix holds the capability approved, the
   edges have done their job: the decision is designed, and the next assessment of a user finds
-  it approved and draws no edge for it (see "Only the matrix's `approved` flag settles
-  anything"). Nothing else is done for it.
+  it approved and draws no edge for it (see "What removes the need for an edge"). Nothing
+  else is done for it.
 - Each assessment applies the rule to the WSJF the tracker holds when it runs. When that makes
   a different Epic the driver, it withdraws each edge it owns from the former driver, with the
   reason that the driver changed.
 
-### Only the matrix's `approved` flag settles anything
+### What removes the need for an edge
 
-A decision is settled when, and only when, the matrix entry or relationship that states it
-carries the `approved` flag (the `matrix` skill, "Approved, verified, effective and side",
-says what sets it). Nothing else settles a decision:
+An `effective` document is approved content, and every architecture document still iterates
+with each Epic (the `effective-architecture` skill, "Lifecycle, the baseline and iteration", is
+the one home of both rules). The `effective` baseline is approved in advance, but no Epic's
+elaboration has reviewed it yet, and the Epic that does may change it. So a document being
+`effective`, or a matrix entry existing, does not remove the need to order the Epics: the
+decision is still to be reviewed and shaped by one Epic's requirements, and the edge decides
+which.
 
-- A matrix entry existing is not approval.
-- A document's `lifecycle: effective` is not approval. A document is an unverified draft
-  unless the matrix holds its decisions approved, whatever lifecycle its front matter states,
-  however normatively it is worded and whatever date it carries.
+What removes the need is the matrix's `approved` flag on the entry or relationship that states
+the decision: an Epic's elaboration has reviewed, approved and owns it (the `matrix` skill,
+"Approved, verified, effective and side", says what sets it). A later Epic designs against
+that decision, and changes it if it must, without an edge.
 
-The draft is still useful: it says which decisions exist, what they may turn out to be, and
-which Epics share them. It never says a decision was made.
+The effective documents and the matrix entries without the flag are still the starting point:
+they say which decisions exist, what each is designed as, and which Epics share them.
 
 Take the flag from the matrix; never infer it. What states a decision is found through the
 matrix, with `atw-matrix`:
@@ -123,12 +127,12 @@ shows which content of an Epic's approval scope is approved. Read the heading th
 names, in that document and no other, when the entry alone does not say what the decision
 is. The arc42 folders, their front matter and section 2 are not searched for this.
 
-So when the entry that states a decision is not approved, the decision is open, and the
-edge test proceeds on it. Record the entry id (and the document heading, for a document)
-you consulted and whether the matrix holds it approved in the edge's `archCheck`, so a later
-reader can tell an approved decision from one that only sounded settled. An assessment that
-drops an edge by citing anything but the `approved` flag has ordered the Epics on an
-unchecked claim.
+So when the entry that states a decision carries no `approved` flag, the decision is open
+for ordering, and the edge test proceeds on it. Record the entry id (and the document heading,
+for a document) you consulted and whether the matrix holds it approved in the edge's
+`archCheck`, so a later reader can tell a decision an Epic has approved from one no Epic has
+reviewed yet. An assessment that drops an edge by citing anything but the `approved` flag has
+ordered the Epics on an unchecked claim.
 
 ## What an edge decides
 
@@ -228,7 +232,7 @@ and its `standing` and `withdrawn` lists are the edges on the Epic.
 3. Check each layer and decision against the matrix's `approved` flag, and drop every one
    the matrix holds approved. Find what states each one with `atw-matrix find --kinds
    document,constraint,feature --text "<the decision in words>"`, then `atw-matrix node <id>`
-   for each match that bears on it (see "Only the matrix's `approved` flag settles anything").
+   for each match that bears on it (see "What removes the need for an edge").
    Record, for each decision you keep, the entry id (and the document heading, for a
    document) you consulted and that the matrix does not hold it approved, or that the lookup
    returned nothing: that record goes on every edge as `archCheck`, and an edge without one
@@ -312,7 +316,7 @@ events on the bus and EventBridge rules routing them. Notification delivery is a
 capability ssbd-guuuz uses, ssbd-hdqid's requirements drive its design, and the matrix does
 not hold that design approved. So the edge runs from ssbd-hdqid to ssbd-guuuz. Without it,
 ssbd-guuuz's architecture step designs its own way to send its emails, which is how a bespoke
-`securityNotifications-service` appeared in the draft.
+`securityNotifications-service` appeared in the architecture.
 
 ## The edge file
 
@@ -366,9 +370,9 @@ revises.
   delivery it drives, is resting on its design, and the edge runs from that Epic.
 - Adding an edge for a decision the matrix holds approved.
 - Dropping an edge by citing anything but the matrix's `approved` flag: a matrix entry that
-  exists, a document at `lifecycle: effective`, or the wording of a document. None of them is
-  evidence that the decision was made, and this is the error that most easily ships as a
-  confident reason nobody re-reads.
+  exists, a document at `lifecycle: effective`, or the wording of a document. None of them
+  shows that an Epic's elaboration has reviewed the decision, and this is the error that most
+  easily ships as a confident reason nobody re-reads.
 - Adding an edge between Epics that share no open decision. Unrelated Epics elaborate
   concurrently.
 - Searching the arc42 folders, their front matter or section 2, or a folder of PRDs, for

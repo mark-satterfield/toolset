@@ -838,7 +838,7 @@ class CommandRule:
 
 @dataclass(frozen=True, slots=True)
 class Approved:
-    """The approved flag: settled, owned by the one Epic whose approved architecture and design reach it."""
+    """The approved flag: owned by the one Epic whose elaboration reviewed and approved it."""
 
     epic: str
     """The beads id of its owner, the Epic whose approval set it; another Epic's approval never replaces it."""

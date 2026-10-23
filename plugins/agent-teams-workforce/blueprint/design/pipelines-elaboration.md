@@ -169,7 +169,7 @@ sequenceDiagram
     SA->>PRD: normally reads the PRD for the Epic
     PRD-->>SA: the Epic's requirements
     SA->>A42: reads existing architecture and design, including standards and constraints
-    A42-->>SA: the headings of what the Epic reaches, handed in the architecture pack; settled only where the matrix shows an entry approved
+    A42-->>SA: the effective headings of what the Epic reaches, handed in the architecture pack, each marked with the Epic that approved it, if any
     SA->>MX: looks up what is known for the Epic, as a resource
     MX-->>SA: nothing (normal) or seeded entries, not approved and not verified
     Note over SA: compares existing architecture to the PRD. Seeded entries get due diligence - section 3

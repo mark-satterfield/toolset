@@ -90,7 +90,7 @@
     {
       "id": "P9",
       "level": "all",
-      "text": "Approved means the matrix's approved flag on the entry, and nothing else: a document's effective lifecycle approves nothing. A review covers only content that is not yet approved. Approved content is reference: it is reported only when an unapproved item cannot be correct unless an approved statement is wrong. A re-check covers only the corrected items."
+      "text": "A review covers the content this Epic adds or changes and the content in its reach that no Epic's elaboration has approved yet (no matrix approved flag; the effective baseline included, as the effective-architecture skill, Lifecycle, the baseline and iteration, says). Content an earlier Epic approved is reference: it is reported only when an unapproved item cannot be correct unless an approved statement is wrong. A re-check covers only the corrected items."
     },
     {
       "id": "P10",
@@ -239,7 +239,7 @@
       "id": "T4",
       "level": "technical-requirement",
       "home": "trd",
-      "text": "No requirement contradicts an approved arc42 statement or section 2, and none creates an element."
+      "text": "No requirement contradicts an effective arc42 statement or section 2, and none creates an element."
     },
     {
       "id": "T5",

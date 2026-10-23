@@ -26,11 +26,12 @@ P7.  Never write section 2. Only architecture-maintainer writes arc42 and the de
 P8.  A finding names the criterion id, the item, the observation with its path and heading,
      and a bounded correction with a condition that shows it is done. A preference is not a
      finding. Something no criterion requires is not a finding.
-P9.  Approved means the matrix's approved flag on the entry, and nothing else: a document's
-     effective lifecycle approves nothing. A review covers only content that is not yet
-     approved. Approved content is reference: it is reported only when an unapproved item
-     cannot be correct unless an approved statement is wrong. A re-check covers only the
-     corrected items.
+P9.  A review covers the content this Epic adds or changes and the content in its reach that
+     no Epic's elaboration has approved yet (no matrix approved flag; the effective baseline
+     included, as the effective-architecture skill, Lifecycle, the baseline and iteration,
+     says). Content an earlier Epic approved is reference: it is reported only when an
+     unapproved item cannot be correct unless an approved statement is wrong. A re-check
+     covers only the corrected items.
 P10. No architecture decision is made by instinct. Every AWS resource the design defines is
      reviewed with the AWS tools (the AWS MCP servers and the aws-core skills) against AWS
      best practice and security best practice, the design has a Well-Architected review, and
@@ -108,8 +109,8 @@ T2. Where the design has the element, the TRD carries its obligations: availabil
     in the solutions architect's result.
 T3. Each shared capability the design uses has one requirement of kind `reuse` naming the
     element, the behaviour and the capability.
-T4. No requirement contradicts an approved arc42 statement or section 2, and none creates an
-    element.
+T4. No requirement contradicts an effective arc42 statement or section 2, and none creates
+    an element.
 T5. Every PRD requirement that needs a technical obligation has one.
 T6. A requirement says what, with a value. It does not say how, and it holds no name or
     shape that belongs to the architecture and design documents.

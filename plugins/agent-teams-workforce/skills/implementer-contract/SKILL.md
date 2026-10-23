@@ -46,6 +46,8 @@ that holds only this Task's data; how to do the job is here and in your own defi
 5. The constraints are the owner's, in arc42 section 2; everything else in the architecture is the
    design so far, followed as established patterns unless a design states a reason and evidence to
    change it.
+6. Existing code and infrastructure as code are never final: change what the Task needs changed,
+   as the `software-engineering` skill ("The smallest complete change") says.
 
 ## Shared capabilities
 

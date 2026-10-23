@@ -43,10 +43,10 @@ spec restates none of their names, values or shapes.
 
 Assess the architecture dependencies of ONE Epic and write its `tracks` edges, then re-score. An
 Epic is a PRD, and an edge from Epic A to Epic B means an architecture decision B rests on should
-be designed from A's requirements first, and no `effective` architecture view already settles it
-(`epic-sequencing`). One `epic-dependency-assessor` session reads the Epic's full PRD and the related PRDs,
-answers the nine-layer foundation checklist, checks each decision against the effective
-architecture, and proposes every edge to or from the Epic with a reason, a confidence and the
+be designed from A's requirements first, and no Epic's elaboration has approved that decision yet
+(the matrix `approved` flag; `epic-sequencing`). One `epic-dependency-assessor` session reads the Epic's full PRD and the related PRDs,
+answers the nine-layer foundation checklist, checks each decision against the matrix's
+`approved` flag, and proposes every edge to or from the Epic with a reason, a confidence and the
 architecture view it checked, keeping or withdrawing (with a reason) every owned edge standing on
 it. Code validates the proposal and applies the diff: only that Epic's owned edges change, and
 hand-made edges are never touched. When the edges are applied, `wsjf-scoring` runs, because edges
@@ -92,9 +92,9 @@ After a successful run (with `apply` true):
   fingerprint (`beads-contract.py content_hash --scope judging`).
 - The matrix, through `atw-matrix`: the Epic's PRD path (`epic <id>`), the other Epics that reach
   what it reaches (`related --epic`, handed with the features and documents each shares, those
-  sharing most first), and, for what settles a decision, `find --kinds
-  document,constraint,feature` then `node`. Only the matrix's `approved` flag settles a
-  decision. Of each related Epic, only the requirements that bear on a decision are
+  sharing most first), and, for what states a decision, `find --kinds
+  document,constraint,feature` then `node`. Only the matrix's `approved` flag removes the need
+  for an edge: an `effective` document is approved content that still iterates with each Epic. Of each related Epic, only the requirements that bear on a decision are
   read: `atw-matrix epic <its id>` names them by their PRD headings, and the session reads those
   headings in its PRD.
 

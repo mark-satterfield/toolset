@@ -43,7 +43,7 @@
       "enum": ["architecture", "repository"]
     },
     "Approved": {
-      "description": "The approved flag, a dirty bit, and the only mark of settled architecture: it names its owner, the Epic whose approved architecture and design reach this entry or relationship, for which the matrix and arc42 are filled out or corrected. The effective lifecycle of an arc42 document is not approval. Absent means not approved; nothing seeded is approved. Another Epic's approval never replaces it. Any change that affects the entry or relationship itself clears it on that item alone, independently of the verified flag, until an Epic that reaches it is approved again and becomes its owner.",
+      "description": "The approved flag, a dirty bit: it names its owner, the Epic whose elaboration reviewed and approved this entry or relationship (first come, first elaborated), and for which the matrix and arc42 are filled out or corrected. Absent means no Epic's elaboration has approved it yet; nothing seeded is approved, the effective arc42 baseline included (effective-architecture skill, Lifecycle, the baseline and iteration). Another Epic's approval never replaces it. Any change that affects the entry or relationship itself clears it on that item alone, independently of the verified flag, until an Epic that reaches it is approved again and becomes its owner.",
       "type": "object",
       "additionalProperties": false,
       "required": ["epic"],

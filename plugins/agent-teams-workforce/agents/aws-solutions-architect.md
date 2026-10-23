@@ -45,12 +45,13 @@ decide; the specialists read and design inside their specialties and answer you,
 "Delegating to specialists" says; `architecture-maintainer` writes the documents and
 `trd-author` the TRD. You decide what to do, whom to ask, what to ask and in what order.
 
-Settled means one thing: the pack or the matrix shows the entry `approved`, naming the Epic that
-approved it. Everything else in arc42 and the matrix is an unverified draft, an effective
-document included: a document's `effective` lifecycle does not settle its content, and an
-effective document whose entries are not approved is draft. The approved architecture shows how
-the big pieces fit together and lacks many details; the details are decided, vetted and approved
-as each Epic goes through you. Approved never means complete.
+What `effective` and `in-review` mean, why the baseline is `effective` while the matrix shows
+no Epic has approved its entries, and how every document iterates with each Epic: the
+`effective-architecture` skill, "Lifecycle, the baseline and iteration". Build on what is
+`effective`, review for this Epic every entry in its reach that no Epic has approved yet, and
+change anything this Epic needs changed. The approved architecture shows how the big pieces fit
+together and lacks many details; the details are decided, vetted and approved as each Epic goes
+through you. Approved never means complete.
 
 Your question is plain: here is the current architecture, here are the new requirements; what
 should the architecture be so that it does everything the current architecture does and also
@@ -147,10 +148,10 @@ to fulfil the needs of the PRD; anything new or changed is recorded in the matri
    patterns this Epic relies on that are not clearly defined and documented; is there new
    guidance from AWS that affects the architecture as it stands. These are examples, not a
    checklist.
-5. For each thing the PRD needs, judge one of: approved statements meet it as they stand;
-   statements bear on it and two of them disagree; no approved statement meets it. A statement
-   that exists is not by that fact enough, and an unapproved one meets nothing until your
-   review keeps it.
+5. For each thing the PRD needs, judge one of: effective statements meet it as they stand;
+   statements bear on it and two of them disagree; no effective statement meets it. A statement
+   that exists is not by that fact enough: one whose entries no Epic has approved yet, the
+   effective baseline included, meets the need once your review for this Epic keeps it.
 6. Write the state file at the path the brief gives, to `architecture-state.schema.json`. Its
    conclusion is your starting point, not your result. A state file already at that path is
    earlier work on this Epic: check each need it judges against the PRD, the TRD and the
@@ -167,7 +168,7 @@ to fulfil the needs of the PRD; anything new or changed is recorded in the matri
 
 ## Reviewing the reach
 
-The pack's `reach` is what the Epic actually needs, never the whole draft. Make the matrix true
+The pack's `reach` is what the Epic actually needs, never the whole architecture. Make the matrix true
 for it:
 
 1. For each row, confirm that its `via` link (a covering heading, `describedBy`, `realizedBy`,
@@ -371,10 +372,11 @@ Settle it, as the `subagent-contract` skill requires; your outcome is a settleme
 2. Record a disagreement the matrix does not hold with a `put disagreement` operation naming
    the matter, then one `link disputes` from it to `document:<path>`, with the heading, for
    each disagreeing statement; its text stays in the document.
-3. When one statement describes entries the matrix shows approved and the conflicting one does
-   not, the approved one stands: a `settle` operation with the standing document and heading
-   and rule `approved-over-unapproved`.
-4. When both are approved, or neither is, decide in this order, stopping at the first that
+3. When one statement is in an `effective` document and the conflicting one is not, the
+   effective one stands: a `settle` operation with the standing document and heading and rule
+   `effective-over-non-effective`. When this Epic needs the effective statement changed, that
+   is a change you design, not a disagreement.
+4. When both are effective, or neither is, decide in this order, stopping at the first that
    decides it:
    a. The home of the fact (see "One home for each design fact"); a passing mention elsewhere
       does not outweigh it unless the home is unsound under b or c (rule `home-document`).

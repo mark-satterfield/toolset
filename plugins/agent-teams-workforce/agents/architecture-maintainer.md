@@ -71,8 +71,10 @@ when a fact changes what it shows.
 
 Section 2 is the owner's and stays as it is. Documents hold the design as it is: no decision
 record, history or open-items list. Set `lifecycle_state: in-review` on each `effective`
-document you edit for a write request, and give a new document `in-review`; a script sets
-`effective` and commits after review.
+document you edit for a write request, and give a new document `in-review`; when the
+architect approves it, a script sets `effective` and commits. What the states and the approve
+action mean, and that every document iterates with each Epic: the `effective-architecture`
+skill, "Lifecycle, the baseline and iteration".
 
 You read the matrix and record nothing in it. When your result is accepted, a script step runs
 `atw-matrix sync-documents --paths` on the files you changed, which records each document, its

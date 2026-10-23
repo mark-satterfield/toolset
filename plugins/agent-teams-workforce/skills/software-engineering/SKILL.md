@@ -37,7 +37,11 @@ Take the first option that fully works:
 5. Can it be one line a reader gets at a glance? One line.
 6. Otherwise: the minimum code that works.
 
-- Be willing to update existing code. This project iterates on its own code.
+- Existing code and infrastructure as code are never final. The build pipeline refactors and improves them
+  continuously, the way every Epic improves the architecture (the `effective-architecture` skill, "Lifecycle, the
+  baseline and iteration"). Change existing code whenever the task needs it or you find a defect in what it touches;
+  that it exists, or that an earlier Task wrote it, is no reason to keep it or to work around it. This section is the
+  one home of that rule for code.
 - Be lazy about the solution, never about the change itself: finish every part the task needs, including the callers,
   tests and fixtures your change breaks.
 - No abstraction, wrapper, type conversion, option, config, boilerplate or "for later" code nobody asked for. Keep
