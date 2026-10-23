@@ -17,7 +17,6 @@ skills:
 - agent-teams-workforce:python-lambda-packaging
 - agent-teams-workforce:matrix
 effort: high
-isolation: worktree
 color: cyan
 mcpServers:
 - aws-mcp

@@ -17,7 +17,6 @@ skills:
 - agent-teams-workforce:matrix
 - agent-teams-workforce:python-lambda-packaging
 effort: medium
-isolation: worktree
 color: teal
 ---
 

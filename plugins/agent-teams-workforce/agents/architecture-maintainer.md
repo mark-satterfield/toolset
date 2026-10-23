@@ -15,7 +15,6 @@ skills:
 - agent-teams-workforce:uml-diagramming
 - agent-teams-workforce:matrix
 effort: medium
-isolation: worktree
 color: cyan
 ---
 
