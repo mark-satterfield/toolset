@@ -27,20 +27,24 @@ Store state externally in DynamoDB, S3, or ElastiCache.
 # BAD: Function-level state
 cache = {}
 
+
 def handler(event, context):
-    if event['key'] in cache:
-        return cache[event['key']]
+    if event["key"] in cache:
+        return cache[event["key"]]
     # ...
+
 
 # GOOD: External state
 import boto3
-dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table('cache')
+
+dynamodb = boto3.resource("dynamodb")
+table = dynamodb.Table("cache")
+
 
 def handler(event, context):
-    response = table.get_item(Key={'pk': event['key']})
-    if 'Item' in response:
-        return response['Item']['value']
+    response = table.get_item(Key={"pk": event["key"]})
+    if "Item" in response:
+        return response["Item"]["value"]
     # ...
 ```
 
@@ -52,20 +56,19 @@ Handle retries gracefully with unique request IDs.
 import boto3
 import hashlib
 
-dynamodb = boto3.resource('dynamodb')
-idempotency_table = dynamodb.Table('idempotency')
+dynamodb = boto3.resource("dynamodb")
+idempotency_table = dynamodb.Table("idempotency")
+
 
 def handler(event, context):
     # Generate idempotency key
-    idempotency_key = hashlib.sha256(
-        f"{event['orderId']}-{event['action']}".encode()
-    ).hexdigest()
+    idempotency_key = hashlib.sha256(f"{event['orderId']}-{event['action']}".encode()).hexdigest()
 
     # Check if already processed
     try:
-        response = idempotency_table.get_item(Key={'pk': idempotency_key})
-        if 'Item' in response:
-            return response['Item']['result']
+        response = idempotency_table.get_item(Key={"pk": idempotency_key})
+        if "Item" in response:
+            return response["Item"]["result"]
     except Exception:
         pass
 
@@ -75,9 +78,9 @@ def handler(event, context):
     # Store result for idempotency
     idempotency_table.put_item(
         Item={
-            'pk': idempotency_key,
-            'result': result,
-            'ttl': int(time.time()) + 86400  # 24h TTL
+            "pk": idempotency_key,
+            "result": result,
+            "ttl": int(time.time()) + 86400,  # 24h TTL
         }
     )
 
@@ -92,18 +95,19 @@ import boto3
 from aws_xray_sdk.core import patch_all
 
 # SDK initialization happens once
-dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table('my-table')
+dynamodb = boto3.resource("dynamodb")
+table = dynamodb.Table("my-table")
 patch_all()
+
 
 def handler(event, context):
     # Handler code uses pre-initialized resources
-    return table.get_item(Key={'pk': event['id']})
+    return table.get_item(Key={"pk": event["id"]})
 ```
 
 **Cold Start Reduction Techniques:**
 - Use provisioned concurrency for critical paths
-- Minimize package size (use layers for dependencies)
+- Ship and import only what the function needs at init; moving a dependency into a layer does not shorten a cold start ([python-lambda-packaging](../../python-lambda-packaging/SKILL.md) for Python)
 - Choose interpreted languages (Python, Node.js) over compiled
 - Avoid VPC unless necessary (adds 6-10 sec cold start)
 
@@ -329,18 +333,16 @@ Resources:
 import boto3
 import json
 
+
 def get_secret(secret_name):
-    client = boto3.client('secretsmanager')
+    client = boto3.client("secretsmanager")
     response = client.get_secret_value(SecretId=secret_name)
-    return json.loads(response['SecretString'])
+    return json.loads(response["SecretString"])
+
 
 # Usage
-db_creds = get_secret('prod/database/credentials')
-connection = connect(
-    host=db_creds['host'],
-    user=db_creds['username'],
-    password=db_creds['password']
-)
+db_creds = get_secret("prod/database/credentials")
+connection = connect(host=db_creds["host"], user=db_creds["username"], password=db_creds["password"])
 ```
 
 ### 5. API Protection
@@ -419,6 +421,7 @@ def get_table_for_tenant(tenant_id):
     shard = hash(tenant_id) % NUM_SHARDS
     return f"data-shard-{shard}"
 
+
 # Or use DynamoDB single-table design with partition keys
 def get_partition_key(tenant_id, entity_type, entity_id):
     return f"TENANT#{tenant_id}#{entity_type}#{entity_id}"
@@ -437,7 +440,8 @@ Database (DAX):        DynamoDB-specific, TTL: minutes
 import redis
 import json
 
-cache = redis.Redis(host='cache.abc123.cache.amazonaws.com', port=6379)
+cache = redis.Redis(host="cache.abc123.cache.amazonaws.com", port=6379)
+
 
 def get_user(user_id):
     # Check cache first
@@ -526,23 +530,21 @@ import boto3
 
 app = Flask(__name__)
 
-@app.route('/health')
+
+@app.route("/health")
 def health():
-    checks = {
-        'database': check_database(),
-        'cache': check_cache(),
-        'external_api': check_external_api()
-    }
+    checks = {"database": check_database(), "cache": check_cache(), "external_api": check_external_api()}
 
-    status = 'healthy' if all(checks.values()) else 'unhealthy'
-    code = 200 if status == 'healthy' else 503
+    status = "healthy" if all(checks.values()) else "unhealthy"
+    code = 200 if status == "healthy" else 503
 
-    return jsonify({'status': status, 'checks': checks}), code
+    return jsonify({"status": status, "checks": checks}), code
+
 
 def check_database():
     try:
         # Quick connectivity test
-        db.execute('SELECT 1')
+        db.execute("SELECT 1")
         return True
     except Exception:
         return False
@@ -618,7 +620,7 @@ ErrorAlarm:
 |-------|----------|
 | No caching | Add CloudFront, ElastiCache early |
 | Inefficient queries | Use indexes, avoid DynamoDB scans |
-| Large Lambda packages | Use layers, minimize dependencies |
+| Large Lambda packages | Remove unused and duplicated dependencies; layers count toward the same 250 MB ([python-lambda-packaging](../../python-lambda-packaging/SKILL.md) for Python) |
 | N+1 queries | Implement DataLoader, batch operations |
 
 ### Cost Surprises

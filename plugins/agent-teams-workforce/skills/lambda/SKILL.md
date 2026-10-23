@@ -138,15 +138,9 @@ aws lambda update-function-configuration \
 
 ### Create and Attach Layer
 
+Build and publish the layer as [deployment.md](deployment.md#create-a-layer) shows; what it holds and how its zip is built follow [python-lambda-packaging](../python-lambda-packaging/SKILL.md).
+
 ```bash
-# Create layer
-zip -r layer.zip python/
-
-aws lambda publish-layer-version \
-  --layer-name my-dependencies \
-  --compatible-runtimes python3.12 \
-  --zip-file fileb://layer.zip
-
 # Attach to function
 aws lambda update-function-configuration \
   --function-name MyFunction \

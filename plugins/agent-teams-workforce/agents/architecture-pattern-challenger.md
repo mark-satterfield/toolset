@@ -20,6 +20,7 @@ skills:
 - agent-teams-workforce:effective-architecture
 - agent-teams-workforce:senior-architect
 - agent-teams-workforce:aws-solution-architect
+- agent-teams-workforce:python-lambda-packaging
 - agent-teams-workforce:aws-serverless-eda
 - aws-core:aws-well-architected-review
 effort: medium
@@ -79,6 +80,7 @@ Whether a trade-off's reasoning and estimates hold is `architecture-tradeoff-ske
 
 - `senior-architect` and `aws-solution-architect`: structural patterns and the AWS service choices they map to.
 - `aws-serverless-eda`: serverless and event-driven patterns and their documented anti-patterns.
+- `python-lambda-packaging`: how Python packages are split between functions and shared layers, when a structure defines layers.
 - `aws-core:aws-well-architected-review`: the pillar questions a structure is measured against.
 - AWS documentation through the AWS MCP tools, for every claim about what a service does, its limits and its regional availability.
 - `effective-architecture`: the review standard, its criteria and their levels.

@@ -65,6 +65,8 @@ The project's CDK language, its Lambda runtime and libraries, and any shared con
 ```python
 from aws_cdk import BundlingOptions, aws_lambda as lambda_
 
+UV_VERSION = uv_version  # the exact version the repository's [tool.uv] required-version names
+
 lambda_.Function(
     self,
     "Handler",
@@ -73,20 +75,24 @@ lambda_.Function(
     architecture=lambda_.Architecture.ARM_64,
     handler="handlers.handler.handler",  # module path inside the copied package
     code=lambda_.Code.from_asset(
-        ".",  # the directory holding pyproject.toml and uv.lock
+        function_dir,  # the smallest directory holding pyproject.toml, uv.lock and src/; all of it is mounted
         bundling=BundlingOptions(
             image=lambda_.Runtime.PYTHON_3_14.bundling_image,
             platform=lambda_.Architecture.ARM_64.docker_platform,  # the function's architecture
-            environment={"UV_CACHE_DIR": "/tmp/uv-cache"},
+            environment={
+                "UV_CACHE_DIR": "/tmp/uv-cache",
+                # when the lock names a private index: "UV_INDEX": private_index_url (never build_args)
+            },
             command=[
                 "bash",
                 "-c",
                 " && ".join([
-                    "python -m pip install --quiet --target /tmp/uvtool uv",
+                    f"python -m pip install --quiet --target /tmp/uvtool uv=={UV_VERSION}",
                     # runtime packages only; add --no-emit-package for each layer-provided package
                     "/tmp/uvtool/bin/uv export --frozen --no-dev --no-default-groups"
                     " --no-emit-project -o /tmp/requirements.txt",
-                    "pip install --no-deps --no-compile --only-binary=:all: -r /tmp/requirements.txt -t /asset-output",
+                    "/tmp/uvtool/bin/uv pip install --no-deps --only-binary :all:"
+                    " --target /asset-output -r /tmp/requirements.txt",
                     "cp -r src/handlers /asset-output/",  # the handler package only
                     "find /asset-output -name __pycache__ -prune -exec rm -rf {} +",
                 ]),
@@ -96,7 +102,9 @@ lambda_.Function(
 )
 ```
 
-Pin the runtime to the latest Python runtime Lambda supports (check with the AWS documentation tools) and use the same runtime for the bundling image and the function's architecture for its platform, so compiled dependencies match. Which packages the command installs, which it leaves to layers, and what it copies are decided by [python-lambda-packaging](../python-lambda-packaging/SKILL.md).
+A `LayerVersion` is bundled from the layer's own project directory with the `BundlingOptions` above, with two changes: the install target is `/asset-output/python`, and no source package is copied. Its `compatible_runtimes` and `compatible_architectures` name the runtime and architecture it was built for.
+
+Pin the runtime to the latest Python runtime Lambda supports (check with the AWS documentation tools) and use the same runtime for the bundling image and the function's architecture for its platform, so compiled dependencies match. Which packages the command installs, which it leaves to layers, and what it mounts and copies are decided by [python-lambda-packaging](../python-lambda-packaging/SKILL.md).
 
 **Benefits**:
 - Stable `aws-cdk-lib` API, with no alpha module to track

@@ -20,6 +20,7 @@ skills:
 - agent-teams-workforce:effective-architecture
 - agent-teams-workforce:senior-architect
 - agent-teams-workforce:aws-solution-architect
+- agent-teams-workforce:python-lambda-packaging
 - aws-core:aws-well-architected-review
 effort: medium
 isolation: worktree
@@ -75,5 +76,6 @@ Whether a mechanism works at all is `architecture-pattern-challenger`'s; the cos
 
 - `senior-architect`: trade-off analysis and decision records.
 - `aws-solution-architect` and `aws-core:aws-well-architected-review`: the pillars and the AWS choices a trade-off is made between.
+- `python-lambda-packaging`: Lambda layer and packaging trade-offs.
 - AWS documentation through the AWS MCP tools, for every limit, quota and performance figure an estimate uses.
 - `effective-architecture`: the review standard, its criteria and their levels.

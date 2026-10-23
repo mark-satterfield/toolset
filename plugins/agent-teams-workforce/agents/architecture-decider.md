@@ -14,6 +14,7 @@ skills:
 - agent-teams-workforce:validation-protocol
 - agent-teams-workforce:senior-architect
 - agent-teams-workforce:aws-solution-architect
+- agent-teams-workforce:python-lambda-packaging
 - agent-teams-workforce:matrix
 effort: high
 isolation: worktree

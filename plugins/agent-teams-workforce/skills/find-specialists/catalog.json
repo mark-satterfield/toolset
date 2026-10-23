@@ -370,6 +370,7 @@
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-architect",
         "agent-teams-workforce:aws-solution-architect",
+        "agent-teams-workforce:python-lambda-packaging",
         "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
@@ -447,6 +448,7 @@
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:senior-architect",
         "agent-teams-workforce:aws-solution-architect",
+        "agent-teams-workforce:python-lambda-packaging",
         "agent-teams-workforce:aws-serverless-eda",
         "aws-core:aws-well-architected-review"
       ],
@@ -474,6 +476,7 @@
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:senior-architect",
         "agent-teams-workforce:aws-solution-architect",
+        "agent-teams-workforce:python-lambda-packaging",
         "aws-core:aws-well-architected-review"
       ],
       "mcpServers": [
@@ -578,6 +581,7 @@
         "agent-teams-workforce:find-specialists",
         "agent-teams-workforce:senior-architect",
         "agent-teams-workforce:aws-solution-architect",
+        "agent-teams-workforce:python-lambda-packaging",
         "agent-teams-workforce:aws-serverless-eda",
         "agent-teams-workforce:senior-security",
         "agent-teams-workforce:graphrag-lookup",
@@ -2680,7 +2684,8 @@
         "agent-teams-workforce:validation-protocol",
         "agent-teams-workforce:senior-secops",
         "agent-teams-workforce:aws-serverless-eda",
-        "agent-teams-workforce:graphrag-lookup"
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-lambda-packaging"
       ],
       "mcpServers": [
         "gitnexus"

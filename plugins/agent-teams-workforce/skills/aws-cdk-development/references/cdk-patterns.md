@@ -107,7 +107,7 @@ A service stack does not create its own VPC. Everything that can be inside the e
 
 ### Python function with bundled dependencies
 
-Use the stable `aws_lambda.Function` with `Code.from_asset` bundling in the runtime's image. `@aws-cdk/aws-lambda-python-alpha` (`PythonFunction`) is an experimental alpha module outside `aws-cdk-lib`; do not use it.
+Use the stable `aws_lambda.Function` with `Code.from_asset` bundling in the runtime's image. `@aws-cdk/aws-lambda-python-alpha` (`PythonFunction`) is an experimental alpha module outside `aws-cdk-lib`; do not use it. In the example, `function_code` is the bundled `Code.from_asset` call of the SKILL.md "Lambda Function Development" example.
 
 ```python
 from aws_cdk import BundlingOptions, Duration, aws_lambda as lambda_
@@ -123,44 +123,13 @@ fn = lambda_.Function(
     memory_size=512,
     tracing=lambda_.Tracing.ACTIVE,
     environment={"TABLE_NAME": table.table_name},
-    code=lambda_.Code.from_asset(
-        ".",  # the directory holding pyproject.toml and uv.lock
-        bundling=BundlingOptions(
-            image=lambda_.Runtime.PYTHON_3_14.bundling_image,
-            platform=lambda_.Architecture.ARM_64.docker_platform,  # the function's architecture
-            environment={"UV_CACHE_DIR": "/tmp/uv-cache"},
-            command=[
-                "bash",
-                "-c",
-                " && ".join([
-                    "python -m pip install --quiet --target /tmp/uvtool uv",
-                    # runtime packages only; add --no-emit-package for each layer-provided package
-                    "/tmp/uvtool/bin/uv export --frozen --no-dev --no-default-groups"
-                    " --no-emit-project -o /tmp/requirements.txt",
-                    "pip install --no-deps --no-compile --only-binary=:all: -r /tmp/requirements.txt -t /asset-output",
-                    "cp -r src/handlers /asset-output/",  # the handler package only
-                    "find /asset-output -name __pycache__ -prune -exec rm -rf {} +",
-                ]),
-            ],
-        ),
-    ),
+    code=function_code,
 )
 ```
 
 ### Lambda Layers
 
-Share code across functions only through a layer or a published package; services never import another service's source. Prefer the project's shared libraries as published packages over a hand-built layer. What a layer holds is decided by [python-lambda-packaging](../../python-lambda-packaging/SKILL.md); bundle it as in the function example above, with the packages installed under `/asset-output/python`.
-
-```python
-layer = lambda_.LayerVersion(
-    self,
-    "CommonLayer",
-    layer_version_name=layer_name,  # from the naming command
-    code=lambda_.Code.from_asset("layers/common", bundling=layer_bundling),
-    compatible_runtimes=[lambda_.Runtime.PYTHON_3_14],
-    compatible_architectures=[lambda_.Architecture.ARM_64],  # what it was built for
-)
-```
+Share code across functions only through a layer or a published package; services never import another service's source. Prefer the project's shared libraries as published packages over a hand-built layer. What a layer holds and its removal policy are decided by [python-lambda-packaging](../../python-lambda-packaging/SKILL.md); its `LayerVersion` is bundled as SKILL.md "Lambda Function Development" describes.
 
 ## Testing Patterns
 

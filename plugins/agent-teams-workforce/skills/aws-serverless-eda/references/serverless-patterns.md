@@ -683,8 +683,8 @@ const waitForJob = new tasks.LambdaInvoke(this, 'StartJob', {
 **Problem**: Large Lambda packages increase cold start time
 
 **Solution**:
-- Use layers for shared dependencies
-- Externalize AWS SDK
+- Bundle only the dependencies the function imports; a layer shares a dependency between functions but does not shorten a cold start
+- Decide explicitly where the AWS SDK comes from: this Node.js example takes it from the runtime; for Python, [python-lambda-packaging](../../python-lambda-packaging/SKILL.md) decides it
 - Minimize bundle size
 
 ```typescript

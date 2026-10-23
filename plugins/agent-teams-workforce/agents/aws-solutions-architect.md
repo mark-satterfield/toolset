@@ -31,6 +31,7 @@ skills:
 - agent-teams-workforce:find-specialists
 - agent-teams-workforce:senior-architect
 - agent-teams-workforce:aws-solution-architect
+- agent-teams-workforce:python-lambda-packaging
 - agent-teams-workforce:aws-serverless-eda
 - agent-teams-workforce:senior-security
 - agent-teams-workforce:graphrag-lookup
