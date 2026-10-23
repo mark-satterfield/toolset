@@ -348,7 +348,16 @@ on the `Wire` event values. How the driver routes each event:
 - a heartbeat is announced nowhere; it counts as progress for the dispatch's idle timeout
   (section 9);
 - a note is announced as `note <kind>`;
-- a fable-wall event is recorded with `fablewall.record`.
+- a fable-wall event is recorded with `fablewall.record`;
+- a step event is kept in the run's `.out` file and announced nowhere.
+
+Each step the journal runner runs ends with a step event (`handback_contract.StepEvent`): the
+step's id, description, outermost container, script key or agent, status after the run, wall
+time in seconds and time budget. The budgets are data, in one table,
+`orchestrator/step-budgets.json` (read by `core/step_budgets.py`): a script step's by its script
+key, an agent step's by its agent, and one budget for any other agent. A step over its budget also
+emits a `warning` note naming its time and budget, so every run measures itself against the
+budgets; a step over budget is never failed.
 
 A session's runner writes a heartbeat every `ATW_HEARTBEAT` seconds (default 300) while the session
 has written a stream line since its last heartbeat (`core/agent_process.py`). Session and note

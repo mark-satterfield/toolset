@@ -43,6 +43,7 @@ import contextlib
 import json
 import sys
 import threading
+import time
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -53,12 +54,12 @@ from uuid import uuid4
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
-from orchestrator.flows.elaboration_support import parallel
+from orchestrator.flows.elaboration_support import emit_event, parallel
 
 from . import step_journal
 from .agents import CONTENT_FAILURES, AgentRunner, SessionNotResumedError, validate_output
 from .handback import failure_for, stop_stage
-from .handback_contract import OTHER_CAUSE, Failure
+from .handback_contract import OTHER_CAUSE, Failure, step_event, warning_note
 from .journal_changes import apply_completion
 from .journal_registry import REGISTRY, Registry
 from .journal_steps import (
@@ -82,6 +83,7 @@ from .models import (
     StepError,
     session_cap,
 )
+from .step_budgets import step_budget
 from .tools import Tools
 
 # isort: split
@@ -725,6 +727,52 @@ class JournalRunner:
         self._complete(step_id, launch.accept(run, launch.output))
 
     def _run_step(self, step_id: StepId) -> None:
+        """Run one step (:meth:`_attempt`), then report its wall time against its budget (:meth:`_report`).
+
+        The report follows whether the step ends or raises; what it raised continues to the caller.
+        """
+        journal: Journal = step_journal.read_journal(self.path)
+        step: Step = step_journal.find_step(journal, step_id)
+        began: float = time.monotonic()
+        try:
+            self._attempt(journal, step)
+        finally:
+            self._report(step, time.monotonic() - began)
+
+    def _report(self, step: Step, seconds: float) -> None:
+        """Emit a step's wall time against its time budget, and a warning when it ran over it.
+
+        The budget is the one the budget table gives the step (``step_budgets.step_budget``); a
+        step over its budget is reported, never failed.
+        """
+        journal: Journal = step_journal.read_journal(self.path)
+        held: Step = step_journal.find_step(journal, step["id"])
+        outermost: Step = held
+        while (above := step_journal.parent_step(journal, outermost["id"])) is not None:
+            outermost = above
+        budget: int | None = step_budget(held)
+        emit_event(
+            self.agents.emit,
+            step_event(
+                held["id"],
+                held["description"],
+                outermost["description"],
+                stage_of(held),
+                held["status"],
+                seconds=round(seconds, 1),
+                budget=budget,
+            ),
+        )
+        if budget is not None and seconds > budget:
+            emit_event(
+                self.agents.emit,
+                warning_note(
+                    stage_of(held),
+                    f"step {held['id']} ({held['description']}) took {seconds:.0f} s, over its budget of {budget} s",
+                ),
+            )
+
+    def _attempt(self, journal: Journal, step: Step) -> None:
         """Run one step and record its failure when it raises.
 
         A stale file the step finds is kept for :meth:`_replan_stale`, and the step is not failed,
@@ -743,8 +791,7 @@ class JournalRunner:
             MalformedRequestError: The malformed request was corrected in this dispatch already.
 
         """
-        journal: Journal = step_journal.read_journal(self.path)
-        step: Step = step_journal.find_step(journal, step_id)
+        step_id: StepId = step["id"]
         try:
             self._perform(journal, step)
         except StaleInputError as stale:

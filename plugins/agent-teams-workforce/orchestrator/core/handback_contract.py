@@ -120,7 +120,7 @@ TRD_PHASE: Final = "trd"
 SPEC_PHASE_PREFIX: Final = "spec:"
 PHASE_KEY: Final = re.compile(rf"^({TRD_PHASE}|{SPEC_PHASE_PREFIX}[a-zA-Z0-9._-]+)$")
 
-type EventName = Literal["phase", "verdict", "session", "heartbeat", "note", "fable-wall"]
+type EventName = Literal["phase", "verdict", "session", "heartbeat", "note", "fable-wall", "step"]
 type SessionState = Literal["started", "ended"]
 type NoteKind = Literal["warning"]
 type PrdToSpecPhase = Literal[
@@ -141,6 +141,7 @@ SESSION_EVENT: Final = "session"
 HEARTBEAT_EVENT: Final = "heartbeat"
 NOTE_EVENT: Final = "note"
 FABLE_WALL_EVENT: Final = "fable-wall"
+STEP_EVENT: Final = "step"
 EVENT_NAMES: Final[frozenset[EventName]] = frozenset(get_args(EventName.__value__))
 
 SESSION_STARTED: Final = "started"
@@ -310,8 +311,28 @@ class FableWallEvent(TypedDict):
     window: str | None
 
 
+class StepEvent(TypedDict):
+    """A step of the journal ended a run: its wall time against its time budget (null when it has none).
+
+    ``container`` is the description of the outermost step that holds it, or its own description
+    when it is an outermost step; ``key`` is its script key or its agent; ``status`` is its status
+    in the journal after the run.
+    """
+
+    event: Literal["step"]
+    id: str
+    description: str
+    container: str
+    key: str
+    status: str
+    seconds: float
+    budget: int | None
+
+
 type NoteEvent = WarningNote
-type OrchestratorEvent = PhaseEvent | VerdictEvent | SessionEvent | HeartbeatEvent | NoteEvent | FableWallEvent
+type OrchestratorEvent = (
+    PhaseEvent | VerdictEvent | SessionEvent | HeartbeatEvent | NoteEvent | FableWallEvent | StepEvent
+)
 
 _EVENT_SHAPES: Final[Mapping[str, object]] = {
     PHASE_EVENT: PhaseEvent,
@@ -319,6 +340,7 @@ _EVENT_SHAPES: Final[Mapping[str, object]] = {
     SESSION_EVENT: SessionEvent,
     HEARTBEAT_EVENT: HeartbeatEvent,
     FABLE_WALL_EVENT: FableWallEvent,
+    STEP_EVENT: StepEvent,
 }
 _NOTE_SHAPES: Final[Mapping[str, object]] = {
     WARNING_NOTE: WarningNote,
@@ -359,6 +381,7 @@ class Wire:
     heartbeat_event: EventName
     note_event: EventName
     fable_wall_event: EventName
+    step_event: EventName
     event_names: frozenset[EventName]
     session_started: SessionState
     session_ended: SessionState
@@ -398,6 +421,7 @@ wire: Final[Wire] = Wire(
     heartbeat_event=HEARTBEAT_EVENT,
     note_event=NOTE_EVENT,
     fable_wall_event=FABLE_WALL_EVENT,
+    step_event=STEP_EVENT,
     event_names=EVENT_NAMES,
     session_started=SESSION_STARTED,
     session_ended=SESSION_ENDED,
@@ -1015,8 +1039,46 @@ def fable_wall_event(resets_at: float | None, window: str | None) -> FableWallEv
     return event
 
 
+def step_event(  # ruff: ignore[too-many-arguments] - The fields of one step event.
+    step_id: str,
+    description: str,
+    container: str,
+    key: str,
+    status: str,
+    *,
+    seconds: float,
+    budget: int | None,
+) -> StepEvent:
+    """Build a validated ``step`` event.
+
+    Returns:
+        The event. A violation raises ``HandbackValidationError``.
+
+    """
+    event: StepEvent = {
+        "event": STEP_EVENT,
+        "id": step_id,
+        "description": description,
+        "container": container,
+        "key": key,
+        "status": status,
+        "seconds": seconds,
+        "budget": budget,
+    }
+    validate_event(event)
+    return event
+
+
 _CONSTANT_ERROR: str
-if {PHASE_EVENT, VERDICT_EVENT, SESSION_EVENT, HEARTBEAT_EVENT, NOTE_EVENT, FABLE_WALL_EVENT} != EVENT_NAMES:
+if {
+    PHASE_EVENT,
+    VERDICT_EVENT,
+    SESSION_EVENT,
+    HEARTBEAT_EVENT,
+    NOTE_EVENT,
+    FABLE_WALL_EVENT,
+    STEP_EVENT,
+} != EVENT_NAMES:
     _CONSTANT_ERROR = "the event constants must name every EventName exactly once"
     raise TypeError(_CONSTANT_ERROR)
 if {SESSION_STARTED, SESSION_ENDED} != SESSION_STATES:
