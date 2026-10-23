@@ -58,7 +58,7 @@
       "type": "string",
       "enum": ["business-conflict", "section-2-conflict"]
     },
-    "Citation": {
+    "SourceHeading": {
       "description": "Where something is stated or can be checked.",
       "type": "object",
       "additionalProperties": false,
@@ -85,7 +85,7 @@
         "need": {"description": "What the PRD needs, in one sentence.", "type": "string", "minLength": 1},
         "prdRequirements": {"description": "The PRD requirement headings the need comes from.", "type": "array", "items": {"type": "string"}},
         "state": {"$ref": "#/$defs/NeedState"},
-        "evidence": {"description": "The approved statements judged, and for a disagreement the statements that disagree.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
+        "evidence": {"description": "The approved statements judged, and for a disagreement the statements that disagree.", "type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},
         "judgment": {"description": "Why the state is what it is.", "type": "string", "minLength": 1}
       }
     },
@@ -201,7 +201,7 @@
         "id": {"description": "The id of the fact, unique in the file.", "type": "string", "minLength": 1},
         "statement": {"description": "The fact, in the form its home document requires: an arc42 section's form, or the detailed design of one component, one feature, components working together or the whole system.", "type": "string", "minLength": 1},
         "reason": {"description": "Why the design is so.", "type": "string", "minLength": 1},
-        "home": {"description": "The one architecture document and heading that states the fact: a document under `arc42/`, or under `detailed/` for detail the architecture documentation model places there.", "$ref": "#/$defs/Citation"},
+        "home": {"description": "The one architecture document and heading that states the fact: a document under `arc42/`, or under `detailed/` for detail the architecture documentation model places there.", "$ref": "#/$defs/SourceHeading"},
         "linkedFrom": {"description": "The paths, relative to the architecture root, of the documents that link to the home and do not restate the fact.", "type": "array", "items": {"type": "string"}}
       }
     },
@@ -213,7 +213,7 @@
       "properties": {
         "criterion": {"description": "The criterion id.", "type": "string", "minLength": 1},
         "status": {"$ref": "#/$defs/CriterionStatus"},
-        "satisfiedAt": {"description": "For `satisfied`, each architecture document and heading, or the TRD path with a requirement id as the heading, that satisfies it; empty for `not-applicable`.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
+        "satisfiedAt": {"description": "For `satisfied`, each architecture document and heading, or the TRD path with a requirement id as the heading, that satisfies it; empty for `not-applicable`.", "type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},
         "reason": {"description": "For `not-applicable`, why the criterion does not apply to this PRD; an empty string for `satisfied`.", "type": "string"}
       }
     },
@@ -225,7 +225,7 @@
       "properties": {
         "id": {"description": "A short name for the position, unique in the matter.", "type": "string", "minLength": 1},
         "statement": {"type": "string", "minLength": 1},
-        "evidence": {"type": "array", "items": {"$ref": "#/$defs/Citation"}},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},
         "cost": {"description": "What choosing this position costs.", "type": "string", "minLength": 1}
       }
     },
@@ -250,7 +250,7 @@
         "resource": {"description": "The matrix id of the billable element.", "type": "string", "minLength": 1},
         "assumptions": {"description": "The stated usage the estimate rests on.", "type": "string", "minLength": 1},
         "unitMath": {"description": "The arithmetic, with the fixed monthly floor kept apart from usage cost.", "type": "string", "minLength": 1},
-        "sources": {"type": "array", "items": {"$ref": "#/$defs/Citation"}}
+        "sources": {"type": "array", "items": {"$ref": "#/$defs/SourceHeading"}}
       }
     },
     "RecommendationAction": {
@@ -279,7 +279,7 @@
         "kind": {"$ref": "#/$defs/RequestKind"},
         "request": {"description": "The question, or the task.", "type": "string", "minLength": 1},
         "bounds": {"description": "For a task, exactly what is to be decided and what is not; an empty string for a question.", "type": "string"},
-        "concerns": {"description": "The PRD sections and architecture headings the request concerns, and nothing wider.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
+        "concerns": {"description": "The PRD sections and architecture headings the request concerns, and nothing wider.", "type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},
         "trustedCode": {"description": "The matrix ids of the entries the matrix marks verified. Code of any other entry is a hint only.", "type": "array", "items": {"type": "string"}},
         "answerPath": {"description": "The absolute path the answer is written to, under the context file's `helpersFolder`.", "type": "string", "minLength": 1}
       }
@@ -324,7 +324,7 @@
       "required": ["statement", "source"],
       "properties": {
         "statement": {"type": "string", "minLength": 1},
-        "source": {"$ref": "#/$defs/Citation"}
+        "source": {"$ref": "#/$defs/SourceHeading"}
       }
     },
     "NeededSpecialty": {
@@ -346,7 +346,7 @@
         "statement": {"description": "One sentence.", "type": "string", "minLength": 1},
         "reason": {"type": "string", "minLength": 1},
         "belongsIn": {"description": "Where the fact belongs, by the architecture documentation model: the arc42 section, 3 to 8, or the folder of the detailed architecture that holds it: `detailed/system`, `detailed/cross-component`, `detailed/components/<component>` or `detailed/features/<feature>`.", "type": "string", "pattern": "^([3-8]|detailed/(system|cross-component|components/[^/]+|features/[^/]+))$"},
-        "sources": {"type": "array", "items": {"$ref": "#/$defs/Citation"}}
+        "sources": {"type": "array", "items": {"$ref": "#/$defs/SourceHeading"}}
       }
     },
     "Diagram": {
@@ -355,7 +355,7 @@
       "additionalProperties": false,
       "required": ["home", "viewType", "mermaid", "shows"],
       "properties": {
-        "home": {"description": "The architecture document (under `arc42/` or `detailed/`) and heading the diagram belongs under.", "$ref": "#/$defs/Citation"},
+        "home": {"description": "The architecture document (under `arc42/` or `detailed/`) and heading the diagram belongs under.", "$ref": "#/$defs/SourceHeading"},
         "viewType": {"description": "The view type, from the documentation model's list of view types.", "type": "string", "minLength": 1},
         "mermaid": {"description": "The Mermaid source, without the code fence.", "type": "string", "minLength": 1},
         "shows": {"description": "The names of the elements the diagram shows.", "type": "array", "items": {"type": "string"}}
@@ -390,7 +390,7 @@
         "id": {"description": "The requirement id; for `add`, an empty string lets trd-author assign the next id.", "type": "string"},
         "kind": {"$ref": "#/$defs/RequirementKind"},
         "statement": {"description": "What must be true, with its checkable value.", "type": "string"},
-        "source": {"$ref": "#/$defs/Citation"},
+        "source": {"$ref": "#/$defs/SourceHeading"},
         "appliesTo": {"description": "The matrix id of the element.", "type": "string"}
       }
     },
@@ -429,7 +429,7 @@
         "id": {"description": "The requirement id, as the TRD gives it: the text of the requirement's own heading in the TRD.", "type": "string", "minLength": 1},
         "kind": {"$ref": "#/$defs/RequirementKind"},
         "statement": {"description": "What must be true, with its checkable value.", "type": "string", "minLength": 1},
-        "source": {"$ref": "#/$defs/Citation"},
+        "source": {"$ref": "#/$defs/SourceHeading"},
         "appliesTo": {"description": "The matrix id of the entry the requirement applies to; an empty string when it applies to the Epic as a whole.", "type": "string"}
       }
     },
@@ -454,7 +454,7 @@
       "required": ["fact", "at"],
       "properties": {
         "fact": {"description": "The id of the fact in this request, or a short name for a fact an effective document states.", "type": "string", "minLength": 1},
-        "at": {"$ref": "#/$defs/Citation"}
+        "at": {"$ref": "#/$defs/SourceHeading"}
       }
     },
     "AppliedSettlement": {
@@ -464,8 +464,8 @@
       "required": ["disagreement", "stands", "corrections"],
       "properties": {
         "disagreement": {"description": "The matrix id of the disagreement entry.", "type": "string", "minLength": 1},
-        "stands": {"description": "The statement that stands.", "$ref": "#/$defs/Citation"},
-        "corrections": {"description": "Each place whose statement lost and is replaced by a link to the one that stands.", "type": "array", "items": {"$ref": "#/$defs/Citation"}}
+        "stands": {"description": "The statement that stands.", "$ref": "#/$defs/SourceHeading"},
+        "corrections": {"description": "Each place whose statement lost and is replaced by a link to the one that stands.", "type": "array", "items": {"$ref": "#/$defs/SourceHeading"}}
       }
     },
     "WriteRequest": {
@@ -497,10 +497,10 @@
       "additionalProperties": false,
       "required": ["headingsChanged", "headingsCreated", "linksAdded", "restatementsRemoved", "notApplied", "summary"],
       "properties": {
-        "headingsChanged": {"type": "array", "items": {"$ref": "#/$defs/Citation"}},
-        "headingsCreated": {"type": "array", "items": {"$ref": "#/$defs/Citation"}},
-        "linksAdded": {"description": "Each place a link to a home heading was added.", "type": "array", "items": {"$ref": "#/$defs/Citation"}},
-        "restatementsRemoved": {"type": "array", "items": {"$ref": "#/$defs/Citation"}},
+        "headingsChanged": {"type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},
+        "headingsCreated": {"type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},
+        "linksAdded": {"description": "Each place a link to a home heading was added.", "type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},
+        "restatementsRemoved": {"type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},
         "notApplied": {"description": "Entries that could not be applied for any other reason.", "type": "array", "items": {"$ref": "#/$defs/UnappliedEntry"}},
         "summary": {"type": "string", "minLength": 1}
       }
@@ -535,7 +535,7 @@
       "properties": {
         "kind": {"$ref": "#/$defs/OwnerConcernKind"},
         "concern": {"type": "string", "minLength": 1},
-        "requirements": {"description": "The business requirements or section 2 constraints in conflict.", "type": "array", "items": {"$ref": "#/$defs/Citation"}}
+        "requirements": {"description": "The business requirements or section 2 constraints in conflict.", "type": "array", "items": {"$ref": "#/$defs/SourceHeading"}}
       }
     },
     "ArchitectureRuling": {

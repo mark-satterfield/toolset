@@ -132,7 +132,7 @@ if TYPE_CHECKING:
     from architecture_work_contract import (
         AgentRequest,
         ArchitectureResult,
-        Citation,
+        SourceHeading,
         SpecialistRecommendation,
         SpecialistRequest,
         TrdAnswer,
@@ -854,7 +854,7 @@ def _constraint(  # ruff: ignore[too-many-arguments, too-many-positional-argumen
     return recorded
 
 
-def _stated_in(matrix: Matrix, arch: Path, source: Citation) -> tuple[EntryId, str] | None:
+def _stated_in(matrix: Matrix, arch: Path, source: SourceHeading) -> tuple[EntryId, str] | None:
     """Find the document heading a technical requirement's source is.
 
     Returns:

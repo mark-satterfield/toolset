@@ -43,7 +43,7 @@ from orchestrator.core.models import StaleInputError, StepError
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from architecture_work_contract import Citation, WriteRequest, WriteResult
+    from architecture_work_contract import SourceHeading, WriteRequest, WriteResult
     from step_journal_contract import Artifact, Step
 
     from orchestrator.core.io import JsonValue
@@ -346,7 +346,7 @@ def written_paths(arch: Path, request: WriteRequest, written: WriteResult) -> li
         created, and of each home the request names, once, in path order.
 
     """
-    cited: list[Citation] = [
+    cited: list[SourceHeading] = [
         *written["headingsChanged"],
         *written["headingsCreated"],
         *written["linksAdded"],

@@ -139,8 +139,8 @@ ARCHITECTURE_QUESTION_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "architecture-ques
 ARCHITECTURE_RULING_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "architecture-ruling.schema.json"
 
 
-class Citation(TypedDict):
-    """Typed form of #/$defs/Citation in architecture-result.schema.json."""
+class SourceHeading(TypedDict):
+    """Typed form of #/$defs/SourceHeading in architecture-result.schema.json."""
 
     source: str
     heading: str
@@ -153,7 +153,7 @@ class Need(TypedDict):
     need: str
     prdRequirements: list[str]
     state: NeedState
-    evidence: list[Citation]
+    evidence: list[SourceHeading]
     judgment: str
 
 
@@ -237,7 +237,7 @@ class FactEntry(TypedDict):
     id: str
     statement: str
     reason: str
-    home: Citation
+    home: SourceHeading
     linkedFrom: list[str]
 
 
@@ -246,7 +246,7 @@ class CriterionAnswer(TypedDict):
 
     criterion: str
     status: CriterionStatus
-    satisfiedAt: list[Citation]
+    satisfiedAt: list[SourceHeading]
     reason: str
 
 
@@ -255,7 +255,7 @@ class Position(TypedDict):
 
     id: str
     statement: str
-    evidence: list[Citation]
+    evidence: list[SourceHeading]
     cost: str
 
 
@@ -274,7 +274,7 @@ class CostEvidence(TypedDict):
     resource: str
     assumptions: str
     unitMath: str
-    sources: list[Citation]
+    sources: list[SourceHeading]
 
 
 class SpecialistRecommendation(TypedDict):
@@ -292,7 +292,7 @@ class SpecialistRequest(TypedDict):
     kind: RequestKind
     request: str
     bounds: str
-    concerns: list[Citation]
+    concerns: list[SourceHeading]
     trustedCode: list[str]
     answerPath: str
 
@@ -329,7 +329,7 @@ class Reason(TypedDict):
     """Typed form of #/$defs/Reason in architecture-result.schema.json."""
 
     statement: str
-    source: Citation
+    source: SourceHeading
 
 
 class NeededSpecialty(TypedDict):
@@ -345,13 +345,13 @@ class DesignFact(TypedDict):
     statement: str
     reason: str
     belongsIn: str
-    sources: list[Citation]
+    sources: list[SourceHeading]
 
 
 class Diagram(TypedDict):
     """Typed form of #/$defs/Diagram in architecture-result.schema.json."""
 
-    home: Citation
+    home: SourceHeading
     viewType: str
     mermaid: str
     shows: list[str]
@@ -377,7 +377,7 @@ class TrdChange(TypedDict):
     id: str
     kind: RequirementKind
     statement: str
-    source: Citation
+    source: SourceHeading
     appliesTo: str
 
 
@@ -407,7 +407,7 @@ class TrdRequirement(TypedDict):
     id: str
     kind: RequirementKind
     statement: str
-    source: Citation
+    source: SourceHeading
     appliesTo: str
 
 
@@ -426,15 +426,15 @@ class Restatement(TypedDict):
     """Typed form of #/$defs/Restatement in architecture-result.schema.json."""
 
     fact: str
-    at: Citation
+    at: SourceHeading
 
 
 class AppliedSettlement(TypedDict):
     """Typed form of #/$defs/AppliedSettlement in architecture-result.schema.json."""
 
     disagreement: str
-    stands: Citation
-    corrections: list[Citation]
+    stands: SourceHeading
+    corrections: list[SourceHeading]
 
 
 class WriteRequest(TypedDict):
@@ -458,10 +458,10 @@ class UnappliedEntry(TypedDict):
 class WriteResult(TypedDict):
     """Typed form of #/$defs/WriteResult in architecture-result.schema.json."""
 
-    headingsChanged: list[Citation]
-    headingsCreated: list[Citation]
-    linksAdded: list[Citation]
-    restatementsRemoved: list[Citation]
+    headingsChanged: list[SourceHeading]
+    headingsCreated: list[SourceHeading]
+    linksAdded: list[SourceHeading]
+    restatementsRemoved: list[SourceHeading]
     notApplied: list[UnappliedEntry]
     summary: str
 
@@ -488,7 +488,7 @@ class OwnerConcern(TypedDict):
 
     kind: OwnerConcernKind
     concern: str
-    requirements: list[Citation]
+    requirements: list[SourceHeading]
 
 
 class ArchitectureRuling(TypedDict):
