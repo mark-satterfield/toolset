@@ -176,7 +176,8 @@ gone a new session starts. A session is continued only when it was made under th
 and contracts of now: each new session records its agent, the contract schema its output is
 validated against and their fingerprint (`agents.agent_fingerprint`: the definition file and each
 schema with the schema files it references, by path and content) in
-`<work>/sessions/<session id>.json`. A session whose fingerprint differs now, or one with no
+`<work>/sessions/<session id>.json`, written once its process runs with a live pid, so a launch
+that fails leaves no record to continue. A session whose fingerprint differs now, or one with no
 record, starts anew; a plugin release that changes neither file keeps it.
 
 An architecture context file the open-run step wrote to an earlier contract is written again in
@@ -189,7 +190,10 @@ there, so the file is written again to the current contract. When the same write
 in one dispatch, the step fails; when that writer is a script step, its code wrote the file to a
 contract other than its readers', and the failure is `PipelineDefectError`. A file a step reads
 that is missing, is not JSON or is refused by its contract is the item's failure; a contract whose
-schema cannot be loaded or applied is a `PipelineDefectError` (`architecture_files.checked_file`). A helper's request is stale only when the session of the step
+schema cannot be loaded or applied is a `PipelineDefectError` (`architecture_files.checked_file`).
+The solutions architect's result and a document maintainer's result are read the same way as a
+helper's request (`architecture_files.checked_output`): refused under a writer session of another
+fingerprint, they are stale and the writer runs again; refused under a current one, the item fails. A helper's request is stale only when the session of the step
 above it was made under another agent definition or contracts (or that step holds none); a request
 that session wrote wrongly under the current ones (`MalformedRequestError`) is corrected in place
 by continuing that session with the errors, and the helper runs again, with nothing set back to
@@ -386,7 +390,10 @@ report and the note and verdict events of the dispatch. For a failure that escap
 
 `run.py` exits 0 whenever it wrote a handback, whatever `ok` says; a process that ended without
 one is a failed dispatch at the driver's stage `no-handback`, built from the child's last
-exception line (`orchestrated.failed_handback`).
+exception line (`orchestrated.failed_handback`). Once the dispatch-arguments contract is loaded, a
+command line the full parse refuses still writes a handback, classification `setup`, to the
+handback path the command line names (`run._handback_options`); only an unloadable contract or a
+command line that names no handback path leaves none.
 
 The driver sets the failure origin from the handback's structured failure
 (`<driver>/pluginhandback.py`): a cause of `api` or `quota`, and the classification `interrupted`,

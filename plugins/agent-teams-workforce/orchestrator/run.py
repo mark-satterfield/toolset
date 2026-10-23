@@ -15,7 +15,7 @@ from pathlib import Path
 from types import FrameType
 from typing import TextIO
 
-from typeguard import CollectionCheckStrategy, check_type, typechecked
+from typeguard import CollectionCheckStrategy, TypeCheckError, check_type, typechecked
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -173,6 +173,23 @@ def _write_result(result: dict[str, JsonValue], destination: Path, bead: str) ->
     write_json(destination, document)
 
 
+def _handback_options(contract: DispatchArguments, argv: list[str] | None) -> argparse.Namespace:
+    """Read the handback path and the bead from the command line before the full parse.
+
+    Returns:
+        ``handback`` (a Path) and ``bead``; each None when the command line does not give it
+        readably.
+
+    """
+    early: argparse.ArgumentParser = argparse.ArgumentParser(add_help=False)
+    early.add_argument(contract.OPT_HANDBACK, dest="handback", type=Path)
+    early.add_argument(contract.OPT_BEAD, dest="bead")
+    try:
+        return early.parse_known_args(argv)[0]
+    except SystemExit:
+        return argparse.Namespace(handback=None, bead=None)
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def main(argv: list[str] | None = None) -> int:
     """Run the selected flow and persist its validated handback.
@@ -181,7 +198,9 @@ def main(argv: list[str] | None = None) -> int:
     the options that carry the handback path. A missing control repository or an unloadable
     contract therefore raises before any handback path is known: the process exits non-zero and
     writes no handback, and the driver reads the absent handback as a rejected document
-    (classification ``pipeline-code-defect``), which stops new dispatch.
+    (classification ``pipeline-code-defect``), which stops new dispatch. Once the contract is
+    loaded, a command line the full parse refuses writes a setup handback to the handback path
+    the command line names, when it names one readably.
 
     Args:
         argv: Command-line arguments; ``None`` reads ``sys.argv``.
@@ -194,6 +213,9 @@ def main(argv: list[str] | None = None) -> int:
             dispatch-arguments contract is incomplete. Loading the contract also propagates
             ``KeyError`` when the control repository variable is unset and ``ImportError``
             when the control repository has no dispatch-arguments module.
+        SystemExit: The full parse refused the command line, which names no handback path.
+        TypeCheckError: A parsed option has the wrong type, and the command line names no
+            handback path.
 
     """
     number: signal.Signals
@@ -202,13 +224,21 @@ def main(argv: list[str] | None = None) -> int:
         message: str = "Arguments must be a list of strings"
         raise TypeError(message)
     contract: DispatchArguments = dispatch_arguments()
-    options: argparse.Namespace = parser(contract).parse_args(argv)
+    early: argparse.Namespace = _handback_options(contract, argv)
     bead: str
     flow_name: str
     path: Path
     destination: Path
-    bead, flow_name = check_type(options.bead, str), check_type(options.flow, str)
-    path, destination = check_type(options.args, Path), check_type(options.handback, Path)
+    try:
+        options: argparse.Namespace = parser(contract).parse_args(argv)
+        bead, flow_name = check_type(options.bead, str), check_type(options.flow, str)
+        path, destination = check_type(options.args, Path), check_type(options.handback, Path)
+    except (SystemExit, TypeCheckError) as exc:
+        if early.handback is None:
+            raise
+        named: str = early.bead or ""
+        _write_result(_failed(None, exc, named, early.handback), early.handback, named)
+        return 0
     context: RunContext | None = None
     previous: dict[signal.Signals, SignalHandler] = {
         number: signal.signal(number, _interrupted) for number in (signal.SIGINT, signal.SIGTERM)

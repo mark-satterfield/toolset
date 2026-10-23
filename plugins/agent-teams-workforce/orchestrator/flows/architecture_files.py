@@ -41,7 +41,7 @@ from orchestrator.core.driver_contracts import DispatchArguments, dispatch_argum
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import json_object, write_json
 from orchestrator.core.journal_steps import is_finish_of
-from orchestrator.core.models import PipelineDefectError, StepError
+from orchestrator.core.models import PipelineDefectError, StaleInputError, StepError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -346,13 +346,48 @@ def _rewritten_context(run: StepRun, held: object) -> ArchitectureContext:
 def read_result(run: StepRun, context: ArchitectureContext) -> ArchitectureResult:
     """Read the solutions architect's result.
 
-    A result file that is missing or does not satisfy its schema raises ``ArchitectureStepError``.
+    A result file that is missing or is not JSON raises ``ArchitectureStepError``. One that does
+    not satisfy its schema is handled by :func:`checked_output`, its writer being the solutions
+    architect's first step in walk order, whose session every later step of the architect
+    continues.
 
     Returns:
         The validated result.
 
     """
-    return checked_file(run, Path(context["resultPath"]), validate_architecture_result)
+    writer: Step | None = next(
+        (step for step in step_journal.steps_in_order(run.journal()) if step.get("agent") == ARCHITECT),
+        None,
+    )
+    return checked_output(run, Path(context["resultPath"]), validate_architecture_result, writer)
+
+
+def checked_output[T](run: StepRun, path: Path, validate: Callable[[object], T], writer: Step | None) -> T:
+    """Read a file an earlier agent step wrote, and validate it with its contract.
+
+    A file the contract refuses was written to an earlier contract when its writer's session was
+    made under another agent definition or contracts (``AgentRunner.resumable``), or the writer
+    holds no session: the writer runs again. Otherwise the refusal is the item's.
+
+    Returns:
+        The validated document.
+
+    Raises:
+        ArchitectureStepError: The file is missing or is not JSON, or the contract refuses it
+            and the writer is unknown or its session is one of the current definition and contracts.
+        StaleInputError: The contract refuses the file, and its writer's session is not one of
+            the current agent definition and contracts.
+
+    """
+    held: object = checked_file(run, path, lambda value: value)
+    try:
+        return validate(held)
+    except ArchitectureWorkError as exc:
+        evidence: str = f"{path}: {exc}"
+        session: str | None = None if writer is None else writer.get("session")
+        if writer is not None and (session is None or not run.agents.resumable(session)):
+            raise StaleInputError(run.inputs.stage, writer["id"], (evidence,)) from None
+        raise ArchitectureStepError(run, evidence) from None
 
 
 def output_check(validate: Callable[[object, str], object]) -> Callable[[Path], dict[str, JsonValue]]:
@@ -427,7 +462,9 @@ def written_documents(run: StepRun, arch: Path) -> list[str]:
     Returns:
         The path under the architecture root of each document written, once, in path order. A
         write request or a result a done step holds that cannot be read raises
-        ``ArchitectureStepError`` from :func:`checked_file`.
+        ``ArchitectureStepError`` from :func:`checked_file`; a result written to an earlier
+        contract by a session of another agent definition raises ``StaleInputError``
+        (:func:`checked_output`).
 
     """
     container: Step = run.step_named(ARCHITECTURE)
@@ -439,7 +476,7 @@ def written_documents(run: StepRun, arch: Path) -> list[str]:
         if step["status"] != STATUS_DONE or written is None or asked is None:
             continue
         request: WriteRequest = checked_file(run, asked, validate_write_request)
-        result: WriteResult = checked_file(run, written, validate_write_result)
+        result: WriteResult = checked_output(run, written, validate_write_result, step)
         paths.update(written_paths(arch, request, result))
     return sorted(paths)
 

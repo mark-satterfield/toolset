@@ -51,6 +51,7 @@ from orchestrator.flows.architecture_files import (
     ArchitectureContext,
     ArchitectureStepError,
     checked_file,
+    checked_output,
     held_file,
     matrix_file,
     read_context,
@@ -285,7 +286,7 @@ def _corrected(run: StepRun) -> list[str]:
         if step["status"] != STATUS_DONE or written is None or asked is None:
             continue
         request: WriteRequest = checked_file(run, asked, validate_write_request)
-        result: WriteResult = checked_file(run, written, validate_write_result)
+        result: WriteResult = checked_output(run, written, validate_write_result, step)
         unapplied: list[str] = [left["entry"] for left in result["notApplied"]]
         corrected.extend(
             settlement["disagreement"]

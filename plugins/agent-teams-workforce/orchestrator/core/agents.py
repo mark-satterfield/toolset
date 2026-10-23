@@ -14,9 +14,10 @@ import tempfile
 import threading
 import time
 import traceback
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager, nullcontext
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from types import MappingProxyType
 from typing import Final
@@ -588,6 +589,10 @@ class AgentRunner:
     ) -> Path:
         """Run the session of one journal step through its corrective and model-fallback resumes.
 
+        A new session's mark (``_mark_session``) is written once its process runs with a live
+        pid, so a launch that fails leaves no mark and no later dispatch tries to continue a
+        session that never ran.
+
         Returns:
             The validated output path.
 
@@ -600,8 +605,6 @@ class AgentRunner:
         session_id: str = directory.name.removeprefix(SESSION_DIRECTORY_PREFIX)
         try:
             scratch, env, launch, row = self._journal_setup(step, session_id, directory)
-            if not resume:
-                self._mark_session(session_id, step)
             if fresh_output and not resume:
                 step.output.unlink(missing_ok=True)
         except (OSError, ValueError, KeyError, ImportError) as exc:
@@ -640,6 +643,7 @@ class AgentRunner:
                 env=env,
                 stream=stream,
                 row=row,
+                live=None if resume else partial(self._mark_session, session_id, step),
             )
             info: dict[str, JsonValue] | None = facts["rate"]
             if info is not None and is_refusal(info) and row["model"] == FABLE:
@@ -665,7 +669,7 @@ class AgentRunner:
                 continue
             return step.output
 
-    def _session(
+    def _session(  # ruff: ignore[too-many-arguments] - The process, its prompt, environment, stream, row and start hook.
         self,
         *,
         command: list[str],
@@ -673,6 +677,7 @@ class AgentRunner:
         env: dict[str, str],
         stream: Path,
         row: Session,
+        live: Callable[[], None] | None = None,
     ) -> SessionFacts:
         directory = Path(row["cwd"])
         pid = None
@@ -682,6 +687,8 @@ class AgentRunner:
         def started(value: int) -> None:
             nonlocal pid
             pid = value
+            if live is not None:
+                live()
             row.update({"pid": pid, "pgid": pid, "startedAt": time.time(), "endedAt": None})
             record_session(self.context, row)
             emit_session(self.emit, row, SESSION_STARTED)
