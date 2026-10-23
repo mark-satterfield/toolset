@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "d02dce999fed1a02e65974f8ba3abfe14c226c0841d672c3edbcb096c1f9d938"
+SCHEMA_SHA256: Final[str] = "32bd386e630426eae3b8fa920feb0bc5bbf6f2b1c1c4b128719c32b326508ff1"
 #: The schema this module was generated from.
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "driver-surface.schema.json"
 
@@ -60,6 +60,34 @@ ORCH_IDLE_ENV: Final[str] = "ATW_ORCH_IDLE"
 #: Orchestrator idle limit in seconds: a positive finite float. A non-finite or non-positive value is a
 #: ValueError.
 ORCH_IDLE_DEFAULT: Final[str] = "3600"
+#: Agent session idle limit in seconds: a session that writes no stream line for this long is ended
+#: with cause timeout. A positive finite float; a non-finite or non-positive value is a ValueError.
+SESSION_IDLE_ENV: Final[str] = "ATW_SESSION_IDLE"
+#: Agent session idle limit in seconds: a session that writes no stream line for this long is ended
+#: with cause timeout. A positive finite float; a non-finite or non-positive value is a ValueError.
+SESSION_IDLE_DEFAULT: Final[str] = "1800"
+#: Agent session hard limit in seconds for an agent whose definition states no x-sessionLimit: a
+#: session running this long is ended with cause timeout. A positive finite float; a non-finite or non-
+#: positive value is a ValueError.
+SESSION_LIMIT_ENV: Final[str] = "ATW_SESSION_LIMIT"
+#: Agent session hard limit in seconds for an agent whose definition states no x-sessionLimit: a
+#: session running this long is ended with cause timeout. A positive finite float; a non-finite or non-
+#: positive value is a ValueError.
+SESSION_LIMIT_DEFAULT: Final[str] = "7200"
+#: Subagent stall limit in seconds: while an Agent call of a session is open, a subagent transcript
+#: that has written nothing for this long ends the session with cause timeout. A positive finite float;
+#: a non-finite or non-positive value is a ValueError.
+SUBAGENT_IDLE_ENV: Final[str] = "ATW_SUBAGENT_IDLE"
+#: Subagent stall limit in seconds: while an Agent call of a session is open, a subagent transcript
+#: that has written nothing for this long ends the session with cause timeout. A positive finite float;
+#: a non-finite or non-positive value is a ValueError.
+SUBAGENT_IDLE_DEFAULT: Final[str] = "300"
+#: Seconds between the heartbeats a running agent session announces. A positive finite float; a non-
+#: finite or non-positive value is a ValueError.
+HEARTBEAT_ENV: Final[str] = "ATW_HEARTBEAT"
+#: Seconds between the heartbeats a running agent session announces. A positive finite float; a non-
+#: finite or non-positive value is a ValueError.
+HEARTBEAT_DEFAULT: Final[str] = "300"
 #: Permission bits a consumer creates the stop marker file with.
 STOP_FILE_MODE: Final[int] = 0o600
 #: Seconds a terminated child process is given before it is killed.
@@ -209,6 +237,10 @@ class DriverEnvironment(TypedDict):
     ATW_STOP_FILE: NotRequired[str]
     ATW_EXECUTION_ID: NotRequired[str]
     ATW_ORCH_IDLE: NotRequired[str]
+    ATW_SESSION_IDLE: NotRequired[str]
+    ATW_SESSION_LIMIT: NotRequired[str]
+    ATW_SUBAGENT_IDLE: NotRequired[str]
+    ATW_HEARTBEAT: NotRequired[str]
 
 
 class UsageWindow(TypedDict):

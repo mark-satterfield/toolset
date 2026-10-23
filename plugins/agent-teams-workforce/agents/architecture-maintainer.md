@@ -4,6 +4,7 @@ description: Write the solutions architect's decisions into the architecture doc
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill, Agent, Workflow
 disallowedTools: AskUserQuestion
 model: sonnet
+x-sessionLimit: 540
 permissionMode: acceptEdits
 maxTurns: 200
 skills:

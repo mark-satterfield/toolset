@@ -14,6 +14,7 @@ mcpServers:
   - pg-aiguide
   - awslabs-postgres-mcp-server
 model: sonnet
+x-sessionLimit: 900
 permissionMode: acceptEdits
 maxTurns: 90
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture, agent-teams-workforce:dynamodb, agent-teams-workforce:aurora-postgresql, agent-teams-workforce:design-postgres-tables, agent-teams-workforce:python-lambda-packaging]

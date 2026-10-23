@@ -6,6 +6,7 @@ mcpServers:
 - mcp-graphrag-server
 disallowedTools: AskUserQuestion
 model: sonnet
+x-sessionLimit: 540
 permissionMode: acceptEdits
 maxTurns: 150
 skills:

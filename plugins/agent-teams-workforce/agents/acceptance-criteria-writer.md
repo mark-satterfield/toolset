@@ -4,6 +4,7 @@ description: Derive traceable criteria and Definition of Done from the finished 
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill, Agent, Workflow
 disallowedTools: AskUserQuestion
 model: sonnet
+x-sessionLimit: 900
 permissionMode: acceptEdits
 maxTurns: 100
 skills:

@@ -8,6 +8,7 @@ disallowedTools: AskUserQuestion
 mcpServers:
 - aws-mcp
 model: fable
+x-sessionLimit: 720
 permissionMode: acceptEdits
 maxTurns: 100
 skills:

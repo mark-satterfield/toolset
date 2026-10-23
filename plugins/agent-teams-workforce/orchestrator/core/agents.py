@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -26,7 +27,7 @@ from . import portfolio_bootstrap  # ruff: ignore[unused-import] - Imported for 
 # isort: split
 import jsonschema
 import strictschema
-from driver_surface_types import ARCH_PATH_ENV, STOP_FILE_ENV
+from driver_surface_types import ARCH_PATH_ENV, SESSION_LIMIT_ENV, STOP_FILE_ENV
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from .agent_context import (
@@ -40,7 +41,7 @@ from .agent_context import (
     load_agent,
     prepare,
 )
-from .agent_process import SessionProcesses, SessionRequest
+from .agent_process import SessionProcesses, SessionRequest, subagent_transcripts
 from .constraints import Section2Guard
 from .driver_contracts import (
     DispatchArguments,
@@ -60,6 +61,7 @@ from .handback_contract import (
     SESSION_ENDED,
     SESSION_STARTED,
     SHUTDOWN_CAUSE,
+    TIMEOUT_CAUSE,
     OrchestratorEvent,
     Session,
     SessionState,
@@ -78,11 +80,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifac
 from matrix_contract import ROLE_ENV, ROLES
 
 PLUGIN_COMMANDS: Final = "bin"
-PLUGIN_MANIFEST: Final = Path(".claude-plugin") / "plugin.json"
-"""The plugin's manifest under the plugin root; its ``version`` is the plugin version."""
-SESSION_MARKS: Final = "sessions"
-"""The folder of the work directory that records, per session id, the plugin version that started it."""
 """The plugin folder whose commands (``atw-matrix``, ``atw-step-journal``) a session runs by name."""
+SESSION_MARKS: Final = "sessions"
+"""The folder of the work directory that records, per session id, the agent, the contract schemas
+and the fingerprint (``agent_fingerprint``) the session was started under."""
 FABLE: Final = "fable"
 FABLE_REPLACEMENT: Final = MappingProxyType({FABLE: "opus"})
 """The model every agent whose definition states Fable runs on while the Fable allowance is spent."""
@@ -165,6 +166,79 @@ def validate_output(step: AgentStep) -> dict[str, JsonValue] | None:
         raise ValueError(message)
     step.validate(step.output)
     return None
+
+
+_FILE_REF: Final = re.compile(r'"\$ref"\s*:\s*"([^"#][^"#]*)')
+_SCHEMA_NAME: Final = re.compile(r"[A-Za-z0-9_.-]+\.schema\.json")
+
+
+def _contract_files(schema: Path) -> list[Path]:
+    """List a contract schema file and every schema file it references, directly or not.
+
+    Returns:
+        The schema and its referenced files, each once, in the order they are reached.
+
+    """
+    found: list[Path] = []
+    pending: list[Path] = [schema.resolve()]
+    while pending:
+        path: Path = pending.pop()
+        if path in found:
+            continue
+        found.append(path)
+        if path.is_file():
+            pending.extend((path.parent / ref).resolve() for ref in _FILE_REF.findall(path.read_text(encoding="utf-8")))
+    return found
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def agent_fingerprint(plugin: Path, agent: str, contracts: Sequence[Path] = ()) -> str:
+    """Fingerprint what a session of an agent was made under: its definition and its contracts.
+
+    The contracts are every schema file the definition names (``<name>.schema.json``, found under
+    the plugin's ``skills/*/schemas/``) and ``contracts``, each with every schema file it
+    references. The digest covers the definition and those files by path and content; a file
+    that does not exist counts as missing. A change elsewhere in the plugin leaves it equal, so a
+    held session survives an unrelated release.
+
+    Args:
+        plugin: The plugin root.
+        agent: The agent's plain name (``agents/<agent>.md``).
+        contracts: Further contract schema files, such as the one the session's output is
+            validated against, absolute or relative to the plugin root.
+
+    Returns:
+        The SHA-256 hex digest.
+
+    """
+    root: Path = plugin.resolve()
+    definition: Path = (root / "agents" / f"{agent}.md").resolve()
+    files: list[Path] = [definition]
+    text: str = definition.read_text(encoding="utf-8") if definition.is_file() else ""
+    named: set[str] = set(_SCHEMA_NAME.findall(text))
+    schemas: list[Path] = sorted(path for path in root.glob("skills/*/schemas/*.schema.json") if path.name in named)
+    for contract in [*schemas, *contracts]:
+        files.extend(path for path in _contract_files(root / contract) if path not in files)
+    digest = hashlib.sha256()
+    for path in files:
+        digest.update(str(path.relative_to(root) if path.is_relative_to(root) else path).encode("utf-8") + b"\0")
+        digest.update(path.read_bytes() if path.is_file() else b"\0missing")
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _contracts_of(plugin: Path, step: AgentStep) -> list[str]:
+    """Name the contract schema a step's output is validated against, relative to the plugin when inside it.
+
+    Returns:
+        The schema's path, or nothing for a Markdown document checked by a function.
+
+    """
+    if not isinstance(step.validate, Path):
+        return []
+    schema: Path = step.validate.resolve()
+    root: Path = plugin.resolve()
+    return [str(schema.relative_to(root) if schema.is_relative_to(root) else schema)]
 
 
 CONTENT_FAILURES: tuple[type[Exception], ...] = (OSError, ValueError, UnicodeError, jsonschema.ValidationError)
@@ -273,34 +347,54 @@ class AgentRunner:
         )
         self.context.model_policy.setdefault("fable_blocked", False)
 
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def plugin_version(self) -> str:
-        """Read the version of the plugin this runner launches sessions with.
-
-        Returns:
-            The ``version`` of the plugin's manifest.
-
-        """
-        return check_type(strict_json(self.plugin / PLUGIN_MANIFEST)["version"], str)
-
     def _session_mark(self, session_id: str) -> Path:
         return self.context.work / SESSION_MARKS / f"{session_id}.json"
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def resumable(self, session_id: str) -> bool:
-        """Tell whether a session may be continued: the plugin version that runs now started it.
-
-        A session another version started, or one with no record, was made under other agent
-        definitions and contracts, so it is not continued.
+    def step_fingerprint(self, step: AgentStep) -> str:
+        """Fingerprint the agent definition and contract a session of ``step`` runs under now.
 
         Returns:
-            True when the work directory records that this plugin version started the session.
+            ``agent_fingerprint`` of the step's agent and output contract in this plugin.
+
+        """
+        return agent_fingerprint(self.plugin, step.agent, [Path(path) for path in _contracts_of(self.plugin, step)])
+
+    def _mark_session(self, session_id: str, step: AgentStep) -> None:
+        """Record the agent, contracts and fingerprint a new session starts under."""
+        contracts: list[str] = _contracts_of(self.plugin, step)
+        write_json(
+            self._session_mark(session_id),
+            {
+                "sessionId": session_id,
+                "agent": step.agent,
+                "contracts": list(contracts),
+                "fingerprint": agent_fingerprint(self.plugin, step.agent, [Path(path) for path in contracts]),
+            },
+        )
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def resumable(self, session_id: str) -> bool:
+        """Tell whether a session may be continued: it was made under the agent definition and contracts of now.
+
+        The session's mark records the agent, its contract schemas and their fingerprint when the
+        session started. A session whose agent definition or contracts have changed since, or one
+        with no mark, is not continued; a change elsewhere in the plugin does not matter.
+
+        Returns:
+            True when the recorded fingerprint equals the fingerprint of the same files now.
 
         """
         mark: Path = self._session_mark(session_id)
         if not mark.is_file():
             return False
-        return strict_json(mark).get("pluginVersion") == self.plugin_version()
+        fields: dict[str, JsonValue] = strict_json(mark)
+        agent: JsonValue = fields.get("agent")
+        contracts: JsonValue = fields.get("contracts")
+        if not isinstance(agent, str) or not isinstance(contracts, list):
+            return False
+        paths: list[Path] = [Path(check_type(path, str)) for path in contracts]
+        return fields.get("fingerprint") == agent_fingerprint(self.plugin, agent, paths)
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def share_processes(self, parent: AgentRunner) -> None:
@@ -445,6 +539,8 @@ class AgentRunner:
         )
         agent: AgentDefinition = load_agent(self.plugin, step.agent)
         env["PATH"] = os.pathsep.join([str(self.plugin / PLUGIN_COMMANDS), env.get("PATH", os.defpath)])
+        if agent.session_limit is not None:
+            env[SESSION_LIMIT_ENV] = str(agent.session_limit)
         if agent.role in ROLES:
             env[ROLE_ENV] = agent.role
         else:
@@ -489,10 +585,7 @@ class AgentRunner:
         try:
             scratch, env, launch, row = self._journal_setup(step, session_id, directory)
             if not resume:
-                write_json(
-                    self._session_mark(session_id),
-                    {"sessionId": session_id, "pluginVersion": self.plugin_version()},
-                )
+                self._mark_session(session_id, step)
             if fresh_output and not resume:
                 step.output.unlink(missing_ok=True)
         except (OSError, ValueError, KeyError, ImportError) as exc:
@@ -598,6 +691,11 @@ class AgentRunner:
                         stream,
                         started,
                         lambda: _emit(self.emit, heartbeat_event([row["sessionId"]], time.time())),
+                        subagent_transcripts(
+                            Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude"))).expanduser(),
+                            directory,
+                            row["sessionId"],
+                        ),
                     ),
                 )
 
@@ -624,25 +722,32 @@ class AgentRunner:
 
     @staticmethod
     def _cause(facts: SessionFacts) -> str | None:
+        """Name the cause a session ended with, or None when it ended well.
+
+        A session ended at its time limit, its idle limit or a stalled subagent is ``timeout``,
+        a transient cause: the next dispatch continues the session.
+
+        Returns:
+            The failure cause, or None.
+
+        """
         if facts["rate"] is not None:
             return None if is_refusal(facts["rate"]) else QUOTA_CAUSE
+        if facts["timeout"]:
+            return TIMEOUT_CAUSE
         result = facts["result"]
-        if result and (
-            result.get("terminal_reason") == "api_error"
-            or (result.get("is_error") and result.get("api_error_status") is not None)
-        ):
-            return API_CAUSE
-        if facts["timeout"] or (result and result.get("is_error")):
-            return OTHER_CAUSE
+        api: bool = bool(
+            result
+            and (
+                result.get("terminal_reason") == "api_error"
+                or (result.get("is_error") and result.get("api_error_status") is not None)
+            ),
+        )
+        if api or (result and result.get("is_error")):
+            return API_CAUSE if api else OTHER_CAUSE
         if facts.get("cancelledCause"):
             return facts["cancelledCause"]
-        if (
-            facts["timeout"]
-            or facts["exit"] != 0
-            or not result
-            or result.get("is_error")
-            or result.get("subtype") != "success"
-        ):
+        if facts["exit"] != 0 or not result or result.get("is_error") or result.get("subtype") != "success":
             return OTHER_CAUSE
         return None
 
@@ -657,4 +762,5 @@ class AgentRunner:
                 if cause == QUOTA_CAUSE and facts["rate"] is not None
                 else facts.get("cancelledResumeAt")
             )
-            raise StepError(step.stage, cause, (str(stream),), resume_at=check_type(reset, float | None))
+            evidence: tuple[str, ...] = (str(stream), *([facts["stalled"]] if "stalled" in facts else []))
+            raise StepError(step.stage, cause, evidence, resume_at=check_type(reset, float | None))

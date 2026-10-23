@@ -42,6 +42,8 @@ SESSION_ENV: Final[Mapping[str, str]] = MappingProxyType({BACKGROUND_TASKS_ENV: 
 BASH_OUTPUT_KEY: Final = "bashOutputMaxChars"
 BASH_OUTPUT_LIMIT: Final = 128_000
 """Claude Code's largest inline command output, so a command's output is not cut to a preview."""
+SESSION_LIMIT_KEY: Final = "x-sessionLimit"
+"""The agent front-matter key stating the hard limit of the agent's sessions, in seconds."""
 BRIEF_SCHEMA: Final[Path] = (
     Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "schemas" / "agent-brief.schema.json"
 )
@@ -65,19 +67,23 @@ class SessionSetupError(RuntimeError):
 class AgentDefinition:
     """The fields of one agent definition file the runner still reads (held for the owner's ruling).
 
-    ``model`` drives the Fable fallback and ``role`` the matrix role. The agent's tools are its
-    front matter's allow-list, which Claude Code applies; the runner reads none of them.
+    ``model`` drives the Fable fallback, ``role`` the matrix role and ``session_limit`` (front
+    matter ``x-sessionLimit``, seconds) the hard limit of the agent's sessions; an agent that states
+    none runs under the driver surface's ``ATW_SESSION_LIMIT``. The agent's tools are its front
+    matter's allow-list, which Claude Code applies; the runner reads none of them.
     """
 
     name: str
     model: str
     role: str | None
+    session_limit: int | None = None
 
     def __post_init__(self) -> None:
         """Validate every constructed field."""
         check_type(self.name, str)
         check_type(self.model, str)
         check_type(self.role, str | None)
+        check_type(self.session_limit, int | None)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -113,14 +119,15 @@ def read_json(path: Path) -> dict[str, JsonValue]:
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def load_agent(plugin: Path, name: str) -> AgentDefinition:
-    """Read the model and role of one agent definition file of the plugin.
+    """Read the model, role and session limit of one agent definition file of the plugin.
 
     Returns:
         The validated fields.
 
     Raises:
         TypeError: An argument or a front matter field has the wrong type.
-        ValueError: The front matter is missing or states no model.
+        ValueError: The front matter is missing, states no model, or states a session limit that
+            is not a positive number of seconds.
 
     """
     if not isinstance(plugin, Path) or not isinstance(name, str):
@@ -137,7 +144,11 @@ def load_agent(plugin: Path, name: str) -> AgentDefinition:
     if role is not None and (not isinstance(role, str) or not role.strip()):
         message = f"agent {name} role must be a non-empty string"
         raise TypeError(message)
-    return AgentDefinition(name=name, model=model.strip(), role=role)
+    limit: JsonValue = metadata.get(SESSION_LIMIT_KEY)
+    if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0):
+        message = f"agent {name} {SESSION_LIMIT_KEY} must be a positive whole number of seconds"
+        raise ValueError(message)
+    return AgentDefinition(name=name, model=model.strip(), role=role, session_limit=limit)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

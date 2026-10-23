@@ -10,6 +10,7 @@ disallowedTools: AskUserQuestion
 mcpServers:
 - gitnexus
 model: fable
+x-sessionLimit: 540
 permissionMode: acceptEdits
 maxTurns: 100
 skills:

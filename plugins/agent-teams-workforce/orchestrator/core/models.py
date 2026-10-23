@@ -163,6 +163,8 @@ class SessionFacts(TypedDict):
     pid: int
     cancelledCause: NotRequired[str]
     cancelledResumeAt: NotRequired[float | None]
+    stalled: NotRequired[str]
+    """The transcript of the subagent whose stall ended the session."""
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

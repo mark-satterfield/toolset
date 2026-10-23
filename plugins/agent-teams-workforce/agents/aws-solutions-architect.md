@@ -23,6 +23,7 @@ mcpServers:
 - pg-aiguide
 - gitnexus
 model: opus
+x-sessionLimit: 3600
 effort: high
 maxTurns: 300
 skills:

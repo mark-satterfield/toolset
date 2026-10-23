@@ -13,9 +13,8 @@ step that finds a file an earlier step wrote to a contract that has since change
 back to planned, and the loop goes on from there; the same writer named twice in one dispatch
 fails the step.
 
-A session is continued only when it was started by the plugin version that runs now
-(``AgentRunner.resumable``); a session another version started was made under other agent
-definitions, so the step starts a new one.
+A session is continued only when its agent definition and contracts are unchanged since it
+started (``AgentRunner.resumable``, by fingerprint); otherwise the step starts a new one.
 
 Steps run in walk order. Consecutive sibling steps that each have an agent, have no child steps
 and whose inputs are all done run as concurrent sessions under the dispatch's session slots.

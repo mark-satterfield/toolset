@@ -9,6 +9,7 @@ mcpServers:
 - aws-mcp
 - gitnexus
 model: sonnet
+x-sessionLimit: 900
 permissionMode: acceptEdits
 maxTurns: 100
 skills:

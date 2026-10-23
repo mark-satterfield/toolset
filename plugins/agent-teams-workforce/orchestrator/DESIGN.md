@@ -171,10 +171,12 @@ the request file its step holds; "Finish" is launched as the same agent, continu
 
 A step that already holds a session id, a "Finish" step, and a later step of an agent that holds a
 session earlier in the journal continue that session (`claude --resume`); when the conversation is
-gone a new session starts. A session is continued only when the plugin version that runs now
-started it: each new session records that version in `<work>/sessions/<session id>.json`, and a
-session another version started, or one with no record, was made under other agent definitions
-and contracts, so the step starts a new session.
+gone a new session starts. A session is continued only when it was made under the agent definition
+and contracts of now: each new session records its agent, the contract schema its output is
+validated against and their fingerprint (`agents.agent_fingerprint`: the definition file and each
+schema with the schema files it references, by path and content) in
+`<work>/sessions/<session id>.json`. A session whose fingerprint differs now, or one with no
+record, starts anew; a plugin release that changes neither file keeps it.
 
 A step that reads a file an earlier step wrote, and finds that it does not satisfy the contract
 the step reads it by (the architecture context the open-run step wrote, a request the step above a
@@ -576,9 +578,17 @@ alias (section 0). The Fable allowance is handled per step, from structured fact
   (section 6), the final `result` event (section 6), and liveness. It writes the raw stream to
   `<work>/scratch/<run id>/<step>-<session id>-<attempt>.stream.jsonl`, with the session's standard
   error beside it, and a failure names that file as evidence.
-- **Timeouts.** A session with no stream line for `ATW_SESSION_IDLE` seconds (default 1800) or
-  running longer than `ATW_SESSION_LIMIT` seconds (default 7200) is killed; the step fails at its
-  stage, cause `other` (a stuck session is not a transient fault).
+- **Timeouts.** A session is killed, and its step fails at its stage with cause `timeout`, when it
+  writes no stream line for `ATW_SESSION_IDLE` seconds (default 1800), when it runs longer than its
+  hard limit, or when one of its open `Agent` calls stalls. The hard limit is the agent's front
+  matter `x-sessionLimit` (seconds; three times the step's time budget), else `ATW_SESSION_LIMIT`
+  (default 7200). A call stalls when its subagent's transcript
+  (`<config>/projects/<slug of the session cwd>/<session id>/subagents/agent-<id>.jsonl`, matched to
+  the call by the `toolUseId` of its `.meta.json`) has written nothing for `ATW_SUBAGENT_IDLE`
+  seconds (default 300) while no nested subagent wrote either; a missing directory means no watch.
+  The variables are in the driver surface. `timeout` is transient: the driver dispatches again and
+  the step continues its held session. After three timeouts of an item in a row with no journal
+  step newly done, the driver fails the item.
 - **Kill.** Each session starts in its own process group (`start_new_session=True`), so the runner
   can kill one session with its MCP server children (`SIGTERM`, then `SIGKILL` after
   `childproc.TERMINATE_GRACE`). `run.py` handles `SIGTERM` by killing every live session group,
@@ -595,7 +605,8 @@ alias (section 0). The Fable allowance is handled per step, from structured fact
 | Agent session: account usage wall | a `rate_limit_event` with `rate_limit_info.status == "rejected"` that `fablewall.is_refusal` does not accept | `quota`, with `failure.resumeAt` = `breaker.exhausted_reset(info)` |
 | Agent session: Fable allowance | the same event, accepted by `fablewall.is_refusal`, in a session that runs on `fable` | none: the step reruns on `opus` (section 5.5) |
 | Agent session: API failure | the `result` event with `terminal_reason == "api_error"`, or `is_error` with `api_error_status` set | `api` |
-| Agent session: ended with no `result` event, killed by a timeout, a failure exit status, or a `result` whose `subtype` is not `success` | the exit status and the absence or `subtype` of the `result` event | `other` |
+| Agent session: killed at its idle limit, its hard limit or a stalled subagent (section 5.6) | the runner's own timer | `timeout` |
+| Agent session: ended with no `result` event, a failure exit status, or a `result` whose `subtype` is not `success` | the exit status and the absence or `subtype` of the `result` event | `other` |
 | Agent session: stopped because another session of the run hit the usage wall or an API failure | the stop the runner recorded for the run's sessions | the cause of that stop (`quota` with its `resumeAt`, or `api`) |
 | Agent session: no valid output file after the corrective retry | the parse or schema exception | `other` |
 | Agent session: its schema file cannot be read or applied | the exception of the schema load or of the validation machinery | `other`, classified `pipeline-code-defect` |
@@ -840,7 +851,7 @@ about which steps are done.
 **The dispatch timeout is an idle timeout.** The driver kills the orchestrator's group only when it
 has written no event line (any of section 4.1, the heartbeat included) for `ATW_ORCH_IDLE` seconds
 (default 3600, above the 1800 s session idle limit and the 300 s heartbeat). There is no total
-cap: an Epic run is many sessions long, and each session is bounded by `ATW_SESSION_LIMIT`
+cap: an Epic run is many sessions long, and each session is bounded by its hard limit
 (section 5.6).
 
 **The step journal.** The driver loads `<orch>/core/step_journal.py` by path

@@ -41,8 +41,9 @@ wrote the file and every step after it are set back to planned, and the run goes
 The architecture context file is written by the open-run step; a helper's request file by the
 step directly above the helper. The same writer named twice in one dispatch fails the step.
 
-A step continues an agent session only when the plugin version that runs now started that
-session; otherwise it starts a new session.
+A step continues an agent session only when the session's agent definition and contract schemas
+are unchanged since it started (their fingerprint, recorded when the session started); otherwise
+it starts a new session. A session ended by a timeout is continued by the next dispatch.
 
 ## The outermost steps
 

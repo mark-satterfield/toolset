@@ -15,6 +15,7 @@ mcpServers:
 - awslabs-amazon-neptune-mcp-server
 - gitnexus
 model: fable
+x-sessionLimit: 900
 permissionMode: acceptEdits
 maxTurns: 100
 skills:

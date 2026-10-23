@@ -344,6 +344,7 @@ class Wire:
     quota_cause: str
     bd_timeout_cause: str
     contention_cause: str
+    timeout_cause: str
     account_causes: frozenset[str]
     retryable_causes: tuple[str, ...]
     transient_causes: frozenset[str]
@@ -382,6 +383,7 @@ wire: Final[Wire] = Wire(
     quota_cause=QUOTA_CAUSE,
     bd_timeout_cause=BD_TIMEOUT_CAUSE,
     contention_cause=CONTENTION_CAUSE,
+    timeout_cause=TIMEOUT_CAUSE,
     account_causes=ACCOUNT_CAUSES,
     retryable_causes=RETRYABLE_CAUSES,
     transient_causes=TRANSIENT_CAUSES,
