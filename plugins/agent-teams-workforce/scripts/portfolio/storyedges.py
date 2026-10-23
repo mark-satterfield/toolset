@@ -513,7 +513,7 @@ def _write_story_edges(
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def story_edges(graph: Graph, writer: Writer) -> StoryEdges:
+def story_edges(graph: Graph, writer: Writer, *, epic: str | None = None) -> StoryEdges:
     """Derive every Story edge and write the difference, except for refused Stories.
 
     Each Story's repository is read from the matrix: the `repository` of the stack its Tasks
@@ -523,11 +523,13 @@ def story_edges(graph: Graph, writer: Writer) -> StoryEdges:
     Args:
         graph: The tracker graph, read after the Task edges were written.
         writer: The tracker writer; a dry-run writer records the writes instead.
+        epic: The Epic whose run asks. Only a refused Story of this Epic makes `ok` false; a
+            refused Story of another Epic is still not written. None judges every Story.
 
     Returns:
-        `ok` (false when a Story was refused), the derived `edges` with their reasons, the
-        `conflicts` and `cycles` and the `refusedStories` they name, the `added`, `removed`
-        and `unchanged` edges, and a `summary`.
+        `ok` (false when a Story it judges was refused), the derived `edges` with their
+        reasons, the `conflicts` and `cycles` and the `refusedStories` they name, the `added`,
+        `removed` and `unchanged` edges, and a `summary`.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -630,4 +632,23 @@ def story_edges(graph: Graph, writer: Writer) -> StoryEdges:
         result["reason"] = (
             "the Story order of " + ", ".join(refused) + " is contradictory, so their Story edges were not written"
         )
+    if epic is not None:
+        _judge_for_epic(result, graph, epic)
     return result
+
+
+def _judge_for_epic(result: StoryEdges, graph: Graph, epic: str) -> None:
+    """Make a result fail only for a refused Story under one Epic.
+
+    A refused Story of another Epic stays in `refusedStories` and is still not written, but it
+    does not fail the asking Epic's run.
+
+    Args:
+        result: The Story edge result, changed in place.
+        graph: The tracker graph.
+        epic: The Epic whose run asks.
+
+    """
+    own: bool = any(any(b.id == epic for b in graph.ancestors(story)) for story in result["refusedStories"])
+    result["ok"] = result["summary"]["ok"] = not own
+    result["refused"] = own

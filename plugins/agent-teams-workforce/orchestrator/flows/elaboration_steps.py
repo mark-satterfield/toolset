@@ -138,7 +138,7 @@ def story_edges(run: StepRun) -> Completion:
     def write() -> storyedges.StoryEdges:
         graph: beadgraph.Graph = run.tools.portfolio(FINISH_PHASE, beadgraph.load, repo)
         writer: beadgraph.Writer = run.tools.portfolio(FINISH_PHASE, beadgraph.Writer, repo)
-        return run.tools.portfolio(FINISH_PHASE, storyedges.story_edges, graph, writer)
+        return run.tools.portfolio(FINISH_PHASE, storyedges.story_edges, graph, writer, epic=str(run.bead))
 
     written: dict[str, JsonValue] = json_object(run.tools.operation(FINISH_PHASE, write))
     if written.get("ok") is False:

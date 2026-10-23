@@ -284,6 +284,22 @@ def _write_errors(step: AgentStep, exc: Exception) -> Path:
     return errors
 
 
+FIRST_ERROR_LIMIT: Final = 300
+"""The most characters of a validation error a failure's message carries."""
+
+
+def _first_error(exc: Exception) -> str:
+    """Give the first line of a validation error, for a failure's evidence and headline.
+
+    Returns:
+        The error's first non-empty line, at most ``FIRST_ERROR_LIMIT`` characters, or its type
+        when it has no message.
+
+    """
+    line: str = next((text.strip() for text in str(exc).splitlines() if text.strip()), type(exc).__name__)
+    return line if len(line) <= FIRST_ERROR_LIMIT else line[: FIRST_ERROR_LIMIT - 1] + "…"
+
+
 def _emit(emit: EventSink, event: OrchestratorEvent) -> None:
     """Send one contract-built event through a sink as its name and facts."""
     facts: dict[str, JsonValue] = json_object({key: value for key, value in event.items() if key != EVENT_KEY})
@@ -643,7 +659,7 @@ class AgentRunner:
             except CONTENT_FAILURES as exc:
                 errors: Path = _write_errors(step, exc)
                 if corrective or not step.corrective:
-                    raise StepError(step.stage, OTHER_CAUSE, (str(errors), str(stream))) from None
+                    raise StepError(step.stage, OTHER_CAUSE, (_first_error(exc), str(errors), str(stream))) from None
                 inputs.append(("validation errors", errors))
                 corrective = resume = True
                 continue
