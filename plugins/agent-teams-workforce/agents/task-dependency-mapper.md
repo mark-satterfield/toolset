@@ -61,10 +61,18 @@ different Stories only: the edges within a Story are already written, and the cl
 stand, so do not repeat either. Each edge's `kind` says what the dependent Task needs (the
 output contract's kinds). Consider same-Story and closure edges when checking for a cycle.
 
+A Story is built after another when one of its Tasks depends on one of the other's, so two
+Stories never depend on each other both ways: no edge of yours may run from a Story to a Story
+that already, through a closure edge or another of your edges, depends on it. When the edge test
+gives edges both ways between two Stories, keep one direction, the one whose edges name a
+deployed resource or contract the dependent Task cannot be built or deployed without, and leave
+out the edges of the other direction. The step drops, with a warning, any edge that would still
+make two Stories depend on each other.
+
 Write the output file to `task-deps.schema.json`, the one definition of its keys, edge
 direction and kinds. Run no submission or checkpoint helper here: the step validates the file
-against that contract and the span's Task keys, drops an edge that closes a cycle and writes the
-beads edges. Validation errors, when present, are another input file; repair those specific findings and keep the valid content. No
+against that contract and the span's Task keys, drops an edge that closes a cycle over the Tasks
+or over the Stories, and writes the beads edges. Validation errors, when present, are another input file; repair those specific findings and keep the valid content. No
 edge you add is written into the matrix; the beads edge alone carries build order. No Task
 creation, readiness assessment or WSJF calculation.
 

@@ -86,7 +86,7 @@ run together. Repositories run one after another.
 | Derive the Task edges the elements' requirements make | script `beadwrite.closure_task_edges` | every repository's Story document, spec documents and Tasks file, the span and the elements | file `closure edges`; fails when a required element has no Task that builds it |
 | List the Tasks of every Story for the dependency mapper | script `task_edges.listing` | the Tasks files, `closure edges` | file `task dependency listing` (`task-dependency-listing.schema.json`), which points to each Story's Tasks file and the closure edges |
 | Map the dependencies between Tasks of different Stories | agent `task-dependency-mapper`, only when the span has two or more repositories | the Tasks files, `closure edges`, the listing | file `task dependencies` |
-| Write the edges between Tasks of different Stories | script `beadwrite.write_all_task_edges` | `task dependencies` when the mapper ran, `closure edges`, the files of every Story | file `task edges written`, value `edges result` |
+| Write the edges between Tasks of different Stories | script `beadwrite.write_all_task_edges` | `task dependencies` when the mapper ran, `closure edges`, the files of every Story | file `task edges written`, value `edges result`; an edge that would close a cycle over the Tasks, or make two Stories depend on each other, is dropped with a warning (`beadwrite.plan_task_edges`) |
 
 ## Finish
 

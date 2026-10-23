@@ -1636,6 +1636,50 @@ def closure_task_edges(span: SpanStories) -> ClosureEdges:
     }
 
 
+def _acyclic(
+    accepted: list[TaskEdge],
+    slug_of: dict[str, str],
+    intra: list[tuple[str, str]],
+    warnings: list[str],
+) -> tuple[list[TaskEdge], set[tuple[str, str]]]:
+    """Keep the accepted edges, in order, that close no cycle over the Tasks or over the Stories.
+
+    A Story follows another when one of its Tasks follows one of the other's, so an edge is
+    dropped when the Story order it adds would make two Stories depend on each other.
+
+    Args:
+        accepted: The accepted edges between Tasks of different Stories, in order.
+        slug_of: Task name -> its Story's slug.
+        intra: The `(from, to)` edges within each Story by name.
+        warnings: Changed in place: one warning for each edge dropped.
+
+    Returns:
+        The edges kept, and `(from, to)` by name for each.
+
+    """
+    edge: TaskEdge
+    pairs: set[tuple[str, str]] = set()
+    story_pairs: set[tuple[str, str]] = set()
+    stories: list[str] = sorted(set(slug_of.values()))
+    kept: list[TaskEdge] = []
+    for edge in accepted:
+        pair: tuple[str, str] = (edge["from"], edge["to"])
+        if build_order(sorted(slug_of), [*intra, *sorted(pairs | {pair})]) is None:
+            warnings.append(f"edge {pair[0]} -> {pair[1]} would close a cycle over the Task graph; dropped")
+            continue
+        story_pair: tuple[str, str] = (slug_of[pair[0]], slug_of[pair[1]])
+        if build_order(stories, sorted(story_pairs | {story_pair})) is None:
+            warnings.append(
+                f"edge {pair[0]} -> {pair[1]} would make Story {story_pair[1]} and Story {story_pair[0]} "
+                "depend on each other; dropped",
+            )
+            continue
+        pairs.add(pair)
+        story_pairs.add(story_pair)
+        kept.append(edge)
+    return kept, pairs
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def plan_task_edges(span: SpanStories) -> EdgePlan:
     """Return the saved Task edges between Stories, checked; runs no `bd` command.
@@ -1649,7 +1693,9 @@ def plan_task_edges(span: SpanStories) -> EdgePlan:
     Returns:
         The accepted edges, the rejected ones, each blocked Task's blockers by name, and
         `warnings`: the closure's warnings, and each edge dropped because it would close a
-        cycle over the Epic's Task graph (edges are taken in order, the closure's first).
+        cycle over the Epic's Task graph, or over its Stories, where a Story follows another when
+        one of its Tasks follows one of the other's, so that no two Stories depend on each other
+        (edges are taken in order, the closure's first).
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -1661,7 +1707,7 @@ def plan_task_edges(span: SpanStories) -> EdgePlan:
     accepted: list[TaskEdge]
     rejected: list[TaskEdge]
     _pairs: set[tuple[str, str]]
-    edge: TaskEdge
+    pairs: set[tuple[str, str]]
     frm: str
     to: str
     if not (isinstance(span, SpanStories)):
@@ -1676,16 +1722,7 @@ def plan_task_edges(span: SpanStories) -> EdgePlan:
     ]
     slug_of, intra, _elab = span_tasks(span)
     accepted, rejected, _pairs = _accept(saved, slug_of)
-    pairs: set[tuple[str, str]] = set()
-    kept: list[TaskEdge] = []
-    for edge in accepted:
-        pair: tuple[str, str] = (edge["from"], edge["to"])
-        if build_order(sorted(slug_of), [*intra, *sorted(pairs | {pair})]) is None:
-            warnings.append(f"edge {pair[0]} -> {pair[1]} would close a cycle over the Task graph; dropped")
-            continue
-        pairs.add(pair)
-        kept.append(edge)
-    accepted = kept
+    accepted, pairs = _acyclic(accepted, slug_of, intra, warnings)
     blockers: dict[str, list[str]] = {}
     for frm, to in sorted(pairs):
         blockers.setdefault(to, []).append(frm)
