@@ -41,6 +41,32 @@ let fableRefusal = null
 // workflow names every agent by its plain front-matter name and atwAgentType resolves it here.
 const PLUGIN_ONLY_AGENTS = new Set(["acceptance-criteria-reviewer","acceptance-criteria-writer","advantage-evaluator","adversarial-critique-adjudicator","adversarial-review-loop-supervisor","ambiguity-detector","api-documentation-writer","architecture-maintainer","architecture-team-lead","beads-format-validator","brd-traceability-auditor","changelog-writer","code-quality-lead","completeness-checker","constitutional-agent","constraint-extractor","context-curator","cross-repo-integration-test-coordinator","definition-of-done-writer","dependency-cve-auditor","deployment-lead","documentation-accuracy-reviewer","documentation-currency-auditor","documentation-lead","domain-boundary-validator","epic-dependency-assessor","exhausted-gate-ruler","feature-objective-writer","feature-persona-writer","github-actions-pipeline-implementer","integration-testing-lead","nfr-analyst","phase-gate-enforcer","prd-alignment-verifier","prd-trd-traceability-verifier","prd-validation-lead","prd-writer","production-readiness-review-facilitator","readme-writer","requirement-classifier","requirements-clarifier","requirements-conflict-detector","spec-authoring-lead","spec-freshness-lead","stakeholder-request-intake-writer","story-bead-writer","test-command-resolver","test-design-lead","test-failure-parser","test-plan-strategy-reviewer","test-strategy-decider","trd-decider","ubiquitous-language-writer","ui-design-source-selector","user-guide-writer","user-story-reviewer","workflow-command-runner","worktree-lander","wsjf-scorer","wsjf-scoring-reviewer"])
 const atwAgentType = (name) => (PLUGIN_ONLY_AGENTS.has(name) ? `agent-teams-workforce:${name}` : name)
+// The Workflow runtime compiles agent({schema}) with Ajv's default (draft-07) class in strict mode:
+// it has no draft 2020-12 meta-schema, so `$schema` naming 2020-12 is refused, an unknown keyword
+// such as an `x-` annotation is refused, and `prefixItems` is unknown. runtimeSchema returns the
+// contract with `$schema` and every `x-` annotation removed and `prefixItems` written as draft-07
+// `items` (with a sibling `items` as `additionalItems`), walking only subschema positions so a
+// property named `$schema` or `x-...` is kept. `$ref` into `$defs` compiles as it is.
+const SCHEMA_MAP_KEYWORDS = new Set(['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas'])
+const SCHEMA_LIST_KEYWORDS = new Set(['allOf', 'anyOf', 'oneOf', 'prefixItems'])
+const SCHEMA_ONE_KEYWORDS = new Set(['items', 'additionalItems', 'additionalProperties', 'not', 'if', 'then', 'else', 'contains', 'propertyNames', 'unevaluatedProperties', 'unevaluatedItems'])
+function runtimeSchema(schema) {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return schema
+  const out = {}
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === '$schema' || key.startsWith('x-')) continue
+    if (SCHEMA_MAP_KEYWORDS.has(key) && value && typeof value === 'object' && !Array.isArray(value)) out[key] = Object.fromEntries(Object.entries(value).map(([name, sub]) => [name, runtimeSchema(sub)]))
+    else if ((SCHEMA_LIST_KEYWORDS.has(key) || key === 'items') && Array.isArray(value)) out[key] = value.map(runtimeSchema)
+    else if (SCHEMA_ONE_KEYWORDS.has(key)) out[key] = runtimeSchema(value)
+    else out[key] = value
+  }
+  if (Array.isArray(out.prefixItems)) {
+    if (out.items !== undefined) out.additionalItems = out.items
+    out.items = out.prefixItems
+    delete out.prefixItems
+  }
+  return out
+}
 // Claude Code loads an agent's definition and preloads the skills its front matter lists, so
 // nothing here reads or passes on an agent's or a skill's text.
 async function fableAgent(prompt, options) {
@@ -51,7 +77,8 @@ async function fableAgent(prompt, options) {
   options = runtimeOptions
   const agentType = (options && options.agentType) || null
   const isFable = fableTypes.has(String(agentType || '').replace(/^agent-teams-workforce:/, ''))
-  const resolved = agentType ? { ...options, agentType: atwAgentType(agentType) } : options
+  const typed = agentType ? { ...options, agentType: atwAgentType(agentType) } : options
+  const resolved = schema ? { ...typed, schema: runtimeSchema(schema) } : typed
   const call = isFable && fableFallback ? { ...resolved, model: 'opus' } : resolved
   try {
     return await agent(`OUTPUT_MODE: ${outputMode}\n\n${prompt}`, call)
