@@ -7,7 +7,15 @@ session starts; when its output is accepted, one journal change records its arti
 its result plans and its done mark (``journal_steps.apply_completion``).
 
 A step that raises is marked failed with a one-line structured cause and the exception continues
-to the caller unchanged. A stop request (the stop file, an interrupt) leaves the step running.
+to the caller unchanged. A stop request (the stop file, an interrupt) leaves the step running. A
+step that finds a file an earlier step wrote to a contract that has since changed
+(``StaleInputError``) is not failed: the step that wrote the file and every step after it are set
+back to planned, and the loop goes on from there; the same writer named twice in one dispatch
+fails the step.
+
+A session is continued only when it was started by the plugin version that runs now
+(``AgentRunner.resumable``); a session another version started was made under other agent
+definitions, so the step starts a new one.
 
 Steps run in walk order. Consecutive sibling steps that each have an agent, have no child steps
 and whose inputs are all done run as concurrent sessions under the dispatch's session slots.
@@ -51,7 +59,7 @@ from .journal_steps import (
     StepRun,
     stage_of,
 )
-from .models import AgentStep, RunContext, StepError
+from .models import AgentStep, RunContext, StaleInputError, StepError
 from .tools import Tools
 
 # isort: split
@@ -386,6 +394,10 @@ class JournalRunner:
         self.tools: Tools = tools
         self.registry: Registry = registry
         self.bead: BeadId = step_journal.read_journal(path)["bead"]
+        self.replanned: set[StepId] = set()
+        """The steps planned again in this dispatch because a file they wrote was stale."""
+        self.stale: list[StaleInputError] = []
+        """The stale files found by the steps of the group that runs now."""
 
     @property
     def context(self) -> RunContext:
@@ -429,8 +441,28 @@ class JournalRunner:
             self._run_step(group[0])
         else:
             parallel(self.context, [partial(self._run_step, step_id) for step_id in group])
+        self._replan_stale()
         self._close_finished()
         return True
+
+    def _replan_stale(self) -> None:
+        """Set the first step that wrote a stale file, and every step after it, back to planned.
+
+        Every other writer comes after the first in walk order, so it is reset too. Runs after the
+        whole group, so no session of the group is running when its step is reset.
+        """
+        writers: list[StepId] = list(dict.fromkeys(stale.writer for stale in self.stale))
+        self.stale = []
+        if not writers:
+            return
+        self.replanned.update(writers)
+
+        def change(journal: Journal) -> None:
+            order: list[StepId] = [step["id"] for step in step_journal.steps_in_order(journal)]
+            first: StepId = min(writers, key=order.index)
+            step_journal.invalidate_from(journal, first, step_journal.timestamp())
+
+        step_journal.update_journal(self.path, change)
 
     def _close_finished(self) -> None:
         """Mark done every running step whose child steps are all done."""
@@ -447,11 +479,24 @@ class JournalRunner:
             step_journal.update_journal(self.path, close)
 
     def _run_step(self, step_id: StepId) -> None:
-        """Run one step and record its failure when it raises."""
+        """Run one step and record its failure when it raises.
+
+        A stale file the step finds is kept for :meth:`_replan_stale`, and the step is not failed,
+        unless the step that wrote the file was planned again in this dispatch already.
+
+        Raises:
+            StaleInputError: The step that wrote the stale file was planned again in this dispatch already.
+
+        """
         journal: Journal = step_journal.read_journal(self.path)
         step: Step = step_journal.find_step(journal, step_id)
         try:
             self._perform(journal, step)
+        except StaleInputError as stale:
+            if stale.writer in self.replanned:
+                self._record_failure(step_id, stage_of(step), stale)
+                raise
+            self.stale.append(stale)
         except Exception as exc:
             self._record_failure(step_id, stage_of(step), exc)
             raise
@@ -571,6 +616,8 @@ class JournalRunner:
         saved: tuple[Artifact, ...] = tuple(step["artifacts"])
         launch: AgentLaunch = check_type(builder(self._step_run(step, inputs, saved)), AgentLaunch)
         held: str | None = _held_session(journal, step, launch)
+        if held is not None and not self.agents.resumable(held):
+            held = None
         if held is None and _finished_output(step, launch):
             reused: StepRun = self._step_run(self._start(step["id"], None, launch.keep), inputs, saved)
             self._complete(step["id"], launch.accept(reused, launch.output))

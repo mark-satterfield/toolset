@@ -3,10 +3,10 @@
 An Epic whose architecture work was under way when the pipeline took its present form has files
 that earlier form wrote: a survey, round plans, specialists' results, draft documents.
 :func:`carry` records each as an artifact of a done step under the Architecture container, so the
-journal holds what was done, and plans the architect's step after them. The architect is not
-handed those files: they are unapproved copies and summaries of the architecture from a pipeline
-that no longer runs, and the matrix and the arc42 documents are the architect's sources. The
-architect's own step stays planned.
+journal holds what was done. The open-run step, which runs first, plans the TRD initial write, the
+architect's step and the check after them. The architect is not handed those files: they are
+unapproved copies and summaries of the architecture from a pipeline that no longer runs, and the
+matrix and the arc42 documents are the architect's sources.
 
 A step that records such files has a script key, so the runner has code for it. That code runs
 only when the owner asks for a start at or before the step, which resets it: it then records
@@ -25,7 +25,6 @@ from typeguard import CollectionCheckStrategy, typechecked
 from orchestrator.core import step_journal
 from orchestrator.core.journal_registry import script_step
 from orchestrator.core.journal_steps import Completion, StepRun, directory_artifact, file_artifact
-from orchestrator.flows.architecture import first_steps
 from orchestrator.flows.architecture_files import ARCHITECTURE, EARLIER_PREFIX, EARLIER_WORK, OPEN_RUN
 
 # isort: split
@@ -93,17 +92,16 @@ def _outermost(journal: Journal, description: str) -> Step:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def carry(journal: Journal, work: Sequence[EarlierWork], architect: str, moment: str) -> list[Step]:
-    """Record earlier work in a new Epic journal and plan the architect's step after it.
+def carry(journal: Journal, work: Sequence[EarlierWork], moment: str) -> list[Step]:
+    """Record earlier work in a new Epic journal.
 
     The steps go under the Architecture container: one step that contains a done step per piece
-    of earlier work, each holding its files, then the architect's step, handed the open-run step,
-    and the check after it. The open-run step stays planned and runs first.
+    of earlier work, each holding its files. The open-run step stays planned; it runs first and
+    plans the architecture steps after the earlier work (``architecture.first_steps``).
 
     Args:
         journal: An Epic's elaboration journal as it is created, every step planned; changed in place.
         work: The pieces of earlier work, in the order they were done; at least one.
-        architect: The agent that plays the solutions architect.
         moment: The present date-time, as ``step_journal.timestamp`` gives it.
 
     Returns:
@@ -143,7 +141,5 @@ def carry(journal: Journal, work: Sequence[EarlierWork], architect: str, moment:
         for artifact in piece.artifacts():
             step_journal.record_artifact(journal, step["id"], artifact)
         step_journal.finish_step(journal, step["id"], moment)
-    planned: list[StepPlan] = [new.plan for new in first_steps(opened[0]["id"], container["id"], architect).steps]
-    step_journal.add_steps(journal, planned, moment, parent=container["id"])
     step_journal.checked_journal(journal, f"the journal of {journal['bead']} with its earlier work")
     return list(holder["steps"])

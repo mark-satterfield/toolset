@@ -34,10 +34,17 @@ architect's state and result files, the review log beside the result (`reviewLog
 TRD, and the folder for requests to helpers;
 with the vault commit the document entries are synced to and the name of the matrix command. It
 records the file `prd`, the value `matrix epic entry` and the file `context`, and plans, under the
-Architecture container, the TRD initial write, the architect's step and the check that follows it.
-Those three plans are also registered as what the lane plans under the container, so a check step planned under an
-earlier key is replanned to the current key when the run opens the journal, even while the
-architect's step is still pending and the open-run step plans nothing new.
+Architecture container, the TRD initial write, the architect's step and the check that follows it,
+and records each on itself, so a start at or before the open-run step removes them and the
+open-run step plans them again as the lane plans them then. Those three plans are also registered
+as what the lane plans under the container, so a planned step whose key was renamed is replanned
+to the current key when the run opens the journal.
+
+A step that finds the context file does not satisfy the context contract (the contract changed
+after the open-run step wrote it) is not failed: the open-run step and every step after it are set
+back to planned, and the open-run step writes the file again (`prd-to-spec.md`, "Where a run
+begins"). A helper whose saved request does not satisfy its contract does the same for the step
+directly above it, which wrote the request.
 
 Every later step of the container is handed the context file through the journal and derives no
 path of its own.
@@ -131,8 +138,9 @@ updated in place as the design adds technical requirements.
 A journal that `orchestrator/port_journal.py` builds for an Epic with saved run data holds, under
 the Architecture container, a step "Earlier work on this PRD" (`architecture_earlier.carry`). It
 contains one done step per piece of that work, each holding its files as artifacts named
-`earlier work: <what the file is>`, so the journal records what was done. The architect's step is
-planned after it and is not handed those files: they are unapproved copies and summaries from a
+`earlier work: <what the file is>`, so the journal records what was done. The open-run step, which
+runs first, plans the TRD initial write, the architect's step and the check after it. The
+architect is not handed those files: they are unapproved copies and summaries from a
 pipeline that no longer runs, and the matrix and the arc42 documents are the architect's sources.
 Such a step has the script `architecture.earlier_work`, which records nothing when it runs: it runs only
 after the owner asks for a start at or before it.

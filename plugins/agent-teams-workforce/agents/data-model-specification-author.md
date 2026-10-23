@@ -81,7 +81,9 @@ requirement's text does not settle a detail. `dependsOn` is context, never work.
 Specify every data item the Story builds without judging existing code satisfied. State under
 "Shared capabilities used" which contract uses which shared capability, and specify no behaviour
 that a shared capability provides. Write the assigned nonempty UTF-8 data-model document with
-decisionIds frontmatter and exact source references. A surface with no applicable work gets a
+exact source references and a YAML front matter whose `decisionIds` cites them, each one string
+`<path>#<heading>`, never an object, for example
+`decisionIds: ["arc42/08-crosscutting-concepts/email-channel-ownership.md#Ownership and the aggregate"]`. A surface with no applicable work gets a
 short reasoned not-applicable document. Do not create infrastructure or change the
 architecture.
 

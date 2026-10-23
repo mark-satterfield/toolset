@@ -169,7 +169,17 @@ the request file its step holds; "Finish" is launched as the same agent, continu
 
 A step that already holds a session id, a "Finish" step, and a later step of an agent that holds a
 session earlier in the journal continue that session (`claude --resume`); when the conversation is
-gone a new session starts. The solutions architect writes its result as the work goes, and every
+gone a new session starts. A session is continued only when the plugin version that runs now
+started it: each new session records that version in `<work>/sessions/<session id>.json`, and a
+session another version started, or one with no record, was made under other agent definitions
+and contracts, so the step starts a new session.
+
+A step that reads a file an earlier step wrote, and finds that it does not satisfy the contract
+the step reads it by (the architecture context the open-run step wrote, a request the step above a
+helper wrote), is not failed (`StaleInputError`): once the steps running with it end, the step
+that wrote the file and every step after it are set back to planned, and the run goes on from
+there, so the file is written again to the current contract. When the same writer is named twice
+in one dispatch, the step fails. The solutions architect writes its result as the work goes, and every
 step of it keeps a result already at the result path, so a new session continues from the partial
 result and the design work done before the stop is not done again.
 
@@ -704,7 +714,7 @@ vocabulary in `core/handback_contract.py`). It is decided from the exception cha
 | Classification | When | What the driver does |
 |---|---|---|
 | `interrupted` | the stop file was seen between sessions (`PipelineStoppedError`, stage `shutdown`), or a signal or keyboard interrupt (stage `interrupted`); the stage that was running is kept as `interruptedStage` | never an item failure, never counted toward repeated failures |
-| `pipeline-code-defect` | a session cleanup error, a runtime type check failure, a handback validation failure, a `PipelineDefectError`; a `TypeError`, `ValueError`, `AttributeError`, `KeyError`, `NameError` or `IndexError` in the chain; an `ImportError` after an agent session started; any failure that is no `StepError` and fits no other row | stops new dispatch |
+| `pipeline-code-defect` | a session cleanup error, a runtime type check failure, a handback validation failure, a `PipelineDefectError`; a `TypeError`, `ValueError`, `AttributeError`, `KeyError`, `NameError` or `IndexError` in the chain; an `ImportError` after an agent session started; any failure that is no `StepError` and fits no other row. An exception raised `from None` ends the chain: the content failure a step found in a file or an agent's output and stated in its evidence is raised that way, so it is an `item` failure | stops new dispatch |
 | `setup` | a failure before the flow started, a session setup error, or a `StepError` at stage `input`; an `ImportError` before any agent session started | stops new dispatch |
 | `item` | a retry allowance used up; any other `StepError` whose cause is not transient | recorded for the item; other items continue |
 | `transient` | a cause among `quota`, `api`, `bd-timeout`, `contention`, `timeout`, `tool-timeout`, `network`, or a timeout or connection error in the chain, with retries left to the driver | pauses or backs off, then dispatches again |

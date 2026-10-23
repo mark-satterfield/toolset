@@ -1,8 +1,8 @@
 """Build an Epic's elaboration journal with the files an earlier form of the pipeline left for it.
 
 The journal is the one the elaboration flow creates on a first dispatch (``outermost_steps``),
-with each piece of earlier work recorded as a done step under the Architecture step and the
-solutions architect's step planned after them (``architecture_earlier.carry``). The journal is
+with each piece of earlier work recorded as a done step under the Architecture step
+(``architecture_earlier.carry``); the open-run step plans the architecture steps after them. The journal is
 printed as JSON; with ``--journal`` it is also written to that file, which must not exist.
 
 The pieces of earlier work are read from a JSON file: a list of objects, each with a
@@ -25,7 +25,6 @@ if __package__ in {None, ""}:
 
 from orchestrator.core import step_journal
 from orchestrator.flows.architecture_earlier import EarlierWork, carry
-from orchestrator.flows.architecture_files import ARCHITECT
 from orchestrator.flows.prd_to_spec import outermost_steps
 
 # isort: split
@@ -84,13 +83,13 @@ def earlier_journal(bead: str, work: list[EarlierWork]) -> Journal:
         work: The pieces of earlier work, in the order they were done; at least one.
 
     Returns:
-        The journal: every outermost step planned, the earlier work done under the Architecture
-        step, and the architect's step planned after it. A bead id the contract does not allow
+        The journal: every outermost step planned and the earlier work done under the
+        Architecture step. A bead id the contract does not allow
         and work that names no file raise ``StepJournalError``.
 
     """
     journal: Journal = step_journal.new_journal(BeadId(bead), BEAD_TYPE_EPIC, PIPELINE_ELABORATION, outermost_steps())
-    carry(journal, work, ARCHITECT, step_journal.timestamp())
+    carry(journal, work, step_journal.timestamp())
     return journal
 
 

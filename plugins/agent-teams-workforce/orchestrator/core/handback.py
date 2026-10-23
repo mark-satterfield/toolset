@@ -29,11 +29,20 @@ from orchestrator.core.models import PipelineDefectError, RetryExhaustedError, S
 
 
 def _exception_chain(exc: BaseException) -> list[BaseException]:
+    """List an exception and the exceptions it was raised from or while handling.
+
+    An exception raised ``from None`` ends the chain: the exception it replaced is not its cause,
+    and its type does not classify the failure.
+
+    Returns:
+        ``exc`` first, then each cause or context in turn.
+
+    """
     chain: list[BaseException] = []
     current: BaseException | None = exc
     while current is not None and current not in chain:
         chain.append(current)
-        current = current.__cause__ or current.__context__
+        current = current.__cause__ or (None if current.__suppress_context__ else current.__context__)
     return chain
 
 

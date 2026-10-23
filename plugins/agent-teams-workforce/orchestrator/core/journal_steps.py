@@ -377,16 +377,13 @@ class StepGroup:
 
     A ``ref`` of one plan can be named in the ``inputs`` of a later plan of the same group.
     ``follows`` places a group that goes after the completing step behind another sibling of it
-    instead. ``unless_agent`` leaves the group out when a step at the place it goes already has
-    that agent and is not done; the journal change decides it, so of several steps that complete
-    at once only one adds the group.
+    instead.
     """
 
     steps: tuple[NewStep, ...]
     where: Where = AFTER_THIS
     container: StepId | None = None
     follows: StepId | None = None
-    unless_agent: str | None = None
 
     def __post_init__(self) -> None:
         """Require a container exactly when the steps go under one.

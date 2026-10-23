@@ -27,7 +27,6 @@ from .journal_steps import (
 # isort: split
 # step_journal puts the pipeline-contracts scripts directory on sys.path; the contract import follows it.
 from step_journal_contract import (
-    STATUS_DONE,
     STATUS_PLANNED,
     Artifact,
     BeadId,
@@ -90,27 +89,6 @@ def _records(planned: Sequence[NewStep], added: Sequence[Step], *, outermost: bo
     return records
 
 
-def _already_planned(journal: Journal, step_id: StepId, group: StepGroup) -> bool:
-    """Tell whether a group is left out because its agent already has a step at that place.
-
-    Returns:
-        True when the group names ``unless_agent`` and a step that is not done, among the steps
-        the group would join, has that agent.
-
-    """
-    if group.unless_agent is None:
-        return False
-    place: list[Step]
-    if group.where == UNDER_THIS:
-        place = step_journal.find_step(journal, step_id)["steps"]
-    elif group.where == UNDER_CONTAINER and group.container is not None:
-        place = step_journal.find_step(journal, group.container)["steps"]
-    else:
-        parent: Step | None = step_journal.parent_step(journal, step_id)
-        place = journal["steps"] if parent is None else parent["steps"]
-    return any(step.get("agent") == group.unless_agent and step["status"] != STATUS_DONE for step in place)
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def apply_completion(journal: Journal, step_id: StepId, completion: Completion, moment: str) -> Step:
     """Record one step's result in a journal: the whole of it, for one journal write.
@@ -137,8 +115,6 @@ def apply_completion(journal: Journal, step_id: StepId, completion: Completion, 
     follows: StepId = step_id
     group: StepGroup
     for group in completion.add:
-        if _already_planned(journal, step_id, group):
-            continue
         plans: list[StepPlan] = [_plan(new, step_id) for new in group.steps]
         added: list[Step]
         if group.where == AFTER_THIS:

@@ -78,6 +78,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifac
 from matrix_contract import ROLE_ENV, ROLES
 
 PLUGIN_COMMANDS: Final = "bin"
+PLUGIN_MANIFEST: Final = Path(".claude-plugin") / "plugin.json"
+"""The plugin's manifest under the plugin root; its ``version`` is the plugin version."""
+SESSION_MARKS: Final = "sessions"
+"""The folder of the work directory that records, per session id, the plugin version that started it."""
 """The plugin folder whose commands (``atw-matrix``, ``atw-step-journal``) a session runs by name."""
 FABLE: Final = "fable"
 FABLE_REPLACEMENT: Final = MappingProxyType({FABLE: "opus"})
@@ -270,6 +274,35 @@ class AgentRunner:
         self.context.model_policy.setdefault("fable_blocked", False)
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def plugin_version(self) -> str:
+        """Read the version of the plugin this runner launches sessions with.
+
+        Returns:
+            The ``version`` of the plugin's manifest.
+
+        """
+        return check_type(strict_json(self.plugin / PLUGIN_MANIFEST)["version"], str)
+
+    def _session_mark(self, session_id: str) -> Path:
+        return self.context.work / SESSION_MARKS / f"{session_id}.json"
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def resumable(self, session_id: str) -> bool:
+        """Tell whether a session may be continued: the plugin version that runs now started it.
+
+        A session another version started, or one with no record, was made under other agent
+        definitions and contracts, so it is not continued.
+
+        Returns:
+            True when the work directory records that this plugin version started the session.
+
+        """
+        mark: Path = self._session_mark(session_id)
+        if not mark.is_file():
+            return False
+        return strict_json(mark).get("pluginVersion") == self.plugin_version()
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def share_processes(self, parent: AgentRunner) -> None:
         """Share the parent runner's process registry and model-policy lock."""
         self.processes = parent.processes
@@ -455,6 +488,11 @@ class AgentRunner:
         session_id: str = directory.name.removeprefix(SESSION_DIRECTORY_PREFIX)
         try:
             scratch, env, launch, row = self._journal_setup(step, session_id, directory)
+            if not resume:
+                write_json(
+                    self._session_mark(session_id),
+                    {"sessionId": session_id, "pluginVersion": self.plugin_version()},
+                )
             if fresh_output and not resume:
                 step.output.unlink(missing_ok=True)
         except (OSError, ValueError, KeyError, ImportError) as exc:
@@ -512,7 +550,7 @@ class AgentRunner:
             except CONTENT_FAILURES as exc:
                 errors: Path = _write_errors(step, exc)
                 if corrective or not step.corrective:
-                    raise StepError(step.stage, OTHER_CAUSE, (str(errors), str(stream))) from exc
+                    raise StepError(step.stage, OTHER_CAUSE, (str(errors), str(stream))) from None
                 inputs.append(("validation errors", errors))
                 corrective = resume = True
                 continue

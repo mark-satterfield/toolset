@@ -63,6 +63,7 @@ from matrixtraverse import epic_id
 from matrixwrite import link, put
 from specialist_catalog import agent_names
 
+from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
 from orchestrator.core.io import write_json
 from orchestrator.core.journal_registry import agent_step, any_agent_step, plan_under
@@ -77,6 +78,7 @@ from orchestrator.core.journal_steps import (
     file_artifact,
     value_artifact,
 )
+from orchestrator.core.models import StaleInputError
 from orchestrator.flows.architecture_check import check_step
 from orchestrator.flows.architecture_files import (
     ARCHITECT,
@@ -115,6 +117,7 @@ from orchestrator.flows.repo_scoping import (
     story_build_entries,
     story_build_problems,
 )
+from orchestrator.flows.trd_authoring import TRD_FRONT_MATTER, document
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -225,11 +228,11 @@ def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
     """Plan the TRD initial write, the architect's step and the check, under the Architecture container.
 
     The TRD initial write comes first, so the architect starts from the TRD and is handed its
-    answer. The same three plans are registered as what this lane plans under the container
-    (``journal_registry.plan_under``). A journal written before the check's key was renamed
-    therefore has its planned check step replanned to the current ``CHECK`` when the run opens
-    the journal (``journal_run.replan_unhandled``), whether or not a step of the architect is
-    still pending, which is when this group is left out.
+    answer. The open-run step plans the group, and records each step it plans on itself, so a
+    start at or before the open-run step removes the group and the open-run step plans it again
+    as the lane plans it then. The same three plans are registered as what this lane plans under
+    the container (``journal_registry.plan_under``), so a planned step whose key was renamed is
+    replanned to the current key when the run opens the journal (``journal_run.replan_unhandled``).
 
     Args:
         opened: The open-run step, whose artifacts the planned steps are handed.
@@ -239,8 +242,6 @@ def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
     Returns:
         The TRD initial write, the architect's step and the check that follows it, as the
         container's last child steps.
-        The group is left out when the container already holds a step of the architect that is
-        not done.
 
     """
     return StepGroup(
@@ -251,7 +252,6 @@ def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
         ),
         UNDER_CONTAINER,
         container,
-        unless_agent=architect,
     )
 
 
@@ -681,6 +681,35 @@ def _saved_request(run: StepRun, *names: str) -> tuple[str, Path]:
     raise ArchitectureStepError(run, f"neither the step nor its inputs hold a request file named one of {names!r}")
 
 
+def _helper_request[T](run: StepRun, asked: Path, validate: Callable[[object], T]) -> T:
+    """Read the request a helper step is launched from, written by the step directly above it.
+
+    The architect, or the lead, wrote the request in its session or from its result. A request that
+    does not satisfy the current contract was written to an earlier one: the step above the
+    helper runs again and writes its requests to the current contract.
+
+    Returns:
+        The validated request.
+
+    Raises:
+        ArchitectureStepError: The file is missing or is not JSON, or the helper has no step above it.
+        StaleInputError: The request does not satisfy the current contract.
+
+    """
+    held: object = checked_file(run, asked, lambda value: value)
+    try:
+        return validate(held)
+    except ArchitectureWorkError as exc:
+        writer: Step | None = step_journal.parent_step(run.journal(), run.step["id"])
+        if writer is None:
+            raise ArchitectureStepError(run, f"{asked}: {exc}") from None
+        raise StaleInputError(
+            run.inputs.stage,
+            writer["id"],
+            (f"step {run.step['id']} ({run.step['description']}): {asked}: {exc}",),
+        ) from None
+
+
 @any_agent_step(CATALOG_AGENTS)
 def specialist(run: StepRun) -> AgentLaunch:
     """Build the session of any agent the architect or the lead named for a request.
@@ -704,7 +733,7 @@ def specialist(run: StepRun) -> AgentLaunch:
         name, asked = LABEL_REQUEST, Path(planned)
     else:
         name, asked = _saved_request(run, LABEL_REQUEST, LABEL_QUESTION)
-    request: SpecialistRequest = checked_file(run, asked, validate_specialist_request)
+    request: SpecialistRequest = _helper_request(run, asked, validate_specialist_request)
 
     def accept(_accepted: StepRun, output: Path) -> Completion:
         return Completion(artifacts=(file_artifact(LABEL_ANSWER, output),))
@@ -874,12 +903,21 @@ def trd_author(run: StepRun) -> AgentLaunch:
     """
     name: str
     asked: Path
+    request: TrdRequest
     if run.step["description"] == TRD_INITIAL_DESCRIPTION:
         name, asked = LABEL_REQUEST, _initial_request(run)
+        request = checked_file(run, asked, validate_trd_request)
     else:
         name, asked = _saved_request(run, LABEL_REQUEST)
-    request: TrdRequest = checked_file(run, asked, validate_trd_request)
+        request = _helper_request(run, asked, validate_trd_request)
     arch: Path = Path(read_context(run)["architectureRoot"])
+    trd: Path = Path(request["trdPath"])
+
+    def check(output: Path) -> dict[str, JsonValue]:
+        answer: dict[str, JsonValue] = strict_json(output)
+        validate_trd_answer(answer, str(output))
+        document(trd, read_matrix(matrix_file()), TRD_FRONT_MATTER)
+        return answer
 
     def accept(accepted: StepRun, output: Path) -> Completion:
         answer: TrdAnswer = checked_file(accepted, output, validate_trd_answer)
@@ -900,7 +938,7 @@ def trd_author(run: StepRun) -> AgentLaunch:
         constraints: list[JsonValue] = [*recorded.entries]
         return Completion(
             artifacts=(
-                file_artifact(ARTIFACT_TRD, Path(request["trdPath"])),
+                file_artifact(ARTIFACT_TRD, trd),
                 file_artifact(LABEL_ANSWER, output),
                 value_artifact(NO_SOURCE, unsourced),
                 value_artifact(CONSTRAINTS, constraints),
@@ -909,7 +947,7 @@ def trd_author(run: StepRun) -> AgentLaunch:
 
     return AgentLaunch(
         output=Path(request["answerPath"]),
-        validate=output_check(validate_trd_answer),
+        validate=check,
         outcome="The TRD and the answer, each at the path the request names.",
         accept=accept,
         add_dirs=(run.context.work,),
@@ -985,7 +1023,7 @@ def maintainer(run: StepRun) -> AgentLaunch:
     name: str
     asked: Path
     name, asked = _saved_request(run, WRITE_REQUEST, LABEL_REQUEST)
-    request: WriteRequest = checked_file(run, asked, validate_write_request)
+    request: WriteRequest = _helper_request(run, asked, validate_write_request)
     arch: Path = Path(read_context(run)["architectureRoot"])
 
     def accept(accepted: StepRun, output: Path) -> Completion:

@@ -29,16 +29,26 @@ step that has no child steps and is not done. No file content, hash or timestamp
 no step checks whether an earlier output still exists: a step that reads a missing file fails as
 any step fails.
 
-An earlier start happens only when the owner asks for it: `atw-step-journal invalidate` sets the
+An earlier start happens when the owner asks for it: `atw-step-journal invalidate` sets the
 named step and every step after it back to planned, and removes the steps those steps planned. The
 driver's `elabmark.py --bead <id> --start-at <step>` does the same through its `journalstart.py`.
 The next dispatch runs from that step.
+
+The runner makes an earlier start of its own in one case: a step reads a file an earlier step
+wrote, and the file does not satisfy the contract the step reads it by, because the contract
+changed after the file was written (`StaleInputError`). The step is not failed; the step that
+wrote the file and every step after it are set back to planned, and the run goes on from there.
+The architecture context file is written by the open-run step; a helper's request file by the
+step directly above the helper. The same writer named twice in one dispatch fails the step.
+
+A step continues an agent session only when the plugin version that runs now started that
+session; otherwise it starts a new session.
 
 ## The outermost steps
 
 | # | Description | Performed by | Plans |
 |---|---|---|---|
-| 1 | Open the run | script `prd_to_spec.open_run` | the architect's step and the check under Architecture |
+| 1 | Open the run | script `prd_to_spec.open_run` | the TRD initial write, the architect's step and the check under Architecture |
 | 2 | Architecture | container | its steps are planned by step 1 and by the steps under it (`architecture.md`) |
 | 3 | TRD | script `trd.confirm` | nothing (`trd-authoring.md`) |
 | 4 | Specs and Stories | container, created with the span step `atw-matrix epic --closure` | the span step reads what the Epic's architecture adds or changes (the architect's `addedOrChangedElements`) and where the architect says the Epic's work that leaves elements unchanged lands (`unchangedWorkElements`), and plans one container per repository a Story builds in (`repo-scoping.md`, `spec-authoring.md`) |

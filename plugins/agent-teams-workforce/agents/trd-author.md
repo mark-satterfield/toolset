@@ -97,5 +97,8 @@ Write to the technical-requirement criteria of `effective-architecture/review-st
 TRD's fixed form is
 `document-front-matter.schema.json#/$defs/TrdDocument` in the artifact-handoff skill's schemas.
 Keep `decisionIds` in the front matter: the arc42 paths, with headings, that the requirements
-cite. Write the TRD file at the request's `trdPath` and the answer, to
+cite, each one string `<path>#<heading>`, never an object, for example
+`decisionIds: ["arc42/08-crosscutting-concepts/email-channel-ownership.md#Ownership and the aggregate"]`.
+Replace a front matter that does not have this form. The step checks the TRD's front matter and
+every citation against the matrix when your session ends. Write the TRD file at the request's `trdPath` and the answer, to
 `trd-answer.schema.json`, at its `answerPath`.

@@ -66,6 +66,21 @@ class RetryExhaustedError(StepError):
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+class StaleInputError(StepError):
+    """A file an earlier step wrote does not satisfy the contract a step reads it by now.
+
+    The contract changed after the file was written. The journal runner sets ``writer``, the
+    step that wrote the file, and every step after it back to planned, so the file is written
+    again to the current contract; the step is not failed.
+    """
+
+    def __init__(self, stage: str, writer: StepId, evidence: tuple[str, ...] = ()) -> None:
+        """Attach the stage, the cause ``other``, the evidence and the step that wrote the file."""
+        super().__init__(stage, OTHER_CAUSE, evidence)
+        self.writer = writer
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 class PipelineDefectError(StepError):
     """Pipeline code failed, not the item's work; it is classified ``pipeline-code-defect``.
 

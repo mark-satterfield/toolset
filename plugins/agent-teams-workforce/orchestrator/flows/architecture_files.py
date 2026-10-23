@@ -34,7 +34,7 @@ from matrixstore import ID_SEPARATOR, make_id, matrix_path
 from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
 from orchestrator.core.handback_contract import OTHER_CAUSE
-from orchestrator.core.models import StepError
+from orchestrator.core.models import StaleInputError, StepError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -253,14 +253,35 @@ def journal_file(run: StepRun, name: str) -> Path:
 def read_context(run: StepRun) -> ArchitectureContext:
     """Read the context file a step is handed through the journal.
 
-    A context file that is missing or does not satisfy its schema raises
-    ``ArchitectureStepError``.
+    The open-run step is the only writer of the context file. A context file that is missing or is
+    not JSON raises ``ArchitectureStepError``; one that does not satisfy the context contract was
+    written to an earlier contract and raises ``StaleInputError`` naming the open-run step, which
+    runs again and writes it to the current one.
 
     Returns:
         The validated context.
 
+    Raises:
+        ArchitectureStepError: The file is missing or is not JSON, or the journal has no open-run step.
+        StaleInputError: The file does not satisfy the current context contract.
+
     """
-    return checked_file(run, journal_file(run, LABEL_CONTEXT), validate_architecture_context)
+    path: Path = journal_file(run, LABEL_CONTEXT)
+    held: object = checked_file(run, path, lambda value: value)
+    try:
+        return validate_architecture_context(held)
+    except ArchitectureWorkError as exc:
+        opened: Step | None = next(
+            (step for step in step_journal.steps_in_order(run.journal()) if step.get("script") == OPEN_RUN),
+            None,
+        )
+        if opened is None:
+            raise ArchitectureStepError(run, f"{path}: {exc}", "the journal has no open-run step") from None
+        raise StaleInputError(
+            run.inputs.stage,
+            opened["id"],
+            (f"step {run.step['id']} ({run.step['description']}): {path}: {exc}",),
+        ) from None
 
 
 def read_result(run: StepRun, context: ArchitectureContext) -> ArchitectureResult:

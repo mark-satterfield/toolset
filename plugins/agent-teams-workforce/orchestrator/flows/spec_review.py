@@ -418,7 +418,7 @@ def correction(run: StepRun) -> AgentLaunch:
         try:
             document_check(accepted, name)(path)
         except (OSError, ValueError) as exc:
-            raise StepError(stage, OTHER_CAUSE, (str(path), str(exc))) from exc
+            raise StepError(stage, OTHER_CAUSE, (str(path), str(exc))) from None
         own: set[JsonValue] = {finding["id"] for finding in _findings(accepted, phase) if finding[DOCUMENT] == kind}
         disputed: list[JsonValue] = [d["findingId"] for d in account["disputes"] if d["findingId"] in own]
         foreign: list[JsonValue] = [

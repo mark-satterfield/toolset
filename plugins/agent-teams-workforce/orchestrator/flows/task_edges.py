@@ -200,7 +200,7 @@ def mapper(run: StepRun) -> AgentLaunch:
         try:
             parse_task_deps(strict_json(output))
         except TaskDepsError as exc:
-            raise accepted.tools.failure(MAPPER, OTHER_CAUSE, {"taskDeps": str(output), "error": str(exc)}) from exc
+            raise accepted.tools.failure(MAPPER, OTHER_CAUSE, {"taskDeps": str(output), "error": str(exc)}) from None
         return Completion(artifacts=(file_artifact(TASK_DEPS, output),))
 
     return AgentLaunch(
@@ -233,7 +233,7 @@ def write(run: StepRun) -> Completion:
     try:
         parse_task_deps(accepted)
     except TaskDepsError as exc:
-        raise run.tools.failure(EDGE_WRITE, OTHER_CAUSE, {"taskDeps": str(mapped), "error": str(exc)}) from exc
+        raise run.tools.failure(EDGE_WRITE, OTHER_CAUSE, {"taskDeps": str(mapped), "error": str(exc)}) from None
     repo: Path = Path(check_type(run.context.args[dispatch_arguments().KEY_BEADS_REPO_PATH], str))
 
     def attempt() -> dict[str, JsonValue]:
