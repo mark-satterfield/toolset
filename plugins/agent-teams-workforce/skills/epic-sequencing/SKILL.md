@@ -63,6 +63,36 @@ The first Epic elaborated that needs a decision not yet approved designs and app
 and later Epics design against it; the edges decide which Epic that is: the one whose
 requirements should drive the decision.
 
+### A shared capability no Epic drives
+
+There are no platform Epics. When the matrix does not hold a shared capability's design
+approved and no open Epic's requirements drive it (every Epic that reaches it only uses it,
+as the event bus, the chassis and the API front door are used), the first Epic elaborated
+that uses it owns its architecture, and every other Epic that uses it waits for that one.
+
+The driver is chosen the way the pipeline picks the next Epic to elaborate, so that every
+assessment names the same one: among the open Epics that use the capability and wait for no
+other user of it (no path in the graph runs from another user to them), the one with the
+highest WSJF, and at an equal WSJF the lowest bead id. An Epic with no WSJF ranks below every
+scored one. A user that waits for another user cannot be elaborated before it, so it is never
+the driver, and no edge from the driver can close a cycle. Find the users as step 4 of "Assessing one Epic" finds related Epics, read
+their WSJF from the tracker, and name the driver, its WSJF and the users ranked below it in
+the reasoning.
+
+- Draw an edge from the driver to every other user, at `low` confidence, with a reason that
+  names the capability and says no Epic's requirements drive it, unless a path in the graph
+  already orders the two. When the assessed Epic is the driver, the edges run out of it; when
+  it is a user, one edge runs in from the driver.
+- No edge runs between two users, as "Shared capabilities come first" states.
+- An edge that would close a cycle is handled as step 8 of "Assessing one Epic" says.
+- When the driver's elaboration is done and the matrix holds the capability approved, the
+  edges have done their job: the decision is designed, and the next assessment of a user finds
+  it approved and draws no edge for it (see "Only the matrix's `approved` flag settles
+  anything"). Nothing else is done for it.
+- Each assessment applies the rule to the WSJF the tracker holds when it runs. When that makes
+  a different Epic the driver, it withdraws each edge it owns from the former driver, with the
+  reason that the driver changed.
+
 ### Only the matrix's `approved` flag settles anything
 
 A decision is settled when, and only when, the matrix entry or relationship that states it
@@ -324,7 +354,9 @@ revises.
 ## Errors to avoid
 
 - Adding an edge to express importance. That is WSJF's job, and an edge costs the blocked
-  Epic its eligibility until the blocker is elaborated.
+  Epic its eligibility until the blocker is elaborated. The one exception is a shared
+  capability no Epic drives, where WSJF picks which user designs it and the edges run from
+  that driver; see "A shared capability no Epic drives".
 - Withholding an edge that passes the test because the fan-out looks excessive.
 - Adding an edge to force a total order.
 - Adding an edge for a build fact — existence, deployment, testability, data flow — which
