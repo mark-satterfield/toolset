@@ -133,8 +133,9 @@ its code:
   keys are defined in `flows/architecture_files.py`, `flows/repo_scoping.py` and
   `flows/elaboration_files.py`: `prd_to_spec.open_run`, `architecture.earlier_work`,
   `atw-matrix check; atw-matrix review-scope`, `atw-matrix sync-documents; atw-matrix commit`, `trd.confirm`,
-  `atw-matrix epic --closure`, `spec_authoring.context`, `cdsbundles.list_bundles`,
-  `spec_authoring.normalize_ui`, `specui.spec_ui_append`, `spec_authoring.story_document`,
+  `atw-matrix epic --closure`, `spec_authoring.context`, `spec_authoring.not_applicable`,
+  `cdsbundles.list_bundles`, `spec_authoring.normalize_ui`, `specui.spec_ui_append`,
+  `spec_review.settle`, `spec_authoring.story_document`,
   `beadwrite.write_story`, `task_decomposition.context`, `beadwrite.plan_story_tasks`,
   `beadwrite.write_task`, `beadwrite.retire_superseded_tasks`, `task_decomposition.record`,
   `beadwrite.closure_task_edges`, `task_edges.listing`, `beadwrite.write_all_task_edges`,

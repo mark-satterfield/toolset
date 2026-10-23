@@ -65,19 +65,24 @@ The architecture and design documents hold every detail the spec states: the arc
 the detailed design under `detailed/` were decided during architecture. State each detail as
 those documents record it, or link to it by path and heading; decide none. A detail the Story
 needs that no approved document states is a gap in the design: state in the document which
-element's design lacks it, and do not settle it. Your repository context file is written to
-`spec-context.schema.json`, which states what each member holds: it points to what you read and
-copies none of it. For each stack it names, run `atw-matrix story-scope --stack <stack> --ids
-<entries>` for the constraints that bind what the Story builds and `atw-matrix uses --ids
-<entries>` for the shared capabilities it must use; read the documents and headings `documents`
-names, and cite a document by the path and heading given there. `componentDocuments` lists every
-architecture and design document of the component; the step after the review ends your document
-with links to them, so do not list them yourself. A constraint with `trd` in place of a
-`statement` is a TRD requirement: read its rule at the heading named by its id, in this Epic's
-TRD (handed to you as `TRD`) or, for another Epic, in the TRD at that Epic bead's
-`artifact_trd_path` metadata. The TRD states every obligation with its PRD heading as its
-source: open the PRD the context names only to read a heading a TRD requirement cites, when the
-requirement's text does not settle a detail. `dependsOn` is context, never work.
+element's design lacks it, and do not settle it. Your repository context file
+(`spec-context.schema.json`) names what the Story builds: `items`, `stacks`, `buildScope` and
+`dependsOn`. Your spec pack (`spec pack`, `spec-pack.schema.json`) holds what you read for it:
+each entry with the Epic that approved it; the text of every architecture heading the Story's
+scopes name, as the approved architecture states it; the constraints and shared capabilities
+that bind the entries; the TRD requirements that bind them; and the contract files the
+repository holds today. Read the pack, not the vault and not the matrix. Cite a document by the
+`path` and `heading` the pack gives. Open a document, or run `atw-matrix node <id>`, only for a
+heading or an entry the pack does not hold, such as a heading row whose `text` is null. A
+constraint with `trd` in place of a `statement` is a TRD requirement: the pack's
+`trd.requirements` gives its text for this Epic's TRD (also handed to you as `TRD`); for another
+Epic's, read it at the heading named by its id in the TRD at that Epic bead's
+`artifact_trd_path` metadata. `componentDocuments` lists every architecture and design document
+of the component; the step after the review ends your document with links to them, so do not
+list them yourself. The TRD states every obligation with its PRD heading as its source: open the
+PRD the context names only to read a heading a TRD requirement cites, when the requirement's
+text does not settle a detail. `dependsOn` is context, never work. A spec that changes a contract
+the repository holds names its file from the pack's `contractFiles`.
 
 Specify every data item the Story builds without judging existing code satisfied. State under
 "Shared capabilities used" which contract uses which shared capability, and specify no behaviour
@@ -100,7 +105,8 @@ compare an existing store with the design, never to change it.
 When the brief's inputs include a spec review (`spec-<slug>.review.json`, defined by
 artifact-handoff's `schemas/spec-review.schema.json`), `spec-reviewer` has checked this
 repository's three specification documents against criteria I1 to I7 and you are making your one
-correction of your own document, which is also among the inputs. When the inputs also include a data-model review
+correction of your own document, which is also among the inputs. The corrections of the three
+documents run at the same time, each by its own author. When the inputs also include a data-model review
 (`spec-<slug>.data-model-review.json`, the same schema), its findings, D1, D2 and so on, are on
 your document too and are corrected or disputed the same way. For each finding whose
 `document` is `data-model`, either make the correction in your document, at its path, so that the

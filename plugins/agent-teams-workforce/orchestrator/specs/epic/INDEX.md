@@ -98,6 +98,7 @@ the same contracts by artifact, writer and reader.
 | Path pattern | Producer | Consumers | Format |
 |---|---|---|---|
 | `<work>/spec-<slug>.context.json` | step `spec_authoring.context` | the spec authors, the reviewer, the UI steps, step `spec_authoring.story_document` and the decomposer (artifact `repository context`) | JSON: `spec-context.schema.json` |
+| `<work>/spec-<slug>.pack.json` | step `spec_authoring.context` | the spec authors, the reviewer, step `spec_authoring.not_applicable` (artifact `spec pack`) | JSON: `spec-pack.schema.json` |
 | `<work>/spec-<slug>.bundles.json` | step `cdsbundles.list_bundles` (frontend repositories only) | the UI sources session and step `spec_authoring.normalize_ui` (artifact `ui bundles`) | JSON: `ui-bundles.schema.json` |
 | `<work>/candidates/spec-<slug>.ui.json` | agent `ui-design-source-selector`, in the UI sources step (frontend repositories only) | step `spec_authoring.normalize_ui` (artifact `ui sources as authored`) | JSON (`spec-ui.schema.json`; no generated Python type for the file exists yet; the code reads its items as `recon_contract.UiItem`) |
 | `<work>/spec-<slug>.ui.json` | step `spec_authoring.normalize_ui` (checked against the bundles) | the contracts session, step `specui.spec_ui_append`, the decomposer (artifact `ui sources`); the first step of the Story's and each Task's journal | JSON (`spec-ui.schema.json`; no generated Python type for the file exists yet; the code reads its items as `recon_contract.UiItem`) |

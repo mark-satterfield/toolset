@@ -1,18 +1,23 @@
 """One repository's specification documents and its Story, as steps of the Epic's journal.
 
 The span step plans one container per repository with its first step, the repository context.
-That step gathers what the repository builds and plans the rest: for a frontend repository the UI
-bundle listing, the UI design-source session and its normalization; the contracts session and the
-data-model session, which run together; the UI section; the acceptance-criteria session and, for a
-repository whose stacks hold a DynamoDB store, the data-model access-pattern review, which run
-together; the review; the Story document; and the Story bead write. Each step takes the files it reads from the
-artifacts of the steps its inputs name, and records what it writes right after writing it.
+That step gathers what the repository builds, writes the spec pack its spec sessions read
+(``spec_pack``), and plans the rest as the kinds of entry the Story builds call for
+(:func:`story_surfaces`): for a frontend repository whose Story builds a UI item the UI bundle
+listing, the UI design-source session and its normalization; the contracts session and the
+data-model session, which run together, or for a document the Story does not need the script step
+that writes it; the UI section; the acceptance-criteria session and, for a repository whose stacks
+hold a DynamoDB store and whose Story builds a data store, the data-model access-pattern review,
+which run together; the review; the Story document; and the Story bead write. Each step takes
+the files it reads from the artifacts of the steps its inputs name, and records what it writes
+right after writing it.
 
-What a repository's Story is handed about the architecture is a set of pointers into the matrix:
-the context file (``spec-context.schema.json``) names each stack the Story builds in with the
-entries it builds there, the commands that print what the matrix holds for them, the documents
-and headings ``atw-matrix story-scope`` names, and every architecture and design document of the
-component the Story builds (``atw-matrix documents``). The authors write specs: every design
+What a repository's Story is handed about the architecture is the context file
+(``spec-context.schema.json``), which names each stack the Story builds in with the entries it
+builds there, the documents and headings ``atw-matrix story-scope`` names, and every architecture
+and design document of the component the Story builds (``atw-matrix documents``); and the spec
+pack (``spec-pack.schema.json``), which holds the text of those headings, the constraints and TRD
+requirements that bind the entries and the repository's contract files. The authors write specs: every design
 detail was decided during architecture and is in those documents and the matrix.
 
 What a spec covers for each entry comes from its verified state (``buildScope``), never from an
@@ -26,6 +31,7 @@ from __future__ import annotations
 
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -36,7 +42,15 @@ import beadwrite
 import cdsbundles
 import hierarchy
 import specui
-from matrix_contract import KIND_INFRASTRUCTURE
+from matrix_contract import (
+    KIND_COMPONENT,
+    KIND_EVENT,
+    KIND_FILE,
+    KIND_INFRASTRUCTURE,
+    KIND_LAYER,
+    KIND_PACKAGE,
+    KIND_SERVICE,
+)
 from matrixquery import documents_view, story_scope
 from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix
 from recon_contract import KEY_MOCKS_DIR
@@ -77,6 +91,9 @@ from orchestrator.flows.elaboration_files import (
     SPEC,
     SPEC_CONTEXT,
     SPEC_CONTEXT_SCHEMA,
+    SPEC_NOT_APPLICABLE,
+    SPEC_PACK,
+    SPEC_PACK_SCHEMA,
     STORY,
     STORY_DOCUMENT,
     STORY_DOCUMENT_SCHEMA,
@@ -110,6 +127,13 @@ from orchestrator.flows.elaboration_files import (
 from orchestrator.flows.elaboration_support import SPEC_AUTHORING_PHASE, enter_phase
 from orchestrator.flows.repo_scoping import BuildContext, build_context, item_stacks
 from orchestrator.flows.spec_authoring_ui import normalize_ui
+from orchestrator.flows.spec_pack import (
+    committed_headings,
+    contract_files,
+    entry_rows,
+    scope_bindings,
+    trd_requirements,
+)
 from orchestrator.flows.trd_authoring import SPEC_FRONT_MATTER, document
 
 # isort: split
@@ -130,6 +154,48 @@ WORK_DOCUMENT: Final = "document"
 KEY_RESOURCE_TYPE: Final = "resourceType"
 DYNAMODB_RESOURCE_PREFIX: Final = "dynamodb-"
 """An infrastructure entry whose resource type starts with this prefix is a DynamoDB resource."""
+DATA_STORE_RESOURCE_PREFIXES: Final[tuple[str, ...]] = (
+    "dynamodb-",
+    "rds-",
+    "aurora-",
+    "neptune-",
+    "docdb-",
+    "elasticache-",
+    "memorydb-",
+    "timestream-",
+    "opensearch-",
+    "keyspaces-",
+    "redshift-",
+)
+"""An infrastructure entry whose resource type starts with one of these is a data store: the data model specifies it."""
+INTERFACE_KINDS: Final[frozenset[str]] = frozenset({
+    KIND_SERVICE,
+    KIND_COMPONENT,
+    KIND_EVENT,
+    KIND_FILE,
+    KIND_PACKAGE,
+    KIND_LAYER,
+})
+"""The kinds of entry that expose or consume an API, event, error or UI contract, which the contracts specify."""
+INTERFACE_RESOURCE_PREFIXES: Final[tuple[str, ...]] = (
+    "rest-api",
+    "websocket-api",
+    "api-gateway-",
+    "appsync-",
+    "eventbridge-",
+    "sqs-",
+    "sns-",
+    "bedrock-agentcore-gateway",
+)
+"""An infrastructure entry whose resource type starts with one of these carries an API or event contract."""
+KEY_DOCUMENT: Final = "document"
+"""The parameter that names the spec document a step records as not applicable."""
+NOT_APPLICABLE_SUBJECT: Final[dict[str, str]] = {
+    SPEC: "API, event, error or UI contract",
+    DATA_MODEL: "data store",
+}
+"""What a repository's Story builds none of, when its contracts or its data model is not applicable."""
+DOCUMENT_TITLE: Final[dict[str, str]] = {SPEC: "Contracts", DATA_MODEL: "Data model"}
 DECISION_IDS: Final = "decision ids"
 KEY_STACKS: Final = "stacks"
 """The member of the repository context that lists the stacks the Story builds in, with their entries."""
@@ -159,6 +225,18 @@ DOCUMENT_ENTRY_KINDS: Final[frozenset[str]] = frozenset({"document"})
 """The kinds of the matrix entries that are architecture and design documents (arc42 and ``detailed/``)."""
 STORY_KEY_PREFIX: Final = "S"
 """The prefix of a Story's key: the span keys its Stories ``S<n>`` in the order it names their repositories."""
+
+
+@dataclass(frozen=True)
+class Surfaces:
+    """Which spec sessions a repository's Story needs, from the kinds of entry it builds."""
+
+    contracts: bool
+    """The Story builds an entry with an API, event, error or UI contract."""
+    data_model: bool
+    """The Story builds a data store."""
+    ui: bool
+    """The repository is a frontend repository and the Story builds a UI item."""
 
 
 def nonempty(path: Path) -> None:
@@ -223,8 +301,9 @@ def author_files(run: StepRun, name: str) -> tuple[tuple[str, Path], ...]:
     Returns:
         The TRD, the span and the elements; the UI sources for the contracts of a frontend
         repository; the contracts and the data model for the criteria; then the repository
-        context, which names the architecture documents and headings to read and the PRD, whose
-        headings the TRD cites.
+        context, which names the PRD, whose headings the TRD cites; and the spec pack, which
+        holds the text of the architecture headings, the constraints and the TRD requirements
+        the session reads.
 
     """
     files: list[tuple[str, Path]] = [
@@ -235,7 +314,7 @@ def author_files(run: StepRun, name: str) -> tuple[tuple[str, Path], ...]:
         files.append((UI_SOURCES, sources))
     if name == CRITERIA:
         files.extend((label, run.inputs.file(label)) for label in (SPEC, DATA_MODEL))
-    return (*files, (CONTEXT, run.inputs.file(CONTEXT)))
+    return (*files, (CONTEXT, run.inputs.file(CONTEXT)), (SPEC_PACK, run.inputs.file(SPEC_PACK)))
 
 
 def author_dirs(run: StepRun, held: Repository) -> tuple[Path, ...]:
@@ -258,6 +337,7 @@ def _step(  # ruff: ignore[too-many-arguments] - One plan field each.
     agent: str | None = None,
     script: str | None = None,
     work: str | None = None,
+    document: str | None = None,
 ) -> NewStep:
     """Plan one step of a repository with the parameters that say what it does.
 
@@ -271,17 +351,25 @@ def _step(  # ruff: ignore[too-many-arguments] - One plan field each.
     if script is not None:
         plan["script"] = script
     params: dict[str, JsonValue] = {} if work is None else {WORK: work}
+    if document is not None:
+        params[KEY_DOCUMENT] = document
     return NewStep(plan, params)
 
 
-def _repository_steps(run: StepRun, held: Repository, *, dynamodb: bool) -> StepGroup:
+def _repository_steps(run: StepRun, held: Repository, surfaces: Surfaces, *, dynamodb: bool) -> StepGroup:
     """Plan every step of one repository that follows its context step.
+
+    A spec document whose session the Story does not need (:func:`story_surfaces`) is written by
+    a script step instead, which states that the Story builds nothing it would specify; those
+    steps come first, so the author sessions that are planned are consecutive and run together.
 
     Args:
         run: The context step.
         held: The repository.
+        surfaces: The spec sessions the Story needs.
         dynamodb: Whether a stack the Story builds in holds a DynamoDB store, which plans the
-            data-model access-pattern review beside the acceptance criteria.
+            data-model access-pattern review beside the acceptance criteria when the Story
+            builds a data store.
 
     Returns:
         The steps in the order they run, after the context step.
@@ -289,8 +377,24 @@ def _repository_steps(run: StepRun, held: Repository, *, dynamodb: bool) -> Step
     """
     name: str = Path(held.path).name
     upstream: list[str] = list(run.step.get("inputs", []))
-    steps: list[NewStep] = []
-    if held.frontend:
+    sources: list[str] = ["sources"] if surfaces.ui else []
+    absent: list[NewStep] = [
+        _step(
+            ref,
+            f"Record that {name} builds no {NOT_APPLICABLE_SUBJECT[document]}",
+            f"The repository's {DOCUMENT_TITLE[document].lower()} document says it specifies nothing",
+            [],
+            script=SPEC_NOT_APPLICABLE,
+            document=document,
+        )
+        for ref, document, needed in (
+            ("contracts", SPEC, surfaces.contracts),
+            ("data-model", DATA_MODEL, surfaces.data_model),
+        )
+        if not needed
+    ]
+    steps: list[NewStep] = list(absent)
+    if surfaces.ui:
         steps.extend((
             _step(
                 "bundles",
@@ -314,26 +418,29 @@ def _repository_steps(run: StepRun, held: Repository, *, dynamodb: bool) -> Step
                 script=UI_NORMALIZE,
             ),
         ))
-    sources: list[str] = ["sources"] if held.frontend else []
-    steps.extend((
-        _step(
-            "contracts",
-            f"Write the API, event and error contracts of {name}",
-            "The repository's contracts are specified",
-            [*upstream, *sources],
-            agent=AUTHOR_CONTRACTS,
-            work=WORK_DOCUMENT,
-        ),
-        _step(
-            "data-model",
-            f"Write the data model of {name}",
-            "The repository's data model is specified",
-            upstream,
-            agent=AUTHOR_DATA_MODEL,
-            work=WORK_DOCUMENT,
-        ),
-    ))
-    if held.frontend:
+    if surfaces.contracts:
+        steps.append(
+            _step(
+                "contracts",
+                f"Write the API, event and error contracts of {name}",
+                "The repository's contracts are specified",
+                [*upstream, *sources],
+                agent=AUTHOR_CONTRACTS,
+                work=WORK_DOCUMENT,
+            ),
+        )
+    if surfaces.data_model:
+        steps.append(
+            _step(
+                "data-model",
+                f"Write the data model of {name}",
+                "The repository's data model is specified",
+                upstream,
+                agent=AUTHOR_DATA_MODEL,
+                work=WORK_DOCUMENT,
+            ),
+        )
+    if surfaces.ui and surfaces.contracts:
         steps.append(
             _step(
                 "ui-section",
@@ -354,8 +461,8 @@ def _repository_steps(run: StepRun, held: Repository, *, dynamodb: bool) -> Step
             work=WORK_DOCUMENT,
         ),
     )
-    reviewed: list[str] = ["data-model-review"] if dynamodb else []
-    if dynamodb:
+    reviewed: list[str] = ["data-model-review"] if dynamodb and surfaces.data_model else []
+    if reviewed:
         steps.append(
             _step(
                 "data-model-review",
@@ -389,6 +496,46 @@ def _repository_steps(run: StepRun, held: Repository, *, dynamodb: bool) -> Step
         ),
     ))
     return StepGroup(tuple(steps))
+
+
+def _resource_type(entry: Entry) -> str:
+    """Read an entry's resource type.
+
+    Returns:
+        The type; empty when the entry has none.
+
+    """
+    held: JsonValue = entry.attributes.get(KEY_RESOURCE_TYPE)
+    return held if isinstance(held, str) else ""
+
+
+def story_surfaces(matrix: Matrix, entries: Sequence[EntryId], *, frontend: bool) -> Surfaces:
+    """Decide which spec sessions a repository's Story needs, from the kinds of entry it builds.
+
+    Args:
+        matrix: The matrix.
+        entries: The entries the Story builds.
+        frontend: Whether the repository is a frontend repository.
+
+    Returns:
+        Contracts when the Story builds an entry of an interface kind (:data:`INTERFACE_KINDS`)
+        or infrastructure whose resource type carries an API or event contract; a data model
+        when it builds infrastructure whose resource type is a data store; the UI design sources
+        when the repository is a frontend repository and the Story builds a component that is
+        no AWS resource (a page, a shell, a view or a component they show). An entry the matrix
+        does not hold calls for every session.
+
+    """
+    found: list[Entry | None] = [matrix.find(entry_id) for entry_id in entries]
+    unknown: bool = any(entry is None for entry in found)
+    held: list[Entry] = [entry for entry in found if entry is not None]
+    infrastructure: list[str] = [_resource_type(entry) for entry in held if entry.kind == KIND_INFRASTRUCTURE]
+    interface: bool = any(entry.kind in INTERFACE_KINDS for entry in held) or any(
+        kind.startswith(INTERFACE_RESOURCE_PREFIXES) for kind in infrastructure
+    )
+    store: bool = any(kind.startswith(DATA_STORE_RESOURCE_PREFIXES) for kind in infrastructure)
+    ui: bool = any(entry.kind == KIND_COMPONENT and not _resource_type(entry) for entry in held)
+    return Surfaces(contracts=unknown or interface, data_model=unknown or store, ui=frontend and (unknown or ui))
 
 
 def _scope_documents(arch: Path, scopes: Sequence[StoryScope]) -> list[JsonValue]:
@@ -547,6 +694,64 @@ def story_context(matrix: Matrix, built: Sequence[JsonValue], every_build: Mappi
     return build_context(matrix, built, items_by_story(every_build))
 
 
+def _write_pack(  # ruff: ignore[too-many-arguments] - One part of the pack each.
+    run: StepRun,
+    held: Repository,
+    matrix: Matrix,
+    *,
+    ids: Sequence[EntryId],
+    scopes: Sequence[StoryScope],
+    documents: Sequence[JsonValue],
+) -> Path:
+    """Write one repository's spec pack (``spec-pack.schema.json``) beside its context file.
+
+    Args:
+        run: The context step.
+        held: The repository.
+        matrix: The matrix.
+        ids: The stacks the Story builds in and the entries it builds there.
+        scopes: The story scopes of those stacks.
+        documents: The documents and headings the story scopes name, as the context lists them.
+
+    Returns:
+        The pack's file.
+
+    """
+    constraints: list[JsonValue]
+    capabilities: list[JsonValue]
+    constraints, capabilities = run.tools.portfolio(SPEC_CONTEXT, scope_bindings, scopes)
+    trd: Path = run.inputs.file(ARTIFACT_TRD)
+    requirements: list[JsonValue] = run.tools.portfolio(
+        SPEC_CONTEXT,
+        trd_requirements,
+        matrix,
+        str(run.bead),
+        trd.read_text(encoding="utf-8"),
+        constraints,
+    )
+    files: list[JsonValue] = list(run.tools.portfolio(SPEC_CONTEXT, contract_files, Path(held.path)))
+    return write_contract(
+        run.context.work / f"spec-{held.slug}.pack.json",
+        {
+            "epic": str(run.bead),
+            "repoPath": held.path,
+            "slug": held.slug,
+            "entries": run.tools.portfolio(SPEC_CONTEXT, entry_rows, matrix, ids),
+            "headings": run.tools.portfolio(
+                SPEC_CONTEXT,
+                committed_headings,
+                architecture_root(run),
+                [json_object(document) for document in documents],
+            ),
+            "constraints": constraints,
+            "capabilities": capabilities,
+            "trd": {"path": str(trd), "requirements": requirements},
+            "contractFiles": files,
+        },
+        SPEC_PACK_SCHEMA,
+    )
+
+
 @script_step(SPEC_CONTEXT)
 def context(run: StepRun) -> Completion:
     """Gather what one repository builds, and plan the steps that specify it.
@@ -561,9 +766,16 @@ def context(run: StepRun) -> Completion:
     paths of the PRD and of the architect's result, whose ``facts`` name the documents that hold
     the design the authors carry.
 
+    Beside it the step writes the spec pack (``spec-pack.schema.json``), what the spec sessions
+    read instead of the vault and the matrix: the entries with their approved owners, the text
+    of every heading the context's ``documents`` name as the vault's last commit holds it, the
+    constraints and shared capabilities that bind the entries, the TRD requirements that bind
+    them and the contract files the repository holds. It plans the spec sessions the Story's
+    entries call for (:func:`story_surfaces`).
+
     Returns:
-        The repository and its context file as artifacts, with the repository's other steps
-        planned after this one.
+        The repository, its context file and its spec pack as artifacts, with the repository's
+        other steps planned after this one.
 
     Raises:
         StepError: The span places no item in the repository, the matrix cannot answer for its
@@ -590,7 +802,7 @@ def context(run: StepRun) -> Completion:
     entries: list[EntryId] = list(dict.fromkeys(entry for built in stacks.values() for entry in built))
     scoped: list[JsonValue] = [entry_scope(matrix, entry) for entry in entries]
     component: list[JsonValue] = component_documents(architecture_root(run), matrix, [*stacks, *entries])
-    dependencies: list[JsonValue] = [json_object(dependency) for dependency in depended["dependsOn"]]
+    documents: list[JsonValue] = _scope_documents(architecture_root(run), scopes)
     path: Path = write_contract(
         run.context.work / f"spec-{held.slug}.context.json",
         {
@@ -600,10 +812,10 @@ def context(run: StepRun) -> Completion:
             "frontend": held.frontend,
             "items": items,
             KEY_STACKS: stacked,
-            "documents": _scope_documents(architecture_root(run), scopes),
+            "documents": documents,
             KEY_BUILD_SCOPE: scoped,
             KEY_COMPONENT_DOCUMENTS: component,
-            "dependsOn": dependencies,
+            "dependsOn": [json_object(dependency) for dependency in depended["dependsOn"]],
             "prd": str(prd),
             "architectureResult": str(Path(read_context(run)["resultPath"]).resolve()),
             dispatch.KEY_DESIGN_SYSTEM: design_system(run),
@@ -611,15 +823,64 @@ def context(run: StepRun) -> Completion:
         SPEC_CONTEXT_SCHEMA,
     )
     return Completion(
-        artifacts=(value_artifact(REPOSITORY, held.facts()), file_artifact(CONTEXT, path)),
+        artifacts=(
+            value_artifact(REPOSITORY, held.facts()),
+            file_artifact(CONTEXT, path),
+            file_artifact(
+                SPEC_PACK,
+                _write_pack(run, held, matrix, ids=[*stacks, *entries], scopes=scopes, documents=documents),
+            ),
+        ),
         add=(
             _repository_steps(
                 run,
                 held,
+                run.tools.portfolio(SPEC_CONTEXT, story_surfaces, matrix, entries, frontend=held.frontend),
                 dynamodb=run.tools.portfolio(SPEC_CONTEXT, holds_dynamodb, matrix, list(stacks)),
             ),
         ),
     )
+
+
+@script_step(SPEC_NOT_APPLICABLE)
+def not_applicable(run: StepRun) -> Completion:
+    """Write the contracts or the data model of a repository whose Story builds nothing it specifies.
+
+    The document has the front matter every spec document has, with no citation, and lists what
+    the Story builds, so the criteria, the review and the Story read it as they read an authored
+    one.
+
+    Returns:
+        The document, recorded under its artifact name.
+
+    Raises:
+        StepError: The step names no document a script writes in place of a session.
+
+    """
+    held: Repository = repository(run.inputs)
+    name: JsonValue = run.params().get(KEY_DOCUMENT)
+    if not isinstance(name, str) or name not in NOT_APPLICABLE_SUBJECT:
+        raise StepError(SPEC_NOT_APPLICABLE, OTHER_CAUSE, (f"no spec document a script writes: {name!r}",))
+    built: list[dict[str, JsonValue]] = objects(strict_json(run.inputs.file(SPEC_PACK))["entries"])
+    lines: list[str] = [
+        "---",
+        "decisionIds: []",
+        "---",
+        "",
+        f"# {DOCUMENT_TITLE[name]} of {Path(held.path).name}",
+        "",
+        f"This repository's Story builds no {NOT_APPLICABLE_SUBJECT[name]}, so this document specifies none.",
+        "What the Story builds:",
+        "",
+        *(
+            f"- {entry['id']} ({', '.join(str(entry[key]) for key in ('kind', 'resourceType') if entry[key])})"
+            for entry in built
+        ),
+        "",
+    ]
+    path: Path = document_file(run, held, name)
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return Completion(artifacts=(file_artifact(name, path),))
 
 
 @script_step(UI_BUNDLES)

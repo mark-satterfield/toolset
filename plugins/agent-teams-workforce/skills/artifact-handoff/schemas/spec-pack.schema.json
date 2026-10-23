@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/spec-pack.schema.json",
+  "title": "Spec pack",
+  "description": "One repository's spec pack (<work>/spec-<slug>.pack.json), handed to its spec authors and its spec reviewer as `spec pack`. The step `spec_authoring.context` (orchestrator/flows/spec_authoring.py, with orchestrator/flows/spec_pack.py) writes it beside the repository context and validates it against this file. It is the session's view of the vault and the matrix for this Story: the entries it builds, the text of every heading its scopes name as the vault's last commit holds it (the approved architecture), the constraints and shared capabilities that bind the entries, the TRD requirements that bind them and the contract files the repository holds today. Read the pack, not the vault and not the matrix; open a document or run `atw-matrix node` only for something the pack does not hold.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["epic", "repoPath", "slug", "entries", "headings", "constraints", "capabilities", "trd", "contractFiles"],
+  "properties": {
+    "epic": {"description": "The Epic's bead id.", "type": "string", "minLength": 1},
+    "repoPath": {"description": "The repository's absolute path.", "type": "string", "minLength": 1},
+    "slug": {"description": "The repository's slug, as the work files name it.", "type": "string", "minLength": 1},
+    "entries": {
+      "description": "Each stack the Story builds in and each entry it builds there, as the repository context's `stacks` name them.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "name", "purpose", "resourceType", "approved"],
+        "properties": {
+          "id": {"description": "The entry's matrix id.", "type": "string", "minLength": 1},
+          "kind": {"description": "The entry's kind; null when the matrix holds no such entry.", "type": ["string", "null"]},
+          "name": {"type": ["string", "null"]},
+          "purpose": {"type": ["string", "null"]},
+          "resourceType": {"description": "The AWS resource type of an infrastructure or component entry; null when it has none.", "type": ["string", "null"]},
+          "approved": {"description": "The Epic whose approved architecture set the entry's approved flag; null when it is not approved.", "type": ["string", "null"]}
+        }
+      }
+    },
+    "headings": {
+      "description": "The text of each heading the repository context's `documents` name, read with `git show HEAD:<path>` from the vault. A heading's text is its own text: its heading line and everything up to the next heading. A document named as a whole has one row with an empty heading and its whole body. Cite a document by the `path` and `heading` given here.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["document", "path", "heading", "text"],
+        "properties": {
+          "document": {"description": "The document's matrix id.", "type": "string", "minLength": 1},
+          "path": {"description": "The document's file under the architecture root.", "type": "string", "minLength": 1},
+          "heading": {"description": "The heading; empty for the document as a whole.", "type": "string"},
+          "text": {"description": "The heading's text; null when the vault's last commit holds no such document or heading.", "type": ["string", "null"]}
+        }
+      }
+    },
+    "constraints": {
+      "description": "Each constraint that binds a stack the Story builds in or an entry it builds, once, as `atw-matrix story-scope` prints it: the constraint (with its `statement`, or `trd` for a TRD requirement), where it is stated and what it applies to.",
+      "type": "array",
+      "items": {"type": "object"}
+    },
+    "capabilities": {
+      "description": "Each shared capability the entries must use, once, as `atw-matrix story-scope` prints it: the feature, the `provides` items relied on and their providers. Specify no behaviour a shared capability provides.",
+      "type": "array",
+      "items": {"type": "object"}
+    },
+    "trd": {
+      "description": "The TRD requirements that bind what the Story builds.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "requirements"],
+      "properties": {
+        "path": {"description": "This Epic's TRD.", "type": "string", "minLength": 1},
+        "requirements": {
+          "description": "Each requirement a constraint among `constraints` points at, then each requirement of this Epic's TRD that applies to the Epic as a whole.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["requirement", "epic", "constraint", "text"],
+            "properties": {
+              "requirement": {"description": "The requirement's id, its heading in its TRD.", "type": "string", "minLength": 1},
+              "epic": {"description": "The Epic whose TRD states it.", "type": "string", "minLength": 1},
+              "constraint": {"description": "The matrix constraint that points at it.", "type": "string", "minLength": 1},
+              "text": {"description": "The requirement's text in this Epic's TRD; null for another Epic's TRD (read it at the heading named by its id in the TRD at that Epic bead's `artifact_trd_path` metadata) or when the TRD has no such heading.", "type": ["string", "null"]}
+            }
+          }
+        }
+      }
+    },
+    "contractFiles": {
+      "description": "The OpenAPI, AsyncAPI, GraphQL and JSON Schema files the repository holds today, by path under the repository, outside its tool, dependency and build folders. A spec that changes one of these contracts names the file.",
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

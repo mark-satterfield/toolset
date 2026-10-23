@@ -85,6 +85,7 @@ The PRD and portfolio workflows run their commands and accept agent files throug
 | Artifact | Writer | Readers | Contract |
 |---|---|---|---|
 | repository context: `<work>/spec-<slug>.context.json` | step `spec_authoring.context` | the spec authors; `spec-reviewer`; `task-decomposer` | `spec-context.schema.json` |
+| spec pack: `<work>/spec-<slug>.pack.json` | step `spec_authoring.context` | the spec authors; `spec-reviewer` | `spec-pack.schema.json` |
 | ui bundles: `<work>/spec-<slug>.bundles.json` | step `cdsbundles.list_bundles` | `ui-design-source-selector`; step `spec_authoring.normalize_ui` | `ui-bundles.schema.json` |
 | ui sources: `<work>/candidates/spec-<slug>.ui.json`, then `<work>/spec-<slug>.ui.json` | `ui-design-source-selector`, then step `spec_authoring.normalize_ui` | the contracts session; `task-decomposer` | `spec-ui.schema.json` |
 | contracts document: `<work>/spec-<slug>.md` | `api-specification-author` | `acceptance-criteria-writer`; `spec-reviewer`; `review-dispute-decider`; `task-decomposer` | `document-front-matter.schema.json#/$defs/SpecDocument`; the specs-and-Tasks criteria of `skills/effective-architecture/review-standard.md` |

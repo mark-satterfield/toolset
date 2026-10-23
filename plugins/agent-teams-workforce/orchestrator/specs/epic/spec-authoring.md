@@ -12,33 +12,51 @@ from the artifacts of the steps its `inputs` name, writes its output in the Epic
 ## The steps of one repository
 
 `<slug>` is the repository's artifact slug. "Frontend" marks a step planned only for a repository
-whose name matches the frontend template.
+whose name matches the frontend template and whose Story builds a UI item. Which sessions are
+planned follows from the kinds of entry the Story builds (`spec_authoring.story_surfaces`): the
+contracts session when it builds an entry of kind service, component, event, file, package or
+layer, or infrastructure whose resource type carries an API or event contract (`rest-api`,
+`websocket-api`, `api-gateway-`, `appsync-`, `eventbridge-`, `sqs-`, `sns-`,
+`bedrock-agentcore-gateway`); the data-model session when it builds infrastructure whose
+resource type is a data store (`dynamodb-`, `rds-`, `aurora-`, `neptune-`, `docdb-`,
+`elasticache-`, `memorydb-`, `timestream-`, `opensearch-`, `keyspaces-`, `redshift-`); the UI
+steps when the repository is a frontend repository and the Story builds a component that is no
+AWS resource. An entry the matrix does not hold calls for every session. A document whose
+session is not planned is written by step 4a instead.
 
 | # | Description | Performed by | Reads (artifact) | Writes | Records (artifact) |
 |---|---|---|---|---|---|
-| 1 | Gather what the repository builds | script `spec_authoring.context` | `span`, `elements`; the dispatch arguments (PRD, design system) | `spec-<slug>.context.json` | value `repository`, file `repository context`; plans steps 2 to 11, step 8a for a repository whose stacks hold a DynamoDB store |
+| 1 | Gather what the repository builds | script `spec_authoring.context` | `span`, `elements`, `TRD`; the dispatch arguments (PRD, design system); the vault's last commit | `spec-<slug>.context.json`, `spec-<slug>.pack.json` | value `repository`, file `repository context`, file `spec pack`; plans steps 2 to 11 as the Story's entries call for, step 8a for a repository whose stacks hold a DynamoDB store and whose Story builds a data store |
 | 2 | List the UI bundles (frontend) | script `cdsbundles.list_bundles` | the design system's packages directory | `spec-<slug>.bundles.json` | file `ui bundles` |
 | 3 | Choose the UI design source of each UI item (frontend) | agent `ui-design-source-selector` | `TRD`, `span`, `elements`, `ui bundles`, `repository context` | `candidates/spec-<slug>.ui.json` | file `ui sources as authored` |
 | 4 | Check the UI design sources against the bundles (frontend) | script `spec_authoring.normalize_ui` | `ui sources as authored`, `ui bundles`, `repository context` | `spec-<slug>.ui.json` | file `ui sources`, value `warnings` |
-| 5 | Write the API, event and error contracts | agent `api-specification-author` | `TRD`, `span`, `elements`, `ui sources` when there are any, `repository context` | `spec-<slug>.md` | file `spec` |
-| 6 | Write the data model | agent `data-model-specification-author` | `TRD`, `span`, `elements`, `repository context` | `spec-<slug>.data-model.md` | file `data model` |
+| 4a | Record that the repository builds nothing a document specifies (contracts, data model) | script `spec_authoring.not_applicable` | `spec pack` | `spec-<slug>.md` or `spec-<slug>.data-model.md`, with no citation, listing what the Story builds | file `spec` or `data model` |
+| 5 | Write the API, event and error contracts | agent `api-specification-author` | `TRD`, `span`, `elements`, `ui sources` when there are any, `repository context`, `spec pack` | `spec-<slug>.md` | file `spec` |
+| 6 | Write the data model | agent `data-model-specification-author` | `TRD`, `span`, `elements`, `repository context`, `spec pack` | `spec-<slug>.data-model.md` | file `data model` |
 | 7 | Add the UI design sources to the contracts (frontend) | script `specui.spec_ui_append` | `spec`, `ui sources` | the section `## UI design sources` of `spec-<slug>.md` | file `spec` |
-| 8 | Write the acceptance criteria | agent `acceptance-criteria-writer` | `TRD`, `span`, `elements`, `spec`, `data model`, `repository context` | `spec-<slug>.criteria.md` | file `criteria` |
+| 8 | Write the acceptance criteria | agent `acceptance-criteria-writer` | `TRD`, `span`, `elements`, `spec`, `data model`, `repository context`, `spec pack` | `spec-<slug>.criteria.md` | file `criteria` |
 | 8a | Review the DynamoDB access patterns of the data model (a repository whose stacks hold a DynamoDB store) | agent `dynamodb-schema-access-pattern-reviewer` | `data model`, `TRD`, `repository context` | `spec-<slug>.data-model-review.json` | file `data model review` |
-| 9 | Review the specification documents | agent `spec-reviewer` | `spec`, `data model`, `criteria`, `TRD`, `repository context` (and, recorded with the review, `data model review`) | `spec-<slug>.review.json` | see "The review" |
+| 9 | Review the specification documents | agent `spec-reviewer` | `spec`, `data model`, `criteria`, `TRD`, `repository context`, `spec pack` (and, recorded with the review, `data model review`) | `spec-<slug>.review.json` | see "The review" |
 | 10 | Write the Story document | script `spec_authoring.story_document` | `spec`, `data model`, `criteria`, `repository context` | the section `## Architecture and design documents` at the end of each of the three spec documents; `story-<slug>.json` | file `story document`, value `decision ids` |
 | 11 | Write the Story bead | script `beadwrite.write_story` | `story document`, the three spec documents, `span`, `elements` | the Story bead; the Story's journal | value `story`, value `story write`, value `decision ids`; plans the repository's container under Tasks |
 
-Steps 5 and 6 are consecutive agent steps whose inputs are done, so their sessions run together;
-so are steps 8 and 8a. A repository's stacks hold a DynamoDB store when the matrix holds an
+Step 4a is planned first, before step 2, so steps 5 and 6 are consecutive agent steps whose
+inputs are done and their sessions run together; so are steps 8 and 8a. A repository's stacks hold a DynamoDB store when the matrix holds an
 infrastructure entry whose resource type starts with `dynamodb-` and whose home is one of the
 stacks the Story builds in (`spec_authoring.holds_dynamodb`).
 
 The repository context (`spec-<slug>.context.json`) is written to `spec-context.schema.json`,
 which says what each member holds. It holds facts and pointers: the items of what the Story
-builds, and for the rest the paths and `atw-matrix` commands the authors read themselves (the PRD
-and the architect's result by path, the stacks the Story builds in for `atw-matrix story-scope`
-and `atw-matrix uses`). `dependsOn` is context, never work.
+builds, and for the rest paths (the PRD and the architect's result). `dependsOn` is context, never
+work. The spec pack (`spec-<slug>.pack.json`, `spec-pack.schema.json`, written by
+`orchestrator/flows/spec_pack.py`) is what the spec sessions read instead of the vault and the
+matrix: each stack and entry the Story builds with the Epic its approved flag names; the text of
+every heading the context's `documents` name, read with `git show HEAD:<path>` from the vault
+(after promotion, the approved architecture), never from the working tree; the constraints and
+shared capabilities `atw-matrix story-scope` gives for the stacks; the requirements of TRDs that
+bind them (a constraint among those with a TRD pointer, and every requirement of this Epic's TRD
+that names no entry), with the text of this Epic's; and the OpenAPI, AsyncAPI, GraphQL and JSON
+Schema files the repository holds.
 
 The authors write specs and design nothing: every detail a spec states (endpoints, payload and
 data schemas, keys, parameter names) was decided during architecture and is in arc42, in the
@@ -77,18 +95,21 @@ own ids are F1, F2 and so on, and its step adds the data-model review's findings
 correction and revision steps and the decider are handed the data-model review beside the review. The step
 keeps a finding only when its criterion id is an id of the specs-and-Tasks level (`implementation`) of
 `skills/effective-architecture/review-criteria.json`. What follows is planned by the
-step whose result calls for it, one step at a time, after that step:
+step whose result calls for it, in at most three rounds after the review; the author steps of
+one round are consecutive agent steps with done inputs, so their sessions run together:
 
 | Step | Planned when | Performed by | Records |
 |---|---|---|---|
 | Review | always | `spec-reviewer` | file `spec review`; value `spec review findings` (the findings of the review and of the data-model review, when there is one, held against an implementation criterion); value `spec review findings dropped` (the others, which go no further) |
-| Correct a document for the review's findings | the document has a finding, or is derived from a document that changed in this pass | the agent that wrote the document, continuing the session in which it wrote it | file `spec correction`, the document again, value `spec review document worked on` (whether it changed, which findings it disputed), value `warnings` |
-| Rule on the disputed findings | an author disputed a finding of its own document | `review-dispute-decider` | file `spec ruling`, value `spec review findings upheld`, value `warnings` |
-| Revise a document to the ruling | the document has an upheld finding, or is derived from a document that changed in this pass | the agent that wrote the document | file `spec revision`, the document again, value `spec review document worked on`, value `warnings` |
+| Correct a document for the review's findings (round 1, planned by the review) | the document has a finding, or is derived from a document that has one | the agent that wrote the document, continuing the session in which it wrote it | file `spec correction`, the document again, value `spec review document worked on` (which findings it disputed), value `warnings` |
+| Decide whether a finding is disputed (after round 1) | round 1 has a step | script `spec_review.settle` | plans the decider when a record of round 1 names a disputed finding |
+| Rule on the disputed findings (round 2) | an author disputed a finding of its own document | `review-dispute-decider` | file `spec ruling`, value `spec review findings upheld`, value `warnings` |
+| Revise a document to the ruling (round 3, planned by the decider) | the document has an upheld finding, or is derived from a document that has one | the agent that wrote the document | file `spec revision`, the document again, value `spec review document worked on`, value `warnings` |
 
-Documents are worked on in the order they are written: contracts, data model, criteria. The
-criteria are derived from the other two, so a change to either sends the criteria to their author
-in the same pass. A finding goes to an author once. A finding disputed again after the ruling
+The criteria are derived from the other two documents, so a finding on either sends the criteria to
+their author in the same round: the criteria author is handed the review (and the ruling) and
+brings the criteria into agreement with what those findings direct, while the other authors
+correct their documents at the same time. A finding goes to an author once. A finding disputed again after the ruling
 stands as ruled. After each correction and revision the document must pass its own check again, or
 the step fails.
 

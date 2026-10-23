@@ -33,7 +33,10 @@ Read the TRD, contracts and data-model documents for the repository. Derive test
 criteria and Definition of Done, with stable criterion/DoD ids and source requirement/section
 references: a requirement is cited by the PRD heading the TRD gives as its source, and the PRD
 your repository context (`spec-context.schema.json`) names is opened only to read such a heading
-when the TRD's text does not settle a criterion. Cover required behavior and failure/boundary cases without inventing scope or
+when the TRD's text does not settle a criterion. Your spec pack (`spec pack`,
+`spec-pack.schema.json`) holds the text of the architecture headings, the constraints and the TRD
+requirements that bind what the Story builds: read it, not the vault and not the matrix, and open
+a document only for a heading the pack does not hold. Cover required behavior and failure/boundary cases without inventing scope or
 architecture. Preserve any test strategy the sources state, in the shape of the testStrategy
 property (`properties.testStrategy`) in the artifact-handoff skill's `schemas/tasks.schema.json`;
 do not invent values the sources do not state. Requirements not checkable by unit tests may be assigned to human testing explicitly.
@@ -53,8 +56,10 @@ When the brief's inputs include a spec review (`spec-<slug>.review.json`, define
 artifact-handoff's `schemas/spec-review.schema.json`), `spec-reviewer` has checked this
 repository's three specification documents and you are making your one correction of your own
 document, which is also among the inputs. Your document is derived from the contracts and
-data-model documents: when either was corrected for a finding, bring your criteria and Definition
-of Done into agreement with it, keeping the ids of the criteria that stay. For each finding whose
+data-model documents, and their authors correct them at the same time as you correct yours, so
+you do not see their corrected text: bring your criteria and Definition of Done into agreement
+with what each finding on the contracts or the data model directs that document to become (its
+`correction` and `doneWhen`), keeping the ids of the criteria that stay. For each finding whose
 `document` is `criteria`, either make the correction in your document, at its path, so that the
 finding's `doneWhen` holds, or dispute it with your reason and where the reason can be checked.
 Change only what the findings and the corrected documents require. Write the output the brief
@@ -64,4 +69,5 @@ of what you changed.
 When the inputs also include a ruling (`spec-<slug>.ruling.json`,
 `schemas/spec-ruling.schema.json`), `review-dispute-decider` has ruled on the disputed findings. Apply the
 directive of each `finding-stands` ruling on your document, and bring your document into
-agreement with a contracts or data-model document the ruling changed; the ruling is final.
+agreement with what each `finding-stands` ruling directs the contracts or the data model to
+become, which their authors apply at the same time; the ruling is final.

@@ -73,6 +73,7 @@
     "write request": "What the architecture maintainer is asked to write (write-request.schema.json).",
     "what was written": "The architecture maintainer's result (write-result.schema.json).",
     "repository context": "One repository's spec context file (spec-context.schema.json).",
+    "spec pack": "One repository's spec pack (spec-pack.schema.json): the text of the architecture headings, the constraints and the TRD requirements its spec sessions read instead of the vault.",
     "span": "The span file: the repositories the Epic's Stories build in (placement.schema.json).",
     "elements": "What the Epic's Stories build, as the span step saved it (target-report.schema.json, DeltaResult).",
     "ui bundles": "The UI bundles the owner supplied (ui-bundles.schema.json).",

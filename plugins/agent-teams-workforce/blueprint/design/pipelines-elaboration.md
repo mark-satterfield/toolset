@@ -502,6 +502,17 @@ Notes on the diagram:
   Epic work that leaves their architecture unchanged lands (`unchangedWorkElements`, which the
   span step in `repo_scoping` reads beside `addedOrChangedElements`). Which elements those
   are is the architect's design decision; no script picks them.
+- The repository context step hands every spec session a spec pack (`spec-pack.schema.json`,
+  written by `orchestrator/flows/spec_pack.py`): the entries the Story builds with the Epic that
+  approved each, the text of every heading their scopes name as the vault's last commit holds it,
+  the constraints, shared capabilities and TRD requirements that bind them, and the contract
+  files the repository holds. No spec session explores the vault. A spec writer runs only for a
+  kind of content the Story's entries include (`spec_authoring.story_surfaces`): contracts for an
+  entry with an API, event, error or UI contract, a data model for a data store, UI design
+  sources for a UI item of a frontend repository; a script writes the document of a kind the
+  Story does not need. After the one review at most three rounds follow, each round's sessions
+  running together: one correction, the decider on the disputed findings, one revision to the
+  ruling.
 - Task decomposition is drawn in section 8.
 - One Spec and one Story per repository, and Tasks under each Story, are stated by
   [requirements/pipelines.md](../requirements/pipelines.md) and the vault's `docs/sdlc/sdlc.md`.
