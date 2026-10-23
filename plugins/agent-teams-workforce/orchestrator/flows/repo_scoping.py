@@ -60,7 +60,7 @@ from matrixtraverse import (
     holder,
     stack_type,
 )
-from matrixwrite import put
+from matrixwrite import commit, put
 from naming_command import (
     NamingAnswer,
     NamingCommandError,
@@ -102,6 +102,7 @@ from orchestrator.flows.architecture_files import HUMAN_ACTION_STAGE, read_conte
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_CREATION,
     ARTIFACT_ELEMENTS,
+    ARTIFACT_MATRIX_COMMIT,
     ARTIFACT_REPOSITORIES,
     ARTIFACT_SPAN,
     SPEC_CONTEXT,
@@ -111,7 +112,8 @@ from orchestrator.flows.repo_placement import forbidden
 
 if TYPE_CHECKING:
     from architecture_work_contract import ArchitectureResult
-    from step_journal_contract import StepPlan
+    from matrixwrite import CommitResult
+    from step_journal_contract import Artifact, StepPlan
 
 SPAN: Final = "atw-matrix epic --closure"
 """The script key of the span step."""
@@ -1158,6 +1160,19 @@ def _read_story_builds(run: StepRun) -> tuple[Matrix, list[DeltaItem]]:
     return run.tools.portfolio(SPAN, read_matrix, matrix_path(None, os.environ)), items
 
 
+def _commit_matrix(run: StepRun) -> list[Artifact]:
+    """Commit and push the matrix file, so what the span recorded in it is in the control repository.
+
+    Returns:
+        The matrix commit, when one was made or pushed; otherwise nothing.
+
+    """
+    recorded: CommitResult = run.tools.portfolio(SPAN, commit, matrix_path(None, os.environ), str(run.bead))
+    if recorded["committed"] or recorded["pushed"]:
+        return [value_artifact(ARTIFACT_MATRIX_COMMIT, recorded["head"])]
+    return []
+
+
 @script_step(SPAN)
 def span(run: StepRun) -> Completion:
     """Read what the Epic's Stories build from the architect's result and plan one spec step per repository.
@@ -1167,11 +1182,13 @@ def span(run: StepRun) -> Completion:
     (``unchangedWorkElements``), and nothing more (:func:`story_builds`). Nothing is recorded in the
     matrix but the name of the repository of a stack the Stories build in that names none (from the
     naming command), and the name of a repository that was created under another name than the one
-    its stacks stated.
+    its stacks stated. The matrix file is then committed and pushed, so what the span recorded is
+    in the control repository before any later step reads it.
 
     Returns:
-        The span file, the elements file, the repository paths, and the creation record when a
-        repository had to be created; with the spec steps planned after this step.
+        The span file, the elements file, the repository paths, the creation record when a
+        repository had to be created, and the matrix commit when one was made or pushed; with the
+        spec steps planned after this step.
 
     Raises:
         StepError: The naming command is not configured or cannot run (checked before any other
@@ -1199,7 +1216,7 @@ def span(run: StepRun) -> Completion:
         "items": items,
     }
     write_json(work / ELEMENTS_FILE, elements)
-    artifacts = [file_artifact(ARTIFACT_ELEMENTS, work / ELEMENTS_FILE)]
+    artifacts: list[Artifact] = [file_artifact(ARTIFACT_ELEMENTS, work / ELEMENTS_FILE)]
     if ruling[KEY_MISSING_REPOS]:
         owner: str = _owner(repositories)
         creation: dict[str, JsonValue] = create_repositories(ruling, run.tools, homes, owner, work)
@@ -1213,6 +1230,7 @@ def span(run: StepRun) -> Completion:
         }
         for placement in ruling[KEY_PLACEMENTS]:
             placement[KEY_REPO_PATH] = placement[KEY_REPO_PATH] or made[placement["repoName"].casefold()]
+    artifacts.extend(_commit_matrix(run))
     span_path: Path = work / SPAN_FILE
     write_json(span_path, ruling)
     repos: list[str] = list(dict.fromkeys(check_type(p[KEY_REPO_PATH], str) for p in ruling[KEY_PLACEMENTS]))

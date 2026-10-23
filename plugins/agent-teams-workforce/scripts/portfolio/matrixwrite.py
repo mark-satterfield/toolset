@@ -18,8 +18,9 @@ writes, so several sessions can record at once and none loses another's change.
 
 Nothing here sets the verified flag (``matrixcode`` sets it), and :func:`approve` leaves it as it
 is. The two flags are dirty bits, each cleared on its own: a change to an entry or a relationship
-clears its approved flag, and a change on the architecture side clears its verified flag too
-(``matrixstore.Matrix.put`` and ``Matrix.link``).
+clears its approved flag, except a change to a stack's ``repository`` attribute alone, and a
+change on the architecture side clears its verified flag too (``matrixstore.Matrix.put`` and
+``Matrix.link``).
 
 The approved flag is set by :func:`approve` alone, which only the script role may run: the step
 that promotes an Epic's reviewed architecture and design runs it on the matrix content the Epic
@@ -443,7 +444,8 @@ def put(  # ruff: ignore[too-many-arguments] - One keyword per member of an entr
     of a list join the held list, where an object with the ``id`` of a held one replaces it; an
     attribute stated as null is removed.
     The approved and verified flags are never stated. A call that changes an entry clears its
-    approved flag, and on the architecture side its verified flag too (``Matrix.put``). A call that states
+    approved flag, unless it changes only the ``repository`` attribute, and on the architecture
+    side its verified flag too (``Matrix.put``). A call that states
     what the entry already holds changes nothing. An entry that then breaks its
     kind raises ``MatrixError`` from ``Matrix.put`` and changes nothing.
 

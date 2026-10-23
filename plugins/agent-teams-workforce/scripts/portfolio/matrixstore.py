@@ -54,6 +54,7 @@ from matrix_contract import (
     ROLE_ENV,
     ROLES,
     STACK_KIND,
+    Approved,
     Entry,
     EntryId,
     EntryKind,
@@ -98,6 +99,8 @@ ATTR_HEADING_HASHES: Final = "headingHashes"
 """The document attribute that holds the hash of each heading's own text, by heading."""
 ATTR_HEADING: Final = "heading"
 """The ``describedBy`` attribute that names the heading whose text describes the entry."""
+ATTR_REPOSITORY: Final = "repository"
+"""The stack attribute that names the repository which holds the stack."""
 _NOT_SLUG: Final[re.Pattern[str]] = re.compile(r"[^a-z0-9]+")
 
 
@@ -361,10 +364,13 @@ def _flags_settled[T: (Entry, Relationship)](held: T | None, item: T) -> T:
     """Decide the flags an entry or a relationship carries once it replaces the one held.
 
     Each flag is a dirty bit settled on its own. A change that leaves everything but the flags
-    as it was keeps both flags the held item carries. Any other change clears the approved flag.
-    It clears the verified flag only when the item is on the architecture side, because only that
-    side states what the item must be built as; a repository-side change keeps it. Flags the
-    replacing item states are not taken: only :meth:`Matrix.set_flags` sets a flag.
+    as it was keeps both flags the held item carries. A change to the ``repository`` attribute
+    alone keeps the approved flag: the name of the repository that holds a stack is given when the
+    Epic's repositories are spanned, after its design was approved, and it changes nothing the
+    approval covers. Any other change clears the approved flag. A change clears the verified flag
+    only when the item is on the architecture side, because only that side states what the item
+    must be built as; a repository-side change keeps it. Flags the replacing item states are not
+    taken: only :meth:`Matrix.set_flags` sets a flag.
 
     Returns:
         The item as given when it is new; otherwise the item with the flags settled as above.
@@ -375,7 +381,25 @@ def _flags_settled[T: (Entry, Relationship)](held: T | None, item: T) -> T:
     if same_content(held, item):
         return replace(item, approved=held.approved, verified=held.verified)
     authority: bool = AUTHORITY_SIDE in {held.side, item.side}
-    return replace(item, approved=None, verified=None if authority else held.verified)
+    approved: Approved | None = held.approved if _repository_alone_changed(held, item) else None
+    return replace(item, approved=approved, verified=None if authority else held.verified)
+
+
+def _repository_alone_changed[T: (Entry, Relationship)](held: T, item: T) -> bool:
+    """Tell whether two entries, or two relationships, differ in nothing but the ``repository`` attribute and the flags.
+
+    Returns:
+        True when the two are equal once the flags and the ``repository`` attribute are taken off both.
+
+    """
+
+    def without(value: T) -> T:
+        attributes: dict[str, JsonValue] = {
+            name: attribute for name, attribute in value.attributes.items() if name != ATTR_REPOSITORY
+        }
+        return replace(value, attributes=attributes, approved=None, verified=None)
+
+    return without(held) == without(item)
 
 
 def _changed_headings(held: Entry | None, entry: Entry) -> frozenset[str] | None:
@@ -861,9 +885,10 @@ class Matrix:
         ``MatrixError`` and changes nothing.
 
         The flags are dirty bits, settled each on its own (:func:`_flags_settled`): an entry that
-        replaces another and differs from it in anything but its flags loses the approved flag, and
-        loses the verified flag when it is on the architecture side; one that differs in nothing
-        else keeps the held entry's flags. Flags the entry states are not taken. When the text under
+        replaces another and differs from it in anything but its flags and its ``repository``
+        attribute loses the approved flag, and one that differs in anything but its flags loses the
+        verified flag when it is on the architecture side; one that differs in nothing else keeps
+        the held entry's flags. Flags the entry states are not taken. When the text under
         a heading of a document changes, each entry an architecture-side ``describedBy`` says that
         heading describes loses both flags, and the other entries the document describes keep theirs
         (:meth:`_dirty_described`); the front matter is under no heading, so the move of a document

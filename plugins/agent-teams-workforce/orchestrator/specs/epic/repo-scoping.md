@@ -74,7 +74,9 @@ The order is fixed, and only the stacks of what the Stories build are reached:
    list arguments, not through a shell; for example, for `stack:acme-sms-service` it is
    `Acme-sms-service`, never the raw stack name), written on the stack as its `repository`
    on the architecture side in one matrix change, so the stack and the created repository carry
-   one name.
+   one name. A change to a stack's `repository` alone keeps its approved flag
+   (`matrixstore._flags_settled`), so naming the repository after promotion does not undo the
+   Epic's approval.
 3. The items are grouped by repository (`repository_stacks`), and `_ruling` looks each name up in
    the inventory. A repository is a frontend repository when the type of its stacks is `web`.
 4. Each name the inventory lacks becomes a missing repository (`_missing`): its stacks must have
@@ -94,7 +96,9 @@ The order is fixed, and only the stacks of what the Stories build are reached:
    this step again.
 6. When the created repository's name differs from the one recorded, the step records it on each
    stack (`put stack --repository`).
-7. Only then are the spec steps planned.
+7. The matrix file is committed and pushed (`atw-matrix commit`, naming the Epic), so the names
+   recorded in steps 2 and 6 are in the control repository.
+8. Only then are the spec steps planned.
 
 A stack arc42 names that has no repository, and in which no Story builds, is never touched.
 
@@ -106,6 +110,7 @@ A stack arc42 names that has no repository, and in which no Story builds, is nev
 | `<work>/repo-scoping.json` | `span` | one placement per repository: its path, name, item ids and whether it is a frontend repository |
 | `<work>/repo-creation.json` | `repository creation` | only when a repository had to be created: what was created and what failed |
 | | `repositories` (value) | the repository paths of the span, in order |
+| | `matrix commit` (value) | the control-repository commit, when the matrix file was committed or pushed |
 
 ## What the step plans
 

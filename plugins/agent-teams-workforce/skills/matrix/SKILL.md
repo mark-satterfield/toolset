@@ -161,7 +161,8 @@ change clears a flag on the item it touches and nothing else; approval sets `app
 and building and testing the Story's Tasks (the CDK deployment test included) sets `verified`
 again. They are separate flags: each clears on a change that affects it, independently of the
 other; one change may clear only `approved`, only `verified`, or each at a different time.
-Never infer one flag from the other.
+Never infer one flag from the other. Naming the repository that holds a stack (its `repository`
+attribute alone) changes no approved design, so it keeps `approved`.
 
 Reading the flags to decide what is planned and what exists:
 
