@@ -1,31 +1,30 @@
 #!/usr/bin/env python3
 """Compute the order in which Epics are architected and approved, from the matrix and beads alone.
 
-No model is called. For every architecture entry the open Epics touch (a feature, a document
-heading, a service, component, infrastructure, event, stack and so on, architecture side only)
-the script names ONE driver, the Epic whose requirements the entry is designed from, and every
-other Epic that touches the entry waits for it (driver -> user, never user -> user):
+No model is called and no ordering is assumed: neither WSJF nor any rank enters the edges. An
+edge says that one Epic uses an architecture entry another Epic's own requirements define, so the
+user is elaborated after the definer (the driver). Units are as fine as the matrix allows:
 
-1. an explicit matrix ``drives`` relationship to the entry, or to a document heading that
-   describes it;
-2. else an Epic whose requirements the heading that states the entry ``covers``
-   (``describedBy`` + ``covers`` + ``hasRequirement``);
-3. else every Epic that touches it (first come, first elaborated).
+1. A feature. Its drivers are the Epics with a ``drives`` relationship to it, or to a document
+   heading (or whole document) that ``describedBy`` names for it. With no such Epic, its drivers
+   are the Epics whose requirements it serves (``hasRequirement`` then ``servedBy``), less those
+   that only rest on it. Its users are the other Epics it serves and the Epics with ``restsOn``
+   to it.
+2. A document heading, a whole document or any other entry an Epic ``drives``. Its drivers are
+   those Epics; its users are the Epics whose requirements that exact heading ``covers``, and the
+   Epics with ``restsOn`` to it or to an entry it describes.
 
-Several candidates are settled by the keeper's selection order (``ops/sdlc-automation/
-selection.py`` and ``ordering.py``): the highest WSJF first, an Epic with no WSJF last, then
-the bead id. An Epic touches an entry by the rule of reach (``matrixtraverse.rule_reach``),
-through the headings covering its requirements, or through its ``drives`` and ``restsOn``
-relationships. An entry whose matrix ``approved`` flag is set makes no edge. Cycles are
-broken by the same rank (an edge from a lower-ranked to a higher-ranked member of a cycle is
-dropped), and the result is transitively reduced.
+Every driver of a unit gets an edge to every user of it. Users of one unit get no edge between
+them, and co-drivers of one unit none either. An entry no Epic drives (a VPC, the chassis library,
+a Cognito pool) makes no edge: the first Epic elaborated reviews and approves it. A unit whose
+matrix ``approved`` flag is set makes no edge. Cycles are reported, never broken: their members
+share a level. The rest is transitively reduced over the cycles taken as single nodes.
 
-Four variants are computed: as the matrix stands (A), as if every entry of a ``shared-*``
-stack were approved (B), and each without the over-broad entries (touched by more than
-``--broad-share`` of the open Epics). ``--report`` writes the Markdown report
-(``epicorderreport.py``); stdout carries one JSON summary. ``--apply`` writes the chosen
-variant's edges as the owned beads ``tracks`` edges through ``edgeset.apply_edges`` (the
-``apply-edges`` path, every owned Epic edge at once); hand-made edges stay.
+Two scenarios are computed: as the matrix stands (A), and as if every entry of a ``shared-*``
+stack were approved (B). ``--report`` writes the Markdown report (``epicorderreport.py``), with
+``--expect <waiter>:<driver>`` spot-checks; stdout carries one JSON summary. ``--apply`` writes
+the chosen scenario's edges as the owned beads ``tracks`` edges through ``edgeset.apply_edges``
+(the ``apply-edges`` path, every owned Epic edge at once); hand-made edges stay.
 """
 
 from __future__ import annotations
@@ -35,7 +34,6 @@ import json
 import os
 import sys
 from dataclasses import dataclass
-from itertools import chain
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -47,7 +45,7 @@ import edgeset
 from contracts import json_object
 from matrix_contract import (
     AUTHORITY_SIDE,
-    KIND_DOCUMENT,
+    KIND_FEATURE,
     KIND_STACK,
     REL_COVERS,
     REL_DESCRIBED_BY,
@@ -55,80 +53,63 @@ from matrix_contract import (
     REL_HAS_REQUIREMENT,
     REL_REALIZED_BY,
     REL_RESTS_ON,
+    REL_SERVED_BY,
     EntryId,
 )
 from matrixstore import Matrix, matrix_path, read_matrix
-from matrixtraverse import Heading, epic_id, heading_index, rule_reach_indexed, stacks_of
+from matrixtraverse import Heading, epic_id, heading_index, stacks_of
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable, Mapping
 
     from contracts import JsonObject, JsonValue
+    from matrixstore import Relationship
 
 type Unit = str
-"""An architecture entry id, or ``<document id>#<heading>`` for one heading of a document."""
+"""A feature or other entry id, or ``<document id>#<heading>`` for one heading of a document."""
 type Pair = tuple[str, str]
-"""An edge: the Epic elaborated first, then the Epic that waits for it."""
+"""An edge: the driver, elaborated first, then the Epic that waits for it."""
 
-DECISION_KINDS: Final[frozenset[str]] = frozenset({
-    "feature",
-    "document",
-    "service",
-    "component",
-    "infrastructure",
-    "event",
-    "stack",
-    "package",
-    "layer",
-    "file",
-})
 SHARED_PREFIX: Final = "shared-"
 HEADING_MARK: Final = "#"
+EPIC_PREFIX: Final = "epic:"
 RULE_DRIVES: Final = "drives"
-RULE_COVERS: Final = "covers"
-RULE_FIRST: Final = "first-come"
+RULE_DRIVES_HEADING: Final = "drives a heading describing it"
+RULE_SERVED: Final = "servedBy"
 SCENARIO_AS_IS: Final = "as-is"
 SCENARIO_SHARED: Final = "shared-approved"
-DEFAULT_BROAD_SHARE: Final = 0.25
-SENSITIVITY_LIMITS: Final[tuple[int, ...]] = (2, 3, 5, 10)
 
 
 @dataclass(frozen=True, slots=True)
 class Epic:
-    """One open Epic with what ranks it."""
+    """One open Epic."""
 
     id: str
     title: str
-    wsjf: float | None
 
 
 @dataclass(frozen=True, slots=True)
 class Decision:
-    """One architecture entry, the Epic that drives it, the rule that chose it, and its users."""
+    """One unit, the Epics that define it, the evidence that made them its drivers, and its users."""
 
     unit: Unit
-    driver: str
+    label: str
+    drivers: tuple[str, ...]
     rule: str
     users: tuple[str, ...]
-
-    @property
-    def epics(self) -> frozenset[str]:
-        """Every Epic on the entry: the driver and its users."""
-        return frozenset({self.driver, *self.users})
 
 
 @dataclass(frozen=True, slots=True)
 class Cycle:
-    """One strongly connected set of Epics, the edges inside it, and the edges dropped to break it."""
+    """One strongly connected set of Epics and the edges inside it, each with the units that make it."""
 
     members: tuple[str, ...]
     edges: Mapping[Pair, tuple[Unit, ...]]
-    dropped: tuple[Pair, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class Order:
-    """One variant's result: its edges before and after cycle breaking and reduction, and the levels."""
+    """One scenario's result: its edges before and after reduction, its cycles and its levels."""
 
     name: str
     excluded: int
@@ -137,7 +118,18 @@ class Order:
     edges: Mapping[Pair, tuple[Unit, ...]]
     levels: Mapping[str, int]
     unlocks: Mapping[str, int]
-    chain: tuple[str, ...]
+    chain: tuple[tuple[str, ...], ...]
+    """The longest chain, each step one Epic or the members of one cycle."""
+
+
+@dataclass(frozen=True, slots=True)
+class Check:
+    """One spot-check: whether ``waiter`` waits for ``driver``, and through which Epics."""
+
+    waiter: str
+    driver: str
+    path: tuple[str, ...]
+    direct: tuple[Unit, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,28 +137,16 @@ class Analysis:
     """Everything the report shows."""
 
     epics: Mapping[str, Epic]
-    decisions: tuple[Decision, ...]
-    broad: tuple[Decision, ...]
-    broad_share: float
+    decisions: Mapping[Unit, Decision]
     orders: tuple[Order, ...]
     current: Mapping[Pair, bool]
     """Each standing ``tracks`` edge between two open Epics, with whether this system owns it."""
     missing: tuple[str, ...]
     """Open Epics the matrix does not hold."""
     validation: Mapping[str, tuple[str, ...]]
-    """Each variant's name with the cycle ``apply-edges`` would refuse its edges for (empty: accepted)."""
-    sensitivity: tuple[tuple[int, Order], ...]
-    """Scenario A kept to the entries at most that many Epics touch, for each such limit."""
-
-
-def rank_key(epic: Epic) -> tuple[int, float, str]:
-    """Order Epics as the keeper selects them: highest WSJF first, unscored last, then id.
-
-    Returns:
-        The sort key.
-
-    """
-    return (0 if epic.wsjf is not None else 1, -(epic.wsjf or 0.0), epic.id)
+    """Each scenario's name with the cycle ``apply-edges`` would refuse its edges for (empty: accepted)."""
+    checks: Mapping[str, tuple[Check, ...]]
+    """Each scenario's name with its spot-checks."""
 
 
 def heading_unit(document: EntryId, heading: str) -> Unit:
@@ -189,111 +169,118 @@ def unit_entry(unit: Unit) -> EntryId:
     return EntryId(unit.partition(HEADING_MARK)[0])
 
 
-def _heading_of(attributes: Mapping[str, object]) -> str:
-    value: object = attributes.get("heading")
+def _heading_of(rel: Relationship) -> str:
+    value: object = rel.attributes.get("heading")
     return value if isinstance(value, str) else ""
 
 
-def _epic_of_requirement(matrix: Matrix, requirement: EntryId) -> set[str]:
-    return {rel.start.removeprefix("epic:") for rel in matrix.incoming(requirement, (REL_HAS_REQUIREMENT,))}
+def _target(rel: Relationship) -> Unit:
+    return heading_unit(rel.end, _heading_of(rel))
 
 
 @dataclass(slots=True)
-class _Touches:
-    touchers: dict[Unit, set[str]]
-    explicit: dict[Unit, set[str]]
+class _Links:
+    """The matrix relationships the rule reads, restricted to the open Epics the matrix holds."""
+
+    drives: dict[Unit, set[str]]
+    rests: dict[Unit, set[str]]
+    served: dict[EntryId, set[str]]
     covered: dict[Unit, set[str]]
+    describers: dict[EntryId, set[Unit]]
 
 
-def _decision_unit(matrix: Matrix, unit: Unit) -> bool:
-    entry = matrix.find(unit_entry(unit))
-    return entry is not None and entry.side == AUTHORITY_SIDE and entry.kind in DECISION_KINDS
+def _epics_of(matrix: Matrix, requirement: EntryId, epics: Collection[str]) -> set[str]:
+    return {
+        bead
+        for rel in matrix.incoming(requirement, (REL_HAS_REQUIREMENT,))
+        if (bead := rel.start.removeprefix(EPIC_PREFIX)) in epics
+    }
 
 
-def _describing(matrix: Matrix) -> dict[EntryId, set[Unit]]:
-    found: dict[EntryId, set[Unit]] = {}
-    for rel in matrix.relationships((REL_DESCRIBED_BY,)):
-        if rel.side == AUTHORITY_SIDE:
-            found.setdefault(rel.start, set()).add(heading_unit(rel.end, _heading_of(rel.attributes)))
-    return found
+def links(matrix: Matrix, epics: Collection[str]) -> _Links:
+    """Read the ``drives``, ``restsOn``, ``servedBy``, ``covers`` and feature ``describedBy`` relationships.
 
+    Returns:
+        Each relationship family indexed by the unit it names.
 
-def _covering(matrix: Matrix, epics: Collection[str]) -> dict[Unit, set[str]]:
-    found: dict[Unit, set[str]] = {}
+    """
+    found = _Links({}, {}, {}, {}, {})
+    for rel in matrix.relationships((REL_DRIVES, REL_RESTS_ON)):
+        bead: str = rel.start.removeprefix(EPIC_PREFIX)
+        if rel.side == AUTHORITY_SIDE and bead in epics:
+            family: dict[Unit, set[str]] = found.drives if rel.kind == REL_DRIVES else found.rests
+            family.setdefault(_target(rel), set()).add(bead)
+    for rel in matrix.relationships((REL_SERVED_BY,)):
+        if rel.side == AUTHORITY_SIDE and (owners := _epics_of(matrix, rel.start, epics)):
+            found.served.setdefault(rel.end, set()).update(owners)
     for rel in matrix.relationships((REL_COVERS,)):
-        owners: set[str] = _epic_of_requirement(matrix, rel.end) & set(epics)
-        if rel.side == AUTHORITY_SIDE and owners:
-            found.setdefault(heading_unit(rel.start, _heading_of(rel.attributes)), set()).update(owners)
+        if rel.side == AUTHORITY_SIDE and (owners := _epics_of(matrix, rel.end, epics)):
+            found.covered.setdefault(_target(rel), set()).update(owners)
+    for rel in matrix.relationships((REL_DESCRIBED_BY,)):
+        start = matrix.find(rel.start)
+        if rel.side == AUTHORITY_SIDE and start is not None and start.kind == KIND_FEATURE:
+            found.describers.setdefault(start.id, set()).add(_target(rel))
     return found
 
 
-def _touch_epic(matrix: Matrix, bead: str, index: Mapping[Heading, list[EntryId]], touches: _Touches) -> None:
-    reach = rule_reach_indexed(matrix, epic_id(bead), index)
-    units: set[Unit] = set(chain(reach.features, reach.entries, reach.stacks, reach.dependencies))
-    for requirement in reach.requirements:
-        units.update(
-            heading_unit(rel.start, _heading_of(rel.attributes)) for rel in matrix.incoming(requirement, (REL_COVERS,))
-        )
-    for rel in matrix.outgoing(epic_id(bead), (REL_DRIVES, REL_RESTS_ON)):
-        heading: str = _heading_of(rel.attributes)
-        unit: Unit = heading_unit(rel.end, heading) if rel.end.startswith(KIND_DOCUMENT) else rel.end
-        units.add(unit)
-        if rel.kind == REL_DRIVES:
-            touches.explicit.setdefault(unit, set()).add(bead)
-    for unit in units:
-        touches.touchers.setdefault(unit, set()).add(bead)
+def _label(matrix: Matrix, unit: Unit) -> str:
+    document, _, heading = unit.partition(HEADING_MARK)
+    entry = matrix.find(EntryId(document))
+    if heading:
+        return f"{document.removeprefix('document:')} § {heading}"
+    return entry.name if entry is not None and entry.kind == KIND_FEATURE else unit
 
 
-def collect(matrix: Matrix, epics: Collection[str]) -> _Touches:
-    """Find, for every architecture entry the open Epics touch, who touches it and who may drive it.
+def _feature(matrix: Matrix, feature: EntryId, found: _Links) -> Decision | None:
+    served: set[str] = found.served.get(feature, set())
+    rests: set[str] = found.rests.get(feature, set())
+    headings: set[Unit] = found.describers.get(feature, set())
+    by_heading: set[str] = set().union(
+        *(found.drives.get(h, set()) | found.drives.get(unit_entry(h), set()) for h in headings),
+    )
+    explicit: set[str] = found.drives.get(feature, set())
+    rule: str = RULE_DRIVES if explicit else RULE_DRIVES_HEADING
+    drivers: set[str] = explicit | by_heading
+    if not drivers:
+        rule, drivers = RULE_SERVED, served - rests
+    users: set[str] = (served | rests) - drivers
+    if not drivers or not users:
+        return None
+    return Decision(feature, _label(matrix, feature), tuple(sorted(drivers)), rule, tuple(sorted(users)))
+
+
+def _driven(matrix: Matrix, unit: Unit, found: _Links, index: Mapping[Heading, list[EntryId]]) -> Decision | None:
+    drivers: set[str] = found.drives[unit]
+    document, _, heading = unit.partition(HEADING_MARK)
+    described: list[EntryId] = index.get((EntryId(document), heading), []) if HEADING_MARK in unit else []
+    users: set[str] = found.covered.get(unit, set()) | found.rests.get(unit, set())
+    users.update(*(found.rests.get(entry, set()) for entry in described))
+    users -= drivers
+    if not users:
+        return None
+    return Decision(unit, _label(matrix, unit), tuple(sorted(drivers)), RULE_DRIVES, tuple(sorted(users)))
+
+
+def decide(matrix: Matrix, epics: Collection[str]) -> dict[Unit, Decision]:
+    """Name the drivers and users of every unit that has both.
 
     Returns:
-        The touching Epics, the explicit drivers and the covering-heading drivers of each unit.
+        Each unit's decision, in unit order.
 
     """
-    touches = _Touches({}, {}, {})
+    found: _Links = links(matrix, epics)
     index: dict[Heading, list[EntryId]] = heading_index(matrix)
-    for bead in sorted(epics):
-        _touch_epic(matrix, bead, index, touches)
-    describing: dict[EntryId, set[Unit]] = _describing(matrix)
-    covering: dict[Unit, set[str]] = _covering(matrix, epics)
-    for unit in list(touches.touchers):
-        headings: set[Unit] = {unit} if HEADING_MARK in unit else describing.get(EntryId(unit), set())
-        whole: set[Unit] = {unit_entry(h) for h in headings}
-        drivers: set[str] = set().union(*(touches.explicit.get(h, set()) for h in headings | whole))
-        if drivers:
-            touches.explicit.setdefault(unit, set()).update(drivers)
-        covers: set[str] = set().union(*(covering.get(h, set()) for h in headings))
-        if covers:
-            touches.covered[unit] = covers
-    for unit in [u for u in touches.touchers if not _decision_unit(matrix, u)]:
-        del touches.touchers[unit]
-    return touches
-
-
-def decide(touches: _Touches, epics: Mapping[str, Epic]) -> list[Decision]:
-    """Name the one driver of every touched entry and its users.
-
-    Returns:
-        One decision per unit, in unit order.
-
-    """
-
-    def rank(bead: str) -> tuple[int, float, str]:
-        return rank_key(epics[bead])
-
-    decisions: list[Decision] = []
-    for unit in sorted(touches.touchers):
-        pools: tuple[tuple[str, set[str]], ...] = (
-            (RULE_DRIVES, touches.explicit.get(unit, set())),
-            (RULE_COVERS, touches.covered.get(unit, set())),
-            (RULE_FIRST, touches.touchers[unit]),
-        )
-        rule, pool = next((name, found) for name, found in pools if found)
-        driver: str = min(pool, key=rank)
-        users: tuple[str, ...] = tuple(sorted(touches.touchers[unit] - {driver}))
-        decisions.append(Decision(unit, driver, rule, users))
-    return decisions
+    decisions: list[Decision | None] = [
+        _feature(matrix, feature, found)
+        for feature in sorted(set(found.served) | set(found.rests))
+        if (entry := matrix.find(feature)) is not None and entry.kind == KIND_FEATURE
+    ]
+    decisions.extend(
+        _driven(matrix, unit, found, index)
+        for unit in sorted(found.drives)
+        if (entry := matrix.find(unit_entry(unit))) is not None and entry.kind != KIND_FEATURE
+    )
+    return {decision.unit: decision for decision in decisions if decision is not None}
 
 
 def is_shared(matrix: Matrix, unit: Unit, index: Mapping[Heading, list[EntryId]]) -> bool:
@@ -319,14 +306,12 @@ def is_shared(matrix: Matrix, unit: Unit, index: Mapping[Heading, list[EntryId]]
         return unit.startswith(f"{KIND_STACK}:{SHARED_PREFIX}") or (
             isinstance(repository, str) and repository.startswith(SHARED_PREFIX)
         )
-    if entry.kind == "feature":
+    if entry.kind == KIND_FEATURE:
         realizers: list[EntryId] = [rel.end for rel in matrix.outgoing(entry.id, (REL_REALIZED_BY,))]
         if realizers:
             return all(is_shared(matrix, realizer, index) for realizer in realizers)
         headings: list[Unit] = [
-            heading_unit(rel.end, _heading_of(rel.attributes))
-            for rel in matrix.outgoing(entry.id, (REL_DESCRIBED_BY,))
-            if HEADING_MARK in heading_unit(rel.end, _heading_of(rel.attributes))
+            unit for rel in matrix.outgoing(entry.id, (REL_DESCRIBED_BY,)) if HEADING_MARK in (unit := _target(rel))
         ]
         return bool(headings) and all(is_shared(matrix, heading, index) for heading in headings)
     stacks: set[EntryId] = stacks_of(matrix, entry.id)
@@ -345,59 +330,25 @@ def is_approved(matrix: Matrix, unit: Unit) -> bool:
 
 
 def raw_edges(decisions: Iterable[Decision]) -> dict[Pair, tuple[Unit, ...]]:
-    """Draw driver -> user for every decision, each pair with the entries that make it.
+    """Draw driver -> user for every driver and user of every decision, each pair with its units.
 
     Returns:
-        Each edge with its deciding entries, sorted.
+        Each edge with the units that make it, sorted.
 
     """
     found: dict[Pair, set[Unit]] = {}
     for decision in decisions:
-        for user in decision.users:
-            found.setdefault((decision.driver, user), set()).add(decision.unit)
+        for driver in decision.drivers:
+            for user in decision.users:
+                found.setdefault((driver, user), set()).add(decision.unit)
     return {pair: tuple(sorted(units)) for pair, units in sorted(found.items())}
 
 
-def components(nodes: Iterable[str], edges: Iterable[Pair]) -> list[tuple[str, ...]]:
-    """Find the strongly connected sets of Epics with more than one member: Epics that reach each other.
-
-    Returns:
-        Each cycle's members, sorted, in member order.
-
-    """
+def _successors(edges: Iterable[Pair]) -> dict[str, list[str]]:
     successors: dict[str, list[str]] = {}
     for start, end in edges:
         successors.setdefault(start, []).append(end)
-    reach: dict[str, set[str]] = {node: _descendants(successors, node) for node in nodes}
-    found: set[tuple[str, ...]] = set()
-    for node, beyond in reach.items():
-        members: tuple[str, ...] = tuple(sorted({node} | {other for other in beyond if node in reach[other]}))
-        if len(members) > 1:
-            found.add(members)
-    return sorted(found)
-
-
-def break_cycles(
-    edges: Mapping[Pair, tuple[Unit, ...]],
-    epics: Mapping[str, Epic],
-) -> tuple[dict[Pair, tuple[Unit, ...]], list[Cycle]]:
-    """Break every cycle by the keeper's rank: drop each edge inside a cycle that runs from a lower to a higher rank.
-
-    Returns:
-        The acyclic edges, and each cycle with its inside edges and the edges dropped.
-
-    """
-    cycles: list[Cycle] = []
-    kept: dict[Pair, tuple[Unit, ...]] = dict(edges)
-    for members in components(epics, edges):
-        inside: dict[Pair, tuple[Unit, ...]] = {
-            pair: units for pair, units in edges.items() if pair[0] in members and pair[1] in members
-        }
-        dropped: list[Pair] = [pair for pair in inside if rank_key(epics[pair[0]]) > rank_key(epics[pair[1]])]
-        for pair in dropped:
-            del kept[pair]
-        cycles.append(Cycle(members, inside, tuple(dropped)))
-    return kept, cycles
+    return successors
 
 
 def _descendants(successors: Mapping[str, list[str]], start: str) -> set[str]:
@@ -411,99 +362,124 @@ def _descendants(successors: Mapping[str, list[str]], start: str) -> set[str]:
     return seen
 
 
-def reduce(edges: Mapping[Pair, tuple[Unit, ...]]) -> dict[Pair, tuple[Unit, ...]]:
-    """Drop A -> C wherever a longer path A -> ... -> C exists (the DAG's transitive reduction).
+def groups(nodes: Iterable[str], edges: Iterable[Pair]) -> dict[str, tuple[str, ...]]:
+    """Put every Epic in its strongly connected set: itself alone, or the members of its cycle.
 
     Returns:
-        The edges that remain.
+        Each Epic's set, sorted.
 
     """
-    successors: dict[str, list[str]] = {}
-    for start, end in edges:
-        successors.setdefault(start, []).append(end)
+    successors: dict[str, list[str]] = _successors(edges)
+    reach: dict[str, set[str]] = {node: _descendants(successors, node) for node in nodes}
+    return {node: tuple(sorted({node} | {o for o in beyond if node in reach[o]})) for node, beyond in reach.items()}
+
+
+def _path(successors: Mapping[str, list[str]], start: str, goal: str) -> tuple[str, ...]:
+    previous: dict[str, str] = {}
+    todo: list[str] = [start]
+    while todo:
+        node: str = todo.pop(0)
+        for nxt in successors.get(node, []):
+            if nxt not in previous and nxt != start:
+                previous[nxt] = node
+                todo.append(nxt)
+    if goal not in previous:
+        return ()
+    path: list[str] = [goal]
+    while path[-1] != start:
+        path.append(previous[path[-1]])
+    return tuple(reversed(path))
+
+
+def _redundant(between: Collection[Pair]) -> set[Pair]:
+    successors: dict[str, list[str]] = _successors(between)
     redundant: set[Pair] = set()
     for start, ends in successors.items():
         beyond: set[str] = set().union(*(_descendants(successors, end) for end in ends))
         redundant.update((start, end) for end in ends if end in beyond)
-    return {pair: units for pair, units in edges.items() if pair not in redundant}
+    return redundant
 
 
-def layer(
-    epics: Mapping[str, Epic],
-    edges: Iterable[Pair],
-) -> tuple[dict[str, int], dict[str, int], tuple[str, ...]]:
-    """Level every Epic (1 = can start now), count what each unlocks, and find the longest chain.
+def _depths(heads: Iterable[str], between: Collection[Pair]) -> tuple[dict[str, int], dict[str, list[str]]]:
+    predecessors: dict[str, list[str]] = {}
+    for start, end in between:
+        predecessors.setdefault(end, []).append(start)
+    depth: dict[str, int] = {}
 
-    Returns:
-        Each Epic's level, each Epic's count of transitive dependents, and the longest chain.
+    def level_of(head: str) -> int:
+        if head not in depth:
+            depth[head] = 1 + max((level_of(p) for p in predecessors.get(head, [])), default=0)
+        return depth[head]
 
-    """
-    successors: dict[str, list[str]] = {}
-    predecessors: dict[str, list[str]] = {bead: [] for bead in epics}
-    for start, end in edges:
-        successors.setdefault(start, []).append(end)
-        predecessors[end].append(start)
-    levels: dict[str, int] = {}
-
-    def level_of(bead: str) -> int:
-        if bead not in levels:
-            levels[bead] = 1 + max((level_of(p) for p in predecessors[bead]), default=0)
-        return levels[bead]
-
-    for bead in sorted(epics):
-        level_of(bead)
-    unlocks: dict[str, int] = {bead: len(_descendants(successors, bead)) for bead in epics}
-
-    def by_rank(bead: str) -> tuple[int, int, float, str]:
-        return (-levels[bead], *rank_key(epics[bead]))
-
-    node: str = min(epics, key=by_rank)
-    path: list[str] = [node]
-    while predecessors[node]:
-        node = min((p for p in predecessors[node] if levels[p] == levels[node] - 1), key=by_rank)
-        path.append(node)
-    return levels, unlocks, tuple(reversed(path))
+    for head in sorted(heads):
+        level_of(head)
+    return depth, predecessors
 
 
-def order(
-    name: str,
-    decisions: Iterable[Decision],
-    excluded: Collection[Unit],
-    epics: Mapping[str, Epic],
-) -> Order:
-    """Compute one variant: the edges of the entries it keeps, cycles broken, reduced and levelled.
+def _chain(group: Mapping[str, tuple[str, ...]], between: Collection[Pair]) -> tuple[tuple[str, ...], ...]:
+    depth, predecessors = _depths({members[0] for members in group.values()}, between)
+    head: str = min(depth, key=lambda h: (-depth[h], -len(group[h]), h))
+    chain: list[tuple[str, ...]] = [group[head]]
+    while predecessors.get(head):
+        head = min((p for p in predecessors[head] if depth[p] == depth[head] - 1), key=lambda h: (-len(group[h]), h))
+        chain.append(group[head])
+    return tuple(reversed(chain))
+
+
+def order(name: str, decisions: Iterable[Decision], excluded: Collection[Unit], epics: Collection[str]) -> Order:
+    """Compute one scenario: its edges, its cycles, the reduction over the cycles, levels and the longest chain.
+
+    Each cycle is taken as one node (named by its first member) for the reduction and the levels.
 
     Returns:
-        The variant's result.
+        The scenario's result.
 
     """
     every: list[Decision] = list(decisions)
-    kept: list[Decision] = [decision for decision in every if decision.unit not in excluded]
+    kept: list[Decision] = [d for d in every if d.unit not in excluded]
     raw: dict[Pair, tuple[Unit, ...]] = raw_edges(kept)
-    acyclic, cycles = break_cycles(raw, epics)
-    edges: dict[Pair, tuple[Unit, ...]] = reduce(acyclic)
-    levels, unlocks, longest = layer(epics, edges)
-    return Order(name, len(every) - len(kept), raw, tuple(cycles), edges, levels, unlocks, longest)
+    group: dict[str, tuple[str, ...]] = groups(epics, raw)
+    cycles: tuple[Cycle, ...] = tuple(
+        Cycle(members, {pair: units for pair, units in raw.items() if group[pair[0]] == members == group[pair[1]]})
+        for members in sorted({g for g in group.values() if len(g) > 1})
+    )
+    between: set[Pair] = {(group[a][0], group[b][0]) for a, b in raw if group[a] != group[b]}
+    redundant: set[Pair] = _redundant(between)
+    edges: dict[Pair, tuple[Unit, ...]] = {
+        (a, b): units for (a, b), units in raw.items() if (group[a][0], group[b][0]) not in redundant
+    }
+    depth, _ = _depths({members[0] for members in group.values()}, between)
+    successors: dict[str, list[str]] = _successors(between)
+    unlocks: dict[str, int] = {
+        bead: len(set().union(*(group[h] for h in _descendants(successors, group[bead][0])))) for bead in epics
+    }
+    levels: dict[str, int] = {bead: depth[group[bead][0]] for bead in epics}
+    return Order(name, len(every) - len(kept), raw, cycles, edges, levels, unlocks, _chain(group, between))
+
+
+def check(result: Order, waiter: str, driver: str) -> Check:
+    """Tell whether ``waiter`` waits for ``driver`` in a scenario, directly or through other Epics.
+
+    Returns:
+        The spot-check, with the path of Epics (empty: it does not wait) and the direct units.
+
+    """
+    path: tuple[str, ...] = _path(_successors(result.raw), driver, waiter)
+    return Check(waiter, driver, path, result.raw.get((driver, waiter), ()))
 
 
 def read_epics(graph: beadgraph.Graph) -> dict[str, Epic]:
-    """Read the open Epics with their titles and WSJF from the tracker.
+    """Read the open Epics with their titles from the tracker.
 
     Returns:
         Each open Epic by id.
 
     """
-    found: dict[str, Epic] = {}
-    for bead in graph.of_kind("epic"):
-        if bead.closed:
-            continue
-        raw: str = bead.metadata.get("wsjf", "").strip()
-        try:
-            wsjf: float | None = float(raw) if raw else None
-        except ValueError:
-            wsjf = None
-        found[bead.id] = Epic(bead.id, bead.title.removeprefix("Feature PRD: ").strip(), wsjf)
-    return found
+    return {
+        bead.id: Epic(bead.id, bead.title.removeprefix("Feature PRD: ").strip())
+        for bead in graph.of_kind("epic")
+        if not bead.closed
+    }
 
 
 def current_edges(graph: beadgraph.Graph, epics: Collection[str]) -> dict[Pair, bool]:
@@ -523,7 +499,7 @@ def current_edges(graph: beadgraph.Graph, epics: Collection[str]) -> dict[Pair, 
 
 
 def proposal(result: Order, decisions: Mapping[Unit, Decision], epics: Mapping[str, Epic]) -> list[edgeset.Edge]:
-    """Turn a variant's edges into the edge proposal ``apply-edges`` takes.
+    """Turn a scenario's edges into the edge proposal ``apply-edges`` takes.
 
     Returns:
         One edge per pair, with its reason and the matrix check that makes it.
@@ -538,10 +514,10 @@ def proposal(result: Order, decisions: Mapping[Unit, Decision], epics: Mapping[s
                 blocker=blocker,
                 blocked=blocked,
                 reason=(
-                    f"{first.unit} is designed from {epics[blocker].title}'s requirements ({first.rule}); "
-                    f"{epics[blocked].title} touches it{more}"
+                    f"{epics[blocked].title} uses {first.label}, which {epics[blocker].title}'s requirements "
+                    f"define ({first.rule}){more}"
                 ),
-                confidence="low",
+                confidence="medium",
                 arch_check=f"{', '.join(units)}: the matrix holds no approved flag on it (epicorder.py)",
             ),
         )
@@ -554,7 +530,7 @@ def _refusal(report: edgeset.ValidationReport) -> tuple[str, ...]:
     return tuple(report["cycle"]) or ("refused: " + json.dumps({k: v for k, v in report.items() if v}),)
 
 
-def analyse(matrix: Matrix, graph: beadgraph.Graph, broad_share: float) -> Analysis:
+def analyse(matrix: Matrix, graph: beadgraph.Graph, expected: Iterable[Pair]) -> Analysis:
     """Run the whole computation over one read of the matrix and the tracker.
 
     Returns:
@@ -563,89 +539,73 @@ def analyse(matrix: Matrix, graph: beadgraph.Graph, broad_share: float) -> Analy
     """
     epics: dict[str, Epic] = read_epics(graph)
     missing: tuple[str, ...] = tuple(sorted(bead for bead in epics if matrix.find(epic_id(bead)) is None))
-    held: dict[str, Epic] = {bead: epic for bead, epic in epics.items() if bead not in missing}
-    decisions: list[Decision] = decide(collect(matrix, held), epics)
-    threshold: float = broad_share * len(epics)
-    broad: list[Decision] = [d for d in decisions if len(d.epics) > threshold]
-    broad_units: set[Unit] = {d.unit for d in broad}
+    held: set[str] = set(epics) - set(missing)
+    decisions: dict[Unit, Decision] = decide(matrix, held)
     index: dict[Heading, list[EntryId]] = heading_index(matrix)
-    shared: set[Unit] = {d.unit for d in decisions if is_shared(matrix, d.unit, index)}
-    approved: set[Unit] = {d.unit for d in decisions if is_approved(matrix, d.unit)}
-    variants: tuple[tuple[str, set[Unit]], ...] = (
-        ("A", approved),
-        ("A without over-broad entries", approved | broad_units),
-        ("B", approved | shared),
-        ("B without over-broad entries", approved | shared | broad_units),
+    approved: set[Unit] = {unit for unit in decisions if is_approved(matrix, unit)}
+    shared: set[Unit] = {unit for unit in decisions if is_shared(matrix, unit, index)}
+    orders: tuple[Order, ...] = (
+        order("A", decisions.values(), approved, epics),
+        order("B", decisions.values(), approved | shared, epics),
     )
-    orders: tuple[Order, ...] = tuple(order(name, decisions, out, epics) for name, out in variants)
-    by_unit: dict[Unit, Decision] = {d.unit: d for d in decisions}
     validation: dict[str, tuple[str, ...]] = {
-        result.name: _refusal(edgeset.validate(graph, proposal(result, by_unit, epics))) for result in orders
+        result.name: _refusal(edgeset.validate(graph, proposal(result, decisions, epics))) for result in orders
     }
-    sensitivity: tuple[tuple[int, Order], ...] = tuple(
-        (
-            limit,
-            order(
-                f"A, at most {limit}",
-                decisions,
-                approved | {d.unit for d in decisions if len(d.epics) > limit},
-                epics,
-            ),
-        )
-        for limit in SENSITIVITY_LIMITS
-    )
-    return Analysis(
-        epics,
-        tuple(decisions),
-        tuple(broad),
-        broad_share,
-        orders,
-        current_edges(graph, epics),
-        missing,
-        validation,
-        sensitivity,
-    )
+    pairs: list[Pair] = list(expected)
+    checks: dict[str, tuple[Check, ...]] = {
+        result.name: tuple(check(result, waiter, driver) for waiter, driver in pairs) for result in orders
+    }
+    return Analysis(epics, decisions, orders, current_edges(graph, epics), missing, validation, checks)
 
 
 def summary(analysis: Analysis) -> JsonObject:
-    """Summarise each variant for stdout.
+    """Summarise each scenario for stdout.
 
     Returns:
         The summary.
 
     """
-    variants: list[JsonValue] = []
+    scenarios: list[JsonValue] = []
     for result in analysis.orders:
         sizes: list[int] = [list(result.levels.values()).count(n) for n in range(1, max(result.levels.values()) + 1)]
-        variants.append({
-            "variant": result.name,
+        scenarios.append({
+            "scenario": result.name,
             "edges": len(result.edges),
             "startNow": sizes[0],
             "levels": len(sizes),
             "maxConcurrency": max(sizes),
-            "longestChain": len(result.chain),
-            "cycles": len(result.cycles),
-            "cycleEdgesDropped": sum(len(c.dropped) for c in result.cycles),
+            "longestChain": sum(len(step) for step in result.chain),
+            "cycles": [list(cycle.members) for cycle in result.cycles],
             "applyValid": not analysis.validation[result.name],
+            "checks": [
+                {"waiter": c.waiter, "driver": c.driver, "waits": bool(c.path), "path": list(c.path)}
+                for c in analysis.checks[result.name]
+            ],
         })
     return {
         "openEpics": len(analysis.epics),
-        "entries": len(analysis.decisions),
-        "overBroad": [d.unit for d in analysis.broad],
+        "units": len(analysis.decisions),
         "missingFromMatrix": list(analysis.missing),
-        "variants": variants,
+        "scenarios": scenarios,
     }
+
+
+def _pair(text: str) -> Pair:
+    waiter, sep, driver = text.partition(":")
+    if not sep or not waiter or not driver:
+        message: str = f"--expect takes <waiter bead>:<driver bead>, not {text!r}"
+        raise argparse.ArgumentTypeError(message)
+    return waiter, driver
 
 
 def _arguments(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--matrix", default=None, help="the matrix file (else ATW_MATRIX, else ATW_CONTROL_REPO)")
     parser.add_argument("--repo", type=Path, default=None, help="the repository whose beads to read")
-    parser.add_argument("--broad-share", type=float, default=DEFAULT_BROAD_SHARE, help="over-broad share of Epics")
     parser.add_argument("--report", type=Path, default=None, help="write the Markdown report here")
-    parser.add_argument("--apply", action="store_true", help="write the chosen variant's edges as beads tracks edges")
+    parser.add_argument("--expect", type=_pair, action="append", default=[], help="spot-check <waiter>:<driver>")
+    parser.add_argument("--apply", action="store_true", help="write the chosen scenario's edges as beads tracks edges")
     parser.add_argument("--scenario", choices=(SCENARIO_AS_IS, SCENARIO_SHARED), default=SCENARIO_AS_IS)
-    parser.add_argument("--without-broad", action="store_true", help="apply the variant without over-broad entries")
     parser.add_argument("--dry-run", action="store_true", help="with --apply, list the writes and make none")
     return parser.parse_args(argv)
 
@@ -660,28 +620,25 @@ def main(argv: list[str] | None = None) -> int:
     args = _arguments(argv)
     matrix: Matrix = read_matrix(matrix_path(args.matrix, os.environ))
     graph: beadgraph.Graph = beadgraph.load(args.repo)
-    analysis: Analysis = analyse(matrix, graph, args.broad_share)
+    analysis: Analysis = analyse(matrix, graph, args.expect)
     if args.report is not None:
         from epicorderreport import render  # ruff: ignore[import-outside-top-level] - the report module is needed only for --report.
 
         args.report.write_text(render(analysis), encoding="utf-8")
     out: JsonObject = summary(analysis)
     if args.apply:
-        name: str = ("A" if args.scenario == SCENARIO_AS_IS else "B") + (
-            " without over-broad entries" if args.without_broad else ""
-        )
+        name: str = "A" if args.scenario == SCENARIO_AS_IS else "B"
         chosen: Order = next(result for result in analysis.orders if result.name == name)
-        by_unit: dict[Unit, Decision] = {d.unit: d for d in analysis.decisions}
         writer = beadgraph.Writer(args.repo, dry_run=args.dry_run)
         applied: JsonObject = json_object(
             edgeset.apply_edges(
                 graph,
-                proposal(chosen, by_unit, analysis.epics),
+                proposal(chosen, analysis.decisions, analysis.epics),
                 writer,
                 edgeset.ApplyScope(seen={}, level="epic"),
             ),
         )
-        out["apply"] = {"variant": name, **{k: v for k, v in applied.items() if k != "plan"}}
+        out["apply"] = {"scenario": name, **{k: v for k, v in applied.items() if k != "plan"}}
     sys.stdout.write(json.dumps(out, indent=2) + "\n")
     return 0
 
