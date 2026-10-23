@@ -34,6 +34,7 @@ from matrixstore import ID_SEPARATOR, make_id, matrix_path
 from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
 from orchestrator.core.handback_contract import OTHER_CAUSE
+from orchestrator.core.journal_steps import is_finish_of
 from orchestrator.core.models import StaleInputError, StepError
 
 if TYPE_CHECKING:
@@ -61,10 +62,6 @@ MATRIX_COMMAND: Final = "atw-matrix"
 MARKDOWN_SUFFIX: Final = ".md"
 URL_MARK: Final = "://"
 """What a citation's source holds when it is a URL and no path."""
-FINISH: Final = "Finish"
-"""What the description of the last child step of an agent that started helpers begins with
-(``helper-steps.schema.json``)."""
-
 LABEL_PRD: Final = "prd"
 LABEL_CONTEXT: Final = "context"
 LABEL_STATE: Final = "state"
@@ -322,11 +319,7 @@ def is_finish(run: StepRun) -> bool:
 
     """
     parent: Step | None = step_journal.parent_step(run.journal(), run.step["id"])
-    return (
-        parent is not None
-        and parent.get("agent") == run.step.get("agent")
-        and run.step["description"].startswith(FINISH)
-    )
+    return parent is not None and is_finish_of(parent, run.step)
 
 
 def lead_resolved(run: StepRun, lead: str) -> bool | None:

@@ -163,8 +163,10 @@ An agent that starts other agents in its own session (`aws-solutions-architect`)
 the script (`architecture-team-lead`) adds child steps and a last child step "Finish" under its own
 step with `atw-step-journal`, by the protocol in `helper-steps.schema.json` that the
 `subagent-contract` skill applies. After such a session the
-runner reads the journal again: a step whose child steps are all done is closed by the runner; a
-child left not done is the next step. An agent left running is launched as its own session from
+runner reads the journal again: a step whose child steps are all done and end with a "Finish" the
+agent closed in its own session is completed through that "Finish" (the accept of its launch, its
+result recorded on the agent's step); one whose child steps end with no done "Finish" gets a
+planned "Finish"; a child left not done is the next step. An agent left running is launched as its own session from
 the request file its step holds; "Finish" is launched as the same agent, continuing its session.
 
 A step that already holds a session id, a "Finish" step, and a later step of an agent that holds a

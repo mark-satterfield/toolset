@@ -54,6 +54,25 @@ UNDER_CONTAINER: Final[Literal["under"]] = "under"
 """The planned steps are the last child steps of a container step planned earlier."""
 JOURNAL_LABEL: Final = "step journal"
 """The label of the journal file among the inputs of every agent step's brief."""
+FINISH: Final = "Finish"
+"""What the description of the last child step of an agent that started helpers begins with
+(``helper-steps.schema.json``, ``x-finish``)."""
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def is_finish_of(parent: Step, step: Step) -> bool:
+    """Tell whether a step is the "Finish" step of the agent step directly above it.
+
+    Args:
+        parent: The step directly above ``step``.
+        step: The child step.
+
+    Returns:
+        True when the parent has an agent, the step has the same agent and its description
+        begins with "Finish".
+
+    """
+    return "agent" in parent and step.get("agent") == parent["agent"] and step["description"].startswith(FINISH)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -439,7 +458,9 @@ class AgentLaunch:
     definition names its input labels: ``files`` then states every one of them.
 
     ``accept`` is called with the validated output path and returns what the step records. It is
-    not called when the session marked the step done itself or left child steps under it.
+    not called when the session marked the step done itself or left child steps under it; the
+    accept of a "Finish" step the agent closed in its own session is called when the step above
+    it closes, and what it returns is recorded on that step (``journal_run``).
     ``fresh_output`` False keeps a file already at ``output`` for a session that starts, for a
     document the agent updates in place. ``keep`` is recorded on the step in the journal change
     that starts it, so what the step is launched from is on the step at every later start.

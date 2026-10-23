@@ -24,6 +24,13 @@ Work that already succeeded is never redone: an agent step whose output file is 
 written since the step started is recorded from that file, and its agent is not started again
 (``helper-steps.schema.json``). That covers a helper a lead agent ran in its own session and left
 unrecorded, and a session that wrote its output and stopped before the step was recorded.
+
+An agent step that has child steps is closed only through its "Finish", its last child step
+(``helper-steps.schema.json``). A "Finish" the runner ran was accepted when it ran. A "Finish"
+the agent closed in its own session holds no session id of its own; the accept of its launch is
+called when its step closes, as if the runner had run it, and what it returns is recorded on the
+agent's step. An agent step whose child steps are all done and whose last child is no done
+"Finish" is not closed: a "Finish" is planned under it, and the agent continues its session there.
 """
 
 from __future__ import annotations
@@ -50,6 +57,7 @@ from .handback_contract import OTHER_CAUSE, Failure
 from .journal_changes import apply_completion
 from .journal_registry import REGISTRY, Registry
 from .journal_steps import (
+    FINISH,
     JOURNAL_LABEL,
     AgentBuilder,
     AgentLaunch,
@@ -57,6 +65,7 @@ from .journal_steps import (
     ScriptHandler,
     StepInputs,
     StepRun,
+    is_finish_of,
     stage_of,
 )
 from .models import AgentStep, RunContext, StaleInputError, StepError
@@ -152,6 +161,52 @@ def _open_leaf(step: Step) -> Step | None:
         if found is not None:
             return found
     return None
+
+
+def _done_finish(step: Step) -> Step | None:
+    """Find the done "Finish" an agent step's child steps end with.
+
+    Returns:
+        The step's last child step when it is the step's "Finish" and is done; else None.
+
+    """
+    last: Step | None = step["steps"][-1] if step["steps"] else None
+    if last is None or last["status"] != STATUS_DONE or not is_finish_of(step, last):
+        return None
+    return last
+
+
+def _finish_plan(step: Step) -> StepPlan:
+    """Plan the "Finish" of an agent step whose child steps are all done and that has none.
+
+    Returns:
+        A "Finish" step of the step's own agent, handed the step and every step below it.
+
+    """
+    return {
+        "description": f"{FINISH} the step {step['description']!r} with what its helper steps recorded",
+        "purpose": "Every helper step is done and the agent has not finished: it continues and records its result",
+        "agent": step.get("agent", ""),
+        "inputs": [step["id"]],
+    }
+
+
+def _planned_finish(journal: Journal, step_id: StepId, moment: str) -> Step | None:
+    """Plan a "Finish" under a running agent step whose child steps are all done.
+
+    Returns:
+        The planned "Finish"; None when the step has no agent, no child steps, a child step that
+        is not done, or is not running.
+
+    """
+    step: Step = step_journal.find_step(journal, step_id)
+    ready: bool = (
+        "agent" in step
+        and step["status"] == STATUS_RUNNING
+        and bool(step["steps"])
+        and all(child["status"] == STATUS_DONE for child in step["steps"])
+    )
+    return step_journal.add_step(journal, _finish_plan(step), moment, parent=step_id) if ready else None
 
 
 JSON_SUFFIX: Final = ".json"
@@ -465,18 +520,68 @@ class JournalRunner:
         step_journal.update_journal(self.path, change)
 
     def _close_finished(self) -> None:
-        """Mark done every running step whose child steps are all done."""
+        """Close every running step whose child steps are all done, the last in walk order first.
 
-        def waiting(journal: Journal) -> list[Step]:
-            return [step for step in step_journal.unclosed_steps(journal) if step["status"] == STATUS_RUNNING]
+        A step with no agent is marked done. An agent step is closed through its "Finish": one
+        the runner ran (it holds a session id) was accepted when it ran, so the step is marked
+        done; one the agent closed in its own session is accepted now (:meth:`_accept_finish`).
+        An agent step whose last child is no done "Finish" gets a planned "Finish" instead.
+        Whatever accepting a "Finish" raises continues to the caller once the failure is recorded
+        on a new "Finish" of the step (:meth:`_record_failure`).
+        """
+        while waiting := [
+            step
+            for step in step_journal.unclosed_steps(step_journal.read_journal(self.path))
+            if step["status"] == STATUS_RUNNING
+        ]:
+            step: Step = waiting[-1]
+            step_id: StepId = step["id"]
+            finish: Step | None = _done_finish(step)
+            if "agent" in step and finish is None:
+                step_journal.update_journal(
+                    self.path,
+                    partial(_planned_finish, step_id=step_id, moment=step_journal.timestamp()),
+                )
+            elif "agent" in step and finish is not None and "session" not in finish:
+                try:
+                    self._accept_finish(step_id, finish["id"])
+                except Exception as exc:
+                    self._record_failure(step_id, stage_of(finish), exc)
+                    raise
+            else:
+                step_journal.update_journal(
+                    self.path,
+                    partial(step_journal.finish_step, step_id=step_id, moment=step_journal.timestamp()),
+                )
 
-        def close(journal: Journal) -> None:
-            moment: str = step_journal.timestamp()
-            while found := waiting(journal):
-                step_journal.finish_step(journal, found[-1]["id"], moment)
+    def _accept_finish(self, step_id: StepId, finish_id: StepId) -> None:
+        """Accept the "Finish" an agent closed in its own session, and record it on the agent's step.
 
-        if waiting(step_journal.read_journal(self.path)):
-            step_journal.update_journal(self.path, close)
+        The launch is the one the runner builds for the "Finish" itself: its output is checked as
+        a session's output is, its accept is called with the "Finish" as the accepted step, and
+        what the accept returns is recorded on the agent's step, which is running: its artifacts,
+        the steps it plans under the step, and the step's done mark unless it plans any.
+
+        A launch that cannot be built, an output the check refuses and a refusing accept raise
+        what they raise; nothing is recorded.
+        """
+        journal: Journal = step_journal.read_journal(self.path)
+        finish: Step = step_journal.find_step(journal, finish_id)
+        inputs: StepInputs = _inputs(journal, finish)
+        run: StepRun = self._step_run(finish, inputs, tuple(finish["artifacts"]))
+        launch: AgentLaunch = check_type(self.registry.agent(finish)(run), AgentLaunch)
+        validate_output(
+            AgentStep(
+                stage=stage_of(finish),
+                agent=finish.get("agent", ""),
+                inputs=(),
+                output=launch.output,
+                outcome=launch.outcome,
+                validate=launch.validate,
+                journal_step=finish_id,
+            ),
+        )
+        self._complete(step_id, launch.accept(run, launch.output))
 
     def _run_step(self, step_id: StepId) -> None:
         """Run one step and record its failure when it raises.
@@ -524,6 +629,9 @@ class JournalRunner:
 
         A step whose session left child steps under it cannot be marked itself; the failure is
         recorded on the first of those steps that is not done, where the next dispatch starts.
+        When every one is done, the failure is recorded on a "Finish" planned under the agent's
+        step (:func:`_planned_finish`), so the next dispatch continues the agent's session there
+        instead of closing its step without a result.
         """
         if stop_stage(exc) is not None:
             return
@@ -540,9 +648,14 @@ class JournalRunner:
         text: str = json.dumps(cause, ensure_ascii=False)
 
         def change(journal: Journal) -> None:
-            target: Step | None = _open_leaf(step_journal.find_step(journal, step_id))
+            moment: str = step_journal.timestamp()
+            target: Step | None = _open_leaf(step_journal.find_step(journal, step_id)) or _planned_finish(
+                journal,
+                step_id,
+                moment,
+            )
             if target is not None:
-                step_journal.fail_step(journal, target["id"], text, step_journal.timestamp())
+                step_journal.fail_step(journal, target["id"], text, moment)
 
         try:
             step_journal.update_journal(self.path, change)
@@ -608,8 +721,11 @@ class JournalRunner:
         A step that holds no session of its own conversation and whose output is already its
         finished work (:func:`_finished_output`) is recorded from that file with what the
         launch's accept function returns, and no session starts. After a session the journal is
-        read again. A step the session marked done, or left child steps under, is not completed
-        here; an ordinary step is completed with what the launch's accept function returns.
+        read again. An ordinary step is completed with what the launch's accept function returns.
+        A step whose child steps are all done and end with a "Finish" the session closed is
+        completed through that "Finish" (:meth:`_accept_finish`), whatever session id the
+        "Finish" holds. A step the session marked done, or left other child steps under, is not
+        completed here.
         """
         builder: AgentBuilder = self.registry.agent(step)
         inputs: StepInputs = _inputs(journal, step)
@@ -642,6 +758,11 @@ class JournalRunner:
         after: Step = step_journal.find_step(step_journal.read_journal(self.path), step["id"])
         if after["status"] != STATUS_DONE and not after["steps"]:
             self._complete(step["id"], launch.accept(replace(run, step=after), output))
+            return
+        finish: Step | None = _done_finish(after)
+        settled: bool = all(child["status"] == STATUS_DONE for child in after["steps"])
+        if after["status"] == STATUS_RUNNING and settled and finish is not None:
+            self._accept_finish(step["id"], finish["id"])
 
     def _session(  # ruff: ignore[too-many-arguments] - The session, its launch and the step before it restarted.
         self,

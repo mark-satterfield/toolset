@@ -116,7 +116,12 @@ each as a child step of its own step with `atw-step-journal`, with the request f
 adds a last child step "Finish", by the protocol in `helper-steps.schema.json`. When its session
 ends, the runner reads the journal again:
 
-- every child step is done: the runner closes the architect's step;
+- every child step is done and the last is a "Finish" the architect closed in its own session: the
+  runner checks the result and calls the launch's accept as if it had run "Finish" (the matrix
+  links of the result, the steps its `requests` plan, the conclusion and the other artifacts), and
+  records what it returns on the architect's step;
+- every child step is done and the last is no done "Finish" (the session stopped after its
+  helpers): the runner plans a "Finish" and launches the architect there, continuing its session;
 - a helper was left running: the runner launches that agent as its own session from the request
   file the step holds, and records the request and what the agent wrote;
 - "Finish" is not done: the runner launches the architect again, continuing its session.
