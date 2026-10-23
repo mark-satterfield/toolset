@@ -67,11 +67,11 @@ flowchart TD
     lookup -->|"yes: seeded, not approved and not verified"| diligence["Due diligence: review everything and see if there are gaps"]
     diligence --> design
     design["Higher-level architecture, the architecture that goes in arc42, with specialists and the AWS tools - section 2"]
-    design --> trdUpdate["TRD architecture update: technical or architecture decisions that impact the detailed design - section 4"]
-    trdUpdate --> detailed["Detailed design, reading the TRD, with specialists and the AWS tools - section 2"]
+    design --> detailed["Detailed design, reading the TRD and the TRD update the architect requested, with specialists and the AWS tools - section 2"]
     detailed --> record["Review log: the AWS tools that reviewed each AWS resource, best practices, security, Well-Architected review, every decision's options and reason - section 2"]
     record --> repos["Repositories and stacks for every resource and component - section 5"]
-    repos --> review["The solutions architect reviews and approves its own architecture against the criteria"]
+    repos --> trdUpdate["TRD architecture update, a step after the architect's session: the technical or architecture decisions the architect requested - section 4"]
+    trdUpdate --> review["The solutions architect reviews and approves its own architecture against the criteria"]
     review --> ok{"Does the check pass the result and the review log?"}
     ok -->|"no: each problem goes back to the architect as a correction"| detailed
     ok -->|"yes"| writes["arc42 documents set effective. Matrix filled out or corrected for the Epic and set approved, verified stays false"]
@@ -93,7 +93,9 @@ Notes on the diagram:
 - The owner, on the TRD: "I think the TRD actually gets written and updated in a few phases." The
   initial write is "one of the very first steps"; the update comes "Once the architecture docs are
   completed (this would be the higher-level architecture that would be in `arc42` that isn't
-  considered detail or design)". Section 4 shows both.
+  considered detail or design)". Section 4 shows both. The update runs as its own step after the
+  architect's session, from the request the architect wrote; the detailed design reads the TRD
+  together with that request, so it works from the decisions before the TRD file holds them.
 - The solutions architect is the reviewer; no other agent reviews the architecture. The owner:
   "The solutions architect is the reviewer. I do not want to introduce new reviewers in for
   architecture. I already took out reviewers." What the owner requires instead is proof: "what I
@@ -147,7 +149,7 @@ sequenceDiagram
     SA->>PRD: normally reads the PRD for the Epic
     PRD-->>SA: the Epic's requirements
     SA->>A42: reads existing architecture and design, including standards and constraints
-    A42-->>SA: effective documents, approved as of this moment
+    A42-->>SA: the headings of what the Epic reaches, handed in the architecture pack; settled only where the matrix shows an entry approved
     SA->>MX: looks up what is known for the Epic, as a resource
     MX-->>SA: nothing (normal) or seeded entries, not approved and not verified
     Note over SA: compares existing architecture to the PRD. Seeded entries get due diligence - section 3
@@ -161,13 +163,12 @@ sequenceDiagram
         SA->>AWS: blesses or reviews every AWS resource the architecture defines
         AWS-->>SA: review result, cost
     end
-    SA->>TRD: the higher-level architecture is complete. TRD architecture update - section 4
-    TRD-->>SA: the updated TRD, with the decisions that impact the detailed design
+    Note over SA: the higher-level architecture is complete. The architect writes the TRD architecture update request - section 4
     loop until the detailed design covers the PRD
-        SA->>SP: a request on one subject, with the updated TRD
+        SA->>SP: a request on one subject, with the TRD and the TRD update request
         SP->>AWS: AWS documentation, best practices, cost analysis
         AWS-->>SP: guidance and figures
-        SP-->>SA: detailed design of that subject, read from the TRD
+        SP-->>SA: detailed design of that subject, read from the TRD and its update request
         SA->>AWS: blesses or reviews every AWS resource the design defines
         AWS-->>SA: review result, cost
     end
@@ -334,8 +335,10 @@ gap in the architecture.
 
 **Subject:** the two phases of the TRD in the architecture stage, and who reads it.
 **Scope:** inside the architecture stage, and the TRD as read by detailed design and the build.
-**Purpose:** that the TRD is written as one of the very first steps, updated once the
-higher-level architecture is complete, and read by detailed design and by the build.
+**Purpose:** that the TRD is written as one of the very first steps, updated from the
+decisions of the higher-level architecture, and read by detailed design and by the build. The
+update is a step of its own after the architect's session, from the request the architect wrote;
+the detailed design reads the TRD with that request.
 **Boundary:** TRD validation detail is not drawn. The owner's future separate TRD input document
 is not drawn as a store: the owner said "do not focus on this now"; its place is the initial
 write, where "we would pull in that human-written Epic-epecific guidence". A TRD an earlier run
@@ -375,12 +378,14 @@ sequenceDiagram
     TRD-->>WF: the TRD
     WF->>SA: Epic id and PRD path, with the TRD
     Note over SA,TRD: the higher-level architecture,<br/>the architecture that goes in arc42 - section 2
-    Note over SA,TRD: TRD Architecture Update, once the<br/>higher-level architecture is complete
-    SA->>TRD: the completed higher-level architecture
+    Note over SA: TRD Architecture Update request, once the<br/>higher-level architecture is complete
+    SA->>T: detailed design reads the TRD with the update request - section 2
+    SA-->>WF: result, naming the TRD update request
+    Note over WF,TRD: TRD Architecture Update, a step after the architect's session
+    WF->>TRD: the architect's update request
     TRD->>A42: reads the technical or architecture decisions made
     TRD-)T: TRD updated with the decisions that impact the detailed design
-    TRD-->>SA: the updated TRD
-    SA->>T: detailed design reads the TRD - section 2
+    TRD-->>WF: the updated TRD, handed to the architect's Finish step
     B->>T: build decisions read the TRD
 ```
 

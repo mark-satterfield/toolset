@@ -42,8 +42,10 @@ something are found from its architecture-side entry.
 ## What the matrix says about a document
 
 Each document entry carries the document's `lifecycle`, mirrored from its `lifecycle_state`, and
-its `headings`. An `effective` document has been reviewed and approved. An `in-review` or `draft`
-document is input to check: read it, and do not assume it is complete or correct. The version a
+its `headings`. A document's lifecycle approves nothing: what it describes is settled only where
+the matrix shows the entry `approved`, whatever the lifecycle. Read any other content, in an
+`effective`, `in-review` or `draft` document, as input to check, and do not assume it is
+complete or correct. The version a
 document belongs to is the folder it lives in: `arc42/` and `detailed/` are effective and
 `built/<element>/` is built.
 

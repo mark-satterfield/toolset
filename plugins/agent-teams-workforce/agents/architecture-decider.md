@@ -43,10 +43,11 @@ the matter and the matter is not raised again. `atw-matrix node disagreement:<id
 disagreement with each statement it `disputes`, by document and heading; the step is accepted
 only when the disagreement reads back with `stands` set.
 
-Where one statement is in an effective document and the conflicting one is not, there is
-nothing to rule on: the effective one stands
-(`atw-matrix settle --id disagreement:<id> --stands <document path> "<heading>" --rule effective-over-non-effective`).
-`atw-matrix node document:<path>` returns a document's `lifecycle`.
+Where one statement describes entries the matrix shows approved and the conflicting one does
+not, there is nothing to rule on: the approved one stands
+(`atw-matrix settle --id disagreement:<id> --stands <document path> "<heading>" --rule approved-over-unapproved`).
+A document's `effective` lifecycle approves nothing; `atw-matrix node <entry id>` shows an
+entry's `approved` flag.
 
 Raise an owner concern only when two business requirements cannot both be met by any design,
 or when the only workable design conflicts with section 2. A technical choice stays with the

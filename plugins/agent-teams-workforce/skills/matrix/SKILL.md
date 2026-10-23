@@ -130,9 +130,9 @@ feature with no covering document), `requirementsReachNothing`, `requirementsNoS
 
 | Field | On | Meaning | Who sets it, when, how |
 |---|---|---|---|
-| `approved: {epic}` | any entry or relationship | The architecture and design of that Epic are approved, and the matrix and arc42 are filled out or corrected for it. Similar to, not the same as, `effective`. | Only the promotion step of elaboration (`orchestrator/flows/architecture_promotion.py`, calling `matrixwrite.approve` as role `script`) on the Epic's approval scope (`atw-matrix approval --epic <id>` shows it), once its reviews pass. No `atw-matrix` command and no session sets it. Any later change to the entry or relationship, or to the heading text that describes it, clears it on that item alone. |
+| `approved: {epic}` | any entry or relationship | The architecture and design of that Epic, its owner, are approved, and the matrix and arc42 are filled out or corrected for it. The only thing that settles an entry; `effective` does not. | Only the promotion step of elaboration (`orchestrator/flows/architecture_promotion.py`, calling `matrixwrite.approve` as role `script`) on the Epic's approval scope, its reach by the rule of reach in the corrected matrix (`atw-matrix approval --epic <id>` shows it), once its reviews pass; it never overwrites a flag naming another Epic. No `atw-matrix` command and no session sets it. Any later change to the entry or relationship, or to the heading text that describes it, clears it on that item alone. |
 | `verified: {commit}` | any entry or relationship | It was built and tested: the CI checks and the test that its CDK deployment works (the deployment may be removed again after the test). A property of the stack or component itself, valid for every Epic that relates to it. Verified = real, its code trusted; not verified = still to be made real, used like anything else. | Only the build driver (`ops/sdlc-automation/matrixmarks.py`), when a Story's test passes: `atw-matrix verify --story <id> --commit <the tested commit>` as role `build-driver`, on what the Story's Tasks state they built (`built`) and the relationships starting there. A merge never sets it; the merge is a separate step after the test. A known change to what the item must be built as (the entry or relationship itself, the heading text that describes it, or an architecture-side relationship starting at it) clears it on that item alone; the next build and test sets it again. |
-| `lifecycle` | `document` | Mirrors the arc42 front matter: `effective` (approved as of now), `in-review`, `draft`. | `atw-matrix sync-documents`; the promotion step after `depscore.py arch-approve`. |
+| `lifecycle` | `document` | Mirrors the arc42 front matter: `effective` (promoted), `in-review`, `draft`. It approves nothing: an effective document whose entries are not approved is draft. | `atw-matrix sync-documents`; the promotion step after `depscore.py arch-approve`. |
 | `side` | everything | `architecture` (authority) or `repository` (hint). | Whoever records the fact: `put` and `link` take `--side`. |
 
 Nothing is seeded approved or verified, and nothing in the live matrix is either yet. No
@@ -189,6 +189,10 @@ Reading the flags to decide what is planned and what exists:
 - Commit the file alone with `atw-matrix commit --bead <id>` (it pushes).
 - A seeding or session result file is recorded by a script step (`seed-apply`), never entry by
   entry by the session.
+- The solutions architect and its helpers write no entry by command: they record each `put`,
+  `link`, `unlink` and `settle` as an operation in the run's change file (`matrix-changes.json`,
+  to `matrix-change.schema.json`), which the step that accepts the architect's result applies in
+  one update.
 
 ## Reconciling and seeding
 

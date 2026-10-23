@@ -32,32 +32,23 @@ schema's descriptions say what each member is.
 ### Mode `initial`
 
 The TRD initial write is one of the very first steps of the architecture: it runs before any
-design exists,
-so write only what is already stated. Many of these requirements are already pre-written in
-arc42; add them to the TRD. Your sources, and only these:
+design exists, so write only what is already stated. Write it from the Epic's architecture pack
+alone, the `pack.json` the request names, with `pack.md` beside it for reading; read nothing
+else from the vault or the matrix:
 
-- The constraints. `atw-matrix epic <the request's epic> --constraints` returns each
-  constraint that binds the Epic, its features and the entries that realize them, with its rule
-  as `statement`, the document and heading it is `statedIn`, and what it `appliesTo`;
-  `selections` names the entries each selector binds.
-  The `statement` is the rule: cite its `statedIn` document and heading as the source without
-  reading that heading again. A constraint with `trd` in place of a statement is a requirement
-  of a TRD (its Epic and id); one of this Epic's is already in the TRD you keep. A constraint
-  listed under `noSource` has no document that states it.
-- The requirements pre-written in the effective arc42 that apply to what this PRD needs: the
-  quality goals (section 1), the owner's constraints (section 2), the standards and policies
-  (section 8) and the quality requirements (section 10). Find the documents and headings with
-  `atw-matrix find --kinds document,constraint --text "<the PRD's need>"` and
-  `atw-matrix node document:<path>`, and read only the headings that apply.
-- The Epic's PRD, at `prdPath`: the quality and operational needs it states. `atw-matrix epic
-  <the request's epic>` lists the requirements the matrix holds for the Epic, each `name` its
-  heading in the PRD; it is a starting point that may be incomplete, and the PRD is what shows
-  whether it is.
+- The PRD, in the pack: the quality and operational needs it states, and the Epic's
+  requirements, each `name` its heading in the PRD.
+- The constraints in the pack: each with its rule as `statement`, the document and heading it is
+  `statedIn`, and what it `appliesTo`. The `statement` is the rule: cite its `statedIn` document
+  and heading as the source. A constraint with `trd` in place of a statement is a requirement of
+  a TRD (its Epic and id); one of this Epic's is already in the TRD you keep.
+- The headings in the pack's `reach` rows: the requirements pre-written in arc42 (quality goals,
+  standards and policies, quality requirements) that describe what the Epic reaches. Cite each by
+  its path and heading as the pack gives them.
 
 A requirement whose element the PRD's need does not yet name applies to the Epic as a whole
 (`appliesTo` empty). Return `noSource`: every quality or operational obligation the PRD implies
-for which neither the PRD nor the effective documents give a source; the TRD holds only sourced
-requirements.
+for which neither the PRD nor the pack gives a source; the TRD holds only sourced requirements.
 
 A TRD already at `trdPath` is earlier work on this Epic: update it in place from these sources
 instead of writing it again. Keep each requirement, under its id, whose source still states it;
@@ -73,16 +64,16 @@ as one requirement of kind `reuse`. `atw-matrix node <capability>` returns the `
 its `relies` names, with each item's behaviour and what a consumer must not implement itself.
 The rest of the file stays as it is.
 
-One update follows the higher-level architecture: once it is in arc42, the request lists the
-technical or architecture decisions that impact the detailed design. Further updates may follow
-as the design settles.
+An update runs as its own step after the solutions architect's session, from the request it
+wrote: the technical or architecture decisions that impact the detailed design. A correction of
+the architecture may bring another.
 
 ### Every requirement
 
 A requirement is to the `TrdRequirement` definition that `trd-answer.schema.json` refers to;
 its descriptions say what each member holds. A removed id is never used again. `appliesTo` is
-a matrix id as `atw-matrix node` or `atw-matrix find` returns it, never a name, and a `source`
-in arc42 gives the heading as `atw-matrix node document:<path>` lists it.
+a matrix id as the pack or `atw-matrix node` gives it, never a name, and a `source` in arc42
+gives the path and heading as the pack lists them.
 
 Each requirement is a heading of the TRD whose text is exactly its id (`#### TR-01`): the
 matrix's constraint for it points at that heading, and the step that confirms the TRD fails on

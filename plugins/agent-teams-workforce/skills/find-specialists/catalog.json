@@ -579,19 +579,7 @@
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:find-specialists",
-        "agent-teams-workforce:senior-architect",
-        "agent-teams-workforce:aws-solution-architect",
-        "agent-teams-workforce:python-lambda-packaging",
-        "agent-teams-workforce:aws-serverless-eda",
-        "agent-teams-workforce:senior-security",
-        "agent-teams-workforce:graphrag-lookup",
-        "aws-core:aws-serverless",
-        "aws-core:aws-well-architected-review",
-        "aws-core:aws-security",
-        "aws-core:aws-billing-and-cost-management",
-        "agent-teams-workforce:log-architecture-review",
-        "aws-core:aws-database",
-        "agent-teams-workforce:matrix"
+        "aws-core:aws-well-architected-review"
       ],
       "mcpServers": [
         "aws-mcp",

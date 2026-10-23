@@ -64,8 +64,9 @@ The design is the solutions architect's. A fact that is not in the request is no
 7. **Keep the catalog true and check the invariants** in `references/consistency-rules.md` across
    every document you touched and every document that links to them.
 8. **Report**: each heading changed or created, each link added, each restatement removed, and
-   what could not be applied with the reason. The files you
-   changed stay `in-review`; a script moves them to `effective` after review. You record nothing
+   what could not be applied with the reason. For a write request, set `lifecycle_state:
+   in-review` on each `effective` document you edit and on each new one; a script moves them to
+   `effective` after review. A correction from built leaves every `lifecycle_state` as it is. You record nothing
    in the matrix: a script step runs `atw-matrix sync-documents --paths` on the files you report,
    which mirrors each document, its headings and what its `shows` names. A correction from built
    is mirrored by the next run's sync.

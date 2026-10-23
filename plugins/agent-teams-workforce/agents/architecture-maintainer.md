@@ -70,7 +70,9 @@ Place each diagram the request carries under its heading, and update or redraw a
 when a fact changes what it shows.
 
 Section 2 is the owner's and stays as it is. Documents hold the design as it is: no decision
-record, history or open-items list. A script sets `lifecycle_state` and commits after review.
+record, history or open-items list. Set `lifecycle_state: in-review` on each `effective`
+document you edit for a write request, and give a new document `in-review`; a script sets
+`effective` and commits after review.
 
 You read the matrix and record nothing in it. When your result is accepted, a script step runs
 `atw-matrix sync-documents --paths` on the files you changed, which records each document, its

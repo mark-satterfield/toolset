@@ -5,12 +5,12 @@
   "$ref": "#/$defs/ArchitectureResult",
   "$defs": {
     "NeedState": {
-      "description": "The architect's first judgment of one need against the effective architecture (the effective architecture, arc42 and detailed, as it stands before this Epic). Effective means approved as of now, never complete or correct. `approved`: the architect judges that effective statements meet the need as they stand. `disagreement`: effective statements bear on the need and two of them disagree. `missing`: no effective statement meets the need.",
+      "description": "The architect's first judgment of one need against the approved architecture (the arc42 and detailed headings that describe entries the matrix shows approved, as they stand before this Epic). Approved means the matrix flag only, never complete or correct; a document's effective lifecycle approves nothing. `approved`: the architect judges that approved statements meet the need as they stand. `disagreement`: statements bear on the need and two of them disagree. `missing`: no approved statement meets the need.",
       "type": "string",
       "enum": ["approved", "disagreement", "missing"]
     },
     "StateConclusion": {
-      "description": "The architect's first judgment, a starting point and no result. `effective-architecture-meets-every-need`: every need is `approved`, so the architect's work starts from the questions its expertise raises about the effective architecture. `work-remains`: at least one need is `disagreement` or `missing`.",
+      "description": "The architect's first judgment, a starting point and no result. `effective-architecture-meets-every-need`: every need is `approved`, so the architect's work starts from the questions its expertise raises about the approved architecture. `work-remains`: at least one need is `disagreement` or `missing`.",
       "type": "string",
       "enum": ["effective-architecture-meets-every-need", "work-remains"]
     },

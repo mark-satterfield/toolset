@@ -27,8 +27,10 @@ classes, data models, routes and names of one component, is done during architec
 recorded in the architecture documents and in the matrix; the specs and Tasks carry it and
 decide none of it.
 
-An effective document is approved design. It is not evidence that anything is built, and it
-is not a permanent constraint on a later PRD.
+Approved means the matrix's `approved` flag on an entry, and nothing else. A document's
+`effective` lifecycle approves nothing: an effective document whose entries are not approved is
+draft. Approved design is not evidence that anything is built, and it is not a permanent
+constraint on a later PRD.
 
 The matrix records what is approved and what code is trusted. Read it as the `matrix` skill says.
 

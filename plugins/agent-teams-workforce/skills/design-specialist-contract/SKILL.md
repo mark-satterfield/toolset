@@ -15,7 +15,8 @@ arc42 headings it concerns, the elements whose code is trusted and the path for 
 
 Most requests are a question. Answer that question and nothing else.
 
-- Read only what the request names, plus what you must open to check a fact.
+- Read only what the request names, plus what you must open to check a fact. When it names an
+  extract of the architecture, read the parts it names in that extract, not their sources.
 - Give the answer in the first sentence. Then the reasons, each with its source: an arc42
   path and heading, an AWS documentation URL, or a section 2 constraint.
 - State the assumptions the answer rests on.
