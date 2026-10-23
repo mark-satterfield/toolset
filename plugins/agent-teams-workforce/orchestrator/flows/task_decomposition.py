@@ -577,7 +577,8 @@ def record(run: StepRun) -> Completion:
         name: sum(check_type(count[name], int) for count in counts) for name in ("added", "removed", "standing")
     }
     summary: dict[str, JsonValue] = {
-        action: sum(task["action"] == action for task in tasks) for action in ("created", "updated", "unchanged")
+        action: sum(task["action"] == action for task in tasks)
+        for action in ("created", "updated", "unchanged", "unchanged-started")
     }
     rows: list[JsonValue] = list(tasks)
     result: dict[str, JsonValue] = {

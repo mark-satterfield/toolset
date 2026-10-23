@@ -48,7 +48,10 @@ Outermost step "TRD", script `trd.confirm`, after the Architecture container. It
    correction: a check that still fails fails the step.
 4. It records the TRD's path, relative to the project root, and the SHA-256 of its bytes in the
    Epic bead's metadata, unless the bead already holds both.
-5. It records the file `TRD`, the value `TRD hash on the Epic bead`, and the value `TRD warnings`
+5. It emits one `verdict` event (phase `trd-authoring`, label `trd.confirm`): `passed` with the
+   number of citations and the digest on the Epic bead, or `correction planned` with the number
+   of problems sent to the TRD author.
+6. It records the file `TRD`, the value `TRD hash on the Epic bead`, and the value `TRD warnings`
    when `decisionIds` is empty.
 
 The spec steps, and the first step of every Story's and Task's journal, are handed the TRD as the

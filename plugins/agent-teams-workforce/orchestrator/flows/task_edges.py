@@ -28,7 +28,7 @@ from typeguard import CollectionCheckStrategy, check_type
 
 from orchestrator.core.agents import strict_json
 from orchestrator.core.driver_contracts import dispatch_arguments
-from orchestrator.core.handback_contract import OTHER_CAUSE
+from orchestrator.core.handback_contract import OTHER_CAUSE, warning_note
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import agent_step, script_step
 from orchestrator.core.journal_steps import (
@@ -57,7 +57,7 @@ from orchestrator.flows.elaboration_files import (
     span_stories,
     write_contract,
 )
-from orchestrator.flows.elaboration_support import TASK_EDGES_PHASE, enter_phase
+from orchestrator.flows.elaboration_support import TASK_EDGES_PHASE, emit_event, enter_phase
 
 if TYPE_CHECKING:
     import hierarchy
@@ -246,6 +246,9 @@ def write(run: StepRun) -> Completion:
     written: dict[str, JsonValue] = run.tools.operation(EDGE_WRITE, attempt)
     path: Path = run.context.work / "task-edges" / "all.json"
     write_json(path, written)
+    warning: str
+    for warning in check_type(written.get("warnings", []), list[str]):
+        emit_event(run.agents.emit, warning_note(EDGE_WRITE, warning))
     if written.get("ok") is False:
         raise run.tools.failure(EDGE_WRITE, OTHER_CAUSE, written)
     result: dict[str, JsonValue] = {

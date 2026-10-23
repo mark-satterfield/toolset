@@ -37,7 +37,7 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
-from orchestrator.core.handback_contract import TRD_PHASE
+from orchestrator.core.handback_contract import TRD_PHASE, verdict_event
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import script_step
 from orchestrator.core.journal_steps import (
@@ -59,7 +59,7 @@ from orchestrator.flows.architecture_files import (
     ArchitectureStepError,
     read_context,
 )
-from orchestrator.flows.elaboration_support import TRD_AUTHORING_PHASE, enter_phase
+from orchestrator.flows.elaboration_support import TRD_AUTHORING_PHASE, emit_event, enter_phase
 
 if TYPE_CHECKING:
     from architecture_work_contract import TrdChange, TrdRequest
@@ -451,6 +451,11 @@ def _correction(run: StepRun, context: ArchitectureContext, changes: list[TrdCha
     )
 
 
+def _summary(run: StepRun, verdict: str, detail: str) -> None:
+    """Emit the one line that says what the TRD confirmation came to."""
+    emit_event(run.agents.emit, verdict_event(TRD_AUTHORING_PHASE, CONFIRM_TRD, verdict, detail))
+
+
 @script_step(CONFIRM_TRD)
 def confirm(run: StepRun) -> Completion:
     """Confirm the reviewed TRD: the matrix holds every source it cites, and the Epic bead carries it.
@@ -476,21 +481,28 @@ def confirm(run: StepRun) -> Completion:
         text: str = trd.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
         raise ArchitectureStepError(run, f"{trd}: {exc}") from None
+    cited: list[str] = []
     warnings: list[str] = []
     changes: list[TrdChange] = [
         _dangling_change(trd, constraint, requirement)
         for constraint, requirement in _dangling(matrix, str(run.bead), _headings(text), ())
     ]
     try:
-        warnings = document(trd, matrix, TRD_FRONT_MATTER)[1]
+        cited, warnings = document(trd, matrix, TRD_FRONT_MATTER)
     except DocumentValidationError as exc:
         changes.insert(0, _document_change(trd, str(exc)))
     if changes:
         above: Step | None = step_journal.parent_step(run.journal(), run.step["id"])
         if above is None or above.get("script") != CONFIRM_TRD:
+            _summary(run, "correction planned", f"{len(changes)} problems sent to the TRD author for one update")
             return _correction(run, context, changes)
         raise ArchitectureStepError(run, *(change["statement"] for change in changes))
     digest: str = _mark_trd(run.context, run.tools, trd)
+    _summary(
+        run,
+        "passed",
+        f"{len(cited)} citations and every requirement pointer resolve; the Epic bead carries the TRD {digest[:12]}",
+    )
     warned: list[JsonValue] = list(warnings)
     return Completion(
         artifacts=(

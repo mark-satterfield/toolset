@@ -1712,7 +1712,8 @@ def plan_task_edges(span: SpanStories) -> EdgePlan:
 
     Returns:
         The accepted edges, the rejected ones, each blocked Task's blockers by name, and
-        `warnings`: the closure's warnings, and each edge dropped because it would close a
+        `warnings`: the closure's warnings, each rejected edge with its reason, and each edge
+        dropped because it would close a
         cycle over the Epic's Task graph, or over its Stories, where a Story follows another when
         one of its Tasks follows one of the other's, so that no two Stories depend on each other
         (edges are taken in order, the closure's first).
@@ -1742,6 +1743,7 @@ def plan_task_edges(span: SpanStories) -> EdgePlan:
     ]
     slug_of, intra, _elab = span_tasks(span)
     accepted, rejected, _pairs = _accept(saved, slug_of)
+    warnings.extend(f"edge {e['from']} -> {e['to']} rejected: {e['reason']}" for e in rejected)
     accepted, pairs = _acyclic(accepted, slug_of, intra, warnings)
     blockers: dict[str, list[str]] = {}
     for frm, to in sorted(pairs):
