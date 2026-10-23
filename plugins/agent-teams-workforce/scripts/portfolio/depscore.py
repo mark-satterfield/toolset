@@ -367,8 +367,9 @@ def assess_plan(
     """Every candidate's fingerprint at a level, and those not assessed as they now stand.
 
     Candidates are the open Epics, or the open Tasks with no `elab_key`. An item is
-    unassessed when its `seq_content_hash` differs from its fingerprint or, with `since`,
-    when its `seq_assessed_at` is absent or earlier than `since`.
+    unassessed when its `seq_content_hash` differs from its fingerprint, when it depends on
+    or owns a blocker that names a bead no longer in the tracker, or, with `since`, when its
+    `seq_assessed_at` is absent or earlier than `since`.
 
     Args:
         graph: The tracker graph, read with descriptions.
@@ -405,7 +406,7 @@ def assess_plan(
 
     def assessed(bead: Bead) -> bool:
         at: datetime | None
-        if bead.metadata.get(KEY_SEQ_CONTENT_HASH) != prints.get(bead.id):
+        if bead.metadata.get(KEY_SEQ_CONTENT_HASH) != prints.get(bead.id) or graph.missing_references(bead):
             return False
         if cutoff is None:
             return True

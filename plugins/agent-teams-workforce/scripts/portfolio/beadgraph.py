@@ -221,6 +221,19 @@ class Graph:
             current = parent
         return chain
 
+    def missing_references(self, bead: Bead) -> list[str]:
+        """Name the beads a bead depends on, or records as owned blockers, that no longer exist.
+
+        A dependency on a deleted bead is neither met nor unmet: the assessment that wrote it is
+        stale and must run again.
+
+        Returns:
+            The identifiers no tracker record carries, sorted.
+
+        """
+        named: set[str] = set(bead.blockers) | set(bead.tracked) | set(bead.owned_blockers)
+        return sorted(ref for ref in named if ref not in self.beads)
+
     def epic_of(self, bead_id: str) -> Bead | None:
         """Find the nearest Epic above a bead.
 
