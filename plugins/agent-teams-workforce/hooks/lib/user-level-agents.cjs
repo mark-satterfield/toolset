@@ -6,8 +6,9 @@
  * Claude Code ignores the `mcpServers` frontmatter of an agent defined in a
  * plugin. An agent that needs an MCP server therefore runs from its copy in
  * `~/.claude/agents/`, which every session on the machine loads whatever
- * repository it runs in, and is dispatched by its plain name. Every agents/*.md
- * whose frontmatter has an `mcpServers:` entry is one of them.
+ * repository it runs in when it loads user settings, and is dispatched by its
+ * plain name. Every agents/*.md whose frontmatter has an `mcpServers:` entry is
+ * one of them.
  */
 
 const fs = require('node:fs');

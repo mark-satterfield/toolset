@@ -24,8 +24,15 @@ const fableFallback = fableInput.fableFallback === true
 let fableChildOrdinal = 0
 // The last call the model allowance refused in this script: { agentType, label, message }, or null.
 let fableRefusal = null
-// An agent is started by its plain front-matter name; Claude Code loads its definition and preloads
-// the skills its front matter lists, so nothing here reads or passes on an agent's or a skill's text.
+// The plugin's agents that have no user-level copy (no mcpServers in their front matter), filled
+// from agents/*.md by shared-blocks.mjs. Claude Code registers a plugin agent only under the
+// plugin prefix, so such an agent is dispatched as agent-teams-workforce:<name>; an agent with a
+// user-level copy keeps its plain name, which names that copy and the MCP servers it carries. A
+// workflow names every agent by its plain front-matter name and atwAgentType resolves it here.
+const PLUGIN_ONLY_AGENTS = new Set(/* PLUGIN_ONLY_AGENTS */ [])
+const atwAgentType = (name) => (PLUGIN_ONLY_AGENTS.has(name) ? `agent-teams-workforce:${name}` : name)
+// Claude Code loads an agent's definition and preloads the skills its front matter lists, so
+// nothing here reads or passes on an agent's or a skill's text.
 async function fableAgent(prompt, options) {
   const schema = options && options.schema
   const artifactSchema = schema && schema.type === 'object' && Array.isArray(schema.required) && schema.required.length === 1 && schema.required[0] === 'artifactPath' && schema.properties && schema.properties.artifactPath && schema.properties.artifactPath.type === 'string'
@@ -34,7 +41,8 @@ async function fableAgent(prompt, options) {
   options = runtimeOptions
   const agentType = (options && options.agentType) || null
   const isFable = fableTypes.has(String(agentType || '').replace(/^agent-teams-workforce:/, ''))
-  const call = isFable && fableFallback ? { ...options, model: 'opus' } : options
+  const resolved = agentType ? { ...options, agentType: atwAgentType(agentType) } : options
+  const call = isFable && fableFallback ? { ...resolved, model: 'opus' } : resolved
   try {
     return await agent(`OUTPUT_MODE: ${outputMode}\n\n${prompt}`, call)
   } catch (error) {

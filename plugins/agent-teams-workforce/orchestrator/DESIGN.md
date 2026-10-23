@@ -425,19 +425,22 @@ brief (section 2.3):
 1. The launcher reads from `<plugin>/agents/<agent>.md` only the front matter fields it decides
    something with (`load_agent`): `model` (required; it drives the Fable fallback), `role` (the
    matrix role, section 5.2). It reads no tools, no body and no skill.
-2. It launches the session with `--agent <agent>`, the agent's plain front matter `name`, for
-   every agent. Claude Code loads the definition: its body, tools, disallowed tools, model,
-   effort, MCP servers, turn limit and front matter skills. An agent whose definition states
-   `mcpServers` (which Claude Code ignores for a plugin agent) runs from the user-level copy in
-   `~/.claude/agents/` that the plugin's `hooks/sync-user-agents.cjs` keeps; by Claude Code's name
-   precedence the user-level copy wins over the plugin agent of the same plain name. The launcher
+2. It launches the session with `--agent agent-teams-workforce:<agent>`, the agent's front matter
+   `name` under the plugin prefix, for every agent. The session loads only project settings
+   (`--setting-sources project`), so the user-level agent copies in `~/.claude/agents/` are not
+   registered in it, and Claude Code registers a plugin agent only under the plugin prefix.
+   Claude Code loads the plugin definition: its body, tools, disallowed tools, model, effort,
+   turn limit and front matter skills; it ignores `mcpServers` on a plugin agent. The launcher
    writes no agent definition, no skill text and no MCP configuration, and adds no tool or skill.
    `--model` is the definition's model, or `opus` in its place on a Fable fallback (section 5.5).
 3. Any agent loads any other skill on demand with the Skill tool, with that skill's scripts and
    relative paths intact. No code reads a skill's text and feeds it to an agent.
-4. An agent the launched agent starts is named the same way, by its plain name, and runs with its
-   own front matter. `scripts/check-agent-types.mjs` fails a prefixed agent name in the plugin.
-   The step journal records the agent name a step is planned with.
+4. An agent the launched agent starts with the Agent tool is named the same way,
+   `agent-teams-workforce:<name>` (the only name registered in the session), and runs with its own
+   front matter. A workflow script names an agent by its plain name and its fable shared block adds
+   the prefix where Claude Code needs it; `scripts/check-agent-types.mjs` fails a prefixed agentType
+   literal in a workflow script. The step journal records the plain agent name a step is planned
+   with.
 5. The brief is written on stdin.
 
 No schema text, rule text, agent text, skill text or file content is placed in the brief.

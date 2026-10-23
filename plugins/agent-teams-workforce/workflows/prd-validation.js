@@ -4,7 +4,7 @@ export const meta = {
     'Leaf mini — PRD Validation. Seven read-only specialists, one per lens, inspect a PRD in parallel: requirement-classifier (requirement class), ambiguity-detector, completeness-checker, requirements-conflict-detector, constraint-extractor, domain-boundary-validator and requirements-clarifier, plus brd-traceability-auditor for an informational BRD traceability mapping when args.brdPath names a BRD file. Each specialist\'s method is in its own definition; the PRD (args.prd.path), the BRD and the boundary notes (args.contextPath) are handed by path, and each writes its result to its $defs entry of skills/artifact-handoff/schemas/prd-validation-analysis.schema.json. The script merges the results into one analysis file, consolidates the findings and fails the PRD only on a blocker finding. The requirement-classifier classifies every requirement as business or technical and asks the matrix whether the architecture already states each technical rule (atw-matrix find --kinds constraint,document, then node); a technical requirement is a major finding, since a PRD keeps business requirements only. The script records in the matrix each technical rule no document states, as a constraint that applies to the Epic and is stated in no document (atw-matrix put constraint, then link appliesTo), and the validation fails when a rule is not recorded.',
   phases: [{ title: 'Validate', detail: 'one specialist per lens inspects the PRD, in parallel; the script merges and judges' }],
 }
-// ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json; edit there, then: node scripts/shared-blocks.mjs --write) =====
+// ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json and agents/*.md; edit there, then: node scripts/shared-blocks.mjs --write) =====
 // skills/pipeline-contracts/schemas/driver-surface.schema.json, inlined by shared-blocks.mjs. DRIVER_SURFACE maps
 // each x-constant of $defs.DriverEnvironment to its environment variable name and each x-values entry of
 // $defs.RateLimitInfo to its wire value, so no workflow names a driver environment variable or a rate-limit value itself.
@@ -31,8 +31,15 @@ const fableFallback = fableInput.fableFallback === true
 let fableChildOrdinal = 0
 // The last call the model allowance refused in this script: { agentType, label, message }, or null.
 let fableRefusal = null
-// An agent is started by its plain front-matter name; Claude Code loads its definition and preloads
-// the skills its front matter lists, so nothing here reads or passes on an agent's or a skill's text.
+// The plugin's agents that have no user-level copy (no mcpServers in their front matter), filled
+// from agents/*.md by shared-blocks.mjs. Claude Code registers a plugin agent only under the
+// plugin prefix, so such an agent is dispatched as agent-teams-workforce:<name>; an agent with a
+// user-level copy keeps its plain name, which names that copy and the MCP servers it carries. A
+// workflow names every agent by its plain front-matter name and atwAgentType resolves it here.
+const PLUGIN_ONLY_AGENTS = new Set(["acceptance-criteria-reviewer","acceptance-criteria-writer","advantage-evaluator","adversarial-critique-adjudicator","adversarial-review-loop-supervisor","ambiguity-detector","api-documentation-writer","architecture-maintainer","architecture-team-lead","beads-format-validator","brd-traceability-auditor","changelog-writer","code-quality-lead","completeness-checker","constitutional-agent","constraint-extractor","context-curator","cross-repo-integration-test-coordinator","definition-of-done-writer","dependency-cve-auditor","deployment-lead","documentation-accuracy-reviewer","documentation-currency-auditor","documentation-lead","domain-boundary-validator","epic-dependency-assessor","exhausted-gate-ruler","feature-objective-writer","feature-persona-writer","github-actions-pipeline-implementer","integration-testing-lead","nfr-analyst","phase-gate-enforcer","prd-alignment-verifier","prd-trd-traceability-verifier","prd-validation-lead","prd-writer","production-readiness-review-facilitator","readme-writer","requirement-classifier","requirements-clarifier","requirements-conflict-detector","spec-authoring-lead","spec-freshness-lead","stakeholder-request-intake-writer","story-bead-writer","test-command-resolver","test-design-lead","test-failure-parser","test-plan-strategy-reviewer","test-strategy-decider","trd-decider","ubiquitous-language-writer","ui-design-source-selector","user-guide-writer","user-story-reviewer","workflow-command-runner","worktree-lander","wsjf-scorer","wsjf-scoring-reviewer"])
+const atwAgentType = (name) => (PLUGIN_ONLY_AGENTS.has(name) ? `agent-teams-workforce:${name}` : name)
+// Claude Code loads an agent's definition and preloads the skills its front matter lists, so
+// nothing here reads or passes on an agent's or a skill's text.
 async function fableAgent(prompt, options) {
   const schema = options && options.schema
   const artifactSchema = schema && schema.type === 'object' && Array.isArray(schema.required) && schema.required.length === 1 && schema.required[0] === 'artifactPath' && schema.properties && schema.properties.artifactPath && schema.properties.artifactPath.type === 'string'
@@ -41,7 +48,8 @@ async function fableAgent(prompt, options) {
   options = runtimeOptions
   const agentType = (options && options.agentType) || null
   const isFable = fableTypes.has(String(agentType || '').replace(/^agent-teams-workforce:/, ''))
-  const call = isFable && fableFallback ? { ...options, model: 'opus' } : options
+  const resolved = agentType ? { ...options, agentType: atwAgentType(agentType) } : options
+  const call = isFable && fableFallback ? { ...resolved, model: 'opus' } : resolved
   try {
     return await agent(`OUTPUT_MODE: ${outputMode}\n\n${prompt}`, call)
   } catch (error) {

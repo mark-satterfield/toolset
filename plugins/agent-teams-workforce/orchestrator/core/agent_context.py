@@ -1,9 +1,10 @@
 """The launcher: a session run as a predefined agent, its settings, and fact-only briefs.
 
-A session is launched as the predefined agent by its plain front-matter name. Claude Code loads
-the agent's definition (the user-level copy of an agent with ``mcpServers`` wins by precedence),
-preloads the skills its front matter lists, and applies its tools, effort and MCP servers. The
-launcher passes no agent or skill text and computes no flag from them.
+A session is launched as the predefined agent under the plugin's name,
+``agent-teams-workforce:<name>``: it loads only project settings, so the user-level agent copies
+are not registered, and Claude Code registers a plugin agent only under that prefix. Claude Code
+loads the agent's definition, preloads the skills its front matter lists, and applies its tools
+and effort. The launcher passes no agent or skill text and computes no flag from them.
 """
 
 from __future__ import annotations
@@ -36,6 +37,8 @@ SAFETY_HOOKS = frozenset({
     "aws-profile-required.sh",
 })
 
+AGENT_PREFIX: Final = "agent-teams-workforce:"
+"""The prefix under which Claude Code registers this plugin's agents."""
 BACKGROUND_TASKS_ENV: Final = "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"
 SESSION_ENV: Final[Mapping[str, str]] = MappingProxyType({BACKGROUND_TASKS_ENV: "1"})
 """Every session's settings: every start blocks."""
@@ -235,8 +238,8 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
     """Write private session settings and construct Claude CLI arguments.
 
     Returns:
-        Explicit arguments selecting the agent by its plain name, the model, the settings and
-        the plugin.
+        Explicit arguments selecting the agent by its name under the plugin prefix, the model,
+        the settings and the plugin.
 
     Raises:
         TypeError: Session inputs do not satisfy the preparation contract.
@@ -253,7 +256,7 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
     write_json(directory / "settings.json", session_settings(config))
     command: list[str] = [
         "--agent",
-        step.agent,
+        f"{AGENT_PREFIX}{step.agent}",
         "--model",
         launch_model(launched, launch),
         "--setting-sources",

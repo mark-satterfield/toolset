@@ -317,7 +317,7 @@ path and the ids of the rows it is to read, the PRD sections, and an earlier ans
 one bears on it. Never write a summary of them into the request.
 
 Issue all independent requests at once: every question and every draft review in ONE message,
-as concurrent `Agent` calls, each starting a specialist by its plain name as the
+as concurrent `Agent` calls, each starting a specialist by the name the
 `subagent-contract` skill says and naming its request file. Ask a follow-up of a specialist you
 started with `SendMessage`, so that it does not read everything again. Ask in a second round only
 what the first round's answers raise, again all at once.

@@ -52,11 +52,14 @@ import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { artifactCapabilityProblems } from './artifact-capabilities.mjs'
+import { createRequire } from 'node:module'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const WORKFLOWS = join(HERE, '..', 'workflows')
 
 const WRITE_COMMAND = 'node scripts/shared-blocks.mjs --write'
+
+const { userLevelAgentNames } = createRequire(import.meta.url)('../hooks/lib/user-level-agents.cjs')
 
 /**
  * The build and deploy lane's workflows, being rewritten on their own schedule. Their committed
@@ -106,7 +109,7 @@ export const SHARED_BLOCKS = Object.freeze([
   {
     name: 'fable',
     canonical: 'scripts/shared-blocks/fable.js',
-    filledFrom: 'skills/pipeline-contracts/schemas/driver-surface.schema.json',
+    filledFrom: 'skills/pipeline-contracts/schemas/driver-surface.schema.json and agents/*.md',
     requiredIn: [
       'adversarial.js',
       'built-version.js',
@@ -279,7 +282,16 @@ export const canonicalBlock = (name) => {
     return fillPlaceholders(name, text, fills)
   }
   if (name !== 'fable') return text
-  return fillPlaceholders(name, text, [['/* DRIVER_SURFACE_SCHEMA */ {}', pluginJson(blockOf(name).filledFrom)]])
+  const userLevel = new Set(userLevelAgentNames(PLUGIN_ROOT))
+  const pluginOnly = readdirSync(join(PLUGIN_ROOT, 'agents'))
+    .filter((f) => f.endsWith('.md'))
+    .map((f) => f.slice(0, -'.md'.length))
+    .filter((agent) => !userLevel.has(agent))
+    .sort()
+  return fillPlaceholders(name, text, [
+    ['/* DRIVER_SURFACE_SCHEMA */ {}', pluginJson('skills/pipeline-contracts/schemas/driver-surface.schema.json')],
+    ['/* PLUGIN_ONLY_AGENTS */ []', JSON.stringify(pluginOnly)],
+  ])
 }
 
 /**
