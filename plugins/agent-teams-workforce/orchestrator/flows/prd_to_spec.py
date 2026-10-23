@@ -43,7 +43,7 @@ from orchestrator.core.handback_contract import (
     EventName,
 )
 from orchestrator.core.io import JsonValue, json_object, write_json
-from orchestrator.core.journal_registry import script_step
+from orchestrator.core.journal_registry import fills, script_step
 from orchestrator.core.journal_run import JournalRunner, open_journal
 from orchestrator.core.journal_steps import Completion, StepRun, file_artifact, value_artifact
 from orchestrator.core.models import RunContext, StepError
@@ -78,6 +78,7 @@ from orchestrator.flows.elaboration_files import (
     SCORE,
     SPECS_CONTAINER,
     STORY_EDGES,
+    STORY_WRITE,
     TASKS_CONTAINER,
 )
 from orchestrator.flows.elaboration_result import journal_result
@@ -131,6 +132,13 @@ class _Lifecycle(TypedDict):
     start: NotRequired[Started | Refused]
     release: NotRequired[Released | JsonObject]
     finish: NotRequired[Finished]
+
+
+fills(ARCHITECTURE, OPEN_RUN)
+fills(TASKS_CONTAINER, SPAN, STORY_WRITE)
+"""The steps that fill the containers :func:`outermost_steps` plans empty: the open-run step plans
+the architecture steps; the span plans the repositories' containers whose Story bead write plans
+each repository's Tasks container."""
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

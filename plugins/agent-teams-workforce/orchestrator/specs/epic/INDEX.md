@@ -25,7 +25,10 @@ started and whose script key or agent has no code in the registry is replanned f
 current plan for its position (`journal_run.replan_unhandled`: the key or agent, description and
 purpose; its id and inputs stay); a step that has started or is done is never changed. Before the
 first step runs, the run checks every step without child steps that is not done against the
-registry and fails with one error naming every key that still has no code. A step is handed each file it reads as an artifact of a step its `inputs` name;
+registry and fails with one error naming every key that still has no code, and every empty
+container (no agent, no script, no child steps) that no step before it that is not done fills: the
+flow names the steps that fill each container it plans empty (`journal_registry.fills`; the
+open-run step fills Architecture, the span and the Story bead write fill Tasks). A step is handed each file it reads as an artifact of a step its `inputs` name;
 the Consumers column gives that artifact's name where the step reads it by name.
 
 The Format column names each file's contract; it never restates fields. A schema file named there

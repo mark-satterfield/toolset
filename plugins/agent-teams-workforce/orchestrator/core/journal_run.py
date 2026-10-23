@@ -302,11 +302,36 @@ def unhandled_steps(journal: Journal, registry: Registry) -> list[Step]:
     ]
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def unfilled_containers(journal: Journal, registry: Registry) -> list[Step]:
+    """List the empty containers a run would reach that no step can fill any more.
+
+    Returns:
+        In walk order, each step that is not done, has no agent, no script and no child steps,
+        and has no step before it in walk order that is not done and that the registry names as
+        one that fills it (``Registry.fills``).
+
+    """
+    ordered: list[Step] = step_journal.steps_in_order(journal)
+    return [
+        step
+        for position, step in enumerate(ordered)
+        if not step["steps"]
+        and step["status"] != STATUS_DONE
+        and "script" not in step
+        and "agent" not in step
+        and not any(
+            earlier["status"] != STATUS_DONE and registry.fills_container(earlier, step["description"])
+            for earlier in ordered[:position]
+        )
+    ]
+
+
 class UnregisteredStepError(LookupError):
-    """Steps a run would reach name a script key or an agent the registry holds no code for."""
+    """Steps a run would reach have no code: a script key or agent without code, or an empty container no step fills."""
 
     def __init__(self, steps: Sequence[Step]) -> None:
-        """Name every such step, its description and the key or agent it names.
+        """Name every such step, its description and the key or agent it names, or that nothing fills it.
 
         Args:
             steps: The steps without code, in walk order; at least one.
@@ -320,7 +345,10 @@ class UnregisteredStepError(LookupError):
             raise ValueError(message)
         self.stage: str = stage_of(steps[0])
         self.evidence: tuple[str, ...] = tuple(
-            f"step {step['id']} ({step['description']}): no code is registered for {stage_of(step)!r}" for step in steps
+            f"step {step['id']} ({step['description']}): no code is registered for {stage_of(step)!r}"
+            if "script" in step or "agent" in step
+            else f"step {step['id']} ({step['description']}): an empty container that no step before it fills"
+            for step in steps
         )
         super().__init__("; ".join(self.evidence))
 
@@ -335,10 +363,14 @@ def require_handled(journal: Journal, registry: Registry) -> None:
 
     Raises:
         UnregisteredStepError: A step that is not done names a script key or an agent the
-            registry holds no code for; it names every such step.
+            registry holds no code for, or is an empty container that no step before it that is
+            not done fills (:func:`unfilled_containers`); it names every such step.
 
     """
-    unhandled: list[Step] = unhandled_steps(journal, registry)
+    missing: set[StepId] = {
+        step["id"] for step in [*unhandled_steps(journal, registry), *unfilled_containers(journal, registry)]
+    }
+    unhandled: list[Step] = [step for step in step_journal.steps_in_order(journal) if step["id"] in missing]
     if unhandled:
         raise UnregisteredStepError(unhandled)
 

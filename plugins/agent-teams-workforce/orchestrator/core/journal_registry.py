@@ -11,6 +11,11 @@ structured error.
 A flow that plans steps under a container while the run goes (not when the journal is created)
 also registers the plans it makes there with ``plan_under``, so a journal written before a step
 key was renamed can be replanned from the lane's current plan for that position.
+
+A container a journal plans with no child steps is filled while the run goes, by a step that
+plans steps under it or plans the steps that do. Its flow names the script keys and agents of
+those steps with ``fills``, so a run whose empty container no step can fill any more fails before
+its first step, not when it reaches the container.
 """
 
 from __future__ import annotations
@@ -39,6 +44,7 @@ class Registry:
         self._agents: dict[str, AgentBuilder] = {}
         self._any_agent: tuple[frozenset[str], AgentBuilder] | None = None
         self._containers: dict[str, tuple[StepPlan, ...]] = {}
+        self._fillers: dict[str, frozenset[str]] = {}
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def plan_under(self, container: str, *plans: StepPlan) -> None:
@@ -66,6 +72,36 @@ class Registry:
 
         """
         return self._containers.get(container, ())
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def fills(self, container: str, *keys: str) -> None:
+        """Register the script keys and agents of the steps that fill an empty container.
+
+        A step fills the container when it plans steps under it, or plans the steps that do.
+
+        Args:
+            container: The description of the container step.
+            keys: The script keys and agent names; added to those already registered.
+
+        Raises:
+            ValueError: ``container`` is blank, or no key is given or one is blank.
+
+        """
+        if not container.strip() or not keys or any(not key.strip() for key in keys):
+            message: str = f"the container {container!r} or the keys {keys!r} that fill it are blank or missing"
+            raise ValueError(message)
+        self._fillers[container] = self._fillers.get(container, frozenset()) | frozenset(keys)
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def fills_container(self, step: Step, container: str) -> bool:
+        """Tell whether a step is one that fills a container.
+
+        Returns:
+            True when the step's script key or agent is registered as a filler of the container.
+
+        """
+        key: str | None = step.get("script") or step.get("agent")
+        return key is not None and key in self._fillers.get(container, frozenset())
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def handles(self, step: Step | StepPlan) -> bool:
@@ -214,3 +250,4 @@ script_step: Final = REGISTRY.script_step
 agent_step: Final = REGISTRY.agent_step
 any_agent_step: Final = REGISTRY.any_agent_step
 plan_under: Final = REGISTRY.plan_under
+fills: Final = REGISTRY.fills
