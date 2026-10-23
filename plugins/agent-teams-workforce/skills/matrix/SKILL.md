@@ -75,7 +75,7 @@ with direction and meaning, are in [references/model.md](references/model.md).
 | Shared capabilities the work on some entries must use | `atw-matrix uses --ids <id> ...` |
 | What a Story building some entries of a stack must be handed | `atw-matrix story-scope --stack stack:<id> --ids <id> ...` |
 | Documents an Epic reaches that are not effective | `atw-matrix review-scope --epic <beads id>` |
-| Which of an Epic's content is approved | `atw-matrix approval --epic <beads id>` |
+| Which of an Epic's content is approved, by the rule of reach | `atw-matrix approval --epic <beads id>` |
 | Open Tasks that name an entry / that a change affects / what a Story built | `atw-matrix work --id <id>` / `affected --id <id>` / `built --story <id>` |
 | Counts; repository-side entries with no architecture counterpart | `atw-matrix summary [--unlinked]` |
 | Does the file meet its contract? | `atw-matrix check` |
@@ -95,7 +95,11 @@ closure. Never answer "which Epics reach X" from the closure either.
 **The rule of reach.** An Epic reaches an entry when a document `covers` one of the Epic's
 requirements under the same heading that the entry's `describedBy` names, or when a feature
 serving one of its requirements is `realizedBy` the entry. It reaches a stack when an entry so
-reached is the stack, has its home in it (`homeIn`), or `correspondsTo` an entry that does.
+reached is the stack, has its home in it (`homeIn`), or `correspondsTo` an entry that does. It
+reaches the direct far end of each dependency that starts at such an entry or stack, one hop,
+never the dependency family outward. This is the Epic's approval scope
+(`matrixtraverse.approval_scope`): what `atw-matrix approval --epic` lists, what the architect
+reviews and what promotion approves.
 `atw-matrix epic <id> --realizers` applies the same heading match per feature.
 
 Example: Epic `ssbd-mx3vn` reaches `service:skillspoke-push-service` because
@@ -130,7 +134,7 @@ feature with no covering document), `requirementsReachNothing`, `requirementsNoS
 
 | Field | On | Meaning | Who sets it, when, how |
 |---|---|---|---|
-| `approved: {epic}` | any entry or relationship | The architecture and design of that Epic, its owner, are approved, and the matrix and arc42 are filled out or corrected for it. The only thing that settles an entry; `effective` does not. | Only the promotion step of elaboration (`orchestrator/flows/architecture_promotion.py`, calling `matrixwrite.approve` as role `script`) on the Epic's approval scope, its reach by the rule of reach in the corrected matrix (`atw-matrix approval --epic <id>` shows it), once its reviews pass; it never overwrites a flag naming another Epic. No `atw-matrix` command and no session sets it. Any later change to the entry or relationship, or to the heading text that describes it, clears it on that item alone. |
+| `approved: {epic}` | any entry or relationship | Settled: its owner, the Epic whose architecture and design approved it, and the matrix and arc42 are filled out or corrected for that Epic. Only this flag settles an entry; a document's `effective` lifecycle does not. | Only the promotion step of elaboration (`orchestrator/flows/architecture_promotion.py`, calling `matrixwrite.approve` as role `script`) on the Epic's approval scope, its reach by the rule of reach in the corrected matrix (`atw-matrix approval --epic <id>` shows it), once its reviews pass. It never replaces a flag that names another Epic: that item keeps its owner. No `atw-matrix` command and no session sets it. Any later change to the entry or relationship, or to the heading text that describes it, clears it on that item alone; the next Epic whose review approves it then owns it. |
 | `verified: {commit}` | any entry or relationship | It was built and tested: the CI checks and the test that its CDK deployment works (the deployment may be removed again after the test). A property of the stack or component itself, valid for every Epic that relates to it. Verified = real, its code trusted; not verified = still to be made real, used like anything else. | Only the build driver (`ops/sdlc-automation/matrixmarks.py`), when a Story's test passes: `atw-matrix verify --story <id> --commit <the tested commit>` as role `build-driver`, on what the Story's Tasks state they built (`built`) and the relationships starting there. A merge never sets it; the merge is a separate step after the test. A known change to what the item must be built as (the entry or relationship itself, the heading text that describes it, or an architecture-side relationship starting at it) clears it on that item alone; the next build and test sets it again. |
 | `lifecycle` | `document` | Mirrors the arc42 front matter: `effective` (promoted), `in-review`, `draft`. It approves nothing: an effective document whose entries are not approved is draft. | `atw-matrix sync-documents`; the promotion step after `depscore.py arch-approve`. |
 | `side` | everything | `architecture` (authority) or `repository` (hint). | Whoever records the fact: `put` and `link` take `--side`. |

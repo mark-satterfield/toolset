@@ -220,9 +220,11 @@ Epic's elaboration has validated and filled out the architecture and design (the
 details) for the Epic, all of that is approved, and the matrix is filled out or corrected for
 that Epic, the matrix content the Epic reaches is set to approved. The corrections to arc42
 are made with it. That content is the Epic, its requirements, every entry the architecture
-side states that the Epic reaches from them, and the architecture-side relationships between
-those entries. What is read from the repositories is a hint and is never approved. The flag
-names the Epic whose approval set it. The approval clears from an entry or a relationship
+side states that the Epic reaches from them by the rule of reach (what its elaboration needs,
+never the closure), and the architecture-side relationships between those entries; it is the
+same set the Epic's architect reviews. What is read from the repositories is a hint and is never
+approved. The flag names its owner, the Epic whose approval set it, and an approval never
+replaces a flag that names another Epic. The approval clears from an entry or a relationship
 when anything other than its flags changes: when the entry or relationship is replaced by one
 that differs, when the text that describes it in a document changes (only the entries whose
 describing text changed lose the flag; the other entries the same document describes keep it,

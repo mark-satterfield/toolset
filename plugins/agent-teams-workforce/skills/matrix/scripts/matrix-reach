@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # matrix-reach <query> ... — the transitive matrix questions one atw-matrix read does not answer, by the
-# rule of reach in matrix_reach.py (same document heading, or realizedBy; no stack dependencies):
+# rule of reach (matrixtraverse.rule_reach: same document heading, or realizedBy; dependencies one hop only):
 #   epics-reaching <entry id>     the Epics that reach the entry, with the document headings or features that do
 #   epic-needs <beads id>         the services, components, infrastructure, stacks and repositories an Epic
 #                                 reaches, and its gaps

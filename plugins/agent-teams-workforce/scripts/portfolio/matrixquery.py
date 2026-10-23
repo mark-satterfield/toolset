@@ -1572,7 +1572,8 @@ def approval_view(matrix: Matrix, bead: str) -> ApprovalView:
     """List which of the matrix content an Epic reaches carries the approved flag.
 
     The content is ``matrixtraverse.approval_scope``: the Epic, its requirements and every
-    architecture-side entry it reaches, with the architecture-side relationships between them. An
+    architecture-side entry it reaches by the rule of reach, with the architecture-side
+    relationships between them. An
     Epic the matrix does not hold raises ``MatrixError``, and an empty beads id raises
     ``ValueError`` from ``epic_id``.
 

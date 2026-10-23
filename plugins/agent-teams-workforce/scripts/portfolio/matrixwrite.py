@@ -152,18 +152,30 @@ class SettleResult(TypedDict):
     entry: View
 
 
+class KeptFlag(TypedDict):
+    """One entry of an Epic's approval scope whose flag names another Epic, which :func:`approve` left."""
+
+    id: EntryId
+    approvedBy: str
+    """The beads id of the Epic the flag names: the entry's owner."""
+
+
 class ApproveResult(TypedDict):
     """What :func:`approve` did."""
 
     epic: EntryId
     entries: list[EntryId]
-    """The entries the Epic reaches, each now carrying the flag, in id order."""
+    """The entries of the Epic's approval scope, in id order: each carries the Epic's flag or another Epic's."""
     relationships: int
-    """How many relationships between them now carry the flag."""
+    """How many relationships between them are in the scope."""
     marked: list[EntryId]
-    """The entries whose flag this call set or changed."""
+    """The entries whose flag this call set."""
     markedRelationships: int
-    """How many relationships had their flag set or changed by this call."""
+    """How many relationships had their flag set by this call."""
+    kept: list[KeptFlag]
+    """The entries whose flag names another Epic, left as they are, in id order."""
+    keptRelationships: int
+    """How many relationships carry another Epic's flag, left as they are."""
 
 
 class MoveResult(TypedDict):
@@ -655,8 +667,12 @@ def approve(matrix: Matrix, bead: str, role: Role) -> ApproveResult:
     pass, in the same matrix change that brings the promoted documents' entries up to date, so
     that the matrix and arc42 are filled out or corrected for the Epic first. The content is
     ``matrixtraverse.approval_scope``: the Epic, its requirements and every architecture-side
-    entry it reaches, with the architecture-side relationships between them. The flag names the
-    Epic. An entry or relationship that already carries the Epic's flag is left as it is. Only
+    entry it reaches by the rule of reach, with the architecture-side relationships between
+    them. The flag names its owner, the Epic. An entry or relationship that already carries the
+    Epic's flag is left as it is, and so is one whose flag names another Epic: an approval never
+    takes another Epic's ownership, and the result reports those under ``kept``. A change to an
+    item clears its flag (``Matrix.put``), after which the next Epic whose review approves it
+    owns it. Only
     the approved flag is set: the verified flag each item carries is left as it is, because
     approving the architecture says nothing about what is built (``Matrix.set_flags``). An Epic
     the matrix does not hold raises ``MatrixError``.
@@ -667,8 +683,8 @@ def approve(matrix: Matrix, bead: str, role: Role) -> ApproveResult:
         role: Who is running it.
 
     Returns:
-        The Epic, the entries and the count of relationships that carry the flag, and what this
-        call set or changed.
+        The Epic, the entries and the count of relationships in its scope, what this call set,
+        and what it left because another Epic owns it.
 
     Raises:
         MatrixRefusedError: The role is not the one that may set the flag.
@@ -685,23 +701,30 @@ def approve(matrix: Matrix, bead: str, role: Role) -> ApproveResult:
     epic: EntryId = make_id(KIND_EPIC, bead.strip())
     scope: ApprovalScope = approval_scope(matrix, epic)
     flag: Approved = Approved(epic=bead.strip())
-    unmarked: list[Relationship] = [held for held in scope.relationships if held.approved != flag]
+    unmarked: list[Relationship] = [held for held in scope.relationships if held.approved is None]
     relationship: Relationship
     for relationship in unmarked:
         matrix.set_flags(replace(relationship, approved=flag))
     marked: list[EntryId] = []
+    kept: list[KeptFlag] = []
     entry_id: EntryId
     for entry_id in scope.entries:
         entry: Entry = matrix.entry(entry_id)
-        if entry.approved != flag:
+        if entry.approved is None:
             matrix.set_flags(replace(entry, approved=flag))
             marked.append(entry_id)
+        elif entry.approved != flag:
+            kept.append({"id": entry_id, "approvedBy": entry.approved.epic})
     return {
         "epic": epic,
         "entries": list(scope.entries),
         "relationships": len(scope.relationships),
         "marked": marked,
         "markedRelationships": len(unmarked),
+        "kept": kept,
+        "keptRelationships": sum(
+            1 for held in scope.relationships if held.approved is not None and held.approved != flag
+        ),
     }
 
 

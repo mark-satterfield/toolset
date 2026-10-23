@@ -7,10 +7,14 @@ returns the relationships it followed, so that whatever renders the result can s
 came from.
 
 - :func:`dependencies`: the dependency family to any depth, in either direction.
-- :func:`epic_reach`: an Epic to everything its requirements reach, with the links of the Epic
-  that have nothing recorded at the other end; :func:`epic_touches`: what of that another Epic
-  could also reach; :func:`approval_scope`: the architecture-side part of that, which the
-  approved flag of the Epic covers.
+- :func:`epic_reach`: an Epic to everything its requirements reach, the closure, with the links
+  of the Epic that have nothing recorded at the other end; :func:`epic_touches`: what of that
+  another Epic could also reach.
+- :func:`rule_reach`: an Epic to what its elaboration needs by the rule of reach, each entry with
+  the links that put it there; :func:`approval_scope`: the architecture-side part of that, which
+  the architect reviews and the approved flag of the Epic covers; :func:`reach_rows`: each entry of
+  that scope with its owner, how it is reached, the Epics that share it and
+  :func:`entry_content_hash`.
 - :func:`constraints_for`: some entries to the constraints that bind them.
 - :func:`capabilities`: some entries to the shared capabilities the work that builds them must use.
 - :func:`impact`: an entry to everything a change to it reaches.
@@ -18,6 +22,8 @@ came from.
 ``matrixquery`` renders what these return as the objects the ``atw-matrix`` reads print.
 """
 
+import hashlib
+import json
 import re
 import sys
 from collections import deque
@@ -63,6 +69,7 @@ from matrix_contract import (
     MatrixError,
     Relationship,
     RelationshipKind,
+    entry_json,
     family_kinds,
 )
 from matrixstore import Matrix, RelationshipId, id_stack, make_id, relationship_id
@@ -108,6 +115,12 @@ SHARED_KINDS: Final[frozenset[EntryKind]] = frozenset({
     KIND_INFRASTRUCTURE,
 })
 """The kinds of entry two Epics are related through when both reach one."""
+VIA_EPIC: Final = "the Epic"
+"""How the Epic itself is in its own reach."""
+VIA_SEPARATOR: Final = "; "
+"""What joins the ways one entry is reached."""
+FLAG_MEMBERS: Final[frozenset[str]] = frozenset({"approved", "verified"})
+"""The members of a rendered entry that are flags, which an entry's content hash leaves out."""
 _CAMEL: Final[re.Pattern[str]] = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _WORD: Final[re.Pattern[str]] = re.compile(r"[a-z0-9]+")
 
@@ -185,14 +198,79 @@ class EpicReach:
 
 
 @dataclass(frozen=True, slots=True)
+class RuleReach:
+    """What one Epic reaches by the rule of reach, each entry with the links that put it there."""
+
+    epic: EntryId
+    requirements: Mapping[EntryId, frozenset[EntryId]]
+    """Each requirement of the Epic with the entries a covering heading or a serving feature reaches from it."""
+    features: Mapping[EntryId, frozenset[str]]
+    """Each feature that serves a requirement of the Epic, with the ``servedBy`` links that do."""
+    entries: Mapping[EntryId, frozenset[str]]
+    """Each entry a covering heading's ``describedBy`` or a serving feature's ``realizedBy`` names, with how."""
+    stacks: Mapping[EntryId, frozenset[EntryId]]
+    """Each stack reached, with the reached entries that place it."""
+    dependencies: Mapping[EntryId, frozenset[str]]
+    """The far end of each dependency that starts at a reached entry or stack, one hop, with the links."""
+
+    def ids(self) -> list[EntryId]:
+        """List every entry reached beyond the Epic's requirements and features.
+
+        Returns:
+            The entries, the stacks and the far ends of the dependencies, without repeats.
+
+        """
+        return list(dict.fromkeys([*self.entries, *self.stacks, *self.dependencies]))
+
+    def via(self) -> dict[EntryId, str]:
+        """Name, for each entry in reach, the links that put it there, as text.
+
+        Returns:
+            Each entry the Epic reaches, its requirements and features included, with its ways
+            sorted and joined by ``; ``; the Epic itself is in reach as the Epic.
+
+        """
+        ways: dict[EntryId, set[str]] = {self.epic: {VIA_EPIC}}
+        requirement: EntryId
+        for requirement in self.requirements:
+            ways.setdefault(requirement, set()).add(f"{REL_HAS_REQUIREMENT} from {self.epic}")
+        found: Mapping[EntryId, frozenset[str]]
+        for found in (self.features, self.entries, self.dependencies):
+            ways.update({entry_id: ways.get(entry_id, set()) | set(how) for entry_id, how in found.items()})
+        stack: EntryId
+        placing: frozenset[EntryId]
+        for stack, placing in self.stacks.items():
+            ways.setdefault(stack, set()).update(f"stack of {entry_id}" for entry_id in placing)
+        return {entry_id: VIA_SEPARATOR.join(sorted(how)) for entry_id, how in ways.items()}
+
+
+@dataclass(frozen=True, slots=True)
 class ApprovalScope:
     """The matrix content one Epic's elaboration reaches, which the Epic's approval sets the approved flag on."""
 
     epic: EntryId
     entries: tuple[EntryId, ...]
-    """The Epic, its requirements and every architecture-side entry it reaches, in id order."""
+    """The Epic, its requirements and every architecture-side entry it reaches by the rule of reach, in id order."""
     relationships: tuple[Relationship, ...]
     """Every architecture-side relationship between two of those entries, in the order the matrix holds them."""
+    via: Mapping[EntryId, str]
+    """Each of the entries with the links that put it in reach, as :meth:`RuleReach.via` names them."""
+
+
+@dataclass(frozen=True, slots=True)
+class ReachRow:
+    """One entry of an Epic's approval scope, as the architecture pack lists it."""
+
+    id: EntryId
+    kind: EntryKind
+    approved: str | None
+    """The beads id of the Epic the approved flag names (its owner); None when the entry is not approved."""
+    via: str
+    """The links that put the entry in the Epic's reach, as text."""
+    shared_with: tuple[str, ...]
+    """The beads ids of the other Epics whose approval scope holds the entry, in id order."""
+    content_hash: str
+    """:func:`entry_content_hash` of the entry."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -712,40 +790,276 @@ def epic_reach(
     )
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def approval_scope(matrix: Matrix, epic: EntryId) -> ApprovalScope:
-    """Name the matrix content an Epic's elaboration reaches, for the approved flag.
+type Heading = tuple[EntryId, str]
+"""A document and one heading of it."""
 
-    It is the Epic, its requirements, and what :func:`epic_reach` reaches from them that the
-    architecture side states: the features, the documents that describe them or what they reach,
-    the entries reached, their stacks and the far end of every dependency; with every
-    architecture-side relationship that joins two of those. What is in a repository today is a
-    hint and is left out. An Epic the matrix does not hold raises ``MatrixError``.
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def heading_index(matrix: Matrix) -> dict[Heading, list[EntryId]]:
+    """Index the entries the architecture side describes by the document heading that describes them.
+
+    Args:
+        matrix: The matrix.
+
+    Returns:
+        Each (document, heading) pair with the entries, other than features, whose
+        architecture-side ``describedBy`` names exactly that pair, in file order.
+
+    """
+    index: dict[Heading, list[EntryId]] = {}
+    describing: Relationship
+    for describing in matrix.relationships((REL_DESCRIBED_BY,)):
+        start: Entry | None = matrix.find(describing.start)
+        if describing.side != AUTHORITY_SIDE or start is None or start.kind == KIND_FEATURE:
+            continue
+        index.setdefault((describing.end, _heading(describing)), []).append(start.id)
+    return index
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def stacks_of(matrix: Matrix, entry_id: EntryId) -> set[EntryId]:
+    """Find the stacks an entry places: itself, its homes, and the homes of what it corresponds to.
+
+    Args:
+        matrix: The matrix.
+        entry_id: The entry's id.
+
+    Returns:
+        The stacks, as either side states the homes.
+
+    """
+    found: set[EntryId] = set()
+    item: EntryId
+    for item in (entry_id, *(relationship.end for relationship in matrix.outgoing(entry_id, (REL_CORRESPONDS_TO,)))):
+        stated: Entry | None = matrix.find(item)
+        if stated is None:
+            continue
+        if stated.kind == KIND_STACK:
+            found.add(item)
+        found.update(relationship.end for relationship in matrix.outgoing(item, (HOME_RELATIONSHIP,)))
+    return found
+
+
+def _requirement_reach(
+    matrix: Matrix,
+    requirement: EntryId,
+    index: Mapping[Heading, list[EntryId]],
+) -> tuple[dict[EntryId, set[str]], dict[EntryId, set[str]]]:
+    """Find the features and the entries one requirement reaches by the rule of reach.
+
+    Returns:
+        The features that serve the requirement, each with the ``servedBy`` link; and each entry
+        a covering heading's ``describedBy`` or a serving feature's ``realizedBy`` names, with how.
+
+    """
+    features: dict[EntryId, set[str]] = {}
+    found: dict[EntryId, set[str]] = {}
+    covering: Relationship
+    for covering in matrix.incoming(requirement, (REL_COVERS,)):
+        heading: str = _heading(covering)
+        entry_id: EntryId
+        for entry_id in index.get((covering.start, heading), ()):
+            found.setdefault(entry_id, set()).add(f"{covering.start.removeprefix(f'{KIND_DOCUMENT}:')}#{heading}")
+    serving: Relationship
+    for serving in matrix.outgoing(requirement, (REL_SERVED_BY,)):
+        features.setdefault(serving.end, set()).add(f"{REL_SERVED_BY} from {requirement}")
+        realizing: Relationship
+        for realizing in matrix.outgoing(serving.end, (REL_REALIZED_BY,)):
+            found.setdefault(realizing.end, set()).add(f"{REL_REALIZED_BY} {serving.end}")
+    return features, found
+
+
+def _one_hop(matrix: Matrix, starts: Collection[EntryId]) -> dict[EntryId, frozenset[str]]:
+    """Find the far end of each dependency that starts at one of some entries, one hop.
+
+    Returns:
+        Each far end that is not itself a start, with the dependency links that reach it.
+
+    """
+    family: frozenset[RelationshipKind] = family_kinds(FAMILY_DEPENDENCY)
+    far: dict[EntryId, set[str]] = {}
+    start: EntryId
+    for start in sorted(starts):
+        relationship: Relationship
+        for relationship in matrix.outgoing(start, family):
+            if relationship.end not in starts:
+                far.setdefault(relationship.end, set()).add(f"{relationship.kind} from {start}")
+    return {entry_id: frozenset(how) for entry_id, how in far.items()}
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def rule_reach(matrix: Matrix, epic: EntryId) -> RuleReach:
+    """Walk one Epic by the rule of reach: what its elaboration needs, never the closure.
+
+    It is :func:`rule_reach_indexed` with the heading index built for the one Epic; see there for the rule.
+    An entry that is not an Epic raises ``MatrixError``.
 
     Args:
         matrix: The matrix.
         epic: The Epic's entry id.
 
     Returns:
-        The entries and relationships the Epic's approval covers.
+        What the Epic reaches, each with how.
 
     """
-    reach: EpicReach = epic_reach(matrix, epic)
-    reached: dict[EntryId, None] = dict.fromkeys((epic, *reach.served, *reach.entries()))
-    describing: tuple[Relationship, ...]
-    for describing in reach.documents.values():
-        reached.update(dict.fromkeys(relationship.end for relationship in describing))
-    reaching: tuple[Way, ...]
-    for reaching in reach.ways.values():
-        reached.update(dict.fromkeys(way.document for way in reaching if way.document is not None))
-    entries: set[EntryId] = {entry_id for entry_id in reached if matrix.entry(entry_id).side == AUTHORITY_SIDE}
+    return rule_reach_indexed(matrix, epic, heading_index(matrix))
+
+
+def rule_reach_indexed(matrix: Matrix, epic: EntryId, headings: Mapping[Heading, list[EntryId]]) -> RuleReach:
+    """Walk one Epic by the rule of reach over a heading index built once for several walks.
+
+    The Epic reaches its requirements and the features that serve them; each entry a document
+    describes (``describedBy``) under the heading that ``covers`` one of its requirements; each
+    entry a serving feature is ``realizedBy``; the stack each such entry is, has its home in, or
+    corresponds to an entry homed in; and the direct far end of each dependency that starts at
+    one of those entries or stacks, one hop, never the dependency family outward. Supporting
+    features, whole documents and stack dependencies are not followed: each makes every Epic
+    reach every service. An entry that is not an Epic raises ``MatrixError``.
+
+    Returns:
+        What the Epic reaches, each with how.
+
+    Raises:
+        MatrixError: The entry is not an Epic.
+
+    """
+    if matrix.entry(epic).kind != KIND_EPIC:
+        message: str = f"{epic} is not an Epic"
+        raise MatrixError(message)
+    requirements: dict[EntryId, frozenset[EntryId]] = {}
+    features: dict[EntryId, set[str]] = {}
+    entries: dict[EntryId, set[str]] = {}
+    stacks: dict[EntryId, set[EntryId]] = {}
+    stated: Relationship
+    for stated in matrix.outgoing(epic, (REL_HAS_REQUIREMENT,)):
+        serving, found = _requirement_reach(matrix, stated.end, headings)
+        requirements[stated.end] = frozenset(found)
+        for feature, how in serving.items():
+            features.setdefault(feature, set()).update(how)
+        for entry_id, how in found.items():
+            entries.setdefault(entry_id, set()).update(how)
+            for stack in stacks_of(matrix, entry_id):
+                stacks.setdefault(stack, set()).add(entry_id)
+    starts: set[EntryId] = {*entries, *stacks}
+    return RuleReach(
+        epic=epic,
+        requirements=requirements,
+        features={feature: frozenset(how) for feature, how in features.items()},
+        entries={entry_id: frozenset(how) for entry_id, how in entries.items()},
+        stacks={stack: frozenset(placing) for stack, placing in stacks.items()},
+        dependencies=_one_hop(matrix, starts),
+    )
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def approval_scope(matrix: Matrix, epic: EntryId) -> ApprovalScope:
+    """Name the matrix content an Epic's elaboration reaches, for the review and the approved flag.
+
+    It is the Epic, its requirements, the features that serve them and what :func:`rule_reach`
+    reaches from them, as far as the architecture side states it, with every architecture-side
+    relationship that joins two of those. The architecture pack lists it, the check holds the
+    architect's verdicts to it and promotion approves it, so what is reviewed and what is
+    approved are one set. What is in a repository today is a hint and is left out. An Epic the
+    matrix does not hold raises ``MatrixError``.
+
+    Args:
+        matrix: The matrix.
+        epic: The Epic's entry id.
+
+    Returns:
+        The entries and relationships the Epic's approval covers, each entry with how it is reached.
+
+    """
+    return _scope(matrix, epic, heading_index(matrix))
+
+
+def _scope(matrix: Matrix, epic: EntryId, headings: Mapping[Heading, list[EntryId]]) -> ApprovalScope:
+    """Name an Epic's approval scope over a heading index built once for several Epics.
+
+    Returns:
+        :func:`approval_scope` of the Epic.
+
+    """
+    reach: RuleReach = rule_reach_indexed(matrix, epic, headings)
+    ways: dict[EntryId, str] = reach.via()
+    entries: list[EntryId] = sorted(entry_id for entry_id in ways if matrix.entry(entry_id).side == AUTHORITY_SIDE)
+    kept: set[EntryId] = set(entries)
     joining: list[Relationship] = [
         relationship
-        for entry_id in sorted(entries)
+        for entry_id in entries
         for relationship in matrix.outgoing(entry_id)
-        if relationship.side == AUTHORITY_SIDE and relationship.end in entries
+        if relationship.side == AUTHORITY_SIDE and relationship.end in kept
     ]
-    return ApprovalScope(epic=epic, entries=tuple(sorted(entries)), relationships=tuple(joining))
+    return ApprovalScope(
+        epic=epic,
+        entries=tuple(entries),
+        relationships=tuple(joining),
+        via={entry_id: ways[entry_id] for entry_id in entries},
+    )
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def entry_content_hash(entry: Entry) -> str:
+    """Hash what an entry states, so a later read can tell whether it changed.
+
+    Args:
+        entry: The entry.
+
+    Returns:
+        The SHA-256 hex digest of the entry as a matrix file holds it (``entry_json``), without
+        its approved and verified flags, as canonical JSON: keys sorted, no white space.
+
+    """
+    rendered: dict[str, JsonValue] = {
+        member: value for member, value in entry_json(entry).items() if member not in FLAG_MEMBERS
+    }
+    canonical: str = json.dumps(rendered, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def reach_rows(matrix: Matrix, epic: EntryId) -> list[ReachRow]:
+    """List each entry of an Epic's approval scope with its owner, how it is reached and who shares it.
+
+    An Epic the matrix does not hold raises ``MatrixError``.
+
+    Args:
+        matrix: The matrix.
+        epic: The Epic's entry id.
+
+    Returns:
+        One row per entry of :func:`approval_scope`, in id order: its kind, the Epic its approved
+        flag names, the links that put it in reach, the other Epics whose approval scope holds
+        it, and :func:`entry_content_hash`.
+
+    """
+    index: dict[Heading, list[EntryId]] = heading_index(matrix)
+    scope: ApprovalScope = _scope(matrix, epic, index)
+    sharing: dict[EntryId, list[str]] = {entry_id: [] for entry_id in scope.entries}
+    other: Entry
+    for other in matrix.entries((KIND_EPIC,)):
+        if other.id == epic:
+            continue
+        found: RuleReach = rule_reach_indexed(matrix, other.id, index)
+        reached: set[EntryId] = {*found.requirements, *found.features, *found.ids()}
+        entry_id: EntryId
+        for entry_id in scope.entries:
+            if entry_id in reached:
+                sharing[entry_id].append(other.id.removeprefix(f"{KIND_EPIC}:"))
+    rows: list[ReachRow] = []
+    for entry_id in scope.entries:
+        entry: Entry = matrix.entry(entry_id)
+        rows.append(
+            ReachRow(
+                id=entry_id,
+                kind=entry.kind,
+                approved=None if entry.approved is None else entry.approved.epic,
+                via=scope.via[entry_id],
+                shared_with=tuple(sorted(sharing[entry_id])),
+                content_hash=entry_content_hash(entry),
+            ),
+        )
+    return rows
 
 
 def _heading(relationship: Relationship) -> str:

@@ -244,10 +244,10 @@ class CommandRule:
 
 @dataclass(frozen=True, slots=True)
 class Approved:
-    """The approved flag: the architecture and design of the Epic that reaches it are approved."""
+    """The approved flag: settled, owned by the one Epic whose approved architecture and design reach it."""
 
     epic: str
-    """The beads id of the Epic whose architecture and design were approved."""
+    """The beads id of its owner, the Epic whose approval set it; another Epic's approval never replaces it."""
 
 
 @dataclass(frozen=True, slots=True)

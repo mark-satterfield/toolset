@@ -196,12 +196,18 @@ and arc42 are filled out or corrected for it.
 
 - **What it covers.** The matrix content the Epic's elaboration reaches,
   `matrixtraverse.approval_scope(matrix, epic)`: the Epic, its requirements, and what
-  `epic_reach` reaches from them that the architecture side states (the features, the
-  documents that describe them or what they reach, the entries reached, their stacks and
-  the far end of every dependency), with every architecture-side relationship that joins
-  two of those. Repository-side facts are hints and are not approved.
+  `rule_reach` reaches from them by the rule of reach that the architecture side states (the
+  features that serve the requirements, the entries a covering heading's `describedBy` or a
+  serving feature's `realizedBy` names, their stacks, and the direct far end of each
+  dependency from those, one hop), with every architecture-side relationship that joins two
+  of those. The closure (`epic_reach`) is not used: it makes every Epic reach every service.
+  The architecture pack lists the same scope (`reach_rows`, each entry with its owner, how it
+  is reached, the Epics that share it and `entry_content_hash`), and the check holds the
+  architect's verdicts to it, so what is reviewed and what is approved are one set.
+  Repository-side facts are hints and are not approved.
 - **Who sets it.** Only `matrixwrite.approve(matrix, bead, role)`, which refuses every role
-  but `script` (`APPROVING_ROLE`). The promotion step (`orchestrator/flows/architecture_promotion.py`
+  but `script` (`APPROVING_ROLE`). The flag names its owner: `approve` never replaces a flag
+  that names another Epic, and returns those items under `kept`. The promotion step (`orchestrator/flows/architecture_promotion.py`
   `_promote`) runs it once the Epic's reviews pass, in the same matrix change that brings the
   promoted documents' entries up to date and removes the settled disagreements, so the
   matrix and arc42 are corrected first. `put` and `link` take attributes only, and no
@@ -334,7 +340,7 @@ today, each marked with its side.
 | Q30 | `links --id <id> [--depth <n>] [--direction out\|in\|both] [--kinds <k,...>]` | Breadth first from the entry over every relationship (or the kinds named), outward by default, to any depth unless `--depth` bounds it; each entry is reached once and each relationship followed is returned with its depth, the direction and the far end. |
 | Q25 | `summary --unlinked` | `noArchitecture`: over the whole matrix, the entries with `side: repository`, of the kinds read from a repository (`matrixquery.FOUND_KINDS`: component, infrastructure, layer, stack), that no `correspondsTo` ends at. It is the other direction of Q13's `noCounterpart`. |
 | Q26 | `epic <id> --realizers` | For each feature Q12 reaches, the ends of its `realizedBy` relationships and every service, component, infrastructure, event or layer whose architecture-side `describedBy` names a document heading that `covers` one of the Epic's requirements by way of the feature. Each realizer is returned once with its architecture-side stack (`authority_holder`), that stack's `repository`, its `resourceType` when it has one and, for an event, its publishers; `noStack` lists the realizers with no such stack. |
-| Approval | `approval --epic <id>` | `matrixtraverse.approval_scope`: the Epic, its requirements and every architecture-side entry Q12 reaches, with the architecture-side relationships between them. Each entry is returned under `approved` (with `kind`, `name` and `approvedBy`, the Epic the flag names) when it carries `approved`, otherwise under `notApproved`; `relationships` and `approvedRelationships` count the relationships (section 1.4.1). |
+| Approval | `approval --epic <id>` | `matrixtraverse.approval_scope`: the Epic, its requirements and every architecture-side entry it reaches by the rule of reach, with the architecture-side relationships between them. Each entry is returned under `approved` (with `kind`, `name` and `approvedBy`, the Epic the flag names) when it carries `approved`, otherwise under `notApproved`; `relationships` and `approvedRelationships` count the relationships (section 1.4.1). |
 
 Three further reads serve single steps. `uses --ids <entry ids>` returns the shared
 capabilities the work that builds those entries must use (entries → `realizes` → features →
@@ -522,7 +528,7 @@ those lanes only as far as slices 29 and 31 of section 6 state.
 | Step | Where | Reads | Records |
 |---|---|---|---|
 | I1 Shared instruction text | `skills/subagent-contract/SKILL.md`, `agents/aws-solutions-architect.md`, `agents/built-architecture-comparer.md`, `agents/polyrepo-steward.md`, `skills/polyrepo-repo/SKILL.md`, and the preamble bundled into each `workflows/*.js` | The text states the approved and verified flags as section 1.4 does. | Nothing; no agent sets a flag. |
-| I2 How an agent uses the matrix | `skills/matrix/SKILL.md`, loaded by every agent whose definition calls `atw-matrix` and pointed to from `skills/graphrag-lookup/SKILL.md`; `skills/matrix/scripts/matrix-reach` | The model, which command answers which question (section 2), that `node` and `impact` are direct only, and the three transitive reads `matrix-reach` makes for every Epic by the rule of reach (a document covers one of the Epic's requirements under the heading that describes the entry, or a feature is realized by it; a stack through what is reached in it; no stack dependencies): the Epics that reach an entry, what an Epic reaches with its gaps, and the entries no Epic reaches. | Nothing. |
+| I2 How an agent uses the matrix | `skills/matrix/SKILL.md`, loaded by every agent whose definition calls `atw-matrix` and pointed to from `skills/graphrag-lookup/SKILL.md`; `skills/matrix/scripts/matrix-reach` | The model, which command answers which question (section 2), that `node` and `impact` are direct only, and the three transitive reads `matrix-reach` makes for every Epic by the rule of reach, `matrixtraverse.rule_reach` (a document covers one of the Epic's requirements under the heading that describes the entry, or a feature is realized by it; a stack through what is reached in it; the far end of a dependency from those, one hop only): the Epics that reach an entry, what an Epic reaches with its gaps, and the entries no Epic reaches. | Nothing. |
 
 ## 5. Replacement list
 
