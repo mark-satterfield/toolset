@@ -88,14 +88,6 @@
         {"id": "remove", "title": "Remove"}
       ]
     },
-    "dependency-assessment": {
-      "runner": "workflow",
-      "sets": [],
-      "phases": [
-        {"id": "assess", "title": "Assess"},
-        {"id": "score", "title": "Score"}
-      ]
-    },
     "probe": {
       "runner": "probe",
       "sets": ["attaching"],
@@ -105,6 +97,7 @@
   "retired": {
     "repair": {"sets": ["attaching"]},
     "incident": {"sets": ["attaching"]},
+    "dependency-assessment": {"sets": ["former-trigger"]},
     "task-dependency-assessment": {"sets": ["former-trigger"]},
     "wsjf-scoring": {"sets": ["former-trigger"]}
   }

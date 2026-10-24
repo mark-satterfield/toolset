@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema and composites.json this module was generated from.
-SOURCE_SHA256: Final[str] = "1bfc755c8f8a30689bdbd62f3b5de8434d8b2212fbc7e6609f328ce514f67c0b"
+SOURCE_SHA256: Final[str] = "5c197b79b56b517e2b627a80d3c18baae1835ca5073857d194b22eef1f6b799c"
 
 #: Every composite id, active then retired.
 type CompositeId = Literal[
@@ -24,10 +24,10 @@ type CompositeId = Literal[
     "story-deploy-fix",
     "deploy-mechanism",
     "built-version",
-    "dependency-assessment",
     "probe",
     "repair",
     "incident",
+    "dependency-assessment",
     "task-dependency-assessment",
     "wsjf-scoring",
 ]
@@ -37,10 +37,10 @@ STORY_DEPLOY: Final[CompositeId] = "story-deploy"
 STORY_DEPLOY_FIX: Final[CompositeId] = "story-deploy-fix"
 DEPLOY_MECHANISM: Final[CompositeId] = "deploy-mechanism"
 BUILT_VERSION: Final[CompositeId] = "built-version"
-DEPENDENCY_ASSESSMENT: Final[CompositeId] = "dependency-assessment"
 PROBE: Final[CompositeId] = "probe"
 REPAIR: Final[CompositeId] = "repair"
 INCIDENT: Final[CompositeId] = "incident"
+DEPENDENCY_ASSESSMENT: Final[CompositeId] = "dependency-assessment"
 TASK_DEPENDENCY_ASSESSMENT: Final[CompositeId] = "task-dependency-assessment"
 WSJF_SCORING: Final[CompositeId] = "wsjf-scoring"
 
@@ -83,8 +83,6 @@ type PhaseId = Literal[
     "compare",
     "correct",
     "remove",
-    "assess",
-    "score",
     "start",
     "work",
 ]
@@ -214,14 +212,6 @@ COMPOSITES: Final[Mapping[CompositeId, CompositeSpec]] = MappingProxyType({
         ),
         "sets": frozenset({"story"}),
     },
-    DEPENDENCY_ASSESSMENT: {
-        "runner": "workflow",
-        "phases": (
-            {"id": "assess", "title": "Assess"},
-            {"id": "score", "title": "Score"},
-        ),
-        "sets": frozenset({}),
-    },
     PROBE: {
         "runner": "probe",
         "phases": (),
@@ -265,11 +255,21 @@ STORY: Final[frozenset[CompositeId]] = frozenset({STORY_DEPLOY, STORY_DEPLOY_FIX
 #: The attaching set.
 ATTACHING: Final[frozenset[CompositeId]] = frozenset({PROBE, REPAIR, INCIDENT})
 #: The former-trigger set.
-FORMER_TRIGGER: Final[frozenset[CompositeId]] = frozenset({TASK_DEPENDENCY_ASSESSMENT, WSJF_SCORING})
+FORMER_TRIGGER: Final[frozenset[CompositeId]] = frozenset({
+    DEPENDENCY_ASSESSMENT,
+    TASK_DEPENDENCY_ASSESSMENT,
+    WSJF_SCORING,
+})
 #: The one elaboration composite.
 ELABORATION_COMPOSITE: Final[CompositeId] = PRD_TO_SPEC
 #: Ids no longer dispatched, kept only to attribute historical cost and ledger rows.
-RETIRED: Final[frozenset[CompositeId]] = frozenset({REPAIR, INCIDENT, TASK_DEPENDENCY_ASSESSMENT, WSJF_SCORING})
+RETIRED: Final[frozenset[CompositeId]] = frozenset({
+    REPAIR,
+    INCIDENT,
+    DEPENDENCY_ASSESSMENT,
+    TASK_DEPENDENCY_ASSESSMENT,
+    WSJF_SCORING,
+})
 #: Every composite id.
 KNOWN: Final[frozenset[CompositeId]] = frozenset(COMPOSITES) | RETIRED
 #: Composite -> the kind of bead it opens a run budget for.
