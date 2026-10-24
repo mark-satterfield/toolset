@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Compute the order in which Epics are architected and approved, from the matrix and beads alone.
+"""Compute every Epic-to-Epic dependency edge from the matrix alone, and replace the edges in beads with them.
 
-No model is called and no ordering is assumed: neither WSJF nor any rank enters the edges. An
+The owner runs it once, for the whole portfolio, before ``keeper.py`` runs. The Epics and
+everything that decides the edges are read from the matrix only. No model is called, no agent or
+workflow is started and no ordering is assumed: neither WSJF nor any rank enters the edges. An
 edge says that one Epic uses an architecture entry another Epic's own requirements define, so the
 user is elaborated after the definer (the driver). Both are read from the chain alone
 (``matrixtraverse.rule_reach``): Epic, ``hasRequirement``, requirement, ``servedBy``, feature,
@@ -23,9 +25,14 @@ members share a level. The rest is transitively reduced over the cycles taken as
 
 Two scenarios are computed: as the matrix stands (A), and as if every entry of a ``shared-*``
 stack were approved (B). ``--report`` writes the Markdown report (``epicorderreport.py``), with
-``--expect <waiter>:<driver>`` spot-checks; stdout carries one JSON summary. ``--apply`` writes
-the chosen scenario's edges as the owned beads ``tracks`` edges through ``edgeset.apply_edges``
-(the ``apply-edges`` path, every owned Epic edge at once); hand-made edges stay.
+``--expect <waiter>:<driver>`` spot-checks; stdout carries one JSON summary. ``--apply`` makes
+the Epic-to-Epic dependency edges in beads exactly the chosen scenario's edges: it removes every
+standing ``tracks`` and ``blocks`` edge between two Epics, whoever made it, and writes each
+computed edge as a ``tracks`` edge. It writes nothing else: no Task, Story, WSJF value or record.
+It refuses, writing nothing, a scenario whose edges close a cycle (every Epic in it would wait
+for good) or name an Epic beads does not hold. ``--apply --dry-run`` prints the removals, the
+additions and any such refusal, and writes nothing. Beads is read only to
+list the standing Epic-to-Epic edges (``--apply``, and the report's comparison with them).
 """
 
 from __future__ import annotations
@@ -42,9 +49,8 @@ import portfolio_path  # ruff: ignore[unused-import] - puts the beads-contract a
 
 # isort: split
 import beadgraph
-import edgeset
 from contracts import json_object
-from matrix_contract import KIND_STACK, EntryId
+from matrix_contract import KIND_EPIC, KIND_STACK, EntryId
 from matrixstore import Matrix, matrix_path, read_matrix
 from matrixtraverse import RuleReach, epic_id, rule_reach, stacks_of
 
@@ -64,14 +70,27 @@ RULE_CHAIN: Final = "realizedBy and homeIn"
 """The evidence that makes an Epic a unit's driver: its features are realized by the unit or by an entry homed in it."""
 SCENARIO_AS_IS: Final = "as-is"
 SCENARIO_SHARED: Final = "shared-approved"
+TITLE_PREFIX: Final = "Feature PRD: "
+EPIC_EDGE_TYPES: Final = (beadgraph.TRACKS, beadgraph.BLOCKS)
+"""The dependency types the pipeline reads as an Epic's prerequisites; ``--apply`` removes both between Epics."""
+LIST_EPICS: Final = ("list", "--type", "epic", "--all", "--json", "-n", "0", "--brief", "--readonly")
 
 
 @dataclass(frozen=True, slots=True)
 class Epic:
-    """One open Epic."""
+    """One Epic the matrix holds."""
 
     id: str
     title: str
+
+
+@dataclass(frozen=True, slots=True)
+class StandingEdge:
+    """One dependency edge between two Epics in beads: ``blocked`` depends on ``blocker``."""
+
+    blocker: str
+    blocked: str
+    kind: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,18 +144,14 @@ class Analysis:
     epics: Mapping[str, Epic]
     decisions: Mapping[Unit, Decision]
     orders: tuple[Order, ...]
-    current: Mapping[Pair, bool]
-    """Each standing ``tracks`` edge between two open Epics, with whether this system owns it."""
-    missing: tuple[str, ...]
-    """Open Epics the matrix does not hold."""
-    validation: Mapping[str, tuple[str, ...]]
-    """Each scenario's name with the cycle ``apply-edges`` would refuse its edges for (empty: accepted)."""
+    standing: tuple[StandingEdge, ...] | None
+    """Every dependency edge between two Epics in beads, or None when beads was not read."""
     checks: Mapping[str, tuple[Check, ...]]
     """Each scenario's name with its spot-checks."""
 
 
 def _reaches(matrix: Matrix, epics: Collection[str]) -> dict[str, RuleReach]:
-    """Walk every open Epic the matrix holds by the rule of reach.
+    """Walk every Epic the matrix holds by the rule of reach.
 
     Returns:
         Each Epic's beads id with what its chain reaches.
@@ -357,93 +372,82 @@ def check(result: Order, waiter: str, driver: str) -> Check:
     return Check(waiter, driver, path, result.raw.get((driver, waiter), ()))
 
 
-def read_epics(graph: beadgraph.Graph) -> dict[str, Epic]:
-    """Read the open Epics with their titles from the tracker.
+def read_epics(matrix: Matrix) -> dict[str, Epic]:
+    """Read every Epic the matrix holds, with its title.
 
     Returns:
-        Each open Epic by id.
+        Each Epic by its beads id.
 
     """
-    return {
-        bead.id: Epic(bead.id, bead.title.removeprefix("Feature PRD: ").strip())
-        for bead in graph.of_kind("epic")
-        if not bead.closed
-    }
+    prefix: str = f"{KIND_EPIC}:"
+    epics: list[Epic] = [
+        Epic(entry.id.removeprefix(prefix), entry.name.removeprefix(TITLE_PREFIX).strip())
+        for entry in matrix.entries((KIND_EPIC,))
+    ]
+    return {epic.id: epic for epic in epics}
 
 
-def current_edges(graph: beadgraph.Graph, epics: Collection[str]) -> dict[Pair, bool]:
-    """Read the standing ``tracks`` edges between open Epics, each with whether this system owns it.
+def _epic_beads(repo: Path | None) -> list[beadgraph.Bead]:
+    """List every Epic bead, closed ones included, with its dependencies, in one read-only ``bd`` call.
 
     Returns:
-        Each edge (blocker, blocked) with its ownership.
+        The Epic beads.
+
+    Raises:
+        beadgraph.GraphError: ``bd`` failed or did not return an array.
 
     """
-    return {
-        (blocker, bead.id): blocker in bead.owned_blockers
-        for bead in graph.of_kind("epic")
-        if bead.id in epics
-        for blocker in bead.tracked
-        if blocker in epics
-    }
+    payload: object = json.loads(beadgraph.run_bd(list(LIST_EPICS), repo))
+    if not isinstance(payload, list):
+        message: str = "`bd list --type epic --json` did not return an array"
+        raise beadgraph.GraphError(message)
+    return [beadgraph.bead_of(json_object(record)) for record in payload]
 
 
-def proposal(result: Order, decisions: Mapping[Unit, Decision], epics: Mapping[str, Epic]) -> list[edgeset.Edge]:
-    """Turn a scenario's edges into the edge proposal ``apply-edges`` takes.
+def standing_edges(beads: Iterable[beadgraph.Bead]) -> tuple[StandingEdge, ...]:
+    """Name every ``tracks`` and ``blocks`` edge whose two ends are Epics.
 
     Returns:
-        One edge per pair, with its reason and the matrix check that makes it.
+        Each edge, in (blocked, blocker) order.
 
     """
-    edges: list[edgeset.Edge] = []
-    for (blocker, blocked), units in result.edges.items():
-        first: Decision = decisions[units[0]]
-        more: str = f" (+{len(units) - 1} more entries)" if len(units) > 1 else ""
-        edges.append(
-            edgeset.Edge(
-                blocker=blocker,
-                blocked=blocked,
-                reason=(
-                    f"{epics[blocked].title} uses {first.label}, which {epics[blocker].title}'s requirements "
-                    f"define ({first.rule}){more}"
-                ),
-                confidence="medium",
-                arch_check=f"{', '.join(units)}: the matrix holds no approved flag on it (epicorder.py)",
-            ),
-        )
-    return edges
+    listed: list[beadgraph.Bead] = list(beads)
+    epic_ids: set[str] = {bead.id for bead in listed}
+    found: list[StandingEdge] = [
+        StandingEdge(blocker, bead.id, kind)
+        for bead in listed
+        for kind, blockers in ((beadgraph.TRACKS, bead.tracked), (beadgraph.BLOCKS, bead.blockers))
+        for blocker in blockers
+        if blocker in epic_ids
+    ]
+    return tuple(sorted(found, key=lambda edge: (edge.blocked, edge.blocker)))
 
 
-def _refusal(report: edgeset.ValidationReport) -> tuple[str, ...]:
-    if report["ok"]:
-        return ()
-    return tuple(report["cycle"]) or ("refused: " + json.dumps({k: v for k, v in report.items() if v}),)
+def analyse(matrix: Matrix, expected: Iterable[Pair], standing: tuple[StandingEdge, ...] | None) -> Analysis:
+    """Run the whole computation over one read of the matrix.
 
-
-def analyse(matrix: Matrix, graph: beadgraph.Graph, expected: Iterable[Pair]) -> Analysis:
-    """Run the whole computation over one read of the matrix and the tracker.
+    Args:
+        matrix: The matrix, the one source of the Epics and of the edges.
+        expected: The spot-checks to answer, each (waiter, driver).
+        standing: The Epic-to-Epic edges in beads, or None when beads was not read.
 
     Returns:
         Everything the report shows.
 
     """
-    epics: dict[str, Epic] = read_epics(graph)
-    missing: tuple[str, ...] = tuple(sorted(bead for bead in epics if matrix.find(epic_id(bead)) is None))
-    held: set[str] = set(epics) - set(missing)
-    decisions: dict[Unit, Decision] = decide(matrix, held)
+    epics: dict[str, Epic] = read_epics(matrix)
+    decisions: dict[Unit, Decision] = decide(matrix, epics)
     approved: set[Unit] = {unit for unit in decisions if is_approved(matrix, unit)}
     shared: set[Unit] = {unit for unit in decisions if is_shared(matrix, unit)}
     orders: tuple[Order, ...] = (
         order("A", decisions.values(), approved, epics),
         order("B", decisions.values(), approved | shared, epics),
     )
-    validation: dict[str, tuple[str, ...]] = {
-        result.name: _refusal(edgeset.validate(graph, proposal(result, decisions, epics))) for result in orders
-    }
     pairs: list[Pair] = list(expected)
     checks: dict[str, tuple[Check, ...]] = {
         result.name: tuple(check(result, waiter, driver) for waiter, driver in pairs) for result in orders
     }
-    return Analysis(epics, decisions, orders, current_edges(graph, epics), missing, validation, checks)
+    return Analysis(epics, decisions, orders, standing, checks)
 
 
 def summary(analysis: Analysis) -> JsonObject:
@@ -464,17 +468,72 @@ def summary(analysis: Analysis) -> JsonObject:
             "maxConcurrency": max(sizes),
             "longestChain": sum(len(step) for step in result.chain),
             "cycles": [list(cycle.members) for cycle in result.cycles],
-            "applyValid": not analysis.validation[result.name],
             "checks": [
                 {"waiter": c.waiter, "driver": c.driver, "waits": bool(c.path), "path": list(c.path)}
                 for c in analysis.checks[result.name]
             ],
         })
+    return {"epics": len(analysis.epics), "units": len(analysis.decisions), "scenarios": scenarios}
+
+
+def _refusal(chosen: Order, in_beads: Collection[str]) -> str:
+    """Say why the scenario's edges cannot be written, or nothing when they can.
+
+    A cycle would hold every Epic in it out of elaboration for good, and an edge onto an Epic beads
+    does not hold cannot be written.
+
+    Returns:
+        The reason, or an empty string.
+
+    """
+    absent: list[str] = sorted({bead for pair in chosen.edges for bead in pair} - set(in_beads))
+    cycles: list[str] = [", ".join(cycle.members) for cycle in chosen.cycles]
+    reasons: list[str] = [
+        *(f"the edges close a cycle among {members}" for members in cycles),
+        *([f"the matrix holds Epics beads does not: {', '.join(absent)}"] if absent else []),
+    ]
+    return "; ".join(reasons) + ("; nothing is written" if reasons else "")
+
+
+def replace_edges(
+    chosen: Order,
+    standing: tuple[StandingEdge, ...],
+    in_beads: Collection[str],
+    writer: beadgraph.Writer,
+) -> JsonObject:
+    """Remove every standing Epic-to-Epic edge, then write each of the scenario's edges as a ``tracks`` edge.
+
+    Args:
+        chosen: The scenario whose edges become the Epic-to-Epic edges.
+        standing: Every Epic-to-Epic edge in beads.
+        in_beads: The ids of the Epic beads.
+        writer: The tracker writer; a dry-run writer records the writes and makes none.
+
+    Returns:
+        The removals and additions, each listed, and why a real run would refuse them (empty: it would not).
+
+    Raises:
+        ValueError: Outside a dry run, the edges close a cycle or name an Epic beads does not hold; nothing
+            is written.
+
+    """
+    refusal: str = _refusal(chosen, in_beads)
+    if refusal and not writer.dry_run:
+        raise ValueError(refusal)
+    for edge in standing:
+        writer.bd(["dep", "remove", edge.blocked, edge.blocker])
+    for blocker, blocked in chosen.edges:
+        writer.bd(["dep", "add", blocked, blocker, "--type", beadgraph.TRACKS])
     return {
-        "openEpics": len(analysis.epics),
-        "units": len(analysis.decisions),
-        "missingFromMatrix": list(analysis.missing),
-        "scenarios": scenarios,
+        "scenario": chosen.name,
+        "dryRun": writer.dry_run,
+        "refused": refusal,
+        "removed": len(standing),
+        "added": len(chosen.edges),
+        "remove": [{"blocker": e.blocker, "blocked": e.blocked, "type": e.kind} for e in standing],
+        "add": [
+            {"blocker": blocker, "blocked": blocked, "type": beadgraph.TRACKS} for blocker, blocked in chosen.edges
+        ],
     }
 
 
@@ -489,17 +548,21 @@ def _pair(text: str) -> Pair:
 def _arguments(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--matrix", default=None, help="the matrix file (else ATW_MATRIX, else ATW_CONTROL_REPO)")
-    parser.add_argument("--repo", type=Path, default=None, help="the repository whose beads to read")
+    parser.add_argument("--repo", type=Path, default=None, help="the repository whose beads Epic edges to replace")
     parser.add_argument("--report", type=Path, default=None, help="write the Markdown report here")
     parser.add_argument("--expect", type=_pair, action="append", default=[], help="spot-check <waiter>:<driver>")
-    parser.add_argument("--apply", action="store_true", help="write the chosen scenario's edges as beads tracks edges")
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="replace every Epic-to-Epic edge in beads with the chosen scenario's edges",
+    )
     parser.add_argument("--scenario", choices=(SCENARIO_AS_IS, SCENARIO_SHARED), default=SCENARIO_AS_IS)
-    parser.add_argument("--dry-run", action="store_true", help="with --apply, list the writes and make none")
+    parser.add_argument("--dry-run", action="store_true", help="with --apply, list the removals and additions only")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Compute the order, write the report, and apply the chosen edges when asked.
+    """Compute the edges, write the report, and replace the Epic-to-Epic edges when asked.
 
     Returns:
         The exit status.
@@ -507,26 +570,19 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = _arguments(argv)
     matrix: Matrix = read_matrix(matrix_path(args.matrix, os.environ))
-    graph: beadgraph.Graph = beadgraph.load(args.repo)
-    analysis: Analysis = analyse(matrix, graph, args.expect)
+    beads: list[beadgraph.Bead] | None = _epic_beads(args.repo) if args.apply or args.report is not None else None
+    standing: tuple[StandingEdge, ...] | None = None if beads is None else standing_edges(beads)
+    analysis: Analysis = analyse(matrix, args.expect, standing)
     if args.report is not None:
         from epicorderreport import render  # ruff: ignore[import-outside-top-level] - the report module is needed only for --report.
 
         args.report.write_text(render(analysis), encoding="utf-8")
     out: JsonObject = summary(analysis)
-    if args.apply:
+    if args.apply and beads is not None and standing is not None:
         name: str = "A" if args.scenario == SCENARIO_AS_IS else "B"
         chosen: Order = next(result for result in analysis.orders if result.name == name)
         writer = beadgraph.Writer(args.repo, dry_run=args.dry_run)
-        applied: JsonObject = json_object(
-            edgeset.apply_edges(
-                graph,
-                proposal(chosen, analysis.decisions, analysis.epics),
-                writer,
-                edgeset.ApplyScope(seen={}, level="epic"),
-            ),
-        )
-        out["apply"] = {"scenario": name, **{k: v for k, v in applied.items() if k != "plan"}}
+        out["apply"] = replace_edges(chosen, standing, {bead.id for bead in beads}, writer)
     sys.stdout.write(json.dumps(out, indent=2) + "\n")
     return 0
 

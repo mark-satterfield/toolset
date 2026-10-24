@@ -732,7 +732,9 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
     relationship between Epics. `epicorder.py` derives the order from the chain: an Epic
     defines each entry a feature serving its requirements is `realizedBy` and the stack that
     entry has its home in, and uses the far end of each dependency, one hop, from what it
-    defines; every definer of an entry orders before every user of it.
+    defines; every definer of an entry orders before every user of it. It reads the Epics and
+    the chain from the matrix only, and its `--apply` removes every Epic-to-Epic dependency edge
+    in beads and writes the computed edges as `tracks` edges.
 20. **Events.** Entries. Q9 and requirement R17 need an event a stack publishes, and the
     EventBridge rule that matches it and the targets the rule routes it to, returned as
     things the stack depends on. A publisher and a consumer meet only at the event: the

@@ -4,10 +4,10 @@ Failure handling: bounded transient retries and quota pauses remain. An ordinary
 
 **Status: owner-run only, not part of the Epic pipeline.** The owner sets every Epic's
 dependencies once, before `keeper.py` runs, with `<plugin>/scripts/portfolio/epicorder.py`, which
-computes the order of every Epic from the matrix chain and, with `--apply`, writes every owned Epic
-`tracks` edge at once. The owner scores WSJF once, before `keeper.py` runs, with the `wsjf-scoring`
+computes every Epic's edges from the matrix alone and, with `--apply`, removes every Epic-to-Epic
+dependency edge in beads and writes the computed ones as `tracks` edges. The owner scores WSJF once, before `keeper.py` runs, with the `wsjf-scoring`
 flow. This flow is an owner-run judgment of one Epic's edges against the `epic-sequencing` edge
-test; the owned edges it writes are replaced at the next `epicorder.py --apply`. It scores nothing,
+test; the edges it writes are removed and replaced at the next `epicorder.py --apply`. It scores nothing,
 and nothing in the keeper, the supervisor, its lanes, elaboration, build or deploy starts it.
 
 Source: `<plugin>/workflows/dependency-assessment.js` (`meta.description`), the plugin command

@@ -1,4 +1,4 @@
-"""Render ``epicorder.py``'s analysis as the Markdown report the owner reads.
+"""Render ``epicorder.py``'s analysis, computed from the matrix alone, as the Markdown report the owner reads.
 
 Epic titles lead everywhere; bead ids follow in parentheses only.
 """
@@ -17,6 +17,8 @@ LISTED: Final = 3
 
 
 def _name(analysis: Analysis, bead: str) -> str:
+    if bead not in analysis.epics:
+        return f"{bead} (an Epic the matrix does not hold)"
     return f"{analysis.epics[bead].title} ({bead})"
 
 
@@ -79,58 +81,25 @@ def _details(summary: str, lines: list[str]) -> list[str]:
     return [f"<details><summary>{summary}</summary>", "", *lines, "", "</details>", ""]
 
 
-def _closing(result: Order, hand: Iterable[Pair]) -> list[Pair]:
-    successors: dict[str, set[str]] = {}
-    for start, end in result.raw:
-        successors.setdefault(start, set()).add(end)
-
-    def reaches(start: str, goal: str) -> bool:
-        seen: set[str] = set()
-        todo: list[str] = [start]
-        while todo:
-            node: str = todo.pop()
-            if node == goal:
-                return True
-            if node not in seen:
-                seen.add(node)
-                todo.extend(successors.get(node, ()))
-        return False
-
-    return sorted(pair for pair in hand if reaches(pair[1], pair[0]))
-
-
 def _diff(analysis: Analysis, result: Order) -> list[str]:
+    if analysis.standing is None:
+        return ["Beads was not read, so the standing Epic-to-Epic edges are not compared.", ""]
     proposed: set[Pair] = set(result.edges)
-    current: Mapping[Pair, bool] = analysis.current
-    hand: set[Pair] = {pair for pair, owned in current.items() if not owned}
-    owned: set[Pair] = set(current) - hand
-    added: list[Pair] = sorted(proposed - set(current))
-    closing: list[Pair] = _closing(result, hand)
+    standing: set[Pair] = {(edge.blocker, edge.blocked) for edge in analysis.standing}
+    kinds: list[str] = sorted({edge.kind for edge in analysis.standing})
     return [
         (
-            f"Current `tracks` edges between open Epics: {len(current)} — {len(hand)} made by hand, "
-            f"{len(owned)} owned by the pipeline. Proposed: {len(proposed)}."
+            f"Standing Epic-to-Epic edges in beads: {len(standing)} ({', '.join(kinds) or 'none'}). "
+            f"Computed: {len(proposed)}. `--apply` removes every standing edge, whoever made it, and writes "
+            "each computed edge as a `tracks` edge."
         ),
         "",
-        "Edges | Hand-made | Pipeline-owned",
-        "--- | --- | ---",
-        f"Also proposed (kept) | {len(hand & proposed)} | {len(owned & proposed)}",
-        f"Not proposed | {len(hand - proposed)} | {len(owned - proposed)}",
-        f"New (not in beads) | — | {len(added)}",
+        f"- Standing and computed (removed and written again): {len(standing & proposed)}.",
+        f"- Standing and not computed (removed): {len(standing - proposed)}.",
+        f"- Computed and not standing (new): {len(proposed - standing)}.",
         "",
-        "`--apply` replaces the pipeline-owned edges and never removes a hand-made edge.",
-        "",
-        (
-            f"Hand-made edges that run against the proposed edges (the proposed edges lead from the waiting Epic "
-            f"back to the one it waits for, so together they close a cycle): {len(closing)}."
-        ),
-        "",
-        *_details("Hand-made edges that close a cycle with the proposed edges", _listed(analysis, closing)),
-        *_details("Hand-made edges also proposed", _listed(analysis, sorted(hand & proposed))),
-        *_details("Hand-made edges not proposed", _listed(analysis, sorted(hand - proposed))),
-        *_details("Pipeline-owned edges also proposed", _listed(analysis, sorted(owned & proposed))),
-        *_details("Pipeline-owned edges not proposed", _listed(analysis, sorted(owned - proposed))),
-        *_details("New edges", _listed(analysis, added)),
+        *_details("Standing edges not computed", _listed(analysis, sorted(standing - proposed))),
+        *_details("New edges", _listed(analysis, sorted(proposed - standing))),
     ]
 
 
@@ -221,7 +190,7 @@ def _scenario(analysis: Analysis, title: str, result: Order) -> list[str]:
         "",
         *_cycles(analysis, result),
         "",
-        "### Diff against the current beads `tracks` edges",
+        "### Diff against the standing Epic-to-Epic edges in beads",
         "",
         *_diff(analysis, result),
         f"### Every edge ({len(result.edges)})",
@@ -244,14 +213,14 @@ def _summary(analysis: Analysis) -> str:
         else "no cycles appear"
     )
     return (
-        f"There are {len(analysis.epics)} open Epics. An edge now says only that one Epic uses an architecture "
+        f"The matrix holds {len(analysis.epics)} Epics. An edge now says only that one Epic uses an architecture "
         f"entry another Epic's own requirements define, so the user is elaborated after the definer; entries "
         f"no Epic defines (the VPC, the chassis library, the Cognito pool) make no edge, and no WSJF or other "
         f"ranking enters any edge. With nothing approved yet (scenario A), **{a_sizes[0]}** Epics can start now, "
         f"at most **{max(a_sizes)}** can be architected side by side in one level, and the longest chain is "
         f"**{_length(a)}** Epics across {len(a_sizes)} levels; {cycles}. If every `shared-*` entry were "
         f"already approved (scenario B), {b_sizes[0]} could start now, maximum concurrency would be "
-        f"{max(b_sizes)}, and the longest chain {_length(b)} Epics. Nothing was written to beads."
+        f"{max(b_sizes)}, and the longest chain {_length(b)} Epics. The report writes nothing to beads."
     )
 
 
@@ -259,11 +228,13 @@ def _method(analysis: Analysis) -> list[str]:
     rules: dict[str, int] = {}
     for decision in analysis.decisions.values():
         rules[decision.rule] = rules.get(decision.rule, 0) + 1
-    valid: str = "; ".join(f"{name}: {'no' if bad else 'yes'}" for name, bad in analysis.validation.items())
     lines: list[str] = [
         "## How the order was computed",
         "",
-        "Relationships used, all architecture side:",
+        (
+            "The Epics and every relationship below are read from the matrix only; relationships used, all "
+            "architecture side:"
+        ),
         "",
         (
             "- **Defines an entry.** An Epic defines each entry a feature serving one of its requirements is "
@@ -292,26 +263,8 @@ def _method(analysis: Analysis) -> list[str]:
             f"({', '.join(f'{rule}: {count}' for rule, count in sorted(rules.items()))}, by the evidence that "
             "chose the drivers)."
         ),
-        f"- `apply-edges` would accept each scenario's edges: {valid}.",
-        *_refused(analysis),
     ]
-    if analysis.missing:
-        lines.append(
-            "- Open Epics the matrix does not hold (no edges computed for them): "
-            + ", ".join(_name(analysis, bead) for bead in analysis.missing)
-            + ".",
-        )
     return [*lines, ""]
-
-
-def _refused(analysis: Analysis) -> list[str]:
-    return [
-        f"  - {name}: refused; with the edges `--apply` keeps, it would close: "
-        + " → ".join(_title(analysis, bead) for bead in cycle)
-        + "."
-        for name, cycle in analysis.validation.items()
-        if cycle
-    ]
 
 
 def render(analysis: Analysis) -> str:

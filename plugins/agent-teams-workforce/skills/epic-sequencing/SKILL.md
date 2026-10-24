@@ -23,15 +23,16 @@ produced it.
 ## Where Epic order comes from
 
 The owner sets every Epic's dependencies once, before `keeper.py` runs, with
-`scripts/portfolio/epicorder.py`: it computes the order of every Epic from the chain the matrix
-records (Epic, requirement, feature, `realizedBy`, `homeIn`) and, with `--apply`, writes every
-owned Epic `tracks` edge at once. WSJF is scored once, also before `keeper.py` runs, by the
+`scripts/portfolio/epicorder.py`: it reads the Epics and the chain the matrix records (Epic,
+requirement, feature, `realizedBy`, `homeIn`) from the matrix only, computes every Epic's edges
+from it and, with `--apply`, removes every Epic-to-Epic dependency edge in beads, whoever made it,
+and writes the computed edges as `tracks` edges. WSJF is scored once, also before `keeper.py` runs, by the
 owner's own `wsjf-scoring` run. Nothing in the keeper, the supervisor, its lanes, elaboration,
 build or deploy assesses an Epic's dependencies or scores anything.
 
 This skill's edge test is the judgment the owner applies when reviewing one Epic's edges with
-the `dependency-assessment` workflow, which only the owner runs. The owned edges that workflow
-writes are replaced at the next `epicorder.py --apply`.
+the `dependency-assessment` workflow, which only the owner runs. The edges that workflow
+writes are removed and replaced at the next `epicorder.py --apply`.
 
 ## What an Epic dependency is
 
