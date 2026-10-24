@@ -12,6 +12,8 @@ The script steps, each one read over all of its inputs with no judgment in it:
 - :func:`seed_inputs` (``seed-inputs``) writes the batch files the seeding sessions are handed,
   each filled up to a session's reading allowance.
 - :func:`list_proposed` (``seed-features --list``) lists the features the proposal files state.
+- :func:`seed_realizer_inputs` (``seed-realizers``) writes the batch files of the realizers
+  step from the features recorded, once the architecture and features steps are recorded.
 - :func:`seed_apply` (``seed-apply``) records what the sessions wrote: every entry and
   relationship of a result file with the side the step states, or the features of the proposal
   files as the merge file names them.
@@ -29,7 +31,9 @@ A session writes these files, all JSON objects (:func:`seed_directory` names whe
   ``features``, each with ``name``, ``purpose`` and ``documents``, each with ``document`` and
   ``heading``;
 - the merge file: ``features``, each with ``name``, ``purpose`` and optionally ``aliases`` and
-  ``proposed``, the proposed names that are this feature.
+  ``proposed``, the proposed names that are this feature or that it is split from;
+- a result file of the realizers step: ``relationships``, each ``realizedBy`` with ``from``, a
+  feature, and ``to``, an architecture-side entry that realizes it.
 """
 
 import json
@@ -49,12 +53,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "resourc
 from matrix_contract import (
     AUTHORITY_SIDE,
     ENTRY_RULES,
+    KIND_COMPONENT,
     KIND_DOCUMENT,
     KIND_EPIC,
     KIND_EVENT,
     KIND_FEATURE,
+    KIND_INFRASTRUCTURE,
+    KIND_LAYER,
     KIND_PACKAGE,
     KIND_REQUIREMENT,
+    KIND_SERVICE,
     KIND_STACK,
     LOCK_DIRECTORY,
     REL_COVERS,
@@ -62,6 +70,7 @@ from matrix_contract import (
     REL_DISTRIBUTED_AS,
     REL_HAS_REQUIREMENT,
     REL_IMPORTS,
+    REL_REALIZED_BY,
     REL_SERVED_BY,
     SIDE_ARCHITECTURE,
     SIDE_REPOSITORY,
@@ -107,13 +116,14 @@ from matrixsync import (
 )
 from naming_command import NamingCommandError, repository_type
 
-type SeedStep = Literal["architecture", "repository", "features"]
+type SeedStep = Literal["architecture", "repository", "features", "realizers"]
 type Outcome = Literal["created", "changed", "unchanged"]
 
 STEP_ARCHITECTURE: Final[Literal["architecture"]] = "architecture"
 STEP_REPOSITORY: Final[Literal["repository"]] = "repository"
 STEP_FEATURES: Final[Literal["features"]] = "features"
-SEED_STEPS: Final[tuple[SeedStep, ...]] = (STEP_ARCHITECTURE, STEP_REPOSITORY, STEP_FEATURES)
+STEP_REALIZERS: Final[Literal["realizers"]] = "realizers"
+SEED_STEPS: Final[tuple[SeedStep, ...]] = (STEP_ARCHITECTURE, STEP_REPOSITORY, STEP_FEATURES, STEP_REALIZERS)
 """The seeding steps whose sessions write files that :func:`seed_apply` records."""
 OUTCOME_CREATED: Final[Literal["created"]] = "created"
 OUTCOME_CHANGED: Final[Literal["changed"]] = "changed"
@@ -177,25 +187,55 @@ REPOSITORY_RESULT_HOLDS: Final = (
     "name of the stack that holds it; its id is then <kind>:<stack name>/<slug of the name>."
 )
 FEATURE_IS: Final = (
-    " A feature is one discrete capability of the product, named as something the product can do, recorded once: "
-    "no two features name the same capability, and one feature commonly serves several requirements, of one Epic "
-    "or of several. A condition, quality or rule about how a capability behaves is a requirement that capability's "
-    "feature serves, not a feature of its own."
+    " A feature is one discrete capability of the product, named as something the product can do, that one part "
+    "of the architecture provides (a service, component, infrastructure entry, layer or package, or a few of them "
+    "working together); it is recorded once: no two features name the same capability, and one feature commonly "
+    "serves several requirements, of one Epic or of several. A condition, quality or rule about how capabilities "
+    "behave is never a feature: empty, loading, unknown and error states, accessibility, who may see or change "
+    "data, confidence grading, checking output against its sources, latency, availability, privacy, security, "
+    "retention and audit are requirements that the feature of each capability they constrain serves. A name that "
+    'joins with "and", "or" or a comma two capabilities that different parts of the architecture provide names two '
+    "features: propose each."
 )
 """What a feature is, in brief, for a seeding session: the matrix requirements define it (section 3.1.1)."""
 PROPOSAL_HOLDS: Final = (
     'One JSON object per PRD, in the file named: "epic", the beads id, and "requirements", a list of '
     '{"requirement", "features"} with one item per requirement listed here. "features" is a list of {"name", '
     '"purpose", "documents"}, and "documents" a list of {"document", "heading"}. A requirement no feature serves '
-    'has "features": [], and a feature no document covers has "documents": [].' + FEATURE_IS
+    'has "features": [], and a feature no document covers has "documents": []. A requirement that states only a '
+    "condition, quality or rule is given the features of the capabilities it constrains, never a feature named "
+    "for the condition." + FEATURE_IS
 )
 MERGE_HOLDS: Final = (
     'One JSON object: "features", a list of {"name", "purpose", "aliases", "proposed"}. "proposed" lists the '
-    "proposed names that are this feature; the feature's own name need not be repeated in it. Every proposed "
-    "name is in exactly one feature. Two proposed features are one feature when they name the same capability: "
-    "the same part of the architecture would provide both. A proposed feature that bundles capabilities different "
-    "parts of the architecture provide is not merged into one of them. A proposed feature that is a feature the "
-    "matrix already holds takes that feature's name." + FEATURE_IS
+    "proposed names that are this feature or that it is split from; the feature's own name need not be repeated "
+    "in it. Every proposed name is in at least one feature. Two proposed features are one feature only when they "
+    "name the same capability: the same part of the architecture would provide both. A shared subject, screen, "
+    "channel, document or Epic is no reason to merge. A proposed feature that bundles capabilities different parts "
+    'of the architecture provide is split: it is listed under "proposed" of each feature it bundles, and no '
+    'feature is the bundle. A proposed feature that is a condition, quality or rule is listed under "proposed" of '
+    "the feature of each capability it constrains, and is no feature of its own. A proposed feature that is a "
+    "feature the matrix already holds takes that feature's name." + FEATURE_IS
+)
+REALIZER_KINDS: Final[frozenset[EntryKind]] = frozenset({
+    KIND_SERVICE,
+    KIND_COMPONENT,
+    KIND_INFRASTRUCTURE,
+    KIND_EVENT,
+    KIND_LAYER,
+    KIND_PACKAGE,
+    KIND_STACK,
+})
+"""The kinds of entry the realizers step joins a feature to: what is built, and the stack that holds it."""
+REALIZER_HOLDS: Final = (
+    'One JSON object: "relationships", a list of {"kind": "realizedBy", "from", "to"}. "from" is the id of a '
+    'feature of the batch; "to" is the id of an architecture-side service, component, infrastructure entry, event, '
+    "layer, package or stack the matrix holds that provides the feature's capability, alone or as one of the parts "
+    "that provide it together. Each feature of the batch gets every entry that realizes it and no other, and a "
+    "feature nothing the matrix holds realizes gets none. A feature's candidates are the entries that a document "
+    "heading describing the feature also describes: a hint to confirm, never the answer. Find the others with "
+    "atw-matrix find --kinds service,component,infrastructure,event,layer,package,stack --text, and confirm each "
+    'with atw-matrix node. The file holds no entry, and nothing carries "approved" or "verified".'
 )
 _REQUIREMENT_NAME: Final[re.Pattern[str]] = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 _NAME_SEPARATORS: Final[re.Pattern[str]] = re.compile(r"[-_.]+")
@@ -341,6 +381,16 @@ class InputsWritten(TypedDict):
     """Where the merge file of the feature proposals is to be written."""
     notSized: list[str]
     """The documents, PRDs and stacks left out of every batch because their files could not be found."""
+
+
+class RealizersWritten(TypedDict):
+    """What :func:`seed_realizer_inputs` did: also what ``seed-realizers`` prints."""
+
+    directory: str
+    allowance: int
+    realizers: list[BatchWritten]
+    notSized: list[str]
+    """The documents left out of the batch sizes because their files could not be found."""
 
 
 class ProposedName(TypedDict):
@@ -1287,6 +1337,119 @@ def seed_inputs(  # ruff: ignore[too-many-arguments] - One place per source the 
     }
 
 
+def _realizer_item(matrix: Matrix, feature: Entry) -> dict[str, JsonValue]:
+    """Describe one feature for the session that names what realizes it.
+
+    Returns:
+        The feature's id, name and purpose, the requirements it serves, the document headings that
+        describe it, the entries those headings also describe (its candidates) and what already
+        realizes it.
+
+    """
+    anchors: list[Relationship] = [
+        describing
+        for describing in matrix.outgoing(feature.id, (REL_DESCRIBED_BY,))
+        if describing.side == SIDE_ARCHITECTURE
+    ]
+    candidates: set[str] = {
+        str(other.start)
+        for anchor in anchors
+        for other in matrix.incoming(anchor.end, (REL_DESCRIBED_BY,))
+        if other.side == SIDE_ARCHITECTURE
+        and other.attributes.get(ATTR_HEADING) == anchor.attributes.get(ATTR_HEADING)
+        and matrix.entry(other.start).kind in REALIZER_KINDS
+    }
+    return {
+        "feature": feature.id,
+        "name": feature.name,
+        "purpose": feature.purpose,
+        "requirements": [serving.start for serving in matrix.incoming(feature.id, (REL_SERVED_BY,))],
+        "documents": [
+            {"document": anchor.end, "heading": anchor.attributes.get(ATTR_HEADING, "")} for anchor in anchors
+        ],
+        "candidates": [*sorted(candidates)],
+        "realizedBy": [realizing.end for realizing in matrix.outgoing(feature.id, (REL_REALIZED_BY,))],
+    }
+
+
+def _realizer_groups(matrix: Matrix, arch: Path, missing: list[str]) -> list[tuple[int, list[dict[str, JsonValue]]]]:
+    """Group the features by the first document that describes them, so one session reads each document once.
+
+    Returns:
+        One group per document, and one for the features no document describes, each weighed as
+        the bytes of its document and of its items; a document whose file is not found weighs
+        nothing and is listed.
+
+    """
+    groups: dict[str, list[dict[str, JsonValue]]] = {}
+    feature: Entry
+    for feature in matrix.entries((KIND_FEATURE,)):
+        anchors: list[EntryId] = sorted(
+            describing.end
+            for describing in matrix.outgoing(feature.id, (REL_DESCRIBED_BY,))
+            if describing.side == SIDE_ARCHITECTURE
+        )
+        groups.setdefault(anchors[0] if anchors else "", []).append(_realizer_item(matrix, feature))
+    sizes: dict[str, int | None] = {
+        document: _size(arch / document.partition(ID_SEPARATOR)[2]) if document else 0 for document in groups
+    }
+    missing.extend(document for document, size in sorted(sizes.items()) if size is None)
+    return [
+        (
+            (sizes[document] or 0) + sum(len(json.dumps(item, ensure_ascii=False)) for item in groups[document]),
+            groups[document],
+        )
+        for document in sorted(groups)
+    ]
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def seed_realizer_inputs(
+    matrix: Matrix,
+    *,
+    arch: Path,
+    directory: Path,
+    allowance: int = READING_ALLOWANCE,
+) -> RealizersWritten:
+    """Write the batch files of the realizers step, and change nothing in the matrix.
+
+    It runs once the architecture step and the features step are recorded: the architecture-side
+    entries and the features are then in the matrix. Each batch lists features, grouped by the
+    first document that describes them and filled up to the reading allowance, each with its
+    requirements, its document headings, its candidates and what already realizes it. The batch
+    files of an earlier run are replaced. A file that cannot be written raises ``MatrixError``.
+
+    Args:
+        matrix: The matrix, which holds the features and the architecture-side entries.
+        arch: The architecture root, which the document ids are paths under.
+        directory: The seeding folder (:func:`seed_directory`).
+        allowance: The bytes of text one session reads.
+
+    Returns:
+        The batch files written, and the documents whose files could not be found.
+
+    Raises:
+        ValueError: ``allowance`` is not positive.
+
+    """
+    if allowance <= 0:
+        message: str = f"the reading allowance {allowance} is not a positive number of bytes"
+        raise ValueError(message)
+    missing: list[str] = []
+    return {
+        "directory": str(directory),
+        "allowance": allowance,
+        "realizers": _write_batches(
+            directory,
+            STEP_REALIZERS,
+            _packed(_realizer_groups(matrix, arch, missing), allowance),
+            {"side": SIDE_ARCHITECTURE, "resultHolds": REALIZER_HOLDS},
+            "features",
+        ),
+        "notSized": missing,
+    }
+
+
 def _parse_proposal(file: Path) -> Proposal:
     """Read one proposal file.
 
@@ -1444,25 +1607,20 @@ def _parse_merge(file: Path) -> list[MergedFeature]:
     ]
 
 
-def _merge_index(file: Path, applied: Applied) -> dict[str, MergedFeature]:
+def _merge_index(file: Path) -> dict[str, list[MergedFeature]]:
     """Index the merge file by proposed name.
 
     Returns:
-        Each proposed name, and each feature's own name, as names are compared, with the feature
-        it is. A name two features claim stays with the first and is listed among the refusals.
+        Each proposed name, and each feature's own name, as names are compared, with the features
+        it is: one, or each feature a proposal that bundles capabilities is split into.
 
     """
-    index: dict[str, MergedFeature] = {}
+    index: dict[str, list[MergedFeature]] = {}
     feature: MergedFeature
     for feature in _parse_merge(file):
         name: str
         for name in dict.fromkeys(name_key(stated) for stated in (feature.name, *feature.proposed)):
-            if name in index and index[name] != feature:
-                applied["refused"].append(
-                    _refusal(file, feature.name, f"{name!r} is already the feature {index[name].name!r}"),
-                )
-            else:
-                index[name] = feature
+            index[name] = [*index.get(name, []), feature]
     return index
 
 
@@ -1532,19 +1690,23 @@ def _apply_feature(
     requirement: EntryId,
     proposed: ProposedFeature,
     merged: MergedFeature,
+    *,
+    split: bool,
 ) -> None:
-    """Record one feature for one requirement: the feature, ``servedBy``, ``describedBy`` and ``covers``."""
+    """Record one feature for one requirement: the feature, ``servedBy``, ``describedBy`` and ``covers``.
+
+    The proposed name becomes an alias of the feature unless the proposal is split into several features.
+    """
     refused: list[Refusal] = recorder.applied["refused"]
     known: str = name_key(merged.name)
+    stated: tuple[str, ...] = () if split else (proposed.name,)
     try:
         feature: Entry = Entry(
             id=make_id(KIND_FEATURE, slug(merged.name)),
             kind=KIND_FEATURE,
             name=merged.name,
             side=SIDE_ARCHITECTURE,
-            aliases=tuple(
-                dict.fromkeys(alias for alias in (*merged.aliases, proposed.name) if name_key(alias) != known),
-            ),
+            aliases=tuple(dict.fromkeys(alias for alias in (*merged.aliases, *stated) if name_key(alias) != known)),
             purpose=merged.purpose or proposed.purpose,
         )
     except ValueError as error:
@@ -1588,11 +1750,12 @@ def _apply_features(matrix: Matrix, results: Sequence[Path], merge: Path, applie
 
     Each feature is recorded once, joined by ``servedBy`` to every requirement it is proposed
     for, by ``describedBy`` to each document heading a proposal says covers it, and each such
-    document by ``covers`` to the requirement. A proposed feature the merge file names nowhere
-    is listed and nothing is recorded for it. A merge file that cannot be read, or is of another
-    shape, raises ``MatrixError`` from :func:`_parse_merge`.
+    document by ``covers`` to the requirement. A proposed feature the merge file splits is recorded
+    as each feature it is split into. A proposed feature the merge file names nowhere is listed and
+    nothing is recorded for it. A merge file that cannot be read, or is of another shape, raises
+    ``MatrixError`` from :func:`_parse_merge`.
     """
-    index: dict[str, MergedFeature] = _merge_index(merge, applied)
+    index: dict[str, list[MergedFeature]] = _merge_index(merge)
     unmerged: dict[str, None] = {}
     proposal: Proposal
     for proposal in _proposals(results, applied["refused"]):
@@ -1611,12 +1774,85 @@ def _apply_features(matrix: Matrix, results: Sequence[Path], merge: Path, applie
                 continue
             proposed: ProposedFeature
             for proposed in stated.features:
-                merged: MergedFeature | None = index.get(name_key(proposed.name))
-                if merged is None:
+                merged: list[MergedFeature] = index.get(name_key(proposed.name), [])
+                if not merged:
                     unmerged[proposed.name] = None
-                else:
-                    _apply_feature(Recorder(matrix, proposal.file, applied), requirement, proposed, merged)
+                _apply_merged(Recorder(matrix, proposal.file, applied), requirement, proposed, merged)
     applied["unmerged"] = sorted(unmerged)
+
+
+def _apply_merged(
+    recorder: Recorder,
+    requirement: EntryId,
+    proposed: ProposedFeature,
+    merged: Sequence[MergedFeature],
+) -> None:
+    """Record a proposed feature for one requirement as each feature the merge file makes it."""
+    feature: MergedFeature
+    for feature in merged:
+        _apply_feature(recorder, requirement, proposed, feature, split=len(merged) > 1)
+
+
+def _realizer_problem(matrix: Matrix, kind: RelationshipKind, start: EntryId, end: EntryId) -> str | None:
+    """Tell why the realizers step does not record a relationship a result file states.
+
+    Returns:
+        The reason; None when it is a ``realizedBy`` from a feature to an architecture-side entry
+        of a realizing kind that the matrix holds.
+
+    """
+    feature: Entry | None = matrix.find(start)
+    realizer: Entry | None = matrix.find(end)
+    if kind != REL_REALIZED_BY:
+        return f"the realizers step records realizedBy only, not {kind}"
+    if feature is None or feature.kind != KIND_FEATURE:
+        return f"{start} is not a feature the matrix holds"
+    if realizer is None or realizer.side != SIDE_ARCHITECTURE or realizer.kind not in REALIZER_KINDS:
+        return f"{end} is not an architecture-side {', '.join(sorted(REALIZER_KINDS))} the matrix holds"
+    return None
+
+
+def _apply_realizer(recorder: Recorder, raw: Mapping[str, JsonValue]) -> None:
+    """Record one ``realizedBy`` a realizers result file states, or list why it is not recorded."""
+    label: str = f"{raw.get('from')} {raw.get('kind')} {raw.get('to')}"
+    try:
+        stated: StatedRelationship = _stated_relationship(raw)
+        start: EntryId = _stated_id(stated.start)
+        end: EntryId = _stated_id(stated.end)
+    except ValueError as error:
+        recorder.applied["refused"].append(_refusal(recorder.file, label, error))
+        return
+    problem: str | None = _realizer_problem(recorder.matrix, stated.kind, start, end)
+    if problem is not None:
+        recorder.applied["refused"].append(_refusal(recorder.file, label, problem))
+        return
+    _link(recorder, Relationship(kind=REL_REALIZED_BY, start=start, end=end, side=SIDE_ARCHITECTURE))
+
+
+def _apply_realizers(matrix: Matrix, results: Sequence[Path], applied: Applied) -> None:
+    """Record the ``realizedBy`` relationships of the realizers step's result files, on the architecture side.
+
+    A folder stands for the result files in it that are named for the step. A file that states
+    entries has them refused: the step records relationships only.
+    """
+    file: Path
+    for file in _files(results, f"{STEP_REALIZERS}{BATCH_SEPARATOR}"):
+        try:
+            content: dict[str, JsonValue] = _read_object(file)
+            stated: list[dict[str, JsonValue]] = _objects(content.get("relationships"), "relationships")
+            entries: list[dict[str, JsonValue]] = _objects(content.get("entries"), "entries")
+        except MatrixError as error:
+            applied["refused"].append(_refusal(file, "the result file", error))
+            continue
+        applied["files"].append(str(file))
+        applied["refused"].extend(
+            _refusal(file, f"{raw.get('kind')} {raw.get('name')}", "the realizers step records no entry")
+            for raw in entries
+        )
+        recorder: Recorder = Recorder(matrix, file, applied)
+        raw: dict[str, JsonValue]
+        for raw in stated:
+            _apply_realizer(recorder, raw)
 
 
 def _stated_id(text: str) -> EntryId:
@@ -1831,7 +2067,8 @@ def seed_apply(matrix: Matrix, step: SeedStep, results: Sequence[Path], merge: P
     (:func:`_merged`). For the features step, each feature the merge file names is recorded once
     on the architecture side, with ``servedBy`` from every requirement a proposal file proposes
     it for, ``describedBy`` to each covering document heading and ``covers`` from that document
-    to the requirement. Nothing recorded carries the verified mark. Whatever cannot be read or
+    to the requirement. For the realizers step, each ``realizedBy`` from a feature to an
+    architecture-side entry that realizes it. Nothing recorded carries the verified mark. Whatever cannot be read or
     recorded is listed and the rest is recorded, except a merge file that cannot be read or is
     of another shape, which raises ``MatrixError`` from :func:`_parse_merge`.
 
@@ -1878,6 +2115,8 @@ def seed_apply(matrix: Matrix, step: SeedStep, results: Sequence[Path], merge: P
     elif step == STEP_FEATURES:
         if merge is not None:
             _apply_features(matrix, results, merge, applied)
+    elif step == STEP_REALIZERS:
+        _apply_realizers(matrix, results, applied)
     else:
         assert_never(step)
     return applied

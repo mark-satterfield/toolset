@@ -344,6 +344,8 @@ now:
 - an Epic to its PRD;
 - a requirement to the features that serve it;
 - a feature to the arc42 documents that cover it;
+- a feature to the services, components, infrastructure, layers, packages and stacks that
+  realize it;
 - an arc42 document to the services, components and infrastructure it describes;
 - each of those to its stack, and each stack to its repository;
 - each stack to what it depends on;

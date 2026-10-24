@@ -4,7 +4,7 @@
 ``link``, ``unlink``, ``settle``, ``apply`` (a whole change file of those four in one update),
 ``rename``, ``remove``, ``move-repository`` and ``commit``;
 ``sync-epics``, ``sync-documents`` and ``sync-events``; ``seed`` and its steps (``seed-stacks``,
-``seed-packages``, ``seed-inputs``, ``seed-features``, ``seed-apply``); ``verify`` and the Task
+``seed-packages``, ``seed-inputs``, ``seed-features``, ``seed-realizers``, ``seed-apply``); ``verify`` and the Task
 script's ``built``, ``work`` and ``affected``; ``check-reuse``. Each change is
 one locked read-modify-write of the matrix file.
 
@@ -66,6 +66,7 @@ from matrixseed import (
     seed_directory,
     seed_inputs,
     seed_packages,
+    seed_realizer_inputs,
     seed_stacks,
 )
 from matrixstore import (
@@ -672,6 +673,24 @@ def _run_seed_features(call: Call) -> Outcome:
     return Outcome(list_proposed(proposals, read_matrix(call.matrix())))
 
 
+def _run_seed_realizers(call: Call) -> Outcome:
+    """Run ``seed-realizers``.
+
+    Returns:
+        The batch files written for the realizers step.
+
+    """
+    allowance: int | None = call.number("allowance")
+    return Outcome(
+        seed_realizer_inputs(
+            read_matrix(call.matrix()),
+            arch=call.required_folder("arch", [ARCH_PATH_ENV]).expanduser(),
+            directory=_seed_folder(call),
+            allowance=READING_ALLOWANCE if allowance is None else allowance,
+        ),
+    )
+
+
 def _run_seed_apply(call: Call) -> Outcome:
     """Run ``seed-apply``.
 
@@ -796,6 +815,7 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     "seed-packages": _run_seed_packages,
     "seed-inputs": _run_seed_inputs,
     "seed-features": _run_seed_features,
+    "seed-realizers": _run_seed_realizers,
     "seed-apply": _run_seed_apply,
     COMMAND_VERIFY: _run_verify,
     COMMAND_BUILT: _run_built,
@@ -974,6 +994,12 @@ def _sync_parsers(
     )
     proposed.add_argument("--list", action="store_true", help="print one line's worth per proposed feature")
     proposed.add_argument("--proposals", nargs="+", help="the proposal files or folders; default: the seeding folder's")
+    realizing: argparse.ArgumentParser = commands.add_parser(
+        "seed-realizers",
+        parents=[where, arch, folder],
+        help="write the batch files of the realizers step, which names what realizes each feature",
+    )
+    realizing.add_argument("--allowance", type=int, help=f"the bytes one session reads; default: {READING_ALLOWANCE}")
     applied: argparse.ArgumentParser = commands.add_parser(
         "seed-apply",
         parents=[where, folder],

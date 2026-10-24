@@ -9,7 +9,7 @@
 #   tasks:   built, work, affected
 #   changes: put, link, unlink, settle, rename, remove, move-repository, commit
 #   syncs:   sync-epics, sync-documents, sync-events
-#   seeding: seed, seed-stacks, seed-packages, seed-inputs, seed-features, seed-apply
+#   seeding: seed, seed-stacks, seed-packages, seed-inputs, seed-features, seed-realizers, seed-apply
 #   code:    verify
 # `atw-matrix <sub-command> --help` lists a sub-command's options. scripts/portfolio/matrix.py is
 # the command; the file's shape is skills/artifact-handoff/schemas/matrix.schema.json, and the

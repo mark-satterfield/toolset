@@ -227,5 +227,7 @@ Seeding fills an empty matrix in this order (`blueprint/design/matrix.md` sectio
 3. Feature sessions read the PRD batches and propose the features of each requirement;
    `seed-features --list`, one merge session, then `seed-apply --step features` records each
    feature once with `servedBy`, `describedBy` and `covers`.
-4. Repository-side sessions read each stack's repository; `seed-apply --step repository`.
-5. `atw-matrix check`, then `atw-matrix commit`.
+4. `seed-realizers` writes the feature batches; realizer sessions name what realizes each
+   feature; `seed-apply --step realizers` records each `realizedBy`.
+5. Repository-side sessions read each stack's repository; `seed-apply --step repository`.
+6. `atw-matrix check`, then `atw-matrix commit`.

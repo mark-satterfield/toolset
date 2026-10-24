@@ -463,6 +463,7 @@
     "seed-packages": {"writes": true, "roles": ["script", "operator"]},
     "seed-inputs": {"writes": false, "roles": ["script", "operator"]},
     "seed-features": {"writes": false, "roles": ["script", "operator", "solutions-architect"]},
+    "seed-realizers": {"writes": false, "roles": ["script", "operator"]},
     "seed-apply": {"writes": true, "roles": ["script", "operator"]}
   }
 }
