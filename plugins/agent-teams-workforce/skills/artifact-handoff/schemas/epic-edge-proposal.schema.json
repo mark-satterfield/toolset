@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/epic-edge-proposal.schema.json",
   "title": "Epic edge proposal",
-  "description": "The edge file the epic-dependency-assessor writes for ONE Epic in the dependency-assessment workflow: the candidate <workDir>/candidates/edges.json, which jsonartifact.py validates against this file and publishes as <workDir>/edges.json. `depscore.py validate` then checks it against the tracker and `depscore.py apply-edges` applies it as beads `tracks` edges; the workflow records each `decisions` row in the matrix (`atw-matrix link drives|restsOn`, side architecture). The session runs no `put`, no `link` and no apply. The edge test and the foundation checklist are the agent-teams-workforce:epic-sequencing skill's.",
+  "description": "The edge file the epic-dependency-assessor writes for ONE Epic in the dependency-assessment workflow: the candidate <workDir>/candidates/edges.json, which jsonartifact.py validates against this file and publishes as <workDir>/edges.json. `depscore.py validate` then checks it against the tracker and `depscore.py apply-edges` applies it as beads `tracks` edges. Nothing of it is recorded in the matrix. The session runs no `put`, no `link` and no apply. The edge test and the foundation checklist are the agent-teams-workforce:epic-sequencing skill's.",
   "type": "object",
   "additionalProperties": false,
   "required": ["edges", "withdrawn", "decisions"],
@@ -39,13 +39,13 @@
       }
     },
     "Decision": {
-      "description": "One decision the assessed Epic drives or rests on, and the matrix entry that states it. The workflow records it as `atw-matrix link <relationship> --from epic:<id> --to <entry> --side architecture [--heading <heading>]`.",
+      "description": "One decision the assessed Epic drives or rests on, and the matrix entry that states it: the evidence for the Epic's edges. It is not recorded in the matrix.",
       "type": "object",
       "additionalProperties": false,
       "required": ["decision", "relationship", "entry", "heading"],
       "properties": {
         "decision": {"description": "The decision, in words.", "type": "string"},
-        "relationship": {"description": "`drives` when the Epic's requirements shape what the entry states; `restsOn` when the Epic relies on what the entry states as settled architecture. The matrix registry (matrix-kinds.json) defines both relationships and the entry kinds each may end at, and `atw-matrix link` refuses any other.", "type": "string", "enum": ["drives", "restsOn"]},
+        "relationship": {"description": "`drives` when the Epic's requirements shape what the entry states; `restsOn` when the Epic relies on what the entry states as settled architecture.", "type": "string", "enum": ["drives", "restsOn"]},
         "entry": {"description": "The id of the matrix entry that states the decision: a feature or a document for `drives`; a feature, document, stack, service, component or infrastructure for `restsOn`.", "type": "string", "minLength": 1},
         "heading": {"description": "For a document entry, the heading that holds the decision; \"\" for any other entry.", "type": "string"}
       }

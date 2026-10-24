@@ -284,17 +284,17 @@ and its `standing` and `withdrawn` lists are the edges on the Epic.
    fails the test, one through an edge with `owned: false`, is reported in the reasoning with
    the failed validation and its findings, not forced.
 
-Applying the edges and recording the matrix rows is not part of the assessment: the assessing
-agent writes nothing to the tracker or the matrix.
+Applying the edges is not part of the assessment: the assessing agent writes nothing to the
+tracker or the matrix.
 
-### What the matrix records from an assessment
+### What the matrix holds of an assessment
 
-For each decision judged, the assessment names the matrix entry the Epic drives or rests
-on: a feature id, or a document id with its heading. The dispatching workflow records each
-as a `drives` or `restsOn` relationship from the Epic, with `side: architecture`; the
-assessing agent runs no `put` and no `link`. A decision no matrix entry states gets no row
-in the edge file; the reasoning names it, and nothing is recorded for it. The Epic-to-Epic edge is a beads `tracks` edge
-and is never a matrix relationship.
+Nothing. For each decision judged, the edge file names the matrix entry the Epic drives or
+rests on (a feature id, or a document id with its heading) as the evidence for its edges; a
+decision no matrix entry states gets no row, and the reasoning names it. The Epic-to-Epic edge
+is a beads `tracks` edge and is never a matrix relationship. The order across every Epic is
+derived from the chain the matrix records (Epic, requirement, feature, `realizedBy`, `homeIn`)
+by `scripts/portfolio/epicorder.py`, never from a relationship stated between Epics.
 
 ## The worked example
 

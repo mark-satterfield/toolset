@@ -3,23 +3,23 @@
 
 No model is called and no ordering is assumed: neither WSJF nor any rank enters the edges. An
 edge says that one Epic uses an architecture entry another Epic's own requirements define, so the
-user is elaborated after the definer (the driver). Units are as fine as the matrix allows:
+user is elaborated after the definer (the driver). Both are read from the chain alone
+(``matrixtraverse.rule_reach``): Epic, ``hasRequirement``, requirement, ``servedBy``, feature,
+``realizedBy``, the entry that realizes it, and ``homeIn``, its stack.
 
-1. A feature. Its drivers are the Epics with a ``drives`` relationship to it, or to a document
-   heading (or whole document) that ``describedBy`` names for it. With no such Epic, it has a
-   driver only when it serves the requirements of exactly one Epic (``hasRequirement`` then
-   ``servedBy``) and that Epic does not only rest on it; a feature serving several Epics with no
-   ``drives`` has no driver and makes no edge. Its users are the other Epics it serves and the Epics with ``restsOn``
-   to it.
-2. A document heading, a whole document or any other entry an Epic ``drives``. Its drivers are
-   those Epics; its users are the Epics whose requirements that exact heading ``covers``, and the
-   Epics with ``restsOn`` to it or to an entry it describes.
+1. An Epic defines each entry a feature serving one of its requirements is ``realizedBy``, and
+   the stack each such entry is or has its home in.
+2. An Epic uses each entry that is the far end of a dependency (one hop: ``imports``, ``calls``,
+   ``publishes``, ``reads`` and the rest of the dependency family) from an entry or stack it
+   defines, and that it does not itself define.
 
-Every driver of a unit gets an edge to every user of it. Users of one unit get no edge between
-them, and co-drivers of one unit none either. An entry no Epic drives (a VPC, the chassis library,
-a Cognito pool) makes no edge: the first Epic elaborated reviews and approves it. A unit whose
-matrix ``approved`` flag is set makes no edge. Cycles are reported, never broken: their members
-share a level. The rest is transitively reduced over the cycles taken as single nodes.
+A unit is an entry some Epic uses. Its drivers are the Epics that define it; its users are the
+Epics that use it. Every driver of a unit gets an edge to every user of it. Co-drivers of one unit
+get no edge between them: two Epics whose features are realized by one entry, or by entries of one
+stack, do not wait for each other. A unit no Epic defines (a VPC, the chassis library, a Cognito
+pool no feature is realized by) makes no edge: the first Epic elaborated reviews and approves it. A
+unit whose matrix ``approved`` flag is set makes no edge. Cycles are reported, never broken: their
+members share a level. The rest is transitively reduced over the cycles taken as single nodes.
 
 Two scenarios are computed: as the matrix stands (A), and as if every entry of a ``shared-*``
 stack were approved (B). ``--report`` writes the Markdown report (``epicorderreport.py``), with
@@ -44,39 +44,24 @@ import portfolio_path  # ruff: ignore[unused-import] - puts the beads-contract a
 import beadgraph
 import edgeset
 from contracts import json_object
-from matrix_contract import (
-    AUTHORITY_SIDE,
-    KIND_FEATURE,
-    KIND_STACK,
-    REL_COVERS,
-    REL_DESCRIBED_BY,
-    REL_DRIVES,
-    REL_HAS_REQUIREMENT,
-    REL_REALIZED_BY,
-    REL_RESTS_ON,
-    REL_SERVED_BY,
-    EntryId,
-)
+from matrix_contract import KIND_STACK, EntryId
 from matrixstore import Matrix, matrix_path, read_matrix
-from matrixtraverse import Heading, epic_id, heading_index, stacks_of
+from matrixtraverse import RuleReach, epic_id, rule_reach, stacks_of
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable, Mapping
 
     from contracts import JsonObject, JsonValue
-    from matrixstore import Relationship
 
 type Unit = str
-"""A feature or other entry id, or ``<document id>#<heading>`` for one heading of a document."""
+"""The id of an entry some Epic uses: a service, component, infrastructure, layer, package or stack."""
 type Pair = tuple[str, str]
 """An edge: the driver, elaborated first, then the Epic that waits for it."""
 
 SHARED_PREFIX: Final = "shared-"
-HEADING_MARK: Final = "#"
 EPIC_PREFIX: Final = "epic:"
-RULE_DRIVES: Final = "drives"
-RULE_DRIVES_HEADING: Final = "drives a heading describing it"
-RULE_SERVED: Final = "servedBy"
+RULE_CHAIN: Final = "realizedBy and homeIn"
+"""The evidence that makes an Epic a unit's driver: its features are realized by the unit or by an entry homed in it."""
 SCENARIO_AS_IS: Final = "as-is"
 SCENARIO_SHARED: Final = "shared-approved"
 
@@ -150,116 +135,34 @@ class Analysis:
     """Each scenario's name with its spot-checks."""
 
 
-def heading_unit(document: EntryId, heading: str) -> Unit:
-    """Name one heading of a document, or the whole document when the heading is empty.
+def _reaches(matrix: Matrix, epics: Collection[str]) -> dict[str, RuleReach]:
+    """Walk every open Epic the matrix holds by the rule of reach.
 
     Returns:
-        The unit.
+        Each Epic's beads id with what its chain reaches.
 
     """
-    return f"{document}{HEADING_MARK}{heading}" if heading else document
-
-
-def unit_entry(unit: Unit) -> EntryId:
-    """Name the matrix entry a unit belongs to.
-
-    Returns:
-        The entry id (the document, for a heading).
-
-    """
-    return EntryId(unit.partition(HEADING_MARK)[0])
-
-
-def _heading_of(rel: Relationship) -> str:
-    value: object = rel.attributes.get("heading")
-    return value if isinstance(value, str) else ""
-
-
-def _target(rel: Relationship) -> Unit:
-    return heading_unit(rel.end, _heading_of(rel))
-
-
-@dataclass(slots=True)
-class _Links:
-    """The matrix relationships the rule reads, restricted to the open Epics the matrix holds."""
-
-    drives: dict[Unit, set[str]]
-    rests: dict[Unit, set[str]]
-    served: dict[EntryId, set[str]]
-    covered: dict[Unit, set[str]]
-    describers: dict[EntryId, set[Unit]]
-
-
-def _epics_of(matrix: Matrix, requirement: EntryId, epics: Collection[str]) -> set[str]:
-    return {
-        bead
-        for rel in matrix.incoming(requirement, (REL_HAS_REQUIREMENT,))
-        if (bead := rel.start.removeprefix(EPIC_PREFIX)) in epics
-    }
-
-
-def links(matrix: Matrix, epics: Collection[str]) -> _Links:
-    """Read the ``drives``, ``restsOn``, ``servedBy``, ``covers`` and feature ``describedBy`` relationships.
-
-    Returns:
-        Each relationship family indexed by the unit it names.
-
-    """
-    found = _Links({}, {}, {}, {}, {})
-    for rel in matrix.relationships((REL_DRIVES, REL_RESTS_ON)):
-        bead: str = rel.start.removeprefix(EPIC_PREFIX)
-        if rel.side == AUTHORITY_SIDE and bead in epics:
-            family: dict[Unit, set[str]] = found.drives if rel.kind == REL_DRIVES else found.rests
-            family.setdefault(_target(rel), set()).add(bead)
-    for rel in matrix.relationships((REL_SERVED_BY,)):
-        if rel.side == AUTHORITY_SIDE and (owners := _epics_of(matrix, rel.start, epics)):
-            found.served.setdefault(rel.end, set()).update(owners)
-    for rel in matrix.relationships((REL_COVERS,)):
-        if rel.side == AUTHORITY_SIDE and (owners := _epics_of(matrix, rel.end, epics)):
-            found.covered.setdefault(_target(rel), set()).update(owners)
-    for rel in matrix.relationships((REL_DESCRIBED_BY,)):
-        start = matrix.find(rel.start)
-        if rel.side == AUTHORITY_SIDE and start is not None and start.kind == KIND_FEATURE:
-            found.describers.setdefault(start.id, set()).add(_target(rel))
-    return found
+    return {bead: rule_reach(matrix, epic_id(bead)) for bead in sorted(epics)}
 
 
 def _label(matrix: Matrix, unit: Unit) -> str:
-    document, _, heading = unit.partition(HEADING_MARK)
-    entry = matrix.find(EntryId(document))
-    if heading:
-        return f"{document.removeprefix('document:')} § {heading}"
-    return entry.name if entry is not None and entry.kind == KIND_FEATURE else unit
+    entry = matrix.find(EntryId(unit))
+    return unit if entry is None else f"{entry.name} ({unit})"
 
 
-def _feature(matrix: Matrix, feature: EntryId, found: _Links) -> Decision | None:
-    served: set[str] = found.served.get(feature, set())
-    rests: set[str] = found.rests.get(feature, set())
-    headings: set[Unit] = found.describers.get(feature, set())
-    by_heading: set[str] = set().union(
-        *(found.drives.get(h, set()) | found.drives.get(unit_entry(h), set()) for h in headings),
-    )
-    explicit: set[str] = found.drives.get(feature, set())
-    rule: str = RULE_DRIVES if explicit else RULE_DRIVES_HEADING
-    drivers: set[str] = explicit | by_heading
-    if not drivers and len(served) == 1:
-        rule, drivers = RULE_SERVED, served - rests
-    users: set[str] = (served | rests) - drivers
-    if not drivers or not users:
-        return None
-    return Decision(feature, _label(matrix, feature), tuple(sorted(drivers)), rule, tuple(sorted(users)))
+def _by_unit(found: Iterable[tuple[str, Iterable[EntryId]]]) -> dict[Unit, set[str]]:
+    """Index Epics by the units each one names.
 
+    Returns:
+        Each unit with the Epics that name it.
 
-def _driven(matrix: Matrix, unit: Unit, found: _Links, index: Mapping[Heading, list[EntryId]]) -> Decision | None:
-    drivers: set[str] = found.drives[unit]
-    document, _, heading = unit.partition(HEADING_MARK)
-    described: list[EntryId] = index.get((EntryId(document), heading), []) if HEADING_MARK in unit else []
-    users: set[str] = found.covered.get(unit, set()) | found.rests.get(unit, set())
-    users.update(*(found.rests.get(entry, set()) for entry in described))
-    users -= drivers
-    if not users:
-        return None
-    return Decision(unit, _label(matrix, unit), tuple(sorted(drivers)), RULE_DRIVES, tuple(sorted(users)))
+    """
+    indexed: dict[Unit, set[str]] = {}
+    bead: str
+    units: Iterable[EntryId]
+    for bead, units in found:
+        indexed.update({unit: {*indexed.get(unit, set()), bead} for unit in units})
+    return indexed
 
 
 def decide(matrix: Matrix, epics: Collection[str]) -> dict[Unit, Decision]:
@@ -269,36 +172,29 @@ def decide(matrix: Matrix, epics: Collection[str]) -> dict[Unit, Decision]:
         Each unit's decision, in unit order.
 
     """
-    found: _Links = links(matrix, epics)
-    index: dict[Heading, list[EntryId]] = heading_index(matrix)
-    decisions: list[Decision | None] = [
-        _feature(matrix, feature, found)
-        for feature in sorted(set(found.served) | set(found.rests))
-        if (entry := matrix.find(feature)) is not None and entry.kind == KIND_FEATURE
-    ]
-    decisions.extend(
-        _driven(matrix, unit, found, index)
-        for unit in sorted(found.drives)
-        if (entry := matrix.find(unit_entry(unit))) is not None and entry.kind != KIND_FEATURE
-    )
-    return {decision.unit: decision for decision in decisions if decision is not None}
+    reaches: dict[str, RuleReach] = _reaches(matrix, epics)
+    defined: dict[Unit, set[str]] = _by_unit((bead, {*reach.entries, *reach.stacks}) for bead, reach in reaches.items())
+    used: dict[Unit, set[str]] = _by_unit((bead, reach.dependencies) for bead, reach in reaches.items())
+    decisions: dict[Unit, Decision] = {}
+    unit: Unit
+    for unit in sorted(set(used) & set(defined)):
+        users: set[str] = used[unit] - defined[unit]
+        if users:
+            drivers: tuple[str, ...] = tuple(sorted(defined[unit]))
+            decisions[unit] = Decision(unit, _label(matrix, unit), drivers, RULE_CHAIN, tuple(sorted(users)))
+    return decisions
 
 
-def is_shared(matrix: Matrix, unit: Unit, index: Mapping[Heading, list[EntryId]]) -> bool:
+def is_shared(matrix: Matrix, unit: Unit) -> bool:
     """Tell whether an entry belongs to a ``shared-*`` stack (the central event API and bus included).
 
-    A stack is shared when its name or repository starts with ``shared-``; an entry when every
-    stack it is or has its home in is; a heading when every entry it describes is; a feature when
-    every entry realizing it is, else when every heading describing it is.
+    A stack is shared when its name or repository starts with ``shared-``; any other entry when the
+    stack it is homed in is.
 
     Returns:
         True for a shared entry.
 
     """
-    if HEADING_MARK in unit:
-        document, _, heading = unit.partition(HEADING_MARK)
-        described: list[EntryId] = index.get((EntryId(document), heading), [])
-        return bool(described) and all(is_shared(matrix, entry, index) for entry in described)
     entry = matrix.find(EntryId(unit))
     if entry is None:
         return False
@@ -307,16 +203,8 @@ def is_shared(matrix: Matrix, unit: Unit, index: Mapping[Heading, list[EntryId]]
         return unit.startswith(f"{KIND_STACK}:{SHARED_PREFIX}") or (
             isinstance(repository, str) and repository.startswith(SHARED_PREFIX)
         )
-    if entry.kind == KIND_FEATURE:
-        realizers: list[EntryId] = [rel.end for rel in matrix.outgoing(entry.id, (REL_REALIZED_BY,))]
-        if realizers:
-            return all(is_shared(matrix, realizer, index) for realizer in realizers)
-        headings: list[Unit] = [
-            unit for rel in matrix.outgoing(entry.id, (REL_DESCRIBED_BY,)) if HEADING_MARK in (unit := _target(rel))
-        ]
-        return bool(headings) and all(is_shared(matrix, heading, index) for heading in headings)
     stacks: set[EntryId] = stacks_of(matrix, entry.id)
-    return bool(stacks) and all(is_shared(matrix, stack, index) for stack in stacks)
+    return bool(stacks) and all(is_shared(matrix, stack) for stack in stacks)
 
 
 def is_approved(matrix: Matrix, unit: Unit) -> bool:
@@ -326,7 +214,7 @@ def is_approved(matrix: Matrix, unit: Unit) -> bool:
         True when the entry carries the flag.
 
     """
-    entry = matrix.find(unit_entry(unit))
+    entry = matrix.find(EntryId(unit))
     return entry is not None and entry.approved is not None
 
 
@@ -542,9 +430,8 @@ def analyse(matrix: Matrix, graph: beadgraph.Graph, expected: Iterable[Pair]) ->
     missing: tuple[str, ...] = tuple(sorted(bead for bead in epics if matrix.find(epic_id(bead)) is None))
     held: set[str] = set(epics) - set(missing)
     decisions: dict[Unit, Decision] = decide(matrix, held)
-    index: dict[Heading, list[EntryId]] = heading_index(matrix)
     approved: set[Unit] = {unit for unit in decisions if is_approved(matrix, unit)}
-    shared: set[Unit] = {unit for unit in decisions if is_shared(matrix, unit, index)}
+    shared: set[Unit] = {unit for unit in decisions if is_shared(matrix, unit)}
     orders: tuple[Order, ...] = (
         order("A", decisions.values(), approved, epics),
         order("B", decisions.values(), approved | shared, epics),

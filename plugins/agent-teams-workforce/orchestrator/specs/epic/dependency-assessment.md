@@ -206,10 +206,8 @@ command printed.
 8. `deterministic` **Apply**: when step 7 is ok, `depscore.py apply-edges --edges edges.json
    --plan assess-plan.json --epic <id> [--dry-run] --out apply-edges.json`
    (`edgeset.apply_edges`). It validates again against the graph as read now and writes nothing
-   if that fails. The proposal's `decisions` rows are then
-   recorded in the matrix, one `atw-matrix link drives|restsOn` from the Epic to the feature or
-   document heading for each, as role `script`; the result's `matrix` holds `{decisions, recorded,
-   failures}`. The Epic-to-Epic edge stays a beads `tracks` edge.
+   if that fails. Nothing is recorded in the matrix: the Epic-to-Epic edge is a beads `tracks`
+   edge.
 9. `deterministic` **Score**: when the edges were applied, the run is not a dry run and `score`
    is not false, the workflow calls the `wsjf-scoring` workflow with `workDir =
    <workDir>/scoring` and the same `repoPath` and `pluginRoot`.

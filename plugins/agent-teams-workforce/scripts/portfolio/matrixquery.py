@@ -37,7 +37,6 @@ from typeguard import CollectionCheckStrategy, typechecked
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 from matrix_contract import (
-    AUTHORITY_SIDE,
     ENTRY_KINDS,
     KIND_COMPONENT,
     KIND_DOCUMENT,
@@ -91,7 +90,6 @@ from matrixtraverse import (
     Touch,
     Way,
     approval_scope,
-    authority_holder,
     capabilities,
     constraints_for,
     dependencies,
@@ -342,11 +340,8 @@ class FeatureRealizers(TypedDict):
     """One feature of an Epic with the ids of what realizes it."""
 
     feature: EntryId
-    supporting: bool
-    """True when the feature is reached only because another feature is supported by it."""
     realizedBy: list[EntryId]
-    """The ends of its ``realizedBy`` relationships, then each realizing entry an arc42 heading
-    describes that covers one of the Epic's requirements by way of the feature."""
+    """The ends of its ``realizedBy`` relationships."""
 
 
 class RealizersView(TypedDict):
@@ -356,7 +351,7 @@ class RealizersView(TypedDict):
     entries: list[RealizerView]
     """Each realizer once, with its stack and repository."""
     noStack: list[EntryId]
-    """The realizers the architecture side places in no stack."""
+    """The realizers no side places in a stack: no architecture-side home, no repository-side home."""
 
 
 class Match(TypedDict):
@@ -942,71 +937,26 @@ def realizers_view(matrix: Matrix, bead: str) -> RealizersView:
         bead: The Epic's beads id.
 
     Returns:
-        Each feature the Epic reaches with the ids of the entries that realize it: the ends of
-        its ``realizedBy`` relationships, then each realizing entry an arc42 heading describes
-        that covers one of the Epic's requirements by way of the feature; each of those entries
-        once with its stack and repository; and those the architecture side places in no stack.
+        Each feature that serves one of the Epic's requirements with the ids of the entries that
+        realize it, the ends of its ``realizedBy`` relationships; each of those entries once with its stack and
+        repository; and those no side places in a stack.
         ``atw-matrix node <id>`` returns an entry's purpose and the documents that describe it.
 
     """
     reach: EpicReach = epic_reach(matrix, epic_id(bead))
-    return _realizers_view(matrix, reach, _realizing(matrix, reach))
-
-
-def _heading_index(matrix: Matrix) -> dict[tuple[EntryId, str], list[EntryId]]:
-    """Index the architecture-side entries of the realizing kinds by the document heading that describes them.
-
-    Returns:
-        Each (document, heading) pair with the realizing entries whose architecture-side
-        ``describedBy`` names exactly that pair, in file order.
-
-    """
-    index: dict[tuple[EntryId, str], list[EntryId]] = {}
-    describing: Relationship
-    for describing in matrix.relationships((REL_DESCRIBED_BY,)):
-        start: Entry | None = matrix.find(describing.start)
-        if describing.side != AUTHORITY_SIDE or start is None or start.kind not in REALIZER_KINDS:
-            continue
-        pair: tuple[EntryId, str] = (describing.end, _text(describing.attributes.get(ATTR_HEADING)))
-        index.setdefault(pair, []).append(start.id)
-    return index
-
-
-def _feature_realizers(
-    matrix: Matrix,
-    reach: EpicReach,
-    feature: EntryId,
-    by_heading: dict[tuple[EntryId, str], list[EntryId]],
-) -> list[EntryId]:
-    """Find what realizes one feature of an Epic.
-
-    Returns:
-        The ends of the feature's ``realizedBy`` relationships, then every realizing entry an
-        arc42 heading describes that covers one of the Epic's requirements by way of the
-        feature; in the order found, each once.
-
-    """
-    realized: list[EntryId] = [relationship.end for relationship in matrix.outgoing(feature, (REL_REALIZED_BY,))]
-    pairs: list[tuple[EntryId, str]] = [
-        (covering.start, _text(covering.attributes.get(ATTR_HEADING)))
-        for requirement in reach.served
-        for covering in matrix.incoming(requirement, (REL_COVERS,))
-        if covering.attributes.get(ATTR_VIA) == feature
-    ]
-    described: list[EntryId] = [entry_id for pair in pairs for entry_id in by_heading.get(pair, [])]
-    return list(dict.fromkeys([*realized, *described]))
+    return _realizers_view(matrix, _realizing(matrix, reach))
 
 
 def _realizer(matrix: Matrix, entry_id: EntryId) -> RealizerView:
     """Render one entry that realizes a feature, with the stack and repository that hold it.
 
     Returns:
-        The entry's id, its architecture-side stack, that stack's repository (None when it
-        names none), its AWS resource type when it has one and, for an event, the services and
-        components that publish it.
+        The entry's id, its stack (:func:`holder`: the architecture side's home, else the
+        repository side's), that stack's repository (None when it names none), its AWS resource
+        type when it has one and, for an event, the services and components that publish it.
 
     """
-    stack: EntryId | None = authority_holder(matrix, entry_id)
+    stack: EntryId | None = holder(matrix, entry_id)
     repository: JsonValue = None if stack is None else matrix.entry(stack).attributes.get(ATTR_REPOSITORY)
     view: RealizerView = {
         "id": entry_id,
@@ -1022,32 +972,35 @@ def _realizer(matrix: Matrix, entry_id: EntryId) -> RealizerView:
 
 
 def _realizing(matrix: Matrix, reach: EpicReach) -> dict[EntryId, list[EntryId]]:
-    """Find what realizes each feature an Epic reaches.
+    """Find what realizes each feature that serves one of an Epic's requirements.
+
+    A feature reached only through ``supportedBy`` is not in the chain from the Epic, so it is left out.
 
     Returns:
-        Each feature, in the order reached, with :func:`_feature_realizers` for it.
+        Each serving feature, in the order reached, with the ends of its ``realizedBy``
+        relationships, each once.
 
     """
-    by_heading: dict[tuple[EntryId, str], list[EntryId]] = _heading_index(matrix)
-    return {feature: _feature_realizers(matrix, reach, feature, by_heading) for feature in reach.features}
+    return {
+        feature: list(dict.fromkeys(found.end for found in matrix.outgoing(feature, (REL_REALIZED_BY,))))
+        for feature in reach.features
+        if feature not in reach.supporting
+    }
 
 
-def _realizers_view(matrix: Matrix, reach: EpicReach, realizing: dict[EntryId, list[EntryId]]) -> RealizersView:
+def _realizers_view(matrix: Matrix, realizing: dict[EntryId, list[EntryId]]) -> RealizersView:
     """Render what realizes each feature of an Epic, each realizer once.
 
     Returns:
         Each feature with the ids of its realizers, each realizer with its stack and repository,
-        and the realizers the architecture side places in no stack.
+        and the realizers no side places in a stack.
 
     """
     realizers: list[EntryId] = list(dict.fromkeys(entry_id for found in realizing.values() for entry_id in found))
     return {
-        "features": [
-            {"feature": feature, "supporting": feature in reach.supporting, "realizedBy": found}
-            for feature, found in realizing.items()
-        ],
+        "features": [{"feature": feature, "realizedBy": found} for feature, found in realizing.items()],
         "entries": [_realizer(matrix, entry_id) for entry_id in realizers],
-        "noStack": [entry_id for entry_id in realizers if authority_holder(matrix, entry_id) is None],
+        "noStack": [entry_id for entry_id in realizers if holder(matrix, entry_id) is None],
     }
 
 

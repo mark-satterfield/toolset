@@ -11,13 +11,12 @@ answer:
 - ``unreached --kinds <kinds>``: the entries of those kinds (and ``repository``) no Epic reaches.
 
 The rule of reach is ``matrixtraverse.rule_reach``, the one walk the approval scope, the
-architecture pack and the check use: an Epic reaches an entry when a document ``covers`` one of
-the Epic's requirements under the same heading that ``describedBy`` names for the entry, or when
-a feature serving one of its requirements is ``realizedBy`` the entry. It reaches a stack when an
-entry so reached is the stack, has its home in it (``homeIn``), or ``correspondsTo`` an entry that
-does. It reaches the direct far end of each dependency that starts at such an entry or stack, one
-hop. The dependency family is not followed further and a document shared under different headings
-joins nothing: both make every Epic reach every service.
+architecture pack and the check use: an Epic reaches an entry when a feature serving one of its
+requirements is ``realizedBy`` the entry. It reaches a stack when an entry so reached is the stack
+or has its home in it (``homeIn``, the architecture side's, else the repository side's). It reaches
+the direct far end of each dependency that starts at such an entry or stack, one hop. Document
+headings and the dependency family beyond one hop are not followed: both make every Epic reach
+every service.
 
 It reads the matrix the same way ``atw-matrix`` does (``--matrix``, else ``ATW_MATRIX``, else
 ``ATW_CONTROL_REPO``) and changes nothing. ``--json`` prints one JSON object instead of text.
@@ -47,7 +46,7 @@ from matrix_contract import (
 )
 from matrixquery import epic_view
 from matrixstore import Matrix, matrix_path, read_matrix
-from matrixtraverse import Heading, RuleReach, epic_id, heading_index, rule_reach_indexed, stacks_of
+from matrixtraverse import RuleReach, epic_id, rule_reach, stacks_of
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -82,21 +81,20 @@ def _text(value: object) -> str:
 
 
 def _all_reaches(matrix: Matrix) -> dict[EntryId, RuleReach]:
-    """Walk every Epic once by the rule of reach, over one heading index.
+    """Walk every Epic once by the rule of reach.
 
     Returns:
         Each Epic with what it reaches.
 
     """
-    index: dict[Heading, list[EntryId]] = heading_index(matrix)
-    return {epic.id: rule_reach_indexed(matrix, epic.id, index) for epic in matrix.entries((KIND_EPIC,))}
+    return {epic.id: rule_reach(matrix, epic.id) for epic in matrix.entries((KIND_EPIC,))}
 
 
 def epics_reaching(matrix: Matrix, target: EntryId) -> Json:
     """List the Epics that reach an entry.
 
     Returns:
-        The entry and each Epic that reaches it, with how: the headings or features that reach an
+        The entry and each Epic that reaches it, with how: the features whose ``realizedBy`` reaches an
         entry, the reached entries that place a stack, or the dependencies that reach it one hop
         from a reached entry or stack.
 
@@ -155,7 +153,7 @@ def epic_needs(matrix: Matrix, bead: str) -> Json:
         it reaches one hop from them, and its gaps.
 
     """
-    reach: RuleReach = rule_reach_indexed(matrix, epic_id(bead), heading_index(matrix))
+    reach: RuleReach = rule_reach(matrix, epic_id(bead))
     view: Mapping[str, object] = epic_view(matrix, bead)
     realizers: dict[str, list[Json]] = {kind: [] for kind in REALIZER_KINDS}
     for entry in sorted(reach.entries):

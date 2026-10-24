@@ -10,9 +10,8 @@ Assess the architecture dependencies of one Epic in the beads tracker of the rep
 are standing in, by dispatching the `dependency-assessment` workflow. An edge between two
 Epics is an architecture dependency: an architecture decision one Epic rests on should be
 designed from another Epic's requirements first, and the matrix does not hold that decision approved
-(`agent-teams-workforce:epic-sequencing`). The workflow writes the Epic's edges to beads and,
-in the matrix, what the Epic drives and rests on, then triggers `wsjf-scoring`, because edges
-decide RR-OE.
+(`agent-teams-workforce:epic-sequencing`). The workflow writes the Epic's edges to beads, then
+triggers `wsjf-scoring`, because edges decide RR-OE. It writes nothing to the matrix.
 
 `<epic-id>` is required: the one Epic, new or changed, to assess. Report the usage and stop
 without it. The epic-dependency-assessor reads that Epic's full PRD, at the path the matrix holds for it,
@@ -29,9 +28,8 @@ it. Code refuses any edge that does not touch the Epic, a cycle, an unaccounted 
 and a missing reason, and writes only that Epic's edges. Hand-made edges are never touched.
 The session checks its proposal with the validate command and writes nothing to beads or the
 matrix. The workflow validates the proposal and runs apply-edges, which validates it again and
-writes nothing unless it passes. It then records, for each decision the session judged that a
-matrix entry states, one `drives` or `restsOn` relationship from the Epic to that entry
-(`atw-matrix link`, `side: architecture`). The Epic-to-Epic edge stays a beads `tracks` edge.
+writes nothing unless it passes. The Epic-to-Epic edge is a beads `tracks` edge, and the matrix
+records no Epic-to-Epic relationship.
 A proposal that does not validate stops the run, naming the Epic and each finding, and writes
 nothing.
 
@@ -74,7 +72,7 @@ When the block prints `REFUSED`, report that line verbatim and stop; dispatch no
 
 Use the printed values below. Leave `archPath` out when it printed empty, and `projectRoot`
 likewise. `<REPO>` is the control repository: its tracker holds the Epics, and its
-`ops/sdlc-automation/matrix.json` is the matrix the workflow reads and records in.
+`ops/sdlc-automation/matrix.json` is the matrix the workflow reads.
 
 ```
 Workflow({name: "agent-teams-workforce:dependency-assessment", args: {
@@ -99,9 +97,6 @@ From the workflow's result:
   (`edges.reasoning`), which holds the Epics whose PRDs the session read in full and the edges
   the sequencer was unsure of. When `edges.applied` is false, its `reason`, or the validation
   defects.
-- `matrix` — `decisions`, the `drives` and `restsOn` relationships the session named;
-  `recorded`, how many `atw-matrix link` confirmed; and `failures`, each refused call with its
-  error, verbatim. With `--propose` none is recorded.
 - `stop` — when the proposal did not validate: the Epic and every finding in
   `stop.findings`, with the `edgesFile` and `validationFile`, and what a person does: correct
   the PRD, or the hand-made edge a cycle runs through, then assess the Epic again.

@@ -1,10 +1,10 @@
 export const meta = {
   name: 'dependency-assessment',
   description:
-    "Assesses the architecture dependencies of ONE Epic and writes its `tracks` edges. The workflow writes the Epic's context: the Epics the matrix relates to it (atw-matrix related --epic), each with its PRD file, and the edges standing on it in the tracker. One epic-dependency-assessor session reads the Epic's PRD and the related PRDs, asks the matrix what already settles each decision (atw-matrix find, node), proposes the edges and checks its proposal; the workflow validates the proposal, runs apply-edges and records in the matrix what the Epic drives and rests on (atw-matrix link drives and restsOn). The Epic-to-Epic edge stays a beads `tracks` edge. When the edges are applied it triggers wsjf-scoring. With `apply: false` apply-edges runs as a dry run, nothing is recorded in the matrix and no scoring runs.",
+    "Assesses the architecture dependencies of ONE Epic and writes its `tracks` edges. The workflow writes the Epic's context: the Epics the matrix relates to it (atw-matrix related --epic), each with its PRD file, and the edges standing on it in the tracker. One epic-dependency-assessor session reads the Epic's PRD and the related PRDs, asks the matrix what already settles each decision (atw-matrix find, node), proposes the edges and checks its proposal; the workflow validates the proposal and runs apply-edges. The Epic-to-Epic edge is a beads `tracks` edge and nothing is recorded in the matrix. When the edges are applied it triggers wsjf-scoring. With `apply: false` apply-edges runs as a dry run and no scoring runs.",
   whenToUse: 'A new or changed Epic needs its architecture dependencies assessed.',
   phases: [
-    { title: 'Assess', detail: 'the workflow writes the context; one epic-dependency-assessor session proposes and validates the edges; the workflow runs apply-edges and records the drives and restsOn relationships in the matrix' },
+    { title: 'Assess', detail: 'the workflow writes the context; one epic-dependency-assessor session proposes and validates the edges; the workflow runs apply-edges' },
     { title: 'Score', detail: 'wsjf-scoring over the new edges' },
   ],
 }
@@ -773,12 +773,10 @@ async function settleAgent(prompt, opts) {
 //   epic:         string,   // the one Epic assessed
 //   archPath?:    string,   // the architecture root a document's id is a path under
 //   score?:       boolean,  // false: do not trigger scoring. Default true.
-//   apply?:       boolean,  // false: apply-edges runs as a dry run and nothing is recorded in the matrix. Default true.
+//   apply?:       boolean,  // false: apply-edges runs as a dry run. Default true.
 // }
-// Returns: { ok, stage, beadId, headline, apply, settled, workDir, epic, assessment, edges, matrix, scoring,
+// Returns: { ok, stage, beadId, headline, apply, settled, workDir, epic, assessment, edges, scoring,
 //            stop, error?, dispatchFailed, dispatchFailures }
-// `matrix` is { decisions, recorded, failures }: the drives and restsOn relationships the session named,
-// how many atw-matrix link confirmed, and each call it refused.
 const given = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const PATH_ARGS = ['repoPath', 'pluginRoot', 'workDir']
 // The environment variable that supplies each path arg the caller leaves out. pluginRoot has none of
@@ -907,14 +905,10 @@ const applies = a.apply !== false
 
 const planFile = file('assess-plan.json')
 const contextFile = file('context.json')
-// The matrix command. The control repository names where the matrix file is; a read needs no role.
+// The matrix command the session reads with. The control repository names where the matrix file is; a read needs no role.
 const PLUGIN = String(a.pluginRoot || '').replace(/\/+$/, '')
 const MATRIX_BIN = `${PLUGIN}/bin/atw-matrix`
-const MATRIX_ENV = { [DRIVER_SURFACE.CONTROL_REPO_ENV]: repo }
 const MATRIX = `${DRIVER_SURFACE.CONTROL_REPO_ENV}=${shq(repo)} ${shq(MATRIX_BIN)}`
-// The role the workflow records under (matrix-kinds.json roles): link runs for it.
-const MATRIX_RECORD_ROLE = 'script'
-const EPIC_ENTRY = `epic:${target}`
 const edgesFile = file('edges.json')
 const candidateFile = file('candidates/edges.json')
 const reasoningFile = file('reasoning.md')
@@ -940,14 +934,9 @@ const contextFailure = planned.error ? { step: 'assess-plan', ...planned } : con
 const contextError = contextFailure ? `${contextFailure.step}: ${contextFailure.error}` : ''
 
 // The edge file the session writes, by its contract file: the prompt names the file, and
-// jsonartifact.py validates the candidate against it. The relationships a decision row may record
-// are generated from the same file.
+// jsonartifact.py validates the candidate against it.
 const EDGE_CONTRACT = 'skills/artifact-handoff/schemas/epic-edge-proposal.schema.json'
 const CONTEXT_CONTRACT = 'skills/artifact-handoff/schemas/dependency-assessment.schema.json#/$defs/EpicContext'
-// ===== CONTRACT SCHEMA DECISION_RELATIONSHIP_SCHEMA = skills/artifact-handoff/schemas/epic-edge-proposal.schema.json#/$defs/Decision/properties/relationship — BEGIN (generated from that contract file; edit it, then: node scripts/shared-blocks.mjs --write --only dependency-assessment.js) =====
-const DECISION_RELATIONSHIP_SCHEMA = {"description":"`drives` when the Epic's requirements shape what the entry states; `restsOn` when the Epic relies on what the entry states as settled architecture. The matrix registry (matrix-kinds.json) defines both relationships and the entry kinds each may end at, and `atw-matrix link` refuses any other.","type":"string","enum":["drives","restsOn"]}
-// ===== CONTRACT SCHEMA DECISION_RELATIONSHIP_SCHEMA — END =====
-const DECISION_RELATIONSHIPS = DECISION_RELATIONSHIP_SCHEMA.enum
 const priorBlock = typeof a.priorFailure === 'string' && a.priorFailure.trim()
   ? `THE PREVIOUS ASSESSMENT OF THIS ITEM FAILED, on this same content: ${a.priorFailure.trim().slice(0, 2000)}\nWork out why before you start, and do not repeat it.\n\n`
   : ''
@@ -975,7 +964,7 @@ const assess = () => settleAgent(assessPrompt, {
 // The authoritative candidate is validated and published before any tracker mutation.
 const saved = !contextError && !dispatchInterruption ? await relayKit.authorArtifact(settleAgent, {
   label: 'save-edges', phase: 'Assess', runner: RUNNER, candidate: candidateFile, file: edgesFile,
-  contract: EDGE_CONTRACT, revision: inputRevision, relayFile: file('relay/accepted-edges.json'), counts: ['edges', 'withdrawn'], keys: ['decisions'],
+  contract: EDGE_CONTRACT, revision: inputRevision, relayFile: file('relay/accepted-edges.json'), counts: ['edges', 'withdrawn'],
 }, assess, () => !!dispatchInterruption) : null
 const accepted = !!(saved && saved.ok)
 const validation = saved && saved.ok ? await depscore('validate', `validate --edges ${shq(edgesFile)} ${scope}`) : null
@@ -986,40 +975,6 @@ const applied = valid
 const summary = applied && !applied.error && applied.summary && typeof applied.summary === 'object' ? applied.summary : {}
 const settled = !!applied && !applied.error && !summary.validation && summary.applied !== false
 
-// The decisions the session judged are recorded in the matrix by the workflow, once the edges are applied:
-// one drives or restsOn relationship from the Epic's entry to the entry that states each, with
-// side architecture. Every call runs in one checked command, and the run is done only when atw-matrix
-// confirmed each of them.
-const RECORD_PY = `import json, os, subprocess
-program, added, calls = ARGS[0], json.loads(ARGS[1]), json.loads(ARGS[2])
-env = dict(os.environ, **added)
-recorded, failures = 0, []
-for call in calls:
-    ran = subprocess.run([program, *call], env=env, capture_output=True, text=True, check=False)
-    if ran.returncode == 0:
-        recorded += 1
-    else:
-        failures.append({"call": " ".join(call), "exit": ran.returncode, "error": (ran.stderr or ran.stdout).strip()[-600:]})
-emit({"recorded": recorded, "failures": failures})`
-const decisionCalls = [...new Map(
-  (accepted && saved.facts && Array.isArray(saved.facts.decisions) ? saved.facts.decisions : [])
-    .filter((d) => d && DECISION_RELATIONSHIPS.includes(d.relationship) && typeof d.entry === 'string' && d.entry.trim())
-    .map((d) => {
-      const entry = d.entry.trim()
-      const heading = entry.startsWith('document:') && typeof d.heading === 'string' ? d.heading.trim() : ''
-      return [`${d.relationship}|${entry}|${heading}`, ['link', d.relationship, '--from', EPIC_ENTRY, '--to', entry, '--side', 'architecture', ...(heading ? ['--heading', heading] : [])]]
-    })
-).values()]
-let matrix = { decisions: decisionCalls.length, recorded: 0, failures: [] }
-if (settled && applies && decisionCalls.length) {
-  const wrote = await relayKit.inline(settleAgent, { label: 'record-decisions', phase: 'Assess', code: RECORD_PY, args: [MATRIX_BIN, JSON.stringify({ ...MATRIX_ENV, ATW_MATRIX_ROLE: MATRIX_RECORD_ROLE }), JSON.stringify(decisionCalls)] })
-  matrix = wrote.ok
-    ? { decisions: decisionCalls.length, recorded: Number(wrote.view.recorded) || 0, failures: Array.isArray(wrote.view.failures) ? wrote.view.failures : [] }
-    : { decisions: decisionCalls.length, recorded: 0, failures: [{ call: 'atw-matrix link', exit: null, error: String(wrote.error || 'the recording command returned no result') }], noResult: !!wrote.noResult }
-  log(`Matrix (${target}): ${matrix.recorded} of ${matrix.decisions} drives and restsOn relationship(s) recorded${matrix.failures.length ? `; ${matrix.failures.length} refused: ${matrix.failures.slice(0, 3).map((f) => `${f.call}: ${f.error}`).join('; ')}` : ''}`)
-}
-const recordedOk = !(settled && applies) || (matrix.failures.length === 0 && matrix.recorded === matrix.decisions)
-const recordError = recordedOk ? '' : `${matrix.decisions - matrix.recorded} of ${matrix.decisions} drives and restsOn relationship(s) were not recorded in the matrix: ${matrix.failures.slice(0, 5).map((f) => `${f.call}: ${f.error}`).join('; ') || 'atw-matrix confirmed fewer than were named'}`
 const validationFile = (validation && validation.relayFile) || selfCheckFile
 const findingsOf = (v) => {
   if (!v || v.error) return null
@@ -1084,26 +1039,23 @@ const scoredOk = !scores || (!!scoring && scoring.ok === true)
 const scoringDeaths = scoring && scoring.ok !== true && scoring.stage === 'agent-dispatch-failed' && Array.isArray(scoring.dispatchFailures) ? scoring.dispatchFailures : []
 const failure = !settled
   ? `${target}: ${edges.reason}`
-  : !recordedOk
-    ? `${target}: the edges were applied, but ${recordError}`
-    : !scoredOk
-      ? `${target}: the edges were applied, but scoring failed: ${(scoring && scoring.error) || 'wsjf-scoring returned no result'}`
-      : null
-const relayDied = [contextFailure, saved && !saved.ok ? saved : null, validation, applied, matrix].some((r) => r && r.noResult)
+  : !scoredOk
+    ? `${target}: the edges were applied, but scoring failed: ${(scoring && scoring.error) || 'wsjf-scoring returned no result'}`
+    : null
+const relayDied = [contextFailure, saved && !saved.ok ? saved : null, validation, applied].some((r) => r && r.noResult)
 return dispatchOutcome({
-  ok: settled && recordedOk && scoredOk,
+  ok: settled && scoredOk,
   stage: (contextError || saved) && !relayDied
-    ? !settled || !recordedOk ? 'Assess' : !scoredOk ? (scoring && scoring.stage === 'agent-dispatch-failed' ? scoring.stage : 'Score') : 'done'
+    ? !settled ? 'Assess' : !scoredOk ? (scoring && scoring.stage === 'agent-dispatch-failed' ? scoring.stage : 'Score') : 'done'
     : 'agent-dispatch-failed',
   beadId: target,
-  headline: failure || `${target}: edges ${applies ? 'applied' : 'proposed'} — ${summary.added ?? '?'} added, ${summary.converted ?? '?'} converted, ${summary.removed ?? '?'} withdrawn, ${summary.unchanged ?? '?'} unchanged; ${applies ? `${matrix.recorded} drives and restsOn relationship(s) recorded in the matrix` : `${matrix.decisions} drives and restsOn relationship(s) named, none recorded`}${scores ? ', and rescored' : ''}`,
+  headline: failure || `${target}: edges ${applies ? 'applied' : 'proposed'} — ${summary.added ?? '?'} added, ${summary.converted ?? '?'} converted, ${summary.removed ?? '?'} withdrawn, ${summary.unchanged ?? '?'} unchanged${scores ? ', and rescored' : ''}`,
   apply: applies,
   settled,
   workDir: work,
   epic: target,
   assessment,
   edges,
-  matrix: { decisions: matrix.decisions, recorded: matrix.recorded, failures: matrix.failures },
   scoring,
   stop,
   ...(failure ? { error: failure } : {}),

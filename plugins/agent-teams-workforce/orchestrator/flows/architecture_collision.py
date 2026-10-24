@@ -33,15 +33,14 @@ from typing import TYPE_CHECKING, Final, TypedDict
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 from architecture_work_contract import VERDICT_KEPT
-from matrix_contract import KIND_DOCUMENT, KIND_EPIC
+from matrix_contract import AUTHORITY_SIDE, KIND_DOCUMENT, KIND_EPIC, KIND_FEATURE, REL_DESCRIBED_BY
 from matrixstore import as_entry_id, make_id, read_matrix
 from matrixsync import parse_document
 from matrixtraverse import (
     approval_scope,
     entry_content_hash,
     epic_id,
-    heading_index,
-    rule_reach_indexed,
+    rule_reach,
 )
 
 from orchestrator.core.handback_contract import MISSING_EDGE_CAUSE
@@ -61,7 +60,7 @@ if TYPE_CHECKING:
     from architecture_work_contract import ArchitectureResult
     from matrix_contract import Entry, EntryId
     from matrixstore import Matrix
-    from matrixtraverse import ApprovalScope, Heading, RuleReach
+    from matrixtraverse import ApprovalScope, RuleReach
 
     from orchestrator.core.io import JsonValue
     from orchestrator.core.journal_steps import StepRun
@@ -251,7 +250,7 @@ def _kept_collision(bead: str, recorded: ReviewedEntry, listed: ReviewedEntry) -
     return None
 
 
-def _reaches(matrix: Matrix, bead: str, index: Mapping[Heading, list[EntryId]]) -> dict[str, set[EntryId]]:
+def _reaches(matrix: Matrix, bead: str) -> dict[str, set[EntryId]]:
     """Walk every other Epic by the rule of reach.
 
     Returns:
@@ -263,7 +262,7 @@ def _reaches(matrix: Matrix, bead: str, index: Mapping[Heading, list[EntryId]]) 
     for other in matrix.entries((KIND_EPIC,)):
         name: str = other.id.removeprefix(f"{KIND_EPIC}:")
         if name != bead:
-            reach: RuleReach = rule_reach_indexed(matrix, other.id, index)
+            reach: RuleReach = rule_reach(matrix, other.id)
             found[name] = {*reach.requirements, *reach.features, *reach.ids()}
     return found
 
@@ -283,13 +282,16 @@ def _named_others(
         Each entry id and each document path with those Epics' beads ids, in id order.
 
     """
-    index: dict[Heading, list[EntryId]] = heading_index(matrix)
-    reaches: dict[str, set[EntryId]] = _reaches(matrix, bead, index)
+    reaches: dict[str, set[EntryId]] = _reaches(matrix, bead)
     wanted: dict[str, set[EntryId]] = {entry_id: {entry_id} for entry_id in entries}
     relative: str
     for relative in documents:
         document: EntryId = make_id(KIND_DOCUMENT, relative)
-        wanted[relative] = {entry for (held, _), described in index.items() if held == document for entry in described}
+        wanted[relative] = {
+            describing.start
+            for describing in matrix.incoming(document, (REL_DESCRIBED_BY,))
+            if describing.side == AUTHORITY_SIDE and matrix.entry(describing.start).kind != KIND_FEATURE
+        }
     return {
         item: tuple(sorted(name for name, reached in reaches.items() if items & reached))
         for item, items in wanted.items()

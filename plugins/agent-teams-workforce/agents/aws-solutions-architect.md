@@ -171,13 +171,11 @@ to fulfil the needs of the PRD; anything new or changed is recorded in the matri
 The pack's `reach` is what the Epic actually needs, never the whole architecture. Make the matrix true
 for it:
 
-1. For each row, confirm that its `via` link (a covering heading, `describedBy`, `realizedBy`,
-   a home, a dependency) is true for this PRD. Correct a wrong link with `unlink` and `link`
-   operations. Unlink a link that over-reaches: for example, a cross-cutting heading
-   "Sign-in by any method resolves to one account" that links
-   `service:skillspoke-securitynotifications-service` and its stack into an identity Epic that
-   sends no security notification. When the link comes from a document heading, have
-   `architecture-maintainer` correct the heading instead; the sync then corrects the link.
+1. For each row, confirm that its `via` link (`servedBy`, `realizedBy`, a home, a dependency)
+   is true for this PRD. Correct a wrong link with `unlink` and `link` operations. Unlink a link
+   that over-reaches: for example, a `realizedBy` that joins a feature of an identity Epic to
+   `service:skillspoke-securitynotifications-service` when the feature sends no security
+   notification.
 2. Use an approved entry as it is: confirm its link, and review its design only when this PRD
    needs it changed. A change to an approved entry clears its flag, and your review then
    approves it for this Epic.

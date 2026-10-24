@@ -266,23 +266,18 @@ def _method(analysis: Analysis) -> list[str]:
         "Relationships used, all architecture side:",
         "",
         (
-            "- **Drives a feature.** An Epic drives a feature when it has a `drives` relationship to the feature, "
-            "or to a document heading (or a whole document) that the feature's `describedBy` names. With no such "
-            "Epic, the feature has a driver only when it serves the requirements of exactly one Epic "
-            "(`hasRequirement` → `servedBy`) that does not only `restsOn` it; a feature serving several Epics with "
-            "no `drives` has no driver and makes no edge (the first Epic elaborated approves it)."
-        ),
-        ("- **Uses a feature.** The other Epics the feature serves (`servedBy`), and the Epics with `restsOn` to it."),
-        (
-            "- **Drives a heading.** An Epic with a `drives` relationship to a document heading drives it. Its "
-            "users are the Epics whose requirements that exact heading `covers`, and the Epics with `restsOn` "
-            "to the heading or to an entry it describes."
+            "- **Defines an entry.** An Epic defines each entry a feature serving one of its requirements is "
+            "`realizedBy` (`hasRequirement` → `servedBy` → `realizedBy`), and the stack each such entry is or "
+            "has its home in (`homeIn`)."
         ),
         (
-            "- **Not used to decide driving:** `covers` and `describedBy` through a heading no Epic `drives`; "
-            "`realizedBy`, `homeIn` and dependency links. Services, stacks, infrastructure and libraries are "
-            "never units of their own, so Epics adding different features to one service do not wait for each "
-            "other, and an entry no Epic's requirements define makes no edge."
+            "- **Uses an entry.** An Epic uses each entry that is the far end of a dependency, one hop, from an "
+            "entry or stack it defines, and that it does not itself define."
+        ),
+        (
+            "- **Not used:** document headings (`covers`, `describedBy`), `supportedBy`, and dependencies beyond "
+            "one hop. Epics whose features are realized by one entry, or by entries of one stack, define it "
+            "together and do not wait for each other; an entry no Epic defines makes no edge."
         ),
         "",
         (

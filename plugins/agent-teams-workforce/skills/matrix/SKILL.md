@@ -42,7 +42,7 @@ The chain from an Epic to a repository:
 ```text
 epic --hasRequirement--> requirement --servedBy--> feature (many-to-many across Epics)
 feature --describedBy--> document <--describedBy-- service | component | infrastructure | event
-feature --realizedBy--> service | component | infrastructure | event | stack
+feature --realizedBy--> service | component | infrastructure | event | layer | package | stack
 service | component | infrastructure --homeIn--> stack   (stack.repository names its repository)
 stack --imports|calls|publishes|reads|runsIn|usesLayer...--> what it depends on (any depth)
 document --covers{heading, via: feature}--> requirement
@@ -92,19 +92,19 @@ that describes a feature, so broad documents (READMEs, crosscutting concepts) an
 make every Epic reach every service. `related --epic` and `resources --epic` walk the same
 closure. Never answer "which Epics reach X" from the closure either.
 
-**The rule of reach.** An Epic reaches an entry when a document `covers` one of the Epic's
-requirements under the same heading that the entry's `describedBy` names, or when a feature
-serving one of its requirements is `realizedBy` the entry. It reaches a stack when an entry so
-reached is the stack, has its home in it (`homeIn`), or `correspondsTo` an entry that does. It
-reaches the direct far end of each dependency that starts at such an entry or stack, one hop,
-never the dependency family outward. This is the Epic's approval scope
+**The rule of reach.** An Epic reaches an entry when a feature serving one of its
+requirements is `realizedBy` the entry. It reaches a stack when an entry so reached is the
+stack or has its home in it (`homeIn` on the architecture side, else on the repository side).
+It reaches the direct far end of each dependency that starts at such an entry or stack, one
+hop, never the dependency family outward. Document headings (`covers`, `describedBy`) and
+`supportedBy` carry no reach. This is the Epic's approval scope
 (`matrixtraverse.approval_scope`): what `atw-matrix approval --epic` lists, what the architect
-reviews and what promotion approves.
-`atw-matrix epic <id> --realizers` applies the same heading match per feature.
+reviews and what promotion approves. `atw-matrix epic <id> --realizers` lists, for each feature
+that serves the Epic's requirements, the ends of its `realizedBy`, each with its stack.
 
-Example: Epic `ssbd-mx3vn` reaches `service:skillspoke-push-service` because
-`arc42/05-building-block-view/messaging-and-realtime/README.md` covers its requirements under
-"Building blocks" and "Per-channel delivery services", the headings that describe the service.
+Example: Epic `ssbd-mb689` reaches `component:chat-turn-worker` because
+`feature:hold-a-conversation-with-the-agent` serves its requirements and is `realizedBy` the
+component, and reaches `stack:SkillSpoke-chat-service` because the component has its home there.
 
 - `atw-matrix epic <id>` (no flag) returns `requirements[]` (each with `features` and
   `coveredBy`), `noFeature` and `noDocument`. `noStack`, `noRepository`, `noCounterpart` and

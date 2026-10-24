@@ -130,7 +130,7 @@ at it under the reverse name.
 | `hasRequirement` (`requirementOf`) | epic → requirement | The Epic's PRD states the requirement. | none |
 | `servedBy` (`serves`) | requirement → feature | The feature serves the requirement. One feature commonly serves several requirements, of one Epic or of several, and reaches each Epic through them. A feature derived from the architecture that no requirement names has none. | none |
 | `supportedBy` (`supports`) | feature → feature | The first feature relies on the second, a supporting capability. | `relies` (ids of the `provides` items relied on) |
-| `realizedBy` (`realizes`) | feature → service, component, infrastructure, event, stack | The entry implements the feature or provides the capability. | none |
+| `realizedBy` (`realizes`) | feature → service, component, infrastructure, event, layer, package, stack | The entry implements the feature or provides the capability. | none |
 | `describedBy` (`describes`) | feature, constraint, service, component, infrastructure, event, stack, package, layer → document | The document describes the entry. | `heading` (key) |
 | `covers` (`coveredBy`) | document → requirement | The document covers this requirement of this PRD. | `heading` (key), `via` (the feature that connects them, key) |
 | `statedIn` (`states`) | constraint → document | The constraint comes from this document. | `heading` (key) |
@@ -200,9 +200,9 @@ and arc42 are filled out or corrected for it.
 - **What it covers.** The matrix content the Epic's elaboration reaches,
   `matrixtraverse.approval_scope(matrix, epic)`: the Epic, its requirements, and what
   `rule_reach` reaches from them by the rule of reach that the architecture side states (the
-  features that serve the requirements, the entries a covering heading's `describedBy` or a
-  serving feature's `realizedBy` names, their stacks, and the direct far end of each
-  dependency from those, one hop), with every architecture-side relationship that joins two
+  features that serve the requirements, the entries a serving feature's `realizedBy` names,
+  the stack each is or has its home in, and the direct far end of each dependency from those,
+  one hop), with every architecture-side relationship that joins two
   of those. The closure (`epic_reach`) is not used: it makes every Epic reach every service.
   The architecture pack lists the same scope (`reach_rows`, each entry with its owner, how it
   is reached, the Epics that share it and `entry_content_hash`), and the check holds the
@@ -343,7 +343,7 @@ today, each marked with its side.
 | Q29 | `documents --id <id>` | The entry, every entry that is `partOf` it to any depth and, for a stack, what it holds; every `document` or `file` any relationship of either direction joins to one of them, once, with its `lifecycle` and the relationships that join it. |
 | Q30 | `links --id <id> [--depth <n>] [--direction out\|in\|both] [--kinds <k,...>]` | Breadth first from the entry over every relationship (or the kinds named), outward by default, to any depth unless `--depth` bounds it; each entry is reached once and each relationship followed is returned with its depth, the direction and the far end. |
 | Q25 | `summary --unlinked` | `noArchitecture`: over the whole matrix, the entries with `side: repository`, of the kinds read from a repository (`matrixquery.FOUND_KINDS`: component, infrastructure, layer, stack), that no `correspondsTo` ends at. It is the other direction of Q13's `noCounterpart`. |
-| Q26 | `epic <id> --realizers` | For each feature Q12 reaches, the ends of its `realizedBy` relationships and every service, component, infrastructure, event or layer whose architecture-side `describedBy` names a document heading that `covers` one of the Epic's requirements by way of the feature. Each realizer is returned once with its architecture-side stack (`authority_holder`), that stack's `repository`, its `resourceType` when it has one and, for an event, its publishers; `noStack` lists the realizers with no such stack. |
+| Q26 | `epic <id> --realizers` | For each feature that serves one of the Epic's requirements, the ends of its `realizedBy` relationships; a feature reached only through `supportedBy` is not listed. Each realizer is returned once with its stack (`holder`: the architecture-side home, else the repository-side home), that stack's `repository`, its `resourceType` when it has one and, for an event, its publishers; `noStack` lists the realizers with no stack on either side. |
 | Approval | `approval --epic <id>` | `matrixtraverse.approval_scope`: the Epic, its requirements and every architecture-side entry it reaches by the rule of reach, with the architecture-side relationships between them. Each entry is returned under `approved` (with `kind`, `name` and `approvedBy`, the Epic the flag names) when it carries `approved`, otherwise under `notApproved`; `relationships` and `approvedRelationships` count the relationships (section 1.4.1). |
 
 Three further reads serve single steps. `uses --ids <entry ids>` returns the shared
@@ -480,7 +480,7 @@ arc42 documents, the next run's E1 mirrors them, and the architect records what 
 |---|---|---|---|
 | A1 PRD and Epic created | `workflows/prd-creation.js` final result; `agents/prd-writer.md` | none | `sync-epics --bead <id> --prd <path>` once the Epic bead exists: the pair and its requirements (Q1). |
 | A2 PRD validation | `workflows/prd-validation.js` requirement-class lens (`agents/requirement-classifier.md`) | `find --kinds constraint,document --text` and `node` for whether the architecture states a technical rule (Q4, Q5). | A technical rule no document states: a `constraint` with `appliesTo` the epic and no `statedIn`. |
-| A3 Epic dependency assessment | `workflows/dependency-assessment.js`; `agents/epic-dependency-assessor.md`; `skills/epic-sequencing/SKILL.md`; `assesscontext.py` `assess_context`; `depscore.py` `apply-edges`, `withdraw-edge` | `related --epic` (Q20); `find --kinds feature,document` then `node` for what states a decision and whether an Epic's elaboration approved it (the `approved` flag); the named related PRDs. | `drives` and `restsOn` from the epic to the feature or document heading for each decision judged. The Epic-to-Epic edge stays a beads `tracks` edge. |
+| A3 Epic dependency assessment | `workflows/dependency-assessment.js`; `agents/epic-dependency-assessor.md`; `skills/epic-sequencing/SKILL.md`; `assesscontext.py` `assess_context`; `depscore.py` `apply-edges`, `withdraw-edge` | `related --epic` (Q20); `find --kinds feature,document` then `node` for what states a decision and whether an Epic's elaboration approved it (the `approved` flag); the named related PRDs. | Nothing. The Epic-to-Epic edge is a beads `tracks` edge. |
 | A4 Task dependency assessment | `workflows/task-dependency-assessment.js`; `assesscontext.py` `task_context` | The ids the Task states; `work --id`, `deps --of` and `deps --on` for the Task's stack (R42, Q9, Q15). | The stack and entry ids written into a Task that states none (R41). A dependency between stacks the matrix lacks. |
 
 ### Build (`task-to-deploy` and the driver's build lane)
@@ -727,8 +727,11 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
     on the beads.
 18. **TRD and Spec files.** Outside the matrix; their paths stay on the beads. The technical
     requirements a TRD states are constraints.
-19. **Epic-to-Epic order.** The edge stays a beads `tracks` edge. The matrix records what
-    each Epic drives and rests on, from which related Epics are read.
+19. **Epic-to-Epic order.** The edge is a beads `tracks` edge, and the matrix records no
+    relationship between Epics. `epicorder.py` derives the order from the chain: an Epic
+    defines each entry a feature serving its requirements is `realizedBy` and the stack that
+    entry has its home in, and uses the far end of each dependency, one hop, from what it
+    defines; every definer of an entry orders before every user of it.
 20. **Events.** Entries. Q9 and requirement R17 need an event a stack publishes, and the
     EventBridge rule that matches it and the targets the rule routes it to, returned as
     things the stack depends on. A publisher and a consumer meet only at the event: the

@@ -33,7 +33,7 @@ its kind at its start and under its reverse name at its end.
 | `hasRequirement` (`requirementOf`) | epic → requirement | The Epic's PRD states the requirement. |
 | `servedBy` (`serves`) | requirement → feature | The feature serves the requirement; one feature serves requirements of many Epics. |
 | `supportedBy` (`supports`) | feature → feature | The first feature relies on the second, a supporting capability (`relies`: the `provides` ids relied on). |
-| `realizedBy` (`realizes`) | feature → service, component, infrastructure, event, stack | The entry implements the feature. |
+| `realizedBy` (`realizes`) | feature → service, component, infrastructure, event, layer, package, stack | The entry implements the feature. |
 | `describedBy` (`describes`) | feature, constraint, service, component, infrastructure, event, stack, package, layer → document | The document describes the entry, under `heading`. A feature and a service described by one document are joined through it. |
 | `covers` (`coveredBy`) | document → requirement | The document heading covers the requirement, `via` the feature that connects them. |
 | `statedIn` (`states`) | constraint → document | The constraint comes from this document heading. |
