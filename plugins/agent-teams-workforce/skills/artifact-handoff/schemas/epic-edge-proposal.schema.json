@@ -2,10 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/epic-edge-proposal.schema.json",
   "title": "Epic edge proposal",
-  "description": "The edge file the epic-dependency-assessor writes for ONE Epic in the dependency-assessment workflow: the candidate <workDir>/candidates/edges.json, which jsonartifact.py validates against this file and publishes as <workDir>/edges.json. `depscore.py validate` then checks it against the tracker and `depscore.py apply-edges` applies it as beads `tracks` edges. Nothing of it is recorded in the matrix. The session runs no `put`, no `link` and no apply. The edge test and the foundation checklist are the agent-teams-workforce:epic-sequencing skill's.",
+  "description": "The edge file the epic-dependency-assessor writes for ONE Epic in the dependency-assessment workflow: the candidate <workDir>/candidates/edges.json, which jsonartifact.py validates against this file and publishes as <workDir>/edges.json. `depscore.py validate` then checks it against the tracker and `depscore.py apply-edges` applies it as beads `tracks` edges. Nothing of it is recorded in the matrix. The session runs no `put`, no `link` and no apply. The edge test and the foundation checklist are the agent-teams-workforce:epic-sequencing skill's. The owner runs this workflow; the order of every Epic is computed by scripts/portfolio/epicorder.py, whose --apply replaces the owned edges this file sets.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["edges", "withdrawn", "decisions"],
+  "required": ["edges", "withdrawn"],
   "properties": {
     "edges": {
       "description": "EVERY edge to or from the assessed Epic that passes the edge test, each owned standing edge it keeps included, and no edge that does not touch it.",
@@ -16,11 +16,6 @@
       "description": "Every owned standing edge (the context's `standing` with `owned: true`) that `edges` does not keep. An edge with `owned: false` is in neither list.",
       "type": "array",
       "items": {"$ref": "dependency-assessment.schema.json#/$defs/Withdrawal"}
-    },
-    "decisions": {
-      "description": "One row for each foundation layer and other architecture decision judged for the assessed Epic, kept or dropped, that a matrix entry states. A decision no matrix entry states gets no row; the reasoning names it.",
-      "type": "array",
-      "items": {"$ref": "#/$defs/Decision"}
     }
   },
   "$defs": {
@@ -36,18 +31,6 @@
         "confidence": {"$ref": "dependency-assessment.schema.json#/$defs/Confidence"},
         "archCheck": {"description": "The matrix entry id (with the document heading, for a document) that states the decision this edge orders, and that the matrix does not hold it approved; or that the lookup returned nothing. Only the `approved` flag, an Epic's elaboration having approved the decision, removes the need for the edge: an entry existing or a document at `lifecycle: effective` does not, because every document still iterates with each Epic (epic-sequencing). An edge without it is refused.", "type": "string"},
         "answers": {"description": "Required only on an edge the context's `withdrawn` list covers: why the recorded withdrawal reason is wrong, on the architecture. Without it that edge is refused.", "type": "string"}
-      }
-    },
-    "Decision": {
-      "description": "One decision the assessed Epic drives or rests on, and the matrix entry that states it: the evidence for the Epic's edges. It is not recorded in the matrix.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["decision", "relationship", "entry", "heading"],
-      "properties": {
-        "decision": {"description": "The decision, in words.", "type": "string"},
-        "relationship": {"description": "`drives` when the Epic's requirements shape what the entry states; `restsOn` when the Epic relies on what the entry states as settled architecture.", "type": "string", "enum": ["drives", "restsOn"]},
-        "entry": {"description": "The id of the matrix entry that states the decision: a feature or a document for `drives`; a feature, document, stack, service, component or infrastructure for `restsOn`.", "type": "string", "minLength": 1},
-        "heading": {"description": "For a document entry, the heading that holds the decision; \"\" for any other entry.", "type": "string"}
       }
     }
   }

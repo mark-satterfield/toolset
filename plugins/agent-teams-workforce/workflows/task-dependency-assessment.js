@@ -1,11 +1,10 @@
 export const meta = {
   name: 'task-dependency-assessment',
   description:
-    "Assesses the build dependencies of ONE Task created outside elaboration and writes its `blocks` edges. The workflow writes the Task's context: the matrix ids the Task states, and for each stack they name the open Tasks that name it or an entry it holds (atw-matrix work --id), what it depends on and what depends on it (atw-matrix deps --of and --on), with the edges standing on the Task in the tracker. One task-dependency-mapper session reads the related Tasks, proposes the edges and checks its proposal; the workflow validates the proposal and runs apply-edges, and writes the stack and entry ids into a Task that states none (its matrix_elements key); it writes nothing into the matrix, and the beads edge alone carries build order. When the edges are applied it triggers wsjf-scoring. With `apply: false` apply-edges runs as a dry run, nothing else is written and no scoring runs.",
+    "Assesses the build dependencies of ONE Task created outside elaboration and writes its `blocks` edges. The workflow writes the Task's context: the matrix ids the Task states, and for each stack they name the open Tasks that name it or an entry it holds (atw-matrix work --id), what it depends on and what depends on it (atw-matrix deps --of and --on), with the edges standing on the Task in the tracker. One task-dependency-mapper session reads the related Tasks, proposes the edges and checks its proposal; the workflow validates the proposal and runs apply-edges, and writes the stack and entry ids into a Task that states none (its matrix_elements key); it writes nothing into the matrix, and the beads edge alone carries build order. The owner runs it; the driver never dispatches it. It scores nothing: WSJF scoring is the owner's own step. With `apply: false` apply-edges runs as a dry run and nothing else is written.",
   whenToUse: 'A Task was created or changed outside elaboration and needs its build dependencies assessed.',
   phases: [
     { title: 'Assess', detail: 'the workflow writes the context; one task-dependency-mapper session proposes and validates the edges; the workflow runs apply-edges and writes the matrix ids of a Task that states none' },
-    { title: 'Score', detail: 'wsjf-scoring over the new edges' },
   ],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json and agents/*.md; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -771,10 +770,9 @@ async function settleAgent(prompt, opts) {
 //   pluginRoot:   string,   // absolute path of this plugin's root
 //   workDir:      string,   // absolute path of a directory for this run's files
 //   task:         string,   // the one Task assessed
-//   score?:       boolean,  // false: do not trigger scoring. Default true.
 //   apply?:       boolean,  // false: apply-edges runs as a dry run and nothing else is written. Default true.
 // }
-// Returns: { ok, stage, beadId, headline, apply, settled, workDir, task, assessment, edges, matrix, scoring,
+// Returns: { ok, stage, beadId, headline, apply, settled, workDir, task, assessment, edges, matrix,
 //            stop, error?, dispatchFailed, dispatchFailures }
 // `matrix` is { elements, elementsWritten, failures }: the matrix ids the session named for a Task that
 // states none; what became of them (none-named, already-stated, written, refused, or not-written on a dry
@@ -1093,17 +1091,6 @@ const assessment = accepted
     }
   : { failed: true, ...(contextError ? { error: contextError } : {}) }
 
-let scoring = null
-const scores = applies && settled && a.score !== false
-if (scores) {
-  phase('Score')
-  try {
-    scoring = await settleWorkflow('agent-teams-workforce:wsjf-scoring', { repoPath: repo, pluginRoot: a.pluginRoot, workDir: file('scoring') })
-  } catch (err) {
-    scoring = { ok: false, error: String((err && err.message) || err).slice(0, 500) }
-  }
-}
-
 const storyEdges = summary.storyEdges || null
 const storyEdgeLine = !storyEdges
   ? ''
@@ -1114,23 +1101,19 @@ const storyEdgeLine = !storyEdges
         .join('')}`
 if (storyEdgeLine) log(`${target}${storyEdgeLine}`)
 
-const scoredOk = !scores || (!!scoring && scoring.ok === true)
-const scoringDeaths = scoring && scoring.ok !== true && scoring.stage === 'agent-dispatch-failed' && Array.isArray(scoring.dispatchFailures) ? scoring.dispatchFailures : []
 const failure = !settled
   ? `${target}: ${edges.reason}`
   : !recordedOk
     ? `${target}: the edges were applied, but ${recordError}`
-    : !scoredOk
-      ? `${target}: the edges were applied, but scoring failed: ${(scoring && scoring.error) || 'wsjf-scoring returned no result'}`
-      : null
+    : null
 const relayDied = [contextFailure, saved && !saved.ok ? saved : null, validation, applied, matrix].some((r) => r && r.noResult)
 return dispatchOutcome({
-  ok: settled && recordedOk && scoredOk,
+  ok: settled && recordedOk,
   stage: (contextError || saved) && !relayDied
-    ? !settled || !recordedOk ? 'Assess' : !scoredOk ? (scoring && scoring.stage === 'agent-dispatch-failed' ? scoring.stage : 'Score') : 'done'
+    ? !settled || !recordedOk ? 'Assess' : 'done'
     : 'agent-dispatch-failed',
   beadId: target,
-  headline: failure || `${target}: edges ${applies ? 'applied' : 'proposed'} — ${summary.added ?? '?'} added, ${summary.converted ?? '?'} converted, ${summary.removed ?? '?'} withdrawn, ${summary.unchanged ?? '?'} unchanged; matrix ids ${matrix.elements}${scores ? ', and rescored' : ''}${storyEdgeLine}`,
+  headline: failure || `${target}: edges ${applies ? 'applied' : 'proposed'} — ${summary.added ?? '?'} added, ${summary.converted ?? '?'} converted, ${summary.removed ?? '?'} withdrawn, ${summary.unchanged ?? '?'} unchanged; matrix ids ${matrix.elements}${storyEdgeLine}`,
   apply: applies,
   settled,
   workDir: work,
@@ -1138,9 +1121,8 @@ return dispatchOutcome({
   assessment,
   edges,
   matrix: { elements: matrix.named, elementsWritten: matrix.elements, failures: matrix.failures },
-  scoring,
   stop,
   ...(failure ? { error: failure } : {}),
-  dispatchFailed: dispatchDeaths().length + scoringDeaths.length > 0,
-  dispatchFailures: [...dispatchDeaths(), ...scoringDeaths],
+  dispatchFailed: dispatchDeaths().length > 0,
+  dispatchFailures: dispatchDeaths(),
 })

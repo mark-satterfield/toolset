@@ -1,5 +1,5 @@
 ---
-description: "Assess the architecture dependencies of one Epic, then score"
+description: "Assess the architecture dependencies of one Epic"
 argument-hint: "<epic-id> [--propose]"
 allowed-tools: [Bash, Workflow]
 ---
@@ -10,10 +10,15 @@ Assess the architecture dependencies of one Epic in the beads tracker of the rep
 are standing in, by dispatching the `dependency-assessment` workflow. An edge between two
 Epics is an architecture dependency: an architecture decision one Epic rests on should be
 designed from another Epic's requirements first, and the matrix does not hold that decision approved
-(`agent-teams-workforce:epic-sequencing`). The workflow writes the Epic's edges to beads, then
-triggers `wsjf-scoring`, because edges decide RR-OE. It writes nothing to the matrix.
+(`agent-teams-workforce:epic-sequencing`). The workflow writes the Epic's edges to beads. It
+writes nothing to the matrix and scores nothing.
 
-`<epic-id>` is required: the one Epic, new or changed, to assess. Report the usage and stop
+The owner runs this command; the driver never dispatches the workflow. The order of every Epic
+is set before `keeper.py` runs by `scripts/portfolio/epicorder.py`, which computes it from the
+matrix chain, and its `--apply` replaces the owned edges this command writes. WSJF is scored
+once, before `keeper.py` runs, by the owner's own `/agent-teams-workforce:wsjf-scoring`.
+
+`<epic-id>` is required: the one Epic to assess. Report the usage and stop
 without it. The epic-dependency-assessor reads that Epic's full PRD, at the path the matrix holds for it,
 and names the architecture decisions its requirements drive and the ones it rests on. It asks
 the matrix what already states each decision (`atw-matrix find --kinds document,constraint,feature`,
@@ -36,7 +41,7 @@ nothing.
 It writes, unless `--propose` is given.
 
 - `--propose` passes `apply: false`: the workflow computes the edge diff as a dry run,
-  returns it, and writes nothing — no edge, no reason, no matrix relationship, no score.
+  returns it, and writes nothing — no edge, no reason, no matrix relationship.
 
 ## Dispatch
 
@@ -103,11 +108,10 @@ From the workflow's result:
 - With `--propose`: `edges.proposed`, then the counts and the edges read from
   `edges.resultFile` as above — there they are the diff that would be written — the proposed
   edge set with its reasons (`edgesFile`) and the reasoning (`reasoning`).
-- `scoring` — the `wsjf-scoring` result it triggered, reported as that command reports it.
 - `error` and `dispatchFailures`, verbatim, when present.
 
 ## Never
 
-- Score anything; the triggered `wsjf-scoring` does.
+- Score anything, or start `wsjf-scoring`.
 - Write to the tracker with `--propose`.
 - Start a pipeline run, a supervisor, a keeper or the dashboard from here.

@@ -2,7 +2,7 @@ export const meta = {
   name: 'wsjf-scoring',
   description:
     "Scores every open Epic and Task with WSJF from the dependency edges already in beads. Judges, one session per Epic and one per Epic's Tasks, only the items whose content changed or whose value is missing, records the judgments, then runs the arithmetic over every open item and writes the values that changed. `all` includes items that already have a value; `rejudge` judges them again; `only` restricts judging to named items; `dryRun` writes nothing.",
-  whenToUse: "Scoring after Epics or Tasks are added or changed, or after dependency assessment applies edges; with all and rejudge, re-judging every Epic and Task.",
+  whenToUse: "The owner's scoring run, once before keeper.py runs, after the Epic edges are set; with all and rejudge, re-judging every Epic and Task. Nothing in the keeper, the supervisor, its lanes, elaboration, build or deploy starts it.",
   phases: [
     { title: "Plan", detail: "fingerprints decide what is judged" },
     { title: "Judge", detail: "a session per Epic, and a session per Epic's Tasks" },

@@ -18,8 +18,7 @@ metadata), `<plugin>/workflows/README.md` (Portfolio section), and, for contract
 `storyedges.py`. `<driver>` is the driver directory the `pipeline-contracts` skill defines
 (`DRIVER_DIR_PARTS` under the control repository its `CONTROL_REPO_ENV` variable names). It shares
 its shape with
-`<orch>/specs/epic/dependency-assessment.md` and calls the flow in
-`<orch>/specs/epic/wsjf-scoring.md`.
+`<orch>/specs/epic/dependency-assessment.md` and calls no other flow.
 
 Bead metadata: every metadata key, key group and value shape this spec names is defined only in
 `<plugin>/skills/beads-contract/schemas/bead-metadata.schema.json` and is named here by the
@@ -45,7 +44,7 @@ one key, `*_KEYS` for a key group). This spec restates none of their names or sh
 ## 1. Purpose
 
 Assess the build dependencies of ONE Task created outside elaboration (no `KEY_ELAB_KEY`) and write its
-`blocks` edges, then re-score. An edge from Task A to Task B means B cannot be built until A is
+`blocks` edges. An edge from Task A to Task B means B cannot be built until A is
 built, because B consumes something A provides (an API, a table, an IAM grant, a deployed resource).
 A producer of an event never depends on a routing rule or its target, and a routing rule or its
 target never depends on a producer: both depend only on the central event API and the bus. Sharing a domain, a repository or an Epic is not an edge, and when in doubt an
@@ -53,8 +52,8 @@ edge is left out. One `task-dependency-mapper` session reads the Task, finds the
 what it consumes or consume what it provides, and proposes every edge to or from it with a reason
 and a confidence, keeping or withdrawing (with a reason) every owned edge standing on it. Code
 validates and applies the diff (only that Task's owned edges; hand-made edges untouched), then
-re-derives the Story-to-Story `blocks` edges, and `wsjf-scoring` runs. With `apply: false` the diff
-is a dry run and nothing is written or scored.
+re-derives the Story-to-Story `blocks` edges. It scores nothing: WSJF is the owner's own step,
+run before `keeper.py`. With `apply: false` the diff is a dry run and nothing is written.
 
 As with `dependency-assessment`, `meta.description` says the session runs `apply-edges`; the code
 and the brief say the workflow applies. This spec follows the code.
@@ -73,9 +72,7 @@ After a successful run (with `apply` true):
   `KEY_STORY_OWNED_BLOCKERS`, `KEY_STORY_OWNED_BLOCKERS_AT`, `KEY_STORY_EDGE_REASONS`, and the
   Story-to-Story `blocks` edges it owns. A Story whose order is contradictory is refused (not
   written) and named.
-- `wsjf-scoring` has run over the whole portfolio. The Task gets a `KEY_WSJF` value only if it sits
-  under a scored Epic (value is inherited); a Task with no Epic stays unscored.
-- With `apply: false`: diff and proposal in files; beads unchanged; no Story edges; no scoring.
+- With `apply: false`: diff and proposal in files; beads unchanged; no Story edges.
 - When the proposal does not validate: nothing is written; the result names the Task and every
   finding (`stop`).
 
@@ -83,9 +80,8 @@ After a successful run (with `apply` true):
 
 - Arguments: `task` (required), `repoPath` (default: the control repository), `pluginRoot`,
   `workDir`, `apply` (default true), `priorFailure` (optional text put at the head of the
-  brief), `score` (optional; false skips the scoring step). The control repository comes from
-  the `CONTROL_REPO_ENV` variable of the `pipeline-contracts` skill. Scoring is passed
-  `repoPath`, `pluginRoot` and its own `workDir`.
+  brief). The control repository comes from the `CONTROL_REPO_ENV` variable of the
+  `pipeline-contracts` skill.
 - beads, read with descriptions: every open Task (title, description, status, `parent` lineage to
   its Epic, metadata `KEY_REPO_PATH`, `KEY_ELAB_KEY`), every `blocks`/`tracks` edge among Tasks,
   the `SEQUENCING_KEYS`, the judging fingerprint (`beads-contract.py content_hash --scope judging`);
@@ -120,12 +116,10 @@ Files (under `<workDir>`):
 - `apply-edges.json` / `apply-edges-dry-run.json`: `edgeset.apply_edges` result plus
   `storyEdges` (the `story_edges` result: `summary {added, removed, ...}`, or `{ok: false,
   error}`, or on refusal `refusedStories`, `conflicts`, `cycles`).
-- `scoring/`: the `wsjf-scoring` work directory.
 
 Bead writes: `edgeset.apply_edges` (order as in the Epic spec, edge type `blocks`), then
 `storyedges.story_edges` (Story edges and `KEY_STORY_OWNED_BLOCKERS`,
-`KEY_STORY_OWNED_BLOCKERS_AT`, `KEY_STORY_EDGE_REASONS`), then the `wsjf-scoring`
-writes. The proposal's `elements` are written into the Task's `matrix_elements` key
+`KEY_STORY_OWNED_BLOCKERS_AT`, `KEY_STORY_EDGE_REASONS`). The proposal's `elements` are written into the Task's `matrix_elements` key
 (`beads-contract.py metadata set`) only when the Task states none. No matrix writes: the
 mapper's edges are never written into the matrix, whose architecture
 side only arc42 (through `sync-documents`) and the architect's recorded design write; the beads
@@ -176,15 +170,11 @@ Each step is what `workflows/task-dependency-assessment.js` does. Every `depscor
    (`edgeset.apply_edges`), which for `--task` also re-derives the Story-to-Story edges
    (`storyedges.story_edges`) and reports them as `storyEdges`. A Story edge refusal is
    reported in the headline and is not a run failure.
-9. `deterministic` **Score**: when the edges were applied, the run is not a dry run and `score`
-   is not false, the workflow calls the `wsjf-scoring` workflow with `workDir =
-   <workDir>/scoring`.
-10. `deterministic` **Result**.
+9. `deterministic` **Result**.
 
 Agents the workflow dispatches:
 - `task-dependency-mapper`: step 5, at most one session a run.
 - `workflow-command-runner`: one session for each relay call of steps 1 to 4 and 6 to 8.
-- The `wsjf-scoring` workflow's agents: see `<orch>/specs/epic/wsjf-scoring.md`.
 
 ## 6. Checks
 
@@ -227,8 +217,7 @@ As in `<orch>/specs/epic/dependency-assessment.md` section 7, with these differe
   no session when the input revision is unchanged, that is when `context.json` and every file
   under `context/` have the same bytes. An interrupted session's candidate, progress file and
   checkpoint are continued as in the Epic spec.
-- Step 8: idempotent; the Story edge pass writes only changed Story edges and keys. Step 9:
-  resumes as `wsjf-scoring` does.
+- Step 8: idempotent; the Story edge pass writes only changed Story edges and keys.
 - A rerun resumes only with the same `workDir`; no command starts this workflow, so the caller
   of the Workflow tool chooses it.
 
@@ -236,9 +225,9 @@ As in `<orch>/specs/epic/dependency-assessment.md` section 7, with these differe
 
 - 7.16 Hierarchy and sources of work: every Task is created by elaboration, so this flow has no
   input to assess; it is deleted in S08 and not rewritten.
-- 7.8 "Tasks with no WSJF score are never considered": via step 9. A Task created outside
-  elaboration under no Epic, or under an unscored Epic, gets no `KEY_WSJF` value and so is never selected by
-  `selection.build_candidates`; this flow does not work around that.
+- 7.8 "Tasks with no WSJF score are never considered": this flow scores nothing. A Task created
+  outside elaboration has a `KEY_WSJF` value only once the owner's `wsjf-scoring` run gives it one,
+  and until then it is never selected by `selection.build_candidates`.
 - 7.8 "Unbuildable Tasks are hidden": the `blocks` edges this flow writes are what makes a Task
   wait (`selection.waiting_build`) rather than be dispatched.
 - 7.4 Retries, 7.9 who gets asked, 7.11, 7.14, 7.2: as in the Epic spec.

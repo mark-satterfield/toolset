@@ -1,11 +1,10 @@
 export const meta = {
   name: 'dependency-assessment',
   description:
-    "Assesses the architecture dependencies of ONE Epic and writes its `tracks` edges. The workflow writes the Epic's context: the Epics the matrix relates to it (atw-matrix related --epic), each with its PRD file, and the edges standing on it in the tracker. One epic-dependency-assessor session reads the Epic's PRD and the related PRDs, asks the matrix what already settles each decision (atw-matrix find, node), proposes the edges and checks its proposal; the workflow validates the proposal and runs apply-edges. The Epic-to-Epic edge is a beads `tracks` edge and nothing is recorded in the matrix. When the edges are applied it triggers wsjf-scoring. With `apply: false` apply-edges runs as a dry run and no scoring runs.",
-  whenToUse: 'A new or changed Epic needs its architecture dependencies assessed.',
+    "Assesses the architecture dependencies of ONE Epic and writes its `tracks` edges. The workflow writes the Epic's context: the Epics the matrix relates to it (atw-matrix related --epic), each with its PRD file, and the edges standing on it in the tracker. One epic-dependency-assessor session reads the Epic's PRD and the related PRDs, asks the matrix what already settles each decision (atw-matrix find, node), proposes the edges and checks its proposal; the workflow validates the proposal and runs apply-edges. The Epic-to-Epic edge is a beads `tracks` edge and nothing is recorded in the matrix. The order of every Epic is computed by scripts/portfolio/epicorder.py from the matrix chain, which the owner runs before keeper.py; this workflow is an owner-run review of one Epic's edges, which the driver never dispatches, and its owned edges are replaced at the next epicorder.py --apply. It scores nothing: WSJF scoring is the owner's own step. With `apply: false` apply-edges runs as a dry run.",
+  whenToUse: 'The owner wants one Epic\'s architecture-dependency edges judged against the epic-sequencing edge test, beside the order epicorder.py computes.',
   phases: [
     { title: 'Assess', detail: 'the workflow writes the context; one epic-dependency-assessor session proposes and validates the edges; the workflow runs apply-edges' },
-    { title: 'Score', detail: 'wsjf-scoring over the new edges' },
   ],
 }
 // ===== SHARED BLOCK fable — BEGIN (canonical: scripts/shared-blocks/fable.js; filled from skills/pipeline-contracts/schemas/driver-surface.schema.json and agents/*.md; edit there, then: node scripts/shared-blocks.mjs --write) =====
@@ -772,10 +771,9 @@ async function settleAgent(prompt, opts) {
 //   workDir:      string,   // absolute path of a directory for this run's files
 //   epic:         string,   // the one Epic assessed
 //   archPath?:    string,   // the architecture root a document's id is a path under
-//   score?:       boolean,  // false: do not trigger scoring. Default true.
 //   apply?:       boolean,  // false: apply-edges runs as a dry run. Default true.
 // }
-// Returns: { ok, stage, beadId, headline, apply, settled, workDir, epic, assessment, edges, scoring,
+// Returns: { ok, stage, beadId, headline, apply, settled, workDir, epic, assessment, edges,
 //            stop, error?, dispatchFailed, dispatchFailures }
 const given = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const PATH_ARGS = ['repoPath', 'pluginRoot', 'workDir']
@@ -1024,41 +1022,23 @@ const assessment = accepted
     }
   : { failed: true, ...(contextError ? { error: contextError } : {}) }
 
-let scoring = null
-const scores = applies && settled && a.score !== false
-if (scores) {
-  phase('Score')
-  try {
-    scoring = await settleWorkflow('agent-teams-workforce:wsjf-scoring', { repoPath: repo, pluginRoot: a.pluginRoot, workDir: file('scoring') })
-  } catch (err) {
-    scoring = { ok: false, error: String((err && err.message) || err).slice(0, 500) }
-  }
-}
-
-const scoredOk = !scores || (!!scoring && scoring.ok === true)
-const scoringDeaths = scoring && scoring.ok !== true && scoring.stage === 'agent-dispatch-failed' && Array.isArray(scoring.dispatchFailures) ? scoring.dispatchFailures : []
-const failure = !settled
-  ? `${target}: ${edges.reason}`
-  : !scoredOk
-    ? `${target}: the edges were applied, but scoring failed: ${(scoring && scoring.error) || 'wsjf-scoring returned no result'}`
-    : null
+const failure = !settled ? `${target}: ${edges.reason}` : null
 const relayDied = [contextFailure, saved && !saved.ok ? saved : null, validation, applied].some((r) => r && r.noResult)
 return dispatchOutcome({
-  ok: settled && scoredOk,
+  ok: settled,
   stage: (contextError || saved) && !relayDied
-    ? !settled ? 'Assess' : !scoredOk ? (scoring && scoring.stage === 'agent-dispatch-failed' ? scoring.stage : 'Score') : 'done'
+    ? !settled ? 'Assess' : 'done'
     : 'agent-dispatch-failed',
   beadId: target,
-  headline: failure || `${target}: edges ${applies ? 'applied' : 'proposed'} — ${summary.added ?? '?'} added, ${summary.converted ?? '?'} converted, ${summary.removed ?? '?'} withdrawn, ${summary.unchanged ?? '?'} unchanged${scores ? ', and rescored' : ''}`,
+  headline: failure || `${target}: edges ${applies ? 'applied' : 'proposed'} — ${summary.added ?? '?'} added, ${summary.converted ?? '?'} converted, ${summary.removed ?? '?'} withdrawn, ${summary.unchanged ?? '?'} unchanged`,
   apply: applies,
   settled,
   workDir: work,
   epic: target,
   assessment,
   edges,
-  scoring,
   stop,
   ...(failure ? { error: failure } : {}),
-  dispatchFailed: dispatchDeaths().length + scoringDeaths.length > 0,
-  dispatchFailures: [...dispatchDeaths(), ...scoringDeaths],
+  dispatchFailed: dispatchDeaths().length > 0,
+  dispatchFailures: dispatchDeaths(),
 })

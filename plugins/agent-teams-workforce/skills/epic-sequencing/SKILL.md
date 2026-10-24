@@ -20,6 +20,19 @@ description: >-
 The output is an edge file for one Epic and a written account of the reasoning that
 produced it.
 
+## Where Epic order comes from
+
+The owner sets every Epic's dependencies once, before `keeper.py` runs, with
+`scripts/portfolio/epicorder.py`: it computes the order of every Epic from the chain the matrix
+records (Epic, requirement, feature, `realizedBy`, `homeIn`) and, with `--apply`, writes every
+owned Epic `tracks` edge at once. WSJF is scored once, also before `keeper.py` runs, by the
+owner's own `wsjf-scoring` run. Nothing in the keeper, the supervisor, its lanes, elaboration,
+build or deploy assesses an Epic's dependencies or scores anything.
+
+This skill's edge test is the judgment the owner applies when reviewing one Epic's edges with
+the `dependency-assessment` workflow, which only the owner runs. The owned edges that workflow
+writes are replaced at the next `epicorder.py --apply`.
+
 ## What an Epic dependency is
 
 An Epic is a PRD: a business requirement, a WHAT and not a HOW. When an Epic is elaborated,
@@ -67,31 +80,10 @@ requirements should drive the decision.
 
 There are no platform Epics. When the matrix does not hold a shared capability's design
 approved and no open Epic's requirements drive it (every Epic that reaches it only uses it,
-as the event bus, the chassis and the API front door are used), the first Epic elaborated
-that uses it owns its architecture, and every other Epic that uses it waits for that one.
-
-The driver is chosen the way the pipeline picks the next Epic to elaborate, so that every
-assessment names the same one: among the open Epics that use the capability and wait for no
-other user of it (no path in the graph runs from another user to them), the one with the
-highest WSJF, and at an equal WSJF the lowest bead id. An Epic with no WSJF ranks below every
-scored one. A user that waits for another user cannot be elaborated before it, so it is never
-the driver, and no edge from the driver can close a cycle. Find the users as step 4 of "Assessing one Epic" finds related Epics, read
-their WSJF from the tracker, and name the driver, its WSJF and the users ranked below it in
-the reasoning.
-
-- Draw an edge from the driver to every other user, at `low` confidence, with a reason that
-  names the capability and says no Epic's requirements drive it, unless a path in the graph
-  already orders the two. When the assessed Epic is the driver, the edges run out of it; when
-  it is a user, one edge runs in from the driver.
-- No edge runs between two users, as "Shared capabilities come first" states.
-- An edge that would close a cycle is handled as step 8 of "Assessing one Epic" says.
-- When the driver's elaboration is done and the matrix holds the capability approved, the
-  edges have done their job: the decision is designed, and the next assessment of a user finds
-  it approved and draws no edge for it (see "What removes the need for an edge"). Nothing
-  else is done for it.
-- Each assessment applies the rule to the WSJF the tracker holds when it runs. When that makes
-  a different Epic the driver, it withdraws each edge it owns from the former driver, with the
-  reason that the driver changed.
+as the event bus, the chassis and the API front door are used), it makes no edge, as it makes
+none in `epicorder.py`: the first Epic elaborated that uses it reviews and approves its
+architecture, and every later user designs against that. No edge runs between two users, as
+"Shared capabilities come first" states. Name the capability and its users in the reasoning.
 
 ### What removes the need for an edge
 
@@ -203,10 +195,9 @@ say which way. Direction comes from the test.
 
 ## Assessing one Epic
 
-An Epic is assessed when it is new or has changed, and seeding assesses every open Epic
-this same way, one after another. The Epic's assessment is the only judgment of its edges:
-it decides every edge to or from that Epic, including each one an earlier assessment of
-another Epic set.
+An Epic is assessed only when the owner runs the `dependency-assessment` workflow for it
+(see "Where Epic order comes from"). The assessment judges every edge to or from that Epic,
+including each one an earlier assessment of another Epic set.
 
 The matrix is read as the `matrix` skill says. `atw-matrix epic <beads id>` returns an Epic's
 PRD path (`prd`, relative to the vault root), its requirements, each named by its PRD heading,
@@ -289,9 +280,9 @@ tracker or the matrix.
 
 ### What the matrix holds of an assessment
 
-Nothing. For each decision judged, the edge file names the matrix entry the Epic drives or
-rests on (a feature id, or a document id with its heading) as the evidence for its edges; a
-decision no matrix entry states gets no row, and the reasoning names it. The Epic-to-Epic edge
+Nothing. Each edge's `archCheck` names the matrix entry that states the decision it orders (a
+feature id, or a document id with its heading), and the reasoning names every decision judged.
+The Epic-to-Epic edge
 is a beads `tracks` edge and is never a matrix relationship. The order across every Epic is
 derived from the chain the matrix records (Epic, requirement, feature, `realizedBy`, `homeIn`)
 by `scripts/portfolio/epicorder.py`, never from a relationship stated between Epics.
@@ -321,8 +312,7 @@ ssbd-guuuz's architecture step designs its own way to send its emails, which is 
 ## The edge file
 
 The edge file's one definition is artifact-handoff's `schemas/epic-edge-proposal.schema.json`:
-its descriptions say what `edges`, `withdrawn` and `decisions` hold and what every member
-means. A reason in it reads like this one: "the identity architecture should be designed from
+its descriptions say what `edges` and `withdrawn` hold and what every member means. A reason in it reads like this one: "the identity architecture should be designed from
 sign-up/sign-in requirements, not password reset's". A withdrawal's reason answers the one
 recorded: "the notification delivery decision is designed from this Epic's own requirements;
 the recorded reason names a runtime call, which is a Task dependency".
@@ -358,9 +348,7 @@ revises.
 ## Errors to avoid
 
 - Adding an edge to express importance. That is WSJF's job, and an edge costs the blocked
-  Epic its eligibility until the blocker is elaborated. The one exception is a shared
-  capability no Epic drives, where WSJF picks which user designs it and the edges run from
-  that driver; see "A shared capability no Epic drives".
+  Epic its eligibility until the blocker is elaborated. WSJF never enters an edge.
 - Withholding an edge that passes the test because the fan-out looks excessive.
 - Adding an edge to force a total order.
 - Adding an edge for a build fact — existence, deployment, testability, data flow — which

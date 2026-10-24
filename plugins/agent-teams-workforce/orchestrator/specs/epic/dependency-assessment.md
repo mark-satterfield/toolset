@@ -2,12 +2,13 @@
 
 Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
 
-**Status: not part of the Epic pipeline rewrite.** This flow assesses an Epic's dependencies and
-re-scores Epics. Epic dependency assessment and Epic WSJF scoring belong to the future readiness
-process, which is not yet built (CONTEXT 7.17; the owner's answer 6 of 2026-10-09); elaboration
-assumes they are done and no Epic flow runs this one. Whether this owner-run command is kept until
-the readiness process exists is the owner's concern, outside this rewrite. The rest of this file is the record
-of its contract, for that decision and for the readiness process.
+**Status: owner-run only, not part of the Epic pipeline.** The owner sets every Epic's
+dependencies once, before `keeper.py` runs, with `<plugin>/scripts/portfolio/epicorder.py`, which
+computes the order of every Epic from the matrix chain and, with `--apply`, writes every owned Epic
+`tracks` edge at once. The owner scores WSJF once, before `keeper.py` runs, with the `wsjf-scoring`
+flow. This flow is an owner-run judgment of one Epic's edges against the `epic-sequencing` edge
+test; the owned edges it writes are replaced at the next `epicorder.py --apply`. It scores nothing,
+and nothing in the keeper, the supervisor, its lanes, elaboration, build or deploy starts it.
 
 Source: `<plugin>/workflows/dependency-assessment.js` (`meta.description`), the plugin command
 `<plugin>/commands/dependency-assessment.md`, the agent `<plugin>/agents/epic-dependency-assessor.md` and its
@@ -16,8 +17,7 @@ skill `epic-sequencing`, `<plugin>/skills/beads-contract/SKILL.md` (bead metadat
 `<plugin>/scripts/portfolio/depscore.py` (`assess-plan`, `assess-context`, `validate`,
 `apply-edges`), `edgeset.py`, `assesscontext.py`, and `<plugin>/bin/atw-matrix`. `<driver>` is the driver directory
 the `pipeline-contracts` skill defines (`DRIVER_DIR_PARTS` under the control repository its
-`CONTROL_REPO_ENV` variable names). It calls the flow in
-`<orch>/specs/epic/wsjf-scoring.md`.
+`CONTROL_REPO_ENV` variable names). It calls no other flow.
 
 Bead metadata: every metadata key, key group, value vocabulary and value shape this spec names is
 defined only in `<plugin>/skills/beads-contract/schemas/bead-metadata.schema.json` and is named
@@ -29,9 +29,8 @@ spec restates none of their names, values or shapes.
 
 - **The Epic pipeline does not call this flow.** `prd-to-spec` neither assesses nor writes
   `tracks` edges; it consumes them (the driver holds an Epic whose blockers are unmet).
-- **The driver does not call this flow.** Commit `64b4adbb` (2026-10-02) deleted `triggers.py`,
-  which dispatched it for each new or changed Epic (`trigger_plan` / `trigger_dispatch` ledger
-  events, now without a producer).
+- **The driver does not call this flow.** `dependency-assessment` is a retired composite in
+  `skills/pipeline-contracts/schemas/composites.json`, and no lane dispatches it.
 - **The driver depends on its output.** `elabstate.blockers` / `unmet_blockers` read an Epic's
   prerequisite edges, and `selection._epic_candidates` skips an Epic with an unmet one
   (`selection.waiting_epics`, `epic_dependency_graph` show them). The WSJF arithmetic reads the
@@ -41,7 +40,7 @@ spec restates none of their names, values or shapes.
 
 ## 1. Purpose
 
-Assess the architecture dependencies of ONE Epic and write its `tracks` edges, then re-score. An
+Assess the architecture dependencies of ONE Epic and write its `tracks` edges. An
 Epic is a PRD, and an edge from Epic A to Epic B means an architecture decision B rests on should
 be designed from A's requirements first, and no Epic's elaboration has approved that decision yet
 (the matrix `approved` flag; `epic-sequencing`). One `epic-dependency-assessor` session reads the Epic's full PRD and the related PRDs,
@@ -49,9 +48,8 @@ answers the nine-layer foundation checklist, checks each decision against the ma
 `approved` flag, and proposes every edge to or from the Epic with a reason, a confidence and the
 architecture view it checked, keeping or withdrawing (with a reason) every owned edge standing on
 it. Code validates the proposal and applies the diff: only that Epic's owned edges change, and
-hand-made edges are never touched. When the edges are applied, `wsjf-scoring` runs, because edges
-decide RR-OE. With `apply: false` the diff is computed as a dry run and nothing is written or
-scored.
+hand-made edges are never touched. With `apply: false` the diff is computed as a dry run and
+nothing is written.
 
 `meta.description` says the session "runs apply-edges"; the code and the session's brief say the
 opposite (the session must not write to beads; the workflow validates and applies). This spec
@@ -71,9 +69,8 @@ After a successful run (with `apply` true):
   through the types generated into `skills/beads-contract/scripts/bead_metadata.py`.
 - On the assessed Epic: `KEY_SEQ_CONTENT_HASH` = its judging fingerprint at plan time, and
   `KEY_SEQ_ASSESSED_AT`.
-- `wsjf-scoring` has run over the whole portfolio (see its spec).
 - No edge between two other Epics changes; no Task edge changes.
-- With `apply: false`: the diff and the proposal are in files; beads unchanged; no scoring.
+- With `apply: false`: the diff and the proposal are in files; beads unchanged.
 - When the proposal does not validate: nothing is written, and the result names the Epic and every
   finding (`stop`).
 
@@ -82,9 +79,8 @@ After a successful run (with `apply` true):
 - Arguments: `epic` (required), `repoPath` (default: the control repository), `pluginRoot`,
   `workDir`, `archPath` (the architecture root; required by the command), `apply` (default
   true); the control repository and architecture root come from the `CONTROL_REPO_ENV` and
-  `ARCH_PATH_ENV` variables of the `pipeline-contracts` skill. Scoring is passed `repoPath`,
-  `pluginRoot` and its own `workDir`. Optional, passed by no current caller: `priorFailure` (text put at the head of the
-  brief), `score` (false skips the scoring step). `assess-context` reads the matrix the
+  `ARCH_PATH_ENV` variables of the `pipeline-contracts` skill. Optional, passed by no current
+  caller: `priorFailure` (text put at the head of the brief). `assess-context` reads the matrix the
   environment names and needs the PRD folder variable (`PRD_DIR_ENV`).
 - beads, read with descriptions: every open Epic (title, description = PRD,
   `KEY_ELABORATION_STATE`), every `tracks`/`blocks` edge among Epics, the `SEQUENCING_KEYS` on each
@@ -135,20 +131,19 @@ Files (under `<workDir>`):
   dryRun, level, scope, planned, sequencedRecorded, validation, added, converted, removed,
   unchanged, withdrawn: [{from, to, reason}], reasonsRecorded, withdrawalsRecorded, plan: {add,
   convert, remove, unchanged, protectedHandMadeEdges, metadata}}`.
-- `scoring/`: the `wsjf-scoring` work directory.
 
 Bead writes: only through `edgeset.apply_edges` (section 2), in its order: ownership covering
 every edge to be added first, then adds, conversions (remove then add as `tracks`), withdrawals,
 final ownership with reasons and withdrawal records, then the assessed Epic's
-`KEY_SEQ_CONTENT_HASH` and `KEY_SEQ_ASSESSED_AT`. Then the `wsjf-scoring` writes.
+`KEY_SEQ_CONTENT_HASH` and `KEY_SEQ_ASSESSED_AT`.
 
 No vault writes, no git commits, no ledger events.
 
-Result: `{ok, stage: "done" | "Assess" | "Score" | "args" | "agent-dispatch-failed", beadId,
+Result: `{ok, stage: "done" | "Assess" | "args" | "agent-dispatch-failed", beadId,
 headline, apply, settled, workDir, epic, assessment: {edgesPath, reasoningPath, edgeCount,
 withdrawnCount, valid, saved, applySummary} | {failed: true, error?}, edges: {added, converted,
 removed, unchanged, withdrawn, applied, proposed, resultFile, edgesFile, reasoning,
-uncertaintyPath, reason?}, scoring: <wsjf-scoring result> | null, stop: {epic, findings,
+uncertaintyPath, reason?}, stop: {epic, findings,
 edgesFile, validationFile, reasoning} | null, error?, dispatchFailed, dispatchFailures}`.
 
 ## 5. Steps
@@ -208,15 +203,11 @@ command printed.
    (`edgeset.apply_edges`). It validates again against the graph as read now and writes nothing
    if that fails. Nothing is recorded in the matrix: the Epic-to-Epic edge is a beads `tracks`
    edge.
-9. `deterministic` **Score**: when the edges were applied, the run is not a dry run and `score`
-   is not false, the workflow calls the `wsjf-scoring` workflow with `workDir =
-   <workDir>/scoring` and the same `repoPath` and `pluginRoot`.
-10. `deterministic` **Result**: assemble the result (section 4).
+9. `deterministic` **Result**: assemble the result (section 4).
 
 Agents the workflow dispatches:
 - `epic-dependency-assessor`: step 5, at most one session a run.
 - `workflow-command-runner`: one session for each relay call of steps 1 to 4 and 6 to 8.
-- The `wsjf-scoring` workflow's agents: see `<orch>/specs/epic/wsjf-scoring.md`.
 
 ## 6. Checks
 
@@ -267,8 +258,6 @@ Agents the workflow dispatches:
   owner corrects the edge or the PRD and assesses the Epic again.
 - Step 8 refused (the graph changed between 7 and 8 and validation now fails): stage `Assess`
   with the findings in `stop`; a rerun reads the tracker again.
-- Step 9 fails: as in the `wsjf-scoring` spec; the applied edges stand; `ok` false at stage
-  `Score`.
 
 ## 8. Resume points
 
@@ -282,20 +271,19 @@ Agents the workflow dispatches:
   session that continues those files.
 - Step 8: idempotent (`apply_edges` writes nothing for an unchanged proposal). A rerun after it
   writes nothing again.
-- Step 9: resumes as `wsjf-scoring` does; after a scoring failure a rerun redoes only scoring.
 - A rerun resumes only with the same `workDir`. The command gives every run a new one
   (`<repo>/.claude/workflow-runs/dependency-assessment/<UTC time>`), so a run the command starts
   begins at step 1 with nothing saved.
 
 ## 9. Requirements that apply
 
-- 7.17 Epic readiness: Epic dependency assessment belongs to the future readiness process; no Epic
-  pipeline step runs this flow.
-- 7.8 "Epics wait on unmet Epic dependencies": this flow is the producer of the `tracks` edges
+- Epic order and WSJF are set by the owner before `keeper.py` runs (`epicorder.py`,
+  `wsjf-scoring`); no step of the keeper, the supervisor, its lanes, elaboration, build or deploy
+  runs this flow.
+- 7.8 "Epics wait on unmet Epic dependencies": with `epicorder.py`, this flow writes the `tracks` edges
   that `elabstate.unmet_blockers` reads; an edge it writes holds the blocked Epic out of
   elaboration until the blocker's `KEY_ELABORATION_STATE` is `ELABORATION_DONE`. It never closes or opens an
   Epic, and it never uses "Epic closed" as a condition (7.6).
-- 7.8 WSJF filter: via step 9 (see the `wsjf-scoring` spec).
 - 7.4 Retries: the session checks its own candidate with `validate` and revises it before it
   returns; the workflow starts no second session on unchanged input.
 - 7.9 Who gets asked: only a cycle through the owner's hand-made edge reaches the owner.
