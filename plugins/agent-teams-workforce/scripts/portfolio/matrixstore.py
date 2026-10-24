@@ -97,8 +97,10 @@ PROBLEMS_SHOWN: Final = 20
 """The most problems an error message lists."""
 ATTR_HEADING_HASHES: Final = "headingHashes"
 """The document attribute that holds the hash of each heading's own text, by heading."""
+ATTR_HEADINGS: Final = "headings"
+"""The document attribute that lists the document's headings as the vault holds them."""
 ATTR_HEADING: Final = "heading"
-"""The ``describedBy`` attribute that names the heading whose text describes the entry."""
+"""The attribute of a relationship to a document that names the document heading it rests on."""
 ATTR_REPOSITORY: Final = "repository"
 """The stack attribute that names the repository which holds the stack."""
 _NOT_SLUG: Final[re.Pattern[str]] = re.compile(r"[^a-z0-9]+")
@@ -416,6 +418,20 @@ def _changed_headings(held: Entry | None, entry: Entry) -> frozenset[str] | None
     old: dict[str, JsonValue] = before if isinstance(before, dict) else {}
     new: dict[str, JsonValue] = after if isinstance(after, dict) else {}
     return frozenset(heading for heading in {*old, *new} if old.get(heading) != new.get(heading))
+
+
+def _document_end(relationship: Relationship) -> EntryId | None:
+    """Name the end of a relationship that is a document entry.
+
+    Returns:
+        The end when it is a document, else the start when it is one; None when neither is.
+
+    """
+    if kind_of(relationship.end) == KIND_DOCUMENT:
+        return relationship.end
+    if kind_of(relationship.start) == KIND_DOCUMENT:
+        return relationship.start
+    return None
 
 
 def _selected[T](kinds: Collection[T] | None, kind: T) -> bool:
@@ -1160,6 +1176,78 @@ class Matrix:
         return sorted(removed)
 
 
+def _heading_keys(matrix: Matrix, document_id: EntryId) -> frozenset[str] | None:
+    """Read the headings a document entry holds, as names are compared.
+
+    Returns:
+        Each heading of the document entry reduced by :func:`name_key`; None when the matrix
+        holds no document entry with that id.
+
+    """
+    held: Entry | None = matrix.find(document_id)
+    if held is None or held.kind != KIND_DOCUMENT:
+        return None
+    headings: JsonValue = held.attributes.get(ATTR_HEADINGS)
+    listed: list[JsonValue] = headings if isinstance(headings, list) else []
+    return frozenset(name_key(heading) for heading in listed if isinstance(heading, str))
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def stale_headings(matrix: Matrix, documents: Collection[EntryId] | None = None) -> list[Relationship]:
+    """List the relationships that name a heading their document entry does not hold.
+
+    A relationship names a heading when it has a ``heading`` attribute; its document is the end
+    of it that is a document entry. Headings are compared as :func:`name_key` reduces them. A
+    relationship whose document the matrix does not hold is left to :meth:`Matrix.problems`.
+
+    Args:
+        matrix: The matrix.
+        documents: The document entries to look at; None looks at every one.
+
+    Returns:
+        Each such relationship, in file order.
+
+    """
+    known: dict[EntryId, frozenset[str] | None] = {}
+    stale: list[Relationship] = []
+    relationship: Relationship
+    for relationship in matrix.relationships():
+        heading: JsonValue = relationship.attributes.get(ATTR_HEADING)
+        document_id: EntryId | None = _document_end(relationship)
+        wanted: bool = documents is None or document_id in documents
+        if not isinstance(heading, str) or not heading or document_id is None or not wanted:
+            continue
+        if document_id not in known:
+            known[document_id] = _heading_keys(matrix, document_id)
+        held: frozenset[str] | None = known[document_id]
+        if held is not None and name_key(heading) not in held:
+            stale.append(relationship)
+    return stale
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def heading_problems(matrix: Matrix) -> list[str]:
+    """Check that every heading a relationship names is a heading of its document entry.
+
+    ``sync-documents`` records each document's headings as the vault holds them; a relationship
+    naming a heading the document no longer has joins on text that is gone. Writes do not run
+    this check: a change to a document leaves such relationships behind until whoever recorded
+    them corrects them, and ``atw-matrix check`` reports each one.
+
+    Args:
+        matrix: The matrix.
+
+    Returns:
+        One sentence per relationship that names a heading its document entry does not hold.
+
+    """
+    return [
+        f"{relationship_label(relationship)}: names the heading "
+        f"{relationship.attributes.get(ATTR_HEADING)!r}, which {_document_end(relationship)} does not have"
+        for relationship in stale_headings(matrix)
+    ]
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def role_of(environ: Mapping[str, str]) -> Role:
     """Read who is running the command from the environment.
@@ -1542,7 +1630,7 @@ def file_problems(path: Path) -> list[str]:
 
     Returns:
         What the file's shape breaks when it cannot be read as a matrix, otherwise what
-        :meth:`Matrix.problems` finds; empty when the file conforms.
+        :meth:`Matrix.problems` and :func:`heading_problems` find; empty when the file conforms.
 
     """
     decoded: object = _decode(path)
@@ -1550,4 +1638,4 @@ def file_problems(path: Path) -> list[str]:
         matrix: Matrix = Matrix(parse_document(decoded, str(path)))
     except MatrixError as error:
         return [str(error)]
-    return matrix.problems()
+    return [*matrix.problems(), *heading_problems(matrix)]

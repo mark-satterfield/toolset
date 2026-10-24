@@ -63,7 +63,7 @@ from matrix_contract import (
     Relationship,
     relationship_json,
 )
-from matrixstore import Matrix, MatrixRefusedError, make_id, name_key, same_content, slug
+from matrixstore import ATTR_HEADING, Matrix, MatrixRefusedError, make_id, name_key, same_content, slug, stale_headings
 from target_contract import TARGET_FOLDER
 
 if TYPE_CHECKING:
@@ -205,6 +205,16 @@ class AmbiguousName(TypedDict):
     entries: list[EntryId]
 
 
+class StaleHeading(TypedDict):
+    """A relationship that names a heading its document no longer has."""
+
+    kind: str
+    start: EntryId
+    end: EntryId
+    side: str
+    heading: str
+
+
 class DocumentsSynced(TypedDict):
     """What :func:`sync_documents` did: also what ``sync-documents`` prints."""
 
@@ -220,6 +230,9 @@ class DocumentsSynced(TypedDict):
     lifecycleNotStated: list[str]
     leftOut: list[str]
     """Files looked at that get no entry: not an architecture document, or of a lifecycle the matrix does not hold."""
+    staleHeadings: list[StaleHeading]
+    """The relationships naming a heading that an added or changed document does not have: each is
+    left in place for whoever recorded it to correct, and ``atw-matrix check`` reports it."""
 
 
 class EpicWithoutPrd(TypedDict):
@@ -682,8 +695,8 @@ def _apply_documents(matrix: Matrix, arch: Path, wanted: Sequence[str]) -> Docum
     """Correct the document entries of the matrix for some paths.
 
     Returns:
-        What was added, changed and removed, the relationships added and the names that joined
-        nothing.
+        What was added, changed and removed, the relationships added, the names that joined
+        nothing and the relationships naming a heading an added or changed document does not have.
 
     """
     read: dict[str, DocumentRead] = {document.path: document for document in read_documents(arch, wanted)}
@@ -698,6 +711,7 @@ def _apply_documents(matrix: Matrix, arch: Path, wanted: Sequence[str]) -> Docum
         "ambiguous": [],
         "lifecycleNotStated": sorted(path for path, document in read.items() if not document.lifecycle_stated),
         "leftOut": [],
+        "staleHeadings": [],
     }
     path: str
     for path in sorted(set(wanted)):
@@ -719,6 +733,17 @@ def _apply_documents(matrix: Matrix, arch: Path, wanted: Sequence[str]) -> Docum
             matrix.put(entry)
             result["added" if existing is None else "changed"].append(path)
         _describe(matrix, document, index, result)
+    touched: set[EntryId] = {make_id(KIND_DOCUMENT, path) for path in (*result["added"], *result["changed"])}
+    result["staleHeadings"] = [
+        {
+            "kind": stale.kind,
+            "start": stale.start,
+            "end": stale.end,
+            "side": stale.side,
+            "heading": str(stale.attributes.get(ATTR_HEADING)),
+        }
+        for stale in stale_headings(matrix, touched)
+    ]
     return result
 
 
@@ -757,7 +782,9 @@ def sync_documents(matrix: Matrix, arch: Path, *, paths: Sequence[str] | None = 
     With ``paths``, exactly those files are looked at: one that is gone loses its entry, and no
     other entry changes. Without, every document under the architecture root is read and every
     document entry the matrix holds is looked at, so the entry of any document that is gone is
-    removed. An entry whose document is as the matrix records it is left as it is. A document
+    removed. An entry whose document is as the matrix records it is left as it is. A relationship
+    naming a heading that an added or changed document no longer has is reported under
+    ``staleHeadings`` and left as it is. A document
     that cannot be read raises ``MatrixError``, and a path outside the architecture root raises
     ``MatrixRefusedError``.
 

@@ -27,7 +27,10 @@ The file holds three members:
 What kinds exist is data, in `skills/artifact-handoff/schemas/matrix-kinds.json` (the kinds
 registry). `skills/artifact-handoff/schemas/matrix.schema.json` validates the generic shape
 of the file; `atw-matrix check` validates every entry and relationship against the
-registry. `skills/artifact-handoff/scripts/matrix_contract.py` is generated from both.
+registry, and reports every relationship whose `heading` is not a heading its document entry
+holds (`matrixstore.heading_problems`). Writes do not run the heading check, because a
+document change leaves such relationships behind until whoever recorded them corrects them.
+`skills/artifact-handoff/scripts/matrix_contract.py` is generated from both.
 
 The registry declares:
 
@@ -408,7 +411,7 @@ over all of its inputs. P7 is the same script's recording step.
 |---|---|---|
 | P1 Empty file | Nothing. | A version 4 file with no entry and no relationship. |
 | P2 `sync-epics` | Every open Epic in beads and its PRD file, found by the Epic's `prd:` label: the `####` headings under `## Requirements`. | One `epic` with its `prd` path and hash, one `requirement` per heading, and `hasRequirement`. An open Epic with no PRD file gets no `prd` and is listed in the result. |
-| P3 `sync-documents` | Every arc42 document in the vault that is effective, in review or draft: front matter and headings. | One `document` with `lifecycle`, `section`, `viewType`, `scope`, `subject`, `headings` and `hash`, with `side: architecture`. |
+| P3 `sync-documents` | Every arc42 document in the vault that is effective, in review or draft: front matter and headings. | One `document` with `lifecycle`, `section`, `viewType`, `scope`, `subject`, `headings` and `hash`, with `side: architecture`. It reports under `staleHeadings` each relationship that names a heading an added or changed document no longer has, and leaves it in place. |
 | P4 `seed-stacks` | `polyrepo inventory`: the name, app and lifecycle of every known repository. | One `stack` per repository that is not deprecated and whose name ends in a type `resource-naming-standard.md` lists. The stack takes the repository's name as its `name`, with `repository`, `app` and `executionUse` (`imported` when the type is `lib`, otherwise `executable`), `side: repository` and the purpose not stated. A repository whose name ends in no listed type gets no stack and is listed in the result. |
 | P5 `seed-packages` | `[project].name` and `[project].dependencies` of the `pyproject.toml` of each stack's repository. | One `package` (`origin: project`) with `distributedAs` from each stack whose `executionUse` is `imported`, and one `imports` from a stack to the stack that holds each project package it depends on, with `through` naming the package. All carry `side: repository`. A third-party dependency is not recorded (requirement R17). |
 | P6 `seed-inputs` | The entries P2 to P5 recorded and the sizes of the files behind them. | No entry. It writes the batch files for section 3.2, each filled up to the reading allowance. The arc42 documents are grouped by `subject`, so that every document about one subject is in one batch, and then by arc42 section. The PRDs are packed to two thirds of the allowance, which leaves room for what `find` returns. A stack counts as its source size up to 40 KB, because a session reads a stack's CDK app, its handler entry points and its file listing and not every source file. |
