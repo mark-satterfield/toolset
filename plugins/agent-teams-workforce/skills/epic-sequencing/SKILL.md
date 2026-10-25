@@ -25,7 +25,10 @@ produced it.
 The owner sets every Epic's dependencies once, before `keeper.py` runs, with
 `scripts/portfolio/epicorder.py`: it reads the Epics and the chain the matrix records (Epic,
 requirement, feature, `realizedBy`, `homeIn`) from the matrix only, computes every Epic's edges
-from it and, with `--apply`, removes every Epic-to-Epic dependency edge in beads, whoever made it,
+from it (each entry has one defining Epic, the one with the most serving features `realizedBy`
+the entry, a tie to the lowest bead id, and a stack is defined only through the features
+`realizedBy` the stack itself; every other Epic that realizes or, one dependency hop away, uses
+the entry waits for that definer) and, with `--apply`, removes every Epic-to-Epic dependency edge in beads, whoever made it,
 and writes the computed edges as `tracks` edges. WSJF is scored once, also before `keeper.py` runs, by the
 owner's own `wsjf-scoring` run. Nothing in the keeper, the supervisor, its lanes, elaboration,
 build or deploy assesses an Epic's dependencies or scores anything.

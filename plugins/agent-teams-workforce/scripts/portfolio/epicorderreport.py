@@ -119,7 +119,7 @@ def _cycles(analysis: Analysis, result: Order) -> list[str]:
             "",
             "The entries that tie it together, by the number of edges inside the cycle each one makes:",
             "",
-            "Entry | Evidence for its drivers | Drivers | Users | Edges inside",
+            "Entry | Defining Epic | Its features realized by the entry | Users | Edges inside",
             "--- | --- | --- | --- | ---",
             *_cycle_units(analysis, cycle.edges),
             "",
@@ -147,7 +147,7 @@ def _cycle_units(analysis: Analysis, edges: Mapping[Pair, tuple[Unit, ...]]) -> 
     for unit, count in sorted(counts.items(), key=lambda item: (-item[1], item[0])):
         decision = analysis.decisions[unit]
         rows.append(
-            f"{decision.label} | {decision.rule} | {_who(analysis, decision.drivers)} | "
+            f"{decision.label} | {_title(analysis, decision.driver)} | {decision.features} | "
             f"{_who(analysis, decision.users)} | {count}",
         )
     return rows
@@ -214,9 +214,10 @@ def _summary(analysis: Analysis) -> str:
     )
     return (
         f"The matrix holds {len(analysis.epics)} Epics. An edge now says only that one Epic uses an architecture "
-        f"entry another Epic's own requirements define, so the user is elaborated after the definer; entries "
-        f"no Epic defines (the VPC, the chassis library, the Cognito pool) make no edge, and no WSJF or other "
-        f"ranking enters any edge. With nothing approved yet (scenario A), **{a_sizes[0]}** Epics can start now, "
+        f"entry another Epic's own requirements define, so the user is elaborated after the definer; each "
+        f"entry has one definer, and entries no feature is realized by (a VPC, a Cognito pool) make no edge; "
+        f"no WSJF or other ranking enters any edge. With nothing approved yet (scenario A), "
+        f"**{a_sizes[0]}** Epics can start now, "
         f"at most **{max(a_sizes)}** can be architected side by side in one level, and the longest chain is "
         f"**{_length(a)}** Epics across {len(a_sizes)} levels; {cycles}. If every `shared-*` entry were "
         f"already approved (scenario B), {b_sizes[0]} could start now, maximum concurrency would be "
@@ -225,9 +226,6 @@ def _summary(analysis: Analysis) -> str:
 
 
 def _method(analysis: Analysis) -> list[str]:
-    rules: dict[str, int] = {}
-    for decision in analysis.decisions.values():
-        rules[decision.rule] = rules.get(decision.rule, 0) + 1
     lines: list[str] = [
         "## How the order was computed",
         "",
@@ -237,32 +235,30 @@ def _method(analysis: Analysis) -> list[str]:
         ),
         "",
         (
-            "- **Defines an entry.** An Epic defines each entry a feature serving one of its requirements is "
-            "`realizedBy` (`hasRequirement` → `servedBy` → `realizedBy`), and the stack each such entry is or "
-            "has its home in (`homeIn`)."
+            "- **Defines an entry.** Each entry has exactly one defining Epic: among the Epics with a feature "
+            "serving one of their requirements that is `realizedBy` the entry (`hasRequirement` → `servedBy` → "
+            "`realizedBy`), the one with the most distinct such features; a tie goes to the lowest bead id. A "
+            "stack is an entry like any other: it is defined only through the features `realizedBy` the stack "
+            "itself, never through the entries homed in it (`homeIn`)."
         ),
         (
-            "- **Uses an entry.** An Epic uses each entry that is the far end of a dependency, one hop, from an "
-            "entry or stack it defines, and that it does not itself define."
+            "- **Uses an entry.** Every other Epic that touches the entry is a user of it: it has a serving "
+            "feature `realizedBy` the entry, or it reaches the entry as the far end of a dependency, one hop, "
+            "from an entry it realizes or that entry's stack."
         ),
         (
             "- **Not used:** document headings (`covers`, `describedBy`), `supportedBy`, and dependencies beyond "
-            "one hop. Epics whose features are realized by one entry, or by entries of one stack, define it "
-            "together and do not wait for each other; an entry no Epic defines makes no edge."
+            "one hop. An entry no serving feature is `realizedBy` makes no edge."
         ),
         "",
         (
-            "Every driver of a unit gets an edge to every user of it. Co-drivers of one unit and users of one "
-            "unit get no edge between them. A unit whose matrix `approved` flag is set makes no edge (none "
-            "carries it today). Cycles are reported and never broken; each is one node in the transitive "
-            "reduction and its members share a level."
+            "The definer of a unit gets one edge to each of its users; an Epic gets no edge to itself, and the "
+            "edges several units make between one pair are one edge. Users of one unit get no edge between "
+            "them. A unit whose matrix `approved` flag is set makes no edge. Cycles are reported and never "
+            "broken; each is one node in the transitive reduction and its members share a level."
         ),
         "",
-        (
-            f"- Units with at least one driver and one user: {len(analysis.decisions)} "
-            f"({', '.join(f'{rule}: {count}' for rule, count in sorted(rules.items()))}, by the evidence that "
-            "chose the drivers)."
-        ),
+        f"- Units (entries with a defining Epic and at least one user): {len(analysis.decisions)}.",
     ]
     return [*lines, ""]
 

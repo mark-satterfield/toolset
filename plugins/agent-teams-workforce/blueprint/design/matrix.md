@@ -729,10 +729,12 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
 18. **TRD and Spec files.** Outside the matrix; their paths stay on the beads. The technical
     requirements a TRD states are constraints.
 19. **Epic-to-Epic order.** The edge is a beads `tracks` edge, and the matrix records no
-    relationship between Epics. `epicorder.py` derives the order from the chain: an Epic
-    defines each entry a feature serving its requirements is `realizedBy` and the stack that
-    entry has its home in, and uses the far end of each dependency, one hop, from what it
-    defines; every definer of an entry orders before every user of it. It reads the Epics and
+    relationship between Epics. `epicorder.py` derives the order from the chain: each entry
+    has one defining Epic, the one with the most features serving its requirements that are
+    `realizedBy` the entry (a tie goes to the lowest bead id), and a stack is defined only
+    through the features `realizedBy` the stack itself. Every other Epic that touches the entry,
+    by a serving feature `realizedBy` it or as the far end of a dependency, one hop, from what it
+    realizes, is a user, and the definer orders before each user. It reads the Epics and
     the chain from the matrix only, and its `--apply` removes every Epic-to-Epic dependency edge
     in beads and writes the computed edges as `tracks` edges.
 20. **Events.** Entries. Q9 and requirement R17 need an event a stack publishes, and the

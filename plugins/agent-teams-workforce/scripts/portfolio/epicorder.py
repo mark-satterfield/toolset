@@ -9,19 +9,21 @@ user is elaborated after the definer (the driver). Both are read from the chain 
 (``matrixtraverse.rule_reach``): Epic, ``hasRequirement``, requirement, ``servedBy``, feature,
 ``realizedBy``, the entry that realizes it, and ``homeIn``, its stack.
 
-1. An Epic defines each entry a feature serving one of its requirements is ``realizedBy``, and
-   the stack each such entry is or has its home in.
-2. An Epic uses each entry that is the far end of a dependency (one hop: ``imports``, ``calls``,
-   ``publishes``, ``reads`` and the rest of the dependency family) from an entry or stack it
-   defines, and that it does not itself define.
+1. Each entry has exactly one defining Epic: among the Epics with a serving feature
+   ``realizedBy`` the entry, the one with the most distinct such features; a tie goes to the
+   lowest bead id. A stack is an entry like any other: it is defined only through the features
+   ``realizedBy`` the stack itself, never through the entries homed in it.
+2. Every other Epic that touches the entry is a user of it: it has a serving feature
+   ``realizedBy`` the entry, or it reaches the entry as the far end of a dependency (one hop:
+   ``imports``, ``calls``, ``publishes``, ``reads`` and the rest of the dependency family) from
+   an entry it realizes or the stack such an entry is or has its home in.
 
-A unit is an entry some Epic uses. Its drivers are the Epics that define it; its users are the
-Epics that use it. Every driver of a unit gets an edge to every user of it. Co-drivers of one unit
-get no edge between them: two Epics whose features are realized by one entry, or by entries of one
-stack, do not wait for each other. A unit no Epic defines (a VPC, the chassis library, a Cognito
-pool no feature is realized by) makes no edge: the first Epic elaborated reviews and approves it. A
-unit whose matrix ``approved`` flag is set makes no edge. Cycles are reported, never broken: their
-members share a level. The rest is transitively reduced over the cycles taken as single nodes.
+A unit is an entry with a defining Epic and at least one user. The definer gets one edge to each
+user; an Epic never gets an edge to itself, and the edges several units make between one pair
+collapse into one. An entry no serving feature is ``realizedBy`` (a VPC, a Cognito pool) makes no
+edge: the first Epic elaborated reviews and approves it. A unit whose matrix ``approved`` flag is
+set makes no edge. Cycles are reported, never broken: their members share a level. The rest is
+transitively reduced over the cycles taken as single nodes.
 
 Two scenarios are computed: as the matrix stands (A), and as if every entry of a ``shared-*``
 stack were approved (B). ``--report`` writes the Markdown report (``epicorderreport.py``), with
@@ -66,8 +68,6 @@ type Pair = tuple[str, str]
 
 SHARED_PREFIX: Final = "shared-"
 EPIC_PREFIX: Final = "epic:"
-RULE_CHAIN: Final = "realizedBy and homeIn"
-"""The evidence that makes an Epic a unit's driver: its features are realized by the unit or by an entry homed in it."""
 SCENARIO_AS_IS: Final = "as-is"
 SCENARIO_SHARED: Final = "shared-approved"
 TITLE_PREFIX: Final = "Feature PRD: "
@@ -95,12 +95,13 @@ class StandingEdge:
 
 @dataclass(frozen=True, slots=True)
 class Decision:
-    """One unit, the Epics that define it, the evidence that made them its drivers, and its users."""
+    """One unit, the one Epic that defines it, how many of its features the unit realizes, and its users."""
 
     unit: Unit
     label: str
-    drivers: tuple[str, ...]
-    rule: str
+    driver: str
+    features: int
+    """The number of distinct features of the driver that are ``realizedBy`` the unit."""
     users: tuple[str, ...]
 
 
@@ -180,23 +181,63 @@ def _by_unit(found: Iterable[tuple[str, Iterable[EntryId]]]) -> dict[Unit, set[s
     return indexed
 
 
+def _realizing(reaches: Mapping[str, RuleReach]) -> dict[Unit, dict[str, int]]:
+    """Count, for every entry a serving feature is ``realizedBy``, each Epic's distinct such features.
+
+    ``RuleReach.entries`` names one ``realizedBy <feature>`` way per feature that realizes the entry,
+    so the number of ways is the number of distinct features.
+
+    Returns:
+        Each entry with each realizing Epic and its feature count.
+
+    """
+    counts: dict[Unit, dict[str, int]] = {}
+    found: Iterable[tuple[Unit, str, int]] = (
+        (unit, bead, len(ways)) for bead, reach in reaches.items() for unit, ways in reach.entries.items()
+    )
+    for unit, bead, count in found:
+        counts.setdefault(unit, {})[bead] = count
+    return counts
+
+
+def definer(counts: Mapping[str, int]) -> str:
+    """Name the one Epic that defines an entry: the most realizing features, a tie to the lowest bead id.
+
+    Args:
+        counts: Each realizing Epic with its number of distinct features ``realizedBy`` the entry.
+
+    Returns:
+        The defining Epic's bead id.
+
+    Raises:
+        ValueError: ``counts`` is empty.
+
+    """
+    if not counts:
+        message: str = "an entry no Epic realizes has no definer"
+        raise ValueError(message)
+    return min(counts, key=lambda bead: (-counts[bead], bead))
+
+
 def decide(matrix: Matrix, epics: Collection[str]) -> dict[Unit, Decision]:
-    """Name the drivers and users of every unit that has both.
+    """Name the one definer and the users of every entry that has both.
 
     Returns:
         Each unit's decision, in unit order.
 
     """
     reaches: dict[str, RuleReach] = _reaches(matrix, epics)
-    defined: dict[Unit, set[str]] = _by_unit((bead, {*reach.entries, *reach.stacks}) for bead, reach in reaches.items())
-    used: dict[Unit, set[str]] = _by_unit((bead, reach.dependencies) for bead, reach in reaches.items())
+    realized: dict[Unit, dict[str, int]] = _realizing(reaches)
+    touched: dict[Unit, set[str]] = _by_unit(
+        (bead, {*reach.entries, *reach.dependencies}) for bead, reach in reaches.items()
+    )
     decisions: dict[Unit, Decision] = {}
     unit: Unit
-    for unit in sorted(set(used) & set(defined)):
-        users: set[str] = used[unit] - defined[unit]
+    for unit in sorted(realized):
+        driver: str = definer(realized[unit])
+        users: set[str] = touched[unit] - {driver}
         if users:
-            drivers: tuple[str, ...] = tuple(sorted(defined[unit]))
-            decisions[unit] = Decision(unit, _label(matrix, unit), drivers, RULE_CHAIN, tuple(sorted(users)))
+            decisions[unit] = Decision(unit, _label(matrix, unit), driver, realized[unit][driver], tuple(sorted(users)))
     return decisions
 
 
@@ -234,17 +275,18 @@ def is_approved(matrix: Matrix, unit: Unit) -> bool:
 
 
 def raw_edges(decisions: Iterable[Decision]) -> dict[Pair, tuple[Unit, ...]]:
-    """Draw driver -> user for every driver and user of every decision, each pair with its units.
+    """Draw driver -> user for every user of every decision, each pair with its units.
 
     Returns:
         Each edge with the units that make it, sorted.
 
     """
     found: dict[Pair, set[Unit]] = {}
-    for decision in decisions:
-        for driver in decision.drivers:
-            for user in decision.users:
-                found.setdefault((driver, user), set()).add(decision.unit)
+    pairs: Iterable[tuple[Pair, Unit]] = (
+        ((decision.driver, user), decision.unit) for decision in decisions for user in decision.users
+    )
+    for pair, unit in pairs:
+        found.setdefault(pair, set()).add(unit)
     return {pair: tuple(sorted(units)) for pair, units in sorted(found.items())}
 
 
