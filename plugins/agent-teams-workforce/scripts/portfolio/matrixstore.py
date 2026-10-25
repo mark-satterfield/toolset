@@ -103,6 +103,10 @@ ATTR_HEADING: Final = "heading"
 """The attribute of a relationship to a document that names the document heading it rests on."""
 ATTR_REPOSITORY: Final = "repository"
 """The stack attribute that names the repository which holds the stack."""
+ATTR_EPIC_DRIVER: Final = "epicDriver"
+"""The stack attribute by which the owner says no Epic drives the stack."""
+OUTSIDE_APPROVAL: Final[frozenset[str]] = frozenset({ATTR_REPOSITORY, ATTR_EPIC_DRIVER})
+"""The attributes whose change alone keeps the approved flag: neither changes an approved design."""
 _NOT_SLUG: Final[re.Pattern[str]] = re.compile(r"[^a-z0-9]+")
 
 
@@ -363,9 +367,10 @@ def _flags_settled[T: (Entry, Relationship)](held: T | None, item: T) -> T:
     """Decide the flags an entry or a relationship carries once it replaces the one held.
 
     Each flag is a dirty bit settled on its own. A change that leaves everything but the flags
-    as it was keeps both flags the held item carries. A change to the ``repository`` attribute
-    alone keeps the approved flag: the name of the repository that holds a stack is given when the
-    Epic's repositories are spanned, after its design was approved, and it changes nothing the
+    as it was keeps both flags the held item carries. A change to the ``repository`` or the
+    ``epicDriver`` attribute alone keeps the approved flag: the name of the repository that holds a
+    stack is given when the Epic's repositories are spanned, after its design was approved, and the
+    owner's decision that no Epic drives a stack orders Epics; neither changes anything the
     approval covers. Any other change clears the approved flag. A change clears the verified flag
     only when the item is on the architecture side, because only that side states what the item
     must be built as; a repository-side change keeps it. Flags the replacing item states are not
@@ -380,21 +385,21 @@ def _flags_settled[T: (Entry, Relationship)](held: T | None, item: T) -> T:
     if same_content(held, item):
         return replace(item, approved=held.approved, verified=held.verified)
     authority: bool = AUTHORITY_SIDE in {held.side, item.side}
-    approved: Approved | None = held.approved if _repository_alone_changed(held, item) else None
+    approved: Approved | None = held.approved if _outside_approval_alone_changed(held, item) else None
     return replace(item, approved=approved, verified=None if authority else held.verified)
 
 
-def _repository_alone_changed[T: (Entry, Relationship)](held: T, item: T) -> bool:
-    """Tell whether two entries, or two relationships, differ in nothing but the ``repository`` attribute and the flags.
+def _outside_approval_alone_changed[T: (Entry, Relationship)](held: T, item: T) -> bool:
+    """Tell whether two entries, or two relationships, differ in nothing but the flags and ``OUTSIDE_APPROVAL``.
 
     Returns:
-        True when the two are equal once the flags and the ``repository`` attribute are taken off both.
+        True when the two are equal once the flags and the attributes outside approval are taken off both.
 
     """
 
     def without(value: T) -> T:
         attributes: dict[str, JsonValue] = {
-            name: attribute for name, attribute in value.attributes.items() if name != ATTR_REPOSITORY
+            name: attribute for name, attribute in value.attributes.items() if name not in OUTSIDE_APPROVAL
         }
         return replace(value, attributes=attributes, approved=None, verified=None)
 

@@ -179,6 +179,7 @@
         "repository": {"description": "The repository that holds the stack; absent while none does.", "type": "string", "minLength": 1},
         "app": {"$ref": "#/$defs/app"},
         "executionUse": {"$ref": "#/$defs/executionUse"},
+        "epicDriver": {"description": "The owner's decision that no Epic drives the architecture of this foundation stack (none): it is designed ahead of every Epic, so no Epic waits on it in the Epic order epicorder.py computes. The owner names the Epic that drives a stack with a drives relationship from the Epic to the stack instead. Absent when the owner has decided neither.", "enum": ["none"]},
         "commands": {
           "type": "object",
           "additionalProperties": false,

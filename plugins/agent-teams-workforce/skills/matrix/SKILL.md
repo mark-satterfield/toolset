@@ -162,7 +162,8 @@ and building and testing the Story's Tasks (the CDK deployment test included) se
 again. They are separate flags: each clears on a change that affects it, independently of the
 other; one change may clear only `approved`, only `verified`, or each at a different time.
 Never infer one flag from the other. Naming the repository that holds a stack (its `repository`
-attribute alone) changes no approved design, so it keeps `approved`.
+attribute alone), or the owner's decision that no Epic drives it (its `epicDriver` attribute
+alone), changes no approved design, so it keeps `approved`.
 
 Reading the flags to decide what is planned and what exists:
 
@@ -191,6 +192,11 @@ Reading the flags to decide what is planned and what exists:
   then `atw-matrix link <kind> --from <id> --to <id> --side architecture [--heading ...]`. A
   repository-side component, infrastructure or layer takes `--stack stack:<id>`. Look the entry
   up with `find` first so one capability is one feature.
+- The owner's driver decision for a foundation stack (a `shared-*`, `*-lib` or `*-infra` stack),
+  which `epicorder.py` reads to order Epics: the driving Epic is
+  `atw-matrix link drives --from epic:<beads id> --to stack:<id> --side architecture`; no Epic
+  drives it is `atw-matrix put stack --id stack:<id> --side architecture --epic-driver none`. A
+  stack carries at most one of the two, and only the owner decides either.
 - Keep it current in the same piece of work: `rename --from <id> --to <id>`,
   `remove <id> [--held]`, `move-repository --from <repo> --to <repo>`, `unlink ...`.
 - Many changes in one step: write them to one change file

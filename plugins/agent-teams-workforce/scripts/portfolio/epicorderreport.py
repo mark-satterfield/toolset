@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Final
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
-    from epicorder import Analysis, Check, Order, Pair, Unit
+    from epicorder import Analysis, Check, Dropped, Order, Pair, Unit
 
 TOP: Final = 10
 LISTED: Final = 3
@@ -103,23 +103,40 @@ def _diff(analysis: Analysis, result: Order) -> list[str]:
     ]
 
 
+def _dropped_line(analysis: Analysis, dropped: Dropped) -> str:
+    waiter, driver = dropped.pair[1], dropped.pair[0]
+    return (
+        f"- {_name(analysis, waiter)} no longer waits for {_name(analysis, driver)}: the driver has "
+        f"{dropped.features} feature(s) in {_units(analysis, dropped.units)}"
+    )
+
+
+def _dropped(analysis: Analysis, result: Order) -> list[str]:
+    if not result.dropped:
+        return ["No edge closed a cycle, so none was dropped.", ""]
+    return [
+        (
+            "Each edge below lay inside a cycle and was dropped, in this order: the edge whose driving Epic "
+            "has the fewest features in the foundations that make it goes first, a tie to the lower bead id."
+        ),
+        "",
+        *(_dropped_line(analysis, dropped) for dropped in result.dropped),
+        "",
+    ]
+
+
 def _cycles(analysis: Analysis, result: Order) -> list[str]:
     if not result.cycles:
-        return ["No cycles: no two Epics define something the other uses."]
+        return ["No cycle is left after the break."]
     lines: list[str] = [
-        (
-            "Each cycle is a set of Epics that, through the entries below, each define something another one "
-            "uses. None is broken; the members share a level. The owner decides how each one is resolved."
-        ),
+        "Each cycle below is left after the break; `--apply` refuses to write any edge while one is.",
         "",
     ]
     for n, cycle in enumerate(result.cycles, start=1):
         lines.extend([
             f"**Cycle {n}** ({len(cycle.members)} Epics, {len(cycle.edges)} edges inside).",
             "",
-            "The entries that tie it together, by the number of edges inside the cycle each one makes:",
-            "",
-            "Entry | Defining Epic | Its features realized by the entry | Users | Edges inside",
+            "Foundation | Driving Epic | Its features in the foundation | Users | Edges inside",
             "--- | --- | --- | --- | ---",
             *_cycle_units(analysis, cycle.edges),
             "",
@@ -186,7 +203,10 @@ def _scenario(analysis: Analysis, title: str, result: Order) -> list[str]:
         "",
         *_top(analysis, result),
         "",
-        "### Cycles",
+        "### Edges dropped to break cycles",
+        "",
+        *_dropped(analysis, result),
+        "### Cycles left",
         "",
         *_cycles(analysis, result),
         "",
@@ -195,7 +215,7 @@ def _scenario(analysis: Analysis, title: str, result: Order) -> list[str]:
         *_diff(analysis, result),
         f"### Every edge ({len(result.edges)})",
         "",
-        "Each line names the entries the waiting Epic uses and the other Epic's requirements define.",
+        "Each line names the foundations the waiting Epic realizes or uses and the other Epic drives.",
         "",
         *(_edge_line(analysis, pair, units) for pair, units in result.edges.items()),
         "",
@@ -205,24 +225,38 @@ def _scenario(analysis: Analysis, title: str, result: Order) -> list[str]:
 def _summary(analysis: Analysis) -> str:
     a, b = analysis.orders
     a_sizes, b_sizes = _sizes(a), _sizes(b)
-    sizes: str = ", ".join(str(len(cycle.members)) for cycle in a.cycles)
-    cycles: str = (
-        f"{len(a.cycles)} cycle(s) of Epics that each define something another uses remain (Epics in each: "
-        f"{sizes}); they are not broken, count as one level each, and are listed as findings below"
-        if a.cycles
-        else "no cycles appear"
-    )
+    driven: int = sum(1 for foundation in analysis.foundations.values() if foundation.driver is not None)
+    left: str = f"{len(a.cycles)} cycle(s) are left, and `--apply` refuses them" if a.cycles else "no cycle is left"
     return (
-        f"The matrix holds {len(analysis.epics)} Epics. An edge now says only that one Epic uses an architecture "
-        f"entry another Epic's own requirements define, so the user is elaborated after the definer; each "
-        f"entry has one definer, and entries no feature is realized by (a VPC, a Cognito pool) make no edge; "
-        f"no WSJF or other ranking enters any edge. With nothing approved yet (scenario A), "
-        f"**{a_sizes[0]}** Epics can start now, "
-        f"at most **{max(a_sizes)}** can be architected side by side in one level, and the longest chain is "
-        f"**{_length(a)}** Epics across {len(a_sizes)} levels; {cycles}. If every `shared-*` entry were "
-        f"already approved (scenario B), {b_sizes[0]} could start now, maximum concurrency would be "
+        f"The matrix holds {len(analysis.epics)} Epics and {len(analysis.foundations)} shared foundations some "
+        f"Epic touches; {driven} have a driving Epic. Only a foundation orders Epics: every Epic that realizes "
+        f"part of it or uses one of its entries waits for its driving Epic, unless the matrix holds it "
+        f"approved; no WSJF or other ranking enters any edge. As things stand (scenario A), "
+        f"**{a_sizes[0]}** Epics can start now, at most **{max(a_sizes)}** can be architected side by side "
+        f"in one level, and the longest chain is **{_length(a)}** Epics across {len(a_sizes)} levels; "
+        f"{len(a.dropped)} edge(s) were dropped to break cycles and {left}. If every `shared-*` foundation "
+        f"were already approved (scenario B), {b_sizes[0]} could start now, maximum concurrency would be "
         f"{max(b_sizes)}, and the longest chain {_length(b)} Epics. The report writes nothing to beads."
     )
+
+
+def _foundation_row(analysis: Analysis, unit: Unit) -> str:
+    foundation = analysis.foundations[unit]
+    driver: str = "none" if foundation.driver is None else _title(analysis, foundation.driver)
+    features: int | str = "" if foundation.driver is None else foundation.features.get(foundation.driver, 0)
+    approved: str = "yes" if foundation.approved else "no"
+    return f"{foundation.label} | {driver} | {foundation.rule} | {features} | {len(foundation.touching)} | {approved}"
+
+
+def _foundations(analysis: Analysis) -> list[str]:
+    return [
+        "## Foundations and their drivers",
+        "",
+        "Foundation | Driving Epic | How it was decided | Driver's features in it | Epics touching it | Approved",
+        "--- | --- | --- | --- | --- | ---",
+        *(_foundation_row(analysis, unit) for unit in analysis.foundations),
+        "",
+    ]
 
 
 def _method(analysis: Analysis) -> list[str]:
@@ -230,35 +264,46 @@ def _method(analysis: Analysis) -> list[str]:
         "## How the order was computed",
         "",
         (
-            "The Epics and every relationship below are read from the matrix only; relationships used, all "
-            "architecture side:"
+            "An edge means that an architecture decision one Epic rests on should be designed from another "
+            "Epic's requirements first, and the matrix does not hold that decision approved. The Epics and "
+            "every relationship below are read from the matrix only."
         ),
         "",
         (
-            "- **Defines an entry.** Each entry has exactly one defining Epic: among the Epics with a feature "
-            "serving one of their requirements that is `realizedBy` the entry (`hasRequirement` → `servedBy` → "
-            "`realizedBy`), the one with the most distinct such features; a tie goes to the lowest bead id. A "
-            "stack is an entry like any other: it is defined only through the features `realizedBy` the stack "
-            "itself, never through the entries homed in it (`homeIn`)."
+            "1. **Only shared foundations order Epics.** A foundation is a stack whose name starts with "
+            "`shared-` or ends with `-lib` or `-infra`, with every entry homed in it (`homeIn`), and a layer "
+            "or package homed in no such stack, on its own. Product services, components, events and app "
+            "stacks make no Epic edge: who builds them first is build order, settled among Tasks."
         ),
         (
-            "- **Uses an entry.** Every other Epic that touches the entry is a user of it: it has a serving "
-            "feature `realizedBy` the entry, or it reaches the entry as the far end of a dependency, one hop, "
-            "from an entry it realizes or that entry's stack."
+            "2. **Approved foundations make no edge.** A foundation is approved when its own entry and every "
+            "architecture-side entry homed in it carry the matrix `approved` flag."
         ),
         (
-            "- **Not used:** document headings (`covers`, `describedBy`), `supportedBy`, and dependencies beyond "
-            "one hop. An entry no serving feature is `realizedBy` makes no edge."
+            "3. **The owner's driver decisions come first.** A `drives` relationship on the architecture side "
+            "from an Epic to the foundation's entry names its driving Epic; the stack attribute "
+            "`epicDriver: none` says no Epic drives it. A foundation no Epic drives makes no edge: no Epic "
+            "waits on it."
+        ),
+        (
+            "4. **Otherwise, the most features.** The driving Epic is the one with strictly the most distinct "
+            "features serving its requirements (`hasRequirement` → `servedBy`) that are `realizedBy` anything "
+            "in the foundation. A tie for most means no Epic drives it, and it makes no edge."
+        ),
+        (
+            "5. **Users wait for the driver.** Every other Epic that realizes part of the foundation, or "
+            "reaches one of its entries as the far end of a dependency one hop away, waits for the driver; "
+            "only entries some Epic realizes count. The edges several foundations make between one pair are "
+            "one edge, and two Epics that only use a foundation get no edge between them."
+        ),
+        (
+            "6. **Cycles are broken.** While the edges hold a cycle, the edge inside a cycle whose driving Epic "
+            "has the fewest features in the foundations that make it is dropped, a tie to the lower bead id; "
+            "every dropped edge is listed below. The rest is transitively reduced."
         ),
         "",
-        (
-            "The definer of a unit gets one edge to each of its users; an Epic gets no edge to itself, and the "
-            "edges several units make between one pair are one edge. Users of one unit get no edge between "
-            "them. A unit whose matrix `approved` flag is set makes no edge. Cycles are reported and never "
-            "broken; each is one node in the transitive reduction and its members share a level."
-        ),
-        "",
-        f"- Units (entries with a defining Epic and at least one user): {len(analysis.decisions)}.",
+        f"- Foundations some Epic touches: {len(analysis.foundations)}.",
+        f"- Foundations that make edges (a driving Epic and at least one user): {len(analysis.decisions)}.",
     ]
     return [*lines, ""]
 
@@ -277,7 +322,8 @@ def render(analysis: Analysis) -> str:
         _summary(analysis),
         "",
         *_method(analysis),
+        *_foundations(analysis),
         *_scenario(analysis, "Scenario A: as things stand (nothing approved)", a),
-        *_scenario(analysis, "Scenario B: every `shared-*` entry already approved", b),
+        *_scenario(analysis, "Scenario B: every `shared-*` foundation already approved", b),
     ]
     return "\n".join(lines).rstrip() + "\n"

@@ -96,7 +96,7 @@ holds.
 | `component` | One component: a Lambda function, a module, a construct, a page. | `component:<slug>` | `resourceType` when it is one AWS resource (a Lambda function, an AgentCore runtime), `executionUse`. |
 | `infrastructure` | One piece of infrastructure: a table, a queue, a rule, an SSM parameter, a bus. An SSM parameter is one entry, named by its path, with `resourceType` `ssm-parameter` and `homeIn` the stack that writes it (requirement R59). | `infrastructure:<slug>` | `resourceType` when it is one AWS resource. |
 | `event` | One event type: a fact with a meaning, its name, the services or components that publish it (`publishes`) and its description. On the architecture side its `purpose` is the description the event catalog in arc42 section 6 gives it and its publishers are the catalog's producers, both written by `atw-matrix sync-events`. It has no `homeIn`: its stack is its publisher's architecture-side stack. | `event:<detail type>` | `externalSource`: the system outside SkillSpoke that publishes it (for example Stripe), only for an event no SkillSpoke service or component publishes. |
-| `stack` | The home in code of services, components and infrastructure. | `stack:<stack name>` | `repository`, `app` (an open token: lowercase words joined by hyphens, for example `personal-agent`), `executionUse`, `commands` (`test`, `publish`, `deploy`). `purpose` is required: why the stack exists, in the form of the example in requirements section 3.3, or the statement that the purpose is not stated. |
+| `stack` | The home in code of services, components and infrastructure. | `stack:<stack name>` | `repository`, `app` (an open token: lowercase words joined by hyphens, for example `personal-agent`), `executionUse`, `commands` (`test`, `publish`, `deploy`), `epicDriver` (`none`: the owner's decision that no Epic drives this foundation stack, read by `epicorder.py`). `purpose` is required: why the stack exists, in the form of the example in requirements section 3.3, or the statement that the purpose is not stated. |
 | `package` | One Python package. | `package:<distribution name>` | `origin` (`project`, `third-party`). |
 | `layer` | One AWS Lambda layer the project deploys. | `layer:<slug>` | none. |
 | `file` | A file in a repository that the architecture or design names and that is not a document in the vault, such as a service's saved OpenAPI document. | `file:<stack name>/<path in the stack's repository>` | `path` (required); `homeIn` the stack. |
@@ -149,7 +149,7 @@ at it under the reverse name.
 | `routesTo` (`targetOf`) | infrastructure → service, component, infrastructure | The rule delivers every event it matches to this target. At most five per rule, the EventBridge limit. | none |
 | `reads` (`readBy`) | stack, service, component → infrastructure | Code reads a value another stack stored, such as an SSM parameter: an entry of `resourceType` `ssm-parameter` whose home is the stack that writes it. | none |
 | `runsIn` (`hosts`) | stack, service, component → infrastructure | Code runs in shared infrastructure, such as a Lambda function in its VPC, subnets and security groups, which another stack holds. | none |
-| `drives` (`drivenBy`) | epic → feature, document | The Epic's requirements shape this architecture decision. | `heading` for a document (key) |
+| `drives` (`drivenBy`) | epic → feature, document, stack | The Epic's requirements shape this architecture decision. To a foundation stack, on the architecture side, it is the owner's naming of the stack's driving Epic, which `epicorder.py` reads. | `heading` for a document (key) |
 | `restsOn` (`supportsEpic`) | epic → feature, document, stack, service, component, infrastructure | The Epic relies on this as settled architecture. | `heading` for a document (key) |
 | `specifiedBy` (`specifies`) | infrastructure, component, service → file, document | The entry, such as an API Gateway API, is specified by this file or document heading, such as its saved OpenAPI document. | `heading` for a document (key) |
 | `disputes` (`disputedBy`) | disagreement → document | The document holds one of the disagreeing statements, under the heading; the statement's text stays in the document. | `heading` (key) |
@@ -218,8 +218,9 @@ and arc42 are filled out or corrected for it.
 - **When it clears.** `Matrix.put` and `Matrix.link` clear it on an entry or relationship
   replaced by one that differs in anything but its flags, and keep it when nothing else
   differs (so `sync-epics` leaves an unchanged requirement approved, and setting `verified`
-  leaves `approved` as it is). A change to a stack's `repository` attribute alone keeps it: the
-  `span` step names the repository after promotion, and the name changes no approved design. When a document's text changes, only the entries whose
+  leaves `approved` as it is). A change to a stack's `repository` or `epicDriver` attribute alone keeps it: the
+  `span` step names the repository after promotion, and the name changes no approved design;
+  the owner's decision that no Epic drives a stack orders Epics and changes no design either. When a document's text changes, only the entries whose
   describing text changed lose it: each `describedBy` names the heading that describes its
   entry, the document entry records a hash per heading (`headingHashes`, the front matter under
   none), and an entry loses the flag when the text under its heading changed; a `describedBy`
@@ -729,14 +730,21 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
 18. **TRD and Spec files.** Outside the matrix; their paths stay on the beads. The technical
     requirements a TRD states are constraints.
 19. **Epic-to-Epic order.** The edge is a beads `tracks` edge, and the matrix records no
-    relationship between Epics. `epicorder.py` derives the order from the chain: each entry
-    has one defining Epic, the one with the most features serving its requirements that are
-    `realizedBy` the entry (a tie goes to the lowest bead id), and a stack is defined only
-    through the features `realizedBy` the stack itself. Every other Epic that touches the entry,
-    by a serving feature `realizedBy` it or as the far end of a dependency, one hop, from what it
-    realizes, is a user, and the definer orders before each user. It reads the Epics and
-    the chain from the matrix only, and its `--apply` removes every Epic-to-Epic dependency edge
-    in beads and writes the computed edges as `tracks` edges.
+    relationship between Epics. `epicorder.py` derives the order from the chain, and only
+    shared foundations order Epics: a stack named `shared-*`, `*-lib` or `*-infra` with every
+    entry homed in it, and a layer or package homed in no such stack. Product services,
+    components, events and app stacks make no Epic edge. A foundation whose own entry and every
+    architecture-side entry homed in it are approved makes no edge. The owner's driver decision
+    is read from the matrix: a `drives` relationship (architecture side) from an Epic to the
+    stack names its driver, and the stack attribute `epicDriver: none` says no Epic drives it,
+    so it makes no edge. Otherwise the driver is the Epic with strictly the most features serving
+    its requirements that are `realizedBy` anything in the foundation, and a tie means no Epic
+    drives it. Every other Epic that realizes part of the foundation, or reaches one of its
+    realized entries as the far end of a dependency, one hop, waits for the driver. While the
+    edges hold a cycle, the edge inside a cycle whose driver has the fewest features in the
+    foundations that make it is dropped (a tie to the lower bead id) and reported. It reads the
+    Epics and the chain from the matrix only, and its `--apply` removes every Epic-to-Epic
+    dependency edge in beads and writes the computed edges as `tracks` edges.
 20. **Events.** Entries. Q9 and requirement R17 need an event a stack publishes, and the
     EventBridge rule that matches it and the targets the rule routes it to, returned as
     things the stack depends on. A publisher and a consumer meet only at the event: the
