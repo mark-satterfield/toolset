@@ -836,6 +836,29 @@ def _one_hop(matrix: Matrix, starts: Collection[EntryId]) -> dict[EntryId, froze
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def requirement_reach(matrix: Matrix, requirement: EntryId) -> tuple[frozenset[EntryId], frozenset[EntryId]]:
+    """Walk one requirement by the rule of reach, as :func:`rule_reach` walks a whole Epic.
+
+    The requirement reaches the features that serve it; each entry a serving feature is
+    ``realizedBy``; the stack each such entry is or has its home in; and the direct far end of
+    each dependency that starts at one of those entries or stacks, one hop. What an Epic reaches
+    by :func:`rule_reach` is what its requirements reach together.
+
+    Args:
+        matrix: The matrix.
+        requirement: The requirement's entry id.
+
+    Returns:
+        The features that serve the requirement, and every other entry it reaches.
+
+    """
+    serving, found = _requirement_reach(matrix, requirement)
+    stacks: set[EntryId] = {stack for entry_id in found for stack in stacks_of(matrix, entry_id)}
+    starts: set[EntryId] = {*found, *stacks}
+    return frozenset(serving), frozenset({*starts, *_one_hop(matrix, starts)})
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def rule_reach(matrix: Matrix, epic: EntryId) -> RuleReach:
     """Walk one Epic by the rule of reach: what its elaboration needs, never the closure.
 

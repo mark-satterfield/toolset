@@ -181,6 +181,8 @@ class RequirementRead:
     """The ``###`` heading above it; empty when it has none."""
     digest: str
     """The hash of the requirement's own text."""
+    text: str
+    """The requirement's own text: its heading line and everything up to the next heading of its level or above."""
 
 
 class Described(TypedDict):
@@ -990,12 +992,14 @@ def parse_requirements(text: str) -> list[RequirementRead]:
     for title, group, lines in found:
         key: str = _requirement_key(title)
         seen[key] = seen.get(key, 0) + 1
+        own_text: str = "\n".join(lines).strip("\n")
         requirements.append(
             RequirementRead(
                 key=key if seen[key] == 1 else f"{key}-{seen[key]}",
                 name=title,
                 group=group,
-                digest=hashlib.sha256("\n".join(lines).strip("\n").encode()).hexdigest(),
+                digest=hashlib.sha256(own_text.encode()).hexdigest(),
+                text=own_text,
             ),
         )
     return requirements

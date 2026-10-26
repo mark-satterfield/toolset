@@ -179,7 +179,7 @@
         "repository": {"description": "The repository that holds the stack; absent while none does.", "type": "string", "minLength": 1},
         "app": {"$ref": "#/$defs/app"},
         "executionUse": {"$ref": "#/$defs/executionUse"},
-        "epicDriver": {"description": "The owner's decision that no Epic drives the architecture in this stack (none): the stack is deployed in advance, so no feature whose realizers are all in it orders Epics in the Epic order epicorder.py computes. The owner names the Epic that drives every feature whose realizers are all in a stack with a drives relationship from the Epic to the stack instead. Absent when the owner has decided neither.", "enum": ["none"]},
+        "epicDriver": {"description": "The owner's decision that no Epic drives the architecture in this stack (none): the stack is deployed in advance, so no shared item realized or homed in it orders Epics in the Epic order epicorder.py computes. The owner names the Epic that owns every shared item realized or homed in a stack with a drives relationship with no basis from the Epic to the stack instead. Absent when the owner has decided neither.", "enum": ["none"]},
         "commands": {
           "type": "object",
           "additionalProperties": false,
@@ -391,11 +391,13 @@
     },
     "drives": {
       "reverse": "drivenBy",
+      "description": "On the architecture side, from an Epic to a shared item: a feature, or a service, component, infrastructure, event, stack, package or layer entry, that two or more Epics need. It records the judgment, made from the Epics' requirements, of which Epic goes first on the item while its architecture is not approved; every other Epic that needs the item waits for that Epic (scripts/portfolio/epicorder.py). It carries basis and reason, and at most one drives with a basis ends at an item. The one drives with no basis is the owner's decision for a whole stack: it ends at the stack and says the Epic owns every shared item realized or homed in that stack. A change to the item leaves the drives as it is.",
       "attributes": {
-        "heading": {"description": "For a document: the heading that holds the decision.", "type": "string", "minLength": 1}
+        "basis": {"description": "owns: this Epic builds and owns the item and the other Epics that need it use it. shared: the Epics share the item independently and this Epic merely goes first. Required on every drives but the owner's decision for a whole stack.", "enum": ["owns", "shared"]},
+        "reason": {"description": "Why, in one sentence, from the Epics' requirements. Required with basis.", "type": "string", "minLength": 1}
       },
       "required": [],
-      "key": ["heading"]
+      "key": []
     },
     "restsOn": {
       "reverse": "supportsEpic",
@@ -446,6 +448,8 @@
     "approval": {"writes": false, "anyRole": true},
     "check": {"writes": false, "roles": ["script", "operator", "repository-steward"]},
     "check-reuse": {"writes": false, "roles": ["build-workflow"]},
+    "shared-items": {"writes": false, "anyRole": true},
+    "record-judgments": {"writes": true, "roles": ["script", "operator"]},
     "put": {"writes": true, "roles": ["solutions-architect", "repository-steward", "script"]},
     "link": {"writes": true, "roles": ["solutions-architect", "repository-steward", "script"]},
     "unlink": {"writes": true, "roles": ["solutions-architect", "repository-steward", "script"]},

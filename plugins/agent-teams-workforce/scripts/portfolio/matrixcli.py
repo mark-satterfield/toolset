@@ -5,7 +5,8 @@
 ``rename``, ``remove``, ``move-repository`` and ``commit``;
 ``sync-epics``, ``sync-documents`` and ``sync-events``; ``seed`` and its steps (``seed-stacks``,
 ``seed-packages``, ``seed-inputs``, ``seed-features``, ``seed-realizers``, ``seed-apply``); ``verify`` and the Task
-script's ``built``, ``work`` and ``affected``; ``check-reuse``. Each change is
+script's ``built``, ``work`` and ``affected``; ``check-reuse``; ``shared-items`` and
+``record-judgments``. Each change is
 one locked read-modify-write of the matrix file.
 
 The attribute options of ``put``, ``link`` and ``unlink`` are not listed here: one option exists
@@ -69,6 +70,7 @@ from matrixseed import (
     seed_realizer_inputs,
     seed_stacks,
 )
+from matrixshared import BATCH_SIZE, epic_titles, item_json, record_judgments, shared_items, write_batches
 from matrixstore import (
     Matrix,
     MatrixRefusedError,
@@ -795,6 +797,46 @@ def _run_check_reuse(call: Call) -> Outcome:
     return Outcome(check_reuse(read_matrix(call.matrix()), ids, worktree, call.texts("files") or None))
 
 
+def _run_shared_items(call: Call) -> Outcome:
+    """Run ``shared-items``.
+
+    Returns:
+        With ``--batches``, the index of the batch files written there of the shared items still
+        to be judged; otherwise every shared item, or those one Epic needs, with its decision.
+
+    Raises:
+        MatrixRefusedError: ``--batch-size`` is under 1.
+
+    """
+    matrix: Matrix = read_matrix(call.matrix())
+    folder: str | None = call.text("batches")
+    if folder is not None:
+        size: int = call.number("batch_size") or BATCH_SIZE
+        if size < 1:
+            message: str = "--batch-size must be 1 or more"
+            raise MatrixRefusedError(message)
+        vault: Path = vault_root(call.required_folder("prd_dir", [PRD_DIR_ENV]))
+        return Outcome(write_batches(matrix, vault, Path(folder).expanduser(), size))
+    bead: str | None = call.text("epic")
+    epic: str | None = None if bead is None else bead.removeprefix("epic:")
+    titles: dict[str, str] = epic_titles(matrix)
+    listed: list[JsonValue] = [
+        item_json(item, titles) for item in shared_items(matrix) if epic is None or epic in item.needs
+    ]
+    return Outcome({"epic": epic, "items": len(listed), "sharedItems": listed})
+
+
+def _run_record_judgments(call: Call) -> Outcome:
+    """Run ``record-judgments``.
+
+    Returns:
+        Each ``drives`` relationship recorded and each earlier judgment it replaced.
+
+    """
+    path: Path = Path(call.required("file")).expanduser()
+    return Outcome(update_matrix(call.matrix(), lambda matrix: record_judgments(matrix, path), wait=call.lock_wait()))
+
+
 COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     "put": _run_put,
     "link": _run_link,
@@ -821,6 +863,8 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     COMMAND_AFFECTED: _run_affected,
     COMMAND_APPROVAL: _run_approval,
     "check-reuse": _run_check_reuse,
+    "shared-items": _run_shared_items,
+    "record-judgments": _run_record_judgments,
 }
 """The sub-commands this module holds, by the name the registry's command table gives each."""
 
@@ -1054,6 +1098,27 @@ def _build_parsers(
     reuse.add_argument("--ids", nargs="+", required=True, help="the shared capability ids the Task states")
     reuse.add_argument("--worktree", required=True, help="the worktree the Task changed")
     reuse.add_argument("--files", nargs="+", help="the changed files; default: what git reports changed")
+    shared: argparse.ArgumentParser = commands.add_parser(
+        "shared-items",
+        parents=[where, sources["prds"]],
+        help="the items two or more Epics need, each with what decides which Epic goes first on it",
+    )
+    shared.add_argument("--epic", help="only the items this Epic needs (its beads id)")
+    shared.add_argument(
+        "--batches",
+        help="write the unapproved shared items no record decides, in batch files with index.json, to this folder",
+    )
+    shared.add_argument("--batch-size", type=int, help=f"about how many items one batch holds; default: {BATCH_SIZE}")
+    judged: argparse.ArgumentParser = commands.add_parser(
+        "record-judgments",
+        parents=[where],
+        help="record a judgment file as the drives relationships from the Epic that goes first to each item",
+    )
+    judged.add_argument(
+        "--file",
+        required=True,
+        help="the judgment file (skills/artifact-handoff/schemas/shared-item-judgments.schema.json)",
+    )
 
 
 def add_parsers(

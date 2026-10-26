@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/shared-item-judgments.schema.json",
+  "title": "Shared item judgments",
+  "description": "The judgments of one batch of shared items (atw-matrix shared-items --batches): for each item two or more Epics need whose architecture is not approved, the Epic that goes first on it and why, decided from the Epics' requirements. `atw-matrix record-judgments --file <path>` records every judgment of the file as the one architecture-side drives relationship from that Epic to the item, with its basis and reason, or records none when one is refused; a judgment by another Epic recorded earlier for the item is replaced. scripts/portfolio/epicorder.py then makes every other Epic that needs the item wait for that Epic.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["judgments"],
+  "properties": {
+    "judgments": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/Judgment"}
+    }
+  },
+  "$defs": {
+    "Judgment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["item", "driver", "basis", "reason"],
+      "properties": {
+        "item": {"description": "The id of the shared item: a feature, or a service, component, infrastructure, event, stack, package or layer entry.", "type": "string", "minLength": 1},
+        "driver": {"description": "The beads id of the Epic that goes first: one of the Epics that need the item.", "type": "string", "minLength": 1},
+        "basis": {"description": "owns: this Epic builds and owns the item, and the other Epics use it. shared: the Epics share the item independently (as two Epics whose Lambdas both need the VPC), and this Epic merely goes first.", "enum": ["owns", "shared"]},
+        "reason": {"description": "Why, in one sentence, from the Epics' requirements.", "type": "string", "minLength": 1}
+      }
+    }
+  }
+}

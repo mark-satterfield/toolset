@@ -49,6 +49,7 @@ from matrix_contract import (
     MATRIX_ENV,
     OPERATOR_ROLE,
     REL_DESCRIBED_BY,
+    REL_DRIVES,
     REL_MATCHES,
     REL_PUBLISHES,
     ROLE_ENV,
@@ -104,6 +105,10 @@ ATTR_REPOSITORY: Final = "repository"
 """The stack attribute that names the repository which holds the stack."""
 ATTR_EPIC_DRIVER: Final = "epicDriver"
 """The stack attribute by which the owner says no Epic drives the stack."""
+ATTR_BASIS: Final = "basis"
+"""The ``drives`` attribute that says on what ground the Epic goes first on a shared item: ``owns`` or ``shared``."""
+ATTR_REASON: Final = "reason"
+"""The ``drives`` attribute that says why, in one sentence."""
 OUTSIDE_APPROVAL: Final[frozenset[str]] = frozenset({ATTR_REPOSITORY, ATTR_EPIC_DRIVER})
 """The attributes whose change alone keeps the approved flag: neither changes an approved design."""
 _NOT_SLUG: Final[re.Pattern[str]] = re.compile(r"[^a-z0-9]+")
@@ -855,14 +860,50 @@ class Matrix:
             return []
         return [f"{entry.id}: the id names {stack}, which is not an entry"]
 
+    def _drives_problems(self) -> list[str]:
+        """Check the architecture-side ``drives`` relationships: the judgments of who goes first on a shared item.
+
+        A ``drives`` with a ``basis`` is the judgment for one item and carries a ``reason``; at
+        most one ends at an item. A ``drives`` with no ``basis`` is the owner's decision for a
+        whole stack, so it ends at a stack.
+
+        Returns:
+            One sentence per ``drives`` that breaks one of these rules.
+
+        """
+        problems: list[str] = []
+        judged: dict[EntryId, list[EntryId]] = {}
+        relationship: Relationship
+        for relationship in self.relationships((REL_DRIVES,)):
+            if relationship.side != AUTHORITY_SIDE:
+                continue
+            label: str = relationship_label(relationship)
+            if ATTR_BASIS not in relationship.attributes:
+                end: Entry | None = self._entries.get(relationship.end)
+                if end is not None and end.kind != STACK_KIND:
+                    problems.append(
+                        f"{label}: a drives with no basis is the owner's decision for a stack, so it ends at one",
+                    )
+                continue
+            if not relationship.attributes.get(ATTR_REASON):
+                problems.append(f"{label}: a drives with a basis carries its reason")
+            judged.setdefault(relationship.end, []).append(relationship.start)
+        problems.extend(
+            f"{item}: {len(starts)} drives with a basis end at it ({', '.join(sorted(starts))}); one Epic goes first"
+            for item, starts in sorted(judged.items())
+            if len(starts) > 1
+        )
+        return problems
+
     def problems(self) -> list[str]:
         """Check the whole matrix against the kinds registry and the rules between entries.
 
         Returns:
             One sentence per entry that breaks its kind or whose id names a stack the matrix does
             not hold; per relationship that breaks its kind or names an entry the matrix does not
-            hold; and per entry that starts more relationships of
-            a kind on one side than the kind allows. Empty when the matrix conforms.
+            hold; per entry that starts more relationships of
+            a kind on one side than the kind allows; and per ``drives`` that breaks
+            :meth:`_drives_problems`. Empty when the matrix conforms.
 
         """
         problems: list[str] = []
@@ -877,6 +918,7 @@ class Matrix:
         problems.extend(self._single_problems())
         problems.extend(self._event_problems())
         problems.extend(self._rule_problems())
+        problems.extend(self._drives_problems())
         return problems
 
     def put(self, entry: Entry) -> None:
