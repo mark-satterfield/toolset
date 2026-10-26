@@ -24,31 +24,30 @@ produced it.
 
 The owner sets every Epic's dependencies once, before `keeper.py` runs, with
 `scripts/portfolio/epicorder.py`. It reads the Epics and the chain the matrix records (Epic,
-requirement, feature, `realizedBy`, `homeIn`, and one dependency hop) from the matrix only and
-applies this skill's edge test to shared foundations alone:
+`hasRequirement`, requirement, `servedBy`, feature, `realizedBy`, architecture entry) from the
+matrix only. The unit that orders Epics is the feature: no two Epics are elaborated at once on
+the unapproved architecture of a feature they both need.
 
-1. Only shared foundations order Epics. A foundation is a stack named `shared-*`, `*-lib` or
-   `*-infra` with every entry homed in it, and a layer or package homed in no such stack.
-   Product services, components, events and app stacks make no Epic edge: who builds them first
-   is build order, settled among Tasks.
-2. A foundation the matrix holds approved (its own entry and every architecture-side entry homed
-   in it carry the `approved` flag) makes no edge.
-3. The owner's driver decision, recorded in the matrix, comes first: a `drives` relationship
-   (architecture side) from an Epic to the stack names its driving Epic, and the stack attribute
-   `epicDriver: none` says no Epic drives it ("A shared capability no Epic drives").
-4. Otherwise the driving Epic is the one with strictly the most features serving its
-   requirements that are `realizedBy` anything in the foundation; a tie means no Epic drives it.
-   A foundation no Epic drives makes no edge.
-5. Every other Epic that realizes part of the foundation, or reaches one of its realized entries
-   as the far end of a dependency one hop away, waits for the driving Epic. Two users get no edge
-   between them.
-6. While the edges hold a cycle, the edge inside a cycle whose driving Epic has the fewest
-   features in the foundations that make it is dropped (a tie to the lower bead id), and the
-   report lists every dropped edge.
+1. The Epics that need a feature are the Epics with a requirement `servedBy` it.
+2. A feature's architecture is approved when the feature is `realizedBy` at least one
+   architecture-side entry and every architecture-side entry it is `realizedBy` carries the
+   `approved` mark. A feature realized by nothing is not approved.
+3. A feature two or more Epics need whose architecture is not approved makes edges. An approved
+   feature makes none, and a feature one Epic needs makes none.
+4. The feature's driver is the Epic with the most of its requirements `servedBy` the feature, a
+   tie to the lower bead id. The owner's decisions recorded in the matrix come first: a `drives`
+   relationship (architecture side) from an Epic to a stack makes that Epic the driver of every
+   feature whose realizers are all in that stack, and the stack attribute `epicDriver: none` says
+   that no feature whose realizers are all in that stack makes an edge, because that stack is
+   deployed in advance ("A shared capability no Epic drives").
+5. The driver precedes every other Epic that needs the feature: one edge from the driver to each.
+6. While the edges hold a loop, the edge inside a loop whose driver has the fewest requirements
+   served by the feature that made it is dropped (a tie to the lower bead id), and the report
+   lists every dropped edge with both Epics and the feature. The rest is transitively reduced.
 
 With `--apply` it removes every Epic-to-Epic dependency edge in beads, whoever made it, and
-writes the computed edges as `tracks` edges; it refuses to write while a cycle is left or an edge
-names an Epic beads does not hold. WSJF is scored once, also before `keeper.py` runs, by the
+writes the computed edges as `tracks` edges; it refuses to write an edge that names an Epic beads
+does not hold. WSJF is scored once, also before `keeper.py` runs, by the
 owner's own `wsjf-scoring` run. Nothing in the keeper, the supervisor, its lanes, elaboration,
 build or deploy assesses an Epic's dependencies or scores anything.
 
@@ -103,9 +102,9 @@ requirements should drive the decision.
 
 There are no platform Epics. When the matrix does not hold a shared capability's design
 approved and no open Epic's requirements drive it (every Epic that reaches it only uses it,
-as the event bus, the chassis and the API front door are used), it makes no edge, as it makes
-none in `epicorder.py` (a tie for most features, or the owner's `epicDriver: none` on the
-stack): the first Epic elaborated that uses it reviews and approves its
+as the event bus, the chassis and the API front door are used), it makes no edge, as a feature
+realized only in a stack the owner marks `epicDriver: none` makes none in `epicorder.py`: the
+first Epic elaborated that uses it reviews and approves its
 architecture, and every later user designs against that. No edge runs between two users, as
 "Shared capabilities come first" states. Name the capability and its users in the reasoning.
 
@@ -308,8 +307,9 @@ Nothing. Each edge's `archCheck` names the matrix entry that states the decision
 feature id, or a document id with its heading), and the reasoning names every decision judged.
 The Epic-to-Epic edge
 is a beads `tracks` edge and is never a matrix relationship. The order across every Epic is
-derived from the chain the matrix records (Epic, requirement, feature, `realizedBy`, `homeIn`)
-by `scripts/portfolio/epicorder.py`, never from a relationship stated between Epics.
+derived from the features the matrix records the Epics as needing (Epic, `hasRequirement`,
+requirement, `servedBy`, feature, `realizedBy`) by `scripts/portfolio/epicorder.py`, never from
+a relationship stated between Epics.
 
 ## The worked example
 

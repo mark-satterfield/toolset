@@ -17,7 +17,7 @@ usually joins and limits nothing: any entry may link to any other.
 | `component` | `component:<slug>`, repository side `component:<stack>/<slug>` | A part of a service, a Lambda, a page or other code unit; `resourceType` when it is one AWS resource, `executionUse`. |
 | `infrastructure` | `infrastructure:<slug>`, repository side `infrastructure:<stack>/<slug>` | One AWS resource (`resourceType`, for example `dynamodb-table`, `eventbridge-rule`, `ssm-parameter`); an EventBridge rule may state `matchesAllEvents`. |
 | `event` | `event:<event type>` | An event type: a fact with a meaning, its publishers (`publishes`) or `externalSource`. It has no `homeIn`; its stack is its publisher's. |
-| `stack` | `stack:<name>` | The home in code of services, components and infrastructure: `purpose` (required), `repository`, `app`, `executionUse`, `commands` (`test`, `publish`, `deploy`), `epicDriver` (`none`: the owner's decision that no Epic drives this foundation stack); its type is the last token of its name. |
+| `stack` | `stack:<name>` | The home in code of services, components and infrastructure: `purpose` (required), `repository`, `app`, `executionUse`, `commands` (`test`, `publish`, `deploy`), `epicDriver` (`none`: the owner's decision that the stack is deployed in advance, so no feature whose realizers are all in it orders Epics); its type is the last token of its name. |
 | `package` | `package:<name>` | A Python package: `origin` `project` (published to CodeArtifact) or `third-party`. |
 | `layer` | `layer:<slug>`, repository side `layer:<stack>/<slug>` | One AWS Lambda layer. |
 | `file` | `file:<stack>/<path>` | A file in a stack's repository that the design names, such as a saved OpenAPI document (`path`). |
@@ -52,7 +52,7 @@ its kind at its start and under its reverse name at its end.
 | `routesTo` (`targetOf`) | infrastructure → service, component, infrastructure | The rule delivers what it matches to this target; at most five. Dependency family. |
 | `reads` (`readBy`) | stack, service, component → infrastructure | Code reads a value another stack stored, such as an SSM parameter. Dependency family. |
 | `runsIn` (`hosts`) | stack, service, component → infrastructure | Code runs in shared infrastructure, such as a Lambda in a VPC, subnets and security groups. Dependency family. |
-| `drives` (`drivenBy`) | epic → feature, document, stack | The Epic's requirements shape this architecture decision (`heading` for a document). To a foundation stack, on the architecture side, it is the owner's naming of the stack's driving Epic, which `epicorder.py` reads. |
+| `drives` (`drivenBy`) | epic → feature, document, stack | The Epic's requirements shape this architecture decision (`heading` for a document). To a stack, on the architecture side, it is the owner's decision that the Epic drives every feature whose realizers are all in the stack, which `epicorder.py` reads. |
 | `restsOn` (`supportsEpic`) | epic → feature, document, stack, service, component, infrastructure | The Epic relies on this as settled architecture (`heading` for a document). |
 | `specifiedBy` (`specifies`) | infrastructure, component, service → file, document | The entry is specified by this file or document heading, such as a saved OpenAPI document. |
 | `disputes` (`disputedBy`) | disagreement → document | The document holds one of the disagreeing statements, under `heading`. |

@@ -15,7 +15,7 @@ writes nothing to the matrix and scores nothing.
 
 The owner runs this command; the driver never dispatches the workflow. The order of every Epic
 is set before `keeper.py` runs by `scripts/portfolio/epicorder.py`, which computes it from the
-matrix chain alone, and its `--apply` removes every Epic-to-Epic edge in beads, this command's
+features the Epics share in the matrix alone, and its `--apply` removes every Epic-to-Epic edge in beads, this command's
 included, and writes the computed ones. WSJF is scored
 once, before `keeper.py` runs, by the owner's own `/agent-teams-workforce:wsjf-scoring`.
 

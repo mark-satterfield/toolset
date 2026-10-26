@@ -231,7 +231,8 @@ of reach (what its elaboration needs, never the closure), except the Epic itself
 architecture-side relationships between those entries; it is the set the Epic's architect
 reviews. What is read from the repositories is a hint and is never approved. Two Epics are never
 elaborated at the same time on the same unapproved architecture: the dependency edges that
-`epicorder.py` sets in advance order them. The approval clears from an entry or a relationship
+`epicorder.py` sets in advance, from the features the Epics share whose architecture is not
+approved, order them. The approval clears from an entry or a relationship
 when anything other than its marks changes: when the entry or relationship is replaced by one
 that differs, when the text that describes it in a document changes (only the entries whose
 describing text changed lose the mark; the other entries the same document describes keep it,
