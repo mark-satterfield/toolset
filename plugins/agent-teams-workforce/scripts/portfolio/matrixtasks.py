@@ -95,12 +95,6 @@ class EpicWork:
     """Every Task, of any Epic, as :func:`read_tasks` reads them."""
 
 
-class VerifiedMark(TypedDict):
-    """The verified flag, as a command prints it."""
-
-    commit: str
-
-
 class BuiltEntry(TypedDict):
     """One entry of the matrix that a Story's Tasks name."""
 
@@ -109,7 +103,8 @@ class BuiltEntry(TypedDict):
     name: str
     side: Side
     """Which side the entry came from: the architecture, or what is in a repository today."""
-    verified: NotRequired[VerifiedMark]
+    verified: bool
+    """Whether the entry carries the verified mark."""
     tasks: list[str]
     """The Tasks of the Story that name the entry."""
 
@@ -270,7 +265,7 @@ def _row(entry: Entry, tasks: Sequence[str]) -> BuiltEntry:
     """Render one entry a Story's Tasks name.
 
     Returns:
-        The entry's id, kind, name and side, its verified mark when it has one, and the Tasks.
+        The entry's id, kind, name and side, whether it carries the verified mark, and the Tasks.
 
     """
     row: BuiltEntry = {
@@ -278,10 +273,9 @@ def _row(entry: Entry, tasks: Sequence[str]) -> BuiltEntry:
         "kind": entry.kind,
         "name": entry.name,
         "side": entry.side,
+        "verified": entry.verified,
         "tasks": sorted(tasks),
     }
-    if entry.verified is not None:
-        row["verified"] = {"commit": entry.verified.commit}
     return row
 
 

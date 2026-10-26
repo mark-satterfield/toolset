@@ -8,11 +8,10 @@ by document. ``pack.json`` holds:
 - ``prd``: the PRD's path and text;
 - ``epicView``: what ``atw-matrix epic`` returns for the Epic;
 - ``reach``: one row per entry of the Epic's approval scope (``matrixtraverse.reach_rows``, the rule
-  of reach): its ``id``, ``kind``, ``approved`` owner (null when unapproved), ``via`` (the links that
-  put it in reach), ``sharedWith`` (the other Epics that reach it), ``contentHash`` and
-  ``headings``, each document heading that describes it (``covers`` for a requirement,
-  ``describedBy`` for any other entry) as its ``path`` under the architecture root and its
-  ``heading``;
+  of reach): its ``id``, ``kind``, ``approved`` (whether it carries the approved mark), ``via`` (the
+  links that put it in reach), ``sharedWith`` (the other Epics that reach it) and ``headings``,
+  each document heading that describes it (``covers`` for a requirement, ``describedBy`` for any
+  other entry) as its ``path`` under the architecture root and its ``heading``;
 - ``headings``: each heading the rows name, once, with its ``text``: many entries share a heading,
   so its text is listed once rather than in every row that names it;
 - ``constraints``: every constraint stated in arc42 section 2, and every other constraint that
@@ -104,10 +103,9 @@ class PackRow(TypedDict):
 
     id: str
     kind: str
-    approved: str | None
+    approved: bool
     via: str
     sharedWith: list[str]
-    contentHash: str
     headings: list[PackHeadingRef]
 
 
@@ -278,7 +276,6 @@ def matrix_part(bead: str) -> tuple[MatrixPart, list[list[tuple[str, str]]]]:
             "approved": row.approved,
             "via": row.via,
             "sharedWith": [*row.shared_with],
-            "contentHash": row.content_hash,
             "headings": [],
         }
         for row in rows
@@ -353,13 +350,13 @@ def _markdown(pack: Pack) -> str:
     ]
     row: PackRow
     for row in pack["reach"]:
-        owner: str = row["approved"] or "unapproved"
+        approved: str = "yes" if row["approved"] else "no"
         shared: str = ", ".join(row["sharedWith"]) or "no other Epic"
         lines.extend([
             "",
             f"### {row['id']}",
             "",
-            f"- kind: {row['kind']}; approved: {owner}; contentHash: `{row['contentHash']}`",
+            f"- kind: {row['kind']}; approved: {approved}",
             f"- via: {row['via']}",
             f"- shared with: {shared}",
         ])

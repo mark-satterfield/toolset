@@ -43,22 +43,12 @@
       "enum": ["architecture", "repository"]
     },
     "Approved": {
-      "description": "The approved flag, a dirty bit: it names its owner, the Epic whose elaboration reviewed and approved this entry or relationship (first come, first elaborated), and for which the matrix and arc42 are filled out or corrected. Absent means no Epic's elaboration has approved it yet; nothing seeded is approved, the effective arc42 baseline included (effective-architecture skill, Lifecycle, the baseline and iteration). Another Epic's approval never replaces it. Any change that affects the entry or relationship itself clears it on that item alone, independently of the verified flag, until an Epic that reaches it is approved again and becomes its owner.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["epic"],
-      "properties": {
-        "epic": {"description": "The beads id of its owner, the Epic whose approval set it.", "type": "string", "minLength": 1}
-      }
+      "description": "The approved mark of an architecture entry or relationship: the solutions architect approved the architecture it is part of for a feature. A plain yes or no that records no who: the entry or relationship carries true or omits the member. Nothing seeded is approved. A change to the entry or relationship itself clears it on that item alone, independently of the verified mark.",
+      "type": "boolean"
     },
     "Verified": {
-      "description": "The verified flag, a dirty bit: this entry or relationship was built and tested, the CI checks and the test that its CDK deployment works included (the deployment need not remain). Set by the build pipeline on what one Story built when its test passes, before and apart from any merge; it belongs to the item, valid for every Epic that relates to it. Absent means not verified; nothing seeded is verified. A change to what the item must be built as clears it on that item alone, independently of the approved flag, until the next build and test of the item sets it again.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["commit"],
-      "properties": {
-        "commit": {"description": "The commit of the Story's branch whose test passed.", "type": "string", "minLength": 1}
-      }
+      "description": "The verified mark of an architecture entry or relationship: the architecture it is part of was built and its test passed, so it is verified correct. A plain yes or no that records no who: the entry or relationship carries true or omits the member. Set by the build pipeline on what one Story built when its test passes. Nothing seeded is verified. A change to what the item must be built as clears it on that item alone, independently of the approved mark.",
+      "type": "boolean"
     },
     "Entry": {
       "description": "One entry. Every other member is an attribute its kind declares.",

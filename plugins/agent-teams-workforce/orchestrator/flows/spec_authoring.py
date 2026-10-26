@@ -144,7 +144,7 @@ from step_journal_contract import BEAD_TYPE_STORY, BeadId
 if TYPE_CHECKING:
     from collections.abc import Collection, Mapping, Sequence
 
-    from matrix_contract import Entry, EntryId, Verified
+    from matrix_contract import Entry, EntryId
     from matrixquery import Described, StoryScope
     from step_journal_contract import Artifact, Step, StepPlan
 
@@ -613,7 +613,7 @@ def entry_scope(matrix: Matrix, entry_id: EntryId) -> dict[str, JsonValue]:
         entry_id: The entry.
 
     Returns:
-        The entry, its verified commit (None when not verified) and its scope: ``delta`` when it
+        The entry, whether it carries the verified mark, and its scope: ``delta`` when it
         is verified, so nothing it must be built as has changed since its last build and test and
         the spec covers this Epic's own work for it alone; ``full`` when it is not verified (a
         change cleared the flag, or it was never built), so the spec covers all the work that
@@ -621,11 +621,11 @@ def entry_scope(matrix: Matrix, entry_id: EntryId) -> dict[str, JsonValue]:
 
     """
     found: Entry | None = matrix.find(entry_id)
-    verified: Verified | None = None if found is None else found.verified
+    verified: bool = found is not None and found.verified
     return {
         "entry": entry_id,
-        "verified": None if verified is None else verified.commit,
-        "scope": SCOPE_FULL if verified is None else SCOPE_DELTA,
+        "verified": verified,
+        "scope": SCOPE_DELTA if verified else SCOPE_FULL,
     }
 
 

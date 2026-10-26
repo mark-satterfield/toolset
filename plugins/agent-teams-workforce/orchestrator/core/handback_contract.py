@@ -99,9 +99,6 @@ CONTENTION_CAUSE: Final = "contention"
 TIMEOUT_CAUSE: Final = "timeout"
 TOOL_TIMEOUT_CAUSE: Final = "tool-timeout"
 NETWORK_CAUSE: Final = "network"
-MISSING_EDGE_CAUSE: Final = "missing-edge"
-"""An Epic's promotion found what it reviewed changed or approved by another Epic with no ``tracks``
-edge between them: an item failure, after which the driver re-assesses the Epic's edges."""
 ACCOUNT_CAUSES: Final[frozenset[str]] = frozenset({API_CAUSE, QUOTA_CAUSE})
 """Causes that come from the Anthropic account or API, not from the item."""
 RETRYABLE_CAUSES: Final[tuple[str, ...]] = (QUOTA_CAUSE, API_CAUSE, BD_TIMEOUT_CAUSE, CONTENTION_CAUSE)

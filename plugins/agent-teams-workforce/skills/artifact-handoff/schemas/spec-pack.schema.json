@@ -23,7 +23,7 @@
           "name": {"type": ["string", "null"]},
           "purpose": {"type": ["string", "null"]},
           "resourceType": {"description": "The AWS resource type of an infrastructure or component entry; null when it has none.", "type": ["string", "null"]},
-          "approved": {"description": "The Epic whose approved architecture set the entry's approved flag; null when it is not approved.", "type": ["string", "null"]}
+          "approved": {"description": "Whether the entry carries the approved mark; null when the matrix does not hold the entry.", "type": ["boolean", "null"]}
         }
       }
     },

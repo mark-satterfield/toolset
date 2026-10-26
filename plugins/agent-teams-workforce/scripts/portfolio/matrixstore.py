@@ -54,7 +54,6 @@ from matrix_contract import (
     ROLE_ENV,
     ROLES,
     STACK_KIND,
-    Approved,
     Entry,
     EntryId,
     EntryKind,
@@ -328,9 +327,9 @@ def dirtied[T: (Entry, Relationship)](item: T) -> T:
         The item without the approved and the verified flag; the item itself when it carries neither.
 
     """
-    if item.approved is None and item.verified is None:
+    if not item.approved and not item.verified:
         return item
-    return replace(item, approved=None, verified=None)
+    return replace(item, approved=False, verified=False)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -345,22 +344,7 @@ def same_content[T: (Entry, Relationship)](held: T, item: T) -> bool:
         True when the two are equal once both flags are taken off both.
 
     """
-    return replace(held, approved=None, verified=None) == replace(item, approved=None, verified=None)
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def approved_by(item: Entry | Relationship) -> str | None:
-    """Read which Epic's approval an entry or a relationship carries.
-
-    Args:
-        item: An entry or a relationship of any kind.
-
-    Returns:
-        The beads id of the Epic the approved flag names; None when it carries no flag, which
-        means not approved.
-
-    """
-    return None if item.approved is None else item.approved.epic
+    return replace(held, approved=False, verified=False) == replace(item, approved=False, verified=False)
 
 
 def _flags_settled[T: (Entry, Relationship)](held: T | None, item: T) -> T:
@@ -385,8 +369,8 @@ def _flags_settled[T: (Entry, Relationship)](held: T | None, item: T) -> T:
     if same_content(held, item):
         return replace(item, approved=held.approved, verified=held.verified)
     authority: bool = AUTHORITY_SIDE in {held.side, item.side}
-    approved: Approved | None = held.approved if _outside_approval_alone_changed(held, item) else None
-    return replace(item, approved=approved, verified=None if authority else held.verified)
+    approved: bool = held.approved and _outside_approval_alone_changed(held, item)
+    return replace(item, approved=approved, verified=held.verified and not authority)
 
 
 def _outside_approval_alone_changed[T: (Entry, Relationship)](held: T, item: T) -> bool:
@@ -401,7 +385,7 @@ def _outside_approval_alone_changed[T: (Entry, Relationship)](held: T, item: T) 
         attributes: dict[str, JsonValue] = {
             name: attribute for name, attribute in value.attributes.items() if name not in OUTSIDE_APPROVAL
         }
-        return replace(value, attributes=attributes, approved=None, verified=None)
+        return replace(value, attributes=attributes, approved=False, verified=False)
 
     return without(held) == without(item)
 

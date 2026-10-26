@@ -163,12 +163,11 @@
       "description": "The architect's verdict on one entry of the Epic's reach: a row of the architecture pack's `reach`, or an entry the architect's corrections brought into the reach.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "verdict", "via", "contentHash"],
+      "required": ["id", "verdict", "via"],
       "properties": {
         "id": {"description": "The entry's matrix id, as the pack lists it.", "type": "string", "minLength": 1},
         "verdict": {"$ref": "#/$defs/ReachVerdictKind"},
-        "via": {"description": "The links that put the entry in reach, as the pack lists them; for an entry the corrections brought in, the link that does.", "type": "string"},
-        "contentHash": {"description": "The entry's content hash as the pack lists it; empty for an entry the corrections brought in. The promotion compares a `kept` entry with it (orchestrator/flows/architecture_collision.py).", "type": "string"}
+        "via": {"description": "The links that put the entry in reach, as the pack lists them; for an entry the corrections brought in, the link that does.", "type": "string"}
       }
     },
     "Exclusion": {

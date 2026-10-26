@@ -82,7 +82,6 @@ from orchestrator.core.journal_steps import (
 )
 from orchestrator.core.models import MalformedRequestError, StaleInputError
 from orchestrator.flows.architecture_check import check_step
-from orchestrator.flows.architecture_collision import record_review, record_written
 from orchestrator.flows.architecture_files import (
     ARCHITECT,
     ARCHITECTURE,
@@ -649,7 +648,6 @@ def architect(run: StepRun) -> AgentLaunch:
                 f"the matrix does not hold what the architecture result {output} and its change file state",
                 *recorded.problems,
             )
-        record_review(accepted, Path(context["architectureRoot"]))
         unserved: list[JsonValue] = [*recorded.no_feature]
         requested: tuple[StepGroup, ...] = _requested(result["requests"])
         return Completion(
@@ -1130,7 +1128,6 @@ def maintainer(run: StepRun) -> AgentLaunch:
         paths: list[str] = written_paths(arch, request, written)
         if paths:
             accepted.tools.portfolio(accepted.inputs.stage, _sync, arch, paths)
-            record_written(accepted, arch, paths)
         synced: list[JsonValue] = [*paths]
         return Completion(artifacts=(file_artifact(WRITTEN, output), value_artifact(SYNCED, synced)))
 

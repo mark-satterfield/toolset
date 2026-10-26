@@ -45,7 +45,7 @@
         "required": ["entry", "verified", "scope"],
         "properties": {
           "entry": {"description": "The entry's matrix id.", "type": "string", "minLength": 1},
-          "verified": {"description": "The commit the entry's verified flag names; null when it is not verified.", "type": ["string", "null"]},
+          "verified": {"description": "Whether the entry carries the verified mark.", "type": "boolean"},
           "scope": {"enum": ["delta", "full"]}
         }
       }

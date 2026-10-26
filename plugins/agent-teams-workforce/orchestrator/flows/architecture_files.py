@@ -71,10 +71,6 @@ PACK_TEXT_FILE: Final = "pack.md"
 """The Epic's architecture pack, and the same pack written for reading, beside the context file."""
 CHANGE_FILE: Final = "matrix-changes.json"
 """The architect's matrix change file, beside the context file (``matrix-change.schema.json``)."""
-REVIEWED_FILE: Final = "reviewed.json"
-"""What the Epic's architect reviewed, as it stood when its result was last accepted: each entry of the
-approval scope with its content hash and approved owner, and each heading of each document its
-maintainers wrote with the hash of its text (``architecture_collision``)."""
 MATRIX_COMMAND: Final = "atw-matrix"
 MARKDOWN_SUFFIX: Final = ".md"
 URL_MARK: Final = "://"

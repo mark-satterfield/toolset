@@ -72,7 +72,7 @@ from matrix_contract import (
     relationship_json,
     relationship_rule,
 )
-from matrixstore import Matrix, approved_by, name_key
+from matrixstore import Matrix, name_key
 from matrixtraverse import (
     ATTR_APP,
     ATTR_EXECUTION_USE,
@@ -559,8 +559,6 @@ class Approval(TypedDict):
     id: EntryId
     kind: str
     name: str
-    approvedBy: str
-    """The beads id of the Epic whose architecture and design approval set the flag."""
 
 
 class ApprovalView(TypedDict):
@@ -643,10 +641,10 @@ def _brief(matrix: Matrix, entry_id: EntryId) -> View:
     home: EntryId | None = matrix.home(entry_id, side=None)
     if home is not None:
         view["stack"] = home
-    if entry.approved is not None:
-        view["approved"] = {"epic": entry.approved.epic}
-    if entry.verified is not None:
-        view["verified"] = {"commit": entry.verified.commit}
+    if entry.approved:
+        view["approved"] = True
+    if entry.verified:
+        view["verified"] = True
     return view
 
 
@@ -1497,9 +1495,9 @@ def summarize(matrix: Matrix, *, unlinked: bool = False) -> MatrixSummary:
     for entry in entries:
         _count(summary["byKind"], entry.kind)
         _count(summary["bySide"], entry.side)
-        if entry.verified is not None:
+        if entry.verified:
             _count(summary["verifiedByKind"], entry.kind)
-        if approved_by(entry) is not None:
+        if entry.approved:
             _count(summary["approvedByKind"], entry.kind)
         if entry.kind == KIND_DOCUMENT:
             _count(summary["documentsByLifecycle"], _text(entry.attributes.get(ATTR_LIFECYCLE)))
@@ -1510,9 +1508,9 @@ def summarize(matrix: Matrix, *, unlinked: bool = False) -> MatrixSummary:
         summary["relationships"] += 1
         _count(summary["relationshipsByKind"], relationship.kind)
         _count(summary["relationshipsBySide"], relationship.side)
-        if relationship.verified is not None:
+        if relationship.verified:
             _count(summary["verifiedRelationshipsByKind"], relationship.kind)
-        if relationship.approved is not None:
+        if relationship.approved:
             _count(summary["approvedRelationshipsByKind"], relationship.kind)
     if unlinked:
         summary["noArchitecture"] = _no_architecture(matrix)
@@ -1521,7 +1519,7 @@ def summarize(matrix: Matrix, *, unlinked: bool = False) -> MatrixSummary:
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def approval_view(matrix: Matrix, bead: str) -> ApprovalView:
-    """List which of the matrix content an Epic reaches carries the approved flag.
+    """List which of the matrix content an Epic reaches carries the approved mark.
 
     The content is ``matrixtraverse.approval_scope``: the Epic, its requirements and every
     architecture-side entry it reaches by the rule of reach, with the architecture-side
@@ -1534,9 +1532,8 @@ def approval_view(matrix: Matrix, bead: str) -> ApprovalView:
         bead: The Epic's beads id.
 
     Returns:
-        The Epic; the entries it reaches that carry the flag (with the Epic whose approval set
-        it) and those that do not, in id order; and how many of the relationships between them
-        there are and carry the flag.
+        The Epic; the entries it reaches that carry the mark and those that do not, in id order;
+        and how many of the relationships between them there are and carry the mark.
 
     """
     epic: EntryId = epic_id(bead)
@@ -1546,17 +1543,16 @@ def approval_view(matrix: Matrix, bead: str) -> ApprovalView:
     entry_id: EntryId
     for entry_id in scope.entries:
         entry: Entry = matrix.entry(entry_id)
-        by: str | None = approved_by(entry)
-        if by is None:
-            not_approved.append(entry_id)
+        if entry.approved:
+            approved.append({"id": entry.id, "kind": entry.kind, "name": entry.name})
         else:
-            approved.append({"id": entry.id, "kind": entry.kind, "name": entry.name, "approvedBy": by})
+            not_approved.append(entry_id)
     return {
         "epic": epic,
         "approved": approved,
         "notApproved": not_approved,
         "relationships": len(scope.relationships),
-        "approvedRelationships": sum(1 for held in scope.relationships if held.approved is not None),
+        "approvedRelationships": sum(1 for held in scope.relationships if held.approved),
     }
 
 

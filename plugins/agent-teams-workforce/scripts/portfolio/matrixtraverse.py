@@ -12,9 +12,8 @@ came from.
   another Epic could also reach.
 - :func:`rule_reach`: an Epic to what its elaboration needs by the rule of reach, each entry with
   the links that put it there; :func:`approval_scope`: the architecture-side part of that, which
-  the architect reviews and the approved flag of the Epic covers; :func:`reach_rows`: each entry of
-  that scope with its owner, how it is reached, the Epics that share it and
-  :func:`entry_content_hash`.
+  the architect reviews and the approved mark covers once it is approved; :func:`reach_rows`: each
+  entry of that scope with whether it is approved, how it is reached and the Epics that share it.
 - :func:`constraints_for`: some entries to the constraints that bind them.
 - :func:`capabilities`: some entries to the shared capabilities the work that builds them must use.
 - :func:`impact`: an entry to everything a change to it reaches.
@@ -22,8 +21,6 @@ came from.
 ``matrixquery`` renders what these return as the objects the ``atw-matrix`` reads print.
 """
 
-import hashlib
-import json
 import re
 import sys
 from collections import deque
@@ -69,7 +66,6 @@ from matrix_contract import (
     MatrixError,
     Relationship,
     RelationshipKind,
-    entry_json,
     family_kinds,
 )
 from matrixstore import Matrix, RelationshipId, id_stack, make_id, relationship_id
@@ -119,8 +115,6 @@ VIA_EPIC: Final = "the Epic"
 """How the Epic itself is in its own reach."""
 VIA_SEPARATOR: Final = "; "
 """What joins the ways one entry is reached."""
-FLAG_MEMBERS: Final[frozenset[str]] = frozenset({"approved", "verified"})
-"""The members of a rendered entry that are flags, which an entry's content hash leaves out."""
 _CAMEL: Final[re.Pattern[str]] = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _WORD: Final[re.Pattern[str]] = re.compile(r"[a-z0-9]+")
 
@@ -246,7 +240,7 @@ class RuleReach:
 
 @dataclass(frozen=True, slots=True)
 class ApprovalScope:
-    """The matrix content one Epic's elaboration reaches, which the Epic's approval sets the approved flag on."""
+    """The matrix content one Epic's elaboration reaches, whose architecture its approval sets the approved mark on."""
 
     epic: EntryId
     entries: tuple[EntryId, ...]
@@ -263,14 +257,12 @@ class ReachRow:
 
     id: EntryId
     kind: EntryKind
-    approved: str | None
-    """The beads id of the Epic the approved flag names (its owner); None when the entry is not approved."""
+    approved: bool
+    """Whether the entry carries the approved mark."""
     via: str
     """The links that put the entry in the Epic's reach, as text."""
     shared_with: tuple[str, ...]
     """The beads ids of the other Epics whose approval scope holds the entry, in id order."""
-    content_hash: str
-    """:func:`entry_content_hash` of the entry."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -930,27 +922,8 @@ def approval_scope(matrix: Matrix, epic: EntryId) -> ApprovalScope:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def entry_content_hash(entry: Entry) -> str:
-    """Hash what an entry states, so a later read can tell whether it changed.
-
-    Args:
-        entry: The entry.
-
-    Returns:
-        The SHA-256 hex digest of the entry as a matrix file holds it (``entry_json``), without
-        its approved and verified flags, as canonical JSON: keys sorted, no white space.
-
-    """
-    rendered: dict[str, JsonValue] = {
-        member: value for member, value in entry_json(entry).items() if member not in FLAG_MEMBERS
-    }
-    canonical: str = json.dumps(rendered, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(canonical.encode()).hexdigest()
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def reach_rows(matrix: Matrix, epic: EntryId) -> list[ReachRow]:
-    """List each entry of an Epic's approval scope with its owner, how it is reached and who shares it.
+    """List each entry of an Epic's approval scope with its approved mark, how it is reached and who shares it.
 
     An Epic the matrix does not hold raises ``MatrixError``.
 
@@ -959,9 +932,9 @@ def reach_rows(matrix: Matrix, epic: EntryId) -> list[ReachRow]:
         epic: The Epic's entry id.
 
     Returns:
-        One row per entry of :func:`approval_scope`, in id order: its kind, the Epic its approved
-        flag names, the links that put it in reach, the other Epics whose approval scope holds
-        it, and :func:`entry_content_hash`.
+        One row per entry of :func:`approval_scope`, in id order: its kind, whether it carries the
+        approved mark, the links that put it in reach and the other Epics whose approval scope
+        holds it.
 
     """
     scope: ApprovalScope = approval_scope(matrix, epic)
@@ -983,10 +956,9 @@ def reach_rows(matrix: Matrix, epic: EntryId) -> list[ReachRow]:
             ReachRow(
                 id=entry_id,
                 kind=entry.kind,
-                approved=None if entry.approved is None else entry.approved.epic,
+                approved=entry.approved,
                 via=scope.via[entry_id],
                 shared_with=tuple(sorted(sharing[entry_id])),
-                content_hash=entry_content_hash(entry),
             ),
         )
     return rows

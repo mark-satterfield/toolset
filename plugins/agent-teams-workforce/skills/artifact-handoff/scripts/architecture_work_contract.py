@@ -213,7 +213,6 @@ class ReachVerdict(TypedDict):
     id: str
     verdict: ReachVerdictKind
     via: str
-    contentHash: str
 
 
 class Exclusion(TypedDict):

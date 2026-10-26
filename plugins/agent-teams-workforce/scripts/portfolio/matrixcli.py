@@ -717,15 +717,13 @@ def _run_verify(call: Call) -> Outcome:
     """Run ``verify``.
 
     Returns:
-        The entries and relationships the Story built that carry the verified flag at the
-        commit, and what was left not verified.
+        The entries and relationships the Story built, which now carry the verified mark.
 
     """
     return Outcome(
         record_verified(
             call.matrix(),
             call.required("story"),
-            call.required("commit"),
             role_of(call.environ),
             call.folder("control", CONTROL_VARIABLES),
         ),
@@ -1020,10 +1018,9 @@ def _build_parsers(
     verified: argparse.ArgumentParser = commands.add_parser(
         COMMAND_VERIFY,
         parents=[where, control],
-        help="set the verified flag on what one Story built, when its test has passed",
+        help="set the verified mark on what one Story built, when its test has passed",
     )
     verified.add_argument("--story", required=True, help="the Story's beads id")
-    verified.add_argument("--commit", required=True, help="the commit of the Story's branch whose test passed")
     story: argparse.ArgumentParser = commands.add_parser(
         COMMAND_BUILT,
         parents=[where, control],

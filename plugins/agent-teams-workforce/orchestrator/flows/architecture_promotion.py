@@ -1,19 +1,14 @@
 """The script step that promotes approved architecture: lifecycle, the matrix's mirror of it, and the commits.
 
 It follows the check step that passed the architect's result and its review log: the architect
-reviews and approves its own architecture. First, under the matrix's lock, it compares what the
-architect reviewed with what the matrix and the documents hold now (``architecture_collision``):
-when another Epic changed or approved any of it, that is a missing ``tracks`` edge, and the step
-changes nothing, sets this Epic's architecture back to its pack step so that it is reviewed again,
-and fails this Epic only, with the cause ``missing-edge``. Otherwise it sets the documents this
+reviews and approves its own architecture. Under the matrix's lock, it sets the documents this
 Epic's document maintainers wrote effective in their front matter, files the Epic's review log in
 the vault beside the architecture, brings the documents' matrix entries up to date so that each
 mirrors its lifecycle, links the review log from the Epic's matrix entry, removes each
-disagreement a document maintainer of this run corrected the losing statement of, sets the
-approved flag on the Epic's approval scope (its reach by the rule of reach, in the corrected
-matrix), commits and pushes those documents and the review log, and commits and pushes the
-matrix file. Anything else is a failure
-with a structured cause.
+disagreement a document maintainer of this run corrected the losing statement of, and sets the
+approved mark on the architecture the Epic's elaboration reviewed (its approval scope by the rule
+of reach, in the corrected matrix). It then commits and pushes those documents and the review log,
+and commits and pushes the matrix file. Anything else is a failure with a structured cause.
 """
 
 from __future__ import annotations
@@ -30,7 +25,7 @@ from architecture_work_contract import validate_write_request, validate_write_re
 from matrix_contract import KIND_DISAGREEMENT, KIND_DOCUMENT, ROLE_SCRIPT
 from matrixstore import as_entry_id, make_id, read_matrix, update_matrix
 from matrixsync import LIFECYCLE_EFFECTIVE, relative_path, set_lifecycle, sync_documents, vault_root
-from matrixtraverse import epic_id
+from matrixtraverse import approval_scope, epic_id
 from matrixwrite import approve, commit
 from step_journal_contract import STATUS_DONE
 
@@ -38,13 +33,9 @@ from orchestrator.core import step_journal
 from orchestrator.core.io import write_json
 from orchestrator.core.journal_registry import script_step
 from orchestrator.core.journal_steps import Completion, StepRun, file_artifact, value_artifact
-from orchestrator.flows.architecture_collision import Baseline, Collision, MissingEdgeError, baseline, collisions
 from orchestrator.flows.architecture_files import (
-    ARCHITECT,
-    ARCHITECTURE,
     ARCHITECTURE_FOLDER,
     LABEL_REQUEST,
-    PACK,
     PROMOTE,
     WRITE_REQUEST,
     WRITTEN,
@@ -55,18 +46,17 @@ from orchestrator.flows.architecture_files import (
     held_file,
     matrix_file,
     read_context,
-    read_result,
     written_documents,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from architecture_work_contract import ArchitectureResult, WriteRequest, WriteResult
+    from architecture_work_contract import WriteRequest, WriteResult
     from matrix_contract import Entry, EntryId
     from matrixstore import Matrix
     from matrixwrite import ApproveResult, CommitResult
-    from step_journal_contract import Artifact, Journal, Step, StepId
+    from step_journal_contract import Artifact, Step
 
     from orchestrator.core.io import JsonValue
 
@@ -94,7 +84,7 @@ class Promoted:
     removed: tuple[EntryId, ...]
     """The disagreements removed: settled, and the losing statement corrected in this run."""
     approved: tuple[EntryId, ...]
-    """The entries the Epic reaches, which now carry the approved flag with the relationships between them."""
+    """The architecture entries the Epic reaches, which now carry the approved mark, as do the relationships between."""
     review_log: str
     """The Epic's review log, by its path under the architecture root."""
 
@@ -126,25 +116,22 @@ def _link_review_log(matrix: Matrix, bead: str, vault: Path, target: Path, diges
     matrix.put(replace(epic, attributes={**epic.attributes, ATTR_REVIEW_LOG: linked}))
 
 
-def _promote(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] - What one promotion is handed.
+def _promote(
     bead: str,
     arch: Path,
     documents: Sequence[str],
     corrected: Sequence[str],
     log: Path,
-    held: Baseline,
 ) -> Promoted:
-    """Promote what the Epic reviewed, unless another Epic changed or approved it since.
+    """Promote what the Epic reviewed.
 
-    In one matrix change, under the matrix's lock: what the architect reviewed is compared with
-    the matrix and the documents as they are now (``architecture_collision.collisions``), and a
-    collision raises ``MissingEdgeError`` before anything is written. Otherwise each document this
-    Epic's maintainers wrote that still exists is set effective in its front matter, the review log
-    is copied into the vault, the entries of the written documents are brought up to date as
-    ``atw-matrix sync-documents --paths`` does (a document that is gone loses its entry), the
-    Epic's entry links the review log, each disagreement named that the matrix holds with a ruling
-    is removed, and the Epic's approval scope gets the approved flag (``matrixwrite.approve``, as
-    the script role).
+    In one matrix change, under the matrix's lock: each document this Epic's maintainers wrote
+    that still exists is set effective in its front matter, the review log is copied into the
+    vault, the entries of the written documents are brought up to date as ``atw-matrix
+    sync-documents --paths`` does (a document that is gone loses its entry), the Epic's entry links
+    the review log, each disagreement named that the matrix holds with a ruling is removed, and
+    the architecture of the Epic's approval scope gets the approved mark (``matrixwrite.approve``,
+    as the script role).
 
     Args:
         bead: The Epic.
@@ -153,7 +140,6 @@ def _promote(  # ruff: ignore[too-many-arguments, too-many-positional-arguments]
         corrected: The ids of the disagreements whose losing statement a document maintainer of
             this run corrected.
         log: The Epic's review log, at the architecture context's ``reviewLogPath``.
-        held: What the architect reviewed, to compare with.
 
     Returns:
         The documents set effective, those the matrix does not show as effective afterwards, the
@@ -166,9 +152,6 @@ def _promote(  # ruff: ignore[too-many-arguments, too-many-positional-arguments]
     filed: list[str] = []
 
     def change(matrix: Matrix) -> tuple[list[EntryId], ApproveResult]:
-        found: list[Collision] = collisions(matrix, bead, arch, documents, held)
-        if found:
-            raise MissingEdgeError(PROMOTE, bead, found)
         copied: str
         digest: str
         copied, digest = _file_review_log(bead, arch, log)
@@ -186,7 +169,7 @@ def _promote(  # ruff: ignore[too-many-arguments, too-many-positional-arguments]
             if entry is not None and entry.kind == KIND_DISAGREEMENT and entry.attributes.get(ATTR_STANDS):
                 matrix.remove(entry.id)
                 removed.append(entry.id)
-        return removed, approve(matrix, bead, ROLE_SCRIPT)
+        return removed, approve(matrix, approval_scope(matrix, epic_id(bead)), ROLE_SCRIPT)
 
     removed: list[EntryId]
     approved: ApproveResult
@@ -239,34 +222,6 @@ def _commit_vault(run: StepRun, vault: Path, paths: list[str], message: str) -> 
     return made
 
 
-def _review_again(run: StepRun) -> StepId | None:
-    """Set this Epic's architecture back to its pack step, so that it is reviewed again from a new pack.
-
-    The pack lists the matrix as it was; another Epic has changed it since, so the pack is
-    assembled again, the TRD initial write updates the TRD from it and the architect reviews
-    again. A journal with no pack step is set back to the architect's first step.
-
-    Returns:
-        The step set back to; None when the Architecture container holds neither.
-
-    """
-    container: Step = run.step_named(ARCHITECTURE)
-    below: list[Step] = step_journal.steps_in_order_from(container)
-    target: Step | None = next((step for step in below if step.get("script") == PACK), None) or next(
-        (step for step in below if step.get("agent") == ARCHITECT),
-        None,
-    )
-    if target is None:
-        return None
-    first: StepId = target["id"]
-
-    def change(journal: Journal) -> None:
-        step_journal.invalidate_from(journal, first, step_journal.timestamp())
-
-    step_journal.update_journal(run.journal_path, change)
-    return first
-
-
 def _corrected(run: StepRun) -> list[str]:
     """List the disagreements whose losing statement a document maintainer of this run corrected.
 
@@ -308,33 +263,22 @@ def promote(run: StepRun) -> Completion:
         made or pushed.
 
     Raises:
-        MissingEdgeError: Another Epic changed or approved what this Epic reviewed; nothing was
-            approved or committed, and the architecture is set back to its pack step.
         ArchitectureStepError: The matrix does not show a promoted document as effective; the
             file of what was promoted names each.
 
     """
     context: ArchitectureContext = read_context(run)
     arch: Path = Path(context["architectureRoot"])
-    result: ArchitectureResult = read_result(run, context)
     documents: list[str] = written_documents(run, arch)
-    held: Baseline = baseline(run.context.work, str(run.bead), result)
-    try:
-        promoted: Promoted = run.tools.portfolio(
-            PROMOTE,
-            _promote,
-            str(run.bead),
-            arch,
-            documents,
-            _corrected(run),
-            Path(context["reviewLogPath"]),
-            held,
-        )
-    except MissingEdgeError as edge:
-        again: StepId | None = _review_again(run)
-        if again is not None:
-            edge.add_note(f"the Epic's architecture is set back to step {again}, to be reviewed again")
-        raise
+    promoted: Promoted = run.tools.portfolio(
+        PROMOTE,
+        _promote,
+        str(run.bead),
+        arch,
+        documents,
+        _corrected(run),
+        Path(context["reviewLogPath"]),
+    )
     path: Path = run.context.work / ARCHITECTURE_FOLDER / "promoted.json"
     record: dict[str, JsonValue] = {
         "documents": [*promoted.documents],

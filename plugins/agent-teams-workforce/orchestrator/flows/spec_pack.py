@@ -1,7 +1,7 @@
 """The spec pack of one repository's Story: what its spec sessions read instead of the vault.
 
 The repository context step writes it (``spec-pack.schema.json``) beside the repository context.
-It holds the entries the Story builds with their approved owners, the text of every heading the
+It holds the entries the Story builds with their approved marks, the text of every heading the
 Story's scopes name, read from the vault's last commit (the approved architecture promotion
 committed), the constraints and shared capabilities that bind the entries, the requirements of
 the Epic's TRD that bind them, and the contract files the repository holds today. A spec session
@@ -111,12 +111,12 @@ def committed_headings(arch: Path, documents: Sequence[Mapping[str, JsonValue]])
 
 
 def entry_rows(matrix: Matrix, ids: Iterable[EntryId]) -> list[JsonValue]:
-    """Describe the entries a Story builds, each with the Epic that approved it.
+    """Describe the entries a Story builds, each with whether it is approved.
 
     Returns:
         One row per entry: its id, kind, name and purpose, its resource type (null when it has
-        none), and the Epic its approved flag names (null when it is not approved). An id the
-        matrix does not hold gives a row with only its id.
+        none), and whether it carries the approved mark. An id the matrix does not hold gives a row
+        with only its id.
 
     """
     rows: list[JsonValue] = []
@@ -133,7 +133,7 @@ def entry_rows(matrix: Matrix, ids: Iterable[EntryId]) -> list[JsonValue]:
             "name": found.name,
             "purpose": found.purpose,
             "resourceType": resource if isinstance(resource, str) else None,
-            "approved": None if found.approved is None else found.approved.epic,
+            "approved": found.approved,
         })
     return rows
 

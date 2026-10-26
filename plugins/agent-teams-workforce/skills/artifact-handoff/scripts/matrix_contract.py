@@ -243,22 +243,6 @@ class CommandRule:
 
 
 @dataclass(frozen=True, slots=True)
-class Approved:
-    """The approved flag: owned by the one Epic whose elaboration reviewed and approved it."""
-
-    epic: str
-    """The beads id of its owner, the Epic whose approval set it; another Epic's approval never replaces it."""
-
-
-@dataclass(frozen=True, slots=True)
-class Verified:
-    """The verified flag: the item was built and tested, the test that its CDK deployment works included."""
-
-    commit: str
-    """The commit of the Story's branch whose test passed."""
-
-
-@dataclass(frozen=True, slots=True)
 class Entry:
     """One entry of the matrix."""
 
@@ -274,10 +258,10 @@ class Entry:
     """One or two sentences that identify the entry."""
     attributes: Mapping[str, JsonValue] = field(default_factory=dict)
     """The attributes the entry's kind declares."""
-    approved: Approved | None = None
-    """The approved flag; None means not approved."""
-    verified: Verified | None = None
-    """The verified flag; None means not verified."""
+    approved: bool = False
+    """The approved mark: the solutions architect approved the architecture it is part of."""
+    verified: bool = False
+    """The verified mark: the architecture it is part of was built and its test passed."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,10 +277,10 @@ class Relationship:
     """Which side states the relationship."""
     attributes: Mapping[str, JsonValue] = field(default_factory=dict)
     """The attributes the relationship's kind declares."""
-    approved: Approved | None = None
-    """The approved flag; None means not approved."""
-    verified: Verified | None = None
-    """The verified flag; None means not verified."""
+    approved: bool = False
+    """The approved mark: the solutions architect approved the architecture it is part of."""
+    verified: bool = False
+    """The verified mark: the architecture it is part of was built and its test passed."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -814,8 +798,7 @@ def entry_problems(entry: Entry) -> list[str]:
         One sentence per way the entry breaks its kind: an id of another form or another kind, or
         of the form the kind's entries have on the other side; a side the kind is never recorded
         with; an empty name, an empty or repeated alias, a missing purpose, an attribute the kind
-        does not declare or a value it does not allow, or a flag that names no commit or Epic.
-        Empty when the entry conforms.
+        does not declare or a value it does not allow. Empty when the entry conforms.
 
     """
     rule: EntryRule = ENTRY_RULES[entry.kind]
@@ -831,10 +814,6 @@ def entry_problems(entry: Entry) -> list[str]:
         problems.append(f"{entry.id}: an alias is empty or repeated")
     if rule.purpose_required and not entry.purpose.strip():
         problems.append(f"{entry.id}: a {entry.kind} must state its purpose")
-    if entry.verified is not None and not entry.verified.commit:
-        problems.append(f"{entry.id}: the verified mark names no commit")
-    if entry.approved is not None and not entry.approved.epic:
-        problems.append(f"{entry.id}: the approved flag names no Epic")
     problems.extend(
         f"{entry.id}: {failure}" for failure in _failures(_entry_validator(entry.kind), dict(entry.attributes))
     )
@@ -869,8 +848,7 @@ def relationship_problems(relationship: Relationship) -> list[str]:
 
     Returns:
         One sentence per attribute the kind does not declare or value it does not allow, for a
-        side the kind is never recorded with, and for a flag that names no commit or Epic. Empty
-        when the relationship conforms.
+        side the kind is never recorded with. Empty when the relationship conforms.
 
     """
     rule: RelationshipRule = relationship_rule(relationship.kind)
@@ -878,10 +856,6 @@ def relationship_problems(relationship: Relationship) -> list[str]:
     problems: list[str] = []
     if rule.side is not None and relationship.side != rule.side:
         problems.append(f"{label}: a {relationship.kind} relationship is always on the {rule.side} side")
-    if relationship.verified is not None and not relationship.verified.commit:
-        problems.append(f"{label}: the verified mark names no commit")
-    if relationship.approved is not None and not relationship.approved.epic:
-        problems.append(f"{label}: the approved flag names no Epic")
     problems.extend(
         f"{label}: {failure}"
         for failure in _failures(_relationship_validator(relationship.kind), dict(relationship.attributes))
@@ -948,40 +922,22 @@ def _string_tuple(value: JsonValue, where: str) -> tuple[str, ...]:
     return tuple(_string(item, where) for item in value)
 
 
-def _verified(value: JsonValue, where: str) -> Verified | None:
-    """Read the verified mark of an entry or a relationship.
+def _mark(value: JsonValue, where: str, name: str) -> bool:
+    """Read the approved or the verified mark of an entry or a relationship.
 
     Returns:
-        The mark, or None when the member is absent.
+        Whether the mark is set; an absent member is not set.
 
     Raises:
-        MatrixError: The member is present and is not an object.
+        MatrixError: The member is present and is not a boolean.
 
     """
     if value is None:
-        return None
-    if not isinstance(value, dict):
-        message: str = f"{where}: verified is not an object"
+        return False
+    if not isinstance(value, bool):
+        message: str = f"{where}: {name} is not a boolean"
         raise MatrixError(message)
-    return Verified(commit=_string(value.get("commit"), f"{where}: verified.commit"))
-
-
-def _approved(value: JsonValue, where: str) -> Approved | None:
-    """Read the approved flag of an entry or a relationship.
-
-    Returns:
-        The flag, or None when the member is absent.
-
-    Raises:
-        MatrixError: The member is present and is not an object.
-
-    """
-    if value is None:
-        return None
-    if not isinstance(value, dict):
-        message: str = f"{where}: approved is not an object"
-        raise MatrixError(message)
-    return Approved(epic=_string(value.get("epic"), f"{where}: approved.epic"))
+    return value
 
 
 def _typed_entry(raw: Mapping[str, JsonValue], where: str) -> Entry:
@@ -999,8 +955,8 @@ def _typed_entry(raw: Mapping[str, JsonValue], where: str) -> Entry:
         aliases=_string_tuple(raw.get("aliases"), f"{where}: aliases"),
         purpose=_string(raw.get("purpose"), f"{where}: purpose"),
         attributes={name: value for name, value in raw.items() if name not in ENTRY_MEMBERS},
-        approved=_approved(raw.get("approved"), where),
-        verified=_verified(raw.get("verified"), where),
+        approved=_mark(raw.get("approved"), where, "approved"),
+        verified=_mark(raw.get("verified"), where, "verified"),
     )
 
 
@@ -1017,8 +973,8 @@ def _typed_relationship(raw: Mapping[str, JsonValue], where: str) -> Relationshi
         end=EntryId(_string(raw.get("to"), f"{where}: to")),
         side=as_side(_string(raw.get("side"), f"{where}: side")),
         attributes={name: value for name, value in raw.items() if name not in RELATIONSHIP_MEMBERS},
-        approved=_approved(raw.get("approved"), where),
-        verified=_verified(raw.get("verified"), where),
+        approved=_mark(raw.get("approved"), where, "approved"),
+        verified=_mark(raw.get("verified"), where, "verified"),
     )
 
 
@@ -1095,31 +1051,11 @@ def parse_document(value: object, where: str = "matrix") -> MatrixDocument:
     return MatrixDocument(entries=tuple(entries), relationships=tuple(relationships))
 
 
-def _verified_json(verified: Verified) -> dict[str, JsonValue]:
-    """Render a verified mark as a matrix file holds it.
-
-    Returns:
-        The ``verified`` member.
-
-    """
-    return {"commit": verified.commit}
-
-
-def _approved_json(approved: Approved) -> dict[str, JsonValue]:
-    """Render an approved flag as a matrix file holds it.
-
-    Returns:
-        The ``approved`` member.
-
-    """
-    return {"epic": approved.epic}
-
-
 def entry_json(entry: Entry) -> dict[str, JsonValue]:
     """Render one entry as a matrix file holds it.
 
     Returns:
-        The common members, the entry's attributes and, when set, the approved and verified flags.
+        The common members, the entry's attributes and, when set, the approved and verified marks.
 
     """
     aliases: list[JsonValue] = list(entry.aliases)
@@ -1132,10 +1068,10 @@ def entry_json(entry: Entry) -> dict[str, JsonValue]:
         "aliases": aliases,
         "purpose": entry.purpose,
     }
-    if entry.approved is not None:
-        rendered["approved"] = _approved_json(entry.approved)
-    if entry.verified is not None:
-        rendered["verified"] = _verified_json(entry.verified)
+    if entry.approved:
+        rendered["approved"] = True
+    if entry.verified:
+        rendered["verified"] = True
     return rendered
 
 
@@ -1144,7 +1080,7 @@ def relationship_json(relationship: Relationship) -> dict[str, JsonValue]:
 
     Returns:
         The kind, both ends, the side, the relationship's attributes and, when set, the approved and
-        verified flags.
+        verified marks.
 
     """
     rendered: dict[str, JsonValue] = {
@@ -1154,10 +1090,10 @@ def relationship_json(relationship: Relationship) -> dict[str, JsonValue]:
         "to": relationship.end,
         "side": relationship.side,
     }
-    if relationship.approved is not None:
-        rendered["approved"] = _approved_json(relationship.approved)
-    if relationship.verified is not None:
-        rendered["verified"] = _verified_json(relationship.verified)
+    if relationship.approved:
+        rendered["approved"] = True
+    if relationship.verified:
+        rendered["verified"] = True
     return rendered
 
 

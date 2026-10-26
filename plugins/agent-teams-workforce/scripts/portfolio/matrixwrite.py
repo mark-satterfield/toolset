@@ -16,18 +16,18 @@ writes, so several sessions can record at once and none loses another's change.
 - :func:`move_repository` gives every stack of one repository another repository's name.
 - :func:`commit` commits the matrix file alone in the repository that holds it, and pushes it.
 
-Nothing here sets the verified flag (``matrixcode`` sets it), and :func:`approve` leaves it as it
-is. The two flags are dirty bits, each cleared on its own: a change to an entry or a relationship
-clears its approved flag, except a change to a stack's ``repository`` attribute alone, and a
-change on the architecture side clears its verified flag too (``matrixstore.Matrix.put`` and
-``Matrix.link``).
+Nothing here sets the verified mark (``matrixcode`` sets it), and :func:`approve` leaves it as it
+is. The approved and verified marks are plain yes/no marks on the architecture, each cleared on its
+own: a change to an entry or a relationship clears its approved mark, except a change to a stack's
+``repository`` attribute alone, and a change on the architecture side clears its verified mark too
+(``matrixstore.Matrix.put`` and ``Matrix.link``).
 
-The approved flag is set by :func:`approve` alone, which only the script role may run: the step
-that promotes an Epic's reviewed architecture and design runs it on the matrix content the Epic
-reaches (``matrixtraverse.approval_scope``). :func:`put` and :func:`link` take attributes only,
-so neither can state a flag. A change to an entry or relationship, to an architecture-side
-relationship an entry starts, or to the text under the document heading that describes it, clears
-the flag on that item alone (``matrixstore.Matrix.put`` and ``Matrix.link``).
+The approved mark is set by :func:`approve` alone, which only the script role may run: the step
+that promotes a feature's reviewed architecture and design runs it on the matrix content the
+Epic's elaboration reached (``matrixtraverse.approval_scope``). :func:`put` and :func:`link` take
+attributes only, so neither can state a mark. A change to an entry or relationship, to an
+architecture-side relationship an entry starts, or to the text under the document heading that
+describes it, clears the mark on that item alone (``matrixstore.Matrix.put`` and ``Matrix.link``).
 """
 
 import json
@@ -38,7 +38,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Final, TypedDict
+from typing import TYPE_CHECKING, Final, TypedDict
 
 from typeguard import CollectionCheckStrategy, typechecked
 
@@ -57,7 +57,6 @@ from matrix_contract import (
     REL_DISPUTES,
     REL_PUBLISHES,
     ROLE_SCRIPT,
-    Approved,
     Entry,
     EntryId,
     EntryKind,
@@ -92,8 +91,10 @@ from matrixstore import (
     slug,
     update_matrix,
 )
-from matrixtraverse import ApprovalScope, approval_scope
 from strictschema import validator
+
+if TYPE_CHECKING:
+    from matrixtraverse import ApprovalScope
 
 NAMED_ID_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_STACK, KIND_PACKAGE, KIND_EVENT})
 """The kinds whose id is the kind and the entry's name as written: a stack name, a distribution name, a detail type."""
@@ -133,7 +134,7 @@ CHANGE_DEFINITIONS: Final[dict[str, str]] = {"put": "Put", "link": "Link", "unli
 """Each operation a change file may hold, with the schema definition of its arguments; each is the atw-matrix
 sub-command of the same name."""
 APPROVING_ROLE: Final[Role] = ROLE_SCRIPT
-"""The one role that may set the approved flag: the script step that promotes an Epic's architecture and design."""
+"""The one role that may set the approved mark: the script step that promotes approved architecture and design."""
 
 type View = dict[str, JsonValue]
 """One entry or one relationship as the command prints it."""
@@ -177,30 +178,17 @@ class SettleResult(TypedDict):
     entry: View
 
 
-class KeptFlag(TypedDict):
-    """One entry of an Epic's approval scope whose flag names another Epic, which :func:`approve` left."""
-
-    id: EntryId
-    approvedBy: str
-    """The beads id of the Epic the flag names: the entry's owner."""
-
-
 class ApproveResult(TypedDict):
     """What :func:`approve` did."""
 
-    epic: EntryId
     entries: list[EntryId]
-    """The entries of the Epic's approval scope, in id order: each carries the Epic's flag or another Epic's."""
+    """The entries the call was given that carry the approved mark, in id order; an Epic is never marked."""
     relationships: int
-    """How many relationships between them are in the scope."""
+    """How many relationships between them the call was given that carry the approved mark."""
     marked: list[EntryId]
-    """The entries whose flag this call set."""
+    """The entries whose mark this call set."""
     markedRelationships: int
-    """How many relationships had their flag set by this call."""
-    kept: list[KeptFlag]
-    """The entries whose flag names another Epic, left as they are, in id order."""
-    keptRelationships: int
-    """How many relationships carry another Epic's flag, left as they are."""
+    """How many relationships had their mark set by this call."""
 
 
 class ChangeFailure(TypedDict):
@@ -711,71 +699,53 @@ def settle(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] -
     return {"id": entry_id, "stands": stands, "rule": rule.strip(), "entry": entry_json(settled)}
 
 
-def approve(matrix: Matrix, bead: str, role: Role) -> ApproveResult:
-    """Set the approved flag on the matrix content an Epic's elaboration reaches.
+def approve(matrix: Matrix, scope: ApprovalScope, role: Role) -> ApproveResult:
+    """Set the approved mark on the architecture the solutions architect reviewed and approved.
 
-    Run by the step that promotes an Epic's reviewed architecture and design, once the reviews
-    pass, in the same matrix change that brings the promoted documents' entries up to date, so
-    that the matrix and arc42 are filled out or corrected for the Epic first. The content is
-    ``matrixtraverse.approval_scope``: the Epic, its requirements and every architecture-side
-    entry it reaches by the rule of reach, with the architecture-side relationships between
-    them. The flag names its owner, the Epic. An entry or relationship that already carries the
-    Epic's flag is left as it is, and so is one whose flag names another Epic: an approval never
-    takes another Epic's ownership, and the result reports those under ``kept``. A change to an
-    item clears its flag (``Matrix.put``), after which the next Epic whose review approves it
-    owns it. Only
-    the approved flag is set: the verified flag each item carries is left as it is, because
-    approving the architecture says nothing about what is built (``Matrix.set_flags``). An Epic
-    the matrix does not hold raises ``MatrixError``.
+    Run by the step that promotes reviewed architecture and design, once the reviews pass, in the
+    same matrix change that brings the promoted documents' entries up to date. The content is the
+    scope the architect reviewed (``matrixtraverse.approval_scope``): every architecture-side entry
+    it names except an Epic, which is not architecture, with the architecture-side relationships
+    between them. The mark is a plain yes: it records nothing about who approved it. Only the
+    approved mark is set: the verified mark each item carries is left as it is, because approving
+    the architecture says nothing about what is built (``Matrix.set_flags``).
 
     Args:
         matrix: The matrix, changed in place.
-        bead: The Epic's beads id.
+        scope: The content to approve.
         role: Who is running it.
 
     Returns:
-        The Epic, the entries and the count of relationships in its scope, what this call set,
-        and what it left because another Epic owns it.
+        The entries and the count of relationships approved, and what this call set.
 
     Raises:
-        MatrixRefusedError: The role is not the one that may set the flag.
-        ValueError: ``bead`` is empty.
+        MatrixRefusedError: The role is not the one that may set the mark.
 
     """
-    message: str
     if role != APPROVING_ROLE:
-        message = f"the role {role} may not set the approved flag; only {APPROVING_ROLE} may"
+        message: str = f"the role {role} may not set the approved mark; only {APPROVING_ROLE} may"
         raise MatrixRefusedError(message)
-    if not bead.strip():
-        message = "approve needs the Epic's beads id"
-        raise ValueError(message)
-    epic: EntryId = make_id(KIND_EPIC, bead.strip())
-    scope: ApprovalScope = approval_scope(matrix, epic)
-    flag: Approved = Approved(epic=bead.strip())
-    unmarked: list[Relationship] = [held for held in scope.relationships if held.approved is None]
+    entries: list[EntryId] = [entry_id for entry_id in scope.entries if matrix.entry(entry_id).kind != KIND_EPIC]
+    approving: set[EntryId] = set(entries)
+    relationships: list[Relationship] = [
+        held for held in scope.relationships if held.start in approving and held.end in approving
+    ]
+    unmarked: list[Relationship] = [held for held in relationships if not held.approved]
     relationship: Relationship
     for relationship in unmarked:
-        matrix.set_flags(replace(relationship, approved=flag))
+        matrix.set_flags(replace(relationship, approved=True))
     marked: list[EntryId] = []
-    kept: list[KeptFlag] = []
     entry_id: EntryId
-    for entry_id in scope.entries:
+    for entry_id in entries:
         entry: Entry = matrix.entry(entry_id)
-        if entry.approved is None:
-            matrix.set_flags(replace(entry, approved=flag))
+        if not entry.approved:
+            matrix.set_flags(replace(entry, approved=True))
             marked.append(entry_id)
-        elif entry.approved != flag:
-            kept.append({"id": entry_id, "approvedBy": entry.approved.epic})
     return {
-        "epic": epic,
-        "entries": list(scope.entries),
-        "relationships": len(scope.relationships),
+        "entries": entries,
+        "relationships": len(relationships),
         "marked": marked,
         "markedRelationships": len(unmarked),
-        "kept": kept,
-        "keptRelationships": sum(
-            1 for held in scope.relationships if held.approved is not None and held.approved != flag
-        ),
     }
 
 

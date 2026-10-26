@@ -699,7 +699,7 @@ def _build_item(matrix: Matrix, placed: Placed, item_id: str, ids: Mapping[Entry
         "requiredBy": [],
         "evidence": [placed.entry_id, EVIDENCE_RESULT],
     }
-    if matrix.entry(placed.entry_id).verified is not None:
+    if matrix.entry(placed.entry_id).verified:
         item["state"] = hierarchy.STATE_VERIFIED
     if matrix.entry(placed.entry_id).kind != KIND_EVENT:
         return item

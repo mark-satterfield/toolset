@@ -371,18 +371,18 @@ def _driver(matrix: Matrix, unit: Unit, counts: Mapping[str, int]) -> tuple[str 
 
 
 def is_approved(matrix: Matrix, members: Iterable[EntryId]) -> bool:
-    """Tell whether a foundation is approved: every architecture-side member carries the ``approved`` flag.
+    """Tell whether a foundation is approved: every architecture-side member carries the ``approved`` mark.
 
     The members are the foundation's own entry and the entries homed in it; repository-side
     entries are hints that are never approved and are left out.
 
     Returns:
-        True when there is at least one architecture-side member and each carries the flag.
+        True when there is at least one architecture-side member and each carries the mark.
 
     """
     held: list[Entry] = [entry for entry in (matrix.find(member) for member in members) if entry is not None]
     stated: list[Entry] = [entry for entry in held if entry.side == AUTHORITY_SIDE]
-    return bool(stated) and all(entry.approved is not None for entry in stated)
+    return bool(stated) and all(entry.approved for entry in stated)
 
 
 def is_shared(matrix: Matrix, unit: Unit) -> bool:
