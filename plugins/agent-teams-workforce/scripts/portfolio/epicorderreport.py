@@ -1,16 +1,20 @@
 """Render ``epicorder.py``'s analysis, computed from the matrix alone, as the Markdown report the owner reads.
 
-Epic titles lead everywhere; bead ids follow in parentheses only.
+Epic titles lead everywhere; bead ids follow in parentheses only. Features are named by their
+matrix name, with their id in parentheses.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+from epicorder import edges_made
 
-    from epicorder import Analysis, Check, Dropped, Order, Pair, Unit
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from epicorder import Analysis, Check, Dropped, Pair
+    from matrix_contract import EntryId
 
 TOP: Final = 10
 LISTED: Final = 3
@@ -26,51 +30,46 @@ def _title(analysis: Analysis, bead: str) -> str:
     return analysis.epics[bead].title if bead in analysis.epics else bead
 
 
-def _sizes(result: Order) -> list[int]:
-    values: list[int] = list(result.levels.values())
+def _sizes(analysis: Analysis) -> list[int]:
+    values: list[int] = list(analysis.order.levels.values())
     return [values.count(level) for level in range(1, max(values) + 1)]
 
 
-def _starts(analysis: Analysis, result: Order) -> list[str]:
-    return sorted((bead for bead, level in result.levels.items() if level == 1), key=lambda b: analysis.epics[b].title)
+def _starts(analysis: Analysis) -> list[str]:
+    return sorted(
+        (bead for bead, level in analysis.order.levels.items() if level == 1),
+        key=lambda b: analysis.epics[b].title,
+    )
 
 
-def _length(result: Order) -> int:
-    return sum(len(step) for step in result.chain)
-
-
-def _step(analysis: Analysis, step: tuple[str, ...]) -> str:
-    if len(step) == 1:
-        return _title(analysis, step[0])
-    return "[cycle: " + ", ".join(_title(analysis, bead) for bead in step) + "]"
-
-
-def _units(analysis: Analysis, units: tuple[Unit, ...]) -> str:
-    named: list[str] = [analysis.decisions[unit].label for unit in units[:LISTED]]
-    more: str = f" (+{len(units) - LISTED} more)" if len(units) > LISTED else ""
+def _features(analysis: Analysis, features: tuple[EntryId, ...]) -> str:
+    named: list[str] = [analysis.decisions[feature].label for feature in features[:LISTED]]
+    more: str = f" (+{len(features) - LISTED} more)" if len(features) > LISTED else ""
     return "; ".join(named) + more
 
 
-def _edge_line(analysis: Analysis, pair: Pair, units: tuple[Unit, ...]) -> str:
-    return f"- {_name(analysis, pair[1])} waits for {_name(analysis, pair[0])} — {_units(analysis, units)}"
+def _edge_line(analysis: Analysis, pair: Pair, features: tuple[EntryId, ...]) -> str:
+    return f"- {_name(analysis, pair[1])} waits for {_name(analysis, pair[0])} — {_features(analysis, features)}"
 
 
-def _shape(analysis: Analysis, result: Order) -> list[str]:
-    sizes: list[int] = _sizes(result)
+def _shape(analysis: Analysis) -> list[str]:
+    result = analysis.order
+    sizes: list[int] = _sizes(analysis)
     return [
         f"- Edges after transitive reduction: {len(result.edges)} (before: {len(result.raw)}).",
         f"- Can start now: **{sizes[0]}** Epics.",
         f"- Levels: {len(sizes)}; maximum concurrency: **{max(sizes)}** Epics in one level.",
         f"- Epics per level: {', '.join(f'L{n}={size}' for n, size in enumerate(sizes, start=1))}.",
-        f"- Longest chain ({_length(result)} Epics, {len(result.chain)} levels): "
-        + " → ".join(_step(analysis, step) for step in result.chain)
+        f"- Longest chain ({len(result.chain)} Epics): "
+        + " → ".join(_title(analysis, bead) for bead in result.chain)
         + ".",
     ]
 
 
-def _top(analysis: Analysis, result: Order) -> list[str]:
-    ranked: list[str] = sorted(analysis.epics, key=lambda b: (-result.unlocks[b], analysis.epics[b].title))[:TOP]
-    return [f"{n}. {_name(analysis, bead)} — unlocks {result.unlocks[bead]}" for n, bead in enumerate(ranked, start=1)]
+def _top(analysis: Analysis) -> list[str]:
+    unlocks = analysis.order.unlocks
+    ranked: list[str] = sorted(analysis.epics, key=lambda b: (-unlocks[b], analysis.epics[b].title))[:TOP]
+    return [f"{n}. {_name(analysis, bead)} — unlocks {unlocks[bead]}" for n, bead in enumerate(ranked, start=1)]
 
 
 def _listed(analysis: Analysis, pairs: Iterable[Pair]) -> list[str]:
@@ -81,10 +80,10 @@ def _details(summary: str, lines: list[str]) -> list[str]:
     return [f"<details><summary>{summary}</summary>", "", *lines, "", "</details>", ""]
 
 
-def _diff(analysis: Analysis, result: Order) -> list[str]:
+def _diff(analysis: Analysis) -> list[str]:
     if analysis.standing is None:
         return ["Beads was not read, so the standing Epic-to-Epic edges are not compared.", ""]
-    proposed: set[Pair] = set(result.edges)
+    proposed: set[Pair] = set(analysis.order.edges)
     standing: set[Pair] = {(edge.blocker, edge.blocked) for edge in analysis.standing}
     kinds: list[str] = sorted({edge.kind for edge in analysis.standing})
     return [
@@ -107,67 +106,23 @@ def _dropped_line(analysis: Analysis, dropped: Dropped) -> str:
     waiter, driver = dropped.pair[1], dropped.pair[0]
     return (
         f"- {_name(analysis, waiter)} no longer waits for {_name(analysis, driver)}: the driver has "
-        f"{dropped.features} feature(s) in {_units(analysis, dropped.units)}"
+        f"{dropped.requirements} requirement(s) served by {_features(analysis, dropped.features)}"
     )
 
 
-def _dropped(analysis: Analysis, result: Order) -> list[str]:
-    if not result.dropped:
-        return ["No edge closed a cycle, so none was dropped.", ""]
+def _dropped(analysis: Analysis) -> list[str]:
+    if not analysis.order.dropped:
+        return ["No edge closed a loop, so none was dropped.", ""]
     return [
         (
-            "Each edge below lay inside a cycle and was dropped, in this order: the edge whose driving Epic "
-            "has the fewest features in the foundations that make it goes first, a tie to the lower bead id."
+            "Each edge below lay inside a loop and was dropped, in this order: the edge whose driving Epic "
+            "has the fewest requirements served by the feature that made it goes first, a tie to the lower "
+            "bead id."
         ),
         "",
-        *(_dropped_line(analysis, dropped) for dropped in result.dropped),
+        *(_dropped_line(analysis, dropped) for dropped in analysis.order.dropped),
         "",
     ]
-
-
-def _cycles(analysis: Analysis, result: Order) -> list[str]:
-    if not result.cycles:
-        return ["No cycle is left after the break."]
-    lines: list[str] = [
-        "Each cycle below is left after the break; `--apply` refuses to write any edge while one is.",
-        "",
-    ]
-    for n, cycle in enumerate(result.cycles, start=1):
-        lines.extend([
-            f"**Cycle {n}** ({len(cycle.members)} Epics, {len(cycle.edges)} edges inside).",
-            "",
-            "Foundation | Driving Epic | Its features in the foundation | Users | Edges inside",
-            "--- | --- | --- | --- | ---",
-            *_cycle_units(analysis, cycle.edges),
-            "",
-            *_details("Members", [f"- {_name(analysis, bead)}" for bead in cycle.members]),
-            *_details(
-                "Every edge inside the cycle",
-                [_edge_line(analysis, pair, units) for pair, units in cycle.edges.items()],
-            ),
-        ])
-    return lines
-
-
-def _who(analysis: Analysis, beads: tuple[str, ...]) -> str:
-    if len(beads) > LISTED:
-        return f"{len(beads)} Epics"
-    return ", ".join(_title(analysis, bead) for bead in beads)
-
-
-def _cycle_units(analysis: Analysis, edges: Mapping[Pair, tuple[Unit, ...]]) -> list[str]:
-    counts: dict[Unit, int] = {}
-    for units in edges.values():
-        for unit in units:
-            counts[unit] = counts.get(unit, 0) + 1
-    rows: list[str] = []
-    for unit, count in sorted(counts.items(), key=lambda item: (-item[1], item[0])):
-        decision = analysis.decisions[unit]
-        rows.append(
-            f"{decision.label} | {_title(analysis, decision.driver)} | {decision.features} | "
-            f"{_who(analysis, decision.users)} | {count}",
-        )
-    return rows
 
 
 def _check_line(analysis: Analysis, check: Check) -> str:
@@ -175,137 +130,97 @@ def _check_line(analysis: Analysis, check: Check) -> str:
     if not check.path:
         return f"- **No**: {who} is false; no chain of edges joins them."
     if check.direct:
-        return f"- **Yes**: {who}, directly — {_units(analysis, check.direct)}."
+        return f"- **Yes**: {who}, directly — {_features(analysis, check.direct)}."
     via: str = " → ".join(_title(analysis, bead) for bead in check.path)
     return f"- **Yes**: {who}, through {via}."
 
 
-def _checks(analysis: Analysis, result: Order) -> list[str]:
-    found: tuple[Check, ...] = analysis.checks[result.name]
-    if not found:
+def _checks(analysis: Analysis) -> list[str]:
+    if not analysis.checks:
         return []
-    return ["### Spot-checks", "", *(_check_line(analysis, check) for check in found), ""]
+    return ["## Spot-checks", "", *(_check_line(analysis, check) for check in analysis.checks), ""]
 
 
-def _scenario(analysis: Analysis, title: str, result: Order) -> list[str]:
-    starts: list[str] = _starts(analysis, result)
+def _feature_table(analysis: Analysis) -> list[str]:
+    made: dict[EntryId, int] = edges_made(analysis)
+    ranked: list[EntryId] = sorted(made, key=lambda f: (-made[f], f))
+    rows: list[str] = []
+    for feature_id in ranked:
+        decision = analysis.decisions[feature_id]
+        feature = analysis.features[feature_id]
+        rows.append(
+            f"{decision.label} | {_name(analysis, decision.driver)} | {feature.rule} | {decision.requirements} | "
+            f"{len(feature.needs)} | {made[feature_id]}",
+        )
     return [
-        f"## {title}",
+        f"## Features that make edges ({len(ranked)})",
         "",
-        *_shape(analysis, result),
-        "",
-        f"### Epics that can start now ({len(starts)})",
-        "",
-        *(f"- {_name(analysis, bead)}" for bead in starts),
-        "",
-        *_checks(analysis, result),
-        "### Top 10 Epics by how many Epics they unlock (transitively)",
-        "",
-        *_top(analysis, result),
-        "",
-        "### Edges dropped to break cycles",
-        "",
-        *_dropped(analysis, result),
-        "### Cycles left",
-        "",
-        *_cycles(analysis, result),
-        "",
-        "### Diff against the standing Epic-to-Epic edges in beads",
-        "",
-        *_diff(analysis, result),
-        f"### Every edge ({len(result.edges)})",
-        "",
-        "Each line names the foundations the waiting Epic realizes or uses and the other Epic drives.",
-        "",
-        *(_edge_line(analysis, pair, units) for pair, units in result.edges.items()),
+        (
+            "Feature | Driving Epic | How it was decided | Driver's requirements served by it | Epics it orders | "
+            "Edges it makes"
+        ),
+        "--- | --- | --- | --- | --- | ---",
+        *rows,
         "",
     ]
 
 
 def _summary(analysis: Analysis) -> str:
-    a, b = analysis.orders
-    a_sizes, b_sizes = _sizes(a), _sizes(b)
-    driven: int = sum(1 for foundation in analysis.foundations.values() if foundation.driver is not None)
-    left: str = f"{len(a.cycles)} cycle(s) are left, and `--apply` refuses them" if a.cycles else "no cycle is left"
+    sizes: list[int] = _sizes(analysis)
+    shared: int = len(analysis.features)
+    approved: int = sum(1 for feature in analysis.features.values() if feature.approved)
+    owner_none: int = sum(1 for feature in analysis.features.values() if feature.driver is None)
     return (
-        f"The matrix holds {len(analysis.epics)} Epics and {len(analysis.foundations)} shared foundations some "
-        f"Epic touches; {driven} have a driving Epic. Only a foundation orders Epics: every Epic that realizes "
-        f"part of it or uses one of its entries waits for its driving Epic, unless the matrix holds it "
-        f"approved; no WSJF or other ranking enters any edge. As things stand (scenario A), "
-        f"**{a_sizes[0]}** Epics can start now, at most **{max(a_sizes)}** can be architected side by side "
-        f"in one level, and the longest chain is **{_length(a)}** Epics across {len(a_sizes)} levels; "
-        f"{len(a.dropped)} edge(s) were dropped to break cycles and {left}. If every `shared-*` foundation "
-        f"were already approved (scenario B), {b_sizes[0]} could start now, maximum concurrency would be "
-        f"{max(b_sizes)}, and the longest chain {_length(b)} Epics. The report writes nothing to beads."
+        f"The matrix holds {len(analysis.epics)} Epics and {analysis.needed} features that serve their "
+        f"requirements; {shared} features are needed by two or more Epics, {approved} of them have approved "
+        f"architecture, {owner_none} are realized only in a stack the owner says no Epic drives, and "
+        f"{len(analysis.decisions)} have a driving Epic and unapproved architecture; after the loop break "
+        f"{len(edges_made(analysis))} of them order Epics. Each of those features has one driving Epic, and "
+        f"every other Epic that needs it waits for the driver; no WSJF or other ranking enters any edge. "
+        f"**{sizes[0]}** Epics can start now, at most **{max(sizes)}** can be architected side by side in one "
+        f"level, and the longest chain is **{len(analysis.order.chain)}** Epics across {len(sizes)} levels; "
+        f"{len(analysis.order.dropped)} edge(s) were dropped to break loops. The report writes nothing to beads."
     )
 
 
-def _foundation_row(analysis: Analysis, unit: Unit) -> str:
-    foundation = analysis.foundations[unit]
-    driver: str = "none" if foundation.driver is None else _title(analysis, foundation.driver)
-    features: int | str = "" if foundation.driver is None else foundation.features.get(foundation.driver, 0)
-    approved: str = "yes" if foundation.approved else "no"
-    return f"{foundation.label} | {driver} | {foundation.rule} | {features} | {len(foundation.touching)} | {approved}"
-
-
-def _foundations(analysis: Analysis) -> list[str]:
+def _method() -> list[str]:
     return [
-        "## Foundations and their drivers",
-        "",
-        "Foundation | Driving Epic | How it was decided | Driver's features in it | Epics touching it | Approved",
-        "--- | --- | --- | --- | --- | ---",
-        *(_foundation_row(analysis, unit) for unit in analysis.foundations),
-        "",
-    ]
-
-
-def _method(analysis: Analysis) -> list[str]:
-    lines: list[str] = [
         "## How the order was computed",
         "",
         (
-            "An edge means that an architecture decision one Epic rests on should be designed from another "
-            "Epic's requirements first, and the matrix does not hold that decision approved. The Epics and "
-            "every relationship below are read from the matrix only."
+            "An edge means that two Epics need the same feature, its architecture is not approved, and the "
+            "Epic that drives the feature is elaborated first, so no two Epics work on that unapproved "
+            "architecture at once. The Epics and every relationship below are read from the matrix only."
         ),
         "",
         (
-            "1. **Only shared foundations order Epics.** A foundation is a stack whose name starts with "
-            "`shared-` or ends with `-lib` or `-infra`, with every entry homed in it (`homeIn`), and a layer "
-            "or package homed in no such stack, on its own. Product services, components, events and app "
-            "stacks make no Epic edge: who builds them first is build order, settled among Tasks."
+            "1. **The Epics that need a feature** are the Epics with a requirement `servedBy` it "
+            "(`hasRequirement` → `servedBy`)."
         ),
         (
-            "2. **Approved foundations make no edge.** A foundation is approved when its own entry and every "
-            "architecture-side entry homed in it carry the matrix `approved` flag."
+            "2. **Approved features make no edge.** A feature's architecture is approved when the feature is "
+            "`realizedBy` at least one architecture-side entry and every architecture-side entry it is "
+            "`realizedBy` carries the `approved` mark. A feature realized by nothing is not approved."
+        ),
+        "3. **Only a feature two or more Epics need makes edges.** A feature one Epic needs orders nothing.",
+        (
+            "4. **The driver** is the Epic with the most of its requirements `servedBy` the feature, a tie to "
+            "the lower bead id. The owner's decisions come first: an architecture-side `drives` relationship "
+            "from an Epic to a stack makes it the driver of every feature whose realizers are all in that "
+            "stack, and `epicDriver: none` on a stack means no feature whose realizers are all in it makes an "
+            "edge, because the stack is deployed in advance."
         ),
         (
-            "3. **The owner's driver decisions come first.** A `drives` relationship on the architecture side "
-            "from an Epic to the foundation's entry names its driving Epic; the stack attribute "
-            "`epicDriver: none` says no Epic drives it. A foundation no Epic drives makes no edge: no Epic "
-            "waits on it."
+            "5. **Every other Epic that needs the feature waits for the driver.** The edges several features "
+            "make between one pair are one edge."
         ),
         (
-            "4. **Otherwise, the most features.** The driving Epic is the one with strictly the most distinct "
-            "features serving its requirements (`hasRequirement` → `servedBy`) that are `realizedBy` anything "
-            "in the foundation. A tie for most means no Epic drives it, and it makes no edge."
-        ),
-        (
-            "5. **Users wait for the driver.** Every other Epic that realizes part of the foundation, or "
-            "reaches one of its entries as the far end of a dependency one hop away, waits for the driver; "
-            "only entries some Epic realizes count. The edges several foundations make between one pair are "
-            "one edge, and two Epics that only use a foundation get no edge between them."
-        ),
-        (
-            "6. **Cycles are broken.** While the edges hold a cycle, the edge inside a cycle whose driving Epic "
-            "has the fewest features in the foundations that make it is dropped, a tie to the lower bead id; "
-            "every dropped edge is listed below. The rest is transitively reduced."
+            "6. **Loops are broken.** While the edges hold a loop, the edge inside a loop whose driving Epic "
+            "has the fewest requirements served by the feature that made it is dropped, a tie to the lower "
+            "bead id; every dropped edge is listed below. The rest is transitively reduced."
         ),
         "",
-        f"- Foundations some Epic touches: {len(analysis.foundations)}.",
-        f"- Foundations that make edges (a driving Epic and at least one user): {len(analysis.decisions)}.",
     ]
-    return [*lines, ""]
 
 
 def render(analysis: Analysis) -> str:
@@ -315,15 +230,38 @@ def render(analysis: Analysis) -> str:
         The Markdown text.
 
     """
-    a, b = analysis.orders
+    starts: list[str] = _starts(analysis)
     lines: list[str] = [
         "# Epic architecture order",
         "",
         _summary(analysis),
         "",
-        *_method(analysis),
-        *_foundations(analysis),
-        *_scenario(analysis, "Scenario A: as things stand (nothing approved)", a),
-        *_scenario(analysis, "Scenario B: every `shared-*` foundation already approved", b),
+        *_method(),
+        *_feature_table(analysis),
+        "## Edges dropped to break loops",
+        "",
+        *_dropped(analysis),
+        "## Shape of the order",
+        "",
+        *_shape(analysis),
+        "",
+        f"## Epics that can start now ({len(starts)})",
+        "",
+        *(f"- {_name(analysis, bead)}" for bead in starts),
+        "",
+        *_checks(analysis),
+        "## Top 10 Epics by how many Epics they unlock (transitively)",
+        "",
+        *_top(analysis),
+        "",
+        "## Diff against the standing Epic-to-Epic edges in beads",
+        "",
+        *_diff(analysis),
+        f"## Every edge ({len(analysis.order.edges)})",
+        "",
+        "Each line names the features both Epics need and the other Epic drives.",
+        "",
+        *(_edge_line(analysis, pair, features) for pair, features in analysis.order.edges.items()),
+        "",
     ]
     return "\n".join(lines).rstrip() + "\n"
