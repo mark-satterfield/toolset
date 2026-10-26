@@ -741,3 +741,11 @@ so nothing is seeded as verified.
   Epic to a stack makes that Epic the owner of every shared item realized or homed in the stack,
   and `epicDriver: none` on a stack makes its items order no Epics, because it is deployed in
   advance.
+- **R66.** The Epic order is for one release at a time: the Epics whose PRD is in that release's
+  folder of the vault (the folder that holds the PRD's `prds` folder, as in
+  `docs/sdlc/mvp-1/prds/`), named when `epicorder.py` runs (`--release`). An Epic of another
+  release takes no part: what it needs makes no item shared, a judgment naming it as the Epic
+  that goes first decides nothing for the release (the item is unjudged), and no edge is computed
+  to or from it. `--apply` removes every standing Epic-to-Epic edge, those to or from Epics of
+  other releases included, and the report lists those Epics, those edges and those items. No
+  Epic is removed from the matrix or beads for being in another release.

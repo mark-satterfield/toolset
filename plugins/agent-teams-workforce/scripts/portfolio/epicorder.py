@@ -6,6 +6,13 @@ everything that decides the edges are read from the matrix only. No model is cal
 workflow is started, and no edge is inferred from counts or names: each comes from a judgment
 recorded in the matrix (``matrixshared``).
 
+The order is for one release (``--release``, for example ``mvp-1``): the Epics whose PRD lies in
+that release's folder of the vault (the folder that holds the PRD's ``prds`` folder, as in
+``docs/sdlc/mvp-1/prds/``). Every other Epic takes no part: what it needs makes no item shared, a
+judgment that names it as the driver decides nothing (the item is unjudged for the release), and
+no edge is computed to or from it. The report lists those Epics, the standing edges to or from
+them that ``--apply`` removes, and the items whose recorded driver is one of them.
+
 An Epic has requirements; requirements are served by features; features are realized by
 architecture entries, which depend on other entries. No Epic relates directly to another Epic.
 An item is shared when two or more Epics need it: a feature that serves a requirement of each,
@@ -42,7 +49,7 @@ import argparse
 import json
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -64,6 +71,10 @@ type Pair = tuple[str, str]
 """An edge: the Epic that goes first, then the Epic that waits for it."""
 
 TITLE_PREFIX: Final = "Feature PRD: "
+SHARED_BY: Final = 2
+"""An item is shared when at least this many Epics need it."""
+PRD_FOLDER: Final = "prds"
+"""The folder that holds a release's PRDs; its parent folder is named for the release."""
 EPIC_EDGE_TYPES: Final = (beadgraph.TRACKS, beadgraph.BLOCKS)
 """The dependency types the pipeline reads as an Epic's prerequisites; ``--apply`` removes both between Epics."""
 LIST_EPICS: Final = ("list", "--type", "epic", "--all", "--json", "-n", "0", "--brief", "--readonly")
@@ -75,6 +86,8 @@ class Epic:
 
     id: str
     title: str
+    release: str
+    """The folder that holds the PRD's ``prds`` folder; empty when the Epic states no PRD there."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,9 +136,15 @@ class Check:
 class Analysis:
     """Everything the report shows."""
 
+    release: str
     epics: Mapping[str, Epic]
+    """The Epics of the release, the only ones ordered."""
+    others: Mapping[str, Epic]
+    """The Epics of every other release, which take no part in the order."""
     items: Mapping[EntryId, SharedItem]
-    """Every item two or more Epics need."""
+    """Every item two or more Epics of the release need, with only those Epics as its needs."""
+    foreign: tuple[EntryId, ...]
+    """The items whose recorded driver is an Epic of another release, so no record decides them here."""
     order: Order
     standing: tuple[StandingEdge, ...] | None
     """Every dependency edge between two Epics in beads, or None when beads was not read."""
@@ -324,8 +343,22 @@ def check(result: Order, waiter: str, driver: str) -> Check:
     return Check(waiter, driver, path, result.raw.get((driver, waiter), ()))
 
 
+def release_of(prd: JsonValue) -> str:
+    """Name the release of an Epic from its ``prd`` attribute.
+
+    Returns:
+        The folder that holds the PRD's ``prds`` folder; empty when the attribute names none.
+
+    """
+    path: JsonValue = prd.get("path") if isinstance(prd, dict) else None
+    if not isinstance(path, str):
+        return ""
+    folder: Path = Path(path).parent
+    return folder.parent.name if folder.name == PRD_FOLDER else ""
+
+
 def read_epics(matrix: Matrix) -> dict[str, Epic]:
-    """Read every Epic the matrix holds, with its title.
+    """Read every Epic the matrix holds, with its title and release.
 
     Returns:
         Each Epic by its beads id.
@@ -333,10 +366,37 @@ def read_epics(matrix: Matrix) -> dict[str, Epic]:
     """
     prefix: str = f"{KIND_EPIC}:"
     epics: list[Epic] = [
-        Epic(entry.id.removeprefix(prefix), entry.name.removeprefix(TITLE_PREFIX).strip())
+        Epic(
+            entry.id.removeprefix(prefix),
+            entry.name.removeprefix(TITLE_PREFIX).strip(),
+            release_of(entry.attributes.get("prd")),
+        )
         for entry in matrix.entries((KIND_EPIC,))
     ]
     return {epic.id: epic for epic in epics}
+
+
+def in_release(items: Iterable[SharedItem], epics: Collection[str]) -> tuple[list[SharedItem], list[EntryId]]:
+    """Keep the items two or more Epics of the release need, each with only those Epics as its needs.
+
+    A recorded driver outside the release decides nothing here: the item keeps no decision.
+
+    Returns:
+        The kept items, and the ids of those whose recorded driver is outside the release.
+
+    """
+    kept: list[SharedItem] = []
+    foreign: list[EntryId] = []
+    for item in items:
+        needs: dict[str, tuple[EntryId, ...]] = {bead: reqs for bead, reqs in item.needs.items() if bead in epics}
+        if len(needs) < SHARED_BY:
+            continue
+        decision = item.decision
+        if decision is not None and decision.driver not in epics:
+            foreign.append(item.id)
+            decision = None
+        kept.append(replace(item, needs=needs, decision=decision))
+    return kept, foreign
 
 
 def _epic_beads(repo: Path | None) -> list[beadgraph.Bead]:
@@ -375,23 +435,38 @@ def standing_edges(beads: Iterable[beadgraph.Bead]) -> tuple[StandingEdge, ...]:
     return tuple(sorted(found, key=lambda edge: (edge.blocked, edge.blocker)))
 
 
-def analyse(matrix: Matrix, expected: Iterable[Pair], standing: tuple[StandingEdge, ...] | None) -> Analysis:
-    """Run the whole computation over one read of the matrix.
+def analyse(
+    matrix: Matrix,
+    release: str,
+    expected: Iterable[Pair],
+    standing: tuple[StandingEdge, ...] | None,
+) -> Analysis:
+    """Run the whole computation over one read of the matrix, for the Epics of one release.
 
     Args:
         matrix: The matrix, the one source of the Epics, the shared items and the judgments.
+        release: The release whose Epics are ordered (the folder that holds their PRDs' ``prds`` folder).
         expected: The spot-checks to answer, each (waiter, driver).
         standing: The Epic-to-Epic edges in beads, or None when beads was not read.
 
     Returns:
         Everything the report shows.
 
+    Raises:
+        ValueError: No Epic of the matrix belongs to the release.
+
     """
-    epics: dict[str, Epic] = read_epics(matrix)
-    items: dict[EntryId, SharedItem] = {item.id: item for item in shared_items(matrix)}
+    every: dict[str, Epic] = read_epics(matrix)
+    epics: dict[str, Epic] = {bead: epic for bead, epic in every.items() if epic.release == release}
+    if not epics:
+        message: str = f"no Epic of the matrix has its PRD in release {release!r}"
+        raise ValueError(message)
+    others: dict[str, Epic] = {bead: epic for bead, epic in every.items() if bead not in epics}
+    kept, foreign = in_release(shared_items(matrix), epics)
+    items: dict[EntryId, SharedItem] = {item.id: item for item in kept}
     result: Order = order(items, deciding(items.values()), epics)
     checks: tuple[Check, ...] = tuple(check(result, waiter, driver) for waiter, driver in expected)
-    return Analysis(epics, items, result, standing, checks)
+    return Analysis(release, epics, others, items, tuple(sorted(foreign)), result, standing, checks)
 
 
 def _dropped_json(dropped: Iterable[Dropped]) -> list[JsonValue]:
@@ -427,6 +502,8 @@ def summary(analysis: Analysis) -> JsonObject:
     decided: list[SharedItem] = deciding(analysis.items.values())
     unapproved: list[SharedItem] = [item for item in analysis.items.values() if not item.approved]
     judged: int = sum(1 for item in decided if item.decision is not None and item.decision.source == SOURCE_JUDGED)
+    others: list[JsonValue] = [*sorted(analysis.others)]
+    foreign: list[JsonValue] = [*analysis.foreign]
     top_items: list[JsonValue] = []
     for item_id in top[:10]:
         decision = analysis.items[item_id].decision
@@ -437,7 +514,10 @@ def summary(analysis: Analysis) -> JsonObject:
             "basis": None if decision is None else decision.basis,
         })
     return {
+        "release": analysis.release,
         "epics": len(analysis.epics),
+        "otherReleases": others,
+        "driverInOtherRelease": foreign,
         "sharedItems": len(analysis.items),
         "approved": len(analysis.items) - len(unapproved),
         "judged": judged,
@@ -512,6 +592,11 @@ def _pair(text: str) -> Pair:
 
 def _arguments(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        "--release",
+        required=True,
+        help="order only the Epics whose PRD is in this release's folder of the vault, for example mvp-1",
+    )
     parser.add_argument("--matrix", default=None, help="the matrix file (else ATW_MATRIX, else ATW_CONTROL_REPO)")
     parser.add_argument("--repo", type=Path, default=None, help="the repository whose beads Epic edges to replace")
     parser.add_argument("--report", type=Path, default=None, help="write the Markdown report here")
@@ -536,7 +621,7 @@ def main(argv: list[str] | None = None) -> int:
     matrix: Matrix = read_matrix(matrix_path(args.matrix, os.environ))
     beads: list[beadgraph.Bead] | None = _epic_beads(args.repo) if args.apply or args.report is not None else None
     standing: tuple[StandingEdge, ...] | None = None if beads is None else standing_edges(beads)
-    analysis: Analysis = analyse(matrix, args.expect, standing)
+    analysis: Analysis = analyse(matrix, args.release, args.expect, standing)
     if args.report is not None:
         from epicorderreport import render  # ruff: ignore[import-outside-top-level] - the report module is needed only for --report.
 

@@ -40,7 +40,10 @@ produced it.
 
 The owner sets every Epic's dependencies once, before `keeper.py` runs, with
 `scripts/portfolio/epicorder.py`. It reads the Epics, the shared items and the judgments from the
-matrix only (`matrixshared.py`).
+matrix only (`matrixshared.py`). It orders one release at a time (`--release`, for example `mvp-1`): the Epics whose PRD is in that release's folder of the vault (`docs/sdlc/<release>/prds/`). An Epic of another release takes no part:
+what it needs makes no item shared, a judgment naming it as the Epic that goes first decides
+nothing for the release (the item is unjudged), and no edge is computed to or from it. The report
+lists those Epics, the standing edges to or from them and those items.
 
 1. The shared items are listed by `atw-matrix shared-items`: each feature that serves a
    requirement of two or more Epics, and each architecture-side entry two or more Epics reach by
@@ -76,8 +79,9 @@ of the file, or none when one is refused.
 
 ## Applying the order
 
-`epicorder.py --apply` removes every Epic-to-Epic dependency edge in beads, whoever made it, and
-writes the computed edges as `tracks` edges; it refuses to write an edge that names an Epic beads
+`epicorder.py --release <release> --apply` removes every Epic-to-Epic dependency edge in beads,
+whoever made it, those to or from Epics of other releases included, and writes the computed edges
+of the release as `tracks` edges; it refuses to write an edge that names an Epic beads
 does not hold. No other step of the pipeline sets or changes an Epic-to-Epic edge.
 
 The `dependency-assessment` workflow, which only the owner runs, applies the same rule to one

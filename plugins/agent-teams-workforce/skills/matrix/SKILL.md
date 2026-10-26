@@ -60,7 +60,10 @@ uses, and so that two Epics never work on the same unapproved shared item at the
 each shared item, either one Epic builds and owns it and the others use it, or the Epics share it
 independently (like two Epics whose Lambdas both need the VPC). That is a judgment from the
 Epics' requirements, recorded as a `drives` from the Epic that goes first to the item (see
-"Writing"); `epicorder.py` never infers it from counts or names. A repository is an attribute
+"Writing"); `epicorder.py` never infers it from counts or names. `epicorder.py` orders one
+release at a time (`--release`, for example `mvp-1`): only the Epics whose PRD is in
+`docs/sdlc/<release>/prds/` count as needing a shared item, and no edge is computed to or from an
+Epic of another release. A repository is an attribute
 of a stack (`repository`), never an entry. The full lists of entry kinds and relationship kinds,
 with direction and meaning, are in [references/model.md](references/model.md).
 

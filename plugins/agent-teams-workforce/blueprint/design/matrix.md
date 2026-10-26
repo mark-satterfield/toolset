@@ -760,7 +760,11 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
     fewest items first, a tie to the lower bead id, and reports each with both Epics and the
     items. It reads everything from the matrix, and its `--apply` removes every Epic-to-Epic
     dependency edge in beads and writes the transitively reduced computed edges as `tracks`
-    edges.
+    edges. It orders one release (`--release`, requirement R66): only the Epics whose PRD is in
+    `docs/sdlc/<release>/prds/` count as needing an item and get edges; an item's judgment
+    whose Epic is in another release decides nothing for the release, and the report lists the
+    Epics of other releases, the standing edges to or from them that `--apply` removes, and those
+    items.
 20. **Events.** Entries. Q9 and requirement R17 need an event a stack publishes, and the
     EventBridge rule that matches it and the targets the rule routes it to, returned as
     things the stack depends on. A publisher and a consumer meet only at the event: the

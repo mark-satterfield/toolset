@@ -22,9 +22,12 @@ LISTED: Final = 3
 
 
 def _name(analysis: Analysis, bead: str) -> str:
-    if bead not in analysis.epics:
-        return f"{bead} (an Epic the matrix does not hold)"
-    return f"{analysis.epics[bead].title} ({bead})"
+    if bead in analysis.epics:
+        return f"{analysis.epics[bead].title} ({bead})"
+    if bead in analysis.others:
+        other = analysis.others[bead]
+        return f"{other.title} ({bead}, release {other.release or 'none'})"
+    return f"{bead} (an Epic the matrix does not hold)"
 
 
 def _title(analysis: Analysis, bead: str) -> str:
@@ -105,6 +108,44 @@ def _diff(analysis: Analysis) -> list[str]:
         *_details("Standing edges not computed", _listed(analysis, sorted(standing - proposed))),
         *_details("New edges", _listed(analysis, sorted(proposed - standing))),
     ]
+
+
+def _other_releases(analysis: Analysis) -> list[str]:
+    others: list[str] = sorted(analysis.others, key=lambda b: (analysis.others[b].release, analysis.others[b].title))
+    touching: list[Pair] = sorted(
+        (edge.blocker, edge.blocked)
+        for edge in analysis.standing or ()
+        if edge.blocker in analysis.others or edge.blocked in analysis.others
+    )
+    lines: list[str] = [
+        f"## Epics of other releases ({len(others)})",
+        "",
+        (
+            f"Only the Epics of release `{analysis.release}` are ordered. The Epics below take no part: what they "
+            "need makes no item shared, and no edge is computed to or from them. `--apply` removes every standing "
+            "edge to or from them and writes none."
+        ),
+        "",
+        *(f"- {_name(analysis, bead)}" for bead in others),
+        "",
+    ]
+    if analysis.standing is not None:
+        lines += [
+            f"Standing edges to or from them, which `--apply` removes: {len(touching)}.",
+            "",
+            *_listed(analysis, touching),
+            "",
+        ]
+    lines += [
+        (
+            f"Shared items whose recorded driver is an Epic of another release, so they are unjudged for "
+            f"`{analysis.release}`: {len(analysis.foreign)}."
+        ),
+        "",
+        *(f"- {label(analysis, item)}" for item in analysis.foreign),
+        "",
+    ]
+    return lines
 
 
 def _dropped_line(analysis: Analysis, dropped: Dropped) -> str:
@@ -209,8 +250,9 @@ def _summary(analysis: Analysis) -> str:
     in_advance: int = sum(1 for item in analysis.items.values() if not item.approved and item.in_advance)
     decided: int = len(deciding(analysis.items.values()))
     return (
-        f"The matrix holds {len(analysis.epics)} Epics and {shared} shared items (features and architecture "
-        f"entries two or more Epics need); {approved} have approved architecture, {in_advance} are realized or "
+        f"Release `{analysis.release}` has {len(analysis.epics)} Epics in the matrix ({len(analysis.others)} "
+        f"Epics of other releases take no part) and {shared} shared items (features and architecture "
+        f"entries two or more of its Epics need); {approved} have approved architecture, {in_advance} are realized or "
         f"homed in a stack deployed in advance, {decided} have a driver recorded in the matrix and "
         f"{len(unjudged(analysis.items.values()))} are unjudged. After the loop break {len(edges_made(analysis))} "
         f"items order Epics: every other Epic that needs one waits for its driver; nothing is inferred from "
@@ -281,6 +323,7 @@ def render(analysis: Analysis) -> str:
         _summary(analysis),
         "",
         *_method(),
+        *_other_releases(analysis),
         *_driver_table(analysis),
         *_unjudged(analysis),
         "## Edges dropped to break loops",
