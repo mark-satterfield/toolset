@@ -1,31 +1,31 @@
 #!/usr/bin/env python3
-"""Compute every Epic-to-Epic dependency edge from the matrix alone, and replace the edges in beads with them.
+"""Compute every Epic-to-Epic edge from the judgments the matrix records, and replace the edges in beads with them.
 
 The owner runs it once, for the whole portfolio, before ``keeper.py`` runs. The Epics and
 everything that decides the edges are read from the matrix only. No model is called, no agent or
-workflow is started and no ordering is assumed: neither WSJF nor any rank enters the edges. The
-unit that orders Epics is the feature: no two Epics are elaborated at once on the unapproved
-architecture of a feature they both need.
+workflow is started, and no edge is inferred from counts or names: each comes from a judgment
+recorded in the matrix (``matrixshared``).
 
-1. The Epics that need a feature are the Epics with a requirement ``servedBy`` it (Epic,
-   ``hasRequirement``, requirement, ``servedBy``, feature).
-2. A feature's architecture is approved when the feature is ``realizedBy`` at least one
-   architecture-side entry and every architecture-side entry it is ``realizedBy`` carries the
-   ``approved`` mark. A feature realized by nothing is not approved.
-3. A feature needed by two or more Epics whose architecture is not approved makes edges. An
-   approved feature makes none, and a feature needed by one Epic makes none.
-4. The feature's driver is the Epic with the most of its requirements ``servedBy`` the feature, a
-   tie to the lower bead id. The owner's decisions recorded in the matrix come first: an
-   architecture-side ``drives`` relationship from an Epic to a stack makes that Epic the driver of
-   every feature whose realizers are all in that stack, and the stack attribute
-   ``epicDriver: none`` says that no feature whose realizers are all in that stack makes an edge
-   (the stack is deployed in advance). Two named drivers, or a named driver beside ``none``, is
-   refused.
-5. The driver precedes every other Epic that needs the feature: one edge from the driver to each.
-   The edges several features make between one pair are one edge.
-6. While the edges hold a cycle, the edge inside a cycle whose driver has the fewest requirements
-   served by the feature that made it is dropped (a tie to the lower bead id of the driver, then
-   of the waiting Epic), and every dropped edge is reported. The rest is transitively reduced.
+An Epic has requirements; requirements are served by features; features are realized by
+architecture entries, which depend on other entries. No Epic relates directly to another Epic.
+An item is shared when two or more Epics need it: a feature that serves a requirement of each,
+or an architecture entry each reaches by the rule of reach. Edges exist so that an Epic waits for
+the Epic that builds and owns something it uses, and so that two Epics never work on the same
+unapproved shared item at the same time.
+
+1. For each shared item whose architecture is not approved, the record that decides it: an
+   architecture-side ``drives`` from Epic F to the item, with ``basis`` ``owns`` (F builds and
+   owns it; the others use it) or ``shared`` (the Epics share it independently; F merely goes
+   first); else the owner's ``drives`` with no basis from F to the stack the item is realized or
+   homed in (F owns it).
+2. Every other Epic that needs the item waits for F: one edge from F to each. The edges several
+   items make between one pair are one edge.
+3. An item no record decides makes no edge and is listed as unjudged. An item realized or homed
+   in a stack that says ``epicDriver: none`` makes no edge (the stack is deployed in advance).
+4. While the edges hold a loop, one edge inside a loop is dropped: first an edge that only
+   ``shared`` items made, then one that an ``owns`` item made, each time the one made by the
+   fewest items, a tie to the lower bead ids; every dropped edge is reported with its items. The
+   rest is transitively reduced.
 
 ``--report`` writes the Markdown report (``epicorderreport.py``), with ``--expect
 <waiter>:<driver>`` spot-checks; stdout carries one JSON summary. ``--apply`` makes the
@@ -51,17 +51,9 @@ import portfolio_path  # ruff: ignore[unused-import] - puts the beads-contract a
 # isort: split
 import beadgraph
 from contracts import json_object
-from matrix_contract import (
-    AUTHORITY_SIDE,
-    KIND_EPIC,
-    REL_DRIVES,
-    REL_HAS_REQUIREMENT,
-    REL_REALIZED_BY,
-    REL_SERVED_BY,
-    EntryId,
-)
-from matrixstore import ATTR_EPIC_DRIVER, Matrix, kind_of, matrix_path, read_matrix
-from matrixtraverse import authority_holder, epic_id
+from matrix_contract import KIND_EPIC, EntryId
+from matrixshared import BASIS_SHARED, SOURCE_JUDGED, SharedItem, shared_items
+from matrixstore import Matrix, matrix_path, read_matrix
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable, Mapping
@@ -69,19 +61,11 @@ if TYPE_CHECKING:
     from contracts import JsonObject, JsonValue
 
 type Pair = tuple[str, str]
-"""An edge: the driver, elaborated first, then the Epic that waits for it."""
+"""An edge: the Epic that goes first, then the Epic that waits for it."""
 
-DRIVER_NONE: Final = "none"
-"""The ``epicDriver`` value by which the owner says no Epic drives a stack."""
 TITLE_PREFIX: Final = "Feature PRD: "
-RULE_OWNER_NAMED: Final = "owner named the driver of its stack"
-RULE_OWNER_NONE: Final = "owner: no Epic drives its stack"
-RULE_MOST: Final = "most requirements served"
-RULE_TIE: Final = "tie for most requirements served: lower bead id"
 EPIC_EDGE_TYPES: Final = (beadgraph.TRACKS, beadgraph.BLOCKS)
 """The dependency types the pipeline reads as an Epic's prerequisites; ``--apply`` removes both between Epics."""
-MIN_SHARED: Final = 2
-"""The number of Epics that must need a feature before it can order them."""
 LIST_EPICS: Final = ("list", "--type", "epic", "--all", "--json", "-n", "0", "--brief", "--readonly")
 
 
@@ -103,40 +87,13 @@ class StandingEdge:
 
 
 @dataclass(frozen=True, slots=True)
-class Feature:
-    """One feature two or more Epics need: who needs it, what realizes it, its approval and its driver."""
-
-    id: EntryId
-    label: str
-    needs: Mapping[str, int]
-    """Each Epic that needs the feature with its number of requirements ``servedBy`` it."""
-    realizers: tuple[EntryId, ...]
-    """The architecture-side entries the feature is ``realizedBy``."""
-    approved: bool
-    driver: str | None
-    rule: str
-    """How the driver was decided: one of the ``RULE_*`` texts."""
-
-
-@dataclass(frozen=True, slots=True)
-class Decision:
-    """One feature that makes edges: its driver, the driver's requirement count and the Epics that wait."""
-
-    feature: EntryId
-    label: str
-    driver: str
-    requirements: int
-    """The number of the driver's requirements ``servedBy`` the feature."""
-    users: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
 class Dropped:
-    """One edge the cycle break dropped, with the features that made it and the driver's requirement count."""
+    """One edge the loop break dropped, with the items that made it."""
 
     pair: Pair
-    features: tuple[EntryId, ...]
-    requirements: int
+    items: tuple[EntryId, ...]
+    shared_only: bool
+    """Whether only items judged ``shared`` made it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,7 +101,7 @@ class Order:
     """The result: the edges before and after reduction, the dropped edges, levels and the longest chain."""
 
     raw: Mapping[Pair, tuple[EntryId, ...]]
-    """The edges left after the cycle break, before the reduction, each with the features that make it."""
+    """The edges left after the loop break, before the reduction, each with the items that make it."""
     dropped: tuple[Dropped, ...]
     edges: Mapping[Pair, tuple[EntryId, ...]]
     levels: Mapping[str, int]
@@ -167,181 +124,62 @@ class Analysis:
     """Everything the report shows."""
 
     epics: Mapping[str, Epic]
-    needed: int
-    """The number of features at least one Epic needs."""
-    features: Mapping[EntryId, Feature]
-    """Every feature two or more Epics need."""
-    decisions: Mapping[EntryId, Decision]
+    items: Mapping[EntryId, SharedItem]
+    """Every item two or more Epics need."""
     order: Order
     standing: tuple[StandingEdge, ...] | None
     """Every dependency edge between two Epics in beads, or None when beads was not read."""
     checks: tuple[Check, ...]
 
 
-def _label(matrix: Matrix, entry_id: EntryId) -> str:
-    entry = matrix.find(entry_id)
-    return entry_id if entry is None else f"{entry.name} ({entry_id})"
-
-
-def needs(matrix: Matrix, epics: Collection[str]) -> dict[EntryId, dict[str, int]]:
-    """Count, for every feature, each Epic's requirements ``servedBy`` it.
+def deciding(items: Iterable[SharedItem]) -> list[SharedItem]:
+    """List the unapproved shared items a record decides and no ``epicDriver: none`` stack holds.
 
     Returns:
-        Each feature some Epic needs, in id order, with each Epic and its requirement count.
+        The items that make edges before the loop break, in the order given.
 
     """
-    served: dict[EntryId, dict[str, set[EntryId]]] = {}
-    found: Iterable[tuple[EntryId, str, EntryId]] = (
-        (serving.end, bead, stated.end)
-        for bead in sorted(epics)
-        for stated in matrix.outgoing(epic_id(bead), (REL_HAS_REQUIREMENT,))
-        for serving in matrix.outgoing(stated.end, (REL_SERVED_BY,))
-    )
-    for feature, bead, requirement in found:
-        served.setdefault(feature, {}).setdefault(bead, set()).add(requirement)
-    return {feature: {bead: len(r) for bead, r in by.items()} for feature, by in sorted(served.items())}
+    return [item for item in items if not item.approved and item.decision is not None and not item.in_advance]
 
 
-def realizers(matrix: Matrix, feature: EntryId) -> tuple[EntryId, ...]:
-    """Name the architecture-side entries a feature is ``realizedBy`` on the architecture side.
+def unjudged(items: Iterable[SharedItem]) -> list[SharedItem]:
+    """List the unapproved shared items no record decides, outside every stack deployed in advance.
 
     Returns:
-        The entries, in id order.
+        The items, in the order given.
 
     """
-    return tuple(
-        sorted({
-            realizing.end
-            for realizing in matrix.outgoing(feature, (REL_REALIZED_BY,))
-            if realizing.side == AUTHORITY_SIDE and matrix.entry(realizing.end).side == AUTHORITY_SIDE
-        }),
-    )
+    return [item for item in items if not item.approved and item.decision is None and not item.in_advance]
 
 
-def is_approved(matrix: Matrix, realized: Collection[EntryId]) -> bool:
-    """Tell whether a feature's architecture is approved: it has realizers and each carries the mark.
+def label(analysis: Analysis, item: EntryId) -> str:
+    """Name an item by its matrix name and id.
 
     Returns:
-        True when there is at least one realizer and every one is approved.
+        ``<name> (<id>)``.
 
     """
-    return bool(realized) and all(matrix.entry(entry_id).approved for entry_id in realized)
+    found: SharedItem | None = analysis.items.get(item)
+    return item if found is None else f"{found.name} ({item})"
 
 
-def owner_decision(matrix: Matrix, stack: EntryId) -> tuple[str | None, bool]:
-    """Read the owner's driver decision for a stack from the matrix.
-
-    Returns:
-        The Epic an architecture-side ``drives`` relationship to the stack names (else None), and
-        whether the stack says ``epicDriver: none``.
-
-    Raises:
-        ValueError: The matrix names two driving Epics, or a driving Epic beside ``none``.
-
-    """
-    named: list[str] = sorted({
-        relationship.start.removeprefix(f"{KIND_EPIC}:")
-        for relationship in matrix.incoming(stack, (REL_DRIVES,))
-        if relationship.side == AUTHORITY_SIDE and kind_of(relationship.start) == KIND_EPIC
-    })
-    entry = matrix.find(stack)
-    none: bool = entry is not None and entry.attributes.get(ATTR_EPIC_DRIVER) == DRIVER_NONE
-    if len(named) > 1 or (named and none):
-        message: str = f"the matrix holds conflicting driver decisions for {stack}: {', '.join(named)}"
-        raise ValueError(message + (f" and {ATTR_EPIC_DRIVER}: {DRIVER_NONE}" if none else ""))
-    return (named[0] if named else None), none
-
-
-def realizing_stack(matrix: Matrix, realized: Collection[EntryId]) -> EntryId | None:
-    """Name the one stack every realizer of a feature is in (the stack itself, or its home).
+def raw_edges(decided: Iterable[SharedItem]) -> dict[Pair, tuple[EntryId, ...]]:
+    """Draw an edge from each decided item's driver to every other Epic that needs it.
 
     Returns:
-        The stack, or None when the feature has no realizer or its realizers are not all in one stack.
-
-    """
-    stacks: set[EntryId | None] = {authority_holder(matrix, entry_id) for entry_id in realized}
-    only: EntryId | None = next(iter(stacks)) if len(stacks) == 1 else None
-    return only
-
-
-def driver_of(matrix: Matrix, realized: Collection[EntryId], counts: Mapping[str, int]) -> tuple[str | None, str]:
-    """Decide a feature's driver and how it was decided.
-
-    Returns:
-        The driver (None: the owner said no Epic drives the stack its realizers are in) and the
-        ``RULE_*`` text.
-
-    """
-    stack: EntryId | None = realizing_stack(matrix, realized)
-    named, none = owner_decision(matrix, stack) if stack is not None else (None, False)
-    if none:
-        return None, RULE_OWNER_NONE
-    if named is not None:
-        return named, RULE_OWNER_NAMED
-    ranked: list[tuple[str, int]] = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
-    tied: bool = len(ranked) > 1 and ranked[0][1] == ranked[1][1]
-    return ranked[0][0], (RULE_TIE if tied else RULE_MOST)
-
-
-def shared_features(matrix: Matrix, needed: Mapping[EntryId, Mapping[str, int]]) -> dict[EntryId, Feature]:
-    """Describe every feature two or more Epics need: realizers, approval and driver.
-
-    Returns:
-        Each such feature, in id order.
-
-    """
-    described: dict[EntryId, Feature] = {}
-    for feature, counts in needed.items():
-        if len(counts) < MIN_SHARED:
-            continue
-        realized: tuple[EntryId, ...] = realizers(matrix, feature)
-        driver, rule = driver_of(matrix, realized, counts)
-        described[feature] = Feature(
-            feature,
-            _label(matrix, feature),
-            counts,
-            realized,
-            is_approved(matrix, realized),
-            driver,
-            rule,
-        )
-    return described
-
-
-def decide(described: Mapping[EntryId, Feature]) -> dict[EntryId, Decision]:
-    """Name the driver and the waiting Epics of every unapproved shared feature with a driver.
-
-    Returns:
-        Each feature's decision, in feature order.
-
-    """
-    return {
-        feature.id: Decision(
-            feature.id,
-            feature.label,
-            feature.driver,
-            feature.needs.get(feature.driver, 0),
-            tuple(sorted(bead for bead in feature.needs if bead != feature.driver)),
-        )
-        for feature in described.values()
-        if feature.driver is not None and not feature.approved
-    }
-
-
-def raw_edges(decisions: Iterable[Decision]) -> dict[Pair, tuple[EntryId, ...]]:
-    """Draw driver -> user for every user of every decision, each pair with its features.
-
-    Returns:
-        Each edge with the features that make it, sorted.
+        Each edge with the items that make it, sorted.
 
     """
     found: dict[Pair, set[EntryId]] = {}
-    pairs: Iterable[tuple[Pair, EntryId]] = (
-        ((decision.driver, user), decision.feature) for decision in decisions for user in decision.users
-    )
-    for pair, feature in pairs:
-        found.setdefault(pair, set()).add(feature)
-    return {pair: tuple(sorted(features)) for pair, features in sorted(found.items())}
+    item: SharedItem
+    for item in decided:
+        if item.decision is None:
+            continue
+        driver: str = item.decision.driver
+        for waiter in item.needs:
+            if waiter != driver:
+                found.setdefault((driver, waiter), set()).add(item.id)
+    return {pair: tuple(sorted(items)) for pair, items in sorted(found.items())}
 
 
 def _successors(edges: Iterable[Pair]) -> dict[str, list[str]]:
@@ -376,26 +214,33 @@ def _inside_cycles(epics: Collection[str], edges: Collection[Pair]) -> list[Pair
 
 def break_cycles(
     raw: Mapping[Pair, tuple[EntryId, ...]],
-    decisions: Mapping[EntryId, Decision],
+    items: Mapping[EntryId, SharedItem],
     epics: Collection[str],
 ) -> tuple[dict[Pair, tuple[EntryId, ...]], tuple[Dropped, ...]]:
-    """Drop edges until no cycle is left, the weakest edge inside a cycle first.
+    """Drop edges until no loop is left, one edge inside a loop at a time.
 
-    An edge's weight is the most requirements its driver has served by any feature that makes it.
-    The edge inside a cycle with the least weight is dropped, a tie to the lower driver bead id,
-    then the lower waiting bead id, and the cycles are found again.
+    First an edge that only items judged ``shared`` made, then an edge an ``owns`` item made
+    (the owner's decision for a stack counts as ``owns``); within each, the edge made by the
+    fewest items, a tie to the lower bead id of the Epic that goes first, then of the Epic that
+    waits. The loops are found again after each drop.
 
     Returns:
         The edges left, and the dropped edges in the order they were dropped.
 
     """
     kept: dict[Pair, tuple[EntryId, ...]] = dict(raw)
-    weight: dict[Pair, int] = {pair: max(decisions[f].requirements for f in features) for pair, features in raw.items()}
+
+    def shared_only(pair: Pair) -> bool:
+        return all(
+            (decision := items[item].decision) is not None and decision.basis == BASIS_SHARED for item in kept[pair]
+        )
+
     dropped: list[Dropped] = []
     inside: list[Pair] = _inside_cycles(epics, kept)
     while inside:
-        weakest: Pair = min(inside, key=lambda pair: (weight[pair], pair))
-        dropped.append(Dropped(weakest, kept.pop(weakest), weight[weakest]))
+        weakest: Pair = min(inside, key=lambda pair: (not shared_only(pair), len(kept[pair]), pair))
+        only: bool = shared_only(weakest)
+        dropped.append(Dropped(weakest, kept.pop(weakest), only))
         inside = _inside_cycles(epics, kept)
     return kept, tuple(dropped)
 
@@ -452,14 +297,14 @@ def _chain(epics: Collection[str], between: Collection[Pair]) -> tuple[str, ...]
     return tuple(reversed(chain))
 
 
-def order(decisions: Mapping[EntryId, Decision], epics: Collection[str]) -> Order:
-    """Compute the edges, the cycle break, the reduction, levels and the longest chain.
+def order(items: Mapping[EntryId, SharedItem], decided: Iterable[SharedItem], epics: Collection[str]) -> Order:
+    """Compute the edges, the loop break, the reduction, levels and the longest chain.
 
     Returns:
         The result.
 
     """
-    raw, dropped = break_cycles(raw_edges(decisions.values()), decisions, epics)
+    raw, dropped = break_cycles(raw_edges(decided), items, epics)
     redundant: set[Pair] = _redundant(raw)
     edges: dict[Pair, tuple[EntryId, ...]] = {pair: f for pair, f in raw.items() if pair not in redundant}
     depth, _ = _depths(epics, raw)
@@ -472,7 +317,7 @@ def check(result: Order, waiter: str, driver: str) -> Check:
     """Tell whether ``waiter`` waits for ``driver``, directly or through other Epics.
 
     Returns:
-        The spot-check, with the path of Epics (empty: it does not wait) and the direct features.
+        The spot-check, with the path of Epics (empty: it does not wait) and the items that make the direct edge.
 
     """
     path: tuple[str, ...] = _path(_successors(result.raw), driver, waiter)
@@ -534,7 +379,7 @@ def analyse(matrix: Matrix, expected: Iterable[Pair], standing: tuple[StandingEd
     """Run the whole computation over one read of the matrix.
 
     Args:
-        matrix: The matrix, the one source of the Epics and of the edges.
+        matrix: The matrix, the one source of the Epics, the shared items and the judgments.
         expected: The spot-checks to answer, each (waiter, driver).
         standing: The Epic-to-Epic edges in beads, or None when beads was not read.
 
@@ -543,31 +388,28 @@ def analyse(matrix: Matrix, expected: Iterable[Pair], standing: tuple[StandingEd
 
     """
     epics: dict[str, Epic] = read_epics(matrix)
-    needed: dict[EntryId, dict[str, int]] = needs(matrix, epics)
-    described: dict[EntryId, Feature] = shared_features(matrix, needed)
-    decisions: dict[EntryId, Decision] = decide(described)
-    result: Order = order(decisions, epics)
+    items: dict[EntryId, SharedItem] = {item.id: item for item in shared_items(matrix)}
+    result: Order = order(items, deciding(items.values()), epics)
     checks: tuple[Check, ...] = tuple(check(result, waiter, driver) for waiter, driver in expected)
-    return Analysis(epics, len(needed), described, decisions, result, standing, checks)
+    return Analysis(epics, items, result, standing, checks)
 
 
 def _dropped_json(dropped: Iterable[Dropped]) -> list[JsonValue]:
     return [
-        {"driver": d.pair[0], "waiter": d.pair[1], "requirements": d.requirements, "features": list(d.features)}
-        for d in dropped
+        {"driver": d.pair[0], "waiter": d.pair[1], "sharedOnly": d.shared_only, "items": list(d.items)} for d in dropped
     ]
 
 
 def edges_made(analysis: Analysis) -> dict[EntryId, int]:
-    """Count the edges each feature makes after the cycle break, before the reduction.
+    """Count the edges each item makes after the loop break, before the reduction.
 
     Returns:
-        Each feature that makes an edge with its count.
+        Each item that makes an edge with its count.
 
     """
     made: dict[EntryId, int] = {}
-    for feature in (f for features in analysis.order.raw.values() for f in features):
-        made[feature] = made.get(feature, 0) + 1
+    for item in (f for items in analysis.order.raw.values() for f in items):
+        made[item] = made.get(item, 0) + 1
     return made
 
 
@@ -582,19 +424,34 @@ def summary(analysis: Analysis) -> JsonObject:
     sizes: list[int] = [list(result.levels.values()).count(n) for n in range(1, max(result.levels.values()) + 1)]
     made: dict[EntryId, int] = edges_made(analysis)
     top: list[EntryId] = sorted(made, key=lambda f: (-made[f], f))
+    decided: list[SharedItem] = deciding(analysis.items.values())
+    unapproved: list[SharedItem] = [item for item in analysis.items.values() if not item.approved]
+    judged: int = sum(1 for item in decided if item.decision is not None and item.decision.source == SOURCE_JUDGED)
+    top_items: list[JsonValue] = []
+    for item_id in top[:10]:
+        decision = analysis.items[item_id].decision
+        top_items.append({
+            "item": item_id,
+            "edges": made[item_id],
+            "driver": None if decision is None else decision.driver,
+            "basis": None if decision is None else decision.basis,
+        })
     return {
         "epics": len(analysis.epics),
-        "featuresNeeded": analysis.needed,
-        "sharedFeatures": len(analysis.features),
-        "featuresWithDriver": len(analysis.decisions),
-        "featuresMakingEdges": len(made),
+        "sharedItems": len(analysis.items),
+        "approved": len(analysis.items) - len(unapproved),
+        "judged": judged,
+        "ownerStack": len(decided) - judged,
+        "deployedInAdvance": sum(1 for item in unapproved if item.in_advance),
+        "unjudged": len(unjudged(analysis.items.values())),
+        "itemsMakingEdges": len(made),
         "edges": len(result.edges),
         "edgesBeforeReduction": len(result.raw),
         "startNow": sizes[0],
         "levels": len(sizes),
         "maxConcurrency": max(sizes),
         "longestChain": len(result.chain),
-        "topFeatures": [{"feature": f, "edges": made[f], "driver": analysis.decisions[f].driver} for f in top[:10]],
+        "topItems": top_items,
         "dropped": _dropped_json(result.dropped),
         "checks": [
             {"waiter": c.waiter, "driver": c.driver, "waits": bool(c.path), "path": list(c.path)}
