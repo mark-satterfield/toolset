@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/epic-edge-proposal.schema.json",
   "title": "Epic edge proposal",
-  "description": "The edge file the epic-dependency-assessor writes for ONE Epic in the dependency-assessment workflow: the candidate <workDir>/candidates/edges.json, which jsonartifact.py validates against this file and publishes as <workDir>/edges.json. `depscore.py validate` then checks it against the tracker and `depscore.py apply-edges` applies it as beads `tracks` edges. Nothing of it is recorded in the matrix. The session runs no `put`, no `link` and no apply. The edge test and the foundation checklist are the agent-teams-workforce:epic-sequencing skill's. The owner runs this workflow; the order of every Epic is computed by scripts/portfolio/epicorder.py, whose --apply replaces the owned edges this file sets.",
+  "description": "The edge file the epic-dependency-assessor writes for ONE Epic in the dependency-assessment workflow: the candidate <workDir>/candidates/edges.json, which jsonartifact.py validates against this file and publishes as <workDir>/edges.json. `depscore.py validate` then checks it against the tracker and `depscore.py apply-edges` applies it as beads `tracks` edges. Nothing of it is recorded in the matrix. The session runs no `put`, no `link` and no apply. The rule that draws an edge is the agent-teams-workforce:epic-sequencing skill's. The owner runs this workflow; the order of every Epic is computed by scripts/portfolio/epicorder.py, whose --apply replaces the owned edges this file sets.",
   "type": "object",
   "additionalProperties": false,
   "required": ["edges", "withdrawn"],
   "properties": {
     "edges": {
-      "description": "EVERY edge to or from the assessed Epic that passes the edge test, each owned standing edge it keeps included, and no edge that does not touch it.",
+      "description": "EVERY edge to or from the assessed Epic that the rule draws, each owned standing edge it keeps included, and no edge that does not touch it.",
       "type": "array",
       "items": {"$ref": "#/$defs/Edge"}
     },
@@ -20,16 +20,16 @@
   },
   "$defs": {
     "Edge": {
-      "description": "One architecture dependency: an architecture decision `to` rests on should be designed from `from`'s requirements first, and the matrix does not hold that decision approved. `from` is elaborated before `to`; both are Epics.",
+      "description": "One Epic-to-Epic edge: a feature both Epics need (a requirement of each is `servedBy` it) has architecture that is not approved, and `from` is its driver (the Epic with the most requirements served by it, a tie to the lower bead id). `from` is elaborated before `to`; both are Epics.",
       "type": "object",
       "additionalProperties": false,
       "required": ["from", "to", "reason", "confidence", "archCheck"],
       "properties": {
-        "from": {"description": "The beads id of the Epic whose requirements should drive the decision.", "type": "string"},
-        "to": {"description": "The beads id of the Epic that rests on the decision.", "type": "string"},
-        "reason": {"description": "The architecture decision and whose requirements should drive it, in one line.", "type": "string"},
+        "from": {"description": "The beads id of the feature's driver.", "type": "string"},
+        "to": {"description": "The beads id of the other Epic that needs the feature.", "type": "string"},
+        "reason": {"description": "The feature and each Epic's count of requirements served by it, in one line.", "type": "string"},
         "confidence": {"$ref": "dependency-assessment.schema.json#/$defs/Confidence"},
-        "archCheck": {"description": "The matrix entry id (with the document heading, for a document) that states the decision this edge orders, and that the matrix does not hold it approved; or that the lookup returned nothing. Only the `approved` flag, an Epic's elaboration having approved the decision, removes the need for the edge: an entry existing or a document at `lifecycle: effective` does not, because every document still iterates with each Epic (epic-sequencing). An edge without it is refused.", "type": "string"},
+        "archCheck": {"description": "The id of the feature that makes this edge, and that its architecture is not approved: the architecture-side realizer without the `approved` mark, or that the feature has no realizer. Only the `approved` mark on every realizer removes the edge: an entry existing or a document at `lifecycle: effective` does not. An edge without it is refused.", "type": "string"},
         "answers": {"description": "Required only on an edge the context's `withdrawn` list covers: why the recorded withdrawal reason is wrong, on the architecture. Without it that edge is refused.", "type": "string"}
       }
     }

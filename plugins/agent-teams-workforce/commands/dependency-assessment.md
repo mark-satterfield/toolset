@@ -1,36 +1,31 @@
 ---
-description: "Assess the architecture dependencies of one Epic"
+description: "Assess the Epic-to-Epic edges of one Epic"
 argument-hint: "<epic-id> [--propose]"
 allowed-tools: [Bash, Workflow]
 ---
 
 # Dependency assessment
 
-Assess the architecture dependencies of one Epic in the beads tracker of the repository you
-are standing in, by dispatching the `dependency-assessment` workflow. An edge between two
-Epics is an architecture dependency: an architecture decision one Epic rests on should be
-designed from another Epic's requirements first, and the matrix does not hold that decision approved
-(`agent-teams-workforce:epic-sequencing`). The workflow writes the Epic's edges to beads. It
-writes nothing to the matrix and scores nothing.
+Assess the Epic-to-Epic edges of one Epic in the beads tracker of the repository you are
+standing in, by dispatching the `dependency-assessment` workflow. The rule is the
+`agent-teams-workforce:epic-sequencing` skill's: a feature that two or more Epics need (a
+requirement of each is `servedBy` it) and whose architecture is not approved orders those
+Epics, and the Epic with the most requirements served by it goes first (a tie to the lower bead
+id). The workflow writes the Epic's edges to beads. It writes nothing to the matrix and scores
+nothing.
 
 The owner runs this command; the driver never dispatches the workflow. The order of every Epic
-is set before `keeper.py` runs by `scripts/portfolio/epicorder.py`, which computes it from the
-features the Epics share in the matrix alone, and its `--apply` removes every Epic-to-Epic edge in beads, this command's
-included, and writes the computed ones. WSJF is scored
-once, before `keeper.py` runs, by the owner's own `/agent-teams-workforce:wsjf-scoring`.
+is set before `keeper.py` runs by `scripts/portfolio/epicorder.py`, which computes it by the same
+rule from the matrix alone, and its `--apply` removes every Epic-to-Epic edge in beads, this
+command's included, and writes the computed ones. WSJF is scored once, before `keeper.py` runs,
+by the owner's own `/agent-teams-workforce:wsjf-scoring`.
 
-`<epic-id>` is required: the one Epic to assess. Report the usage and stop
-without it. The epic-dependency-assessor reads that Epic's full PRD, at the path the matrix holds for it,
-and names the architecture decisions its requirements drive and the ones it rests on. It asks
-the matrix what already states each decision (`atw-matrix find --kinds document,constraint,feature`,
-then `atw-matrix node`) and drops only those an Epic's elaboration has already approved (the
-matrix `approved` flag). An `effective` document is approved content, but it still iterates with
-each Epic, so being effective alone does not remove the need for an edge.
-It takes the related Epics from the matrix (`atw-matrix related --epic`, and
-`atw-matrix find --kinds requirement,feature` for an Epic no feature serves yet), reads those
-PRDs in full, and applies the edge test in both directions. It proposes every edge to or from
-the Epic with a reason, and keeps or withdraws, with a reason, every owned edge standing on
-it. Code refuses any edge that does not touch the Epic, a cycle, an unaccounted standing edge
+`<epic-id>` is required: the one Epic to assess. Report the usage and stop without it. The
+epic-dependency-assessor lists the features the Epic needs (`atw-matrix epic`), the other Epics
+that need each (`atw-matrix node`), and whether each feature's realizers all carry the
+`approved` mark; for every shared feature that is not approved it names the driver and draws
+the edges that touch the Epic. It keeps or withdraws, with a reason, every owned edge standing on
+it. Code refuses any edge that does not touch the Epic, a loop, an unaccounted standing edge
 and a missing reason, and writes only that Epic's edges. Hand-made edges are never touched.
 The session checks its proposal with the validate command and writes nothing to beads or the
 matrix. The workflow validates the proposal and runs apply-edges, which validates it again and
@@ -52,7 +47,7 @@ The environment variables read below are named and described by the `pipeline-co
 that skill's generated module (`PRD_DIR_ENV`, `ARCH_PATH_ENV`, `PROJECT_ROOT_ENV`); never type a
 name from memory. The PRD folder is required: the matrix holds each PRD's path relative to the
 vault that folder is in, and the workflow's context step locates the vault from it. The other
-two are optional: the matrix, not the architecture folder, is what the assessment judges against.
+two are optional: the matrix, not the architecture folder, is what the assessment reads.
 
 ```bash
 CONTRACTS="${CLAUDE_PLUGIN_ROOT}/skills/pipeline-contracts/scripts"
@@ -100,8 +95,8 @@ From the workflow's result:
   edges themselves are in the file `edges.resultFile` names: every edge added, converted or
   removed as `blocker -> blocked` from its `plan.add`, `plan.convert` and `plan.remove`, and
   every withdrawal with its reason from its `withdrawn`. Then the reasoning file
-  (`edges.reasoning`), which holds the Epics whose PRDs the session read in full and the edges
-  the sequencer was unsure of. When `edges.applied` is false, its `reason`, or the validation
+  (`edges.reasoning`), which holds the shared features, the requirement counts, the
+  realizers' `approved` marks and the driver of each feature. When `edges.applied` is false, its `reason`, or the validation
   defects.
 - `stop` — when the proposal did not validate: the Epic and every finding in
   `stop.findings`, with the `edgesFile` and `validationFile`, and what a person does: correct

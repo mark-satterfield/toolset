@@ -52,7 +52,7 @@ its kind at its start and under its reverse name at its end.
 | `routesTo` (`targetOf`) | infrastructure → service, component, infrastructure | The rule delivers what it matches to this target; at most five. Dependency family. |
 | `reads` (`readBy`) | stack, service, component → infrastructure | Code reads a value another stack stored, such as an SSM parameter. Dependency family. |
 | `runsIn` (`hosts`) | stack, service, component → infrastructure | Code runs in shared infrastructure, such as a Lambda in a VPC, subnets and security groups. Dependency family. |
-| `drives` (`drivenBy`) | epic → feature, document, stack | The Epic's requirements shape this architecture decision (`heading` for a document). To a stack, on the architecture side, it is the owner's decision that the Epic drives every feature whose realizers are all in the stack, which `epicorder.py` reads. |
+| `drives` (`drivenBy`) | epic → stack | On the architecture side, the owner's decision that the Epic drives every feature whose realizers are all in the stack, which `epicorder.py` reads. |
 | `restsOn` (`supportsEpic`) | epic → feature, document, stack, service, component, infrastructure | The Epic relies on this as settled architecture (`heading` for a document). |
 | `specifiedBy` (`specifies`) | infrastructure, component, service → file, document | The entry is specified by this file or document heading, such as a saved OpenAPI document. |
 | `disputes` (`disputedBy`) | disagreement → document | The document holds one of the disagreeing statements, under `heading`. |

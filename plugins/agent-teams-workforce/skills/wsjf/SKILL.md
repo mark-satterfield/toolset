@@ -29,7 +29,7 @@ portfolio must not move the score of an item whose own inputs did not change.
 |---|---|---|
 | What it is | a PRD, a business requirement — it spans repositories, becomes many Tasks, and nobody implements it directly | one agent's work inside one repository |
 | UBV, TC | **judged** from the requirements document | **inherited** from the parent Epic, with its confidence |
-| RR-OE graph edges | ARCHITECTURE dependency — an architecture decision one Epic rests on should be designed from another Epic's requirements first; RR-OE measures the Epic as an Architectural Enabler | BUILD order — one Task must be built before another; RR-OE measures how many sibling Tasks it unblocks |
+| RR-OE graph edges | ARCHITECTURE order — a feature both Epics need whose architecture is not approved, its driver first (`epicorder.py`); RR-OE measures the Epic as an Architectural Enabler | BUILD order — one Task must be built before another; RR-OE measures how many sibling Tasks it unblocks |
 | Job Size | **judged** as an estimate with a plausible range; once Tasks exist, the plain sum of their sizes | **judged** on the same scale; above 13 is a decomposition fault |
 
 The RR-OE bands differ by level and live in `scripts/wsjf.py`, with the size scale and the
@@ -119,11 +119,10 @@ this step, never re-judged.
 
 **It is a count, not an argument.** What it measures depends on the level:
 
-- **Epic** — the Architectural Enabler measure. An Epic whose requirements should drive an
-  architecture decision many other Epics are designed on — sign-up and sign-in driving the
-  canonical identity pattern — scores high. An Epic designed on top of a pattern other
-  requirements drive — password reset on identity — scores low. The edges are architecture
-  dependencies (`agent-teams-workforce:epic-sequencing`), never build edges.
+- **Epic** — the Architectural Enabler measure. An Epic that drives many unapproved features
+  other Epics also need scores high; an Epic that waits for others' drivers scores low. The
+  edges come from the features the Epics share (`agent-teams-workforce:epic-sequencing`), never
+  from build facts.
 - **Task** — how many Tasks it unblocks: the edges are ordinary build dependencies between
   Tasks, known once the architecture is settled.
 

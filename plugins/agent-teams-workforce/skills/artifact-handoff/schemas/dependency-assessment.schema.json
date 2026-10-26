@@ -12,7 +12,7 @@
     "Source": {"description": "The tracker read the command worked from.", "type": "string"},
     "Warnings": {"description": "What the tracker read warned of.", "type": "array"},
     "Confidence": {
-      "description": "How sure the assessing session is that the edge passes the test. `low` is drawn and argued about, never left out.",
+      "description": "How sure the assessing session is that the rule draws the edge, given what the matrix records.",
       "type": "string",
       "enum": ["high", "medium", "low"]
     },
@@ -24,7 +24,7 @@
       "properties": {
         "from": {"description": "The standing edge's `from`, exactly as the context's `standing` gives it.", "type": "string", "minLength": 1},
         "to": {"description": "The standing edge's `to`, exactly as the context's `standing` gives it.", "type": "string", "minLength": 1},
-        "reason": {"description": "Why the edge does not pass the test, answering the reason recorded for it.", "type": "string", "minLength": 1}
+        "reason": {"description": "Why the rule does not draw the edge, answering the reason recorded for it.", "type": "string", "minLength": 1}
       }
     },
     "StandingEdge": {
@@ -57,7 +57,7 @@
       }
     },
     "EpicContext": {
-      "description": "The context of one Epic's architecture-dependency assessment (`assesscontext.assess_context`).",
+      "description": "The context of one Epic's Epic-to-Epic edge assessment (`assesscontext.assess_context`).",
       "type": "object",
       "additionalProperties": false,
       "required": ["epic", "related", "similar", "standing", "withdrawn", "summary"],

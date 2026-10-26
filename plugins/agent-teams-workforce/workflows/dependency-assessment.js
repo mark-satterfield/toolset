@@ -1,8 +1,8 @@
 export const meta = {
   name: 'dependency-assessment',
   description:
-    "Assesses the architecture dependencies of ONE Epic and writes its `tracks` edges. The workflow writes the Epic's context: the Epics the matrix relates to it (atw-matrix related --epic), each with its PRD file, and the edges standing on it in the tracker. One epic-dependency-assessor session reads the Epic's PRD and the related PRDs, asks the matrix what already settles each decision (atw-matrix find, node), proposes the edges and checks its proposal; the workflow validates the proposal and runs apply-edges. The Epic-to-Epic edge is a beads `tracks` edge and nothing is recorded in the matrix. The order of every Epic is computed by scripts/portfolio/epicorder.py from the matrix chain, which the owner runs before keeper.py; this workflow is an owner-run review of one Epic's edges, which the driver never dispatches, and its owned edges are replaced at the next epicorder.py --apply. It scores nothing: WSJF scoring is the owner's own step. With `apply: false` apply-edges runs as a dry run.",
-  whenToUse: 'The owner wants one Epic\'s architecture-dependency edges judged against the epic-sequencing edge test, beside the order epicorder.py computes.',
+    "Assesses the Epic-to-Epic edges of ONE Epic and writes its `tracks` edges, by the epic-sequencing feature rule: a feature two or more Epics need (a requirement of each is servedBy it) whose architecture is not approved orders them, the Epic with the most requirements served by it first (a tie to the lower bead id). The workflow writes the Epic's context: the Epics the matrix relates to it (atw-matrix related --epic) and the edges standing on it in the tracker. One epic-dependency-assessor session reads the features the Epic needs, the other Epics that need each and the approved mark of each feature's realizers (atw-matrix epic, node), proposes the edges and checks its proposal; the workflow validates the proposal and runs apply-edges. The Epic-to-Epic edge is a beads `tracks` edge and nothing is recorded in the matrix. The order of every Epic is computed by scripts/portfolio/epicorder.py from the matrix chain, which the owner runs before keeper.py; this workflow is an owner-run review of one Epic's edges, which the driver never dispatches, and its owned edges are replaced at the next epicorder.py --apply. It scores nothing: WSJF scoring is the owner's own step. With `apply: false` apply-edges runs as a dry run.",
+  whenToUse: 'The owner wants one Epic\'s Epic-to-Epic edges drawn by the epic-sequencing feature rule, beside the order epicorder.py computes.',
   phases: [
     { title: 'Assess', detail: 'the workflow writes the context; one epic-dependency-assessor session proposes and validates the edges; the workflow runs apply-edges' },
   ],
@@ -941,7 +941,7 @@ const priorBlock = typeof a.priorFailure === 'string' && a.priorFailure.trim()
 const inputBinding = contextError ? null : await relayKit.artifactRevision(settleAgent, { label: 'assess:inputs', phase: 'Assess', runner: RUNNER, files: [contextFile], relayFile: file('relay/assessment-inputs.json'), context: { target, scope } })
 if (inputBinding && !inputBinding.ok) return dispatchOutcome({ ok: false, stage: 'Assess', reason: inputBinding.error })
 const inputRevision = inputBinding ? inputBinding.revision : ''
-const assessPrompt = `${priorBlock}Assess the architecture dependencies of ONE Epic, ${target}, which is new or has changed.
+const assessPrompt = `${priorBlock}Assess the Epic-to-Epic edges of ONE Epic, ${target}, which is new or has changed.
 
 - Context file: ${contextFile}, to \`${CONTEXT_CONTRACT}\` (path from the plugin root \`${PLUGIN}\`).
 - Matrix: \`${MATRIX} <command>\`.${a.archPath ? ` A document's id is \`document:\` and the document's path under ${a.archPath}.` : ''}

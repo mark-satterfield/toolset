@@ -1587,7 +1587,7 @@
     },
     {
       "name": "epic-dependency-assessor",
-      "description": "Proposes and validates the architecture-dependency edges to and from ONE Epic, by the edge test of the epic-sequencing skill, and accounts for every owned edge standing on it; orders nothing, scores nothing and applies nothing.",
+      "description": "Proposes and validates the Epic-to-Epic edges to and from ONE Epic, by the feature rule of the epic-sequencing skill, and accounts for every owned edge standing on it; scores nothing and applies nothing.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:epic-sequencing",

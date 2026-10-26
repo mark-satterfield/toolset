@@ -180,7 +180,7 @@ flowchart TD
     kind -->|"Story"| sReady{"Are all of the Story's Tasks built?"}
     kind -->|"any other kind"| other["Not routed to a pipeline. Skipped with the reason logged, left for a person"]
     eReady -->|"no"| skip["Not started this time"]
-    eReady -->|"yes"| eDeps{"Are the Epics whose architecture decisions it rests on elaborated?"}
+    eReady -->|"yes"| eDeps{"Are the Epics it waits for by its tracks edges elaborated?"}
     eDeps -->|"no"| skip
     eDeps -->|"yes"| eOrder["Taken in WSJF order among the eligible Epics"]
     eOrder --> eRun(["Elaboration of the Epic - pipelines-elaboration.md"])
@@ -204,9 +204,10 @@ Notes on the diagram:
   [requirements/pipelines.md](../requirements/pipelines.md)).
 - An Epic's readiness and its WSJF score are given, not decided here: a ready Epic's PRD has
   already been checked for completeness and accuracy, and it has its WSJF score (the owner).
-- Architecture dependencies between Epics decide which ready Epics may be elaborated: an Epic waits
-  for the Epics whose architecture decisions it rests on, because an Epic designed before those
-  decisions would be redesigned. Ready Epics are taken in their WSJF order behind those
+- The Epic-to-Epic `tracks` edges `epicorder.py` sets decide which ready Epics may be elaborated:
+  an Epic waits for the driver of each feature they both need whose architecture is not approved,
+  because no two Epics are elaborated at once on the unapproved architecture of a feature they
+  both need. Ready Epics are taken in their WSJF order behind those
   dependencies, because it puts the most value per effort first.
 - A Task is ready when the Tasks it depends on (beads dependency edges) are closed, and ready Tasks
   are taken in WSJF order, because the edges carry build order and WSJF orders what is free to run.
@@ -427,7 +428,7 @@ input and out. The matrix is both input and output." and "Once all of the tasks 
 stories for and Epic have been built and tested ... then all of the architecture and
 rellationships for the Epic can be set to verified." For the reads and writes of `keeper.py` and
 `supervisor.py`, the code: `ops/sdlc-automation/keeper.py`, `supervisor.py`, `selection.py` (ready
-Epics, their WSJF scores and the Epics each rests on, read from beads) and `storydeploy.py` (the
+Epics, their WSJF scores and the Epics each waits for, read from beads) and `storydeploy.py` (the
 Story closed).
 
 ```mermaid
@@ -446,7 +447,7 @@ sequenceDiagram
     end
 
     K->>S: runs supervisor.py
-    S->>BD: ready Epics, their WSJF scores and the Epics each rests on
+    S->>BD: ready Epics, their WSJF scores and the Epics each waits for
     S->>EL: an Epic, with the paths on its bead
     EL->>MX: what is known for the Epic, at every step
     EL->>A42: effective documents
@@ -475,8 +476,7 @@ Notes on the diagram:
   purpose is that each step does not "research and scan or rediscover what pertains the task that
   step is performing" (the owner).
 - The elaboration lane reads, from beads, the ready Epics, their WSJF scores and the Epics each
-  rests on, because an Epic waits for the Epics whose architecture decisions it rests on (section
-  2).
+  waits for by its `tracks` edges (section 2).
 - `keeper.py` reads and writes no bead itself: it runs `supervisor.py`, whose lanes do.
 - The driver writes each bead state from the run's result, and the pipelines write content, because
   code sets a state the same way every time (section 4).
