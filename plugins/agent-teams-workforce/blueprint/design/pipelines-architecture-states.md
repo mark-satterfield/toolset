@@ -155,9 +155,8 @@ Notes on the diagram:
   section 3.5). Only the element that changes becomes dirty: an unchanged diagram or element
   keeps both flags. In "changed by a later Epic", the code built for the element is still there,
   and a spec starts from it (section 4). The next build and test of the element sets verified
-  again. A build verified while an
-  element carries an approved change it did not build leaves the element not verified
-  ([design/matrix.md](matrix.md) decision 9).
+  again. Both are plain yes/no marks on the architecture: neither records the Epic, the stack or
+  the commit that set it ([design/matrix.md](matrix.md), section 1.4).
 - The matrix does not record Stories or Tasks, and does not record what is deployed. The owner:
   "The matrix does not include stories and tasks (it isn't a build tracker), and it doesn't care
   about what has actually been deployed."
@@ -268,8 +267,7 @@ sequenceDiagram
 ```
 
 The version numbers are the owner's illustration ("Think of the everuything in terms of version
-numbers"). The matrix records, on each element, the verified flag with the commit it was proved
-at, and a change clears it ([requirements/matrix.md](../requirements/matrix.md), section 3.5). When
+numbers"). The matrix records, on each element, whether it is verified, and a change clears it ([requirements/matrix.md](../requirements/matrix.md), section 3.5). When
 Epic B's change is approved, the service is no longer verified, and B's spec covers the work that
 brings the build, from the code built at v1.0.0, up to v1.0.1: that work is B's change. When Epic
 C's and then Epic D's changes are approved with no build between them, the service stays not

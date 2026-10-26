@@ -30,8 +30,8 @@ decide none of it.
 Approved design (an `effective` document, as "Lifecycle" below defines it) is not evidence that
 anything is built, and it is not a permanent constraint on a later PRD: it iterates.
 
-The matrix records which Epic's elaboration approved each entry and what code is trusted. Read it
-as the `matrix` skill says.
+The matrix records which architecture is approved and which is verified, as plain yes/no marks
+that name no Epic. Read it as the `matrix` skill says.
 
 ## Lifecycle, the baseline and iteration
 
@@ -52,17 +52,18 @@ An architecture document (arc42 or `detailed/`) is in one of two working states,
 
 A matrix entry or relationship goes through the
 same states by the same actions: a changed entry is unapproved until the architect approves it.
-The `matrix` skill ("Approved, verified, effective and side") says how its `approved` flag
+The `matrix` skill ("Approved, verified, effective and side") says how its `approved` mark
 records that.
 
 ### The starting baseline
 
 The arc42 documents are approved in advance as a baseline covering all Epics, so that work goes
-faster: they are `effective`. On purpose, the matrix shows none of their entries with an
-`approved` flag. Each must be reviewed and approved through an Epic's elaboration, not assumed
-correct; any of them may contain mistakes. The matrix's `approved` flag records which
-Epic's elaboration has reviewed, approved and now owns an entry: the first Epic elaborated that
-reaches it (first come, first elaborated).
+faster: they are `effective`. On purpose, the matrix shows none of their entries with the
+`approved` mark. Each must be reviewed and approved through an Epic's elaboration, not assumed
+correct; any of them may contain mistakes. The matrix's `approved` mark records that the solutions architect has reviewed and approved an
+entry through some Epic's elaboration; it names no Epic. Two Epics are never elaborated at the
+same time on the same unapproved architecture: the dependency edges `epicorder.py` sets in advance
+order them.
 
 ### Iteration
 
@@ -77,7 +78,7 @@ first Epics most of all.
 - An `in-review` document, such as one in `detailed/` that no architect has approved, is a
   candidate to review. When it already matches what the architect would approve, the architect approves it
   (it becomes `effective`) instead of spending tokens recreating it.
-- Nothing is deleted merely for being in `in-review` or for carrying no `approved` flag.
+- Nothing is deleted merely for being in `in-review` or for carrying no `approved` mark.
 
 Code and infrastructure iterate the same way, as the `software-engineering` skill says.
 

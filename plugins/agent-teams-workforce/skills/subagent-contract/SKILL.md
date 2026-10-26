@@ -37,14 +37,15 @@ Missing inputs are named dependencies, not permission to invent facts. Distingui
 facts, assumptions and unresolved questions in the artifact's supported fields. Do not mark your
 own work approved.
 
-The matrix has two flags, `approved` and `verified`. The step that promotes an Epic's reviewed
-architecture and design sets `approved` on the matrix content the Epic reaches, once the matrix
+The matrix has two marks, `approved` and `verified`, plain yes/no marks on the architecture that
+name no Epic, stack or commit. The step that promotes an Epic's reviewed
+architecture and design sets `approved` on the architecture the Epic reaches, once the matrix
 and arc42 are filled out or corrected for it; it is similar to, and not the same as, an arc42
-document's `effective`. The build driver sets `verified`, with the tested commit, on what one
+document's `effective`. The build driver sets `verified` on what one
 Story built when that Story's test passes: its CI checks and the test that its CDK deployment
-works, before and apart from any merge. Each flag belongs to the item, valid for every Epic that
+works, before and apart from any merge. Each mark belongs to the item, valid for every Epic that
 relates to it, and works as a dirty bit: a change that affects the item clears it on that item
-alone, each flag independently of the other. No agent sets either. No deployed mark and no merged
+alone, each mark independently of the other. No agent sets either. No deployed mark and no merged
 mark exists; absent means not approved and not verified. Verified means
 real: the entry or relationship exists, and its code is trusted and is expected to match the
 architecture. Not verified means it still has to be made real: use it like any other, and

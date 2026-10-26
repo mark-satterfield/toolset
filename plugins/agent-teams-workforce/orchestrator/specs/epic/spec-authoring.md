@@ -62,11 +62,11 @@ The authors write specs and design nothing: every detail a spec states (endpoint
 data schemas, keys, parameter names) was decided during architecture and is in arc42, in the
 detailed architecture under `detailed/` or in the matrix. What a spec covers for each entry the
 Story builds is the context's `buildScope`, read from the entry's verified flag
-(`spec_authoring.entry_scope`), never from an architecture delta: `delta` when the build is
-verified at the version before this Epic's change (the flag names no later change, or this
-Epic's), and the spec covers that change alone; `full` when the entry is not verified, or
-another Epic's approved change to it is still not built, and the spec covers all the work that
-brings the build up to the entry's approved architecture. `componentDocuments` lists every
+(`spec_authoring.entry_scope`), never from an architecture delta: `delta` when the entry carries
+the verified mark, so nothing it must be built as has changed since its last build and test, and
+the spec covers this Epic's own work for it alone; `full` when the entry is not verified (a
+change cleared the mark, or it was never built), and the spec covers all the work that brings the
+build up to the entry's approved architecture. `componentDocuments` lists every
 architecture and design document `atw-matrix documents` joins to the stacks and entries the
 Story builds (`spec_authoring.component_documents`); step 10, after every correction, ends each
 of the three spec documents with a link to each (`spec_authoring.link_documents`, which replaces

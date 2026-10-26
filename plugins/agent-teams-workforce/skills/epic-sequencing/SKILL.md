@@ -119,8 +119,8 @@ elaboration has reviewed it yet, and the Epic that does may change it. So a docu
 decision is still to be reviewed and shaped by one Epic's requirements, and the edge decides
 which.
 
-What removes the need is the matrix's `approved` flag on the entry or relationship that states
-the decision: an Epic's elaboration has reviewed, approved and owns it (the `matrix` skill,
+What removes the need is the matrix's `approved` mark on the entry or relationship that states
+the decision: the solutions architect has reviewed and approved it (the `matrix` skill,
 "Approved, verified, effective and side", says what sets it). A later Epic designs against
 that decision, and changes it if it must, without an edge.
 

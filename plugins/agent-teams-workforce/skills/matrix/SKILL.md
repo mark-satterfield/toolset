@@ -8,7 +8,7 @@ description: >-
   stacks or repositories relate to something, what an Epic needs, what depends on an entry, or
   what is approved or verified, or record, rename or remove a fact in the matrix. It holds the
   model, which command answers which question, the direct-versus-transitive trap, the rule of
-  reach, ready scripts for the transitive questions, the approved and verified flags, and the
+  reach, ready scripts for the transitive questions, the approved and verified marks, and the
   rules for writing.
 user-invocable: false
 allowed-tools: [Bash, Read]
@@ -134,16 +134,16 @@ feature with no covering document), `requirementsReachNothing`, `requirementsNoS
 
 | Field | On | Meaning | Who sets it, when, how |
 |---|---|---|---|
-| `approved: {epic}` | any entry or relationship | Its owner: the Epic whose elaboration reviewed and approved this entry or relationship (first come, first elaborated), and for which the matrix and arc42 are filled out or corrected. An entry goes through the same states by the same actions as a document (the `effective-architecture` skill, "Lifecycle, the baseline and iteration"): a change clears the flag, and the entry stays unapproved until an architect approves it again. The baseline carries no flag on purpose: no Epic has reviewed it yet. | Only the promotion step of elaboration (`orchestrator/flows/architecture_promotion.py`, calling `matrixwrite.approve` as role `script`) on the Epic's approval scope, its reach by the rule of reach in the corrected matrix (`atw-matrix approval --epic <id>` shows it), once its reviews pass. It never replaces a flag that names another Epic: that item keeps its owner. No `atw-matrix` command and no session sets it. Any later change to the entry or relationship, or to the heading text that describes it, clears it on that item alone; the next Epic whose review approves it then owns it. |
-| `verified: {commit}` | any entry or relationship | It was built and tested: the CI checks and the test that its CDK deployment works (the deployment may be removed again after the test). A property of the stack or component itself, valid for every Epic that relates to it. Verified = real, its code trusted; not verified = still to be made real, used like anything else. | Only the build driver (`ops/sdlc-automation/matrixmarks.py`), when a Story's test passes: `atw-matrix verify --story <id> --commit <the tested commit>` as role `build-driver`, on what the Story's Tasks state they built (`built`) and the relationships starting there. A merge never sets it; the merge is a separate step after the test. A known change to what the item must be built as (the entry or relationship itself, the heading text that describes it, or an architecture-side relationship starting at it) clears it on that item alone; the next build and test sets it again. |
+| `approved: true` | any architecture entry or relationship (never an Epic) | The solutions architect approved the architecture for a feature: the architecture and design an Epic's elaboration reached are approved, and the matrix and arc42 are filled out or corrected for it. A plain yes or no: it records no Epic, stack, commit or owner, and absent means not approved. An entry goes through the same states by the same actions as a document (the `effective-architecture` skill, "Lifecycle, the baseline and iteration"): a change clears the mark, and the entry stays unapproved until an architect approves it again. The baseline carries no mark on purpose: no architect has reviewed it yet. | Only the promotion step of elaboration (`orchestrator/flows/architecture_promotion.py`, calling `matrixwrite.approve` as role `script`) on the Epic's approval scope without the Epic itself, its reach by the rule of reach in the corrected matrix (`atw-matrix approval --epic <id>` shows it), once its reviews pass. No `atw-matrix` command and no session sets it. Any later change to the entry or relationship, or to the heading text that describes it, clears it on that item alone; the next approval that covers it sets it again. Two Epics are never elaborated at the same time on the same unapproved architecture: the dependency edges `epicorder.py` sets in advance order them. |
+| `verified: true` | any entry or relationship | The architecture was built and its test passed, so it is verified correct: the CI checks and the test that its CDK deployment works (the deployment may be removed again after the test). A plain yes or no: it records no Epic, stack, commit or owner, and absent means not verified. A property of the stack or component itself, valid for every Epic that relates to it. Verified = real, its code trusted; not verified = still to be made real, used like anything else. | Only the build driver (`ops/sdlc-automation/matrixmarks.py`), when a Story's test passes: `atw-matrix verify --story <id>` as role `build-driver`, on every stack and entry the Story's Tasks state they built (`built`) and every relationship starting there. A merge never sets it; the merge is a separate step after the test. A known change to what the item must be built as (the entry or relationship itself, the heading text that describes it, or an architecture-side relationship starting at it) clears it on that item alone; the next build and test sets it again. |
 | `lifecycle` | `document` | Mirrors the document's `lifecycle_state`: `effective` (approved) or `in-review`, or another vault value such as `draft` or `superseded`. What the states and the approve action mean: the `effective-architecture` skill, "Lifecycle, the baseline and iteration". | `atw-matrix sync-documents`; the promotion step after `depscore.py arch-approve`. |
 | `side` | everything | `architecture` (authority) or `repository` (hint). | Whoever records the fact: `put` and `link` take `--side`. |
 
 Nothing is seeded approved or verified, and nothing in the live matrix is either yet. No
-deployed or merged mark exists. Neither flag ever blocks reading, linking or designing on an
+deployed or merged mark exists. Neither mark ever blocks reading, linking or designing on an
 entry.
 
-The verified flag, as [the matrix requirements](../../blueprint/requirements/matrix.md)
+The verified mark, as [the matrix requirements](../../blueprint/requirements/matrix.md)
 section 3.5 and R25 state it:
 
 - It is set when an item has been built and tested, the CDK deployment test included. The
@@ -156,16 +156,16 @@ section 3.5 and R25 state it:
 - What a stack or Task only uses (a shared library, a layer, a chassis) was verified when it
   was itself built and tested; using it verifies nothing.
 
-Both flags are dirty bits on individual items, at the finest grain the matrix records: a known
+Both marks are dirty bits on individual items, at the finest grain the matrix records: a known
 change clears a flag on the item it touches and nothing else; approval sets `approved` again,
 and building and testing the Story's Tasks (the CDK deployment test included) sets `verified`
-again. They are separate flags: each clears on a change that affects it, independently of the
+again. They are separate marks: each clears on a change that affects it, independently of the
 other; one change may clear only `approved`, only `verified`, or each at a different time.
-Never infer one flag from the other. Naming the repository that holds a stack (its `repository`
+Never infer one mark from the other. Naming the repository that holds a stack (its `repository`
 attribute alone), or the owner's decision that no Epic drives it (its `epicDriver` attribute
 alone), changes no approved design, so it keeps `approved`.
 
-Reading the flags to decide what is planned and what exists:
+Reading the marks to decide what is planned and what exists:
 
 - Verified: it exists as recorded, at its current architecture. Build on it and trust its code;
   it needs no work.

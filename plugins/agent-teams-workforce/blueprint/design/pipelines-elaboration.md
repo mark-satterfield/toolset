@@ -59,7 +59,7 @@ requured, but there still needs to be a spec".
 
 ```mermaid
 flowchart TD
-    start(["Ready Epic and its PRD"]) --> pack["Architecture pack, a script step: the PRD, the Epic's reach by the rule of reach with each entry's owner and the Epic's sharing it, the headings that describe each from the vault's last commit, and the constraints that apply"]
+    start(["Ready Epic and its PRD"]) --> pack["Architecture pack, a script step: the PRD, the Epic's reach by the rule of reach with whether each entry is approved and the Epics sharing it, the headings that describe each from the vault's last commit, and the constraints that apply"]
     pack --> trdInit["TRD initial write, one of the very first steps: NFRs, many pre-written in arc42, and the human-written Epic-specific guidance - section 4"]
     trdInit --> readPRD["The solutions architect normally reads the PRD for the Epic"]
     readPRD --> resources["Uses arc42 documents and the matrix as resources"]
@@ -75,9 +75,7 @@ flowchart TD
     trdUpdate --> review["The solutions architect reviews and approves its own architecture against the criteria"]
     review --> ok{"Does the check pass the result and the review log?"}
     ok -->|"no: each problem goes back to the architect as a correction"| detailed
-    ok -->|"yes"| edge{"Did another Epic change or approve what this Epic reviewed?"}
-    edge -->|"yes: a missing tracks edge"| missing(["Nothing approved or committed; the architecture is set back to its pack step and the Epic fails with cause missing-edge; the driver re-assesses its edges"])
-    edge -->|"no"| writes["The documents this Epic's maintainers wrote set effective. The Epic's reach in the corrected matrix set approved, verified stays false"]
+    ok -->|"yes"| writes["The documents this Epic's maintainers wrote set effective. The architecture of the Epic's reach in the corrected matrix set approved, verified stays false"]
     writes --> archChange{"Did the Epic need an architecture change?"}
     archChange -->|"yes"| spec["Specs written from what is not yet verified - section 6"]
     archChange -->|"no: for example a wording change on a web page"| specNo["A spec with instructions for the change - section 6"]
@@ -111,11 +109,9 @@ Notes on the diagram:
   `pruned` one must no longer be reached, and each reached service, component, piece of
   infrastructure or layer with no stack is placed or listed under `excluded`.
 - Promotion sets effective exactly the documents this Epic's maintainers wrote, and commits those
-  and the review log. Before it changes anything, under the matrix's lock, it compares each entry
-  of the reach with the hash and owner recorded when the architect's result was last accepted, a
-  `kept` entry also with the pack's, and each written document's heading hashes with those
-  recorded when they were written (`orchestrator/flows/architecture_collision.py`). A difference is
-  a missing `tracks` edge between this Epic and another; there is no global lock.
+  and the review log, and sets the approved mark on the architecture of the reach. Two Epics are
+  never elaborated at the same time on the same unapproved architecture: the dependency edges
+  `epicorder.py` sets in advance order them, so promotion runs no check for that case.
 - The solutions architect is the reviewer; no other agent reviews the architecture. The owner:
   "The solutions architect is the reviewer. I do not want to introduce new reviewers in for
   architecture. I already took out reviewers." What the owner requires instead is proof: "what I
@@ -169,7 +165,7 @@ sequenceDiagram
     SA->>PRD: normally reads the PRD for the Epic
     PRD-->>SA: the Epic's requirements
     SA->>A42: reads existing architecture and design, including standards and constraints
-    A42-->>SA: the effective headings of what the Epic reaches, handed in the architecture pack, each marked with the Epic that approved it, if any
+    A42-->>SA: the effective headings of what the Epic reaches, handed in the architecture pack, each marked with whether it is approved
     SA->>MX: looks up what is known for the Epic, as a resource
     MX-->>SA: nothing (normal) or seeded entries, not approved and not verified
     Note over SA: compares existing architecture to the PRD. Seeded entries get due diligence - section 3
@@ -523,8 +519,8 @@ Notes on the diagram:
   span step in `repo_scoping` reads beside `addedOrChangedElements`). Which elements those
   are is the architect's design decision; no script picks them.
 - The repository context step hands every spec session a spec pack (`spec-pack.schema.json`,
-  written by `orchestrator/flows/spec_pack.py`): the entries the Story builds with the Epic that
-  approved each, the text of every heading their scopes name as the vault's last commit holds it,
+  written by `orchestrator/flows/spec_pack.py`): the entries the Story builds with whether each is
+  approved, the text of every heading their scopes name as the vault's last commit holds it,
   the constraints, shared capabilities and TRD requirements that bind them, and the contract
   files the repository holds. No spec session explores the vault. A spec writer runs only for a
   kind of content the Story's entries include (`spec_authoring.story_surfaces`): contracts for an

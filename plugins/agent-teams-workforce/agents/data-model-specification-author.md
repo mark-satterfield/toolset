@@ -68,7 +68,7 @@ needs that no approved document states is a gap in the design: state in the docu
 element's design lacks it, and do not settle it. Your repository context file
 (`spec-context.schema.json`) names what the Story builds: `items`, `stacks`, `buildScope` and
 `dependsOn`. Your spec pack (`spec pack`, `spec-pack.schema.json`) holds what you read for it:
-each entry with the Epic that approved it; the text of every architecture heading the Story's
+each entry with whether it is approved; the text of every architecture heading the Story's
 scopes name, as the approved architecture states it; the constraints and shared capabilities
 that bind the entries; the TRD requirements that bind them; and the contract files the
 repository holds today. Read the pack, not the vault and not the matrix. Cite a document by the

@@ -512,30 +512,26 @@ sequenceDiagram
 
     K->>GH: the Story's checks
     GH-->>K: passing, on the tested commit; the deploy test passed before the pull request opened
-    K->>VS: verify what the Story built, at the tested commit
+    K->>VS: verify what the Story built
     VS->>MX: the stacks and entries the Story's Tasks state they built, and the relationships starting there
-    MX-->>VS: entries and links, with their flags
-    alt an entry carries an approved change this build did not build
-        VS-)MX: verified set on what this Story built and tested, that change stays not verified
-    else otherwise
-        VS-)MX: verified set
-    end
+    MX-->>VS: entries and links, with their marks
+    VS-)MX: verified set on every one of them
     VS-->>K: what the Story built is verified
     Note over K,GH: the merge follows as a separate step and decides nothing about verified
 ```
 
 Notes on the diagram:
 
-- A deterministic step sets the flag when the Story's test passes, because the condition is
+- A deterministic step sets the mark when the Story's test passes, because the condition is
   factual and needs no judgment. It runs before and apart from the merge, and names no branch
   ([the matrix design](matrix.md), section 1.4.2).
-- The flag is set per Story on what that Story built and tested, and waits for no other Story of
+- The mark is set per Story on what that Story built and tested, and waits for no other Story of
   any Epic, because an Epic owns no stack or component.
-- Verified is set only on what was built and tested; an entry carrying another approved change
-  stays not verified for that change, because verified says built, nothing more.
+- Verified is a plain yes that names no Story and no commit: it is set on every stack and entry
+  the Story built and every relationship starting there, and a later change clears it.
 - Verification writes only the matrix. It changes no arc42 document; `effective` is the
   architecture agent's approval, not a build result.
-- The flags are `approved` and `verified` on every entry and relationship
+- The marks are `approved` and `verified`, plain yes/no marks on every entry and relationship
   ([the matrix design](matrix.md), section 1.4).
 
 ## 8. The states of a Story through deploy

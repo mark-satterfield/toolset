@@ -7,7 +7,7 @@ stores nothing. It answers three questions, each one ``atw-matrix`` command:
 
 - :func:`built` (``built --story``): the stacks and entries a Story built, for the verified flag.
 - :func:`epic_work`: the Epic above a Story, with every Story and Task of that Epic and whether
-  each is closed, which decides when the Epic's verified flag is set.
+  each is closed; ``verify`` reads the Story's Tasks from it.
 - :func:`work` (``work --id``): the open Tasks that name an entry or, for a stack, an entry the
   stack holds.
 - :func:`affected` (``affected --id``): the open Tasks a change to an entry affects.

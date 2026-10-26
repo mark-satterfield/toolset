@@ -60,3 +60,13 @@ its kind at its start and under its reverse name at its end.
 A dependency between two stacks is read, never stored: stack A depends on stack B when a
 dependency-family relationship starts at A or an entry A holds and ends at B or an entry B holds.
 `deps --of` and `deps --on` follow the family to any depth.
+
+## The approved and verified marks
+
+Any entry or relationship may carry `"approved": true` and `"verified": true`; absent means not
+approved and not verified. Both are plain yes/no marks on the architecture (architecture entries
+and the relationships between them) and record no Epic, stack, commit or owner. Approved: the
+solutions architect approved the architecture for a feature (`matrixwrite.approve`, run by
+promotion; an Epic never carries it). Verified: that architecture was built and its test passed
+(`atw-matrix verify --story <id>`). A change to an entry or relationship clears its marks. The
+`matrix` skill, "Approved, verified, effective and side", says who sets each and how to read them.
