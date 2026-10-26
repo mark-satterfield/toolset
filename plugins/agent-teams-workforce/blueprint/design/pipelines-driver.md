@@ -205,9 +205,9 @@ Notes on the diagram:
 - An Epic's readiness and its WSJF score are given, not decided here: a ready Epic's PRD has
   already been checked for completeness and accuracy, and it has its WSJF score (the owner).
 - The Epic-to-Epic `tracks` edges `epicorder.py` sets decide which ready Epics may be elaborated:
-  an Epic waits for the driver of each feature they both need whose architecture is not approved,
-  because no two Epics are elaborated at once on the unapproved architecture of a feature they
-  both need. Ready Epics are taken in their WSJF order behind those
+  an Epic waits for the Epic that goes first, by the judgment the matrix records, on each shared
+  item they both need whose architecture is not approved, so that an Epic waits for the Epic that
+  builds and owns what it uses and no two Epics work at once on the same unapproved shared item. Ready Epics are taken in their WSJF order behind those
   dependencies, because it puts the most value per effort first.
 - A Task is ready when the Tasks it depends on (beads dependency edges) are closed, and ready Tasks
   are taken in WSJF order, because the edges carry build order and WSJF orders what is free to run.

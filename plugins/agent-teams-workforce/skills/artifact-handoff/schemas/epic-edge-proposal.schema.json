@@ -20,16 +20,16 @@
   },
   "$defs": {
     "Edge": {
-      "description": "One Epic-to-Epic edge: a feature both Epics need (a requirement of each is `servedBy` it) has architecture that is not approved, and `from` is its driver (the Epic with the most requirements served by it, a tie to the lower bead id). `from` is elaborated before `to`; both are Epics.",
+      "description": "One Epic-to-Epic edge: a shared item both Epics need (a feature serving their requirements, or an architecture entry they reach by the rule of reach) has architecture that is not approved, and the matrix records `from` as the Epic that goes first on it (a `drives` judgment from `from` to the item, or the owner's decision for the item's stack). `from` is elaborated before `to`; both are Epics.",
       "type": "object",
       "additionalProperties": false,
       "required": ["from", "to", "reason", "confidence", "archCheck"],
       "properties": {
-        "from": {"description": "The beads id of the feature's driver.", "type": "string"},
-        "to": {"description": "The beads id of the other Epic that needs the feature.", "type": "string"},
-        "reason": {"description": "The feature and each Epic's count of requirements served by it, in one line.", "type": "string"},
+        "from": {"description": "The beads id of the Epic that goes first on the item.", "type": "string"},
+        "to": {"description": "The beads id of the other Epic that needs the item.", "type": "string"},
+        "reason": {"description": "The item, the Epic that goes first, the basis and the recorded reason, in one line.", "type": "string"},
         "confidence": {"$ref": "dependency-assessment.schema.json#/$defs/Confidence"},
-        "archCheck": {"description": "The id of the feature that makes this edge, and that its architecture is not approved: the architecture-side realizer without the `approved` mark, or that the feature has no realizer. Only the `approved` mark on every realizer removes the edge: an entry existing or a document at `lifecycle: effective` does not. An edge without it is refused.", "type": "string"},
+        "archCheck": {"description": "The id of the shared item that makes this edge, its recorded decision (a judgment on the item, or the owner's decision for its stack), and that its architecture is not approved (for a feature: a realizer without the `approved` mark, or no realizer). Only the `approved` mark removes the edge: an entry existing or a document at `lifecycle: effective` does not. An edge without it is refused.", "type": "string"},
         "answers": {"description": "Required only on an edge the context's `withdrawn` list covers: why the recorded withdrawal reason is wrong, on the architecture. Without it that edge is refused.", "type": "string"}
       }
     }

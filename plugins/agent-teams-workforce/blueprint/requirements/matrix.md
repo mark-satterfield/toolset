@@ -231,8 +231,8 @@ of reach (what its elaboration needs, never the closure), except the Epic itself
 architecture-side relationships between those entries; it is the set the Epic's architect
 reviews. What is read from the repositories is a hint and is never approved. Two Epics are never
 elaborated at the same time on the same unapproved architecture: the dependency edges that
-`epicorder.py` sets in advance, from the features the Epics share whose architecture is not
-approved, order them. The approval clears from an entry or a relationship
+`epicorder.py` sets in advance, from the judgments the matrix records on the shared items whose
+architecture is not approved (R63), order them. The approval clears from an entry or a relationship
 when anything other than its marks changes: when the entry or relationship is replaced by one
 that differs, when the text that describes it in a document changes (only the entries whose
 describing text changed lose the mark; the other entries the same document describes keep it,
@@ -714,3 +714,30 @@ so nothing is seeded as verified.
   kind not held before is named the same way. Nothing routes a specialist agent by it.
 - **R62.** The matrix answers Q27 to Q30 from the matrix alone, without a scan (R1).
 
+### Shared items and Epic order
+
+- **R63.** An Epic has requirements; requirements are served by features; features are
+  realized by architecture entries (services, components, infrastructure, events, stacks,
+  packages, layers), which depend on other entries (calls, reads, publishes, imports and the
+  other dependency relationships). No Epic relates directly to another Epic. An item is shared
+  when two or more Epics need it, whatever repository or name it has: `shared-` names what is
+  sharable at enterprise level, and `SkillSpoke-*` things are often shared too. Two Epics need
+  an architecture entry when it realizes a feature serving their requirements, or is one
+  dependency hop from such an entry (the rule of reach). Architecture is not fixed: later
+  Epics may change shared architecture, and `approved` and `verified` are plain yes/no marks;
+  nothing is approved by design at the start.
+- **R64.** Epic-to-Epic dependency edges exist so that an Epic waits for the Epic that builds
+  and owns something it uses, and so that two Epics never work on the same unapproved shared
+  item at the same time. For each shared item there is no fixed answer: either one Epic builds
+  and owns it and the others use it, or the Epics share it independently (like two Epics whose
+  Lambdas both need the VPC). It is a judgment from the Epics' requirements, recorded in the
+  matrix as the one architecture-side `drives` from the Epic that goes first to the item, with
+  `basis` `owns` or `shared` and a one-sentence `reason`. `epicorder.py` never infers it from
+  counts or names, and a change to the item does not clear the record.
+- **R65.** The matrix lists every shared item whose architecture is not approved, with the
+  Epics that need it and, for each Epic, the requirements (id and text) through which it does,
+  and writes those no record decides in batches for judging, keeping items whose sets of Epics
+  are identical together. The owner's records stay in force: a `drives` with no basis from an
+  Epic to a stack makes that Epic the owner of every shared item realized or homed in the stack,
+  and `epicDriver: none` on a stack makes its items order no Epics, because it is deployed in
+  advance.

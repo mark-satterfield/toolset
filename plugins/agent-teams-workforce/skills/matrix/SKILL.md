@@ -48,7 +48,19 @@ stack --imports|calls|publishes|reads|runsIn|usesLayer...--> what it depends on 
 document --covers{heading, via: feature}--> requirement
 ```
 
-A feature reaches an Epic only through the requirements it serves. A repository is an attribute
+A feature reaches an Epic only through the requirements it serves. No Epic relates directly to
+another Epic.
+
+**Shared items.** An item is shared when two or more Epics need it, whatever repository or name
+it has (`shared-` names what is sharable at enterprise level, but `SkillSpoke-*` things are often
+shared too): a feature that serves a requirement of each, or an architecture entry each reaches by
+the rule of reach (below). Architecture is not fixed: later Epics may change shared architecture.
+Epic-to-Epic edges exist so that an Epic waits for the Epic that builds and owns something it
+uses, and so that two Epics never work on the same unapproved shared item at the same time. For
+each shared item, either one Epic builds and owns it and the others use it, or the Epics share it
+independently (like two Epics whose Lambdas both need the VPC). That is a judgment from the
+Epics' requirements, recorded as a `drives` from the Epic that goes first to the item (see
+"Writing"); `epicorder.py` never infers it from counts or names. A repository is an attribute
 of a stack (`repository`), never an entry. The full lists of entry kinds and relationship kinds,
 with direction and meaning, are in [references/model.md](references/model.md).
 
@@ -76,6 +88,8 @@ with direction and meaning, are in [references/model.md](references/model.md).
 | What a Story building some entries of a stack must be handed | `atw-matrix story-scope --stack stack:<id> --ids <id> ...` |
 | Documents an Epic reaches that are not effective | `atw-matrix review-scope --epic <beads id>` |
 | Which of an Epic's content is approved, by the rule of reach | `atw-matrix approval --epic <beads id>` |
+| The shared items (two or more Epics need them), each with its Epics, the requirements through which each needs it, and what decides who goes first | `atw-matrix shared-items [--epic <beads id>]` |
+| The unapproved shared items no record decides, in batches for judging | `atw-matrix shared-items --batches <folder> [--batch-size 25]` |
 | Open Tasks that name an entry / that a change affects / what a Story built | `atw-matrix work --id <id>` / `affected --id <id>` / `built --story <id>` |
 | Counts; repository-side entries with no architecture counterpart | `atw-matrix summary [--unlinked]` |
 | Does the file meet its contract? | `atw-matrix check` |
@@ -183,7 +197,8 @@ Reading the marks to decide what is planned and what exists:
 - Writing needs a role in `ATW_MATRIX_ROLE` (unset means `operator`). `put`, `link` and `unlink`:
   `solutions-architect`, `repository-steward`, `script`. `settle`: `solutions-architect`,
   `decider`. `rename` and `remove`: `solutions-architect`, `repository-steward`, `operator`
-  (`remove` also `script`). `move-repository`: `repository-steward`, `operator`. `commit`:
+  (`remove` also `script`). `record-judgments`: `script`, `operator`. `move-repository`:
+  `repository-steward`, `operator`. `commit`:
   `script`, `repository-steward`, `build-driver`, `operator`. `apply`: `solutions-architect`,
   `repository-steward`, `script`, `decider`, and each operation of the file needs the role its
   own sub-command needs. Reads need none.
@@ -192,12 +207,21 @@ Reading the marks to decide what is planned and what exists:
   then `atw-matrix link <kind> --from <id> --to <id> --side architecture [--heading ...]`. A
   repository-side component, infrastructure or layer takes `--stack stack:<id>`. Look the entry
   up with `find` first so one capability is one feature.
-- The owner's driver decision for a stack, which `epicorder.py` reads to order Epics by the
-  features they share: `atw-matrix link drives --from epic:<beads id> --to stack:<id> --side architecture`
-  makes that Epic the driver of every feature whose realizers are all in the stack;
+- The judgment of which Epic goes first on a shared item is one architecture-side `drives`
+  from that Epic to the item (a feature or any architecture entry) with `basis` `owns` (the Epic
+  builds and owns it; the others use it) or `shared` (the Epics share it independently; the Epic
+  merely goes first) and a one-sentence `reason`. At most one `drives` with a basis ends at an
+  item, and a change to the item leaves it as it is. Judgments are recorded from a judgment file
+  (`skills/artifact-handoff/schemas/shared-item-judgments.schema.json`) with
+  `atw-matrix record-judgments --file <path>` (role `script` or `operator`), which refuses the
+  whole file when an item is not shared, its Epic does not need it, or the owner's decision for
+  its stack already decides it, and replaces another Epic's earlier judgment for the item.
+- The owner's decisions for a whole stack: a `drives` with no basis from `epic:<beads id>` to
+  `stack:<id>` says that Epic owns every shared item realized or homed in the stack;
   `atw-matrix put stack --id stack:<id> --side architecture --epic-driver none` says the stack is
-  deployed in advance, so no feature whose realizers are all in it orders Epics. A stack carries
-  at most one of the two, and only the owner decides either.
+  deployed in advance, so no shared item realized or homed in it orders Epics. A stack carries at
+  most one of the two, and only the owner decides either. A `drives` with no basis ends only at a
+  stack.
 - Keep it current in the same piece of work: `rename --from <id> --to <id>`,
   `remove <id> [--held]`, `move-repository --from <repo> --to <repo>`, `unlink ...`.
 - Many changes in one step: write them to one change file

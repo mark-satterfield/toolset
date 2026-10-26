@@ -8,10 +8,7 @@ allowed-tools: [Bash, Workflow]
 
 Assess the Epic-to-Epic edges of one Epic in the beads tracker of the repository you are
 standing in, by dispatching the `dependency-assessment` workflow. The rule is the
-`agent-teams-workforce:epic-sequencing` skill's: a feature that two or more Epics need (a
-requirement of each is `servedBy` it) and whose architecture is not approved orders those
-Epics, and the Epic with the most requirements served by it goes first (a tie to the lower bead
-id). The workflow writes the Epic's edges to beads. It writes nothing to the matrix and scores
+`agent-teams-workforce:epic-sequencing` skill's: a shared item two or more Epics need (a feature serving their requirements, or an architecture entry they reach by the rule of reach) whose architecture is not approved orders them by the judgment the matrix records for it: every other Epic that needs it waits for the Epic its `drives` judgment (basis owns or shared), or the owner's decision for its stack, names; an item with no record orders nothing. The workflow writes the Epic's edges to beads. It writes nothing to the matrix and scores
 nothing.
 
 The owner runs this command; the driver never dispatches the workflow. The order of every Epic
@@ -21,10 +18,10 @@ command's included, and writes the computed ones. WSJF is scored once, before `k
 by the owner's own `/agent-teams-workforce:wsjf-scoring`.
 
 `<epic-id>` is required: the one Epic to assess. Report the usage and stop without it. The
-epic-dependency-assessor lists the features the Epic needs (`atw-matrix epic`), the other Epics
-that need each (`atw-matrix node`), and whether each feature's realizers all carry the
-`approved` mark; for every shared feature that is not approved it names the driver and draws
-the edges that touch the Epic. It keeps or withdraws, with a reason, every owned edge standing on
+epic-dependency-assessor lists the shared items the Epic needs, the other Epics that need each,
+their approval and their recorded decisions (`atw-matrix shared-items --epic`); for every
+unapproved shared item a record decides it draws the edges that touch the Epic, and it lists the
+unjudged items. It keeps or withdraws, with a reason, every owned edge standing on
 it. Code refuses any edge that does not touch the Epic, a loop, an unaccounted standing edge
 and a missing reason, and writes only that Epic's edges. Hand-made edges are never touched.
 The session checks its proposal with the validate command and writes nothing to beads or the
@@ -95,8 +92,8 @@ From the workflow's result:
   edges themselves are in the file `edges.resultFile` names: every edge added, converted or
   removed as `blocker -> blocked` from its `plan.add`, `plan.convert` and `plan.remove`, and
   every withdrawal with its reason from its `withdrawn`. Then the reasoning file
-  (`edges.reasoning`), which holds the shared features, the requirement counts, the
-  realizers' `approved` marks and the driver of each feature. When `edges.applied` is false, its `reason`, or the validation
+  (`edges.reasoning`), which holds the shared items, their Epics, their approval
+  and the recorded decision of each, and the unjudged items. When `edges.applied` is false, its `reason`, or the validation
   defects.
 - `stop` — when the proposal did not validate: the Epic and every finding in
   `stop.findings`, with the `edgesFile` and `validationFile`, and what a person does: correct

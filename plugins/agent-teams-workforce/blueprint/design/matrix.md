@@ -96,7 +96,7 @@ holds.
 | `component` | One component: a Lambda function, a module, a construct, a page. | `component:<slug>` | `resourceType` when it is one AWS resource (a Lambda function, an AgentCore runtime), `executionUse`. |
 | `infrastructure` | One piece of infrastructure: a table, a queue, a rule, an SSM parameter, a bus. An SSM parameter is one entry, named by its path, with `resourceType` `ssm-parameter` and `homeIn` the stack that writes it (requirement R59). | `infrastructure:<slug>` | `resourceType` when it is one AWS resource. |
 | `event` | One event type: a fact with a meaning, its name, the services or components that publish it (`publishes`) and its description. On the architecture side its `purpose` is the description the event catalog in arc42 section 6 gives it and its publishers are the catalog's producers, both written by `atw-matrix sync-events`. It has no `homeIn`: its stack is its publisher's architecture-side stack. | `event:<detail type>` | `externalSource`: the system outside SkillSpoke that publishes it (for example Stripe), only for an event no SkillSpoke service or component publishes. |
-| `stack` | The home in code of services, components and infrastructure. | `stack:<stack name>` | `repository`, `app` (an open token: lowercase words joined by hyphens, for example `personal-agent`), `executionUse`, `commands` (`test`, `publish`, `deploy`), `epicDriver` (`none`: the owner's decision that the stack is deployed in advance, so no feature whose realizers are all in it orders Epics, read by `epicorder.py`). `purpose` is required: why the stack exists, in the form of the example in requirements section 3.3, or the statement that the purpose is not stated. |
+| `stack` | The home in code of services, components and infrastructure. | `stack:<stack name>` | `repository`, `app` (an open token: lowercase words joined by hyphens, for example `personal-agent`), `executionUse`, `commands` (`test`, `publish`, `deploy`), `epicDriver` (`none`: the owner's decision that the stack is deployed in advance, so no shared item realized or homed in it orders Epics, read by `epicorder.py`). `purpose` is required: why the stack exists, in the form of the example in requirements section 3.3, or the statement that the purpose is not stated. |
 | `package` | One Python package. | `package:<distribution name>` | `origin` (`project`, `third-party`). |
 | `layer` | One AWS Lambda layer the project deploys. | `layer:<slug>` | none. |
 | `file` | A file in a repository that the architecture or design names and that is not a document in the vault, such as a service's saved OpenAPI document. | `file:<stack name>/<path in the stack's repository>` | `path` (required); `homeIn` the stack. |
@@ -149,7 +149,7 @@ at it under the reverse name.
 | `routesTo` (`targetOf`) | infrastructure → service, component, infrastructure | The rule delivers every event it matches to this target. At most five per rule, the EventBridge limit. | none |
 | `reads` (`readBy`) | stack, service, component → infrastructure | Code reads a value another stack stored, such as an SSM parameter: an entry of `resourceType` `ssm-parameter` whose home is the stack that writes it. | none |
 | `runsIn` (`hosts`) | stack, service, component → infrastructure | Code runs in shared infrastructure, such as a Lambda function in its VPC, subnets and security groups, which another stack holds. | none |
-| `drives` (`drivenBy`) | epic → stack | On the architecture side, the owner's decision that the Epic drives every feature whose realizers are all in the stack, which `epicorder.py` reads. | `heading` for a document (key) |
+| `drives` (`drivenBy`) | epic → feature, service, component, infrastructure, event, stack, package, layer | On the architecture side, the judgment that the Epic goes first on a shared item, which `epicorder.py` reads: `basis` `owns` (the Epic builds and owns it; the others use it) or `shared` (the Epics share it independently; the Epic merely goes first) and `reason`; at most one with a basis ends at an item. One with no basis is the owner's decision for a whole stack: the Epic owns every shared item realized or homed in it. | `basis` (`owns` or `shared`; required on every `drives` but the owner's decision for a stack), `reason` (required with `basis`) |
 | `restsOn` (`supportsEpic`) | epic → feature, document, stack, service, component, infrastructure | The Epic relies on this as settled architecture. | `heading` for a document (key) |
 | `specifiedBy` (`specifies`) | infrastructure, component, service → file, document | The entry, such as an API Gateway API, is specified by this file or document heading, such as its saved OpenAPI document. | `heading` for a document (key) |
 | `disputes` (`disputedBy`) | disagreement → document | The document holds one of the disagreeing statements, under the heading; the statement's text stays in the document. | `heading` (key) |
@@ -226,7 +226,7 @@ corrected for it.
   differs (so `sync-epics` leaves an unchanged requirement approved, and setting `verified`
   leaves `approved` as it is). A change to a stack's `repository` or `epicDriver` attribute alone keeps it: the
   `span` step names the repository after promotion, and the name changes no approved design;
-  the owner's decision that no Epic drives the features realized in a stack orders Epics and changes no design either. When a document's text changes, only the entries whose
+  the owner's decision that a stack is deployed in advance orders Epics and changes no design either. When a document's text changes, only the entries whose
   describing text changed lose it: each `describedBy` names the heading that describes its
   entry, the document entry records a hash per heading (`headingHashes`, the front matter under
   none), and an entry loses the flag when the text under its heading changed; a `describedBy`
@@ -348,6 +348,17 @@ today, each marked with its side.
 | Q25 | `summary --unlinked` | `noArchitecture`: over the whole matrix, the entries with `side: repository`, of the kinds read from a repository (`matrixquery.FOUND_KINDS`: component, infrastructure, layer, stack), that no `correspondsTo` ends at. It is the other direction of Q13's `noCounterpart`. |
 | Q26 | `epic <id> --realizers` | For each feature that serves one of the Epic's requirements, the ends of its `realizedBy` relationships; a feature reached only through `supportedBy` is not listed. Each realizer is returned once with its stack (`holder`: the architecture-side home, else the repository-side home), that stack's `repository`, its `resourceType` when it has one and, for an event, its publishers; `noStack` lists the realizers with no stack on either side. |
 | Approval | `approval --epic <id>` | `matrixtraverse.approval_scope`: the Epic, its requirements and every architecture-side entry it reaches by the rule of reach, with the architecture-side relationships between them. Each entry is returned under `approved` (with `kind` and `name`) when it carries `approved`, otherwise under `notApproved`; `relationships` and `approvedRelationships` count the relationships (section 1.4.1). |
+| Shared items | `shared-items [--epic <id>]` | `matrixshared.shared_items`: every feature that serves a requirement of two or more Epics and every architecture-side service, component, infrastructure, event, stack, package or layer entry two or more Epics reach by the rule of reach, walked per requirement (`matrixtraverse.requirement_reach`), each with the Epics that need it and the requirements through which each does, whether its architecture is approved, its stack, whether that stack is deployed in advance (`epicDriver: none`), and its decision: the judgment (`drives` with a basis to the item) or the owner's decision for its stack (`drives` with no basis to the stack). |
+| Judging batches | `shared-items --batches <folder> [--batch-size <n>]` | `matrixshared.write_batches`: the unapproved shared items no record decides and no stack deployed in advance holds, grouped by identical sets of Epics, packed into batches of about `n` items (25 by default) without splitting a group, each item with its id, kind, name, purpose, stack and Epics with their requirement ids, each batch with the text of every requirement it names once (read from the PRDs under the vault of `--prd-dir`), and `index.json` with the counts. It reads the matrix only. |
+
+`record-judgments --file <path>` (role `script` or `operator`) records a judgment file
+(`shared-item-judgments.schema.json`) in one locked update: each judgment becomes the one
+architecture-side `drives` with a basis from its Epic to its item, replacing another Epic's
+earlier judgment for the item; the whole file is refused when an item is not shared, its Epic
+does not need it, or the owner's decision for its stack decides it. `Matrix.problems` refuses
+two `drives` with a basis to one item, a `drives` with a basis and no reason, and a `drives`
+with no basis that does not end at a stack. A change to the item leaves its `drives` as it is,
+since a relationship that ends at an entry is neither cleared nor removed when the entry changes.
 
 Three further reads serve single steps. `uses --ids <entry ids>` returns the shared
 capabilities the work that builds those entries must use (entries → `realizes` → features →
@@ -733,23 +744,23 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
 18. **TRD and Spec files.** Outside the matrix; their paths stay on the beads. The technical
     requirements a TRD states are constraints.
 19. **Epic-to-Epic order.** The edge is a beads `tracks` edge, and the matrix records no
-    relationship between Epics. `epicorder.py` derives the order from the features the Epics
-    share. The Epics that need a feature are the Epics with a requirement `servedBy` it. A
-    feature's architecture is approved when it is `realizedBy` at least one architecture-side
-    entry and every architecture-side entry it is `realizedBy` carries the `approved` mark; a
-    feature realized by nothing is not approved. A feature two or more Epics need whose
-    architecture is not approved makes edges; an approved feature, or one only one Epic needs,
-    makes none. The feature's driver is the Epic with the most of its requirements `servedBy` the
-    feature, a tie to the lower bead id. The owner's decisions are read from the matrix first: a
-    `drives` relationship (architecture side) from an Epic to a stack makes that Epic the driver
-    of every feature whose realizers are all in that stack, and the stack attribute
-    `epicDriver: none` says no feature whose realizers are all in that stack makes an edge,
-    because the stack is deployed in advance. The driver precedes every other Epic that needs
-    the feature. While the edges hold a loop, the edge inside a loop whose driver has the fewest
-    requirements served by the feature that made it is dropped (a tie to the lower bead id) and
-    reported with both Epics and the feature. It reads the Epics and the chain from the matrix
-    only, and its `--apply` removes every Epic-to-Epic dependency edge in beads and writes the
-    transitively reduced computed edges as `tracks` edges.
+    relationship between Epics. An Epic has requirements, served by features, realized by
+    architecture entries that depend on other entries; an item is shared when two or more
+    Epics need it, whatever repository or name it has. Edges exist so that an Epic waits for
+    the Epic that builds and owns something it uses, and so that two Epics never work on the
+    same unapproved shared item at the same time. Who goes first on a shared item is a
+    judgment from the Epics' requirements, recorded as an architecture-side `drives` from that
+    Epic to the item with `basis` `owns` or `shared` and a `reason`; the owner's records stay
+    in force (a `drives` with no basis to a stack: that Epic owns every shared item realized or
+    homed in the stack; `epicDriver: none`: the stack's items make no edge). `epicorder.py`
+    never infers who goes first from counts or names: for each unapproved shared item with a
+    decision, every other Epic that needs it waits for the Epic that goes first; an item with
+    no decision makes no edge and is listed as unjudged. While the edges hold a loop it drops
+    first an edge only `shared` items made, then one an `owns` item made, the edge made by the
+    fewest items first, a tie to the lower bead id, and reports each with both Epics and the
+    items. It reads everything from the matrix, and its `--apply` removes every Epic-to-Epic
+    dependency edge in beads and writes the transitively reduced computed edges as `tracks`
+    edges.
 20. **Events.** Entries. Q9 and requirement R17 need an event a stack publishes, and the
     EventBridge rule that matches it and the targets the rule routes it to, returned as
     things the stack depends on. A publisher and a consumer meet only at the event: the

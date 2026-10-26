@@ -11,7 +11,8 @@ came from.
   of the Epic that have nothing recorded at the other end; :func:`epic_touches`: what of that
   another Epic could also reach.
 - :func:`rule_reach`: an Epic to what its elaboration needs by the rule of reach, each entry with
-  the links that put it there; :func:`approval_scope`: the architecture-side part of that, which
+  the links that put it there; :func:`requirement_reach`: the same walk from one requirement;
+  :func:`approval_scope`: the architecture-side part of that, which
   the architect reviews and the approved mark covers once it is approved; :func:`reach_rows`: each
   entry of that scope with whether it is approved, how it is reached and the Epics that share it.
 - :func:`constraints_for`: some entries to the constraints that bind them.

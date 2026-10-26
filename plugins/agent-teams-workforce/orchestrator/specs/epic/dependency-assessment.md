@@ -6,7 +6,7 @@ Failure handling: bounded transient retries and quota pauses remain. An ordinary
 dependencies once, before `keeper.py` runs, with `<plugin>/scripts/portfolio/epicorder.py`, which
 computes every Epic's edges from the matrix alone and, with `--apply`, removes every Epic-to-Epic
 dependency edge in beads and writes the computed ones as `tracks` edges. The owner scores WSJF once, before `keeper.py` runs, with the `wsjf-scoring`
-flow. This flow is an owner-run application of the same rule, the `epic-sequencing` feature rule,
+flow. This flow is an owner-run application of the same rule, the `epic-sequencing` shared-item rule,
 to one Epic; the edges it writes are removed and replaced at the next `epicorder.py --apply`. It scores nothing,
 and nothing in the keeper, the supervisor, its lanes, elaboration, build or deploy starts it.
 
@@ -41,13 +41,14 @@ spec restates none of their names, values or shapes.
 ## 1. Purpose
 
 Assess the Epic-to-Epic edges of ONE Epic and write its `tracks` edges. An edge from Epic A to
-Epic B means a feature both need (a requirement of each is `servedBy` it) has architecture that
-is not approved (a realizer without the matrix `approved` mark, or no realizer), and A is its
-driver: the Epic with the most requirements served by it, a tie to the lower bead id
-(`epic-sequencing`). One `epic-dependency-assessor` session lists the features the Epic needs
-and the other Epics that need each from the matrix, reads the `approved` mark of each feature's
-realizers, and proposes every edge to or from the Epic with a reason, a confidence and the
-feature that makes it, keeping or withdrawing (with a reason) every owned edge standing on
+Epic B means a shared item both need (a feature serving their requirements, or an architecture
+entry they reach by the rule of reach) has architecture that is not approved, and A goes first
+on it by the judgment the matrix records (a `drives` from A to the item, basis `owns` or
+`shared`) or by the owner's decision for its stack (`epic-sequencing`); an item with no record
+draws no edge. One `epic-dependency-assessor` session lists the shared items the Epic needs,
+the other Epics that need each, their approval and their decisions from the matrix
+(`atw-matrix shared-items --epic`), and proposes every edge to or from the Epic with a reason, a
+confidence and the item that makes it, keeping or withdrawing (with a reason) every owned edge standing on
 it. Code validates the proposal and applies the diff: only that Epic's owned edges change, and
 hand-made edges are never touched. With `apply: false` the diff is computed as a dry run and
 nothing is written.
@@ -87,12 +88,12 @@ After a successful run (with `apply` true):
   `KEY_ELABORATION_STATE`), every `tracks`/`blocks` edge among Epics, the `SEQUENCING_KEYS` on each
   Epic, the judging
   fingerprint (`beads-contract.py content_hash --scope judging`).
-- The matrix, through `atw-matrix`: the Epic's requirements and the features each is served by
-  (`epic <id>`), the other Epics that reach what it reaches (`related --epic`, handed with the
-  features and documents each shares, those sharing most first), and, for each feature, the
-  requirements served by it and its realizers with their `approved` marks (`node`). Only the
-  `approved` mark on every realizer of a feature removes the edges it makes: an `effective`
-  document or an entry existing does not.
+- The matrix, through `atw-matrix`: the shared items the Epic needs, each with the Epics that
+  need it, the requirements through which each does, its approval and its recorded decision
+  (`shared-items --epic <id>`), and the other Epics that reach what it reaches (`related
+  --epic`, handed with the features and documents each shares, those sharing most first). Only
+  the `approved` mark removes the edges an item makes: an `effective` document or an entry
+  existing does not.
 
 ## 4. Outputs
 
@@ -114,9 +115,9 @@ Files (under `<workDir>`):
   `edges.json.receipt` holds `{artifactPath, sha256, bytes, schemaSha256, revision}` for the
   published bytes, `edges.json.prev` the proposal it replaced when the two differ, and
   `edges.json.publish` exists only while a publish is under way.
-- `reasoning.md` (written by the agent): the shared features with each Epic's requirement
-  count, each feature's realizers and their `approved` marks, its driver, per-edge and
-  per-withdrawal reasoning, and validation findings.
+- `reasoning.md` (written by the agent): the shared items with the Epics that need each, their
+  approval and recorded decisions, the unjudged items, per-edge and per-withdrawal reasoning,
+  and validation findings.
 - `validation.json` (written by the agent's own check of its candidate, `depscore.py validate
   ... | tee validation.json`): the `edgeset.validate` result: `{ok, level, edgeCount,
   withdrawnCount, scope, badScope, outsideScope, missingReason, missingArchCheck,
@@ -178,8 +179,8 @@ command printed.
    - In every other case step 5 runs.
 5. `agent` **Assess**: `epic-dependency-assessor`. The brief carries data only: `context.json`
    and its contract, the `atw-matrix` command, the candidate and reasoning files, the validation
-   command, and the `priorFailure` text when given. The feature rule, the
-   seven-step order and that the session runs no command that writes to beads or the matrix are
+   command, and the `priorFailure` text when given. The shared-item rule, the
+   six-step order and that the session runs no command that writes to beads or the matrix are
    in the agent's definition and its `epic-sequencing` skill. It ends with the artifact
    contract data: the candidate path, the contract file path, the progress file path, the input
    revision and the `artifactcontract.py` commands (`validate`, `checkpoint`, `complete`,
