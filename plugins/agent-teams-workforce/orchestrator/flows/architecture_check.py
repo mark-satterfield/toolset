@@ -5,9 +5,10 @@ review log (``log-architecture-review``), holds the result's reach verdicts to t
 the corrected matrix gives it (``matrixtraverse.approval_scope``, the set promotion approves), and
 reads from the matrix the documents the Epic reaches
 that are not effective. It then plans what follows by rule: a mechanical defect goes back to the
-architect, a matter the architect could not settle goes to the lead, and otherwise the promotion
-step follows. Nothing reviews the architect's work: the architect reviews and approves its own
-architecture against the criteria, and the review log is the record of that review. The step
+architect, a matter the architect could not settle goes to the lead, and otherwise the one TRD
+write from the architect's decisions (``trd_steps``) and then the promotion step follow. Nothing
+reviews the architect's work: the architect reviews and approves its own architecture against the
+criteria, and the review log is the record of that review. The step
 judges nothing and records nothing in the matrix: every branch is a rule over the matrix, the
 criteria file, the architect's result and the review log.
 """
@@ -71,6 +72,7 @@ from orchestrator.flows.architecture_files import (
 )
 from orchestrator.flows.architecture_index import index_step
 from orchestrator.flows.spec_review import CRITERIA_FILE
+from orchestrator.flows.trd_steps import write_plan
 
 if TYPE_CHECKING:
     from architecture_work_contract import ArchitectureResult
@@ -267,10 +269,10 @@ def _open_review(bead: str, added_or_changed: list[str]) -> tuple[ReviewScope, E
 
 
 def _promotion(run: StepRun) -> Completion:
-    """Plan the promotion step after this check.
+    """Plan the one TRD write from the architect's decisions, then the promotion, after this check.
 
     Returns:
-        The completion that plans the promotion, handed this check step's review scope.
+        The completion that plans the TRD write and the promotion, each handed this check step.
 
     """
     promote: StepPlan = {
@@ -279,7 +281,7 @@ def _promotion(run: StepRun) -> Completion:
         "script": PROMOTE,
         "inputs": [run.step["id"]],
     }
-    return Completion(add=(StepGroup((NewStep(promote),)),))
+    return Completion(add=(StepGroup((NewStep(write_plan([run.step["id"]])), NewStep(promote))),))
 
 
 def _correction(run: StepRun, check: CheckResult, path: Path) -> Completion:

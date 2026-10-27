@@ -123,7 +123,7 @@
       }
     },
     "TrdDocument": {
-      "description": "The front matter of the Epic's TRD (<work>/trd.md), written by trd-author. Each requirement is a heading whose text is exactly its id (for example `#### TR-01`), and under it the members of architecture-result.schema.json#/$defs/TrdRequirement. A matrix constraint that records the requirement points at that heading by the Epic and the id (matrix-kinds.json, `$defs/trdRequirement`); the step `trd.confirm` (orchestrator/flows/trd_authoring.py) fails when a citation does not resolve or a pointer names an id the TRD has no heading for.",
+      "description": "The front matter of the Epic's TRD (<work>/trd.md), seeded by the script step `trd.seed` (orchestrator/flows/trd_steps.py) from the constraints that bind the Epic and completed by trd-author. Each requirement is a heading whose text is exactly its id: a seeded requirement's id is its constraint's id, and one trd-author adds has an id such as `TR-1`; under a requirement trd-author writes are the members of architecture-result.schema.json#/$defs/TrdRequirement. A matrix constraint that records the requirement points at that heading by the Epic and the id (matrix-kinds.json, `$defs/trdRequirement`); the step `trd.confirm` (orchestrator/flows/trd_authoring.py) fails when a citation does not resolve or a pointer names an id the TRD has no heading for.",
       "type": "object",
       "required": [
         "decisionIds"

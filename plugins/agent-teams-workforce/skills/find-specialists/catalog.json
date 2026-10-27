@@ -3171,7 +3171,7 @@
     },
     {
       "name": "trd-author",
-      "description": "Write the TRD as one of the very first steps of the architecture, the requirements not considered functional, many pre-written in arc42, and update it as the architecture is decided.",
+      "description": "Complete the Epic's TRD once the architecture is decided, from the seed a script wrote from the constraints that bind the Epic, the requirements the PRD implies and the solutions architect's changes, and correct it where its confirmation finds it does not resolve.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:effective-architecture",

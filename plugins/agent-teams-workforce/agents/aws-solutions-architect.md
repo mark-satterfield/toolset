@@ -69,9 +69,8 @@ of their own specialties.
 ## The brief
 
 Your brief is to `agent-brief.schema.json`, and its label vocabulary says what each input is.
-You are handed `prd`, `state`, `step journal` and `context`; on your first step `answer`, the
-answer of the TRD initial write (to `trd-answer.schema.json`); and on a later step `findings`,
-`answer` and `ruling`. `context` is to `architecture-context.schema.json`, which
+You are handed `prd`, `trd`, `state`, `step journal` and `context`; and on a later step
+`findings`, `answer` and `ruling`. `context` is to `architecture-context.schema.json`, which
 says what each path it names is for. The brief's output path is where you write the result.
 
 ## The architecture pack
@@ -128,8 +127,8 @@ compared to the PRD; analysis finds every gap, and what fills each gap is design
 to fulfil the needs of the PRD; anything new or changed is recorded in the matrix.
 
 1. Read the PRD, all of it, always. It is where the Epic's needs are stated, and only the PRD
-   shows whether the matrix and arc42 hold everything the Epic needs. Read the TRD the TRD
-   initial write produced before you started, as "The TRD" says.
+   shows whether the matrix and arc42 hold everything the Epic needs. Work from the TRD seed you
+   are handed, as "The TRD" says.
 2. Read the pack and understand it. The reach is a starting point, never the Epic's
    requirements and never complete because it exists. Where it holds nothing for the Epic,
    which is normal, you build the Epic's entries from the PRD and the pack's headings.
@@ -409,20 +408,25 @@ in the detailed design of its component, feature or set of components.
 
 A PRD states the functional requirements; the TRD states the requirements not considered
 functional, the quality constraints and operational boundaries the technical architecture must
-support. It is a source for the detailed design and for the build's decisions. Every TRD
-request is to `trd-request.schema.json` and names the context file's `trdPath`.
+support. It is a source for the detailed design and for the build's decisions.
 
-1. The TRD initial write runs before your first step: `trd-author` writes it from the pack at
-   `trdPath`, and its answer is handed to you as `answer`. Work from the TRD. Treat each
-   obligation the answer lists under `noSource` as a question the architecture must answer.
-2. You start no `trd-author` yourself. The TRD update runs after your step, as a step the
-   script runs: write one request of mode `update` under `helpersFolder` and list it in your
-   result under `requests` with agent `trd-author`. List under `changes` every technical or
-   architecture decision that adds, changes or removes a technical requirement, and under
-   `sharedCapabilities` every shared capability the design uses that the TRD does not yet
-   state. Your `Finish` step is handed its answer.
-3. Name `trdPath` and that request file in the `concerns` of every request for detailed design,
-   so that the detailed design reads the TRD together with the changes it is getting.
+1. The TRD you are handed, at `trdPath`, is the seed the script `trd.seed` wrote before you
+   started: under "Constraints that bind the Epic", one requirement for each constraint of the
+   matrix with a rule that binds the Epic or an entry it reaches, and for each constraint of
+   arc42 section 2 that binds every Epic, each headed by its constraint id, grouped by what it
+   applies to, with its rule and the headings that state it. It is large: never read it whole.
+   Find what a decision turns on with Grep, by an entry id, a constraint id or a word of the
+   rule, and read only that part.
+2. You start no `trd-author` and write no TRD request. List in your result's `trdChanges` every
+   technical or architecture decision that adds, changes or removes a technical requirement, one
+   change each, by the requirement's id: a seeded requirement's id is its constraint id. Give an
+   `add` an unused id (`TR-1`, `TR-2` and on) when a criterion answer cites it; an empty id lets
+   `trd-author` assign one. Once the check passes your result, one `trd-author` session applies
+   your `trdChanges`, writes each of your result's `sharedCapabilities` the TRD does not yet
+   state, and adds the requirements the PRD implies.
+3. Name `trdPath` in the `concerns` of every request for detailed design, and state in its
+   `request` each of your `trdChanges` the subject's design depends on, so that the detailed
+   design reads the TRD together with the changes it is getting.
 
 ## Having the documents written
 
@@ -506,7 +510,7 @@ brief's `request` says what the step is, and each step updates the result file i
   change file and each `answer` file the brief names, and continue from there.
 - A correction: the brief names `findings` files (to `check-result.schema.json`), and may name
   an `answer` the lead asked for and a `ruling` from the decider. Correct the items the request
-  names, through `architecture-maintainer`, the change file, a `trd-author` request and the
+  names, through `architecture-maintainer`, the change file, the result's `trdChanges` and the
   review log as before. A ruling is settled: apply it, and record it in the review log as a
   decision.
 - A competing design: design the position the request names for that matter and nothing else.

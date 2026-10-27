@@ -84,7 +84,7 @@ Layout:
 |---|---|
 | `<orch>/run.py` | argument parsing, the flow registry, handback writing, signal handling, the top-level handler of section 6.7 |
 | `<orch>/core/` | the step journal (`step_journal.py`) and its runner (`journal_run.py`, `journal_steps.py`, `journal_changes.py`), the registry of step code (`journal_registry.py`), the session runner and launcher (`agents.py`, `agent_context.py`, `agent_process.py`, `frontmatter.py`), the tools layer for `bd`, git, `gh`, `polyrepo.py` and `cdk` (`tools.py`, `tool_locks.py`), the section 2 guard (`constraints.py`), the event writer (`events.py`), the handback contract and classification (`handback_contract.py`, `handback.py`), the run record (`manifest.py`) and the driver modules the plugin loads (`driver_contracts.py`) |
-| `<orch>/flows/` | the steps of the Epic's journal: `prd_to_spec.py` (the dispatch and the open-run step), `architecture.py`, `architecture_check.py`, `architecture_ruling.py`, `architecture_promotion.py`, `architecture_earlier.py`, `architecture_files.py`, `trd_authoring.py`, `repo_scoping.py`, `repo_placement.py`, `spec_authoring.py`, `spec_authoring_ui.py`, `spec_review.py`, `task_decomposition.py`, `task_edges.py`, `elaboration_steps.py`, `elaboration_files.py`, `elaboration_support.py`, `elaboration_result.py` |
+| `<orch>/flows/` | the steps of the Epic's journal: `prd_to_spec.py` (the dispatch and the open-run step), `architecture.py`, `architecture_check.py`, `architecture_ruling.py`, `architecture_promotion.py`, `architecture_earlier.py`, `architecture_files.py`, `trd_steps.py`, `trd_authoring.py`, `repo_scoping.py`, `repo_placement.py`, `spec_authoring.py`, `spec_authoring_ui.py`, `spec_review.py`, `task_decomposition.py`, `task_edges.py`, `elaboration_steps.py`, `elaboration_files.py`, `elaboration_support.py`, `elaboration_result.py` |
 | `<orch>/port_journal.py` | builds the step journal of a bead that has saved run data and no journal; the driver's `journalport.py` calls it |
 | `<orch>/specs/`, `<orch>/measurements/`, `<orch>/DESIGN.md` | documents |
 
@@ -137,7 +137,7 @@ its code:
 - **Script step.** The step's `script` text is the key of a handler (`@script_step("<key>")`). The
   keys are defined in `flows/architecture_files.py`, `flows/repo_scoping.py` and
   `flows/elaboration_files.py`: `prd_to_spec.open_run`, `architecture.earlier_work`,
-  `atw-matrix check; atw-matrix review-scope`, `atw-matrix sync-documents; atw-matrix commit`, `trd.confirm`,
+  `atw-matrix check; atw-matrix review-scope`, `atw-matrix sync-documents; atw-matrix commit`, `trd.seed`, `trd.confirm`,
   `atw-matrix epic --closure`, `spec_authoring.context`, `spec_authoring.not_applicable`,
   `cdsbundles.list_bundles`, `spec_authoring.normalize_ui`, `specui.spec_ui_append`,
   `spec_review.settle`, `spec_authoring.story_document`,
@@ -595,7 +595,7 @@ records the model in `run.json`; it passes no effort.
 |---|---|---|
 | `aws-solutions-architect` | `solutions-architect` | by the script: its first step, a correction, a competing design, its "Finish" |
 | Any agent the `find-specialists` catalog lists that has no row here (for example `persistence-architecture-specialist`, `c4-diagram-author`, `polyrepo-steward`) | its own, if any | by the architect in its own session, by the name it chose from the catalog; by the script when the architect names it in its result's `requests`, when it was left running, or when the lead asks it for an opinion |
-| `trd-author` | | by the script: the TRD initial write, the first step of the Architecture container; by the architect in its own session for each update; by the script when left running |
+| `trd-author` | | by the script: the TRD write from the architect's decisions, once the check passes; the correction `trd.confirm` plans; when left running |
 | `architecture-maintainer` | | by the architect in its own session; by the script when left running |
 | `architecture-team-lead` | `architecture-lead` | by the script, only when the architect's result is unsettled |
 | `architecture-decider` | `decider` | by the script, only for a step the lead plans |
@@ -969,9 +969,9 @@ specification is `<plugin>/blueprint/design/matrix.md`.
 
 ### 11.1 Architecture
 
-The Architecture container holds, in order: the architect's step; the index step; the check
-step; then either a correction by the architect, an index and a new check, or the lead, an index
-and a new check, or the promotion step.
+The Architecture container holds, in order: the pack; the TRD seed; the architect's step; the
+index step; the check step; then either a correction by the architect, an index and a new check,
+or the lead, an index and a new check, or the TRD write and the promotion step.
 The architect reviews and approves its own architecture against the criteria; nothing else
 reviews it.
 
@@ -1050,16 +1050,19 @@ result carries only error text, section 6.1).
 
 ### 11.4 The TRD
 
-`trd-author` writes the TRD at the path the architecture context names. The TRD initial write
-is the first step of the Architecture container, from a request the script writes: the
-requirements not considered functional, many of them pre-written in arc42. Once the higher-level
-architecture is in arc42, the architect has it make the TRD architecture update with the
-technical or architecture decisions that impact the detailed design; the detailed design reads the
-TRD, and the architect has it updated in place as the design settles. Every session of it is
-handed the Epic's architecture pack (`architecture_pack`), an index: the PRD's path, the Epic's
-requirements, the file of the constraints that apply and the reference of each heading that
-describes what the Epic reaches, whose text `atw-matrix heading` prints; the initial write is
-written from the pack and what it names alone. Its answer lists every requirement each
+The TRD is at the path the architecture context names. The script step `trd.seed`
+(`flows/trd_steps.py`) writes it before the architect's step, with no session: one requirement
+for each constraint of the matrix with a rule that binds the Epic or an entry of its reach, and for
+each constraint of arc42 section 2 that binds every Epic, headed by its constraint id, with its
+rule and the headings that state it. The seed is not recorded in the matrix, because its
+requirements are the matrix's own constraints, and it starts the TRD over: it removes every
+constraint that points at a requirement of this Epic's earlier TRD. The architect works from the
+seed and states in its result's `trdChanges` the decisions that add, change or remove a
+requirement. Once the check passes, one `trd-author` session (mode `complete`), from a request
+the script writes from the result, adds the requirements the PRD implies, applies the
+`trdChanges` and writes each shared capability of the result the TRD does not yet state; the
+promotion follows it. Every session of `trd-author` is handed the Epic's architecture pack
+(`architecture_pack`), an index. Its answer lists every requirement each
 write added or changed, and the step that accepts the answer records one constraint for each as
 a pointer (`trd`: the Epic and the requirement id, a heading of the TRD), so the requirement's
 text lives in the TRD alone. The answer's check fails, for the session's correction, when the

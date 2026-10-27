@@ -35,9 +35,9 @@
       "enum": ["question", "task"]
     },
     "TrdMode": {
-      "description": "`initial`: the TRD initial write, one of the very first steps of the architecture: the requirements not considered functional (the quality constraints and operational boundaries the technical architecture must support), many of them already pre-written in arc42. `update`: apply the listed changes and nothing else; the TRD architecture update, once the higher-level architecture is in arc42, is one.",
+      "description": "`complete`: the one TRD write after the solutions architect's decisions, once the architecture check passes: the TRD at `trdPath` is the seed the script `trd.seed` wrote from the constraints that bind the Epic; add the requirements not considered functional (the quality constraints and operational boundaries the technical architecture must support) that the PRD implies and the TRD does not state, apply the listed changes, and write each listed shared capability the TRD does not yet state. `update`: apply the listed changes and nothing else; the correction the TRD confirm step asks for is one.",
       "type": "string",
-      "enum": ["initial", "update"]
+      "enum": ["complete", "update"]
     },
     "TrdChangeKind": {
       "type": "string",
@@ -293,11 +293,25 @@
         "request": {"$ref": "#/$defs/SpecialistRequest"}
       }
     },
+    "TrdChange": {
+      "description": "One change to the TRD. For `remove`, only `id` carries meaning and the other texts are empty.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["change", "id", "kind", "statement", "source", "appliesTo"],
+      "properties": {
+        "change": {"$ref": "#/$defs/TrdChangeKind"},
+        "id": {"description": "The requirement id; for `add`, an empty string lets trd-author assign the next id; for a `change` the TRD confirm step states about the front matter or a citation, an empty string.", "type": "string"},
+        "kind": {"$ref": "#/$defs/RequirementKind"},
+        "statement": {"description": "What must be true, with its checkable value.", "type": "string"},
+        "source": {"$ref": "#/$defs/SourceHeading"},
+        "appliesTo": {"description": "The matrix id of the element.", "type": "string"}
+      }
+    },
     "ArchitectureResult": {
       "description": "The solutions architect's result for one Epic, at the context file's `resultPath`. The architect writes it as the work goes, so that a session that stops loses nothing: the members settled so far, written as soon as the state file is written and rewritten in place each time a part settles (a fact and its home, a settlement, a feature, a criterion answer). The file satisfies this schema when the architect finishes; until then it is the partial result a `Finish` step, or a session started again, continues from. The script reads `conclusion`, starts the agent each entry of `requests` names with its request, checks every criterion answer and the review log at the context file's `reviewLogPath`; what is unapproved comes from the matrix, not from this file. The architect reviews and approves its own architecture against the criteria; the promotion step then sets it effective.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["bead", "conclusion", "features", "noFeature", "addedOrChangedElements", "unchangedWorkElements", "sharedCapabilities", "facts", "settledDisagreements", "criteria", "unsettled", "costEvidence", "specialistRecommendations", "requests", "reach", "excluded"],
+      "required": ["bead", "conclusion", "features", "noFeature", "addedOrChangedElements", "unchangedWorkElements", "sharedCapabilities", "facts", "settledDisagreements", "criteria", "unsettled", "costEvidence", "specialistRecommendations", "trdChanges", "requests", "reach", "excluded"],
       "properties": {
         "bead": {"description": "The Epic id.", "type": "string", "minLength": 1},
         "conclusion": {"$ref": "#/$defs/Conclusion"},
@@ -312,6 +326,7 @@
         "unsettled": {"description": "Empty unless `conclusion` is `unsettled`.", "type": "array", "items": {"$ref": "#/$defs/UnsettledMatter"}},
         "costEvidence": {"type": "array", "items": {"$ref": "#/$defs/CostEvidence"}},
         "specialistRecommendations": {"description": "Each recommendation to the owner to create or update a specialist agent; empty when the specialists covered every subject.", "type": "array", "items": {"$ref": "#/$defs/SpecialistRecommendation"}},
+        "trdChanges": {"description": "Every technical or architecture decision of this design that adds, changes or removes a requirement of the TRD, as one change each; empty when the design changes none. The TRD the architect works from is the seed the script wrote from the constraints that bind the Epic, each requirement headed by its constraint id. Consumed by: the TRD write that the check step of orchestrator/flows/architecture_check.py plans before the promotion, whose request (`trd-request.schema.json`, mode `complete`) carries these changes and this result's `sharedCapabilities`.", "type": "array", "items": {"$ref": "#/$defs/TrdChange"}},
         "requests": {"description": "The work the architect has agents do outside its own session, one entry per request; empty when it needs none. Consumed by: the step of orchestrator/flows/architecture.py that accepts the result, which plans below that step one step for each request whose answer file is not yet a valid answer, started as the agent the entry names and handed its request, then the architect's `Finish` step, handed every answer. The script decides nothing about which agent runs. A question or a quick piece of work the architect asks in its own session is not listed here.", "type": "array", "items": {"$ref": "#/$defs/AgentRequest"}},
         "reach": {"description": "One verdict per entry of the Epic's reach: every row of the architecture pack's `reach`, and every entry the architect's corrections brought into the reach. Consumed by: the check step of orchestrator/flows/architecture_check.py, which recomputes the reach (`matrixtraverse.approval_scope`) on the matrix after the architect's change file is applied and fails each entry in it, other than the Epic and its requirements, with no `kept` or `corrected` verdict, and each `pruned` entry still in it; and the promotion step, which compares each `kept` entry with its `contentHash` before it approves.", "type": "array", "items": {"$ref": "#/$defs/ReachVerdict"}},
         "excluded": {"description": "Each reached service, component, piece of infrastructure or layer with no home stack that no stack builds, with the reason; empty when every one is placed. Consumed by: the check step of orchestrator/flows/architecture_check.py, which fails each such entry with no stack that is not listed here.", "type": "array", "items": {"$ref": "#/$defs/Exclusion"}}
@@ -379,22 +394,8 @@
         "diagrams": {"description": "For a diagram task, the diagrams drawn; empty for any other task; absent for a question.", "type": "array", "items": {"$ref": "#/$defs/Diagram"}}
       }
     },
-    "TrdChange": {
-      "description": "One change to the TRD. For `remove`, only `id` carries meaning and the other texts are empty.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["change", "id", "kind", "statement", "source", "appliesTo"],
-      "properties": {
-        "change": {"$ref": "#/$defs/TrdChangeKind"},
-        "id": {"description": "The requirement id; for `add`, an empty string lets trd-author assign the next id; for a `change` the TRD confirm step states about the front matter or a citation, an empty string.", "type": "string"},
-        "kind": {"$ref": "#/$defs/RequirementKind"},
-        "statement": {"description": "What must be true, with its checkable value.", "type": "string"},
-        "source": {"$ref": "#/$defs/SourceHeading"},
-        "appliesTo": {"description": "The matrix id of the element.", "type": "string"}
-      }
-    },
     "TrdRequest": {
-      "description": "What trd-author is asked. The script writes the request of the initial write, from the architecture context, before the solutions architect starts; the solutions architect writes every request of mode `update`. Its sources are not listed here: every session of trd-author is handed the Epic's architecture pack (`pack.json`, labelled `architecture pack`), an index that names the PRD, the Epic's requirements, the file of the constraints that apply with their statements and the headings they are stated in, and the heading references (`<path>#<heading>`) that describe what the Epic reaches, whose text `atw-matrix heading` prints. The initial write is written from the pack and what it names alone.",
+      "description": "What trd-author is asked. The script writes every request: the request of mode `complete` from the solutions architect's result (its `trdChanges` and `sharedCapabilities`) once the architecture check passes, and the request of mode `update` the TRD confirm step writes for what it found does not resolve. Its sources are not listed here: every session of trd-author is handed the Epic's architecture pack (`pack.json`, labelled `architecture pack`), an index that names the PRD, the Epic's requirements, the file of the constraints that apply with their statements and the headings they are stated in, and the heading references (`<path>#<heading>`) that describe what the Epic reaches, whose text `atw-matrix heading` prints.",
       "type": "object",
       "additionalProperties": false,
       "required": ["mode", "epic", "prdPath", "trdPath", "sharedCapabilities", "changes", "answerPath"],
@@ -403,8 +404,8 @@
         "epic": {"description": "The Epic's beads id, which `atw-matrix epic` takes.", "type": "string", "minLength": 1},
         "prdPath": {"description": "The PRD file, which the architecture pack names; trd-author reads it, each requirement's `name` its PRD heading.", "type": "string", "minLength": 1},
         "trdPath": {"description": "The absolute path of the TRD file.", "type": "string", "minLength": 1},
-        "sharedCapabilities": {"description": "For `update`, each shared capability the design uses that the TRD does not yet state, to be written as one requirement of kind `reuse`; empty for `initial`, which comes before any design.", "type": "array", "items": {"$ref": "#/$defs/SharedUse"}},
-        "changes": {"description": "For `update`, the changes to apply; empty for `initial`.", "type": "array", "items": {"$ref": "#/$defs/TrdChange"}},
+        "sharedCapabilities": {"description": "For `complete`, every shared capability the design uses; trd-author writes each one the TRD does not yet state as one requirement of kind `reuse`. Empty for `update`.", "type": "array", "items": {"$ref": "#/$defs/SharedUse"}},
+        "changes": {"description": "The changes to apply: for `complete`, the solutions architect's `trdChanges`; for `update`, what the TRD confirm step found does not resolve.", "type": "array", "items": {"$ref": "#/$defs/TrdChange"}},
         "answerPath": {"description": "The absolute path the answer is written to.", "type": "string", "minLength": 1}
       }
     },
@@ -439,9 +440,9 @@
       "required": ["mode", "requirementIds", "requirements", "removed", "noSource", "summary"],
       "properties": {
         "mode": {"$ref": "#/$defs/TrdMode"},
-        "requirementIds": {"description": "For `initial`, every requirement id in the TRD; for `update`, the ids added, changed and removed.", "type": "array", "items": {"type": "string"}},
-        "removed": {"description": "The ids of the requirements removed from the TRD: for `update`, those the request removes; for `initial`, those a TRD already at `trdPath` held that the write removed, empty when there was none.", "type": "array", "items": {"type": "string", "minLength": 1}},
-        "requirements": {"description": "Every requirement this answer's TRD write added or changed, exactly as the TRD now states it: for `initial`, every requirement the TRD states, one entry for each id in `requirementIds`; for `update`, each requirement added or changed. A removed requirement is named in `requirementIds` only. The script records the matrix's constraints, each a pointer to its requirement, from these entries and from no other file.", "type": "array", "items": {"$ref": "#/$defs/TrdRequirement"}},
+        "requirementIds": {"description": "The ids this write added, changed and removed.", "type": "array", "items": {"type": "string"}},
+        "removed": {"description": "The ids of the requirements this write removed from the TRD.", "type": "array", "items": {"type": "string", "minLength": 1}},
+        "requirements": {"description": "Every requirement this answer's TRD write added or changed, exactly as the TRD now states it. A removed requirement is named in `requirementIds` only. The script records the matrix's constraints, each a pointer to its requirement, from these entries and from no other file.", "type": "array", "items": {"$ref": "#/$defs/TrdRequirement"}},
         "noSource": {"type": "array", "items": {"$ref": "#/$defs/NoSource"}},
         "summary": {"type": "string", "minLength": 1}
       }

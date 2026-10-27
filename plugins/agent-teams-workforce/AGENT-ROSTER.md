@@ -45,7 +45,7 @@ Gate and conflict rulings, and context integrity. `gate-enforce` starts `phase-g
 
 ## Architecture
 
-`aws-solutions-architect` has single responsibility for the architecture a PRD needs. It chooses the design specialists, review specialists and diagram authors a gap needs through the `find-specialists` catalog and asks each one question or one bounded task, starts `trd-author` for the TRD and `architecture-maintainer` to write its decisions into arc42, reviews and approves its own architecture and records the proof in the Epic's review log. `architecture-team-lead` routes what the architect could not settle, and `architecture-decider` rules on what the team could not settle. The remaining agents here are available to a caller that chooses them.
+`aws-solutions-architect` has single responsibility for the architecture a PRD needs. It chooses the design specialists, review specialists and diagram authors a gap needs through the `find-specialists` catalog and asks each one question or one bounded task, states the TRD changes its decisions make, starts `architecture-maintainer` to write its decisions into arc42, reviews and approves its own architecture and records the proof in the Epic's review log. `architecture-team-lead` routes what the architect could not settle, and `architecture-decider` rules on what the team could not settle. The remaining agents here are available to a caller that chooses them.
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
@@ -171,11 +171,11 @@ Each reviews one aspect of an Epic's unapproved architecture and TRD when the so
 
 ## TRD
 
-The solutions architect starts `trd-author`. The other two are available to a caller that chooses them.
+The script starts `trd-author` once the architecture check passes, from the architect's TRD changes, and for the correction the TRD confirm step asks for. The other two are available to a caller that chooses them.
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| trd-author | execute | Writes the TRD as one of the very first steps of the architecture, the requirements not considered functional, many pre-written in arc42, and updates it as the architecture is decided. |
+| trd-author | execute | Completes the Epic's TRD once the architecture is decided, from the seed a script wrote from the constraints that bind the Epic, the requirements the PRD implies and the solutions architect's changes, and corrects it where its confirmation finds it does not resolve. |
 | prd-trd-traceability-verifier | test | Builds and checks the TRD's SOURCE traceability matrix: every TRD requirement anchored to a PRD requirement OR to an architecture view, every PRD requirement needing technical elaboration answered, and genuine scope drift flagged. The relation is not 1:1 and an architecture-sourced requirement is not an orphan. |
 | trd-decider | approve | Rules on a dispute over a TRD from the evidence the sides wrote: a TRD maker-checker deadlock, competing TRD approaches, or checkers that contradict each other on one TRD section; generates no TRD content or analysis. For a caller that runs a TRD review loop; in elaboration TRD disputes go to architecture-decider through the architecture team. |
 

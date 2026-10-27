@@ -3,8 +3,8 @@
 An Epic whose architecture work was under way when the pipeline took its present form has files
 that earlier form wrote: a survey, round plans, specialists' results, draft documents.
 :func:`carry` records each as an artifact of a done step under the Architecture container, so the
-journal holds what was done. The open-run step, which runs first, plans the TRD initial write, the
-architect's step and the check after them. The architect is not handed those files: they are
+journal holds what was done. The open-run step, which runs first, plans the pack, the TRD seed, the
+architect's step, and the index and the check after them. The architect is not handed those files: they are
 unapproved copies and summaries of the architecture from a pipeline that no longer runs, and the
 matrix and the arc42 documents are the architect's sources.
 

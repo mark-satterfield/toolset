@@ -339,8 +339,8 @@ def open_run(run: StepRun) -> Completion:
 
     Returns:
         The PRD, the id of the Epic's matrix entry and the context file as artifacts, with the
-        TRD initial write, the architect's step and the check after it planned under the
-        Architecture container (``architecture.first_steps``).
+        pack, the TRD seed, the architect's step, and the index and the check after it planned
+        under the Architecture container (``architecture.first_steps``).
 
     """
     enter_phase(run.context, run.agents.emit, ARCHITECTURE_PHASE, OPEN_RUN)

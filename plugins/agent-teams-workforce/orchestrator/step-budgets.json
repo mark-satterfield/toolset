@@ -3,6 +3,7 @@
   "scripts": {
     "prd_to_spec.open_run": 30,
     "architecture.pack": 30,
+    "trd.seed": 30,
     "architecture.index": 600,
     "atw-matrix check; atw-matrix review-scope": 30,
     "atw-matrix sync-documents; atw-matrix commit": 60,

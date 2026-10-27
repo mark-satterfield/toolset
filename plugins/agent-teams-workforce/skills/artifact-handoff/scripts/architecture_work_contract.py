@@ -20,7 +20,7 @@ type Conclusion = Literal["no-change-needed", "changes-designed", "unsettled"]
 type CriterionStatus = Literal["satisfied", "not-applicable"]
 type UnsettledKind = Literal["technical-choice", "business-conflict"]
 type RequestKind = Literal["question", "task"]
-type TrdMode = Literal["initial", "update"]
+type TrdMode = Literal["complete", "update"]
 type TrdChangeKind = Literal["add", "change", "remove"]
 type RequirementKind = Literal["obligation", "reuse"]
 type Routing = Literal["reject", "correct", "opinion", "competing-design", "decider"]
@@ -44,7 +44,7 @@ UNSETTLED_TECHNICAL_CHOICE: Final[Literal["technical-choice"]] = "technical-choi
 UNSETTLED_BUSINESS_CONFLICT: Final[Literal["business-conflict"]] = "business-conflict"
 REQUEST_QUESTION: Final[Literal["question"]] = "question"
 REQUEST_TASK: Final[Literal["task"]] = "task"
-TRD_MODE_INITIAL: Final[Literal["initial"]] = "initial"
+TRD_MODE_COMPLETE: Final[Literal["complete"]] = "complete"
 TRD_MODE_UPDATE: Final[Literal["update"]] = "update"
 TRD_CHANGE_ADD: Final[Literal["add"]] = "add"
 TRD_CHANGE_CHANGE: Final[Literal["change"]] = "change"
@@ -91,7 +91,7 @@ REQUEST_KINDS: Final[tuple[RequestKind, ...]] = (
     REQUEST_TASK,
 )
 TRD_MODES: Final[tuple[TrdMode, ...]] = (
-    TRD_MODE_INITIAL,
+    TRD_MODE_COMPLETE,
     TRD_MODE_UPDATE,
 )
 TRD_CHANGE_KINDS: Final[tuple[TrdChangeKind, ...]] = (
@@ -303,6 +303,17 @@ class AgentRequest(TypedDict):
     request: SpecialistRequest
 
 
+class TrdChange(TypedDict):
+    """Typed form of #/$defs/TrdChange in architecture-result.schema.json."""
+
+    change: TrdChangeKind
+    id: str
+    kind: RequirementKind
+    statement: str
+    source: SourceHeading
+    appliesTo: str
+
+
 class ArchitectureResult(TypedDict):
     """Typed form of #/$defs/ArchitectureResult in architecture-result.schema.json."""
 
@@ -319,6 +330,7 @@ class ArchitectureResult(TypedDict):
     unsettled: list[UnsettledMatter]
     costEvidence: list[CostEvidence]
     specialistRecommendations: list[SpecialistRecommendation]
+    trdChanges: list[TrdChange]
     requests: list[AgentRequest]
     reach: list[ReachVerdict]
     excluded: list[Exclusion]
@@ -367,17 +379,6 @@ class SpecialistAnswer(TypedDict):
     needs: list[NeededSpecialty]
     decisions: NotRequired[list[DesignFact]]
     diagrams: NotRequired[list[Diagram]]
-
-
-class TrdChange(TypedDict):
-    """Typed form of #/$defs/TrdChange in architecture-result.schema.json."""
-
-    change: TrdChangeKind
-    id: str
-    kind: RequirementKind
-    statement: str
-    source: SourceHeading
-    appliesTo: str
 
 
 class TrdRequest(TypedDict):

@@ -61,7 +61,7 @@ it starts a new session. A session ended by a timeout is continued by the next d
 
 | # | Description | Performed by | Plans |
 |---|---|---|---|
-| 1 | Open the run | script `prd_to_spec.open_run` | the TRD initial write, the architect's step and the check under Architecture |
+| 1 | Open the run | script `prd_to_spec.open_run` | the pack, the TRD seed, the architect's step, the index and the check under Architecture |
 | 2 | Architecture | container | its steps are planned by step 1 and by the steps under it (`architecture.md`) |
 | 3 | TRD | script `trd.confirm` | nothing (`trd-authoring.md`) |
 | 4 | Specs and Stories | container, created with the span step `atw-matrix epic --closure` | the span step reads what the Epic's architecture adds or changes (the architect's `addedOrChangedElements`) and where the architect says the Epic's work that leaves elements unchanged lands (`unchangedWorkElements`), and plans one container per repository a Story builds in (`repo-scoping.md`, `spec-authoring.md`) |

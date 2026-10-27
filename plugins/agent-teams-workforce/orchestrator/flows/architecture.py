@@ -1,15 +1,15 @@
 """The solutions architect's steps, and the sessions of the agents it left running.
 
 One agent, the solutions architect, decides what the architecture should be for a PRD. Before it
-starts, the TRD initial write runs as one of the very first steps of the architecture: ``trd-author``
-writes the requirements not considered functional, many of them already pre-written in arc42, from a
-request the script writes. The architect is handed that step's answer, works from the TRD, and has
-it updated once the higher-level architecture is in arc42, before the detailed design. The script
-starts the architect's session, hands it the files its definition names and records what it returns.
+starts, the script step ``trd.seed`` (``trd_steps``) writes the TRD from the constraints that bind
+the Epic, with no session. The architect is handed that TRD, works from it, and states in its result
+the changes its decisions make to it; the one TRD write after the decisions applies them once the
+architecture check passes. The script starts the architect's session, hands it the files its
+definition names and records what it returns.
 The architect always reads the PRD it is handed; the arc42 documents and the matrix are its
 starting point, both input and output, possibly incomplete or wrong and possibly empty for the
 Epic. It reads them through the Epic's architecture pack (``architecture_pack``), which a script
-step writes before the TRD initial write, and writes its matrix changes to one change file that
+step writes before the TRD seed, and writes its matrix changes to one change file that
 the step accepting its result applies in one locked update. It decides the stack and repository of each element
 after its detailed design and records that placement itself; the ``span`` step names and
 creates each repository that placement needs. What the architect reads, whom it asks and in what order are its
@@ -34,7 +34,6 @@ from typing import TYPE_CHECKING, Final
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "find-specialists" / "scripts"))
 from architecture_work_contract import (
-    TRD_MODE_INITIAL,
     ArchitectureWorkError,
     validate_architecture_result,
     validate_specialist_answer,
@@ -100,6 +99,7 @@ from orchestrator.flows.architecture_files import (
     LABEL_RESULT,
     LABEL_RULING,
     LABEL_STATE,
+    LABEL_TRD,
     MAINTAINER,
     MAX_FINISH_GENERATIONS,
     PARAM_REQUEST,
@@ -133,6 +133,7 @@ from orchestrator.flows.trd_authoring import (
     document,
     unresolved_requirements,
 )
+from orchestrator.flows.trd_steps import SEED_REF, WRITE_DESCRIPTION, seed_plan, write_request
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -161,16 +162,6 @@ if TYPE_CHECKING:
 ARCHITECT_DESCRIPTION: Final = "Decide what the architecture should be for this PRD"
 ARCHITECT_PURPOSE: Final = "One agent is responsible for the architecture this PRD needs, and reviews and approves it"
 ARCHITECT_REF: Final = "architect"
-TRD_INITIAL_DESCRIPTION: Final = (
-    "TRD initial write: the requirements not considered functional, many pre-written in arc42"
-)
-TRD_INITIAL_PURPOSE: Final = (
-    "The TRD is written as one of the very first steps; the architecture and the detailed design read it"
-)
-TRD_INITIAL_REF: Final = "trd-initial"
-TRD_INITIAL_FILE: Final = "trd-initial"
-"""The stem of the request and answer files of the TRD initial write, in the helpers folder."""
-ANSWER_SUFFIX: Final = ".answer.json"
 NO_SOURCE: Final = "obligations with no source"
 NO_FEATURE: Final = "requirements with no feature"
 SYNCED: Final = "documents synced"
@@ -224,28 +215,12 @@ def _architect_plan(architect: str, inputs: list[str]) -> StepPlan:
     }
 
 
-def _trd_initial_plan(inputs: list[str]) -> StepPlan:
-    """Plan the TRD initial write.
-
-    Returns:
-        The plan of ``trd-author``'s step, handed the steps ``inputs`` names.
-
-    """
-    return {
-        "ref": TRD_INITIAL_REF,
-        "description": TRD_INITIAL_DESCRIPTION,
-        "purpose": TRD_INITIAL_PURPOSE,
-        "agent": TRD_AUTHOR,
-        "inputs": inputs,
-    }
-
-
 def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
-    """Plan the pack, the TRD write, the architect's step, the index and the check under the Architecture container.
+    """Plan the pack, the TRD seed, the architect's step, the index and the check under the Architecture container.
 
-    The pack comes first (``architecture_pack``): the TRD author and the architect read the Epic's
-    reach, the headings that describe it and its constraints from that index. The TRD initial
-    write comes next, so the architect starts from the TRD and is handed its answer. The open-run
+    The pack comes first (``architecture_pack``): the seed and the architect read the Epic's reach
+    from it, and the architect the headings that describe it and its constraints. The TRD seed
+    (``trd_steps``) comes next, so the architect starts from the TRD and is handed it. The open-run
     step plans the group, and records each step it plans on itself, so a start at or before the
     open-run step removes the group and the open-run step plans it again as the lane plans it
     then. The same plans are registered as what this lane plans under the container
@@ -258,15 +233,15 @@ def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
         architect: The agent that plays the solutions architect.
 
     Returns:
-        The pack, the TRD initial write, the architect's step, and the index and the check that
+        The pack, the TRD seed, the architect's step, and the index and the check that
         follow it, as the container's last child steps.
 
     """
     return StepGroup(
         (
             NewStep(pack_plan([opened])),
-            NewStep(_trd_initial_plan([opened, PACK_REF])),
-            NewStep(_architect_plan(architect, [opened, TRD_INITIAL_REF])),
+            NewStep(seed_plan([opened, PACK_REF])),
+            NewStep(_architect_plan(architect, [opened, SEED_REF])),
             index_step([ARCHITECT_REF]),
             check_step([ARCHITECT_REF], corrections=0),
         ),
@@ -278,7 +253,7 @@ def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
 plan_under(
     ARCHITECTURE,
     pack_plan([]),
-    _trd_initial_plan([]),
+    seed_plan([]),
     _architect_plan(ARCHITECT, []),
     index_step([ARCHITECT_REF]).plan,
     check_step([ARCHITECT_REF], corrections=0).plan,
@@ -292,14 +267,15 @@ def _handed_files(run: StepRun, context: ArchitectureContext, prd: Path) -> tupl
     definition names for the Epic, so what it reads is the matrix as it is at that moment.
 
     Returns:
-        The PRD, the context file and the state path; then each mechanical check result the
-        step is handed, as findings; then each answer the step is handed (the TRD initial
-        write's answer on the first step, a specialist's answer later) and each ruling.
+        The PRD, the TRD, the context file and the state path; then each mechanical check
+        result the step is handed, as findings; then each answer the step is handed (a
+        specialist's) and each ruling.
 
     """
     findings: list[Path] = list(run.inputs.files(ARTIFACT_CHECK))
     return (
         (LABEL_PRD, prd),
+        (LABEL_TRD, Path(context["trdPath"])),
         (LABEL_CONTEXT, journal_file(run, LABEL_CONTEXT)),
         (LABEL_STATE, Path(context["statePath"])),
         *((LABEL_FINDINGS, path) for path in dict.fromkeys(findings)),
@@ -969,41 +945,15 @@ def _record_trd(bead: str, arch: Path, answer: TrdAnswer) -> Recorded:
     return update_matrix(matrix_file(), change)
 
 
-def _initial_request(run: StepRun) -> Path:
-    """Write the request of the TRD initial write from the architecture context.
-
-    Returns:
-        The request file, in the helpers folder: mode ``initial`` for the Epic, its PRD, the TRD
-        path the context names, and the answer path beside the request.
-
-    """
-    context: ArchitectureContext = read_context(run)
-    helpers: Path = Path(context["helpersFolder"])
-    asked: Path = helpers / (TRD_INITIAL_FILE + REQUEST_SUFFIX)
-    request: TrdRequest = {
-        "mode": TRD_MODE_INITIAL,
-        "epic": context["bead"],
-        "prdPath": context["prdPath"],
-        "trdPath": context["trdPath"],
-        "sharedCapabilities": [],
-        "changes": [],
-        "answerPath": str(helpers / (TRD_INITIAL_FILE + ANSWER_SUFFIX)),
-    }
-    write_json(asked, request)
-    return asked
-
-
 @agent_step(TRD_AUTHOR)
 def trd_author(run: StepRun) -> AgentLaunch:
-    """Build the session of the TRD author: the TRD initial write, or an update left running.
+    """Build the session of the TRD author: the one TRD write after the decisions, or a correction.
 
-    The TRD initial write is one of the very first steps of the architecture, before the
-    architect's: the script writes its request (:func:`_initial_request`), and the session writes
-    the TRD from the Epic's architecture pack and what it names alone, the pack being handed to
-    every session of the author.
-    An update runs from the request file its step is handed: one the architect's result requests,
-    planned after the architect's session (:func:`_requested`), or one the TRD confirm step plans.
-    A step left running is launched from the request file it holds. The answer is checked against
+    The TRD write runs once, when the architecture check passes and before the promotion: the
+    script writes its request from the architect's result (``trd_steps.write_request``), and the
+    session completes the TRD the seed wrote. A correction runs from the request file its step is
+    handed, which the TRD confirm step writes. Every session of the author is handed the Epic's
+    architecture pack. The answer is checked against
     the TRD it names: its front matter and citations, and every constraint that points at a
     requirement of this TRD names a heading of it once the answer is recorded. The accepted answer
     is recorded in the matrix: one constraint for each technical requirement the answer states,
@@ -1017,9 +967,9 @@ def trd_author(run: StepRun) -> AgentLaunch:
     asked: Path
     request: TrdRequest
     pack: Path = pack_file(run)
-    initial: bool = run.step["description"] == TRD_INITIAL_DESCRIPTION
-    if initial:
-        name, asked = LABEL_REQUEST, _initial_request(run)
+    complete: bool = run.step["description"] == WRITE_DESCRIPTION
+    if complete:
+        name, asked = LABEL_REQUEST, write_request(run)
         request = checked_file(run, asked, validate_trd_request)
     else:
         name, asked = _saved_request(run, LABEL_REQUEST)
@@ -1073,9 +1023,9 @@ def trd_author(run: StepRun) -> AgentLaunch:
         output=Path(request["answerPath"]),
         validate=check,
         outcome=(
-            "The TRD, written from the architecture pack and what it names alone, and the answer, each at the path "
-            "the request names."
-            if initial
+            "The TRD completed from the PRD and the architect's decisions as the request asks, and the answer, "
+            "each at the path the request names."
+            if complete
             else "The TRD updated as the request asks, and the answer, each at the path the request names."
         ),
         accept=accept,

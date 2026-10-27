@@ -1,38 +1,38 @@
 # The TRD
 
-Code: `orchestrator/flows/architecture.py` (the TRD author's sessions), `trd_authoring.py` (the
-confirm step).
+Code: `orchestrator/flows/trd_steps.py` (the seed and the request of the TRD write),
+`architecture.py` (the TRD author's sessions), `trd_authoring.py` (the confirm step).
 
 ## Who writes it
 
-`trd-author` writes the TRD at the path the context file names (`<work>/trd.md`): the
-requirements not considered functional, the quality constraints and operational boundaries the
-technical architecture must support. It is written, then updated, during the architecture, and the
-architect reviews and approves it with the architecture, against the technical-requirement
-criteria. The TRD is a source of information for the detailed design and for the build's
-decisions.
+The TRD is at the path the context file names (`<work>/trd.md`): the requirements not considered
+functional, the quality constraints and operational boundaries the technical architecture must
+support. It is written, then updated, during the architecture, and the architect reviews and
+approves its changes with the architecture, against the technical-requirement criteria. The TRD
+is a source of information for the detailed design and for the build's decisions.
 
-1. The TRD initial write (mode `initial`) is the first step of the Architecture container, before
-   the architect's step: the script writes its request from the context file
-   (`architecture.md`, "The TRD initial write"). It adds the requirements already stated, many of
-   them pre-written in arc42.
-2. The TRD architecture update (mode `update`): once the higher-level architecture is in arc42,
-   the architect has `trd-author` add the technical or architecture decisions that impact the
-   detailed design, and the shared capabilities the design uses.
-3. The detailed design reads the TRD; the architect has it updated in place (mode `update`) as the
-   design adds technical requirements.
+1. The seed (script `trd.seed`, `architecture.md`, "The TRD seed") is written before the
+   architect's step, with no session: one requirement for each constraint of the matrix with a
+   rule that binds the Epic or an entry of its reach, and for each constraint of arc42 section 2
+   that binds every Epic, headed by its constraint id. Nothing of it is recorded in the matrix.
+2. The architect works from the seed, and states in its result's `trdChanges` each technical or
+   architecture decision that adds, changes or removes a requirement; the detailed design reads
+   the TRD with the changes its request states.
+3. The TRD write (`trd-author`, mode `complete`, `architecture.md`, "The TRD write") runs once,
+   when the architecture check passes and before the promotion: it adds the requirements the PRD
+   implies that the TRD does not state, applies the architect's `trdChanges` and writes each shared
+   capability of the result the TRD does not yet state.
 
 Every session of `trd-author` is handed the Epic's architecture pack (artifact `architecture
-pack`), an index; the initial write is written from the pack and what it names alone: the PRD, the
-constraints file, and the headings its reach rows name, read with `atw-matrix heading`. An update runs as its own step from the
-request file its step is handed: one the architect's result requests, after the architect's
-session, or the correction the confirm step plans. A `trd-author` step left running is launched
-from the request file it holds. The file already at the TRD's path is kept for the session to
-update. The answer's check fails, for the session's correction, when the TRD's front matter or a
-citation does not resolve, or the TRD has no heading for a requirement the answer states or for
-one a constraint of this TRD points at that the answer does not remove. When its answer is
-accepted the step records the request, the file `TRD`, the answer, and the value `obligations
-with no source`.
+pack`), an index, and runs from a request file: the TRD write's, which its launch builder writes
+from the architect's result, or the correction the confirm step plans (mode `update`). A
+`trd-author` step left running is launched from the request file it holds. The file already at
+the TRD's path is kept for the session to update. The answer's check fails, for the session's
+correction, when the TRD's front matter or a citation does not resolve, or the TRD has no heading
+for a requirement the answer states or for one a constraint of this TRD points at that the answer
+does not remove. When its answer is accepted the step records one constraint for each
+requirement the answer added or changed, the request, the file `TRD`, the answer, and the value
+`obligations with no source`.
 
 ## The confirm step
 

@@ -34,9 +34,9 @@ architect's state and result files, the review log beside the result (`reviewLog
 TRD, and the folder for requests to helpers;
 with the vault commit the document entries are synced to and the name of the matrix command. It
 records the file `prd`, the value `matrix epic entry` and the file `context`, and plans, under the
-Architecture container, the TRD initial write, the architect's step, and the index and the check
-that follow it, and records each on itself, so a start at or before the open-run step removes them and the
-open-run step plans them again as the lane plans them then. Those three plans are also registered
+Architecture container, the architecture pack, the TRD seed, the architect's step, and the index
+and the check that follow it, and records each on itself, so a start at or before the open-run step
+removes them and the open-run step plans them again as the lane plans them then. Those plans are also registered
 as what the lane plans under the container, so a planned step whose key was renamed is replanned
 to the current key when the run opens the journal.
 
@@ -49,22 +49,28 @@ directly above it, which wrote the request.
 Every later step of the container is handed the context file through the journal and derives no
 path of its own.
 
-## The TRD initial write
+## The TRD seed
 
-Agent `trd-author`, step "TRD initial write: the requirements not considered functional, many
-pre-written in arc42", the first step of the Architecture container: the TRD is written as one of
-the very first steps, before the architect starts. The launch builder (`architecture.trd_author`)
-writes the request itself from the context file, mode `initial`, at
-`<helpersFolder>/trd-initial.request.json` with the answer beside it
-(`trd-initial.answer.json`), and launches `trd-author` from it. The step records what a
-`trd-author` step records (the table below) and is an input of the architect's step, so the
-architect is handed its answer as `answer` on its first step.
+Script `trd.seed` (`trd_steps.seed`), step "Seed the TRD from the constraints that bind the Epic",
+after the pack and before the architect: the TRD is written as one of the very first steps, with no
+session. In one matrix change it removes every constraint that points at a requirement of this
+Epic's TRD (an earlier run's, `trd.epic` the Epic), and reads, for the Epic and the entries of the
+pack's `reach`, each constraint with a rule (`statement`) that binds one of them
+(`matrixtraverse.constraints_for`: an `appliesTo` relationship or a selector), and each constraint
+of arc42 section 2 with a rule, no selector and no `appliesTo`. It writes the TRD at the context's
+`trdPath`: under "Constraints that bind the Epic", one requirement per constraint, headed by the
+constraint id, under a heading that names what it applies to (the reach entries its `appliesTo`
+names, the selector, or the Epic as a whole), with its rule and each heading that states it as
+`<path>#<heading>`; the front matter's `decisionIds` are those headings that resolve in the matrix.
+Nothing of the seed is recorded in the matrix: its requirements are the matrix's own constraints.
+It records the file `TRD`, the value `seeded requirements` and the value `earlier TRD constraints
+removed`, and is an input of the architect's step, which is handed the TRD as `trd`.
 
 ## The architect and the agents it starts
 
 Agent `aws-solutions-architect`, step "Decide what the architecture should be for this PRD".
 Its brief (`agent-brief.schema.json`) names exactly the files its definition names: `prd`,
-`context`, `state` (its state file), on its first step the TRD initial write's `answer`, and, in a later step, the
+`trd` (the TRD at `trdPath`), `context`, `state` (its state file), and, in a later step, the
 `findings` (check results), `answer` and `ruling` files that step is handed. No file
 is written from the matrix for it: the architect reads the Epic live, with
 `atw-matrix epic <id>`, `atw-matrix epic <id> --realizers` and `atw-matrix epic <id> --constraints`
@@ -114,7 +120,7 @@ architect's session: the "Finish" step continues the session of the step above i
 later step continues the nearest earlier session the agent holds in the journal.
 
 The architect starts the agents the PRD needs inside its own session, by the names it chose from
-the `find-specialists` catalog, and the TRD author and the document maintainer. It records
+the `find-specialists` catalog, and the document maintainer. It records
 each as a child step of its own step with `atw-step-journal`, with the request file it wrote, and
 adds a last child step "Finish", by the protocol in `helper-steps.schema.json`. When its session
 ends, the runner reads the journal again:
@@ -132,14 +138,14 @@ ends, the runner reads the journal again:
 | Helper left running | Request artifact | Output | Records |
 |---|---|---|---|
 | any agent the architect or the lead named (the launch builder registered for every catalog agent with no builder of its own, `journal_registry.any_agent_step`) | the step's parameter `request`, else `request` or `question` | the answer path the request names | the request, file `answer`. The repository steward places nothing: an entry the architect's result builds in no stack fails the architect's output check |
-| `trd-author` | `request` | the answer path the request names; the TRD at the path the request names is kept and updated in place | the request, file `TRD`, file `answer`, value `obligations with no source`, value `constraints recorded`. The step records one `constraint` for each requirement the answer lists under `requirements` (every requirement that write added or changed), as a pointer `trd` (the Epic and the requirement id, a heading of the TRD) with no copy of its text, with `statedIn` and `appliesTo`, removes the constraint of each id the answer lists under `removed`, and records one with no `statedIn` for each `noSource` obligation; it fails when the matrix refuses one |
+| `trd-author` (the TRD write after the check, and the `trd.confirm` correction) | `request`; for the TRD write, the request the launch builder writes | the answer path the request names; the TRD at the path the request names is kept and updated in place | the request, file `TRD`, file `answer`, value `obligations with no source`, value `constraints recorded`. The step records one `constraint` for each requirement the answer lists under `requirements` (every requirement that write added or changed), as a pointer `trd` (the Epic and the requirement id, a heading of the TRD) with no copy of its text, with `statedIn` and `appliesTo`, removes the constraint of each id the answer lists under `removed`, and records one with no `statedIn` for each `noSource` obligation; it fails when the matrix refuses one |
 | `architecture-maintainer` | `write request` or `request` | the result path the request names | the request, file `what was written`, value `documents synced`. The session is granted the architecture root, where it writes; the step sets each document written that exists `in-review` in its front matter (`matrixsync.set_lifecycle`), so the check and the promotion of this run reach it, then runs `sync-documents --paths` on the documents written |
 
-The TRD is written, then updated, during the architecture: the TRD initial write is the first step
-of the container; once the higher-level architecture is in arc42, the architect has `trd-author`
-make the TRD architecture update (mode `update`) with the technical or architecture decisions
-that impact the detailed design; the detailed design reads the TRD, and the architect has it
-updated in place as the design adds technical requirements.
+The TRD is written, then updated, during the architecture: the seed is written before the
+architect starts; the architect works from it, states in its result's `trdChanges` the technical
+or architecture decisions that add, change or remove a requirement, and names `trdPath` and the
+changes a subject depends on in each request for detailed design; once the check passes, one
+`trd-author` session completes the TRD ("The TRD write").
 
 ## Earlier work on this PRD
 
@@ -147,7 +153,7 @@ A journal that `orchestrator/port_journal.py` builds for an Epic with saved run 
 the Architecture container, a step "Earlier work on this PRD" (`architecture_earlier.carry`). It
 contains one done step per piece of that work, each holding its files as artifacts named
 `earlier work: <what the file is>`, so the journal records what was done. The open-run step, which
-runs first, plans the TRD initial write, the architect's step, and the index and the check after
+runs first, plans the pack, the TRD seed, the architect's step, and the index and the check after
 it. The architect is not handed those files: they are unapproved copies and summaries from a
 pipeline that no longer runs, and the matrix and the arc42 documents are the architect's sources.
 Such a step has the script `architecture.earlier_work`, which records nothing when it runs: it runs only
@@ -197,7 +203,7 @@ follows by rule over the matrix, the criteria file, the architect's result and t
 |---|---|
 | a mechanical defect | a correction step for the architect, handed the check result, an index and a new check; after 3 corrections a defect fails the step |
 | no defect, the result's conclusion is `unsettled`, and no lead has run in the container | the step of `architecture-team-lead`, an index and a new check |
-| otherwise, whatever the conclusion | the promotion step |
+| otherwise, whatever the conclusion | the TRD write, then the promotion step |
 
 With no defect it reads what is in review for the Epic, the documents the Epic reaches that are
 not effective with the headings reached (`atw-matrix review-scope --epic`), and writes
@@ -225,9 +231,21 @@ records the value `disagreements settled`. A send-back is in the step journal on
 raises an owner concern fails the step at stage `requires-human-action`, with the concerns as its
 evidence.
 
+## The TRD write
+
+Agent `trd-author`, step "Write the TRD from the architect's decisions", planned by a check that
+found no defect, before the promotion; it runs once per pass through the architecture. The launch
+builder (`architecture.trd_author`, with `trd_steps.write_request`) writes the request from the
+context file and the architect's result: mode `complete`, the result's `trdChanges` as `changes`
+and its `sharedCapabilities`, at `<helpersFolder>/trd.request.json` with the answer beside it
+(`trd.answer.json`). The session adds the requirements the PRD implies that the TRD does not
+state, applies the changes and writes each shared capability the TRD does not yet state as a
+`reuse` requirement. The step records what a `trd-author` step records (the table above), so the
+matrix holds each requirement it added or changed before the promotion commits the matrix.
+
 ## Promotion
 
-Script `atw-matrix sync-documents; atw-matrix commit`. It follows a check that found no defect.
+Script `atw-matrix sync-documents; atw-matrix commit`. It follows the TRD write after a check that found no defect.
 It sets the documents of the review scope effective in their front matter, copies the review log
 into the vault at `<architectureRoot>/review-logs/<epic id>.json`, mirrors the documents'
 lifecycle in the matrix (`sync-documents --paths`), links the log from the Epic's matrix entry

@@ -51,8 +51,8 @@ The PRD and portfolio workflows run their commands and accept agent files throug
 | architecture result: `<arch-work>/result.json` | `aws-solutions-architect` | the check step; `architecture-team-lead`; the span step | `architecture-result.schema.json` |
 | specialist request | `aws-solutions-architect`; `architecture-team-lead` | the design specialist, diagram author or `polyrepo-steward` asked | `specialist-request.schema.json` |
 | specialist answer | the agent asked | `aws-solutions-architect`; `architecture-team-lead` | `specialist-answer.schema.json` |
-| TRD request | the script, for the TRD initial write (mode `initial`); `aws-solutions-architect`, for each update | `trd-author` | `trd-request.schema.json` |
-| TRD answer | `trd-author` | `aws-solutions-architect`; the step that accepts it, which records each requirement in the matrix as a `trd` pointer | `trd-answer.schema.json` |
+| TRD request | the script: mode `complete` from the architect's result (`trdChanges`, `sharedCapabilities`) once the architecture check passes; mode `update` from the `trd.confirm` step | `trd-author` | `trd-request.schema.json` |
+| TRD answer | `trd-author` | the step that accepts it, which records each requirement in the matrix as a `trd` pointer | `trd-answer.schema.json` |
 | write request | `aws-solutions-architect` | `architecture-maintainer` | `write-request.schema.json` |
 | write result | `architecture-maintainer` | `aws-solutions-architect` | `write-result.schema.json` |
 | architecture documents (views, standards and policies): `<arch>/arc42/**` except section 2, and the detailed architecture `<arch>/detailed/**` | `architecture-maintainer` | the architecture team, `trd-author`, the spec authors | `skills/arc42/references/arc42-section-model.md`; `document-front-matter.schema.json#/$defs/ArchitectureView` and `#/$defs/ArchitectureStandard`; the architecture and design criteria of `skills/effective-architecture/review-standard.md` |
@@ -70,7 +70,7 @@ The PRD and portfolio workflows run their commands and accept agent files throug
 
 | Artifact | Writer | Readers | Contract |
 |---|---|---|---|
-| TRD: `<work>/trd.md` | `trd-author` | `aws-solutions-architect`; the spec authors, reviewer and decider; the Story and Task journals | `document-front-matter.schema.json#/$defs/TrdDocument`, each requirement `architecture-result.schema.json#/$defs/TrdRequirement`; the technical-requirement criteria of `skills/effective-architecture/review-standard.md` |
+| TRD: `<work>/trd.md` | the script step `trd.seed`, from the matrix before the architect starts; `trd-author`, which completes it once the architecture check passes | `aws-solutions-architect`; the spec authors, reviewer and decider; the Story and Task journals | `document-front-matter.schema.json#/$defs/TrdDocument`, each requirement `architecture-result.schema.json#/$defs/TrdRequirement`; the technical-requirement criteria of `skills/effective-architecture/review-standard.md` |
 
 ## Repository span
 
