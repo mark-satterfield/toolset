@@ -1,24 +1,28 @@
-"""The solutions architect's steps, and the sessions of the agents it left running.
+"""The solutions architect's steps, and the sessions of the agents the script starts for it.
 
-One agent, the solutions architect, decides what the architecture should be for a PRD. Before it
-starts, the script step ``trd.seed`` (``trd_steps``) writes the TRD from the constraints that bind
-the Epic, with no session. The architect is handed that TRD, works from it, and states in its result
-the changes its decisions make to it; the one TRD write after the decisions applies them once the
-architecture check passes. The script starts the architect's session, hands it the files its
-definition names and records what it returns.
-The architect always reads the PRD it is handed; the arc42 documents and the matrix are its
-starting point, both input and output, possibly incomplete or wrong and possibly empty for the
-Epic. It reads them through the Epic's architecture pack (``architecture_pack``), which a script
-step writes before the TRD seed, and writes its matrix changes to one change file that
-the step accepting its result applies in one locked update. It decides the stack and repository of each element
-after its detailed design and records that placement itself; the ``span`` step names and
-creates each repository that placement needs. What the architect reads, whom it asks and in what order are its
-own decisions. The same launch builder serves every step that agent
-performs: the first, its "Finish" after an interruption, a correction after findings or after the
-mechanical check, and a competing design the lead orders.
+One agent, the solutions architect, decides what the architecture should be for a PRD. It starts
+no agent: every step it performs is a fresh session that writes one file, and the script runs
+everything between them (``architecture_rounds``).
 
-An agent the architect starts runs inside the architect's session. Only one it left running when
-its session stopped is launched here, from the request file the architect saved for it.
+1. Analyze: handed the PRD, the TRD the script step ``trd.seed`` wrote (``trd_steps``) and the
+   context, it reads the Epic's architecture pack (``architecture_pack``) and writes its state
+   file and one round of requests, one per specialist (``questions.json``).
+2. The script starts each specialist with its request, each as its own session.
+3. Decide: a fresh session handed the answers and their digest writes the architecture result,
+   its decisions, and its matrix changes to one change file that the step accepting its result
+   applies in one locked update. A result that asks a second round gets one more round and one
+   more Decide; a Decide of the second round that still asks fails.
+4. The script writes one request per home document from the result and starts one
+   ``architecture-maintainer`` per document; the step that accepts each write records
+   ``describedBy`` and ``covers`` for the headings written.
+
+A correction after the mechanical check, and a competing design the lead orders, are fresh
+sessions too, continuing from the result file. The architect always reads the PRD it is handed;
+the arc42 documents and the matrix are its starting point, both input and output, possibly
+incomplete or wrong and possibly empty for the Epic. It decides the stack and repository of each
+element after its detailed design and records that placement itself; the ``span`` step names and
+creates each repository that placement needs. What the architect reads and whom it asks are its
+own decisions.
 
 The step that accepts a result file records in the matrix what that file states, and is done only
 when the matrix shows it.
@@ -36,8 +40,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "find-sp
 from architecture_work_contract import (
     ArchitectureWorkError,
     validate_architecture_result,
+    validate_architecture_state,
     validate_specialist_answer,
     validate_specialist_request,
+    validate_specialist_round,
     validate_trd_answer,
     validate_trd_request,
     validate_write_request,
@@ -66,11 +72,9 @@ from specialist_catalog import agent_names
 
 from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
-from orchestrator.core.io import write_json
 from orchestrator.core.journal_registry import agent_step, any_agent_step, plan_under
 from orchestrator.core.journal_steps import (
     UNDER_CONTAINER,
-    UNDER_THIS,
     AgentLaunch,
     Completion,
     NewStep,
@@ -80,7 +84,7 @@ from orchestrator.core.journal_steps import (
     value_artifact,
 )
 from orchestrator.core.models import MalformedRequestError, StaleInputError
-from orchestrator.flows.architecture_check import check_step
+from orchestrator.flows.architecture_check import check_step, review_log_findings
 from orchestrator.flows.architecture_files import (
     ARCHITECT,
     ARCHITECTURE,
@@ -90,19 +94,25 @@ from orchestrator.flows.architecture_files import (
     ARTIFACT_SPECIALIST_RECOMMENDATIONS,
     ARTIFACT_TRD,
     CHANGE_FILE,
+    EXAMPLE_RESULT,
+    EXAMPLE_ROUND,
+    EXAMPLE_STATE,
     LABEL_ANSWER,
     LABEL_CONTEXT,
+    LABEL_DIGEST,
+    LABEL_EXAMPLE,
     LABEL_FINDINGS,
     LABEL_PRD,
     LABEL_QUESTION,
     LABEL_REQUEST,
     LABEL_RESULT,
+    LABEL_ROUND,
     LABEL_RULING,
     LABEL_STATE,
     LABEL_TRD,
     MAINTAINER,
-    MAX_FINISH_GENERATIONS,
     PARAM_REQUEST,
+    QUESTIONS_FILE,
     TRD_AUTHOR,
     WRITE_REQUEST,
     WRITTEN,
@@ -111,8 +121,6 @@ from orchestrator.flows.architecture_files import (
     architecture_folder,
     checked_file,
     cited_document,
-    finish_generation,
-    is_finish,
     journal_file,
     matrix_file,
     output_check,
@@ -121,6 +129,14 @@ from orchestrator.flows.architecture_files import (
 )
 from orchestrator.flows.architecture_index import index_step
 from orchestrator.flows.architecture_pack import PACK_REF, pack_file, pack_plan
+from orchestrator.flows.architecture_rounds import (
+    MAX_ROUNDS,
+    answered,
+    round_of,
+    round_steps,
+    write_digest,
+    write_steps,
+)
 from orchestrator.flows.repo_scoping import (
     FIELD_ADDED_OR_CHANGED,
     FIELD_UNCHANGED_WORK,
@@ -144,6 +160,7 @@ if TYPE_CHECKING:
         SourceHeading,
         SpecialistRecommendation,
         SpecialistRequest,
+        SpecialistRound,
         TrdAnswer,
         TrdRequest,
         TrdRequirement,
@@ -159,7 +176,9 @@ if TYPE_CHECKING:
 
     from orchestrator.core.io import JsonValue
 
-ARCHITECT_DESCRIPTION: Final = "Decide what the architecture should be for this PRD"
+ANALYZE_DESCRIPTION: Final = (
+    "Analyze the PRD against the architecture and put the questions and draft reviews to the specialists"
+)
 ARCHITECT_PURPOSE: Final = "One agent is responsible for the architecture this PRD needs, and reviews and approves it"
 ARCHITECT_REF: Final = "architect"
 NO_SOURCE: Final = "obligations with no source"
@@ -174,11 +193,8 @@ ATTR_EPIC: Final = "epic"
 ATTR_REQUIREMENT: Final = "requirement"
 REQUIREMENT_KEY_SEPARATOR: Final = "/"
 HEADING_MARK: Final = "#"
-REQUEST_SUFFIX: Final = ".request.json"
-"""What the request file of an entry of the result's ``requests`` adds to its answer file's stem."""
 ERRORS_SUFFIX: Final = ".errors.txt"
 """What the file of a request's validation errors adds to the request file's stem."""
-FINISH_DESCRIPTION: Final = "Finish deciding the architecture with the answers of the agents the architect requested"
 CATALOG_AGENTS: Final[frozenset[str]] = agent_names()
 """Every agent the find-specialists skill's catalog lists: the names a request may give."""
 
@@ -200,7 +216,7 @@ class Recorded:
 
 
 def _architect_plan(architect: str, inputs: list[str]) -> StepPlan:
-    """Plan the architect's first step.
+    """Plan the architect's first step, Analyze.
 
     Returns:
         The plan, handed the steps ``inputs`` names.
@@ -208,7 +224,7 @@ def _architect_plan(architect: str, inputs: list[str]) -> StepPlan:
     """
     return {
         "ref": ARCHITECT_REF,
-        "description": ARCHITECT_DESCRIPTION,
+        "description": ANALYZE_DESCRIPTION,
         "purpose": ARCHITECT_PURPOSE,
         "agent": architect,
         "inputs": inputs,
@@ -216,11 +232,13 @@ def _architect_plan(architect: str, inputs: list[str]) -> StepPlan:
 
 
 def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
-    """Plan the pack, the TRD seed, the architect's step, the index and the check under the Architecture container.
+    """Plan the pack, the TRD seed, the architect's Analyze step, the index and the check under the container.
 
     The pack comes first (``architecture_pack``): the seed and the architect read the Epic's reach
     from it, and the architect the headings that describe it and its constraints. The TRD seed
-    (``trd_steps``) comes next, so the architect starts from the TRD and is handed it. The open-run
+    (``trd_steps``) comes next, so the architect starts from the TRD and is handed it. The steps
+    the Analyze step's output plans (the specialists, Decide, the document writes) go after it,
+    before the index and the check (``architecture_rounds``). The open-run
     step plans the group, and records each step it plans on itself, so a start at or before the
     open-run step removes the group and the open-run step plans it again as the lane plans it
     then. The same plans are registered as what this lane plans under the container
@@ -233,7 +251,7 @@ def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
         architect: The agent that plays the solutions architect.
 
     Returns:
-        The pack, the TRD seed, the architect's step, and the index and the check that
+        The pack, the TRD seed, the architect's Analyze step, and the index and the check that
         follow it, as the container's last child steps.
 
     """
@@ -260,7 +278,12 @@ plan_under(
 )
 
 
-def _handed_files(run: StepRun, context: ArchitectureContext, prd: Path) -> tuple[tuple[str, Path], ...]:
+def _handed_files(
+    run: StepRun,
+    context: ArchitectureContext,
+    prd: Path,
+    *examples: Path,
+) -> tuple[tuple[str, Path], ...]:
     """Name the files of the architect's brief: exactly the labels its definition states.
 
     No file is written from the matrix for the architect: it runs the ``atw-matrix`` reads its
@@ -268,19 +291,22 @@ def _handed_files(run: StepRun, context: ArchitectureContext, prd: Path) -> tupl
 
     Returns:
         The PRD, the TRD, the context file and the state path; then each mechanical check
-        result the step is handed, as findings; then each answer the step is handed (a
-        specialist's) and each ruling.
+        result the step is handed, as findings; then the digest of the answers the step is handed
+        (a specialist's), each answer and each ruling; then the example of each file the step writes.
 
     """
     findings: list[Path] = list(run.inputs.files(ARTIFACT_CHECK))
+    digest: Path | None = write_digest(run, Path(context["helpersFolder"]))
     return (
         (LABEL_PRD, prd),
         (LABEL_TRD, Path(context["trdPath"])),
         (LABEL_CONTEXT, journal_file(run, LABEL_CONTEXT)),
         (LABEL_STATE, Path(context["statePath"])),
         *((LABEL_FINDINGS, path) for path in dict.fromkeys(findings)),
+        *(() if digest is None else ((LABEL_DIGEST, digest),)),
         *((LABEL_ANSWER, path) for path in dict.fromkeys(run.inputs.files(LABEL_ANSWER))),
         *((LABEL_RULING, path) for path in dict.fromkeys(run.inputs.files(LABEL_RULING))),
+        *((LABEL_EXAMPLE, example) for example in examples),
     )
 
 
@@ -450,11 +476,11 @@ def _change_problems(matrix: Matrix, changes: Path) -> list[str]:
     ]
 
 
-def _result_problems(bead: str, result: ArchitectureResult, changes: Path) -> list[str]:
-    """Find what the matrix could not hold of an architecture result and its change file, writing nothing.
+def _result_problems(matrix: Matrix, bead: str, result: ArchitectureResult, changes: Path) -> list[str]:
+    """Find what the matrix could not hold of an architecture result and its change file.
 
-    The architect's change file (``matrix-changes.json``) is applied first to a copy of the matrix
-    that is never written; each operation that fails is a problem, with its index. What the
+    The architect's change file (``matrix-changes.json``) is applied first to ``matrix``, a copy
+    of the matrix that is never written; each operation that fails is a problem, with its index. What the
     Epic's Stories build is then checked against that copy
     (``repo_scoping.story_build_problems``): the result's ``addedOrChangedElements`` and its
     ``unchangedWorkElements``, each list on its own; at least one of them must name something, and
@@ -466,7 +492,6 @@ def _result_problems(bead: str, result: ArchitectureResult, changes: Path) -> li
         comparison found. Empty when the result can be accepted.
 
     """
-    matrix: Matrix = read_matrix(matrix_file())
     refused: list[str] = _change_problems(matrix, changes)
     unbuildable: list[str] = [
         *story_build_problems(matrix, bead, result[FIELD_ADDED_OR_CHANGED], FIELD_ADDED_OR_CHANGED),
@@ -528,17 +553,71 @@ def _compared(matrix: Matrix, bead: str, recorded: Recorded) -> Recorded:
     )
 
 
+def _request_problems(requests: Sequence[AgentRequest]) -> list[str]:
+    """Hold a round of requests to the catalog and to one request per agent.
+
+    Returns:
+        One sentence for each agent the find-specialists catalog does not list, and one for each
+        agent named by more than one request.
+
+    """
+    named: list[str] = [step_journal.agent_name(entry["agent"]) for entry in requests]
+    unknown: list[str] = [
+        f"requests: the find-specialists catalog lists no agent named {agent!r}"
+        for agent in dict.fromkeys(named)
+        if agent not in CATALOG_AGENTS
+    ]
+    twice: list[str] = [
+        f"requests: {agent} is named by {named.count(agent)} requests; put all of its questions and draft reviews "
+        "of this round in one request"
+        for agent in dict.fromkeys(named)
+        if named.count(agent) > 1
+    ]
+    return [*unknown, *twice]
+
+
+def _about_problems(matrix: Matrix, result: ArchitectureResult) -> list[str]:
+    """Find each entry a fact of the result is about that the matrix does not hold.
+
+    Returns:
+        One sentence per id that is not an entry id, or is not held.
+
+    """
+    problems: list[str] = []
+    for fact in result["facts"]:
+        for named in fact["about"]:
+            _held(matrix, named, f"fact {fact['id']} about", problems)
+    return problems
+
+
+def _decision_problems(bead: str, result: ArchitectureResult, changes: Path, log: Path) -> list[str]:
+    """Find what an architecture result, its change file and its review log leave unfinished, writing nothing.
+
+    Returns:
+        :func:`_result_problems`; then each id a fact is about that the matrix, with the change
+        file applied, does not hold; then, when the result asks no further round, each problem of
+        the review log (``architecture_check.review_log_findings``).
+
+    """
+    matrix: Matrix = read_matrix(matrix_file())
+    problems: list[str] = _result_problems(matrix, bead, result, changes)
+    problems.extend(_about_problems(matrix, result))
+    if not result["requests"]:
+        problems.extend(review_log_findings(bead, log, matrix, result))
+    return problems
+
+
 def result_check(run: StepRun) -> Callable[[Path], dict[str, JsonValue]]:
     """Build the output check of a session that writes the architecture result.
 
     Returns:
         A check that reads the output as strict JSON, validates it with its contract, then runs
-        :func:`_result_problems` with the change file beside the context file, and refuses a
-        request naming an agent the find-specialists catalog does not list. Each problem is one
-        line of the ``ArchitectureWorkError`` it raises, which sends the session to its one
-        correction.
+        :func:`_decision_problems` with the change file beside the context file and the review
+        log, and :func:`_request_problems` on its ``requests``. Each problem is one line of the
+        ``ArchitectureWorkError`` it raises, which sends the session to its one correction.
 
     """
+    context: ArchitectureContext = read_context(run)
 
     def check(path: Path) -> dict[str, JsonValue]:
         document: dict[str, JsonValue] = strict_json(path)
@@ -546,17 +625,37 @@ def result_check(run: StepRun) -> Callable[[Path], dict[str, JsonValue]]:
         problems: list[str] = [
             *run.tools.portfolio(
                 run.inputs.stage,
-                _result_problems,
+                _decision_problems,
                 str(run.bead),
                 result,
                 architecture_folder(run.context.work) / CHANGE_FILE,
+                Path(context["reviewLogPath"]),
             ),
-            *(
-                f"requests: the find-specialists catalog lists no agent named {entry['agent']!r}"
-                for entry in result["requests"]
-                if entry["agent"] not in CATALOG_AGENTS
-            ),
+            *_request_problems(result["requests"]),
         ]
+        if problems:
+            raise ArchitectureWorkError("\n".join(problems))
+        return document
+
+    return check
+
+
+def _round_check(context: ArchitectureContext) -> Callable[[Path], dict[str, JsonValue]]:
+    """Build the output check of the Analyze step.
+
+    Returns:
+        A check that reads the output as strict JSON, validates it as a round of requests, refuses
+        what :func:`_request_problems` finds, and validates the state file at the context's
+        ``statePath``, which the step writes first.
+
+    """
+
+    def check(path: Path) -> dict[str, JsonValue]:
+        document: dict[str, JsonValue] = strict_json(path)
+        stated: SpecialistRound = validate_specialist_round(document, str(path))
+        state: Path = Path(context["statePath"])
+        validate_architecture_state(strict_json(state), str(state))
+        problems: list[str] = _request_problems(stated["requests"])
         if problems:
             raise ArchitectureWorkError("\n".join(problems))
         return document
@@ -577,42 +676,76 @@ def _recommendation(entry: SpecialistRecommendation) -> JsonValue:
     )
 
 
+def _analyze(run: StepRun, context: ArchitectureContext, prd: Path) -> AgentLaunch:
+    """Build the session of the architect's Analyze step.
+
+    The output is the first round of requests, one per specialist; the state file is written
+    first. The accepted round plans after the step one step per request whose answer is not yet
+    a valid answer, then the Decide step (``architecture_rounds.round_steps``).
+
+    Returns:
+        The launch.
+
+    """
+
+    def accept(accepted: StepRun, output: Path) -> Completion:
+        stated: SpecialistRound = checked_file(accepted, output, validate_specialist_round)
+        return Completion(
+            add=(round_steps(accepted, stated["requests"], 1),),
+            artifacts=(file_artifact(LABEL_ROUND, output), file_artifact(LABEL_STATE, Path(context["statePath"]))),
+        )
+
+    return AgentLaunch(
+        output=architecture_folder(run.context.work) / QUESTIONS_FILE,
+        validate=_round_check(context),
+        outcome="The state file, then one request per specialist this Epic needs.",
+        accept=accept,
+        add_dirs=(architecture_folder(run.context.work),),
+        files=_handed_files(run, context, prd, EXAMPLE_STATE, EXAMPLE_ROUND),
+        hand_inputs=False,
+    )
+
+
 @agent_step(ARCHITECT)
 def architect(run: StepRun) -> AgentLaunch:
-    """Build the session of any step the solutions architect performs.
+    """Build the session of any step the solutions architect performs, always a fresh session.
 
-    The resolved inputs say which step it is. A step that is handed findings is a correction; the
-    "Finish" step below the architect's own step continues that step's session; any other step
-    after one of the architect's continues the nearest earlier session the agent holds. The
-    output is always the architecture result, which every step after the first updates in place.
+    The Analyze step writes the first round of requests (:func:`_analyze`). Every other step (a
+    Decide, a correction after findings, a competing design the lead orders) writes the
+    architecture result, its decisions, which every step after the first updates in place: a
+    result already at the result path is kept, so a session that starts again continues from it,
+    and a valid file there is never taken as the step's finished output without the session
+    (``reuse_output`` False).
+
+    The accepted result is recorded in the matrix. A result that asks a further round plans that
+    round and a Decide after it; one that asks it after :data:`MAX_ROUNDS` rounds fails the step.
+    A result that asks none plans the document writes it needs (``architecture_rounds.write_steps``).
 
     The session is handed files and no folder of the architecture or of the PRDs: it reads the PRD
     it is handed in full, and the documents and headings the Epic reaches through the matrix, which
-    is its starting point and not a complete record. A result already at the result path is
-    kept for every step: the architect writes its result as the work goes, so a session that
-    starts again, for the first step as for any other, continues from the partial result. A
-    valid file at the result path is therefore never taken as the step's finished output
-    without the session (``reuse_output`` False). A result that still requests work at the
-    :data:`MAX_FINISH_GENERATIONS`-th "Finish" in one chain fails the step.
+    is its starting point and not a complete record.
 
     Returns:
-        The launch: the result file as output, the files the definition names, and what the
-        journal records when the result is accepted.
+        The launch: the output, the files the definition names, and what the journal records when
+        the output is accepted.
 
     """
     context: ArchitectureContext = read_context(run)
     prd: Path = journal_file(run, LABEL_PRD)
     pack_file(run)
-    holder: Step | None = None if is_finish(run) else run.session_holder()
+    if run.step["description"] == ANALYZE_DESCRIPTION:
+        return _analyze(run, context, prd)
+    number: int = round_of(run)
+    arch: Path = Path(context["architectureRoot"])
 
     def accept(accepted: StepRun, output: Path) -> Completion:
         result: ArchitectureResult = checked_file(accepted, output, validate_architecture_result)
-        open_requests: list[str] = [entry["agent"] for entry in result["requests"] if not _answered(entry["request"])]
-        if open_requests and finish_generation(accepted) >= MAX_FINISH_GENERATIONS:
+        open_requests: list[AgentRequest] = [entry for entry in result["requests"] if not answered(entry["request"])]
+        if open_requests and number >= MAX_ROUNDS:
             raise ArchitectureStepError(
                 accepted,
-                f"the architect's Finish {MAX_FINISH_GENERATIONS} times over still requests work of {open_requests}; "
-                "the architecture does not converge",
+                f"the architect's result still requests work of {[entry['agent'] for entry in open_requests]} after "
+                f"{MAX_ROUNDS} rounds; the architecture does not converge",
             )
         recorded: Recorded = accepted.tools.portfolio(
             accepted.inputs.stage,
@@ -628,9 +761,13 @@ def architect(run: StepRun) -> AgentLaunch:
                 *recorded.problems,
             )
         unserved: list[JsonValue] = [*recorded.no_feature]
-        requested: tuple[StepGroup, ...] = _requested(result["requests"])
+        follows: tuple[StepGroup, ...] = (
+            (round_steps(accepted, open_requests, number + 1),)
+            if open_requests
+            else write_steps(accepted, arch, Path(context["helpersFolder"]), result)
+        )
         return Completion(
-            add=requested,
+            add=follows,
             artifacts=(
                 file_artifact(LABEL_RESULT, output),
                 value_artifact(ARTIFACT_CONCLUSION, result["conclusion"]),
@@ -648,84 +785,19 @@ def architect(run: StepRun) -> AgentLaunch:
         outcome="The architecture result of this PRD.",
         accept=accept,
         add_dirs=(architecture_folder(run.context.work),),
-        files=_handed_files(run, context, prd),
-        resume_from=None if holder is None else holder["id"],
+        files=_handed_files(run, context, prd, EXAMPLE_RESULT),
         fresh_output=False,
         hand_inputs=False,
         reuse_output=False,
     )
 
 
-def _answered(request: SpecialistRequest) -> bool:
-    """Tell whether a request's answer file already holds a valid answer.
-
-    Returns:
-        True when the file at the request's answer path is a valid specialist answer.
-
-    """
-    path: Path = Path(request["answerPath"])
-    if not path.is_file():
-        return False
-    try:
-        validate_specialist_answer(strict_json(path), str(path))
-    except OSError, ValueError:
-        return False
-    return True
-
-
-def _requested(requests: Sequence[AgentRequest]) -> tuple[StepGroup, ...]:
-    """Plan the work the architect's result requests of other agents, below the accepting step.
-
-    Each request whose answer is not yet a valid answer gets one step, performed by the agent the
-    request names and handed its request file, written beside the answer path; then one
-    ``Finish`` step of the architect, handed every answer. The agent of each step is the one the
-    result names; nothing here chooses it.
-
-    Returns:
-        One group below the accepting step; none when every request is answered.
-
-    """
-    steps: list[NewStep] = []
-    refs: list[str] = []
-    index: int
-    entry: AgentRequest
-    for index, entry in enumerate(requests):
-        if _answered(entry["request"]):
-            continue
-        answer: Path = Path(entry["request"]["answerPath"])
-        asked: Path = answer.with_name(answer.stem + REQUEST_SUFFIX)
-        write_json(asked, entry["request"])
-        ref: str = f"request-{index}"
-        refs.append(ref)
-        steps.append(
-            NewStep(
-                {
-                    "ref": ref,
-                    "description": f"Answer the solutions architect's request to {entry['agent']}",
-                    "purpose": "The solutions architect named this agent for this work in its result",
-                    "agent": entry["agent"],
-                },
-                params={PARAM_REQUEST: str(asked)},
-            ),
-        )
-    if not steps:
-        return ()
-    finish: StepPlan = {
-        "description": FINISH_DESCRIPTION,
-        "purpose": "The architect decides with the answers to the requests its result made",
-        "agent": ARCHITECT,
-        "inputs": refs,
-    }
-    return (StepGroup((*steps, NewStep(finish)), UNDER_THIS),)
-
-
 def _saved_request(run: StepRun, *names: str) -> tuple[str, Path]:
     """Find the request file a helper step is launched from.
 
-    A step the architect's result requested (``_requested``) is handed its request file as a
-    parameter; it runs after the architect's session, and the architect's ``Finish`` is handed
-    its answer. A helper the architect started in its own session and left running holds its
-    request file itself, or is handed it by its inputs.
+    A step the script planned from the architect's output (``architecture_rounds``) is handed its
+    request file as a parameter. A step the lead planned holds its request file itself, or is
+    handed it by its inputs.
 
     Returns:
         The artifact name and the path of the request: the parameter the planning step handed,
@@ -747,10 +819,26 @@ def _saved_request(run: StepRun, *names: str) -> tuple[str, Path]:
     raise ArchitectureStepError(run, f"neither the step nor its inputs hold a request file named one of {names!r}")
 
 
-def _helper_request[T](run: StepRun, asked: Path, validate: Callable[[object], T]) -> T:
-    """Read the request a helper step is launched from, written by the step directly above it.
+def _planner(run: StepRun) -> Step | None:
+    """Find the step that planned a helper step.
 
-    The architect, or the lead, wrote the request in its session or from its result. A request that
+    Returns:
+        The step that holds the record of planning it (``step_journal.planned_for_name``), else
+        the step directly above it.
+
+    """
+    record: str = step_journal.planned_for_name(run.step["id"])
+    step: Step
+    for step in step_journal.steps_in_order(run.journal()):
+        if any(held["name"] == record for held in step["artifacts"]):
+            return step
+    return step_journal.parent_step(run.journal(), run.step["id"])
+
+
+def _helper_request[T](run: StepRun, asked: Path, validate: Callable[[object], T]) -> T:
+    """Read the request a helper step is launched from, written by the step that planned it (:func:`_planner`).
+
+    The architect's output, or the lead's session, holds the request. A request that
     does not satisfy the current contract is stale only when the writer's session was made under
     another agent definition or contracts (``AgentRunner.resumable``), or the writer holds no
     session: the step above the helper then runs again and writes its requests to the current
@@ -772,7 +860,7 @@ def _helper_request[T](run: StepRun, asked: Path, validate: Callable[[object], T
     try:
         return validate(held)
     except ArchitectureWorkError as exc:
-        writer: Step | None = step_journal.parent_step(run.journal(), run.step["id"])
+        writer: Step | None = _planner(run)
         if writer is None:
             raise ArchitectureStepError(run, f"{asked}: {exc}") from None
         evidence: tuple[str, ...] = (f"step {run.step['id']} ({run.step['description']}): {asked}: {exc}",)
@@ -802,9 +890,9 @@ def _helper_request[T](run: StepRun, asked: Path, validate: Callable[[object], T
 def specialist(run: StepRun) -> AgentLaunch:
     """Build the session of any agent the architect or the lead named for a request.
 
-    The agent is the one the step names: the architect's result named it (``requests``), the
-    architect started it in its own session and it was left running, or the lead asked it for an
-    opinion. No code chooses it. The repository steward, when named, answers what the architect's
+    The agent is the one the step names: the architect's round of requests named it
+    (``questions.json``, or a result's ``requests``), or the lead asked it for an opinion. No
+    code chooses it. The repository steward, when named, answers what the architect's
     placement needs to know about the repositories; the placement itself is the architect's,
     recorded in the matrix before the steward starts and checked when the architect's result is
     accepted (``repo_scoping.story_build_problems``).
@@ -1060,16 +1148,55 @@ def _sync(arch: Path, paths: Sequence[str]) -> DocumentsSynced:
     return update_matrix(matrix_file(), change)
 
 
+def _record_homes(arch: Path, request: WriteRequest, written: WriteResult) -> Recorded:
+    """Record the headings a write states the request's facts under, in one matrix change.
+
+    For each fact the result does not list under ``notApplied``: ``describedBy`` from each entry
+    it is about to its home heading, and ``covers`` from that heading to each requirement an
+    entry among them serves as a feature (``servedBy``), with that feature as ``via``.
+
+    Returns:
+        What could not be recorded: a home that is no document the matrix holds, an entry it does not hold.
+
+    """
+    skipped: set[str] = {entry["entry"] for entry in written["notApplied"]}
+
+    def change(matrix: Matrix) -> Recorded:
+        problems: list[str] = []
+        for fact in request["facts"]:
+            if fact["id"] in skipped or not fact["about"]:
+                continue
+            home: EntryId | None = cited_document(arch, fact["home"]["source"])
+            heading: str = fact["home"]["heading"].strip()
+            if home is None or matrix.find(home) is None:
+                source: str = fact["home"]["source"]
+                problems.append(f"fact {fact['id']}: its home {source!r} is no document the matrix holds")
+                continue
+            for named in fact["about"]:
+                entry: EntryId | None = _held(matrix, named, f"fact {fact['id']} about", problems)
+                if entry is None:
+                    continue
+                _link(matrix, REL_DESCRIBED_BY, entry, home, problems, {ATTR_HEADING: heading})
+                for served in matrix.incoming(entry, (REL_SERVED_BY,)):
+                    covered: dict[str, JsonValue] = {ATTR_HEADING: heading, ATTR_VIA: entry}
+                    _link(matrix, REL_COVERS, home, served.start, problems, covered)
+        return Recorded(problems=tuple(problems))
+
+    return update_matrix(matrix_file(), change)
+
+
 @agent_step(MAINTAINER)
 def maintainer(run: StepRun) -> AgentLaunch:
-    """Build the session of the document maintainer the architect left running.
+    """Build the session of the document maintainer of one write request the script wrote.
 
     The accepted result is mirrored in the matrix: each document written is set in review and its
     entry is brought up to date with its headings and lifecycle, and the entry of a document that is gone is
-    removed. The session is granted the architecture root, where it writes the arc42 documents.
+    removed; then each fact's home heading is recorded (:func:`_record_homes`). The session is
+    granted the architecture root, where it writes the arc42 documents.
 
     Returns:
-        The launch from the saved write request: the result path the request names as output.
+        The launch from the write request the step's parameters name, else the saved one: the
+        result path the request names as output.
 
     """
     name: str
@@ -1083,6 +1210,13 @@ def maintainer(run: StepRun) -> AgentLaunch:
         paths: list[str] = written_paths(arch, request, written)
         if paths:
             accepted.tools.portfolio(accepted.inputs.stage, _sync, arch, paths)
+        recorded: Recorded = accepted.tools.portfolio(accepted.inputs.stage, _record_homes, arch, request, written)
+        if recorded.problems:
+            raise ArchitectureStepError(
+                accepted,
+                f"the matrix does not hold the headings {output} states the facts of {asked} under",
+                *recorded.problems,
+            )
         synced: list[JsonValue] = [*paths]
         return Completion(artifacts=(file_artifact(WRITTEN, output), value_artifact(SYNCED, synced)))
 

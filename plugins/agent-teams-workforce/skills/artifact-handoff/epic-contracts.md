@@ -48,13 +48,15 @@ The PRD and portfolio workflows run their commands and accept agent files throug
 |---|---|---|---|
 | architecture context: `<arch-work>/context.json` | step `prd_to_spec.open_run` | `aws-solutions-architect` (as `context`); the architecture steps | `architecture-context.schema.json` |
 | architecture state: `<arch-work>/state.json` | `aws-solutions-architect` | `aws-solutions-architect` | `architecture-state.schema.json` |
-| architecture result: `<arch-work>/result.json` | `aws-solutions-architect` | the check step; `architecture-team-lead`; the span step | `architecture-result.schema.json` |
-| specialist request | `aws-solutions-architect`; `architecture-team-lead` | the design specialist, diagram author or `polyrepo-steward` asked | `specialist-request.schema.json` |
-| specialist answer | the agent asked | `aws-solutions-architect`; `architecture-team-lead` | `specialist-answer.schema.json` |
+| specialist round: `<arch-work>/questions.json` | `aws-solutions-architect`, its Analyze step | the step that accepts it, which starts each specialist and then the Decide step | `specialist-round.schema.json` |
+| answers digest: `<arch-work>/helpers/digest-<step>.json` | the launch of an architect step handed answers | `aws-solutions-architect` | `answers-digest.schema.json` |
+| architecture result: `<arch-work>/result.json` | `aws-solutions-architect` | the check step; the step that accepts it, which writes the write requests; `architecture-team-lead`; the span step | `architecture-result.schema.json` |
+| specialist request | the step that accepts the architect's round or result, from each request it states; `architecture-team-lead` | the design specialist, diagram author or `polyrepo-steward` asked | `specialist-request.schema.json` |
+| specialist answer | the agent asked | `aws-solutions-architect`, with the digest; `architecture-team-lead` | `specialist-answer.schema.json` |
 | TRD request | the script: mode `complete` from the architect's result (`trdChanges`, `sharedCapabilities`) once the architecture check passes; mode `update` from the `trd.confirm` step | `trd-author` | `trd-request.schema.json` |
 | TRD answer | `trd-author` | the step that accepts it, which records each requirement in the matrix as a `trd` pointer | `trd-answer.schema.json` |
-| write request | `aws-solutions-architect` | `architecture-maintainer` | `write-request.schema.json` |
-| write result | `architecture-maintainer` | `aws-solutions-architect` | `write-result.schema.json` |
+| write request | the step that accepts the architect's result, one per document | `architecture-maintainer` | `write-request.schema.json` |
+| write result | `architecture-maintainer` | the step that accepts it, which records `describedBy` and `covers` | `write-result.schema.json` |
 | architecture documents (views, standards and policies): `<arch>/arc42/**` except section 2, and the detailed architecture `<arch>/detailed/**` | `architecture-maintainer` | the architecture team, `trd-author`, the spec authors | `skills/arc42/references/arc42-section-model.md`; `document-front-matter.schema.json#/$defs/ArchitectureView` and `#/$defs/ArchitectureStandard`; the architecture and design criteria of `skills/effective-architecture/review-standard.md` |
 | check result: `<arch-work>/checks/<step id>/check.json` | the check step | `aws-solutions-architect` (as `findings`) | `check-result.schema.json` |
 | review log: `<arch-work>/review-log.json` (the context's `reviewLogPath`) | `aws-solutions-architect` | the check step (`review_log.problems`); the promotion step, which files it at `<arch>/review-logs/<epic id>.json` and links it from the Epic's matrix entry as `reviewLog` | `skills/log-architecture-review/schemas/review-log.schema.json` |

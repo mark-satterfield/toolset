@@ -186,28 +186,22 @@ sequenceDiagram
     MX-->>SA: nothing (normal) or seeded entries, not approved and not verified
     Note over SA: compares existing architecture to the PRD. Seeded entries get due diligence - section 3
     Note over SA,TRD: the TRD seed came first - section 4
-    loop until the higher-level architecture, the architecture that goes in arc42, covers the PRD
-        SA->>SP: a request on one subject, with what the architect knows and the TRD
+    SA-)WF: Analyze - its state file and one request per specialist, with the TRD
+    loop at most 2 rounds, until the architecture and its detailed design cover the PRD
+        WF->>SP: each request, each specialist its own session, at the same time
         Note over SP: a specialist starts no further agent and no workflow
         SP->>AWS: AWS documentation, best practices, cost analysis
         AWS-->>SP: guidance and figures
-        SP-->>SA: higher-level architecture of that subject
+        SP-->>WF: architecture and detailed design of that subject, read from the TRD and the TRD changes the request states
+        WF->>SA: Decide, a fresh session - every answer and a digest of them
         SA->>AWS: blesses or reviews every AWS resource the architecture defines
         AWS-->>SA: review result, cost
-    end
-    Note over SA: the higher-level architecture is complete. The architect states the TRD changes in its result - section 4
-    loop until the detailed design covers the PRD
-        SA->>SP: a request on one subject, with the TRD and the TRD changes it depends on
-        SP->>AWS: AWS documentation, best practices, cost analysis
-        AWS-->>SP: guidance and figures
-        SP-->>SA: detailed design of that subject, read from the TRD and those changes
-        SA->>AWS: blesses or reviews every AWS resource the design defines
-        AWS-->>SA: review result, cost
+        SA-)WF: the result - its decisions, the TRD changes, and a second round's requests if the answers raise any
     end
     SA-)WF: review log beside the result - the AWS tools, MCP servers, skills and specialists that reviewed each AWS resource, best practices, security best practices, Well-Architected review, every decision's options and reason
-    SA-)A42: new and changed arc42 documents, in-review
-    SA-)DA: new and changed detailed architecture and design documents, in-review
     SA-)MX: new and changed entries and relationships, not approved, not verified
+    WF-)A42: architecture-maintainer, one per document - new and changed arc42 documents, in-review
+    WF-)DA: architecture-maintainer, one per document - new and changed detailed architecture and design documents, in-review
     Note over SA,WF: the architect reviews and approves its own architecture. The check step refuses a result whose review log is incomplete
     opt a matter the architect cannot settle
         SA->>DEC: through architecture-team-lead, both positions and their evidence
@@ -231,9 +225,13 @@ Notes on the diagram:
   architecture, and links it from the Epic's matrix entry (attribute `reviewLog`). arc42 holds no
   decision records, so the log keeps the documents to design facts while every decision and
   review stays findable.
-- How the architect reaches a specialist is drawn in section 3: in its own session for a
-  question or quick work, or by naming the agent and its request in its result for work outside
-  its session.
+- How the architect reaches a specialist is drawn in section 3: it names the agent and its
+  request in a round of its requests, and the script starts the agent. The architect starts no
+  agent, and each of its steps is a fresh session (`orchestrator/DESIGN.md`, section 11.1): one
+  long session resumed for every round and correction grew to 466K tokens of context re-sent on
+  every turn. The documents are written by `architecture-maintainer` sessions the script starts,
+  one per document, from the facts, restatements, settlements and diagrams of the architect's
+  result.
 - "Any updates or corrections to arc42 must also be made." (the owner): every correction written
   to the matrix at the end of the stage has its counterpart in the arc42 documents written in the
   same stage.
@@ -307,13 +305,10 @@ flowchart TD
     m1 --> subj["Name each subject the design needs. For example persistence, an SQS queue, KMS for a container"]
     subj --> cat["Find the agents for the subject in the find-specialists catalog: description, skills, MCP servers"]
     cat --> q2{"For this subject, does an agent's expertise give a reason to use it?"}
-    q2 -->|"yes"| how{"What does the architect need from it?"}
-    how -->|"a question or a quick response"| ask["The architect starts the agent in its own session, by name"]
-    how -->|"work outside the architect's session"| req["The architect names the agent and its request in its result's requests"]
-    req --> route["The script starts that agent by the name given, with the request, then the architect's Finish with the answer"]
+    q2 -->|"yes"| req["The architect names the agent and puts all of its questions and draft reviews in one request of its round"]
+    req --> route["The script starts that agent by the name given, with the request, then a fresh Decide of the architect with every answer and their digest"]
     q2 -->|"no: no agent covers the subject, or none is equipped for it"| self["The architect designs it, with its own tools and resources"]
-    ask --> m2(("merge"))
-    route --> m2
+    route --> m2(("merge"))
     self --> m2
     m2 --> more{"Another subject?"}
     more -->|"yes"| q2
@@ -342,12 +337,14 @@ Notes on the diagram:
   generated from every agent's own definition by `scripts/specialist_catalog.py`, whose
   `generate --check` the pre-commit hook `specialist-catalog-fresh` runs whenever an agent
   changes.
-- Python decides nothing about which agent runs. Each entry of the result's `requests`
-  (`architecture-result.schema.json`) names an agent and states its request; the step that
-  accepts the result (`orchestrator/flows/architecture.py`, `_requested`) plans one step for each
-  named agent and the architect's `Finish` after them, and the launch builder registered for
-  every catalog agent without one of its own (`journal_registry.any_agent_step`) starts it. A name
-  the catalog does not list is sent back to the architect as a correction.
+- Python decides nothing about which agent runs. Each entry of a round (the Analyze step's
+  `questions.json`, `specialist-round.schema.json`, or a second round in the result's `requests`)
+  names an agent and states its request; the step that accepts it
+  (`orchestrator/flows/architecture_rounds.py`, `round_steps`) plans one step for each named agent
+  and a fresh Decide of the architect after them, and the launch builder registered for every
+  catalog agent without one of its own (`journal_registry.any_agent_step`) starts it. A name the
+  catalog does not list, or two requests to one agent in one round, is sent back to the architect
+  as a correction.
 - The architecture lead chooses the specialist it asks for an opinion from the same catalog.
 - In example 1 the owner noted the cost of autonomy: "So I'm not necessarily interested in an
   agent orchestating with autonomy like this."

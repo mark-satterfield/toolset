@@ -90,10 +90,10 @@ Notes on the diagram:
 - An agent whose definition grants `Agent` or `Workflow` may start subagents and workflows when
   its work needs them, choosing the plugin's own agents from the `find-specialists` catalog
   ([requirements/pipelines.md](../requirements/pipelines.md), "Agents may start agents";
-  `skills/subagent-contract/SKILL.md`, "Starting subagents and workflows"). Every agent elaboration
-  starts, except `aws-solutions-architect`, grants neither: the scripts start every agent
-  elaboration needs, so its session carries no agent listing, only its own agent's MCP servers,
-  and only the skills its definition names (`orchestrator/DESIGN.md`, section 5.2).
+  `skills/subagent-contract/SKILL.md`, "Starting subagents and workflows"). No agent elaboration
+  starts grants either: the scripts start every agent elaboration needs, so its session carries
+  no agent listing, only its own agent's MCP servers, and only the skills its definition names
+  (`orchestrator/DESIGN.md`, section 5.2).
 
 ## Where the stores are read and written
 

@@ -3,9 +3,9 @@ name: find-specialists
 description: >-
   The catalog of every agent of the agent-teams-workforce plugin, each with its description, the
   skills it loads and the MCP servers its tools reach, and the commands that search it. Use when
-  deciding which specialist agents a subject of the design needs: to ask a specialist a question
-  in your own session, or to name an agent and its request in your result for work done outside
-  your session. The agents you choose are your decision; nothing else chooses them.
+  deciding which specialist agents a subject of the design needs, to name each one and its
+  request in the file your definition says; the script starts each agent you name. The agents
+  you choose are your decision; nothing else chooses them.
 allowed-tools: [Bash, Read]
 ---
 
@@ -49,12 +49,10 @@ a specialist to the owner.
 
 ## Using the agents you chose
 
-- A question, or a quick bounded piece of work: start the agent in your own session by its
-  `name`, as your definition says.
-- Work done outside your session: name the agent and state its request in your result, as
-  your definition and the result's schema say. The script starts that agent by the name you
-  give, with your request, and hands you its answer. It decides nothing about which agent runs,
-  and refuses a name the catalog does not list.
+Name each agent by its `name` and state its request in the file your definition says. The
+script starts that agent by the name you give, as its own session, with your request, and hands
+you its answer. It decides nothing about which agent runs, and refuses a name the catalog does
+not list. You start no agent yourself.
 
 ## How the catalog stays current
 

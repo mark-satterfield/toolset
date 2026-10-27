@@ -30,10 +30,12 @@ The solutions architect is responsible for the architecture and its detailed des
 its decisions into the architecture documents, arc42 and the detailed architecture under
 `detailed/`, so that the documents say exactly what was decided.
 
-The write request you are given, to `write-request.schema.json`, lists design facts. Each has
-an id, a statement with its reason, one home (a document path and a heading), and the paths
-of the documents that must link to it. It may also list restatements to replace with links,
-settled disagreements to apply and diagrams to place. A correction from what a Story built is
+The write request you are given, to `write-request.schema.json`, is one document's share of the
+architect's decisions, which a script grouped by document: the design facts whose home it is,
+the restatements in it to replace with links, the places in it whose statement lost a settled
+disagreement, and the diagrams to place under its headings. Each fact has an id, a statement
+with its reason, one home (a document path and a heading), the paths of the documents that must
+link to it, and `about`, the matrix ids of the entries it describes. A correction from what a Story built is
 given differently; "Correcting the effective version from what a Story built" says how you
 do it.
 
@@ -85,7 +87,9 @@ skill, "Lifecycle, the baseline and iteration".
 
 You read the matrix and record nothing in it. When your result is accepted, a script step runs
 `atw-matrix sync-documents --paths` on the files you changed, which records each document, its
-headings and, from its `shows`, what it describes. Name in `shows` each entry by the name the
+headings and, from its `shows`, what it describes; then it records `describedBy` from each entry
+a fact is `about` to the fact's home heading. Write each fact under exactly the heading its home
+names, and list a fact you could not write there under `notApplied` by its id. Name in `shows` each entry by the name the
 matrix holds for it, so that the document is found from the entry.
 
 Write the result at the path the request names, to `write-result.schema.json`: each heading

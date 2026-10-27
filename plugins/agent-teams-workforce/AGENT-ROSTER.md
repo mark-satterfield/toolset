@@ -45,7 +45,7 @@ Gate and conflict rulings, and context integrity. `gate-enforce` starts `phase-g
 
 ## Architecture
 
-`aws-solutions-architect` has single responsibility for the architecture a PRD needs. It chooses the design specialists, review specialists and diagram authors a gap needs through the `find-specialists` catalog and asks each one question or one bounded task, states the TRD changes its decisions make, starts `architecture-maintainer` to write its decisions into arc42, reviews and approves its own architecture and records the proof in the Epic's review log. `architecture-team-lead` routes what the architect could not settle, and `architecture-decider` rules on what the team could not settle. The remaining agents here are available to a caller that chooses them.
+`aws-solutions-architect` has single responsibility for the architecture a PRD needs. It chooses the design specialists, review specialists and diagram authors a gap needs through the `find-specialists` catalog and puts to each one request a round, which the script runs, states the TRD changes its decisions make and the facts the script has `architecture-maintainer` write into arc42, reviews and approves its own architecture and records the proof in the Epic's review log. `architecture-team-lead` routes what the architect could not settle, and `architecture-decider` rules on what the team could not settle. The remaining agents here are available to a caller that chooses them.
 
 | Agent | Category | Purpose |
 | --- | --- | --- |

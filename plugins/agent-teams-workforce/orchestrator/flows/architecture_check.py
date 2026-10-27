@@ -158,7 +158,7 @@ def _aws_resources(matrix: Matrix, elements: list[str]) -> dict[str, str]:
     return found
 
 
-def _review_log_problems(bead: str, log: Path, matrix: Matrix | None, result: ArchitectureResult) -> list[str]:
+def review_log_findings(bead: str, log: Path, matrix: Matrix | None, result: ArchitectureResult) -> list[str]:
     """Check the Epic's review log against the AWS resources the design adds or changes.
 
     Returns:
@@ -238,7 +238,7 @@ def _mechanical(run: StepRun, result: ArchitectureResult, criteria: Criteria, lo
         if entry.id not in answered
     ]
     problems.extend(f"criterion {name} has no answer in the architecture result" for name in unanswered)
-    problems.extend(_review_log_problems(str(run.bead), log, matrix, result))
+    problems.extend(review_log_findings(str(run.bead), log, matrix, result))
     corrections: JsonValue = run.params().get(CORRECTIONS, 0)
     return {
         "valid": not problems,

@@ -127,7 +127,8 @@ The outermost steps of an Epic's journal are Open the run, Architecture, TRD, Sp
 Tasks, Task edges, Score the Tasks, Apply the done rule, Story edges and Mark the Epic elaborated
 (`flows/prd_to_spec.py` `outermost_steps`). A step with child steps is never run itself. Steps
 found at run time are added by the step that finds them: the open-run step plans the architect's
-step and the check after it, the check plans the promotion, the span step plans
+Analyze step and the check after it, each architect step plans the specialists, the next Decide or
+the document writes after it, the check plans the promotion, the span step plans
 one container per repository with its first step, that first step plans the repository's spec
 steps, and the Story bead write plans the repository's container under Tasks.
 
@@ -165,15 +166,17 @@ adds every step the result plans and marks the step done (`core/journal_changes.
 `apply_completion`). A step that raises is marked failed with a structured cause and the dispatch
 ends; the next dispatch starts at that step. A stop request leaves the step running.
 
-An agent that starts other agents in its own session (`aws-solutions-architect`) or plans steps for
-the script (`architecture-team-lead`) adds child steps and a last child step "Finish" under its own
-step with `atw-step-journal`, by the protocol in `helper-steps.schema.json` that the
-`subagent-contract` skill applies. After such a session the
-runner reads the journal again: a step whose child steps are all done and end with a "Finish" the
-agent closed in its own session is completed through that "Finish" (the accept of its launch, its
-result recorded on the agent's step); one whose child steps end with no done "Finish" gets a
-planned "Finish"; a child left not done is the next step. An agent left running is launched as its own session from
-the request file its step holds; "Finish" is launched as the same agent, continuing its session.
+No Epic agent starts another agent. An agent that plans steps for the script
+(`architecture-team-lead`) adds child steps and a last child step "Finish" under its own step with
+`atw-step-journal`, by the protocol in `helper-steps.schema.json` that the `subagent-contract`
+skill applies. After such a session the runner reads the journal again: a step whose child steps
+are all done and end with a "Finish" the agent closed in its own session is completed through that
+"Finish" (the accept of its launch, its result recorded on the agent's step); one whose child steps
+end with no done "Finish" gets a planned "Finish"; a child left not done is the next step. A helper
+is launched as its own session from the request file its step holds; "Finish" is launched as the
+same agent, continuing its session. The solutions architect plans nothing itself: each of its
+steps writes a file, and the step that accepts it plans what follows among its siblings
+(section 11.1).
 
 A step that already holds a session id, a "Finish" step, and a later step of an agent that holds a
 session earlier in the journal continue that session (`claude --resume`); when the conversation is
@@ -188,7 +191,7 @@ record, starts anew; a plugin release that changes neither file keeps it.
 An architecture context file the open-run step wrote to an earlier contract is written again in
 place to the current one by the step that reads it (`architecture_files.read_context`), and no
 step is set back to planned. A step that reads another file an earlier step wrote, and finds that
-it does not satisfy the contract the step reads it by (a request the step above a helper wrote),
+it does not satisfy the contract the step reads it by (a request the step that planned a helper wrote),
 is not failed (`StaleInputError`): once the steps running with it end, the step
 that wrote the file and every step after it are set back to planned, and the run goes on from
 there, so the file is written again to the current contract. When the same writer is named twice
@@ -517,7 +520,7 @@ For example, the launch of `aws-solutions-architect`:
 claude -p --output-format stream-json --verbose --session-id <uuid>
   --agent agent-teams-workforce:aws-solutions-architect --model opus --setting-sources project
   --settings <session dir>/settings.json --mcp-config <session dir>/mcp.json --strict-mcp-config
-  --plugin-dir <plugin> --permission-mode bypassPermissions
+  --plugin-dir <session dir>/.plugin --permission-mode bypassPermissions
 ```
 
 - **Working directory.** A per-session directory outside every repository,
@@ -593,10 +596,10 @@ records the model in `run.json`; it passes no effort.
 
 | Agent | Role | Launched |
 |---|---|---|
-| `aws-solutions-architect` | `solutions-architect` | by the script: its first step, a correction, a competing design, its "Finish" |
-| Any agent the `find-specialists` catalog lists that has no row here (for example `persistence-architecture-specialist`, `c4-diagram-author`, `polyrepo-steward`) | its own, if any | by the architect in its own session, by the name it chose from the catalog; by the script when the architect names it in its result's `requests`, when it was left running, or when the lead asks it for an opinion |
+| `aws-solutions-architect` | `solutions-architect` | by the script, each step a fresh session: Analyze, each Decide, a correction, a competing design |
+| Any agent the `find-specialists` catalog lists that has no row here (for example `persistence-architecture-specialist`, `c4-diagram-author`, `polyrepo-steward`) | its own, if any | by the script, by the name the architect gave it in a round of its requests (`questions.json` or its result's `requests`), or when the lead asks it for an opinion |
 | `trd-author` | | by the script: the TRD write from the architect's decisions, once the check passes; the correction `trd.confirm` plans; when left running |
-| `architecture-maintainer` | | by the architect in its own session; by the script when left running |
+| `architecture-maintainer` | | by the script: one per document an accepted architect result changes, from the write request the script built |
 | `architecture-team-lead` | `architecture-lead` | by the script, only when the architect's result is unsettled |
 | `architecture-decider` | `decider` | by the script, only for a step the lead plans |
 | `ui-design-source-selector` | | by the script, in a frontend repository's container under Specs and Stories: the UI sources step |
@@ -969,11 +972,26 @@ specification is `<plugin>/blueprint/design/matrix.md`.
 
 ### 11.1 Architecture
 
-The Architecture container holds, in order: the pack; the TRD seed; the architect's step; the
-index step; the check step; then either a correction by the architect, an index and a new check,
-or the lead, an index and a new check, or the TRD write and the promotion step.
-The architect reviews and approves its own architecture against the criteria; nothing else
-reviews it.
+The Architecture container holds, in order: the pack; the TRD seed; the architect's Analyze step;
+the steps it plans after itself; the index step; the check step; then either a correction by the
+architect, an index and a new check, or the lead, an index and a new check, or the TRD write and
+the promotion step. The architect reviews and approves its own architecture against the criteria;
+nothing else reviews it.
+
+- **The architect's sessions** (`flows/architecture.py`, `flows/architecture_rounds.py`). The
+  architect starts no agent, and each of its steps is a fresh session; files carry the work from
+  one to the next. Analyze writes the state file and `questions.json`, one request per specialist.
+  Its acceptance plans one step per request (the specialists run at the same time) and then a
+  Decide step, handed every answer and a digest of them (`answers-digest.schema.json`), so the
+  architect reads a few KB per answer instead of each answer file. Decide writes the result; one
+  that asks a second round gets it and one more Decide, and a Decide of round 2 that still asks
+  fails the step. A result with no open request plans one `architecture-maintainer` per home
+  document whose script-built write request changed; the step that accepts each write records
+  `describedBy` and `covers` for the facts' homes. The architect is handed a short example of
+  each file it writes instead of its schema, and the output check returns every problem to the
+  same session, the review log's included. Reason: one long Opus session per Epic, resumed for
+  every round and correction, grew to 466K tokens of context re-sent on every turn and idled while
+  its helpers ran; short fresh sessions keep each turn's context small and nothing waits.
 
 - **The index step** (`flows/architecture_index.py`) runs `$ATW_DOCS_INDEX_COMMAND`, the
   project's re-index of its graph index of the architecture documents, once per pass after every

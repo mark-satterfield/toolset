@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The digest of an architect step's answers is defined once, as architecture-result.schema.json#/$defs/AnswersDigest.",
+  "$ref": "architecture-result.schema.json#/$defs/AnswersDigest"
+}

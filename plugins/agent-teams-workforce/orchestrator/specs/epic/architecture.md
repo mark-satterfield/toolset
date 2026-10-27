@@ -1,7 +1,7 @@
 # Architecture: the steps of the Architecture container
 
 Code: `orchestrator/flows/prd_to_spec.py` (the open-run step), `architecture.py`,
-`architecture_check.py`, `architecture_ruling.py`, `architecture_promotion.py`,
+`architecture_rounds.py`, `architecture_check.py`, `architecture_ruling.py`, `architecture_promotion.py`,
 `architecture_earlier.py`, `architecture_files.py` (names, the context file and readers).
 
 One agent, `aws-solutions-architect`, is responsible for the solution: it decides the architecture
@@ -34,8 +34,8 @@ architect's state and result files, the review log beside the result (`reviewLog
 TRD, and the folder for requests to helpers;
 with the vault commit the document entries are synced to and the name of the matrix command. It
 records the file `prd`, the value `matrix epic entry` and the file `context`, and plans, under the
-Architecture container, the architecture pack, the TRD seed, the architect's step, and the index
-and the check that follow it, and records each on itself, so a start at or before the open-run step
+Architecture container, the architecture pack, the TRD seed, the architect's Analyze step, and the
+index and the check that follow it, and records each on itself, so a start at or before the open-run step
 removes them and the open-run step plans them again as the lane plans them then. Those plans are also registered
 as what the lane plans under the container, so a planned step whose key was renamed is replanned
 to the current key when the run opens the journal.
@@ -44,7 +44,7 @@ A step that finds the context file does not satisfy the context contract (the co
 after the open-run step wrote it) is not failed: the open-run step and every step after it are set
 back to planned, and the open-run step writes the file again (`prd-to-spec.md`, "Where a run
 begins"). A helper whose saved request does not satisfy its contract does the same for the step
-directly above it, which wrote the request.
+that planned it, whose output holds the request.
 
 Every later step of the container is handed the context file through the journal and derives no
 path of its own.
@@ -64,82 +64,88 @@ names, the selector, or the Epic as a whole), with its rule and each heading tha
 `<path>#<heading>`; the front matter's `decisionIds` are those headings that resolve in the matrix.
 Nothing of the seed is recorded in the matrix: its requirements are the matrix's own constraints.
 It records the file `TRD`, the value `seeded requirements` and the value `earlier TRD constraints
-removed`, and is an input of the architect's step, which is handed the TRD as `trd`.
+removed`, and is an input of the architect's Analyze step, which is handed the TRD as `trd`.
 
-## The architect and the agents it starts
+## The architect and the agents the script starts for it
 
-Agent `aws-solutions-architect`, step "Decide what the architecture should be for this PRD".
-Its brief (`agent-brief.schema.json`) names exactly the files its definition names: `prd`,
-`trd` (the TRD at `trdPath`), `context`, `state` (its state file), and, in a later step, the
-`findings` (check results), `answer` and `ruling` files that step is handed. No file
-is written from the matrix for it: the architect reads the Epic live, with
-`atw-matrix epic <id>`, `atw-matrix epic <id> --realizers` and `atw-matrix epic <id> --constraints`
-(what each returns is defined in `blueprint/design/matrix.md`, queries Q2 and Q4, Q26 and Q5), and runs
-`atw-matrix impact --id <id>` itself for an entry it means to change. The session is granted the
-work folder and no folder of the architecture or of the PRDs. The architect records its own entries and links in the matrix (`atw-matrix put`, `link`)
-before it writes its result. After its detailed design has determined the resources and
-components, it decides the stack, and so the repository, of each element and records that
-placement itself (`put stack`, `homeIn`, architecture side), leaving the repository out of a
-stack whose repository does not exist yet; the `span` step names and creates that repository.
-Its output is the architecture result at the path the context file names. The session's output
-check validates the result against its schema, then runs `repo_scoping.story_build_problems` on the
-result's `addedOrChangedElements` (the elements the design adds or changes) and on its
-`unchangedWorkElements` (the existing elements the design leaves unchanged where the Epic has work),
-each list on its own, since the Epic's Stories build both, and refuses a result in which both are empty: an id the matrix lacks, an entry
-not on the architecture side, an event with no description, an entry built in no stack (for an
-event, one none of whose producers is homed in a stack);
-then it records the design in an in-memory copy of the matrix, which is never written, and compares
-it with what `atw-matrix epic` returns from that copy: an entry the result names that the matrix does
-not hold, a requirement the copy does not show as served by the feature the result names, a
-requirement neither served by a feature nor listed under the result's `noFeature`. Each problem is
-one sentence of the error the check raises, and goes to the architect as its correction (the
-session's one corrective resume). The step that accepts the result then makes the write: it records
-in the matrix what the result states of the Epic's features (`servedBy`, `realizedBy`,
-`supportedBy`, and `covers` from each document heading that describes a feature), and fails only
-when the matrix written does not hold it. It records the file `architecture result` and the values
-`conclusion` and `requirements with no feature`. The output check also refuses a `requests` entry
-naming an agent the `find-specialists` catalog (`skills/find-specialists/catalog.json`) does not
-list.
+Agent `aws-solutions-architect`. It starts no agent and holds no session across steps: every step
+it performs is a fresh session that writes one file, and the step that accepts that file plans what
+follows it, among its siblings, before the index and the check (`architecture_rounds`). Its brief
+(`agent-brief.schema.json`) names exactly the files its definition names: `prd`, `trd` (the TRD at
+`trdPath`), `context`, `state` (its state file) and an `example` of each file the step writes
+(`skills/artifact-handoff/examples/`), which it is handed instead of the 45K-character schema; and,
+on a later step, the `answers digest`, each `answer`, the `findings` (check results) and each
+`ruling` that step is handed. No file is written from the matrix for it: it reads the Epic's pack
+and runs `atw-matrix` reads itself. The session is granted the architecture work folder and no
+folder of the architecture or of the PRDs.
 
-Each entry of the result's `requests` is work the architect has an agent do outside its own
-session. The accepting step writes each request beside its answer path
-(`<answer stem>.request.json`) and plans, below its own step, one step per request whose answer
-file is not yet a valid answer, performed by the agent the entry names and handed the request
-file as the parameter `request`; then a step "Finish" of the architect whose inputs are those
-steps, so it is handed each `answer`. The architect's step stays running until they are done.
-A "Finish" whose result requests more work plans another "Finish" below it; the third "Finish"
-in that chain that still requests work fails the step (`MAX_FINISH_GENERATIONS`), because the
-architecture does not converge.
-
-The same launch builder serves every step the architect performs: the first, its "Finish", a
-correction after the mechanical check or after the lead's routing, and a competing design the lead plans.
-The architect writes its result as the work goes (`architecture-result.schema.json`), and every
-step keeps a result already at the result path, so a session that starts again continues from
-the partial result. A step after the first updates the result file in place and continues the
-architect's session: the "Finish" step continues the session of the step above it, and any other
-later step continues the nearest earlier session the agent holds in the journal.
-
-The architect starts the agents the PRD needs inside its own session, by the names it chose from
-the `find-specialists` catalog, and the document maintainer. It records
-each as a child step of its own step with `atw-step-journal`, with the request file it wrote, and
-adds a last child step "Finish", by the protocol in `helper-steps.schema.json`. When its session
-ends, the runner reads the journal again:
-
-- every child step is done and the last is a "Finish" the architect closed in its own session: the
-  runner checks the result and calls the launch's accept as if it had run "Finish" (the matrix
-  links of the result, the steps its `requests` plan, the conclusion and the other artifacts), and
-  records what it returns on the architect's step;
-- every child step is done and the last is no done "Finish" (the session stopped after its
-  helpers): the runner plans a "Finish" and launches the architect there, continuing its session;
-- a helper was left running: the runner launches that agent as its own session from the request
-  file the step holds, and records the request and what the agent wrote;
-- "Finish" is not done: the runner launches the architect again, continuing its session.
-
-| Helper left running | Request artifact | Output | Records |
+| Step | Planned by | Output | What its acceptance plans after it |
 |---|---|---|---|
-| any agent the architect or the lead named (the launch builder registered for every catalog agent with no builder of its own, `journal_registry.any_agent_step`) | the step's parameter `request`, else `request` or `question` | the answer path the request names | the request, file `answer`. The repository steward places nothing: an entry the architect's result builds in no stack fails the architect's output check |
+| Analyze ("Analyze the PRD against the architecture and put the questions and draft reviews to the specialists") | the open-run step | the state file, then `<arch-work>/questions.json` (`specialist-round.schema.json`): one request per specialist | one step per request whose answer is not yet a valid answer, then a Decide step (round 1) |
+| Decide ("Decide the architecture with the specialists' answers") | the step whose output asked a round | the architecture result at the context's `resultPath`, updated in place | a further round and a Decide (round 2) when the result's `requests` holds an unanswered request; otherwise the document writes |
+| A correction ("Correct what the mechanical check found"), or a step the lead adds | the check, or the lead | the architecture result, updated in place | as for Decide |
+
+The output check of the Analyze step validates the round and the state file, and refuses a request
+naming an agent the `find-specialists` catalog (`skills/find-specialists/catalog.json`) does not
+list, and two requests naming one agent: a round holds one request per agent, all of its
+questions and draft reviews together. An agent named with the plugin's prefix is the agent of that
+name (`step_journal.agent_name`). The step records the file `specialist round` and the file
+`state`.
+
+The output check of a step that writes the result validates it against its schema, then applies the
+architect's change file (`matrix-changes.json`, beside the context file) to a copy of the matrix
+that is never written, reporting each failed operation by its index; then it runs
+`repo_scoping.story_build_problems` on the result's `addedOrChangedElements` (the elements the
+design adds or changes) and on its `unchangedWorkElements` (the existing elements the design leaves
+unchanged where the Epic has work), each list on its own, since the Epic's Stories build both, and
+refuses a result in which both are empty: an id the matrix lacks, an entry not on the architecture
+side, an event with no description, an entry built in no stack (for an event, one none of whose
+producers is homed in a stack); then it records the design in that copy and compares it with what
+`atw-matrix epic` returns from it: an entry the result names that the matrix does not hold, a
+requirement the copy does not show as served by the feature the result names, a requirement
+neither served by a feature nor listed under the result's `noFeature`. It refuses an id a fact is
+`about` that the copy does not hold, and the request problems the Analyze step's check refuses.
+When the result asks no further round, it also checks the review log
+(`architecture_check.review_log_findings`, the same check the check step makes). Each problem is
+one sentence of the error the check raises, and goes back to the same session as its one
+correction. The step that accepts the result then makes the write: it applies the change file in
+one locked update, records in the matrix what the result states of the Epic's features
+(`servedBy`, `realizedBy`, `supportedBy`, and `covers` from each heading that already describes a
+feature), and fails only when the matrix written does not hold it. It records the file
+`architecture result` and the values `conclusion`, `requirements with no feature` and `specialist
+recommendations`.
+
+A round: the accepting step writes each request beside its answer path
+(`<answer stem>.request.json`) and plans one step per request whose answer file is not yet a valid
+answer, performed by the agent the request names and handed the request file as the parameter
+`request`; then a Decide step whose inputs are those steps and the accepting step's own inputs, so
+it is handed every answer of the chain and any findings and rulings, with the parameter `round`.
+The specialist steps run at the same time. The Decide step's launch writes the digest of its answers
+(`<helpersFolder>/digest-<step>.json`, `answers-digest.schema.json`: each answer's sentence,
+assumptions, needs, decisions and diagram homes, with the agent and the answer file's path) and
+hands it as `answers digest`. A result of round 2 (`MAX_ROUNDS`) that still requests work fails the
+step, because the architecture does not converge.
+
+The document writes: a result with no unanswered request is grouped into one write request per
+document (`architecture_rounds.write_requests`): a fact and a diagram go to the request of their
+home, a restatement to the request of the document it is in, and a settlement to the request of
+each document holding a statement that lost, with only that document's places. Each request is
+written to `<helpersFolder>/write-<document slug>.request.json`, its result path beside it. A
+document whose request file already holds the same request with a valid result is not written
+again; every other gets one `architecture-maintainer` step, handed the request as the parameter
+`request`. The maintainer steps run at the same time, after the step that planned them and before
+the index.
+
+The same launch builder serves every step the architect performs. The architect writes its result
+as the work goes, and every step keeps a result already at the result path (`fresh_output` False),
+so a session that starts again continues from the partial result, and a valid file there is never
+taken as the step's finished output without the session (`reuse_output` False).
+
+| Helper step | Request artifact | Output | Records |
+|---|---|---|---|
+| any agent the architect's round or the lead named (the launch builder registered for every catalog agent with no builder of its own, `journal_registry.any_agent_step`) | the step's parameter `request`, else `request` or `question` | the answer path the request names | the request, file `answer`. The repository steward places nothing: an entry the architect's result builds in no stack fails the architect's output check |
 | `trd-author` (the TRD write after the check, and the `trd.confirm` correction) | `request`; for the TRD write, the request the launch builder writes | the answer path the request names; the TRD at the path the request names is kept and updated in place | the request, file `TRD`, file `answer`, value `obligations with no source`, value `constraints recorded`. The step records one `constraint` for each requirement the answer lists under `requirements` (every requirement that write added or changed), as a pointer `trd` (the Epic and the requirement id, a heading of the TRD) with no copy of its text, with `statedIn` and `appliesTo`, removes the constraint of each id the answer lists under `removed`, and records one with no `statedIn` for each `noSource` obligation; it fails when the matrix refuses one |
-| `architecture-maintainer` | `write request` or `request` | the result path the request names | the request, file `what was written`, value `documents synced`. The session is granted the architecture root, where it writes; the step sets each document written that exists `in-review` in its front matter (`matrixsync.set_lifecycle`), so the check and the promotion of this run reach it, then runs `sync-documents --paths` on the documents written |
+| `architecture-maintainer` | the step's parameter `request`, else `write request` or `request` | the result path the request names | the request, file `what was written`, value `documents synced`. The session is granted the architecture root, where it writes; the step sets each document written that exists `in-review` in its front matter (`matrixsync.set_lifecycle`), so the check and the promotion of this run reach it, then runs `sync-documents --paths` on the documents written; then, in one matrix change, for each fact of the request the result does not list under `notApplied`, records `describedBy` from each entry the fact is `about` to its home heading, and `covers` from that heading to each requirement an entry among them serves as a feature, with that feature as `via`; it fails when the matrix refuses one |
 
 The TRD is written, then updated, during the architecture: the seed is written before the
 architect starts; the architect works from it, states in its result's `trdChanges` the technical
@@ -153,8 +159,8 @@ A journal that `orchestrator/port_journal.py` builds for an Epic with saved run 
 the Architecture container, a step "Earlier work on this PRD" (`architecture_earlier.carry`). It
 contains one done step per piece of that work, each holding its files as artifacts named
 `earlier work: <what the file is>`, so the journal records what was done. The open-run step, which
-runs first, plans the pack, the TRD seed, the architect's step, and the index and the check after
-it. The architect is not handed those files: they are unapproved copies and summaries from a
+runs first, plans the pack, the TRD seed, the architect's Analyze step, and the index and the
+check after it. The architect is not handed those files: they are unapproved copies and summaries from a
 pipeline that no longer runs, and the matrix and the arc42 documents are the architect's sources.
 Such a step has the script `architecture.earlier_work`, which records nothing when it runs: it runs only
 after the owner asks for a start at or before it.
@@ -186,8 +192,8 @@ does not fail the step: the documents stand, and the next pass re-indexes them.
 
 ## The check
 
-Script `atw-matrix check; atw-matrix review-scope`. It follows the architect's first step, each
-correction of a mechanical defect, and the lead's step for a matter the architect could not
+Script `atw-matrix check; atw-matrix review-scope`. It follows the architect's steps and the document
+writes they plan, each correction of a mechanical defect, and the lead's step for a matter the architect could not
 settle. It records nothing in the matrix. It checks what code can check: the matrix file, the
 Epic's entry, an answer in the architect's result for every architecture and
 technical-requirement criterion, and the review log (`review_log.problems`): a missing or

@@ -6,10 +6,16 @@ user-invocable: false
 
 # How a design specialist is used
 
-The solutions architect is responsible for the architecture. It starts you for one gap in
-your specialty and decides what to do with what you return. The request file you are given, to
-`specialist-request.schema.json`, holds a `kind`, the question or task, the PRD sections and
-arc42 headings it concerns, the elements whose code is trusted and the path for your answer.
+The solutions architect is responsible for the architecture, and decides what to do with what
+you return. The script starts you, as your own session, with the architect's one request to you
+for this round: every question and draft review it has in your specialty, numbered in the
+request when there are several. The request file you are given, to
+`specialist-request.schema.json`, holds a `kind` (`task` when any part is a task), the
+questions or tasks, the PRD sections and arc42 headings they concern, the elements whose code is
+trusted and the path for your answer. Answer every part in the one answer file: `answer` sums
+them up in one sentence, each part's answer is a reason that starts with the part's number, and
+a task's decisions are design facts. Nobody can ask you a follow-up: what your answers raise
+goes in `needs`, and the architect asks it in a second round.
 
 ## A question
 

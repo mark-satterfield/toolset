@@ -73,6 +73,11 @@ CONSTRAINTS_FILE: Final = "constraints.json"
 """The Epic's architecture pack, an index, and every constraint that applies, in full, beside the context file."""
 CHANGE_FILE: Final = "matrix-changes.json"
 """The architect's matrix change file, beside the context file (``matrix-change.schema.json``)."""
+QUESTIONS_FILE: Final = "questions.json"
+"""The architect's first round of requests to the specialists, beside the context file.
+
+Its shape is ``specialist-round.schema.json``.
+"""
 MATRIX_COMMAND: Final = "atw-matrix"
 MARKDOWN_SUFFIX: Final = ".md"
 URL_MARK: Final = "://"
@@ -88,6 +93,9 @@ LABEL_QUESTION: Final = "question"
 LABEL_REQUEST: Final = "request"
 LABEL_ANSWER: Final = "answer"
 LABEL_RULING: Final = "ruling"
+LABEL_EXAMPLE: Final = "example"
+LABEL_DIGEST: Final = "answers digest"
+LABEL_ROUND: Final = "specialist round"
 """The input labels the definitions of the architecture team name.
 
 ``request``, ``question``, ``answer`` and ``ruling`` are also the names of the artifacts that
@@ -121,6 +129,11 @@ REVIEW_LOG_FILE: Final = "review-log.json"
 """The name of the Epic's review log, beside the architect's result (``log-architecture-review``)."""
 
 PLUGIN: Final[Path] = Path(__file__).resolve().parents[2]
+EXAMPLES: Final[Path] = PLUGIN / "skills" / "artifact-handoff" / "examples"
+"""Short valid examples of the files the architect writes; it is handed these instead of their schema."""
+EXAMPLE_STATE: Final[Path] = EXAMPLES / "architecture-state.example.json"
+EXAMPLE_ROUND: Final[Path] = EXAMPLES / "specialist-round.example.json"
+EXAMPLE_RESULT: Final[Path] = EXAMPLES / "architecture-result.example.json"
 HUMAN_ACTION_STAGE: Final = "requires-human-action"
 
 
@@ -345,18 +358,18 @@ def read_result(run: StepRun, context: ArchitectureContext) -> ArchitectureResul
     """Read the solutions architect's result.
 
     A result file that is missing or is not JSON raises ``ArchitectureStepError``. One that does
-    not satisfy its schema is handled by :func:`checked_output`, its writer being the solutions
-    architect's first step in walk order, whose session every later step of the architect
-    continues.
+    not satisfy its schema is handled by :func:`checked_output`, its writer being the last step
+    of the solutions architect in walk order that recorded the result.
 
     Returns:
         The validated result.
 
     """
-    writer: Step | None = next(
-        (step for step in step_journal.steps_in_order(run.journal()) if step.get("agent") == ARCHITECT),
-        None,
-    )
+    writer: Step | None = None
+    step: Step
+    for step in step_journal.steps_in_order(run.journal()):
+        if step.get("agent") == ARCHITECT and held_file(step, LABEL_RESULT) is not None:
+            writer = step
     return checked_output(run, Path(context["resultPath"]), validate_architecture_result, writer)
 
 

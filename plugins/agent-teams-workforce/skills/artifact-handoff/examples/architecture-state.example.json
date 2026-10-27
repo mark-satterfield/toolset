@@ -1,0 +1,23 @@
+{
+  "bead": "ssbd-x1y2",
+  "needs": [
+    {
+      "id": "N1",
+      "need": "A job seeker is emailed when a saved search finds a new match.",
+      "prdRequirements": ["Notify on new matches"],
+      "state": "missing",
+      "evidence": [],
+      "judgment": "No effective document states how a match notification is sent."
+    },
+    {
+      "id": "N2",
+      "need": "The seeker's saved searches are kept per account.",
+      "prdRequirements": ["Save a search"],
+      "state": "approved",
+      "evidence": [{"source": "arc42/05-building-blocks/search-service.md", "heading": "Saved searches"}],
+      "judgment": "The search service's section 5 document states it and this PRD needs it unchanged."
+    }
+  ],
+  "conclusion": "work-remains",
+  "summary": "One need is met as the architecture stands; match notification is missing."
+}

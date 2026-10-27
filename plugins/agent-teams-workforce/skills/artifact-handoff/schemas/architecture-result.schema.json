@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Architecture work",
-  "description": "The files the architecture team of one Epic hands to each other and to the script: the solutions architect's state and result, the requests it writes for the agents it starts and their answers, the lead's routing, the question put to the decider and its ruling, and the comparison of what a Story built. The root is the architect's result; each other file has its own schema file that refers to its definition here. A matrix id is the id of an entry as atw-matrix prints it.",
+  "description": "The files the architecture team of one Epic hands to each other and to the script: the solutions architect's state, its requests to the specialists and their answers with their digest, its result, the lead's routing, the question put to the decider and its ruling, and the comparison of what a Story built. The root is the architect's result; each other file has its own schema file that refers to its definition here. A matrix id is the id of an entry as atw-matrix prints it.",
   "$ref": "#/$defs/ArchitectureResult",
   "$defs": {
     "NeedState": {
@@ -195,13 +195,14 @@
       "description": "One design fact with its one home.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "statement", "reason", "home", "linkedFrom"],
+      "required": ["id", "statement", "reason", "home", "linkedFrom", "about"],
       "properties": {
         "id": {"description": "The id of the fact, unique in the file.", "type": "string", "minLength": 1},
         "statement": {"description": "The fact, in the form its home document requires: an arc42 section's form, or the detailed design of one component, one feature, components working together or the whole system.", "type": "string", "minLength": 1},
         "reason": {"description": "Why the design is so.", "type": "string", "minLength": 1},
         "home": {"description": "The one architecture document and heading that states the fact: a document under `arc42/`, or under `detailed/` for detail the architecture documentation model places there.", "$ref": "#/$defs/SourceHeading"},
-        "linkedFrom": {"description": "The paths, relative to the architecture root, of the documents that link to the home and do not restate the fact.", "type": "array", "items": {"type": "string"}}
+        "linkedFrom": {"description": "The paths, relative to the architecture root, of the documents that link to the home and do not restate the fact.", "type": "array", "items": {"type": "string"}},
+        "about": {"description": "The matrix ids of the entries the fact is about; empty for a fact about none. Consumed by: the step of orchestrator/flows/architecture.py that accepts the document write of the fact's home, which records `describedBy` from each entry to the home heading, and `covers` from that heading to each requirement an entry among them serves as a feature. The output check of the architect's result refuses an id the matrix, with the change file applied, does not hold.", "type": "array", "items": {"type": "string", "minLength": 1}}
       }
     },
     "CriterionAnswer": {
@@ -270,7 +271,7 @@
       }
     },
     "SpecialistRequest": {
-      "description": "What the solutions architect, or the lead when it asks for an opinion, asks of one agent: a question or a bounded piece of design, in the asker's own session or, for the architect, as an entry of the result's `requests`.",
+      "description": "What the solutions architect, or the lead when it asks for an opinion, asks of one agent: a question or a bounded piece of design. The script starts the agent with it as its own session; no agent starts another.",
       "type": "object",
       "additionalProperties": false,
       "required": ["kind", "request", "bounds", "concerns", "trustedCode", "answerPath"],
@@ -284,13 +285,56 @@
       }
     },
     "AgentRequest": {
-      "description": "One request for work an agent does outside the solutions architect's session, with the agent the architect chose for it.",
+      "description": "One request to one agent, with the agent the architect chose for it: the agent's whole share of one round, its questions and draft reviews together.",
       "type": "object",
       "additionalProperties": false,
       "required": ["agent", "request"],
       "properties": {
         "agent": {"description": "The name of the agent that does the work, as the find-specialists skill's catalog lists it. The script refuses a name the catalog does not list.", "type": "string", "minLength": 1},
         "request": {"$ref": "#/$defs/SpecialistRequest"}
+      }
+    },
+    "SpecialistRound": {
+      "description": "The first round of requests to the specialists, written by the solutions architect's Analyze step at `questions.json` beside the context file. Consumed by: the step of orchestrator/flows/architecture.py that accepts it, which refuses an agent the find-specialists catalog does not list and two requests to one agent, writes each request beside its answer path and plans one step per request whose answer is not yet a valid answer, then the architect's Decide step, handed every answer and a digest of them.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bead", "requests"],
+      "properties": {
+        "bead": {"description": "The Epic id.", "type": "string", "minLength": 1},
+        "requests": {"description": "One request per agent; empty when the Epic needs no specialist.", "type": "array", "items": {"$ref": "#/$defs/AgentRequest"}}
+      }
+    },
+    "Restatement": {
+      "description": "A place that states a fact a second time, to be replaced by a link to the fact's home.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact", "at"],
+      "properties": {
+        "fact": {"description": "The id of the fact in this request, or a short name for a fact an effective document states.", "type": "string", "minLength": 1},
+        "at": {"$ref": "#/$defs/SourceHeading"}
+      }
+    },
+    "AppliedSettlement": {
+      "description": "A settled disagreement to apply to the documents.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["disagreement", "stands", "corrections"],
+      "properties": {
+        "disagreement": {"description": "The matrix id of the disagreement entry.", "type": "string", "minLength": 1},
+        "stands": {"description": "The statement that stands.", "$ref": "#/$defs/SourceHeading"},
+        "corrections": {"description": "Each place whose statement lost and is replaced by a link to the one that stands.", "type": "array", "items": {"$ref": "#/$defs/SourceHeading"}}
+      }
+    },
+    "Diagram": {
+      "description": "One diagram for architecture-maintainer to place.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["home", "viewType", "mermaid", "shows"],
+      "properties": {
+        "home": {"description": "The architecture document (under `arc42/` or `detailed/`) and heading the diagram belongs under.", "$ref": "#/$defs/SourceHeading"},
+        "viewType": {"description": "The view type, from the documentation model's list of view types.", "type": "string", "minLength": 1},
+        "mermaid": {"description": "The Mermaid source, without the code fence.", "type": "string", "minLength": 1},
+        "shows": {"description": "The names of the elements the diagram shows.", "type": "array", "items": {"type": "string"}}
       }
     },
     "TrdChange": {
@@ -308,10 +352,10 @@
       }
     },
     "ArchitectureResult": {
-      "description": "The solutions architect's result for one Epic, at the context file's `resultPath`. The architect writes it as the work goes, so that a session that stops loses nothing: the members settled so far, written as soon as the state file is written and rewritten in place each time a part settles (a fact and its home, a settlement, a feature, a criterion answer). The file satisfies this schema when the architect finishes; until then it is the partial result a `Finish` step, or a session started again, continues from. The script reads `conclusion`, starts the agent each entry of `requests` names with its request, checks every criterion answer and the review log at the context file's `reviewLogPath`; what is unapproved comes from the matrix, not from this file. The architect reviews and approves its own architecture against the criteria; the promotion step then sets it effective.",
+      "description": "The solutions architect's result for one Epic, at the context file's `resultPath`: its decisions. The architect's Decide step writes it as the work goes, so that a session that stops loses nothing: the members settled so far, rewritten in place each time a part settles (a fact and its home, a settlement, a feature, a criterion answer). Every later architect step (a second Decide, a correction, a competing design) is a fresh session that continues from this file. The script reads `conclusion`, starts the agent each entry of `requests` names with its request, writes the documents from `facts`, `restatements`, `settlements` and `diagrams`, and checks every criterion answer and the review log at the context file's `reviewLogPath`; what is unapproved comes from the matrix, not from this file. The architect reviews and approves its own architecture against the criteria; the promotion step then sets it effective.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["bead", "conclusion", "features", "noFeature", "addedOrChangedElements", "unchangedWorkElements", "sharedCapabilities", "facts", "settledDisagreements", "criteria", "unsettled", "costEvidence", "specialistRecommendations", "trdChanges", "requests", "reach", "excluded"],
+      "required": ["bead", "conclusion", "features", "noFeature", "addedOrChangedElements", "unchangedWorkElements", "sharedCapabilities", "facts", "restatements", "settlements", "diagrams", "criteria", "unsettled", "costEvidence", "specialistRecommendations", "trdChanges", "requests", "reach", "excluded"],
       "properties": {
         "bead": {"description": "The Epic id.", "type": "string", "minLength": 1},
         "conclusion": {"$ref": "#/$defs/Conclusion"},
@@ -320,14 +364,16 @@
         "addedOrChangedElements": {"description": "The matrix ids, as recorded, of every element this design adds or changes for the Epic (services, components, infrastructure, events, routing rules, layers and packages), including every element a TRD requirement binds that this design adds or changes. The Epic's Stories build these and the elements of `unchangedWorkElements`, and nothing more. An element the Epic only uses is not listed: it is context for the Tasks, never work. An event is built in each stack that holds one of its producers. The step that accepts the result fails on an id the matrix lacks, an entry not on the architecture side, an event with no description, and an entry built in no stack (for an event, one none of whose producers is homed in a stack).", "type": "array", "items": {"type": "string"}},
         "unchangedWorkElements": {"description": "The matrix ids, as recorded, of the existing architecture-side elements (services, components, infrastructure, events, routing rules, layers and packages) that this design leaves unchanged and where the Epic has work, such as new wording on an existing page, as the architect names them from its design. An Epic can have both: a new service in `addedOrChangedElements` and new wording on an existing page here. Consumed by: the output check of orchestrator/flows/architecture.py, which fails when both lists are empty and on each problem `repo_scoping.story_build_problems` reports for these ids; and the span step of orchestrator/flows/repo_scoping.py, whose Stories build in these as well as in `addedOrChangedElements`.", "type": "array", "items": {"type": "string"}},
         "sharedCapabilities": {"description": "Every shared capability the design uses, as the `supportedBy` relationships the architect recorded state them.", "type": "array", "items": {"$ref": "#/$defs/SharedUse"}},
-        "facts": {"description": "The design facts this run decided.", "type": "array", "items": {"$ref": "#/$defs/FactEntry"}},
-        "settledDisagreements": {"description": "The matrix ids of the disagreements this run settled; what the losing statement must change goes in the write request.", "type": "array", "items": {"type": "string"}},
+        "facts": {"description": "The design facts this run decided, each with its one home. Consumed by: the step of orchestrator/flows/architecture.py that accepts the result with no open request, which writes one write request per home document from `facts`, `restatements`, `settlements` and `diagrams` and plans one architecture-maintainer step for each document whose request differs from the one already written.", "type": "array", "items": {"$ref": "#/$defs/FactEntry"}},
+        "restatements": {"description": "Each place that restates a fact and is to be replaced by a link to its home; it goes to the write request of the document it is in.", "type": "array", "items": {"$ref": "#/$defs/Restatement"}},
+        "settlements": {"description": "Each disagreement this run settled, with the statement that stands and each place whose statement lost; each place goes to the write request of its document.", "type": "array", "items": {"$ref": "#/$defs/AppliedSettlement"}},
+        "diagrams": {"description": "Each diagram to place: one a diagram author drew, as its answer file holds it, or one the architect drew; it goes to the write request of its home document.", "type": "array", "items": {"$ref": "#/$defs/Diagram"}},
         "criteria": {"description": "One answer for every criterion whose level is architecture or technical-requirement. A criterion with neither a place it is satisfied nor a reason it does not apply is unfinished work.", "type": "array", "items": {"$ref": "#/$defs/CriterionAnswer"}},
         "unsettled": {"description": "Empty unless `conclusion` is `unsettled`.", "type": "array", "items": {"$ref": "#/$defs/UnsettledMatter"}},
         "costEvidence": {"type": "array", "items": {"$ref": "#/$defs/CostEvidence"}},
         "specialistRecommendations": {"description": "Each recommendation to the owner to create or update a specialist agent; empty when the specialists covered every subject.", "type": "array", "items": {"$ref": "#/$defs/SpecialistRecommendation"}},
         "trdChanges": {"description": "Every technical or architecture decision of this design that adds, changes or removes a requirement of the TRD, as one change each; empty when the design changes none. The TRD the architect works from is the seed the script wrote from the constraints that bind the Epic, each requirement headed by its constraint id. Consumed by: the TRD write that the check step of orchestrator/flows/architecture_check.py plans before the promotion, whose request (`trd-request.schema.json`, mode `complete`) carries these changes and this result's `sharedCapabilities`.", "type": "array", "items": {"$ref": "#/$defs/TrdChange"}},
-        "requests": {"description": "The work the architect has agents do outside its own session, one entry per request; empty when it needs none. Consumed by: the step of orchestrator/flows/architecture.py that accepts the result, which plans below that step one step for each request whose answer file is not yet a valid answer, started as the agent the entry names and handed its request, then the architect's `Finish` step, handed every answer. The script decides nothing about which agent runs. A question or a quick piece of work the architect asks in its own session is not listed here.", "type": "array", "items": {"$ref": "#/$defs/AgentRequest"}},
+        "requests": {"description": "A second round of requests, one per agent, for what the answers the step was handed raise; empty when the decisions need none. Consumed by: the step of orchestrator/flows/architecture.py that accepts the result, which plans after that step one step for each request whose answer file is not yet a valid answer, started as the agent the entry names and handed its request, then a fresh Decide step, handed every answer and a digest of them; a Decide of the second round whose result still requests work fails, because the architecture does not converge. The script decides nothing about which agent runs.", "type": "array", "items": {"$ref": "#/$defs/AgentRequest"}},
         "reach": {"description": "One verdict per entry of the Epic's reach: every row of the architecture pack's `reach`, and every entry the architect's corrections brought into the reach. Consumed by: the check step of orchestrator/flows/architecture_check.py, which recomputes the reach (`matrixtraverse.approval_scope`) on the matrix after the architect's change file is applied and fails each entry in it, other than the Epic and its requirements, with no `kept` or `corrected` verdict, and each `pruned` entry still in it; and the promotion step, which compares each `kept` entry with its `contentHash` before it approves.", "type": "array", "items": {"$ref": "#/$defs/ReachVerdict"}},
         "excluded": {"description": "Each reached service, component, piece of infrastructure or layer with no home stack that no stack builds, with the reason; empty when every one is placed. Consumed by: the check step of orchestrator/flows/architecture_check.py, which fails each such entry with no stack that is not listed here.", "type": "array", "items": {"$ref": "#/$defs/Exclusion"}}
       }
@@ -363,18 +409,6 @@
         "sources": {"type": "array", "items": {"$ref": "#/$defs/SourceHeading"}}
       }
     },
-    "Diagram": {
-      "description": "One diagram for architecture-maintainer to place.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["home", "viewType", "mermaid", "shows"],
-      "properties": {
-        "home": {"description": "The architecture document (under `arc42/` or `detailed/`) and heading the diagram belongs under.", "$ref": "#/$defs/SourceHeading"},
-        "viewType": {"description": "The view type, from the documentation model's list of view types.", "type": "string", "minLength": 1},
-        "mermaid": {"description": "The Mermaid source, without the code fence.", "type": "string", "minLength": 1},
-        "shows": {"description": "The names of the elements the diagram shows.", "type": "array", "items": {"type": "string"}}
-      }
-    },
     "SpecialistAnswer": {
       "description": "A design specialist's or diagram author's answer to one request.",
       "type": "object",
@@ -392,6 +426,42 @@
         "needs": {"type": "array", "items": {"$ref": "#/$defs/NeededSpecialty"}},
         "decisions": {"description": "For a task, the decisions as design facts; absent for a question.", "type": "array", "items": {"$ref": "#/$defs/DesignFact"}},
         "diagrams": {"description": "For a diagram task, the diagrams drawn; empty for any other task; absent for a question.", "type": "array", "items": {"$ref": "#/$defs/Diagram"}}
+      }
+    },
+    "DiagramSummary": {
+      "description": "What a diagram an answer holds shows, without its Mermaid source.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["home", "viewType", "shows"],
+      "properties": {
+        "home": {"$ref": "#/$defs/SourceHeading"},
+        "viewType": {"type": "string", "minLength": 1},
+        "shows": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "DigestedAnswer": {
+      "description": "One specialist answer, cut to what a decision needs: its reasons, alternatives and Mermaid sources stay in the answer file.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent", "kind", "answerPath", "answer", "assumptions", "needs", "decisions", "diagrams"],
+      "properties": {
+        "agent": {"description": "The agent that answered.", "type": "string", "minLength": 1},
+        "kind": {"$ref": "#/$defs/RequestKind"},
+        "answerPath": {"description": "The answer file, to read in full when a decision turns on its reasons.", "type": "string", "minLength": 1},
+        "answer": {"type": "string", "minLength": 1},
+        "assumptions": {"type": "array", "items": {"type": "string"}},
+        "needs": {"type": "array", "items": {"$ref": "#/$defs/NeededSpecialty"}},
+        "decisions": {"description": "A task's decisions; empty for a question.", "type": "array", "items": {"$ref": "#/$defs/DesignFact"}},
+        "diagrams": {"description": "A task's diagrams, without their source; empty for a question.", "type": "array", "items": {"$ref": "#/$defs/DiagramSummary"}}
+      }
+    },
+    "AnswersDigest": {
+      "description": "The answers one architect step is handed, digested by the script that launches it (orchestrator/flows/architecture.py) into the helpers folder, so the architect reads a few KB instead of every answer file.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["answers"],
+      "properties": {
+        "answers": {"type": "array", "items": {"$ref": "#/$defs/DigestedAnswer"}}
       }
     },
     "TrdRequest": {
@@ -445,27 +515,6 @@
         "requirements": {"description": "Every requirement this answer's TRD write added or changed, exactly as the TRD now states it. A removed requirement is named in `requirementIds` only. The script records the matrix's constraints, each a pointer to its requirement, from these entries and from no other file.", "type": "array", "items": {"$ref": "#/$defs/TrdRequirement"}},
         "noSource": {"type": "array", "items": {"$ref": "#/$defs/NoSource"}},
         "summary": {"type": "string", "minLength": 1}
-      }
-    },
-    "Restatement": {
-      "description": "A place that states a fact a second time, to be replaced by a link to the fact's home.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["fact", "at"],
-      "properties": {
-        "fact": {"description": "The id of the fact in this request, or a short name for a fact an effective document states.", "type": "string", "minLength": 1},
-        "at": {"$ref": "#/$defs/SourceHeading"}
-      }
-    },
-    "AppliedSettlement": {
-      "description": "A settled disagreement to apply to the documents.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["disagreement", "stands", "corrections"],
-      "properties": {
-        "disagreement": {"description": "The matrix id of the disagreement entry.", "type": "string", "minLength": 1},
-        "stands": {"description": "The statement that stands.", "$ref": "#/$defs/SourceHeading"},
-        "corrections": {"description": "Each place whose statement lost and is replaced by a link to the one that stands.", "type": "array", "items": {"$ref": "#/$defs/SourceHeading"}}
       }
     },
     "WriteRequest": {

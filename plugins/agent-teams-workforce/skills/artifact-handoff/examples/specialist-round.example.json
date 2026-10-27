@@ -1,0 +1,20 @@
+{
+  "bead": "ssbd-x1y2",
+  "requests": [
+    {
+      "agent": "queue-and-topic-designer",
+      "request": {
+        "kind": "task",
+        "request": "1. Design how a new match reaches the notification sender. 2. Review the reach rows infrastructure:match-events-queue and infrastructure:match-events-dlq against the PRD and return each as accepted or with its correction.",
+        "bounds": "Decide the queue or topic, its dead-letter handling and its retention; not the email content and not the sender's code.",
+        "concerns": [
+          {"source": "/abs/run/architecture/pack.json", "heading": "reach: infrastructure:match-events-queue, infrastructure:match-events-dlq"},
+          {"source": "/abs/prds/saved-search.md", "heading": "Notify on new matches"},
+          {"source": "/abs/run/trd.md", "heading": "TR-1"}
+        ],
+        "trustedCode": [],
+        "answerPath": "/abs/run/architecture/helpers/queue-and-topic-designer.answer.json"
+      }
+    }
+  ]
+}

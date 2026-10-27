@@ -38,14 +38,14 @@ The runner makes an earlier start of its own in one case: a step reads a file an
 wrote, and the file does not satisfy the contract the step reads it by, because the contract
 changed after the file was written (`StaleInputError`). The step is not failed; the step that
 wrote the file and every step after it are set back to planned, and the run goes on from there.
-A helper's request file is written by the step directly above the helper. The same writer named
+A helper's request file is written by the step that planned the helper, from its output. The same writer named
 twice in one dispatch fails the step; when that writer is a script step, the failure is a pipeline
 code defect, since its code wrote the file to a contract other than its readers'. The architecture context file, which the open-run step
 writes, is not handled this way: a step that finds it written to an earlier contract writes it
 again in place to the current one, from the PRD and architecture root the dispatch names and the
 vault commit the file recorded, and sets no step back to planned.
 
-A helper's request file is stale only when the session of the step above the helper was made under
+A helper's request file is stale only when the session of the step that planned the helper was made under
 another agent definition or contracts, or that step holds no session. When that session is one of
 the current agent definition and contracts, the request is its mistake (`MalformedRequestError`):
 the runner writes the errors beside the request, continues that session to correct the request
@@ -61,7 +61,7 @@ it starts a new session. A session ended by a timeout is continued by the next d
 
 | # | Description | Performed by | Plans |
 |---|---|---|---|
-| 1 | Open the run | script `prd_to_spec.open_run` | the pack, the TRD seed, the architect's step, the index and the check under Architecture |
+| 1 | Open the run | script `prd_to_spec.open_run` | the pack, the TRD seed, the architect's Analyze step, the index and the check under Architecture |
 | 2 | Architecture | container | its steps are planned by step 1 and by the steps under it (`architecture.md`) |
 | 3 | TRD | script `trd.confirm` | nothing (`trd-authoring.md`) |
 | 4 | Specs and Stories | container, created with the span step `atw-matrix epic --closure` | the span step reads what the Epic's architecture adds or changes (the architect's `addedOrChangedElements`) and where the architect says the Epic's work that leaves elements unchanged lands (`unchangedWorkElements`), and plans one container per repository a Story builds in (`repo-scoping.md`, `spec-authoring.md`) |

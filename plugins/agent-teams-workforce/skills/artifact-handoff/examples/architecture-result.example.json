@@ -1,0 +1,65 @@
+{
+  "bead": "ssbd-x1y2",
+  "conclusion": "changes-designed",
+  "features": [
+    {
+      "id": "feature:notify-new-match",
+      "name": "Notify a seeker of a new match",
+      "prdRequirements": ["Notify on new matches"],
+      "elements": ["service:skillspoke-notification-service"],
+      "sharedCapabilities": ["feature:send-an-email"]
+    }
+  ],
+  "noFeature": [],
+  "addedOrChangedElements": ["infrastructure:match-events-queue"],
+  "unchangedWorkElements": [],
+  "sharedCapabilities": [
+    {"element": "service:skillspoke-notification-service", "capability": "feature:send-an-email", "relies": ["send-templated-email"]}
+  ],
+  "facts": [
+    {
+      "id": "F1",
+      "statement": "A new match is published to the match-events queue, with a dead-letter queue after 5 receives.",
+      "reason": "The sender is decoupled from the search and retries without losing a match.",
+      "home": {"source": "detailed/features/notify-new-match/notify-new-match.md", "heading": "Delivery"},
+      "linkedFrom": ["arc42/06-runtime/match-notification.md"],
+      "about": ["feature:notify-new-match", "infrastructure:match-events-queue"]
+    }
+  ],
+  "restatements": [
+    {"fact": "F1", "at": {"source": "arc42/05-building-blocks/search-service.md", "heading": "Outputs"}}
+  ],
+  "settlements": [
+    {
+      "disagreement": "disagreement:match-retention",
+      "stands": {"source": "arc42/08-concepts/messaging.md", "heading": "Retention"},
+      "corrections": [{"source": "arc42/05-building-blocks/search-service.md", "heading": "Outputs"}]
+    }
+  ],
+  "diagrams": [
+    {
+      "home": {"source": "detailed/features/notify-new-match/notify-new-match.md", "heading": "Delivery"},
+      "viewType": "sequence",
+      "mermaid": "sequenceDiagram\n  Search->>Queue: match found\n  Queue->>Notifier: deliver",
+      "shows": ["Search", "Queue", "Notifier"]
+    }
+  ],
+  "criteria": [
+    {"criterion": "A1", "status": "satisfied", "satisfiedAt": [{"source": "detailed/features/notify-new-match/notify-new-match.md", "heading": "Delivery"}], "reason": ""},
+    {"criterion": "T1", "status": "not-applicable", "satisfiedAt": [], "reason": "The PRD stores no data."}
+  ],
+  "unsettled": [],
+  "costEvidence": [
+    {"resource": "infrastructure:match-events-queue", "assumptions": "2,000 matches a month", "unitMath": "2,000 x 3 requests x $0.40 per million = $0.0024 a month", "sources": [{"source": "https://aws.amazon.com/sqs/pricing/", "heading": "Standard queues"}]}
+  ],
+  "specialistRecommendations": [],
+  "trdChanges": [
+    {"change": "add", "id": "TR-1", "kind": "obligation", "statement": "The match-events queue redrives to its dead-letter queue after 5 receives.", "source": {"source": "detailed/features/notify-new-match/notify-new-match.md", "heading": "Delivery"}, "appliesTo": "infrastructure:match-events-queue"}
+  ],
+  "requests": [],
+  "reach": [
+    {"id": "infrastructure:match-events-queue", "verdict": "corrected", "via": "realizedBy"},
+    {"id": "service:skillspoke-notification-service", "verdict": "kept", "via": "realizedBy"}
+  ],
+  "excluded": []
+}

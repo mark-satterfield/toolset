@@ -128,8 +128,10 @@ ARCHITECTURE_RESULT_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "architecture-result
 ARCHITECTURE_CONTEXT_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "architecture-context.schema.json"
 CHECK_RESULT_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "check-result.schema.json"
 ARCHITECTURE_STATE_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "architecture-state.schema.json"
+SPECIALIST_ROUND_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "specialist-round.schema.json"
 SPECIALIST_REQUEST_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "specialist-request.schema.json"
 SPECIALIST_ANSWER_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "specialist-answer.schema.json"
+ANSWERS_DIGEST_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "answers-digest.schema.json"
 TRD_REQUEST_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "trd-request.schema.json"
 TRD_ANSWER_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "trd-answer.schema.json"
 WRITE_REQUEST_SCHEMA_PATH: Final[Path] = SCHEMA_DIR / "write-request.schema.json"
@@ -238,6 +240,7 @@ class FactEntry(TypedDict):
     reason: str
     home: SourceHeading
     linkedFrom: list[str]
+    about: list[str]
 
 
 class CriterionAnswer(TypedDict):
@@ -303,6 +306,37 @@ class AgentRequest(TypedDict):
     request: SpecialistRequest
 
 
+class SpecialistRound(TypedDict):
+    """Typed form of #/$defs/SpecialistRound in architecture-result.schema.json."""
+
+    bead: str
+    requests: list[AgentRequest]
+
+
+class Restatement(TypedDict):
+    """Typed form of #/$defs/Restatement in architecture-result.schema.json."""
+
+    fact: str
+    at: SourceHeading
+
+
+class AppliedSettlement(TypedDict):
+    """Typed form of #/$defs/AppliedSettlement in architecture-result.schema.json."""
+
+    disagreement: str
+    stands: SourceHeading
+    corrections: list[SourceHeading]
+
+
+class Diagram(TypedDict):
+    """Typed form of #/$defs/Diagram in architecture-result.schema.json."""
+
+    home: SourceHeading
+    viewType: str
+    mermaid: str
+    shows: list[str]
+
+
 class TrdChange(TypedDict):
     """Typed form of #/$defs/TrdChange in architecture-result.schema.json."""
 
@@ -325,7 +359,9 @@ class ArchitectureResult(TypedDict):
     unchangedWorkElements: list[str]
     sharedCapabilities: list[SharedUse]
     facts: list[FactEntry]
-    settledDisagreements: list[str]
+    restatements: list[Restatement]
+    settlements: list[AppliedSettlement]
+    diagrams: list[Diagram]
     criteria: list[CriterionAnswer]
     unsettled: list[UnsettledMatter]
     costEvidence: list[CostEvidence]
@@ -359,15 +395,6 @@ class DesignFact(TypedDict):
     sources: list[SourceHeading]
 
 
-class Diagram(TypedDict):
-    """Typed form of #/$defs/Diagram in architecture-result.schema.json."""
-
-    home: SourceHeading
-    viewType: str
-    mermaid: str
-    shows: list[str]
-
-
 class SpecialistAnswer(TypedDict):
     """Typed form of #/$defs/SpecialistAnswer in architecture-result.schema.json."""
 
@@ -379,6 +406,33 @@ class SpecialistAnswer(TypedDict):
     needs: list[NeededSpecialty]
     decisions: NotRequired[list[DesignFact]]
     diagrams: NotRequired[list[Diagram]]
+
+
+class DiagramSummary(TypedDict):
+    """Typed form of #/$defs/DiagramSummary in architecture-result.schema.json."""
+
+    home: SourceHeading
+    viewType: str
+    shows: list[str]
+
+
+class DigestedAnswer(TypedDict):
+    """Typed form of #/$defs/DigestedAnswer in architecture-result.schema.json."""
+
+    agent: str
+    kind: RequestKind
+    answerPath: str
+    answer: str
+    assumptions: list[str]
+    needs: list[NeededSpecialty]
+    decisions: list[DesignFact]
+    diagrams: list[DiagramSummary]
+
+
+class AnswersDigest(TypedDict):
+    """Typed form of #/$defs/AnswersDigest in architecture-result.schema.json."""
+
+    answers: list[DigestedAnswer]
 
 
 class TrdRequest(TypedDict):
@@ -420,21 +474,6 @@ class TrdAnswer(TypedDict):
     requirements: list[TrdRequirement]
     noSource: list[NoSource]
     summary: str
-
-
-class Restatement(TypedDict):
-    """Typed form of #/$defs/Restatement in architecture-result.schema.json."""
-
-    fact: str
-    at: SourceHeading
-
-
-class AppliedSettlement(TypedDict):
-    """Typed form of #/$defs/AppliedSettlement in architecture-result.schema.json."""
-
-    disagreement: str
-    stands: SourceHeading
-    corrections: list[SourceHeading]
 
 
 class WriteRequest(TypedDict):
@@ -688,6 +727,33 @@ def validate_architecture_state(value: object, where: str = "ArchitectureState")
     raise ArchitectureWorkError(message)
 
 
+def is_specialist_round(value: object) -> TypeIs[SpecialistRound]:
+    """Tell whether a value satisfies the SpecialistRound definition.
+
+    Returns:
+        True when the schema accepts the value.
+
+    """
+    return not schema_problems(value, "SpecialistRound")
+
+
+def validate_specialist_round(value: object, where: str = "SpecialistRound") -> SpecialistRound:
+    """Validate a decoded SpecialistRound document.
+
+    Returns:
+        The value, typed.
+
+    Raises:
+        ArchitectureWorkError: The value does not satisfy the SpecialistRound definition.
+
+    """
+    if is_specialist_round(value):
+        return value
+    problems: str = "; ".join(schema_problems(value, "SpecialistRound"))
+    message: str = f"{where} does not satisfy SpecialistRound: {problems}"
+    raise ArchitectureWorkError(message)
+
+
 def is_specialist_request(value: object) -> TypeIs[SpecialistRequest]:
     """Tell whether a value satisfies the SpecialistRequest definition.
 
@@ -739,6 +805,33 @@ def validate_specialist_answer(value: object, where: str = "SpecialistAnswer") -
         return value
     problems: str = "; ".join(schema_problems(value, "SpecialistAnswer"))
     message: str = f"{where} does not satisfy SpecialistAnswer: {problems}"
+    raise ArchitectureWorkError(message)
+
+
+def is_answers_digest(value: object) -> TypeIs[AnswersDigest]:
+    """Tell whether a value satisfies the AnswersDigest definition.
+
+    Returns:
+        True when the schema accepts the value.
+
+    """
+    return not schema_problems(value, "AnswersDigest")
+
+
+def validate_answers_digest(value: object, where: str = "AnswersDigest") -> AnswersDigest:
+    """Validate a decoded AnswersDigest document.
+
+    Returns:
+        The value, typed.
+
+    Raises:
+        ArchitectureWorkError: The value does not satisfy the AnswersDigest definition.
+
+    """
+    if is_answers_digest(value):
+        return value
+    problems: str = "; ".join(schema_problems(value, "AnswersDigest"))
+    message: str = f"{where} does not satisfy AnswersDigest: {problems}"
     raise ArchitectureWorkError(message)
 
 
