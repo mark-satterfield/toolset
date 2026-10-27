@@ -7,7 +7,9 @@ description: >-
   or the document stands), and a PRD draft the prd-writer and the
   prd-alignment-verifier could not converge on (accept or reject); writes no
   document content and no analysis of its own.
-tools: Read, Glob, Grep, Write, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill, Agent, Workflow
+tools: Read, Glob, Grep, Write, Bash, mcp__aws-mcp__aws___search_documentation,
+  mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill,
+  mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill
 disallowedTools: AskUserQuestion, Edit, NotebookEdit
 mcpServers:
   - aws-mcp
@@ -15,6 +17,12 @@ model: opus
 permissionMode: acceptEdits
 maxTurns: 60
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture, agent-teams-workforce:prd-writer]
+x-onDemandSkills:
+- agent-teams-workforce:acceptance-criteria
+- agent-teams-workforce:log-architecture-review
+- agent-teams-workforce:matrix
+- agent-teams-workforce:pipeline-contracts
+- agent-teams-workforce:software-engineering
 effort: high
 isolation: worktree
 color: purple

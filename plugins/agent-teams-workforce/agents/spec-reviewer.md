@@ -6,7 +6,15 @@ description: >-
   specs-and-Tasks criteria I1 to I7 of the review standard, once, and returns
   findings a document's author can correct without interpretation; changes
   nothing.
-tools: Read, Glob, Grep, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, Skill, mcp__pg-aiguide__search_docs, mcp__awslabs-postgres-mcp-server__connect_to_database, mcp__awslabs-postgres-mcp-server__is_database_connected, mcp__awslabs-postgres-mcp-server__get_database_connection_info, mcp__awslabs-postgres-mcp-server__get_table_schema, Agent, Workflow
+tools: Read, Glob, Grep, Write, mcp__aws-mcp__aws___search_documentation,
+  mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill,
+  mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
+  mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator,
+  mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, Skill,
+  mcp__pg-aiguide__search_docs, mcp__awslabs-postgres-mcp-server__connect_to_database,
+  mcp__awslabs-postgres-mcp-server__is_database_connected,
+  mcp__awslabs-postgres-mcp-server__get_database_connection_info,
+  mcp__awslabs-postgres-mcp-server__get_table_schema
 disallowedTools: AskUserQuestion, Edit, Bash
 mcpServers:
   - aws-mcp
@@ -18,6 +26,13 @@ x-sessionLimit: 900
 permissionMode: acceptEdits
 maxTurns: 90
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture, agent-teams-workforce:dynamodb, agent-teams-workforce:aurora-postgresql, agent-teams-workforce:design-postgres-tables, agent-teams-workforce:python-lambda-packaging]
+x-onDemandSkills:
+- agent-teams-workforce:database-schema-designer
+- agent-teams-workforce:log-architecture-review
+- agent-teams-workforce:matrix
+- agent-teams-workforce:pipeline-contracts
+- agent-teams-workforce:resource-naming
+- agent-teams-workforce:software-engineering
 effort: low
 isolation: worktree
 color: purple

@@ -7,7 +7,10 @@ description: >-
   about who exposes it and who may call it, whether shared behaviour is taken
   from its shared home, and whether the design breaks a section 2 constraint
   or departs from an established pattern without a stated reason.
-tools: Read, Glob, Grep, Bash, Write, Skill, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, mcp__mcp-graphrag-server, Agent, Workflow
+tools: Read, Glob, Grep, Bash, Write, Skill, mcp__aws-mcp__aws___search_documentation,
+  mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill,
+  mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
+  mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Edit, NotebookEdit
 mcpServers:
 - aws-mcp
@@ -22,6 +25,11 @@ skills:
 - agent-teams-workforce:senior-architect
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:matrix
+x-onDemandSkills:
+- agent-teams-workforce:artifact-handoff
+- agent-teams-workforce:log-architecture-review
+- agent-teams-workforce:pipeline-contracts
+- agent-teams-workforce:software-engineering
 effort: medium
 isolation: worktree
 color: cyan

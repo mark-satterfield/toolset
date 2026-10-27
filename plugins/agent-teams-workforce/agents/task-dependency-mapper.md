@@ -5,7 +5,11 @@ description: >-
   built until another is, because it consumes something the other provides.
   Proposes the cross-Story edges among the Tasks of one Epic's Stories, or every
   edge to or from one Task created outside elaboration; writes no edge itself.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__gitnexus__query, mcp__gitnexus__context, mcp__gitnexus__impact, mcp__gitnexus__detect_changes, mcp__gitnexus__trace, mcp__gitnexus__explain, mcp__gitnexus__api_impact, mcp__gitnexus__route_map, mcp__gitnexus__tool_map, mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query, mcp__gitnexus__cypher, mcp__gitnexus__check, mcp__gitnexus__list_repos, mcp__gitnexus__group_list, Agent, Workflow
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__gitnexus__query, mcp__gitnexus__context,
+  mcp__gitnexus__impact, mcp__gitnexus__detect_changes, mcp__gitnexus__trace,
+  mcp__gitnexus__explain, mcp__gitnexus__api_impact, mcp__gitnexus__route_map,
+  mcp__gitnexus__tool_map, mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query,
+  mcp__gitnexus__cypher, mcp__gitnexus__check, mcp__gitnexus__list_repos, mcp__gitnexus__group_list
 disallowedTools: AskUserQuestion
 mcpServers:
 - gitnexus
@@ -20,6 +24,9 @@ skills:
 - agent-teams-workforce:artifact-handoff
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:matrix
+x-onDemandSkills:
+- agent-teams-workforce:effective-architecture
+- agent-teams-workforce:pipeline-contracts
 effort: medium
 isolation: worktree
 color: yellow

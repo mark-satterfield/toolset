@@ -1,7 +1,7 @@
 ---
 name: ui-design-source-selector
 description: Choose the design source of each UI item a frontend repository's Story builds, from the cds bundles the owner supplied and the configured Configurable Design System (cds) - a supplied bundle, the live design system, or no design change; designs nothing.
-tools: Read, Write, Glob, Grep, Bash, Skill, Agent, Workflow
+tools: Read, Write, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion, Edit, NotebookEdit
 model: sonnet
 permissionMode: acceptEdits
@@ -11,6 +11,9 @@ skills:
 - agent-teams-workforce:artifact-handoff
 - cds:apply-design-system
 - cds:audit-against-system
+x-onDemandSkills:
+- agent-teams-workforce:effective-architecture
+- agent-teams-workforce:pipeline-contracts
 effort: low
 isolation: worktree
 color: purple

@@ -2,8 +2,9 @@
 name: architecture-decider
 description: Rule between the positions on an architecture matter the solutions architect and the architecture team lead could not settle, from the evidence each position carries, and record the ruling in the matrix as the settlement of the disagreement.
 role: decider
-tools: Read, Glob, Grep, Write, Bash, Skill, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
-  mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Agent, Workflow
+tools: Read, Glob, Grep, Write, Bash, Skill, mcp__aws-mcp__aws___search_documentation,
+  mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill,
+  mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability
 disallowedTools: AskUserQuestion, Edit, NotebookEdit
 model: opus
 permissionMode: acceptEdits
@@ -16,6 +17,14 @@ skills:
 - agent-teams-workforce:aws-solution-architect
 - agent-teams-workforce:python-lambda-packaging
 - agent-teams-workforce:matrix
+x-onDemandSkills:
+- agent-teams-workforce:artifact-handoff
+- agent-teams-workforce:aurora-postgresql
+- agent-teams-workforce:cdk-coding
+- agent-teams-workforce:log-architecture-review
+- agent-teams-workforce:pipeline-contracts
+- agent-teams-workforce:resource-naming
+- agent-teams-workforce:software-engineering
 effort: high
 color: cyan
 mcpServers:

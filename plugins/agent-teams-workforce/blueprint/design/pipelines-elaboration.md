@@ -172,7 +172,7 @@ sequenceDiagram
     Note over SA,TRD: the TRD initial write came first - section 4
     loop until the higher-level architecture, the architecture that goes in arc42, covers the PRD
         SA->>SP: a request on one subject, with what the architect knows and the TRD
-        Note over SP: a specialist may start further agents or a workflow. There can be nested subagents
+        Note over SP: a specialist starts no further agent and no workflow
         SP->>AWS: AWS documentation, best practices, cost analysis
         AWS-->>SP: guidance and figures
         SP-->>SA: higher-level architecture of that subject

@@ -13,12 +13,7 @@ tools: Read, Write, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation,
   mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation,
   mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs,
   mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_converter,
-  mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator,
-  mcp__plugin_aws-agents_awsknowledge__aws___search_documentation,
-  mcp__plugin_aws-agents_awsknowledge__aws___read_documentation,
-  mcp__plugin_aws-agents_awsknowledge__aws___retrieve_skill,
-  mcp__plugin_aws-agents_awsknowledge__aws___list_regions,
-  mcp__plugin_aws-agents_awsknowledge__aws___get_regional_availability, Agent, Workflow
+  mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator
 disallowedTools: AskUserQuestion, Edit, NotebookEdit
 mcpServers:
 - aws-mcp
@@ -35,6 +30,13 @@ skills:
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:dynamodb
 - aws-core:aws-database
+x-onDemandSkills:
+- agent-teams-workforce:artifact-handoff
+- agent-teams-workforce:log-architecture-review
+- agent-teams-workforce:matrix
+- agent-teams-workforce:pipeline-contracts
+- agent-teams-workforce:resource-naming
+- agent-teams-workforce:software-engineering
 effort: medium
 isolation: worktree
 color: cyan

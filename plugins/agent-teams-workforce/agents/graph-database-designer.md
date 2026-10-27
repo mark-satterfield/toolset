@@ -10,12 +10,7 @@ tools: Read, Write, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation,
   mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query, mcp__gitnexus__cypher, mcp__gitnexus__check,
   mcp__gitnexus__list_repos, mcp__gitnexus__group_list,
   mcp__awslabs-amazon-neptune-mcp-server__get_graph_status,
-  mcp__awslabs-amazon-neptune-mcp-server__get_graph_schema,
-  mcp__plugin_aws-agents_awsknowledge__aws___search_documentation,
-  mcp__plugin_aws-agents_awsknowledge__aws___read_documentation,
-  mcp__plugin_aws-agents_awsknowledge__aws___retrieve_skill,
-  mcp__plugin_aws-agents_awsknowledge__aws___list_regions,
-  mcp__plugin_aws-agents_awsknowledge__aws___get_regional_availability, Agent, Workflow
+  mcp__awslabs-amazon-neptune-mcp-server__get_graph_schema
 disallowedTools: AskUserQuestion, Edit, NotebookEdit
 mcpServers:
 - aws-mcp
@@ -32,6 +27,12 @@ skills:
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:amazon-neptune
 - aws-core:aws-database
+x-onDemandSkills:
+- agent-teams-workforce:artifact-handoff
+- agent-teams-workforce:log-architecture-review
+- agent-teams-workforce:matrix
+- agent-teams-workforce:pipeline-contracts
+- agent-teams-workforce:software-engineering
 effort: medium
 isolation: worktree
 color: cyan

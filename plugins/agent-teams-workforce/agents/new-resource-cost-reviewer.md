@@ -6,7 +6,11 @@ description: >-
   math at the stated usage computed by script, its fixed monthly floor
   separated from its usage cost, and the total against the stated cost
   ceilings.
-tools: Read, Glob, Grep, Bash, Write, Skill, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, mcp__aws-mcp__aws___run_script, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, mcp__mcp-graphrag-server, Agent, Workflow
+tools: Read, Glob, Grep, Bash, Write, Skill, mcp__aws-mcp__aws___search_documentation,
+  mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill,
+  mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
+  mcp__aws-mcp__aws___run_script, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs,
+  mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Edit, NotebookEdit
 mcpServers:
 - aws-mcp
@@ -20,6 +24,12 @@ skills:
 - agent-teams-workforce:design-specialist-contract
 - agent-teams-workforce:effective-architecture
 - aws-core:aws-billing-and-cost-management
+x-onDemandSkills:
+- agent-teams-workforce:artifact-handoff
+- agent-teams-workforce:log-architecture-review
+- agent-teams-workforce:matrix
+- agent-teams-workforce:pipeline-contracts
+- agent-teams-workforce:software-engineering
 effort: medium
 isolation: worktree
 color: cyan

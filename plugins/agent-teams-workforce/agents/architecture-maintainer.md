@@ -1,7 +1,7 @@
 ---
 name: architecture-maintainer
 description: Write the solutions architect's decisions into the architecture documents (arc42 and detailed/), each fact in its one home with links from every other document, and correct the effective documents to match what a Story built.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, Agent, Workflow
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion
 model: sonnet
 x-sessionLimit: 540
@@ -11,9 +11,15 @@ skills:
 - agent-teams-workforce:effective-architecture
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:arc42-maintain
+x-onDemandSkills:
+- agent-teams-workforce:arc42
+- agent-teams-workforce:artifact-handoff
 - agent-teams-workforce:c4-diagramming
-- agent-teams-workforce:uml-diagramming
+- agent-teams-workforce:log-architecture-review
 - agent-teams-workforce:matrix
+- agent-teams-workforce:pipeline-contracts
+- agent-teams-workforce:software-engineering
+- agent-teams-workforce:uml-diagramming
 effort: medium
 color: cyan
 ---
@@ -67,7 +73,8 @@ For each fact:
    the catalog front matter and name the file for its subject.
 
 Place each diagram the request carries under its heading, and update or redraw a diagram
-when a fact changes what it shows.
+when a fact changes what it shows. The notation of a diagram is set by its skill among your
+on-demand skills, and every `atw-matrix` command by the `matrix` skill.
 
 Section 2 is the owner's and stays as it is. Documents hold the design as it is: no decision
 record, history or open-items list. Set `lifecycle_state: in-review` on each `effective`

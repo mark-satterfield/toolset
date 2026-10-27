@@ -1,7 +1,14 @@
 ---
 name: rag-architecture-designer
 description: Answer a question or do a bounded piece of design for the solutions architect on retrieval-augmented generation and semantic search - Bedrock Knowledge Bases, chunking, embeddings models, vector stores (Aurora pgvector, S3 Vectors, OpenSearch, Neptune Analytics), hybrid retrieval, re-ranking, metadata filtering and retrieval evaluation.
-tools: Read, Write, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill, mcp__mcp-graphrag-server, mcp__gitnexus__query, mcp__gitnexus__context, mcp__gitnexus__impact, mcp__gitnexus__detect_changes, mcp__gitnexus__trace, mcp__gitnexus__explain, mcp__gitnexus__api_impact, mcp__gitnexus__route_map, mcp__gitnexus__tool_map, mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query, mcp__gitnexus__cypher, mcp__gitnexus__check, mcp__gitnexus__list_repos, mcp__gitnexus__group_list, mcp__plugin_aws-agents_awsknowledge__aws___search_documentation, mcp__plugin_aws-agents_awsknowledge__aws___read_documentation, mcp__plugin_aws-agents_awsknowledge__aws___retrieve_skill, mcp__plugin_aws-agents_awsknowledge__aws___list_regions, mcp__plugin_aws-agents_awsknowledge__aws___get_regional_availability, mcp__pg-aiguide__search_docs, Agent, Workflow
+tools: Read, Write, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation,
+  mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill,
+  mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill,
+  mcp__mcp-graphrag-server, mcp__gitnexus__query, mcp__gitnexus__context, mcp__gitnexus__impact,
+  mcp__gitnexus__detect_changes, mcp__gitnexus__trace, mcp__gitnexus__explain,
+  mcp__gitnexus__api_impact, mcp__gitnexus__route_map, mcp__gitnexus__tool_map,
+  mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query, mcp__gitnexus__cypher, mcp__gitnexus__check,
+  mcp__gitnexus__list_repos, mcp__gitnexus__group_list, mcp__pg-aiguide__search_docs
 disallowedTools: AskUserQuestion, Edit, NotebookEdit
 mcpServers:
 - aws-mcp
@@ -23,6 +30,14 @@ skills:
 - aws-data-analytics:storing-and-querying-vectors
 - aws-data-analytics:amazon-opensearch-service
 - aws-core:amazon-bedrock
+x-onDemandSkills:
+- agent-teams-workforce:artifact-handoff
+- agent-teams-workforce:database-schema-designer
+- agent-teams-workforce:log-architecture-review
+- agent-teams-workforce:matrix
+- agent-teams-workforce:pipeline-contracts
+- agent-teams-workforce:resource-naming
+- agent-teams-workforce:software-engineering
 effort: medium
 isolation: worktree
 color: cyan

@@ -2,26 +2,18 @@
 name: aws-solutions-architect
 description: Hold single responsibility for the architecture a PRD needs, from the first read of the PRD until the architecture and the TRD are designed, reviewed and approved, with the review log that proves how.
 role: solutions-architect
-tools: Read, Glob, Grep, Bash, Write, Skill, Agent, SendMessage, mcp__aws-mcp__aws___search_documentation,
-  mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill,
-  mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
+tools: Read, Glob, Grep, Bash, Write, Skill, Agent, SendMessage,
+  mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
+  mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions,
+  mcp__aws-mcp__aws___get_regional_availability,
   mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, mcp__mcp-graphrag-server,
-  mcp__pg-aiguide__search_docs, mcp__gitnexus__query, mcp__gitnexus__context, mcp__gitnexus__impact,
-  mcp__gitnexus__detect_changes, mcp__gitnexus__trace, mcp__gitnexus__explain, mcp__gitnexus__api_impact,
-  mcp__gitnexus__route_map, mcp__gitnexus__tool_map, mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query,
-  mcp__gitnexus__cypher, mcp__gitnexus__check, mcp__gitnexus__list_repos, mcp__gitnexus__group_list,
-  mcp__plugin_aws-agents_awsknowledge__aws___search_documentation,
-  mcp__plugin_aws-agents_awsknowledge__aws___read_documentation,
-  mcp__plugin_aws-agents_awsknowledge__aws___retrieve_skill,
-  mcp__plugin_aws-agents_awsknowledge__aws___list_regions,
-  mcp__plugin_aws-agents_awsknowledge__aws___get_regional_availability, mcp__aws-mcp__aws___run_script, Workflow
+  mcp__pg-aiguide__search_docs, mcp__aws-mcp__aws___run_script, Workflow
 disallowedTools: AskUserQuestion, Edit, NotebookEdit
 mcpServers:
 - aws-mcp
 - mcp-graphrag-server
 - awslabs-dynamodb-mcp-server
 - pg-aiguide
-- gitnexus
 model: opus
 x-sessionLimit: 3600
 effort: high

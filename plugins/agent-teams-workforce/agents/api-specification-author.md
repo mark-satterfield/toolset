@@ -1,9 +1,14 @@
 ---
 name: api-specification-author
 description: Write the spec of the API, event, error and UI contracts one repository's Story builds, from the recorded architecture and design; designs nothing.
-tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
-  mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
-  Skill, mcp__gitnexus__query, mcp__gitnexus__context, mcp__gitnexus__impact, mcp__gitnexus__detect_changes, mcp__gitnexus__trace, mcp__gitnexus__explain, mcp__gitnexus__api_impact, mcp__gitnexus__route_map, mcp__gitnexus__tool_map, mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query, mcp__gitnexus__cypher, mcp__gitnexus__check, mcp__gitnexus__list_repos, mcp__gitnexus__group_list, Agent, Workflow
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation,
+  mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill,
+  mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill,
+  mcp__gitnexus__query, mcp__gitnexus__context, mcp__gitnexus__impact,
+  mcp__gitnexus__detect_changes, mcp__gitnexus__trace, mcp__gitnexus__explain,
+  mcp__gitnexus__api_impact, mcp__gitnexus__route_map, mcp__gitnexus__tool_map,
+  mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query, mcp__gitnexus__cypher, mcp__gitnexus__check,
+  mcp__gitnexus__list_repos, mcp__gitnexus__group_list
 disallowedTools: AskUserQuestion
 mcpServers:
 - aws-mcp
@@ -20,7 +25,11 @@ skills:
 - agent-teams-workforce:effective-architecture
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:matrix
+x-onDemandSkills:
+- agent-teams-workforce:log-architecture-review
+- agent-teams-workforce:pipeline-contracts
 - agent-teams-workforce:python-lambda-packaging
+- agent-teams-workforce:software-engineering
 effort: medium
 isolation: worktree
 color: purple

@@ -4,8 +4,11 @@ A session is launched as the predefined agent under the plugin's name,
 ``agent-teams-workforce:<name>``: it loads only project settings, so the user-level agent copies
 are not registered, and Claude Code registers a plugin agent only under that prefix. Claude Code
 loads the agent's definition, preloads the skills its front matter lists, and applies its tools
-and effort; it ignores the ``mcpServers`` of a plugin agent, so the launcher passes the servers
-the plugin's agents declare as the session's MCP configuration. The launcher passes no agent or
+and effort; it ignores the ``mcpServers`` of a plugin agent, so the launcher passes the session's
+MCP configuration, and no other MCP server loads. A session that cannot start another agent gets
+only its own agent's servers, and a plugin directory that lists only the skills its agent's
+definition names; a session that can start agents gets every server the plugin's agents declare
+and the whole plugin, since the agents it starts run in it. The launcher passes no agent or
 skill text.
 """
 
@@ -15,6 +18,7 @@ import functools
 import json
 import os
 import shlex
+import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -51,6 +55,24 @@ SESSION_LIMIT_KEY: Final = "x-sessionLimit"
 """The agent front-matter key stating the hard limit of the agent's sessions, in seconds."""
 MCP_SERVERS_KEY: Final = "mcpServers"
 """The agent front-matter key naming the MCP servers the agent's tools reach."""
+TOOLS_KEY: Final = "tools"
+"""The agent front-matter key holding the agent's tool allow-list; absent, the agent has every tool."""
+DISALLOWED_TOOLS_KEY: Final = "disallowedTools"
+"""The agent front-matter key holding the tools the agent is denied."""
+STARTING_TOOLS: Final = frozenset({"Agent", "Workflow"})
+"""The tools with which a session starts other agents in itself."""
+PRELOADED_SKILLS_KEY: Final = "skills"
+"""The agent front-matter key naming the skills preloaded into the agent's context."""
+ON_DEMAND_SKILLS_KEY: Final = "x-onDemandSkills"
+"""The agent front-matter key naming the skills the agent may load itself with the Skill tool."""
+SKILL_FILE: Final = "SKILL.md"
+"""The file by which Claude Code finds a skill in a plugin's skill folder."""
+SKILLS_FOLDER: Final = "skills"
+LISTED_FOLDERS: Final = frozenset({"commands", "workflows"})
+"""The plugin folders whose files Claude Code lists to the model beside the skills, by file stem."""
+SESSION_PLUGIN: Final = ".plugin"
+"""The folder in a session's directory that holds the plugin as that session sees it."""
+DISABLE_BUNDLED_SKILLS_KEY: Final = "disableBundledSkills"
 CONFIG_DIR_ENV: Final = "CLAUDE_CONFIG_DIR"
 GLOBAL_CONFIG_NAME: Final = ".claude.json"
 """Claude Code's global configuration file, which holds the user-scope MCP server definitions."""
@@ -75,17 +97,23 @@ class SessionSetupError(RuntimeError):
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass(frozen=True)
 class AgentDefinition:
-    """The fields of one agent definition file the runner still reads (held for the owner's ruling).
+    """The fields of one agent definition file the launcher decides something with.
 
     ``model`` drives the Fable fallback, ``role`` the matrix role and ``session_limit`` (front
     matter ``x-sessionLimit``, seconds) the hard limit of the agent's sessions; an agent that states
-    none runs under the driver surface's ``ATW_SESSION_LIMIT``. The agent's tools are its front
-    matter's allow-list, which Claude Code applies; the runner reads none of them.
+    none runs under the driver surface's ``ATW_SESSION_LIMIT``. ``starts_agents`` tells whether the
+    agent's tools include one that starts other agents (``Agent`` or ``Workflow``, or no
+    ``tools`` allow-list at all); ``servers`` are its front matter ``mcpServers``; ``skills`` are
+    the plain names of this plugin's skills its front matter ``skills`` and ``x-onDemandSkills``
+    name. Claude Code applies the agent's tools; the launcher only reads them.
     """
 
     name: str
     model: str
     role: str | None
+    starts_agents: bool
+    servers: tuple[str, ...]
+    skills: frozenset[str]
     session_limit: int | None = None
 
     def __post_init__(self) -> None:
@@ -93,6 +121,9 @@ class AgentDefinition:
         check_type(self.name, str)
         check_type(self.model, str)
         check_type(self.role, str | None)
+        check_type(self.starts_agents, bool)
+        check_type(self.servers, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.skills, frozenset[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.session_limit, int | None)
 
 
@@ -128,8 +159,43 @@ def read_json(path: Path) -> dict[str, JsonValue]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def _names(metadata: Mapping[str, JsonValue], key: str, agent: str) -> tuple[str, ...]:
+    """Read a front matter field that lists names.
+
+    Returns:
+        The names, in order; none when the field is absent.
+
+    Raises:
+        TypeError: The field is not a list of names.
+
+    """
+    value: JsonValue = metadata.get(key, [])
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        message: str = f"agent {agent} {key} must be a list of names"
+        raise TypeError(message)
+    return tuple(check_type(value, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS))
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def _tools(metadata: Mapping[str, JsonValue], key: str, agent: str) -> frozenset[str] | None:
+    """Read a front matter tool field: a comma-separated line or a list of tool names.
+
+    Returns:
+        The tool names; None when the field is absent. A field that is neither text nor a list
+        of names fails in :func:`_names`.
+
+    """
+    value: JsonValue = metadata.get(key)
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return frozenset(word.strip() for word in value.split(",") if word.strip())
+    return frozenset(_names(metadata, key, agent))
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def load_agent(plugin: Path, name: str) -> AgentDefinition:
-    """Read the model, role and session limit of one agent definition file of the plugin.
+    """Read the fields of one agent definition file of the plugin the launcher decides with.
 
     Returns:
         The validated fields.
@@ -158,7 +224,22 @@ def load_agent(plugin: Path, name: str) -> AgentDefinition:
     if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0):
         message = f"agent {name} {SESSION_LIMIT_KEY} must be a positive whole number of seconds"
         raise ValueError(message)
-    return AgentDefinition(name=name, model=model.strip(), role=role, session_limit=limit)
+    allowed: frozenset[str] = _tools(metadata, TOOLS_KEY, name) or STARTING_TOOLS
+    denied: frozenset[str] = _tools(metadata, DISALLOWED_TOOLS_KEY, name) or frozenset()
+    named: tuple[str, ...] = _names(metadata, PRELOADED_SKILLS_KEY, name) + _names(
+        metadata,
+        ON_DEMAND_SKILLS_KEY,
+        name,
+    )
+    return AgentDefinition(
+        name=name,
+        model=model.strip(),
+        role=role,
+        starts_agents=bool((allowed - denied) & STARTING_TOOLS),
+        servers=_names(metadata, MCP_SERVERS_KEY, name),
+        skills=frozenset(skill.removeprefix(AGENT_PREFIX) for skill in named if skill.startswith(AGENT_PREFIX)),
+        session_limit=limit,
+    )
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -220,9 +301,9 @@ def safety_settings(config: Path) -> dict[str, JsonValue]:
 def session_settings(config: Path) -> dict[str, JsonValue]:
     """Build the settings file of one session.
 
-    Every session has the safety hooks and the control repository's edit hooks, is limited to
-    one layer of started agents, each started in the foreground, and takes a command's output
-    whole.
+    Every session has the safety hooks and the control repository's edit hooks, starts every
+    agent in the foreground, takes a command's output whole, and loads none of the skills
+    bundled with Claude Code.
 
     Returns:
         The session's settings.
@@ -237,6 +318,7 @@ def session_settings(config: Path) -> dict[str, JsonValue]:
     settings: dict[str, JsonValue] = safety_settings(config)
     settings["env"] = dict(SESSION_ENV)
     settings[BASH_OUTPUT_KEY] = BASH_OUTPUT_LIMIT
+    settings[DISABLE_BUNDLED_SKILLS_KEY] = True
     return settings
 
 
@@ -244,9 +326,9 @@ def session_settings(config: Path) -> dict[str, JsonValue]:
 def declared_servers(plugin: Path) -> tuple[str, ...]:
     """Name every MCP server some agent of the plugin declares in its front matter ``mcpServers``.
 
-    Claude Code ignores ``mcpServers`` on a plugin agent, and an agent started with the Agent tool
-    reaches only the servers of the session that starts it. Any session may start any agent of the
-    plugin, so every session is given the union of all the agents' servers.
+    An agent started in a session reaches only the servers of that session, and a session that can
+    start agents may start any agent of the plugin, so such a session is given the union of all
+    the agents' servers.
 
     Returns:
         The server names, sorted; an agent whose ``mcpServers`` is not a list of names fails the
@@ -274,19 +356,83 @@ def global_config_file(config: Path) -> Path:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def session_servers(plugin: Path, config: Path) -> dict[str, JsonValue]:
+def session_servers(plugin: Path, config: Path, agent: AgentDefinition) -> dict[str, JsonValue]:
     """Build the MCP configuration of one session from the user-scope server definitions.
 
     A session loads only project settings, so the user-scope servers do not load by themselves.
-    Each server the plugin's agents declare is taken from the global configuration file; a name it
-    does not define is left out, as an interactive session would leave it out.
+    The session gets its agent's own ``mcpServers``, or, when its agent can start agents, every
+    server the plugin's agents declare (:func:`declared_servers`). Each is taken from the global
+    configuration file; a name it does not define is left out, as an interactive session would
+    leave it out.
 
     Returns:
-        ``{"mcpServers": {name: definition}}`` for every declared server the user defines.
+        ``{"mcpServers": {name: definition}}`` for every server of the session the user defines.
 
     """
     defined: dict[str, JsonValue] = json_object(read_json(global_config_file(config)).get(MCP_SERVERS_KEY, {}))
-    return {MCP_SERVERS_KEY: {name: defined[name] for name in declared_servers(plugin) if name in defined}}
+    names: tuple[str, ...] = declared_servers(plugin) if agent.starts_agents else agent.servers
+    return {MCP_SERVERS_KEY: {name: defined[name] for name in names if name in defined}}
+
+
+def _link(target: Path, link: Path) -> None:
+    """Make ``link`` a symbolic link to ``target``."""
+    link.symlink_to(target, target_is_directory=target.is_dir())
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def _skill_folder(source: Path, folder: Path, skills: frozenset[str]) -> None:
+    """Build a session's skill folder: a named skill whole, any other without its ``SKILL.md``.
+
+    A skill folder with no ``SKILL.md`` is not listed, while its scripts, schemas and references
+    stay at their paths for the commands and skills that use them.
+    """
+    folder.mkdir()
+    entry: Path
+    for entry in sorted(source.iterdir()):
+        if entry.name in skills or not entry.is_dir():
+            _link(entry, folder / entry.name)
+            continue
+        (folder / entry.name).mkdir()
+        part: Path
+        for part in sorted(entry.iterdir()):
+            if part.name != SKILL_FILE:
+                _link(part, folder / entry.name / part.name)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def session_plugin(plugin: Path, directory: Path, agent: AgentDefinition) -> Path:
+    """Name the plugin folder a session loads, building it when the session lists only some skills.
+
+    A session whose agent can start agents loads the whole plugin, since the agents it starts run
+    with their skills in it. Any other session loads ``<directory>/.plugin``, rebuilt for each
+    launch: every entry of the plugin as a link, except that it lists only the skills, commands
+    and workflows the agent's definition names (:func:`_skill_folder`; a command or workflow is
+    named by its file stem).
+
+    Returns:
+        The plugin folder to pass with ``--plugin-dir``.
+
+    """
+    if agent.starts_agents:
+        return plugin
+    source: Path = plugin.resolve()
+    built: Path = directory / SESSION_PLUGIN
+    if built.exists():
+        shutil.rmtree(built)
+    built.mkdir(mode=0o700)
+    entry: Path
+    for entry in sorted(source.iterdir()):
+        if entry.name == SKILLS_FOLDER:
+            _skill_folder(entry, built / entry.name, agent.skills)
+        elif entry.name in LISTED_FOLDERS:
+            (built / entry.name).mkdir()
+            listed: Path
+            for listed in sorted(entry.iterdir()):
+                if listed.stem in agent.skills:
+                    _link(listed, built / entry.name / listed.name)
+        else:
+            _link(entry, built / entry.name)
+    return built
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -295,7 +441,7 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
 
     Returns:
         Explicit arguments selecting the agent by its name under the plugin prefix, the model,
-        the settings, the MCP servers and the plugin.
+        the settings, the MCP servers (and no other) and the session's plugin folder.
 
     Raises:
         TypeError: Session inputs do not satisfy the preparation contract.
@@ -310,7 +456,7 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
     launched: AgentDefinition = load_agent(plugin, step.agent)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     write_json(directory / "settings.json", session_settings(config))
-    write_json(directory / "mcp.json", session_servers(plugin, config))
+    write_json(directory / "mcp.json", session_servers(plugin, config, launched))
     command: list[str] = [
         "--agent",
         f"{AGENT_PREFIX}{step.agent}",
@@ -322,8 +468,9 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
         str(directory / "settings.json"),
         "--mcp-config",
         str(directory / "mcp.json"),
+        "--strict-mcp-config",
         "--plugin-dir",
-        str(plugin),
+        str(session_plugin(plugin, directory, launched)),
         "--permission-mode",
         "bypassPermissions",
     ]

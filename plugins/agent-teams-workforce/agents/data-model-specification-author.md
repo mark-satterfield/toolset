@@ -1,12 +1,21 @@
 ---
 name: data-model-specification-author
 description: Write the spec of the data one repository's Story builds, from the recorded architecture and design; designs nothing.
-tools: Read, Write, Edit, Glob, Grep, Bash, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation,
-  mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_converter,
+tools: Read, Write, Edit, Glob, Grep, Bash,
+  mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation,
+  mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs,
+  mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_converter,
   mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, Skill,
   mcp__pg-aiguide__search_docs, mcp__awslabs-postgres-mcp-server__connect_to_database,
-  mcp__awslabs-postgres-mcp-server__is_database_connected, mcp__awslabs-postgres-mcp-server__get_database_connection_info,
-  mcp__awslabs-postgres-mcp-server__get_table_schema, mcp__awslabs-amazon-neptune-mcp-server__get_graph_status, mcp__awslabs-amazon-neptune-mcp-server__get_graph_schema, mcp__gitnexus__query, mcp__gitnexus__context, mcp__gitnexus__impact, mcp__gitnexus__detect_changes, mcp__gitnexus__trace, mcp__gitnexus__explain, mcp__gitnexus__api_impact, mcp__gitnexus__route_map, mcp__gitnexus__tool_map, mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query, mcp__gitnexus__cypher, mcp__gitnexus__check, mcp__gitnexus__list_repos, mcp__gitnexus__group_list, Agent, Workflow
+  mcp__awslabs-postgres-mcp-server__is_database_connected,
+  mcp__awslabs-postgres-mcp-server__get_database_connection_info,
+  mcp__awslabs-postgres-mcp-server__get_table_schema,
+  mcp__awslabs-amazon-neptune-mcp-server__get_graph_status,
+  mcp__awslabs-amazon-neptune-mcp-server__get_graph_schema, mcp__gitnexus__query,
+  mcp__gitnexus__context, mcp__gitnexus__impact, mcp__gitnexus__detect_changes,
+  mcp__gitnexus__trace, mcp__gitnexus__explain, mcp__gitnexus__api_impact, mcp__gitnexus__route_map,
+  mcp__gitnexus__tool_map, mcp__gitnexus__shape_check, mcp__gitnexus__pdg_query,
+  mcp__gitnexus__cypher, mcp__gitnexus__check, mcp__gitnexus__list_repos, mcp__gitnexus__group_list
 disallowedTools: AskUserQuestion
 mcpServers:
 - awslabs-dynamodb-mcp-server
@@ -30,7 +39,12 @@ skills:
 - agent-teams-workforce:pgvector-semantic-search
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:matrix
+x-onDemandSkills:
+- agent-teams-workforce:log-architecture-review
+- agent-teams-workforce:pipeline-contracts
 - agent-teams-workforce:python-lambda-packaging
+- agent-teams-workforce:resource-naming
+- agent-teams-workforce:software-engineering
 effort: medium
 isolation: worktree
 color: purple

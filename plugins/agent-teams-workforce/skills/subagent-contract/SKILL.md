@@ -11,9 +11,10 @@ Perform the role in your definition. The brief is the artifact-handoff skill's
 the inputs this step needs. The skills your
 definition lists are in your context; read the applicable contract before writing. The artifact-handoff skill is the shared producer/reviewer authority.
 Write the result file; Python validates it, records it in the step journal and keeps pipeline state.
-Start another agent with the Agent tool by its name under the plugin prefix
-(`agent-teams-workforce:trd-author`); where the Agent tool also lists its plain front-matter name
-(`trd-author`), use the plain name, which starts the agent's user-level copy with its MCP servers.
+An agent whose definition grants the Agent tool starts another agent by its name under the
+plugin prefix (`agent-teams-workforce:trd-author`); where the Agent tool also lists its plain
+front-matter name (`trd-author`), it uses the plain name, which starts the agent's user-level copy
+with its MCP servers.
 Never invoke a command runner. When the brief carries ARTIFACT CONTRACT DATA, write the progress
 file it names and record a checkpoint or the submission only by running the artifactcontract.py
 commands it gives; never write a checkpoint sidecar any other way. The progress file's fields are
@@ -67,7 +68,9 @@ An agent that starts no other agent adds no step.
 
 ## Starting subagents and workflows
 
-An agent may start subagents and workflows when its work needs them. It starts the fewest
+An agent whose definition grants the Agent or Workflow tool may start subagents and workflows
+when its work needs them; an agent whose definition grants neither starts none, and the script
+starts every agent its step needs. An agent that starts them starts the fewest
 agents that keep each context small, prefers workflows over subagents, runs any agent that
 changes source code on Opus, and follows the `workflow-authoring` skill for a workflow script. It keeps its own context low
 (the detail stays in the files the agents it starts write, and it holds their paths), uses

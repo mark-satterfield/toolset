@@ -87,11 +87,13 @@ Notes on the diagram:
 - Verified is set per Story when its test passes, on what it built and tested; it waits for no
   other Story and for no merge, because verified belongs to each stack and component, not to an
   Epic ([requirements/matrix.md](../requirements/matrix.md), section 3.5).
-- An agent in any pipeline may start subagents and workflows when its work needs them, choosing
-  the plugin's own agents from the `find-specialists` catalog; every agent definition with a
-  `tools` list grants `Agent` and `Workflow` and denies neither
+- An agent whose definition grants `Agent` or `Workflow` may start subagents and workflows when
+  its work needs them, choosing the plugin's own agents from the `find-specialists` catalog
   ([requirements/pipelines.md](../requirements/pipelines.md), "Agents may start agents";
-  `skills/subagent-contract/SKILL.md`, "Starting subagents and workflows").
+  `skills/subagent-contract/SKILL.md`, "Starting subagents and workflows"). Every agent elaboration
+  starts, except `aws-solutions-architect`, grants neither: the scripts start every agent
+  elaboration needs, so its session carries no agent listing, only its own agent's MCP servers,
+  and only the skills its definition names (`orchestrator/DESIGN.md`, section 5.2).
 
 ## Where the stores are read and written
 

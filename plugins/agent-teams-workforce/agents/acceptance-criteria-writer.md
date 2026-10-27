@@ -1,7 +1,7 @@
 ---
 name: acceptance-criteria-writer
 description: Derive traceable criteria and Definition of Done from the finished specification set.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, Agent, Workflow
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion
 model: sonnet
 x-sessionLimit: 900
@@ -13,6 +13,12 @@ skills:
 - agent-teams-workforce:artifact-handoff
 - agent-teams-workforce:effective-architecture
 - agent-teams-workforce:acceptance-criteria
+x-onDemandSkills:
+- agent-teams-workforce:log-architecture-review
+- agent-teams-workforce:matrix
+- agent-teams-workforce:pipeline-contracts
+- agent-teams-workforce:prd-writer
+- agent-teams-workforce:software-engineering
 effort: low
 isolation: worktree
 color: purple

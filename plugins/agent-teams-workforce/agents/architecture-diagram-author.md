@@ -1,7 +1,7 @@
 ---
 name: architecture-diagram-author
 description: Draw one architecture diagram of a design the solutions architect has settled, of any view type the documentation model lists (C4, UML, context map, data flow, deployment and the others), and return it with its home, view type and the elements it shows.
-tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server, Agent, Workflow
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill, mcp__mcp-graphrag-server
 mcpServers:
 - mcp-graphrag-server
 disallowedTools: AskUserQuestion
@@ -16,6 +16,12 @@ skills:
 - agent-teams-workforce:c4-diagramming
 - agent-teams-workforce:uml-diagramming
 - agent-teams-workforce:effective-architecture
+x-onDemandSkills:
+- agent-teams-workforce:artifact-handoff
+- agent-teams-workforce:log-architecture-review
+- agent-teams-workforce:matrix
+- agent-teams-workforce:pipeline-contracts
+- agent-teams-workforce:software-engineering
 effort: medium
 isolation: worktree
 color: cyan

@@ -5,7 +5,10 @@ description: >-
   logs, metrics, alarms and dashboards each block needs, the TRD's
   observability, availability and recovery obligations, how each failure is
   detected and who is told, and the operational burden at the stated usage.
-tools: Read, Glob, Grep, Bash, Write, Skill, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, mcp__mcp-graphrag-server, Agent, Workflow
+tools: Read, Glob, Grep, Bash, Write, Skill, mcp__aws-mcp__aws___search_documentation,
+  mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill,
+  mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
+  mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Edit, NotebookEdit
 mcpServers:
 - aws-mcp
@@ -20,6 +23,12 @@ skills:
 - agent-teams-workforce:observability-designer
 - agent-teams-workforce:cloudwatch
 - aws-core:aws-observability
+x-onDemandSkills:
+- agent-teams-workforce:artifact-handoff
+- agent-teams-workforce:log-architecture-review
+- agent-teams-workforce:matrix
+- agent-teams-workforce:pipeline-contracts
+- agent-teams-workforce:software-engineering
 effort: low
 isolation: worktree
 color: cyan

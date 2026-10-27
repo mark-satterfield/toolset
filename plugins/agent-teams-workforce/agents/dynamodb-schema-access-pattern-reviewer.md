@@ -7,7 +7,13 @@ description: >-
   store has the key attributes, indexes, access patterns and expiry attribute
   the detailed design records. Returns findings the data-model author can
   correct without interpretation; changes nothing.
-tools: Read, Glob, Grep, Bash, Write, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, Skill, Agent, Workflow
+tools: Read, Glob, Grep, Bash, Write,
+  mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation,
+  mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator,
+  mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs,
+  mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation,
+  mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions,
+  mcp__aws-mcp__aws___get_regional_availability, Skill
 disallowedTools: AskUserQuestion, Edit, NotebookEdit
 mcpServers:
   - awslabs-dynamodb-mcp-server
@@ -16,6 +22,12 @@ model: opus
 permissionMode: acceptEdits
 maxTurns: 90
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture, agent-teams-workforce:dynamodb]
+x-onDemandSkills:
+- agent-teams-workforce:log-architecture-review
+- agent-teams-workforce:matrix
+- agent-teams-workforce:pipeline-contracts
+- agent-teams-workforce:resource-naming
+- agent-teams-workforce:software-engineering
 effort: low
 isolation: worktree
 color: purple

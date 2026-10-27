@@ -6,7 +6,10 @@ description: >-
   evidence supports, and whether the assumptions and estimates it rests on
   (latency, throughput, limits, effort) hold against the stated constraints
   and AWS documentation.
-tools: Read, Glob, Grep, Bash, Write, Skill, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, mcp__mcp-graphrag-server, Agent, Workflow
+tools: Read, Glob, Grep, Bash, Write, Skill, mcp__aws-mcp__aws___search_documentation,
+  mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill,
+  mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
+  mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Edit, NotebookEdit
 mcpServers:
 - aws-mcp
@@ -22,6 +25,15 @@ skills:
 - agent-teams-workforce:aws-solution-architect
 - agent-teams-workforce:python-lambda-packaging
 - aws-core:aws-well-architected-review
+x-onDemandSkills:
+- agent-teams-workforce:artifact-handoff
+- agent-teams-workforce:aurora-postgresql
+- agent-teams-workforce:cdk-coding
+- agent-teams-workforce:log-architecture-review
+- agent-teams-workforce:matrix
+- agent-teams-workforce:pipeline-contracts
+- agent-teams-workforce:resource-naming
+- agent-teams-workforce:software-engineering
 effort: medium
 isolation: worktree
 color: cyan

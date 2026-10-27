@@ -125,8 +125,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -154,8 +153,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -191,8 +189,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -238,8 +235,7 @@
         "agent-teams-workforce:artifact-handoff",
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:matrix",
-        "agent-teams-workforce:python-lambda-packaging"
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "aws-mcp",
@@ -258,8 +254,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -432,10 +427,7 @@
       "skills": [
         "agent-teams-workforce:effective-architecture",
         "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:arc42-maintain",
-        "agent-teams-workforce:c4-diagramming",
-        "agent-teams-workforce:uml-diagramming",
-        "agent-teams-workforce:matrix"
+        "agent-teams-workforce:arc42-maintain"
       ],
       "mcpServers": []
     },
@@ -519,8 +511,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -585,9 +576,7 @@
         "aws-mcp",
         "awslabs-dynamodb-mcp-server",
         "mcp-graphrag-server",
-        "pg-aiguide",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "pg-aiguide"
       ]
     },
     {
@@ -603,8 +592,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -671,8 +659,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -688,8 +675,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -744,8 +730,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -766,8 +751,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -1045,8 +1029,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -1108,8 +1091,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -1157,8 +1139,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -1175,8 +1156,7 @@
         "agent-teams-workforce:design-postgres-tables",
         "agent-teams-workforce:pgvector-semantic-search",
         "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:matrix",
-        "agent-teams-workforce:python-lambda-packaging"
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "awslabs-dynamodb-mcp-server",
@@ -1216,8 +1196,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -1342,8 +1321,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -1359,8 +1337,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -1414,8 +1391,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -1525,8 +1501,7 @@
         "aws-mcp",
         "mcp-graphrag-server",
         "gitnexus",
-        "awslabs-dynamodb-mcp-server",
-        "plugin_aws-agents_awsknowledge"
+        "awslabs-dynamodb-mcp-server"
       ]
     },
     {
@@ -1542,8 +1517,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -1581,8 +1555,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -1688,8 +1661,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -1803,8 +1775,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -1840,8 +1811,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -1893,8 +1863,7 @@
         "aws-mcp",
         "mcp-graphrag-server",
         "gitnexus",
-        "awslabs-amazon-neptune-mcp-server",
-        "plugin_aws-agents_awsknowledge"
+        "awslabs-amazon-neptune-mcp-server"
       ]
     },
     {
@@ -1911,8 +1880,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -1943,8 +1911,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -2020,8 +1987,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -2086,8 +2052,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -2105,8 +2070,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -2176,8 +2140,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -2255,8 +2218,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -2273,8 +2235,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -2292,8 +2253,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -2328,8 +2288,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -2390,8 +2349,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -2465,8 +2423,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -2500,8 +2457,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -2660,8 +2616,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -2699,7 +2654,6 @@
         "aws-mcp",
         "mcp-graphrag-server",
         "gitnexus",
-        "plugin_aws-agents_awsknowledge",
         "pg-aiguide"
       ]
     },
@@ -2798,8 +2752,7 @@
         "aws-mcp",
         "mcp-graphrag-server",
         "gitnexus",
-        "pg-aiguide",
-        "plugin_aws-agents_awsknowledge"
+        "pg-aiguide"
       ]
     },
     {
@@ -2922,8 +2875,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -3069,8 +3021,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -3083,8 +3034,7 @@
         "agent-teams-workforce:graphrag-lookup",
         "agent-teams-workforce:artifact-handoff",
         "agent-teams-workforce:wsjf",
-        "agent-teams-workforce:matrix",
-        "agent-teams-workforce:python-lambda-packaging"
+        "agent-teams-workforce:matrix"
       ],
       "mcpServers": [
         "mcp-graphrag-server",
@@ -3216,8 +3166,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -3291,8 +3240,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -3351,8 +3299,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {
@@ -3398,8 +3345,7 @@
       "mcpServers": [
         "aws-mcp",
         "mcp-graphrag-server",
-        "gitnexus",
-        "plugin_aws-agents_awsknowledge"
+        "gitnexus"
       ]
     },
     {

@@ -6,7 +6,11 @@ description: >-
   usage, the cost assumptions each change rests on, a monthly floor it adds or
   moves, and any cost cliff (a pricing tier, free-tier limit, quota or
   capacity-mode boundary) the stated usage reaches.
-tools: Read, Glob, Grep, Bash, Write, Skill, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, mcp__aws-mcp__aws___run_script, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, mcp__mcp-graphrag-server, Agent, Workflow
+tools: Read, Glob, Grep, Bash, Write, Skill, mcp__aws-mcp__aws___search_documentation,
+  mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill,
+  mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability,
+  mcp__aws-mcp__aws___run_script, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs,
+  mcp__mcp-graphrag-server
 disallowedTools: AskUserQuestion, Edit, NotebookEdit
 mcpServers:
 - aws-mcp
@@ -21,6 +25,11 @@ skills:
 - agent-teams-workforce:effective-architecture
 - aws-core:aws-billing-and-cost-management
 - agent-teams-workforce:matrix
+x-onDemandSkills:
+- agent-teams-workforce:artifact-handoff
+- agent-teams-workforce:log-architecture-review
+- agent-teams-workforce:pipeline-contracts
+- agent-teams-workforce:software-engineering
 effort: medium
 isolation: worktree
 color: cyan
