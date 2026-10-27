@@ -31,6 +31,7 @@ import strictschema
 from .frontmatter import split_front_matter
 from .io import JsonValue, json_object, write_json
 from .models import AgentStep
+from .step_journal import AGENT_PREFIX
 from .tool_locks import control_repo
 
 SAFETY_HOOKS = frozenset({
@@ -40,8 +41,6 @@ SAFETY_HOOKS = frozenset({
     "aws-profile-required.sh",
 })
 
-AGENT_PREFIX: Final = "agent-teams-workforce:"
-"""The prefix under which Claude Code registers this plugin's agents."""
 BACKGROUND_TASKS_ENV: Final = "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"
 SESSION_ENV: Final[Mapping[str, str]] = MappingProxyType({BACKGROUND_TASKS_ENV: "1"})
 """Every session's settings: every start blocks."""

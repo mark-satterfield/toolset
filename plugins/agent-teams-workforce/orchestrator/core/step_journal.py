@@ -84,6 +84,8 @@ JOURNALS_DIRECTORY: Final = "step-journals"
 """The one directory, inside the workflow runs directory, that holds every bead's step journal."""
 EXIT_OK: Final = 0
 EXIT_REFUSED: Final = 1
+AGENT_PREFIX: Final = "agent-teams-workforce:"
+"""The prefix under which Claude Code registers this plugin's agents; a journal step names none."""
 
 
 class InputArtifacts(TypedDict):
@@ -215,6 +217,32 @@ def timestamp() -> str:
 
     """
     return datetime.now(UTC).strftime(TIMESTAMP_FORMAT)
+
+
+def agent_name(name: str) -> str:
+    """Name an agent as its definition's ``name`` states it, which is how a journal step names it.
+
+    A session starts this plugin's agents under :data:`AGENT_PREFIX`, and may name one that way.
+
+    Returns:
+        ``name`` without :data:`AGENT_PREFIX`.
+
+    """
+    return name.removeprefix(AGENT_PREFIX)
+
+
+def _plain_agents(journal: Journal) -> Journal:
+    """Name the agent of every step of a journal as :func:`agent_name` does.
+
+    Returns:
+        ``journal``, changed in place.
+
+    """
+    step: Step
+    for step in _walk(journal["steps"]):
+        if "agent" in step:
+            step["agent"] = agent_name(step["agent"])
+    return journal
 
 
 def _walk(steps: Sequence[Step]) -> Iterator[Step]:
@@ -404,7 +432,7 @@ def _build_steps(plans: Sequence[StepPlan], refs: dict[str, StepId], known: set[
             "steps": [],
         }
         if "agent" in plan:
-            step["agent"] = plan["agent"]
+            step["agent"] = agent_name(plan["agent"])
         if "script" in plan:
             step["script"] = plan["script"]
         if inputs:
@@ -1113,7 +1141,7 @@ def read_journal(path: Path) -> Journal:
         path: The journal file.
 
     Returns:
-        The validated journal.
+        The validated journal, each step's agent named as :func:`agent_name` names it.
 
     Raises:
         StepJournalError: The file is missing, unreadable or not JSON.
@@ -1125,7 +1153,7 @@ def read_journal(path: Path) -> Journal:
     except json.JSONDecodeError as error:
         message: str = f"the step journal {path} is not JSON: {error}"
         raise StepJournalError(message) from error
-    return checked_journal(validate_journal(decoded, str(path)), str(path))
+    return _plain_agents(checked_journal(validate_journal(decoded, str(path)), str(path)))
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
