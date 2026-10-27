@@ -5,7 +5,7 @@
 # the side it came from (architecture or repository) and, where set, the approved and verified flags.
 #   reads:   epic, find, node, deps, stacks, layers, resources, parameters, documents, links,
 #            impact, related, uses, story-scope,
-#            review-scope, summary, check, check-reuse, approval, shared-items
+#            review-scope, summary, check, check-reuse, approval, shared-items, heading
 #   tasks:   built, work, affected
 #   changes: put, link, unlink, settle, rename, remove, move-repository, commit, record-judgments
 #   syncs:   sync-epics, sync-documents, sync-events

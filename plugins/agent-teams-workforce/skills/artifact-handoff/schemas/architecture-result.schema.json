@@ -394,14 +394,14 @@
       }
     },
     "TrdRequest": {
-      "description": "What trd-author is asked. The script writes the request of the initial write, from the architecture context, before the solutions architect starts; the solutions architect writes every request of mode `update`. Its sources are not listed here: every session of trd-author is handed the Epic's architecture pack (`pack.json`, labelled `architecture pack`), which holds the PRD, the Epic's requirements, the constraints that apply with their statements and the headings they are stated in, and the text of each heading that describes what the Epic reaches. The initial write is written from the pack alone.",
+      "description": "What trd-author is asked. The script writes the request of the initial write, from the architecture context, before the solutions architect starts; the solutions architect writes every request of mode `update`. Its sources are not listed here: every session of trd-author is handed the Epic's architecture pack (`pack.json`, labelled `architecture pack`), an index that names the PRD, the Epic's requirements, the file of the constraints that apply with their statements and the headings they are stated in, and the heading references (`<path>#<heading>`) that describe what the Epic reaches, whose text `atw-matrix heading` prints. The initial write is written from the pack and what it names alone.",
       "type": "object",
       "additionalProperties": false,
       "required": ["mode", "epic", "prdPath", "trdPath", "sharedCapabilities", "changes", "answerPath"],
       "properties": {
         "mode": {"$ref": "#/$defs/TrdMode"},
         "epic": {"description": "The Epic's beads id, which `atw-matrix epic` takes.", "type": "string", "minLength": 1},
-        "prdPath": {"description": "The PRD file, whose text the architecture pack holds; trd-author reads the PRD from the pack, each requirement's `name` its PRD heading.", "type": "string", "minLength": 1},
+        "prdPath": {"description": "The PRD file, which the architecture pack names; trd-author reads it, each requirement's `name` its PRD heading.", "type": "string", "minLength": 1},
         "trdPath": {"description": "The absolute path of the TRD file.", "type": "string", "minLength": 1},
         "sharedCapabilities": {"description": "For `update`, each shared capability the design uses that the TRD does not yet state, to be written as one requirement of kind `reuse`; empty for `initial`, which comes before any design.", "type": "array", "items": {"$ref": "#/$defs/SharedUse"}},
         "changes": {"description": "For `update`, the changes to apply; empty for `initial`.", "type": "array", "items": {"$ref": "#/$defs/TrdChange"}},

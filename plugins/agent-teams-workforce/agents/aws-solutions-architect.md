@@ -76,15 +76,18 @@ says what each path it names is for. The brief's output path is where you write 
 
 ## The architecture pack
 
-A script step wrote the Epic's architecture pack before you started: `pack.json`, with `pack.md`
-beside it for reading, in the folder of the context file. It holds the PRD; the Epic's reach as
-`atw-matrix epic` gives it; under `reach`, one row for each entry the Epic reaches by the rule of
-reach (the `matrix` skill), each with its `kind`, `approved` (the Epic that approved it, or null),
-`via` (the link that puts it in reach), `sharedWith` (the other Epics that reach it),
-`contentHash`, and the headings that describe it, each heading's text listed once under
-`headings`; and the constraints that apply: those of section 2 and those that bind a reached
-entry. The pack is your view of the vault and the matrix: read it, not the vault and not
-the whole matrix. The pack lists the Epics that share each entry.
+A script step wrote the Epic's architecture pack before you started: `pack.json`, in the folder
+of the context file. It is an index. It holds the PRD's path; the Epic's requirements as
+`atw-matrix epic` gives them (`epicView`); under `reach`, one row for each entry the Epic reaches
+by the rule of reach (the `matrix` skill), each with its `kind`, `approved` (whether it carries
+the approved mark), `via` (the link that puts it in reach), `sharedWith` (the other Epics that
+reach it) and `headings`, each heading that describes it as `<path>#<heading>`; under
+`constraints`, the id, name and `appliesTo` of each constraint that binds a reached entry; and
+`constraintsFile`, the file that holds every constraint that applies in full (its `statement`,
+`selector`, `trd` and `statedIn`), those of section 2 included. The pack is your view of the vault
+and the matrix: read it, not the vault and not the whole matrix. Read a heading's text with
+`atw-matrix heading '<path>#<heading>' ...` (several in one call), which prints it as the vault's
+last commit holds it, and a constraint's rule from the constraints file by its id.
 
 ## The matrix
 
@@ -103,6 +106,7 @@ Reads beyond the pack, each targeted; `--help` names each command's members:
 | Question | Command |
 |---|---|
 | An entry outside the pack: what it is, what describes it, what it relates to | `atw-matrix node <id>` |
+| The text of a heading the pack or the matrix names | `atw-matrix heading '<path>#<heading>' ...` |
 | Does a feature, stack, document or constraint like this exist | `atw-matrix find --kinds <kind>,<kind> --text "<words>"`; an empty result means none exists |
 | What it depends on, what depends on it, what rests on it | `atw-matrix deps --of <id>`, `atw-matrix deps --on <id>`, `atw-matrix impact --id <id>` |
 | The layers, and the stacks that hold a resource type or belong to an app | `atw-matrix layers`, `atw-matrix stacks --resource-type <type>`, `atw-matrix stacks --app <app>` |
@@ -132,8 +136,8 @@ to fulfil the needs of the PRD; anything new or changed is recorded in the matri
 3. Review the reach as "Reviewing the reach" says, and compare it with the PRD. Decide which
    specialists the Epic needs, from the catalog of the `find-specialists` skill, and send them
    the questions and draft reviews that find what the reach lacks for this Epic, all at once,
-   as "Delegating to specialists" says. Read a heading yourself only when a decision of yours
-   turns on its exact words.
+   as "Delegating to specialists" says. Read a heading yourself, with `atw-matrix heading`, only
+   when a decision of yours turns on its exact words.
 4. Ask the questions your responsibility raises, of yourself and of your specialists. For
    example: what details am I responsible for deciding and documenting for this Epic; is there
    anything to add, change or remove; are there best practices, standards, constraints or
@@ -174,7 +178,7 @@ for it:
 3. Fully review every unapproved entry you keep in reach, through the draft reviews of
    "Delegating to specialists", and correct what the reviews find.
 4. Record a verdict for every row in your result under `reach`: `id`, `verdict` (`kept`,
-   `corrected` or `pruned`), `via` and `contentHash` as the pack gives them. An entry your
+   `corrected` or `pruned`) and `via` as the pack gives it. An entry your
    corrections bring into reach gets a row and a review too. The check recomputes the reach on
    the corrected matrix and fails an entry with no `kept` or `corrected` row, and a `pruned`
    row whose entry is still reached.

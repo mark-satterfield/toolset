@@ -209,7 +209,7 @@ corrected for it.
   one hop), with every architecture-side relationship that joins two
   of those. The closure (`epic_reach`) is not used: it makes every Epic reach every service.
   The architecture pack lists the same scope (`reach_rows`, each entry with whether it is
-  approved, how it is reached and the Epics that share it), and the check holds the
+  approved, how it is reached, the Epics that share it and the headings that describe it), and the check holds the
   architect's verdicts to it, so what is reviewed and what is approved are one set.
   Repository-side facts are hints and are not approved.
 - **Who sets it.** Only `matrixwrite.approve(matrix, scope, role)`, which refuses every role
@@ -368,7 +368,10 @@ object the stack and its repository, the documents and headings that describe ea
 (Q18), the constraints that apply (Q5) and the shared capabilities (`uses`).
 `review-scope --epic <id>` returns the documents the Epic's requirements and features reach
 through `covers` and `describedBy` whose `lifecycle` is not `effective`, each with the
-headings reached (Q4, Q18).
+headings reached (Q4, Q18). `heading <path>#<heading> ...` (`matrixheadings.py`) prints the text
+of each heading named, as the vault's last commit holds it: the architecture pack and the spec
+sessions' context name headings, and a session reads the words of one only when a decision
+turns on them.
 
 The three questions about Stories and Tasks are answered by the Task script (section 1.5)
 and by no lookup in this table.

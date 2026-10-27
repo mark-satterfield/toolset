@@ -90,6 +90,7 @@ with direction and meaning, are in [references/model.md](references/model.md).
 | Shared capabilities the work on some entries must use | `atw-matrix uses --ids <id> ...` |
 | What a Story building some entries of a stack must be handed | `atw-matrix story-scope --stack stack:<id> --ids <id> ...` |
 | Documents an Epic reaches that are not effective | `atw-matrix review-scope --epic <beads id>` |
+| The text of document headings, as the vault's last commit holds them | `atw-matrix heading '<path>#<heading>' ...` (a path alone prints the whole document) |
 | Which of an Epic's content is approved, by the rule of reach | `atw-matrix approval --epic <beads id>` |
 | The shared items (two or more Epics need them), each with its Epics, the requirements through which each needs it, and what decides who goes first | `atw-matrix shared-items [--epic <beads id>]` |
 | The unapproved shared items no record decides, in batches for judging | `atw-matrix shared-items --batches <folder> [--batch-size 25]` |

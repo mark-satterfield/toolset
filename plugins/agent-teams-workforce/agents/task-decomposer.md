@@ -44,9 +44,10 @@ Never expose secrets or edit section 2.
 ## Assignment
 
 Read the Story, the TRD, all three spec documents, the repository context, the spec pack, the task
-context and the UI-source input. The spec pack (`spec-pack.schema.json`) holds the approved heading
-texts, constraints, shared capabilities and TRD requirements that bind what the Story builds: read
-it instead of the vault, and open a document only for what it does not hold. The repository context's `items` (`spec-context.schema.json`) are what the
+context and the UI-source input. The spec pack (`spec-pack.schema.json`) holds the constraints,
+shared capabilities and TRD requirements that bind what the Story builds: read it instead of the
+vault. Read the text of an approved heading the repository context's `documents` names only when
+a Task turns on it, with `atw-matrix heading '<path>#<heading>' ...`. The repository context's `items` (`spec-context.schema.json`) are what the
 Story builds: the services, components, infrastructure and events the Epic's architecture adds
 or changes in this repository. In one pass: decompose into coherent single-repository build Tasks, sequence
 dependencies, then size them using the wsjf skill's agent-pipeline reference jobs. Tasks are

@@ -12,7 +12,8 @@ variable names another.
 Every sub-command prints one JSON object on stdout. This module holds the reads, which answer
 from the file and change nothing (``epic``, ``find``, ``node``, ``deps``, ``stacks``,
 ``layers``, ``resources``, ``parameters``, ``documents``, ``links``, ``impact``, ``related``,
-``uses``, ``approval``, ``story-scope``, ``review-scope``, ``summary``),
+``uses``, ``approval``, ``story-scope``, ``review-scope``, ``summary``, and ``heading``, which reads
+the text of document headings from the vault's last commit),
 and ``check``, which reports every way the file fails its contract. ``matrixcli`` holds the
 sub-commands that change the matrix, bring it up to date, seed it and mark it. The registry's
 command table says which role may run each; the role is the value of the role variable, and the
@@ -37,6 +38,7 @@ from matrix_contract import COMMAND_RULES, ENTRY_KINDS, EntryKind, RelationshipK
 from matrixcall import EXIT_OK, EXIT_REFUSED, PROGRAM, Call, Outcome
 from matrixcli import COMMANDS as CHANGE_COMMANDS
 from matrixcli import add_parsers
+from matrixheadings import committed_headings
 from matrixquery import (
     DEFAULT_LIMIT,
     LINK_DIRECTIONS,
@@ -307,6 +309,16 @@ def _run_review_scope(call: Call) -> Outcome:
     return Outcome(review_scope(read_matrix(call.matrix()), call.required("epic")))
 
 
+def _run_heading(call: Call) -> Outcome:
+    """Run ``heading``.
+
+    Returns:
+        Each heading reference with its text as the vault's last commit holds it.
+
+    """
+    return Outcome(committed_headings(call.required_folder("arch", [ARCH_PATH_ENV]), call.texts("refs")))
+
+
 def _run_summary(call: Call) -> Outcome:
     """Run ``summary``.
 
@@ -348,6 +360,7 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     "approval": _run_approval,
     "story-scope": _run_story_scope,
     "review-scope": _run_review_scope,
+    "heading": _run_heading,
     "summary": _run_summary,
     "check": _run_check,
     **CHANGE_COMMANDS,
@@ -513,6 +526,16 @@ def _parser() -> argparse.ArgumentParser:
     )
     commands: argparse._SubParsersAction[argparse.ArgumentParser] = parser.add_subparsers(dest="command", required=True)
     _read_parsers(commands, where)
+    heading: argparse.ArgumentParser = commands.add_parser(
+        "heading",
+        parents=[where, sources["arch"]],
+        help="the text of document headings, as the vault's last commit holds them",
+    )
+    heading.add_argument(
+        "refs",
+        nargs="+",
+        help="each heading as <path>#<heading>, the path under the architecture root; a path alone names the document",
+    )
     add_parsers(commands, where, sources)
     return parser
 

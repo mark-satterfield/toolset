@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/spec-context.schema.json",
   "title": "Spec context",
-  "description": "One repository's spec context file (<work>/spec-<slug>.context.json), handed to its spec authors, its spec reviewer and its task decomposer as `repository context`. The step `spec_authoring.context` (orchestrator/flows/spec_authoring.py) writes it and validates it against this file. It holds facts and pointers only: what the architecture says about the Story's stacks is in the spec pack beside it (spec-pack.schema.json), never copied here. Every design detail a spec needs was decided during architecture and is in those documents and the matrix; a spec states the build work and decides none of it.",
+  "description": "One repository's spec context file (<work>/spec-<slug>.context.json), handed to its spec authors, its spec reviewer and its task decomposer as `repository context`. The step `spec_authoring.context` (orchestrator/flows/spec_authoring.py) writes it and validates it against this file. It holds facts and pointers only: what binds the Story's stacks (constraints, shared capabilities, TRD requirements) is in the spec pack beside it (spec-pack.schema.json), and the text of the headings `documents` names is read with `atw-matrix heading`, never copied here. Every design detail a spec needs was decided during architecture and is in those documents and the matrix; a spec states the build work and decides none of it.",
   "type": "object",
   "additionalProperties": false,
   "required": ["epic", "repoPath", "slug", "frontend", "items", "stacks", "documents", "buildScope", "componentDocuments", "dependsOn", "prd", "architectureResult", "designSystem"],
@@ -23,7 +23,7 @@
       "items": {"$ref": "#/$defs/StackEntries"}
     },
     "documents": {
-      "description": "The architecture documents (arc42 and the detailed architecture) the story scopes of `stacks` name, each with its id, its file and the headings to read (none when a scope names the document as a whole). The spec pack holds the text of each; cite a document by the path and heading given here.",
+      "description": "The architecture documents (arc42 and the detailed architecture) the story scopes of `stacks` name, each with its id, its file and the headings to read (none when a scope names the document as a whole). `atw-matrix heading '<path>#<heading>'` prints a heading's text as the vault's last commit holds it (a path alone, the document's whole body); cite a document by the path and heading given here.",
       "type": "array",
       "items": {
         "type": "object",

@@ -26,7 +26,7 @@ session is not planned is written by step 4a instead.
 
 | # | Description | Performed by | Reads (artifact) | Writes | Records (artifact) |
 |---|---|---|---|---|---|
-| 1 | Gather what the repository builds | script `spec_authoring.context` | `span`, `elements`, `TRD`; the dispatch arguments (PRD, design system); the vault's last commit | `spec-<slug>.context.json`, `spec-<slug>.pack.json` | value `repository`, file `repository context`, file `spec pack`; plans steps 2 to 11 as the Story's entries call for, step 8a for a repository whose stacks hold a DynamoDB store and whose Story builds a data store |
+| 1 | Gather what the repository builds | script `spec_authoring.context` | `span`, `elements`, `TRD`; the dispatch arguments (PRD, design system) | `spec-<slug>.context.json`, `spec-<slug>.pack.json` | value `repository`, file `repository context`, file `spec pack`; plans steps 2 to 11 as the Story's entries call for, step 8a for a repository whose stacks hold a DynamoDB store and whose Story builds a data store |
 | 2 | List the UI bundles (frontend) | script `cdsbundles.list_bundles` | the design system's packages directory | `spec-<slug>.bundles.json` | file `ui bundles` |
 | 3 | Choose the UI design source of each UI item (frontend) | agent `ui-design-source-selector` | `TRD`, `span`, `elements`, `ui bundles`, `repository context` | `candidates/spec-<slug>.ui.json` | file `ui sources as authored` |
 | 4 | Check the UI design sources against the bundles (frontend) | script `spec_authoring.normalize_ui` | `ui sources as authored`, `ui bundles`, `repository context` | `spec-<slug>.ui.json` | file `ui sources`, value `warnings` |
@@ -50,13 +50,14 @@ which says what each member holds. It holds facts and pointers: the items of wha
 builds, and for the rest paths (the PRD and the architect's result). `dependsOn` is context, never
 work. The spec pack (`spec-<slug>.pack.json`, `spec-pack.schema.json`, written by
 `orchestrator/flows/spec_pack.py`) is what the spec sessions read instead of the vault and the
-matrix: each stack and entry the Story builds with the Epic its approved flag names; the text of
-every heading the context's `documents` name, read with `git show HEAD:<path>` from the vault
-(after promotion, the approved architecture), never from the working tree; the constraints and
+matrix: each stack and entry the Story builds with the Epic its approved flag names; the constraints and
 shared capabilities `atw-matrix story-scope` gives for the stacks; the requirements of TRDs that
 bind them (a constraint among those with a TRD pointer, and every requirement of this Epic's TRD
 that names no entry), with the text of this Epic's; and the OpenAPI, AsyncAPI, GraphQL and JSON
-Schema files the repository holds.
+Schema files the repository holds. It holds no heading text: a session reads the text of a
+heading the context's `documents` name, only when its work turns on it, with `atw-matrix heading`,
+which reads it with `git show HEAD:<path>` from the vault (after promotion, the approved
+architecture), never from the working tree.
 
 The authors write specs and design nothing: every detail a spec states (endpoints, payload and
 data schemas, keys, parameter names) was decided during architecture and is in arc42, in the

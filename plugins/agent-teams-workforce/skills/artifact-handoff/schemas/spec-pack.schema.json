@@ -2,10 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/spec-pack.schema.json",
   "title": "Spec pack",
-  "description": "One repository's spec pack (<work>/spec-<slug>.pack.json), handed to its spec authors, its spec reviewer and its task decomposer as `spec pack`. The step `spec_authoring.context` (orchestrator/flows/spec_authoring.py, with orchestrator/flows/spec_pack.py) writes it beside the repository context and validates it against this file. It is the session's view of the vault and the matrix for this Story: the entries it builds, the text of every heading its scopes name as the vault's last commit holds it (the approved architecture), the constraints and shared capabilities that bind the entries, the TRD requirements that bind them and the contract files the repository holds today. Read the pack, not the vault and not the matrix; open a document or run `atw-matrix node` only for something the pack does not hold.",
+  "description": "One repository's spec pack (<work>/spec-<slug>.pack.json), handed to its spec authors, its spec reviewer and its task decomposer as `spec pack`. The step `spec_authoring.context` (orchestrator/flows/spec_authoring.py, with orchestrator/flows/spec_pack.py) writes it beside the repository context and validates it against this file. It is the session's view of the vault and the matrix for this Story: the entries it builds, the constraints and shared capabilities that bind the entries, the TRD requirements that bind them and the contract files the repository holds today. The headings the Story's scopes name are in the repository context's `documents`; `atw-matrix heading '<path>#<heading>'` prints a heading's text as the vault's last commit holds it (the approved architecture). Read the pack, not the vault and not the matrix; run `atw-matrix node` only for an entry the pack does not hold.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["epic", "repoPath", "slug", "entries", "headings", "constraints", "capabilities", "trd", "contractFiles"],
+  "required": ["epic", "repoPath", "slug", "entries", "constraints", "capabilities", "trd", "contractFiles"],
   "properties": {
     "epic": {"description": "The Epic's bead id.", "type": "string", "minLength": 1},
     "repoPath": {"description": "The repository's absolute path.", "type": "string", "minLength": 1},
@@ -24,21 +24,6 @@
           "purpose": {"type": ["string", "null"]},
           "resourceType": {"description": "The AWS resource type of an infrastructure or component entry; null when it has none.", "type": ["string", "null"]},
           "approved": {"description": "Whether the entry carries the approved mark; null when the matrix does not hold the entry.", "type": ["boolean", "null"]}
-        }
-      }
-    },
-    "headings": {
-      "description": "The text of each heading the repository context's `documents` name, read with `git show HEAD:<path>` from the vault. A heading's text is its own text: its heading line and everything up to the next heading. A document named as a whole has one row with an empty heading and its whole body. Cite a document by the `path` and `heading` given here.",
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["document", "path", "heading", "text"],
-        "properties": {
-          "document": {"description": "The document's matrix id.", "type": "string", "minLength": 1},
-          "path": {"description": "The document's file under the architecture root.", "type": "string", "minLength": 1},
-          "heading": {"description": "The heading; empty for the document as a whole.", "type": "string"},
-          "text": {"description": "The heading's text; null when the vault's last commit holds no such document or heading.", "type": ["string", "null"]}
         }
       }
     },

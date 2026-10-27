@@ -1,24 +1,25 @@
-"""The script step that assembles one Epic's architecture pack before the TRD and the architect start.
+"""The script step that writes one Epic's architecture pack before the TRD and the architect start.
 
-The pack is the architect's, the TRD author's and the specialists' view of the vault and the
-matrix for the Epic, in one local file, so no session reads the whole matrix or the vault document
-by document. ``pack.json`` holds:
+The pack is an index of the vault and the matrix for the Epic, in two local files beside the
+context file, so no session reads the whole matrix, and a session reads a heading's words only when
+a decision turns on them. ``pack.json`` holds:
 
 - ``epic``: the Epic's beads id;
-- ``prd``: the PRD's path and text;
+- ``prd``: the PRD's path;
 - ``epicView``: what ``atw-matrix epic`` returns for the Epic;
 - ``reach``: one row per entry of the Epic's approval scope (``matrixtraverse.reach_rows``, the rule
   of reach): its ``id``, ``kind``, ``approved`` (whether it carries the approved mark), ``via`` (the
   links that put it in reach), ``sharedWith`` (the other Epics that reach it) and ``headings``,
   each document heading that describes it (``covers`` for a requirement, ``describedBy`` for any
-  other entry) as its ``path`` under the architecture root and its ``heading``;
-- ``headings``: each heading the rows name, once, with its ``text``: many entries share a heading,
-  so its text is listed once rather than in every row that names it;
-- ``constraints``: every constraint stated in arc42 section 2, and every other constraint that
-  binds an entry of the reach (``matrixtraverse.constraints_for``).
+  other entry) as a reference ``<path>#<heading>``, the path under the architecture root, which
+  ``atw-matrix heading`` takes to print the heading's text from the vault's last commit;
+- ``constraints``: the ``id``, ``name`` and ``appliesTo`` of every constraint that binds an entry
+  of the reach (``matrixtraverse.constraints_for``);
+- ``constraintsFile``: the path of ``constraints.json``.
 
-Heading text is read from the vault's last commit (``git show HEAD:<path>``), never from the
-working tree. ``pack.md`` holds the same content for reading.
+``constraints.json`` holds each constraint in full (its rule, selector, TRD pointer, what it
+applies to in the reach and each document heading that states it): every constraint stated in
+arc42 section 2, which binds every Epic, and every constraint the pack's ``constraints`` names.
 """
 
 from __future__ import annotations
@@ -36,9 +37,9 @@ from matrix_contract import (
     REL_DESCRIBED_BY,
     REL_STATED_IN,
 )
+from matrixheadings import heading_ref
 from matrixquery import epic_view
 from matrixstore import read_matrix
-from matrixsync import heading_texts, relative_path, vault_root
 from matrixtraverse import constraints_for, epic_id, reach_rows
 
 from orchestrator.core import step_journal
@@ -48,11 +49,11 @@ from orchestrator.core.journal_steps import Completion, StepRun, file_artifact
 from orchestrator.core.models import StaleInputError
 from orchestrator.flows.architecture_files import (
     ARTIFACT_PACK,
-    ARTIFACT_PACK_TEXT,
+    ARTIFACT_PACK_CONSTRAINTS,
+    CONSTRAINTS_FILE,
     OPEN_RUN,
     PACK,
     PACK_FILE,
-    PACK_TEXT_FILE,
     ArchitectureContext,
     architecture_folder,
     document_path,
@@ -68,8 +69,8 @@ if TYPE_CHECKING:
 
 PACK_DESCRIPTION: Final = "Assemble the Epic's architecture pack"
 PACK_PURPOSE: Final = (
-    "The TRD author, the architect and its specialists read the Epic's reach, its headings and its "
-    "constraints from one local file, never the whole matrix or the vault"
+    "The TRD author, the architect and its specialists read the Epic's reach, the headings that "
+    "describe it and the constraints that bind it from one local index, never the whole matrix or the vault"
 )
 PACK_REF: Final = "pack"
 SECTION_TWO: Final = "02-"
@@ -78,24 +79,6 @@ ATTR_HEADING: Final = "heading"
 ATTR_STATEMENT: Final = "statement"
 ATTR_SELECTOR: Final = "selector"
 ATTR_TRD: Final = "trd"
-GIT: Final = "git"
-
-
-class PackHeadingRef(TypedDict):
-    """One document heading that describes an entry of the reach."""
-
-    path: str
-    """The document, by its path under the architecture root."""
-    heading: str
-
-
-class PackHeading(TypedDict):
-    """One document heading the reach names, with its text."""
-
-    path: str
-    heading: str
-    text: str
-    """The heading's own text at the vault's last commit; empty when that commit does not hold it."""
 
 
 class PackRow(TypedDict):
@@ -106,7 +89,8 @@ class PackRow(TypedDict):
     approved: bool
     via: str
     sharedWith: list[str]
-    headings: list[PackHeadingRef]
+    headings: list[str]
+    """Each document heading that describes the entry, as ``<path>#<heading>``."""
 
 
 class PackSource(TypedDict):
@@ -117,7 +101,7 @@ class PackSource(TypedDict):
 
 
 class PackConstraint(TypedDict):
-    """One constraint that applies to the Epic."""
+    """One constraint that applies to the Epic, in full, as ``constraints.json`` lists it."""
 
     id: str
     name: str
@@ -130,26 +114,27 @@ class PackConstraint(TypedDict):
     statedIn: list[PackSource]
 
 
-class PackPrd(TypedDict):
-    """The PRD the Epic is elaborated from."""
+class PackConstraintRef(TypedDict):
+    """One constraint that binds an entry of the reach, as the pack's index names it."""
 
-    path: str
-    text: str
+    id: str
+    name: str
+    appliesTo: list[str]
 
 
 class Pack(TypedDict):
     """What ``pack.json`` holds."""
 
     epic: str
-    prd: PackPrd
+    prd: str
     epicView: dict[str, JsonValue]
     reach: list[PackRow]
-    headings: list[PackHeading]
-    constraints: list[PackConstraint]
+    constraints: list[PackConstraintRef]
+    constraintsFile: str
 
 
 class MatrixPart(TypedDict):
-    """What the pack takes from the matrix, before the heading texts are read from the vault."""
+    """What the pack and its constraints file take from the matrix."""
 
     epicView: dict[str, JsonValue]
     reach: list[PackRow]
@@ -188,13 +173,13 @@ def _object(entry: Entry, name: str) -> dict[str, JsonValue] | None:
     return dict(value) if isinstance(value, dict) else None
 
 
-def _describing(matrix: Matrix, row: ReachRow) -> list[tuple[str, str]]:
+def _describing(matrix: Matrix, row: ReachRow) -> list[str]:
     """Name the document headings that describe one entry of the reach.
 
     Returns:
         For a requirement, each heading that ``covers`` it; for any other entry, each heading it
-        is ``describedBy``; each as the document's path under the architecture root and the
-        heading, once, in the order the matrix holds them.
+        is ``describedBy``; each as ``<path>#<heading>``, the path under the architecture root,
+        once, in the order the matrix holds them.
 
     """
     found: list[Relationship] = (
@@ -202,18 +187,18 @@ def _describing(matrix: Matrix, row: ReachRow) -> list[tuple[str, str]]:
         if row.kind == KIND_REQUIREMENT
         else [*matrix.outgoing(row.id, (REL_DESCRIBED_BY,))]
     )
-    pairs: dict[tuple[str, str], None] = {}
+    refs: dict[str, None] = {}
     relationship: Relationship
     for relationship in found:
         document: EntryId = relationship.start if row.kind == KIND_REQUIREMENT else relationship.end
         heading: JsonValue = relationship.attributes.get(ATTR_HEADING)
         if document.startswith(f"{KIND_DOCUMENT}:") and isinstance(heading, str) and heading:
-            pairs[document_path(document), heading] = None
-    return list(pairs)
+            refs[heading_ref(document_path(document), heading)] = None
+    return list(refs)
 
 
 def _constraint(matrix: Matrix, constraint: Entry, binds: list[str]) -> PackConstraint:
-    """Render one constraint for the pack.
+    """Render one constraint in full.
 
     Returns:
         Its rule, what it binds in the reach, and each document heading that states it.
@@ -258,12 +243,12 @@ def _constraints(matrix: Matrix, scope: list[EntryId]) -> list[PackConstraint]:
     return [_constraint(matrix, matrix.entry(entry_id), binding[entry_id]) for entry_id in sorted(binding)]
 
 
-def matrix_part(bead: str) -> tuple[MatrixPart, list[list[tuple[str, str]]]]:
-    """Read from the matrix what the pack holds of it.
+def matrix_part(bead: str) -> MatrixPart:
+    """Read from the matrix what the pack and its constraints file hold.
 
     Returns:
-        The Epic's view, its reach rows with no heading text yet and its constraints; and, for
-        each row in the same order, the document headings that describe it.
+        The Epic's view, its reach rows with the headings that describe each, and every
+        constraint that applies, in full.
 
     """
     matrix: Matrix = read_matrix(matrix_file())
@@ -276,157 +261,41 @@ def matrix_part(bead: str) -> tuple[MatrixPart, list[list[tuple[str, str]]]]:
             "approved": row.approved,
             "via": row.via,
             "sharedWith": [*row.shared_with],
-            "headings": [],
+            "headings": _describing(matrix, row),
         }
         for row in rows
     ]
-    part: MatrixPart = {
+    return {
         "epicView": json_object(epic_view(matrix, bead)),
         "reach": reach,
         "constraints": _constraints(matrix, [epic, *(row.id for row in rows)]),
     }
-    return part, [_describing(matrix, row) for row in rows]
 
 
-def _committed(run: StepRun, vault: Path, path: Path) -> str | None:
-    """Read a file of the vault as its last commit holds it.
-
-    Returns:
-        The file's text at ``HEAD``; None when the path is outside the vault or ``HEAD`` does not
-        hold it.
-
-    """
-    if not path.resolve().is_relative_to(vault.resolve()):
-        return None
-    shown = run.tools.command(
-        [GIT, "-C", str(vault), "show", f"HEAD:{relative_path(path, vault)}"],
-        stage=PACK,
-        check=False,
-    )
-    return shown.stdout if shown.exit == 0 else None
-
-
-def _heading_texts(run: StepRun, arch: Path, vault: Path, wanted: set[str]) -> dict[str, dict[str, str]]:
-    """Read the heading texts of some documents from the vault's last commit.
+def write_pack(folder: Path, bead: str, prd: Path, part: MatrixPart) -> tuple[Path, Path]:
+    """Write the pack and its constraints file into the Epic's architecture work folder.
 
     Returns:
-        Each document, by its path under the architecture root, with each heading's own text
-        (``matrixsync.heading_texts``); a document the commit does not hold has none.
+        ``pack.json`` and ``constraints.json``.
 
     """
-    texts: dict[str, dict[str, str]] = {}
-    relative: str
-    for relative in sorted(wanted):
-        held: str | None = _committed(run, vault, arch / relative)
-        texts[relative] = {} if held is None else heading_texts(held.splitlines())
-    return texts
-
-
-def _prd_text(run: StepRun, prd: Path, vault: Path) -> str:
-    """Read the PRD from the vault's last commit, or from its file when no commit holds it.
-
-    Returns:
-        The PRD's text.
-
-    """
-    held: str | None = _committed(run, vault, prd)
-    return prd.read_text(encoding="utf-8") if held is None else held
-
-
-def _markdown(pack: Pack) -> str:
-    """Render the pack for reading.
-
-    Returns:
-        The PRD path, each reach row with the headings that describe it, each heading's text once,
-        and each constraint.
-
-    """
-    lines: list[str] = [
-        f"# Architecture pack of {pack['epic']}",
-        "",
-        f"PRD: `{pack['prd']['path']}` (its text is in pack.json under prd.text).",
-        "",
-        f"## Reach ({len(pack['reach'])} entries)",
-    ]
-    row: PackRow
-    for row in pack["reach"]:
-        approved: str = "yes" if row["approved"] else "no"
-        shared: str = ", ".join(row["sharedWith"]) or "no other Epic"
-        lines.extend([
-            "",
-            f"### {row['id']}",
-            "",
-            f"- kind: {row['kind']}; approved: {approved}",
-            f"- via: {row['via']}",
-            f"- shared with: {shared}",
-        ])
-        lines.extend(f"- described by `{named['path']}` # {named['heading']}" for named in row["headings"])
-    lines.extend(["", f"## Headings ({len(pack['headings'])})"])
-    heading: PackHeading
-    for heading in pack["headings"]:
-        text: str = heading["text"] or "(the vault's last commit holds no such heading)"
-        lines.extend(["", f"### `{heading['path']}` # {heading['heading']}", "", text])
-    lines.extend(["", f"## Constraints ({len(pack['constraints'])})"])
-    constraint: PackConstraint
-    for constraint in pack["constraints"]:
-        rule: str = constraint["statement"] or (f"TRD requirement {constraint['trd']}" if constraint["trd"] else "")
-        stated: str = "; ".join(f"`{source['path']}` # {source['heading']}" for source in constraint["statedIn"])
-        lines.extend([
-            "",
-            f"- **{constraint['id']}**: {rule}",
-            f"  - selector: {constraint['selector']}; applies to: {', '.join(constraint['appliesTo']) or 'none named'}",
-            f"  - stated in: {stated or 'no document'}",
-        ])
-    return "\n".join([*lines, ""])
-
-
-def build_pack(run: StepRun, arch: Path, prd: Path) -> Pack:
-    """Assemble the pack of the step's Epic from the matrix and the vault's last commit.
-
-    Returns:
-        The pack.
-
-    """
-    vault: Path = run.tools.portfolio(PACK, vault_root, arch)
-    part: MatrixPart
-    describing: list[list[tuple[str, str]]]
-    part, describing = run.tools.portfolio(PACK, matrix_part, str(run.bead))
-    texts: dict[str, dict[str, str]] = _heading_texts(
-        run,
-        arch,
-        vault,
-        {relative for pairs in describing for relative, _ in pairs},
-    )
-    row: PackRow
-    pairs: list[tuple[str, str]]
-    for row, pairs in zip(part["reach"], describing, strict=True):
-        row["headings"] = [{"path": relative, "heading": heading} for relative, heading in pairs]
-    named: list[tuple[str, str]] = sorted({pair for pairs in describing for pair in pairs})
-    return {
-        "epic": str(run.bead),
-        "prd": {"path": str(prd), "text": _prd_text(run, prd, vault)},
+    constraints: Path = folder / CONSTRAINTS_FILE
+    write_json(constraints, part["constraints"])
+    pack: Pack = {
+        "epic": bead,
+        "prd": str(prd),
         "epicView": part["epicView"],
         "reach": part["reach"],
-        "headings": [
-            {"path": relative, "heading": heading, "text": texts.get(relative, {}).get(heading, "")}
-            for relative, heading in named
+        "constraints": [
+            {"id": held["id"], "name": held["name"], "appliesTo": held["appliesTo"]}
+            for held in part["constraints"]
+            if held["appliesTo"]
         ],
-        "constraints": part["constraints"],
+        "constraintsFile": str(constraints),
     }
-
-
-def write_pack(folder: Path, pack: Pack) -> tuple[Path, Path]:
-    """Write the pack and the same pack for reading into the Epic's architecture work folder.
-
-    Returns:
-        ``pack.json`` and ``pack.md``.
-
-    """
     written: Path = folder / PACK_FILE
     write_json(written, pack)
-    readable: Path = folder / PACK_TEXT_FILE
-    readable.write_text(_markdown(pack), encoding="utf-8")
-    return written, readable
+    return written, constraints
 
 
 @script_step(PACK)
@@ -434,15 +303,22 @@ def assemble(run: StepRun) -> Completion:
     """Assemble the Epic's architecture pack beside the context file.
 
     Returns:
-        ``pack.json`` and ``pack.md`` as artifacts.
+        ``pack.json`` and ``constraints.json`` as artifacts.
 
     """
     context: ArchitectureContext = read_context(run)
-    pack: Pack = build_pack(run, Path(context["architectureRoot"]), Path(context["prdPath"]))
+    part: MatrixPart = run.tools.portfolio(PACK, matrix_part, str(run.bead))
     written: Path
-    readable: Path
-    written, readable = write_pack(architecture_folder(run.context.work), pack)
-    return Completion(artifacts=(file_artifact(ARTIFACT_PACK, written), file_artifact(ARTIFACT_PACK_TEXT, readable)))
+    constraints: Path
+    written, constraints = write_pack(
+        architecture_folder(run.context.work),
+        str(run.bead),
+        Path(context["prdPath"]),
+        part,
+    )
+    return Completion(
+        artifacts=(file_artifact(ARTIFACT_PACK, written), file_artifact(ARTIFACT_PACK_CONSTRAINTS, constraints)),
+    )
 
 
 def pack_file(run: StepRun) -> Path:
@@ -475,4 +351,4 @@ def pack_file(run: StepRun) -> Path:
     )
 
 
-__all__ = ["PACK_REF", "assemble", "build_pack", "matrix_part", "pack_file", "pack_plan", "write_pack"]
+__all__ = ["PACK_REF", "assemble", "matrix_part", "pack_file", "pack_plan", "write_pack"]

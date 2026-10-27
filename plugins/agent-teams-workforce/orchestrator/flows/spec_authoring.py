@@ -16,8 +16,9 @@ What a repository's Story is handed about the architecture is the context file
 (``spec-context.schema.json``), which names each stack the Story builds in with the entries it
 builds there, the documents and headings ``atw-matrix story-scope`` names, and every architecture
 and design document of the component the Story builds (``atw-matrix documents``); and the spec
-pack (``spec-pack.schema.json``), which holds the text of those headings, the constraints and TRD
-requirements that bind the entries and the repository's contract files. The authors write specs: every design
+pack (``spec-pack.schema.json``), which holds the constraints and TRD requirements that bind the
+entries and the repository's contract files. A session reads the text of a heading the context
+names with ``atw-matrix heading``, only when its work turns on it. The authors write specs: every design
 detail was decided during architecture and is in those documents and the matrix.
 
 What a spec covers for each entry comes from its verified state (``buildScope``), never from an
@@ -129,7 +130,6 @@ from orchestrator.flows.elaboration_support import SPEC_AUTHORING_PHASE, enter_p
 from orchestrator.flows.repo_scoping import BuildContext, build_context, item_stacks
 from orchestrator.flows.spec_authoring_ui import normalize_ui
 from orchestrator.flows.spec_pack import (
-    committed_headings,
     contract_files,
     entry_rows,
     scope_bindings,
@@ -337,9 +337,8 @@ def author_files(run: StepRun, name: str) -> tuple[tuple[str, Path], ...]:
     Returns:
         The TRD, the span and the elements; the UI sources for the contracts of a frontend
         repository; the contracts and the data model for the criteria; then the repository
-        context, which names the PRD, whose headings the TRD cites; and the spec pack, which
-        holds the text of the architecture headings, the constraints and the TRD requirements
-        the session reads.
+        context, which names the PRD, whose headings the TRD cites, and the architecture headings;
+        and the spec pack, which holds the constraints and the TRD requirements the session reads.
 
     """
     files: list[tuple[str, Path]] = [
@@ -730,14 +729,13 @@ def story_context(matrix: Matrix, built: Sequence[JsonValue], every_build: Mappi
     return build_context(matrix, built, items_by_story(every_build))
 
 
-def _write_pack(  # ruff: ignore[too-many-arguments] - One part of the pack each.
+def _write_pack(
     run: StepRun,
     held: Repository,
     matrix: Matrix,
     *,
     ids: Sequence[EntryId],
     scopes: Sequence[StoryScope],
-    documents: Sequence[JsonValue],
 ) -> Path:
     """Write one repository's spec pack (``spec-pack.schema.json``) beside its context file.
 
@@ -747,7 +745,6 @@ def _write_pack(  # ruff: ignore[too-many-arguments] - One part of the pack each
         matrix: The matrix.
         ids: The stacks the Story builds in and the entries it builds there.
         scopes: The story scopes of those stacks.
-        documents: The documents and headings the story scopes name, as the context lists them.
 
     Returns:
         The pack's file.
@@ -773,12 +770,6 @@ def _write_pack(  # ruff: ignore[too-many-arguments] - One part of the pack each
             "repoPath": held.path,
             "slug": held.slug,
             "entries": run.tools.portfolio(SPEC_CONTEXT, entry_rows, matrix, ids),
-            "headings": run.tools.portfolio(
-                SPEC_CONTEXT,
-                committed_headings,
-                architecture_root(run),
-                [json_object(document) for document in documents],
-            ),
             "constraints": constraints,
             "capabilities": capabilities,
             "trd": {"path": str(trd), "requirements": requirements},
@@ -864,7 +855,7 @@ def context(run: StepRun) -> Completion:
             file_artifact(CONTEXT, path),
             file_artifact(
                 SPEC_PACK,
-                _write_pack(run, held, matrix, ids=[*stacks, *entries], scopes=scopes, documents=documents),
+                _write_pack(run, held, matrix, ids=[*stacks, *entries], scopes=scopes),
             ),
         ),
         add=(

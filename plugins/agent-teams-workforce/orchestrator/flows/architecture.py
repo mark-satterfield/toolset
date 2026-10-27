@@ -244,13 +244,13 @@ def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
     """Plan the pack, the TRD write, the architect's step, the index and the check under the Architecture container.
 
     The pack comes first (``architecture_pack``): the TRD author and the architect read the Epic's
-    reach, headings and constraints from it. The TRD initial write comes next, so the architect
-    starts from the TRD and is handed its answer. The open-run step plans the group, and records
-    each step it plans on itself, so a start at or before the open-run step removes the group and
-    the open-run step plans it again as the lane plans it then. The same plans are registered as
-    what this lane plans under the container (``journal_registry.plan_under``), so a planned step
-    whose key was renamed is replanned to the current key when the run opens the journal
-    (``journal_run.replan_unhandled``).
+    reach, the headings that describe it and its constraints from that index. The TRD initial
+    write comes next, so the architect starts from the TRD and is handed its answer. The open-run
+    step plans the group, and records each step it plans on itself, so a start at or before the
+    open-run step removes the group and the open-run step plans it again as the lane plans it
+    then. The same plans are registered as what this lane plans under the container
+    (``journal_registry.plan_under``), so a planned step whose key was renamed is replanned to the
+    current key when the run opens the journal (``journal_run.replan_unhandled``).
 
     Args:
         opened: The open-run step, whose artifacts the planned steps are handed.
@@ -999,7 +999,8 @@ def trd_author(run: StepRun) -> AgentLaunch:
 
     The TRD initial write is one of the very first steps of the architecture, before the
     architect's: the script writes its request (:func:`_initial_request`), and the session writes
-    the TRD from the Epic's architecture pack alone, which every session of the author is handed.
+    the TRD from the Epic's architecture pack and what it names alone, the pack being handed to
+    every session of the author.
     An update runs from the request file its step is handed: one the architect's result requests,
     planned after the architect's session (:func:`_requested`), or one the TRD confirm step plans.
     A step left running is launched from the request file it holds. The answer is checked against
@@ -1072,7 +1073,8 @@ def trd_author(run: StepRun) -> AgentLaunch:
         output=Path(request["answerPath"]),
         validate=check,
         outcome=(
-            "The TRD, written from the architecture pack alone, and the answer, each at the path the request names."
+            "The TRD, written from the architecture pack and what it names alone, and the answer, each at the path "
+            "the request names."
             if initial
             else "The TRD updated as the request asks, and the answer, each at the path the request names."
         ),

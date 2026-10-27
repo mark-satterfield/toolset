@@ -40,9 +40,10 @@ criteria and Definition of Done, with stable criterion/DoD ids and source requir
 references: a requirement is cited by the PRD heading the TRD gives as its source, and the PRD
 your repository context (`spec-context.schema.json`) names is opened only to read such a heading
 when the TRD's text does not settle a criterion. Your spec pack (`spec pack`,
-`spec-pack.schema.json`) holds the text of the architecture headings, the constraints and the TRD
-requirements that bind what the Story builds: read it, not the vault and not the matrix, and open
-a document only for a heading the pack does not hold. Cover required behavior and failure/boundary cases without inventing scope or
+`spec-pack.schema.json`) holds the constraints and the TRD requirements that bind what the Story
+builds: read it, not the vault and not the matrix. Read the text of an architecture heading the
+repository context's `documents` names only when a criterion turns on it, with
+`atw-matrix heading '<path>#<heading>' ...`. Cover required behavior and failure/boundary cases without inventing scope or
 architecture. Preserve any test strategy the sources state, in the shape of the testStrategy
 property (`properties.testStrategy`) in the artifact-handoff skill's `schemas/tasks.schema.json`;
 do not invent values the sources do not state. Requirements not checkable by unit tests may be assigned to human testing explicitly.

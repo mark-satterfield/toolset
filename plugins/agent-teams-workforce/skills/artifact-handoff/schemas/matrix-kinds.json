@@ -441,6 +441,7 @@
     "uses": {"writes": false, "anyRole": true},
     "story-scope": {"writes": false, "anyRole": true},
     "review-scope": {"writes": false, "anyRole": true},
+    "heading": {"writes": false, "anyRole": true},
     "summary": {"writes": false, "anyRole": true},
     "built": {"writes": false, "anyRole": true},
     "work": {"writes": false, "anyRole": true},

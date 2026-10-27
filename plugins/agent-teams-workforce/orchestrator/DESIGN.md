@@ -1056,9 +1056,10 @@ requirements not considered functional, many of them pre-written in arc42. Once 
 architecture is in arc42, the architect has it make the TRD architecture update with the
 technical or architecture decisions that impact the detailed design; the detailed design reads the
 TRD, and the architect has it updated in place as the design settles. Every session of it is
-handed the Epic's architecture pack (`architecture_pack`): the PRD, the Epic's requirements, the
-constraints that apply and the text of each heading that describes what the Epic reaches; the
-initial write is written from the pack alone. Its answer lists every requirement each
+handed the Epic's architecture pack (`architecture_pack`), an index: the PRD's path, the Epic's
+requirements, the file of the constraints that apply and the reference of each heading that
+describes what the Epic reaches, whose text `atw-matrix heading` prints; the initial write is
+written from the pack and what it names alone. Its answer lists every requirement each
 write added or changed, and the step that accepts the answer records one constraint for each as
 a pointer (`trd`: the Epic and the requirement id, a heading of the TRD), so the requirement's
 text lives in the TRD alone. The answer's check fails, for the session's correction, when the

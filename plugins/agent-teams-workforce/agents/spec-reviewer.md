@@ -79,10 +79,12 @@ of them, and you change none of them.
 The brief names six inputs: the contracts document (`spec-<slug>.md`), the data-model document
 (`spec-<slug>.data-model.md`), the acceptance criteria (`spec-<slug>.criteria.md`), the TRD
 (`trd.md`), the repository's context file (`spec-context.schema.json`, whose `items` are
-what this repository's Story builds) and the spec pack (`spec-pack.schema.json`), which holds
-the text of the architecture headings the Story's scopes name, as the approved architecture
-states it, and the constraints and TRD requirements that bind what the Story builds. Read those,
-and open another file only to check a statement one of them cites that the pack does not hold.
+what this repository's Story builds, and whose `documents` name the architecture headings the
+Story's scopes name) and the spec pack (`spec-pack.schema.json`), which holds the constraints and
+TRD requirements that bind what the Story builds. Read those. To check a statement against a
+heading a document cites, find the heading's line with Grep in the file at the `path` the
+context gives, and Read from that line to the next heading only. Open another file only to check
+a statement one of them cites that none of these holds.
 
 Review the three documents against the specs-and-Tasks criteria, I1 to I7, as
 `effective-architecture/review-standard.md` states them, and against nothing else. The

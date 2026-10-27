@@ -36,20 +36,22 @@ schema's descriptions say what each member is.
 ### Mode `initial`
 
 The TRD initial write is one of the very first steps of the architecture: it runs before any
-design exists, so write only what is already stated. Write it from the Epic's architecture pack
-alone, the `pack.json` the brief hands as `architecture pack`, with `pack.md` beside it for
-reading; read nothing else from the vault or the matrix:
+design exists, so write only what is already stated. Write it from the Epic's architecture pack,
+the `pack.json` the brief hands as `architecture pack`, an index, and from what it points at;
+read nothing else from the vault or the matrix:
 
-- The PRD, in the pack: the quality and operational needs it states, and the Epic's
-  requirements, each `name` its heading in the PRD.
-- The constraints in the pack: each with its rule as `statement`, the document and heading it is
-  `statedIn`, and what it `appliesTo`. The `statement` is the rule: cite its `statedIn` document
-  and heading as the source. A constraint with `trd` in place of a statement is a requirement of
-  a TRD (its Epic and id); one of this Epic's is already in the TRD you keep.
-- The headings the pack's `reach` rows name, each with its text once under the pack's
-  `headings`: the requirements pre-written in arc42 (quality goals, standards and policies,
-  quality requirements) that describe what the Epic reaches. Cite each by its path and heading as
-  the pack gives them.
+- The PRD at the pack's `prd`: the quality and operational needs it states, and the Epic's
+  requirements (the pack's `epicView`), each `name` its heading in the PRD.
+- The constraints in the file at the pack's `constraintsFile`: each with its rule as
+  `statement`, the document and heading it is `statedIn`, and what it `appliesTo`. The
+  `statement` is the rule: cite its `statedIn` document and heading as the source. A constraint
+  with `trd` in place of a statement is a requirement of a TRD (its Epic and id); one of this
+  Epic's is already in the TRD you keep.
+- The headings the pack's `reach` rows name, each as `<path>#<heading>`: the requirements
+  pre-written in arc42 (quality goals, standards and policies, quality requirements) that
+  describe what the Epic reaches. Read the text of the ones that can state such a requirement
+  with `atw-matrix heading '<path>#<heading>' ...` (several in one call), which prints each as
+  the vault's last commit holds it. Cite each by its path and heading as the pack gives them.
 
 A requirement whose element the PRD's need does not yet name applies to the Epic as a whole
 (`appliesTo` empty). Return `noSource`: every quality or operational obligation the PRD implies
@@ -85,7 +87,7 @@ heading the pack or `atw-matrix node document:<path>` gives.
 A requirement is to the `TrdRequirement` definition that `trd-answer.schema.json` refers to;
 its descriptions say what each member holds. A removed id is never used again. `appliesTo` is
 a matrix id as the pack or `atw-matrix node` gives it, never a name, and a `source` in arc42
-gives the path and heading as the pack lists them.
+gives the path and heading as the pack or its constraints file lists them.
 
 Each requirement is a heading of the TRD whose text is exactly its id (`#### TR-01`): the
 matrix's constraint for it points at that heading, and the step that confirms the TRD fails on

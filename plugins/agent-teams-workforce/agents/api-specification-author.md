@@ -64,13 +64,15 @@ those documents record it, or link to it by path and heading; decide none. A det
 needs that no approved document states is a gap in the design: state in the document which
 element's design lacks it, and do not settle it. Your repository context file
 (`spec-context.schema.json`) names what the Story builds: `items`, `stacks`, `buildScope` and
-`dependsOn`. Your spec pack (`spec pack`, `spec-pack.schema.json`) holds what you read for it:
-each entry with whether it is approved; the text of every architecture heading the Story's
-scopes name, as the approved architecture states it; the constraints and shared capabilities
-that bind the entries; the TRD requirements that bind them; and the contract files the
-repository holds today. Read the pack, not the vault and not the matrix. Cite a document by the
-`path` and `heading` the pack gives. Open a document, or run `atw-matrix node <id>`, only for a
-heading or an entry the pack does not hold, such as a heading row whose `text` is null. A
+`dependsOn`, and under `documents` every architecture heading the Story's scopes name. Your
+spec pack (`spec pack`, `spec-pack.schema.json`) holds what you read for it: each entry with
+whether it is approved; the constraints and shared capabilities that bind the entries; the TRD
+requirements that bind them; and the contract files the repository holds today. Read the pack,
+not the vault and not the matrix. Read the text of the headings your document turns on with
+`atw-matrix heading '<path>#<heading>' ...` (several in one call; a path alone for a document
+named as a whole), which prints each as the approved architecture states it. Cite a document by
+the `path` and `heading` the context gives. Run `atw-matrix node <id>` only for an entry the pack
+does not hold. A
 constraint with `trd` in place of a `statement` is a TRD requirement: the pack's
 `trd.requirements` gives its text for this Epic's TRD (also handed to you as `TRD`); for another
 Epic's, read it at the heading named by its id in the TRD at that Epic bead's

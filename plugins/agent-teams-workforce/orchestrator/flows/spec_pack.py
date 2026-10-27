@@ -1,11 +1,12 @@
 """The spec pack of one repository's Story: what its spec sessions read instead of the vault.
 
 The repository context step writes it (``spec-pack.schema.json``) beside the repository context.
-It holds the entries the Story builds with their approved marks, the text of every heading the
-Story's scopes name, read from the vault's last commit (the approved architecture promotion
-committed), the constraints and shared capabilities that bind the entries, the requirements of
-the Epic's TRD that bind them, and the contract files the repository holds today. A spec session
-reads the pack, not the vault and not the matrix.
+It holds the entries the Story builds with their approved marks, the constraints and shared
+capabilities that bind the entries, the requirements of the Epic's TRD that bind them, and the
+contract files the repository holds today. The headings the Story's scopes name are listed in the
+repository context, not here: a spec session reads the text of the ones its work turns on with
+``atw-matrix heading``, from the vault's last commit (the approved architecture promotion
+committed). A spec session reads the pack, not the vault and not the matrix.
 """
 
 from __future__ import annotations
@@ -15,8 +16,9 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from matrix_contract import KIND_CONSTRAINT, REL_APPLIES_TO, MatrixError
-from matrixsync import heading_texts, program_output
+from matrix_contract import KIND_CONSTRAINT, REL_APPLIES_TO
+from matrixheadings import document_body
+from matrixsync import heading_texts
 from typeguard import check_type
 
 from orchestrator.core.io import JsonValue, json_object
@@ -31,8 +33,6 @@ if TYPE_CHECKING:
 ATTR_TRD: Final = "trd"
 ATTR_RESOURCE_TYPE: Final = "resourceType"
 ATTR_SELECTOR: Final = "selector"
-FENCE: Final = "---"
-"""The line that opens and closes a document's front matter."""
 SKIPPED_FOLDERS: Final[frozenset[str]] = frozenset({
     ".git",
     ".claude",
@@ -56,58 +56,6 @@ CONTRACT_FILE: Final[re.Pattern[str]] = re.compile(
     re.IGNORECASE,
 )
 """The file names of API, event and data contracts: OpenAPI, AsyncAPI, GraphQL and JSON Schema files."""
-
-
-def document_body(text: str) -> list[str]:
-    """Split a document's text into the lines after its front matter.
-
-    Returns:
-        Every line when the document has no front matter.
-
-    """
-    lines: list[str] = text.splitlines()
-    if not lines or lines[0].strip() != FENCE:
-        return lines
-    close: int = next((index for index in range(1, len(lines)) if lines[index].strip() == FENCE), 0)
-    return lines[close + 1 :] if close else lines
-
-
-def committed_headings(arch: Path, documents: Sequence[Mapping[str, JsonValue]]) -> list[JsonValue]:
-    """Read the text of each heading some documents name, from the vault's last commit.
-
-    Each document is read once with ``git show HEAD:<path>``, never from the vault's working
-    tree. A heading's text is its own text (its heading line and everything up to the next
-    heading), as the matrix hashes it; a document named as a whole gives its whole body.
-
-    Args:
-        arch: The architecture root, a folder of the vault.
-        documents: The documents, as the repository context lists them: the entry id, the file
-            and the headings to read.
-
-    Returns:
-        One row per heading (one per document named as a whole): the document, its file, the
-        heading (empty for the whole document) and its text; the text is null when the last
-        commit holds no such document or heading.
-
-    """
-    rows: list[JsonValue] = []
-    document: Mapping[str, JsonValue]
-    for document in documents:
-        identifier: str = check_type(document["document"], str)
-        relative: str = identifier.partition(":")[2]
-        try:
-            body: list[str] | None = document_body(program_output("git", ["show", f"HEAD:./{relative}"], arch))
-        except MatrixError:
-            body = None
-        texts: dict[str, str] = {} if body is None else heading_texts(body)
-        named: list[str] = check_type(document["headings"], list[str])
-        wanted: list[str] = named or [""]
-        heading: str
-        for heading in wanted:
-            whole: str | None = None if body is None else "\n".join(body).strip("\n")
-            text: str | None = texts.get(heading) if heading else whole
-            rows.append({"document": identifier, "path": document["path"], "heading": heading, "text": text})
-    return rows
 
 
 def entry_rows(matrix: Matrix, ids: Iterable[EntryId]) -> list[JsonValue]:

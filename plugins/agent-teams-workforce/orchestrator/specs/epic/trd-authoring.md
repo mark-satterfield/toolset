@@ -23,7 +23,8 @@ decisions.
    design adds technical requirements.
 
 Every session of `trd-author` is handed the Epic's architecture pack (artifact `architecture
-pack`); the initial write is written from the pack alone. An update runs as its own step from the
+pack`), an index; the initial write is written from the pack and what it names alone: the PRD, the
+constraints file, and the headings its reach rows name, read with `atw-matrix heading`. An update runs as its own step from the
 request file its step is handed: one the architect's result requests, after the architect's
 session, or the correction the confirm step plans. A `trd-author` step left running is launched
 from the request file it holds. The file already at the TRD's path is kept for the session to

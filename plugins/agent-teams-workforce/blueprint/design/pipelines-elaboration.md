@@ -59,7 +59,7 @@ requured, but there still needs to be a spec".
 
 ```mermaid
 flowchart TD
-    start(["Ready Epic and its PRD"]) --> pack["Architecture pack, a script step: the PRD, the Epic's reach by the rule of reach with whether each entry is approved and the Epics sharing it, the headings that describe each from the vault's last commit, and the constraints that apply"]
+    start(["Ready Epic and its PRD"]) --> pack["Architecture pack, a script step and an index: the PRD's path, the Epic's reach by the rule of reach with whether each entry is approved, the Epics sharing it and the references of the headings that describe it, the constraints that bind it by id, and a file of every constraint that applies"]
     pack --> trdInit["TRD initial write, one of the very first steps: NFRs, many pre-written in arc42, and the human-written Epic-specific guidance - section 4"]
     trdInit --> readPRD["The solutions architect normally reads the PRD for the Epic"]
     readPRD --> resources["Uses arc42 documents and the matrix as resources"]
@@ -98,9 +98,13 @@ Notes on the diagram:
   architect's session, from the request the architect wrote; the detailed design reads the TRD
   together with that request, so it works from the decisions before the TRD file holds them.
 - The architecture pack (`orchestrator/flows/architecture_pack.py`) is written beside the context
-  file as `pack.json` and `pack.md`. The TRD author, the architect and its specialists read it,
-  not the whole matrix and not the vault. The reach is `matrixtraverse.approval_scope`, the one set
-  the pack lists, the check holds the architect's verdicts to and promotion approves.
+  file as `pack.json`, an index, with `constraints.json`, every constraint that applies in full.
+  The TRD author, the architect and its specialists read it, not the whole matrix and not the
+  vault. It holds no heading text: each reach row names the headings that describe it as
+  `<path>#<heading>`, and a session reads a heading's words with `atw-matrix heading` only when a
+  decision turns on them, so no session is handed the text of every heading the Epic reaches.
+  The reach is `matrixtraverse.approval_scope`, the one set the pack lists, the check holds the
+  architect's verdicts to and promotion approves.
 - The architect writes its matrix changes to one change file, `matrix-changes.json` beside the
   context file. The output check applies it to a copy of the matrix and sends each failing
   operation back for the session's correction; the step that accepts the result applies it in one
@@ -175,7 +179,7 @@ sequenceDiagram
     SA->>PRD: normally reads the PRD for the Epic
     PRD-->>SA: the Epic's requirements
     SA->>A42: reads existing architecture and design, including standards and constraints
-    A42-->>SA: the effective headings of what the Epic reaches, handed in the architecture pack, each marked with whether it is approved
+    A42-->>SA: the headings of what the Epic reaches, named in the architecture pack with whether each entry is approved, read with atw-matrix heading when a decision turns on their words
     SA->>MX: looks up what is known for the Epic, as a resource
     MX-->>SA: nothing (normal) or seeded entries, not approved and not verified
     Note over SA: compares existing architecture to the PRD. Seeded entries get due diligence - section 3
@@ -530,9 +534,10 @@ Notes on the diagram:
   are is the architect's design decision; no script picks them.
 - The repository context step hands every spec session a spec pack (`spec-pack.schema.json`,
   written by `orchestrator/flows/spec_pack.py`): the entries the Story builds with whether each is
-  approved, the text of every heading their scopes name as the vault's last commit holds it,
-  the constraints, shared capabilities and TRD requirements that bind them, and the contract
-  files the repository holds. No spec session explores the vault. A spec writer runs only for a
+  approved, the constraints, shared capabilities and TRD requirements that bind them, and the contract
+  files the repository holds. It holds no heading text: a spec session reads the text of a
+  heading the repository context names with `atw-matrix heading`, from the vault's last commit,
+  only when its work turns on it. No spec session explores the vault. A spec writer runs only for a
   kind of content the Story's entries include (`spec_authoring.story_surfaces`): contracts for an
   entry with an API, event, error or UI contract, a data model for a data store, UI design
   sources for a UI item of a frontend repository; a script writes the document of a kind the
