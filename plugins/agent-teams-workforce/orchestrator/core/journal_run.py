@@ -59,7 +59,7 @@ from orchestrator.flows.elaboration_support import emit_event, parallel
 from . import step_journal
 from .agents import CONTENT_FAILURES, AgentRunner, SessionNotResumedError, validate_output
 from .handback import failure_for, stop_stage
-from .handback_contract import OTHER_CAUSE, Failure, step_event, warning_note
+from .handback_contract import OTHER_CAUSE, Failure, Session, StepTokens, step_event, warning_note
 from .journal_changes import apply_completion
 from .journal_registry import REGISTRY, Registry
 from .journal_steps import (
@@ -83,7 +83,8 @@ from .models import (
     StepError,
     session_cap,
 )
-from .step_budgets import step_budget
+from .step_budgets import Budget, step_budget
+from .step_tokens import Measured, StepSession, Window, config_dir, measure
 from .tools import Tools
 
 # isort: split
@@ -572,6 +573,8 @@ class JournalRunner:
         self.corrected: set[Path] = set()
         """The request files whose writer's session was asked in this dispatch to correct them."""
         self._correcting: threading.Lock = threading.Lock()
+        self._corrected_sessions: dict[StepId, list[str]] = {}
+        """The writers' sessions continued to correct a request, by the step that found it, until it is reported."""
 
     @property
     def context(self) -> RunContext:
@@ -727,30 +730,71 @@ class JournalRunner:
         self._complete(step_id, launch.accept(run, launch.output))
 
     def _run_step(self, step_id: StepId) -> None:
-        """Run one step (:meth:`_attempt`), then report its wall time against its budget (:meth:`_report`).
+        """Run one step (:meth:`_attempt`), then report its wall time and tokens against its budgets (:meth:`_report`).
 
         The report follows whether the step ends or raises; what it raised continues to the caller.
         """
         journal: Journal = step_journal.read_journal(self.path)
         step: Step = step_journal.find_step(journal, step_id)
         began: float = time.monotonic()
+        started: float = time.time()
         try:
             self._attempt(journal, step)
         finally:
-            self._report(step, time.monotonic() - began)
+            self._report(step, time.monotonic() - began, Window(started, time.time()))
 
-    def _report(self, step: Step, seconds: float) -> None:
-        """Emit a step's wall time against its time budget, and a warning when it ran over it.
+    def _step_sessions(self, step: Step) -> list[StepSession]:
+        """Name the sessions a step ran or continued in this run.
 
-        The budget is the one the budget table gives the step (``step_budgets.step_budget``); a
-        step over its budget is reported, never failed.
+        Returns:
+            The session the step holds after the run, then each writer's session continued to
+            correct a request for it (:meth:`_correct_request`), each once, with the working
+            directory and agent of its session row.
+
+        """
+        with self._correcting:
+            corrected: list[str] = self._corrected_sessions.pop(step["id"], [])
+        named: list[str] = list(dict.fromkeys([*([step["session"]] if "session" in step else []), *corrected]))
+        rows: dict[str, Session] = {row["sessionId"]: row for row in self.context.sessions}
+        return [StepSession(name, Path(rows[name]["cwd"]), rows[name]["agent"]) for name in named if name in rows]
+
+    def _tokens(self, held: Step, window: Window) -> StepTokens | None:
+        """Measure the tokens of a step's sessions and their helpers, with a warning for each problem.
+
+        Returns:
+            The step's tokens, or None when it ran no session or its transcripts cannot be read.
+
+        """
+        sessions: list[StepSession] = self._step_sessions(held)
+        if not sessions:
+            return None
+        try:
+            measured: Measured = measure(sessions, window, config_dir())
+        except OSError as error:
+            emit_event(
+                self.agents.emit,
+                warning_note(stage_of(held), f"step {held['id']}: its tokens could not be measured: {error}"),
+            )
+            return None
+        problem: str
+        for problem in measured.problems:
+            emit_event(self.agents.emit, warning_note(stage_of(held), f"step {held['id']}: {problem}"))
+        return measured.tokens
+
+    def _report(self, step: Step, seconds: float, window: Window) -> None:
+        """Emit a step's wall time and tokens against its budgets, and a warning for each budget it ran over.
+
+        The budgets are the ones the budget table gives the step (``step_budgets.step_budget``);
+        the tokens are what its sessions and their helpers used within ``window``
+        (``step_tokens.measure``). A step over a budget is reported, never failed.
         """
         journal: Journal = step_journal.read_journal(self.path)
         held: Step = step_journal.find_step(journal, step["id"])
         outermost: Step = held
         while (above := step_journal.parent_step(journal, outermost["id"])) is not None:
             outermost = above
-        budget: int | None = step_budget(held)
+        budget: Budget = step_budget(held)
+        tokens: StepTokens | None = self._tokens(held, window)
         emit_event(
             self.agents.emit,
             step_event(
@@ -760,16 +804,21 @@ class JournalRunner:
                 stage_of(held),
                 held["status"],
                 seconds=round(seconds, 1),
-                budget=budget,
+                budget=budget.seconds,
+                tokens=tokens,
+                token_budget=budget.tokens,
             ),
         )
-        if budget is not None and seconds > budget:
+        overruns: list[str] = []
+        if budget.seconds is not None and seconds > budget.seconds:
+            overruns.append(f"took {seconds:.0f} s, over its budget of {budget.seconds} s")
+        if budget.tokens is not None and tokens is not None and tokens["usage"]["total"] > budget.tokens:
+            overruns.append(f"used {tokens['usage']['total']} tokens, over its budget of {budget.tokens} tokens")
+        overrun: str
+        for overrun in overruns:
             emit_event(
                 self.agents.emit,
-                warning_note(
-                    stage_of(held),
-                    f"step {held['id']} ({held['description']}) took {seconds:.0f} s, over its budget of {budget} s",
-                ),
+                warning_note(stage_of(held), f"step {held['id']} ({held['description']}) {overrun}"),
             )
 
     def _attempt(self, journal: Journal, step: Step) -> None:
@@ -826,6 +875,8 @@ class JournalRunner:
         a session that fails, fails the helper step with what the session raised.
         """
         self.corrected.add(malformed.request)
+        with self._correcting:
+            self._corrected_sessions.setdefault(step_id, []).append(malformed.session)
         writer: Step = step_journal.find_step(step_journal.read_journal(self.path), malformed.writer)
         request: AgentStep = AgentStep(
             stage=malformed.stage,

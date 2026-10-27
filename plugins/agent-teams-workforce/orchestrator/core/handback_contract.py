@@ -308,12 +308,45 @@ class FableWallEvent(TypedDict):
     window: str | None
 
 
+class TokenUsage(TypedDict):
+    """Model usage summed over a step's turns, each API request counted once.
+
+    ``total`` is ``input + cacheCreate + cacheRead + output``, the measure a token budget is
+    compared with; ``turns`` is the number of API requests.
+    """
+
+    input: int
+    cacheCreate: int
+    cacheRead: int
+    output: int
+    total: int
+    turns: int
+
+
+class TokenPart(TokenUsage):
+    """The usage of one transcript within a step: a session's own, or one of its helpers'.
+
+    ``agent`` is the session's agent, or the helper's agent type when ``helper`` is true.
+    """
+
+    session: str
+    agent: str
+    helper: bool
+
+
+class StepTokens(TypedDict):
+    """The usage a step's sessions and their helpers made while the step ran."""
+
+    usage: TokenUsage
+    parts: list[TokenPart]
+
+
 class StepEvent(TypedDict):
-    """A step of the journal ended a run: its wall time against its time budget (null when it has none).
+    """A step of the journal ended a run: its wall time and tokens against its budgets (null when it has none).
 
     ``container`` is the description of the outermost step that holds it, or its own description
     when it is an outermost step; ``key`` is its script key or its agent; ``status`` is its status
-    in the journal after the run.
+    in the journal after the run. ``tokens`` is null for a step that ran no session.
     """
 
     event: Literal["step"]
@@ -324,6 +357,8 @@ class StepEvent(TypedDict):
     status: str
     seconds: float
     budget: int | None
+    tokens: StepTokens | None
+    tokenBudget: int | None
 
 
 type NoteEvent = WarningNote
@@ -1045,6 +1080,8 @@ def step_event(  # ruff: ignore[too-many-arguments] - The fields of one step eve
     *,
     seconds: float,
     budget: int | None,
+    tokens: StepTokens | None,
+    token_budget: int | None,
 ) -> StepEvent:
     """Build a validated ``step`` event.
 
@@ -1061,6 +1098,8 @@ def step_event(  # ruff: ignore[too-many-arguments] - The fields of one step eve
         "status": status,
         "seconds": seconds,
         "budget": budget,
+        "tokens": tokens,
+        "tokenBudget": token_budget,
     }
     validate_event(event)
     return event

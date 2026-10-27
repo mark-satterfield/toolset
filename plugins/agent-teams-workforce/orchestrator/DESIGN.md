@@ -353,10 +353,20 @@ on the `Wire` event values. How the driver routes each event:
 
 Each step the journal runner runs ends with a step event (`handback_contract.StepEvent`): the
 step's id, description, outermost container, script key or agent, status after the run, wall
-time in seconds and time budget. The budgets are data, in one table,
-`orchestrator/step-budgets.json` (read by `core/step_budgets.py`): a script step's by its script
-key, an agent step's by its agent, and one budget for any other agent. A step over its budget also
-emits a `warning` note naming its time and budget, so every run measures itself against the
+time in seconds and time budget, its tokens and its token budget. The tokens
+(`handback_contract.StepTokens`, measured by `core/step_tokens.py`) are what the step's sessions
+used while the step ran: the session the step holds and each writer's session continued to
+correct a request for it, each with its helpers, read from their Claude Code transcripts, each
+API request counted once and only when made between the step's start and end, so a session
+continued in a later step or dispatch is counted in each only for its own turns. They are the
+step's usage (input, cache writes, cache reads, output, their total and the number of requests)
+and one part per transcript (the session, its agent, whether it is a helper); a step that ran no
+session has none. The driver sums the events of a run's `.out` file per Epic, agent and step
+(`<driver>/stepcost.py`). The budgets are data, in one table,
+`orchestrator/step-budgets.json` (read by `core/step_budgets.py`): a script step's time budget by
+its script key, an agent step's time and token budgets by its agent, and one pair for any other
+agent; a script step runs no session and has no token budget. A step over a budget also emits a
+`warning` note naming its time or tokens and the budget, so every run measures itself against the
 budgets; a step over budget is never failed.
 
 A session's runner writes a heartbeat every `ATW_HEARTBEAT` seconds (default 300) while the session

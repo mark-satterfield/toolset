@@ -1,5 +1,5 @@
 {
-  "description": "The time budget, in seconds of wall time, of each step of an Epic's elaboration journal. A script step is found by its script key, an agent step by its agent; an agent step whose agent is not listed takes otherAgents (a design specialist's draft review or question). The journal runner reports each step's wall time against its budget in a step event, and a step over its budget in a warning note; a step over budget is not failed. Consumed by orchestrator/core/step_budgets.py.",
+  "description": "The budgets of each step of an Epic's elaboration journal: wall time in seconds, and for an agent step the tokens its sessions and their helpers use while it runs (input, cache writes, cache reads and output, each API request counted once). A script step is found by its script key and has a time budget only; an agent step is found by its agent; an agent step whose agent is not listed takes otherAgents (a design specialist's draft review or question). The journal runner reports each step's wall time and tokens against its budgets in a step event, and a step over either budget in a warning note; a step over budget is not failed. Consumed by orchestrator/core/step_budgets.py.",
   "scripts": {
     "prd_to_spec.open_run": 30,
     "architecture.pack": 30,
@@ -29,21 +29,69 @@
     "elaboration.finish": 15
   },
   "agents": {
-    "trd-author": 240,
-    "aws-solutions-architect": 1200,
-    "architecture-maintainer": 180,
-    "c4-diagram-author": 180,
-    "uml-diagram-author": 180,
-    "architecture-diagram-author": 180,
-    "api-specification-author": 300,
-    "data-model-specification-author": 300,
-    "ui-design-source-selector": 180,
-    "acceptance-criteria-writer": 180,
-    "dynamodb-schema-access-pattern-reviewer": 180,
-    "spec-reviewer": 120,
-    "review-dispute-decider": 120,
-    "task-decomposer": 300,
-    "task-dependency-mapper": 180
+    "trd-author": {
+      "seconds": 240,
+      "tokens": 1000000
+    },
+    "aws-solutions-architect": {
+      "seconds": 1200,
+      "tokens": 6000000
+    },
+    "architecture-maintainer": {
+      "seconds": 180,
+      "tokens": 2750000
+    },
+    "c4-diagram-author": {
+      "seconds": 180,
+      "tokens": 1750000
+    },
+    "uml-diagram-author": {
+      "seconds": 180,
+      "tokens": 1750000
+    },
+    "architecture-diagram-author": {
+      "seconds": 180,
+      "tokens": 1750000
+    },
+    "api-specification-author": {
+      "seconds": 300,
+      "tokens": 1750000
+    },
+    "data-model-specification-author": {
+      "seconds": 300,
+      "tokens": 1750000
+    },
+    "ui-design-source-selector": {
+      "seconds": 180,
+      "tokens": 1750000
+    },
+    "acceptance-criteria-writer": {
+      "seconds": 180,
+      "tokens": 1750000
+    },
+    "dynamodb-schema-access-pattern-reviewer": {
+      "seconds": 180,
+      "tokens": 1750000
+    },
+    "spec-reviewer": {
+      "seconds": 120,
+      "tokens": 1750000
+    },
+    "review-dispute-decider": {
+      "seconds": 120,
+      "tokens": 1750000
+    },
+    "task-decomposer": {
+      "seconds": 300,
+      "tokens": 1750000
+    },
+    "task-dependency-mapper": {
+      "seconds": 180,
+      "tokens": 1750000
+    }
   },
-  "otherAgents": 240
+  "otherAgents": {
+    "seconds": 240,
+    "tokens": 1700000
+  }
 }

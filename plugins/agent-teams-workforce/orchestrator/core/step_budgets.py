@@ -1,7 +1,8 @@
-"""The time budget of each step of an elaboration journal, read from ``orchestrator/step-budgets.json``.
+"""The time and token budgets of each step of an elaboration journal, read from ``orchestrator/step-budgets.json``.
 
-The file is the one place the budgets are stated: a script step's budget by its script key, an
-agent step's by its agent, and one budget for every other agent.
+The file is the one place the budgets are stated: a script step's time budget by its script key,
+an agent step's time and token budgets by its agent, and one pair of budgets for every other
+agent. A script step runs no session, so it has no token budget.
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ from __future__ import annotations
 import json
 from functools import cache
 from pathlib import Path
-from typing import Final
+from typing import Final, NamedTuple
 
 from typeguard import CollectionCheckStrategy, typechecked
 
@@ -27,58 +28,73 @@ class StepBudgetsError(ValueError):
     """The budget table is not the shape its readers need."""
 
 
-def _seconds(value: object, where: str) -> int:
+class Budget(NamedTuple):
+    """The budgets of one step; None where the table gives it none."""
+
+    seconds: int | None
+    """Wall time, in seconds."""
+    tokens: int | None
+    """Tokens of the step's sessions and their helpers, as ``TokenUsage.total`` counts them."""
+
+
+def _positive(value: object, where: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        message: str = f"{BUDGETS_FILE}: {where} is not a positive whole number of seconds: {value!r}"
+        message: str = f"{BUDGETS_FILE}: {where} is not a positive whole number: {value!r}"
         raise StepBudgetsError(message)
     return value
 
 
-def _table(value: object, where: str) -> dict[str, int]:
+def _object(value: object, where: str) -> dict[str, object]:
     if not isinstance(value, dict):
         message: str = f"{BUDGETS_FILE}: {where} is not an object"
         raise StepBudgetsError(message)
-    return {str(key): _seconds(seconds, f"{where}.{key}") for key, seconds in value.items()}
+    return {str(key): item for key, item in value.items()}
 
 
-@cache
-def _budgets() -> tuple[dict[str, int], dict[str, int], int]:
-    """Read the budget table once.
-
-    Returns:
-        The script budgets, the agent budgets and the budget of every other agent.
-
-    Raises:
-        StepBudgetsError: The file is not an object holding ``scripts``, ``agents`` and
-            ``otherAgents`` with positive whole numbers of seconds.
-
-    """
-    document: object = json.loads(BUDGETS_FILE.read_text(encoding="utf-8"))
-    if not isinstance(document, dict):
-        message: str = f"{BUDGETS_FILE} is not an object"
-        raise StepBudgetsError(message)
-    return (
-        _table(document.get("scripts"), "scripts"),
-        _table(document.get("agents"), "agents"),
-        _seconds(document.get("otherAgents"), "otherAgents"),
+def _agent_budget(value: object, where: str) -> Budget:
+    fields: dict[str, object] = _object(value, where)
+    return Budget(
+        _positive(fields.get("seconds"), f"{where}.seconds"),
+        _positive(fields.get("tokens"), f"{where}.tokens"),
     )
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def step_budget(step: Step) -> int | None:
-    """Name the time budget of a step.
+@cache
+def _budgets() -> tuple[dict[str, int], dict[str, Budget], Budget]:
+    """Read the budget table once.
+
+    A file that is not an object holding ``scripts`` (positive whole numbers of seconds),
+    ``agents`` and ``otherAgents`` (each ``seconds`` and ``tokens``, positive whole numbers)
+    raises ``StepBudgetsError``.
 
     Returns:
-        The seconds the table gives the step's script key or agent; ``otherAgents`` for an agent
-        it does not list; None for a script key it does not list and for a step with neither.
+        The script time budgets, the agent budgets and the budgets of every other agent.
+
+    """
+    document: dict[str, object] = _object(json.loads(BUDGETS_FILE.read_text(encoding="utf-8")), "the file")
+    script_table: dict[str, object] = _object(document.get("scripts"), "scripts")
+    agent_table: dict[str, object] = _object(document.get("agents"), "agents")
+    scripts: dict[str, int] = {key: _positive(seconds, f"scripts.{key}") for key, seconds in script_table.items()}
+    agents: dict[str, Budget] = {key: _agent_budget(budget, f"agents.{key}") for key, budget in agent_table.items()}
+    return scripts, agents, _agent_budget(document.get("otherAgents"), "otherAgents")
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def step_budget(step: Step) -> Budget:
+    """Name the budgets of a step.
+
+    Returns:
+        For a script step, the seconds the table gives its script key (None when it lists none)
+        and no token budget; for an agent step, the budgets the table gives its agent, or
+        ``otherAgents`` for an agent it does not list; neither for a step with neither.
 
     """
     scripts: dict[str, int]
-    agents: dict[str, int]
-    other: int
+    agents: dict[str, Budget]
+    other: Budget
     scripts, agents, other = _budgets()
     if "script" in step:
-        return scripts.get(step["script"])
+        return Budget(scripts.get(step["script"]), None)
     if "agent" in step:
         return agents.get(step["agent"], other)
-    return None
+    return Budget(None, None)
