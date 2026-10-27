@@ -54,6 +54,7 @@ if TYPE_CHECKING:
 
 OPEN_RUN: Final = "prd_to_spec.open_run"
 PACK: Final = "architecture.pack"
+INDEX: Final = "architecture.index"
 CHECK: Final = "atw-matrix check; atw-matrix review-scope"
 PROMOTE: Final = "atw-matrix sync-documents; atw-matrix commit"
 CONFIRM_TRD: Final = "trd.confirm"

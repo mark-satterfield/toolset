@@ -969,11 +969,19 @@ specification is `<plugin>/blueprint/design/matrix.md`.
 
 ### 11.1 Architecture
 
-The Architecture container holds, in order: the architect's step; the check step; then either a
-correction by the architect and a new check, or the lead and a new check, or the promotion step.
+The Architecture container holds, in order: the architect's step; the index step; the check
+step; then either a correction by the architect, an index and a new check, or the lead, an index
+and a new check, or the promotion step.
 The architect reviews and approves its own architecture against the criteria; nothing else
 reviews it.
 
+- **The index step** (`flows/architecture_index.py`) runs `$ATW_DOCS_INDEX_COMMAND`, the
+  project's re-index of its graph index of the architecture documents, once per pass after every
+  document is written and outside any agent session, so no session waits on a rebuild and no agent
+  re-indexes. It runs nothing when the variable is unset or when no file under the architecture
+  root changed since the last index the journal records (value `indexed documents`, a fingerprint
+  of path, size and modification time). A failed re-index is recorded in
+  `architecture/index/<step id>/index.json` and does not fail the step.
 - **The check step** (`flows/architecture_check.py`) judges nothing; every branch is a rule over
   the matrix, the criteria file, the architect's result and the Epic's review log. It writes
   `architecture/checks/<step id>/check.json`. A problem plans one correction by the architect and

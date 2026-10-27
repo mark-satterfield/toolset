@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "32bd386e630426eae3b8fa920feb0bc5bbf6f2b1c1c4b128719c32b326508ff1"
+SCHEMA_SHA256: Final[str] = "f562f029d064242830624f86c231e0050eaf716f70972dc0dc367df5f2ac81d4"
 #: The schema this module was generated from.
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "driver-surface.schema.json"
 
@@ -35,6 +35,10 @@ ARCH_PATH_ENV: Final[str] = "ATW_ARCH_PATH"
 DESIGN_PACKAGES_ENV: Final[str] = "ATW_DESIGN_PACKAGES_DIR"
 #: The first PRD root; optional.
 PRD_DIR_ENV: Final[str] = "ATW_PRD_DIR"
+#: The executable that re-indexes the project's graph index of its architecture documents, run with no
+#: arguments by the architecture's index step once per pass, after the documents are written; optional:
+#: absent means the project keeps no such index.
+DOCS_INDEX_ENV: Final[str] = "ATW_DOCS_INDEX_COMMAND"
 #: The controller runtime's bin directory first, de-duplicated.
 PATH_ENV: Final[str] = "PATH"
 #: The dispatch scratch directory.
@@ -229,6 +233,7 @@ class DriverEnvironment(TypedDict):
     ATW_ARCH_PATH: NotRequired[str]
     ATW_DESIGN_PACKAGES_DIR: NotRequired[str]
     ATW_PRD_DIR: NotRequired[str]
+    ATW_DOCS_INDEX_COMMAND: NotRequired[str]
     PATH: str
     TMPDIR: str
     TMP: str

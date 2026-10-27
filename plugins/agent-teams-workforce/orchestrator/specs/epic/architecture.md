@@ -34,8 +34,8 @@ architect's state and result files, the review log beside the result (`reviewLog
 TRD, and the folder for requests to helpers;
 with the vault commit the document entries are synced to and the name of the matrix command. It
 records the file `prd`, the value `matrix epic entry` and the file `context`, and plans, under the
-Architecture container, the TRD initial write, the architect's step and the check that follows it,
-and records each on itself, so a start at or before the open-run step removes them and the
+Architecture container, the TRD initial write, the architect's step, and the index and the check
+that follow it, and records each on itself, so a start at or before the open-run step removes them and the
 open-run step plans them again as the lane plans them then. Those three plans are also registered
 as what the lane plans under the container, so a planned step whose key was renamed is replanned
 to the current key when the run opens the journal.
@@ -147,8 +147,8 @@ A journal that `orchestrator/port_journal.py` builds for an Epic with saved run 
 the Architecture container, a step "Earlier work on this PRD" (`architecture_earlier.carry`). It
 contains one done step per piece of that work, each holding its files as artifacts named
 `earlier work: <what the file is>`, so the journal records what was done. The open-run step, which
-runs first, plans the TRD initial write, the architect's step and the check after it. The
-architect is not handed those files: they are unapproved copies and summaries from a
+runs first, plans the TRD initial write, the architect's step, and the index and the check after
+it. The architect is not handed those files: they are unapproved copies and summaries from a
 pipeline that no longer runs, and the matrix and the arc42 documents are the architect's sources.
 Such a step has the script `architecture.earlier_work`, which records nothing when it runs: it runs only
 after the owner asks for a start at or before it.
@@ -163,6 +163,20 @@ server tools, skills and specialists that reviewed it and the best practices and
 practices it follows, each with where it is stated; the Well-Architected review of the design,
 one assessment per pillar; and every decision between two or more options, with the options, the
 choice and the reason.
+
+## The index
+
+Script `architecture.index` (`orchestrator/flows/architecture_index.py`). It runs before every
+check, after every document of the pass is written, outside any agent session; no agent re-indexes.
+It runs the command the driver names in `$ATW_DOCS_INDEX_COMMAND` (the project's re-index of its
+graph index of the architecture documents) with no arguments, and nothing when the variable is
+unset. It fingerprints every file under the architecture root (path, size, modification time); when
+the fingerprint equals the one the latest done index step of the journal recorded, it runs nothing
+and records the value `indexed documents` again. Otherwise it runs the command once, with a timeout
+of 900 seconds, writes `<arch-work>/index/<step id>/index.json` (the command, its exit status and
+output, or the cause and evidence of a run that did not finish) as the file `index run`, and, when
+the command exits 0, records the fingerprint as the value `indexed documents`. A failed re-index
+does not fail the step: the documents stand, and the next pass re-indexes them.
 
 ## The check
 
@@ -181,8 +195,8 @@ follows by rule over the matrix, the criteria file, the architect's result and t
 
 | What the check finds | What it plans |
 |---|---|
-| a mechanical defect | a correction step for the architect, handed the check result, and a new check; after 3 corrections a defect fails the step |
-| no defect, the result's conclusion is `unsettled`, and no lead has run in the container | the step of `architecture-team-lead` and a new check |
+| a mechanical defect | a correction step for the architect, handed the check result, an index and a new check; after 3 corrections a defect fails the step |
+| no defect, the result's conclusion is `unsettled`, and no lead has run in the container | the step of `architecture-team-lead`, an index and a new check |
 | otherwise, whatever the conclusion | the promotion step |
 
 With no defect it reads what is in review for the Epic, the documents the Epic reaches that are

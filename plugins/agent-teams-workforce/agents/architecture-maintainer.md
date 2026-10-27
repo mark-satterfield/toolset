@@ -88,12 +88,6 @@ You read the matrix and record nothing in it. When your result is accepted, a sc
 headings and, from its `shows`, what it describes. Name in `shows` each entry by the name the
 matrix holds for it, so that the document is found from the entry.
 
-The project's vault facts (its project skill for the documentation vault) may name a graph
-index of the architecture documents and the command that re-indexes it. When they do, run that
-command after you write, as the last step of each write request and of each correction pass,
-so the architecture agents query what you wrote. A failed re-index is reported in your result
-with its output; it does not undo the write.
-
 Write the result at the path the request names, to `write-result.schema.json`: each heading
 you changed or created, each link you added, each restatement you removed, and anything in the request you could not apply and why.
 

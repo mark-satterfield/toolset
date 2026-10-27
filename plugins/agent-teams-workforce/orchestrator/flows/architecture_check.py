@@ -69,6 +69,7 @@ from orchestrator.flows.architecture_files import (
     read_context,
     read_result,
 )
+from orchestrator.flows.architecture_index import index_step
 from orchestrator.flows.spec_review import CRITERIA_FILE
 
 if TYPE_CHECKING:
@@ -285,7 +286,7 @@ def _correction(run: StepRun, check: CheckResult, path: Path) -> Completion:
     """Send mechanical defects back to the architect, and check again after the correction.
 
     Returns:
-        The completion that plans one architect step and one check step after this one.
+        The completion that plans one architect step, one index step and one check step after this one.
 
     Raises:
         ArchitectureStepError: The architect has already corrected mechanical defects as often
@@ -307,7 +308,7 @@ def _correction(run: StepRun, check: CheckResult, path: Path) -> Completion:
         "inputs": [run.step["id"]],
     }
     again: NewStep = check_step(["correction"], corrections=check["corrections"] + 1)
-    return Completion(add=(StepGroup((NewStep(plan), again)),))
+    return Completion(add=(StepGroup((NewStep(plan), index_step(["correction"]), again)),))
 
 
 def _review_files(folder: Path, scope: ReviewScope, unlinked: EpicView) -> list[Artifact]:
@@ -375,5 +376,5 @@ def check(run: StepRun) -> Completion:
             "inputs": [run.step["id"]],
         }
         again: NewStep = check_step(["lead"], corrections=checked["corrections"])
-        return Completion(artifacts=tuple(recorded), add=(StepGroup((NewStep(routing), again)),))
+        return Completion(artifacts=tuple(recorded), add=(StepGroup((NewStep(routing), index_step(["lead"]), again)),))
     return Completion(artifacts=tuple(recorded), add=_promotion(run).add)

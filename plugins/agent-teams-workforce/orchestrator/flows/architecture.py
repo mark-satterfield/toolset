@@ -119,6 +119,7 @@ from orchestrator.flows.architecture_files import (
     read_context,
     written_paths,
 )
+from orchestrator.flows.architecture_index import index_step
 from orchestrator.flows.architecture_pack import PACK_REF, pack_file, pack_plan
 from orchestrator.flows.repo_scoping import (
     FIELD_ADDED_OR_CHANGED,
@@ -240,7 +241,7 @@ def _trd_initial_plan(inputs: list[str]) -> StepPlan:
 
 
 def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
-    """Plan the pack, the TRD initial write, the architect's step and the check under the Architecture container.
+    """Plan the pack, the TRD write, the architect's step, the index and the check under the Architecture container.
 
     The pack comes first (``architecture_pack``): the TRD author and the architect read the Epic's
     reach, headings and constraints from it. The TRD initial write comes next, so the architect
@@ -257,8 +258,8 @@ def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
         architect: The agent that plays the solutions architect.
 
     Returns:
-        The pack, the TRD initial write, the architect's step and the check that follows it, as
-        the container's last child steps.
+        The pack, the TRD initial write, the architect's step, and the index and the check that
+        follow it, as the container's last child steps.
 
     """
     return StepGroup(
@@ -266,6 +267,7 @@ def first_steps(opened: StepId, container: StepId, architect: str) -> StepGroup:
             NewStep(pack_plan([opened])),
             NewStep(_trd_initial_plan([opened, PACK_REF])),
             NewStep(_architect_plan(architect, [opened, TRD_INITIAL_REF])),
+            index_step([ARCHITECT_REF]),
             check_step([ARCHITECT_REF], corrections=0),
         ),
         UNDER_CONTAINER,
@@ -278,6 +280,7 @@ plan_under(
     pack_plan([]),
     _trd_initial_plan([]),
     _architect_plan(ARCHITECT, []),
+    index_step([ARCHITECT_REF]).plan,
     check_step([ARCHITECT_REF], corrections=0).plan,
 )
 

@@ -108,6 +108,12 @@ Notes on the diagram:
   corrected matrix: each entry needs a `kept` or `corrected` verdict in the result's `reach`, a
   `pruned` one must no longer be reached, and each reached service, component, piece of
   infrastructure or layer with no stack is placed or listed under `excluded`.
+- The project's graph index of the architecture documents is re-indexed by a script step
+  (`orchestrator/flows/architecture_index.py`) once per pass, after every document is written and
+  before the check, outside any agent session: no agent re-indexes, and no session waits on a
+  rebuild. The driver names the command in `$ATW_DOCS_INDEX_COMMAND`; a pass that changed no file
+  under the architecture root runs nothing, and a failed re-index is recorded without failing the
+  run.
 - Promotion sets effective exactly the documents this Epic's maintainers wrote, and commits those
   and the review log, and sets the approved mark on the architecture of the reach. Two Epics are
   never elaborated at the same time on the same unapproved architecture: the dependency edges

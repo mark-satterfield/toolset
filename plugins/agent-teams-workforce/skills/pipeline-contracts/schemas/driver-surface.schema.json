@@ -60,6 +60,7 @@
         "ATW_ARCH_PATH": {"type": "string", "minLength": 1, "description": "The architecture root; set only when the driver knows one. Readers use args.archPath first and fall back to it.", "x-constant": "ARCH_PATH_ENV"},
         "ATW_DESIGN_PACKAGES_DIR": {"type": "string", "minLength": 1, "description": "The owner's cds design packages directory; optional.", "x-constant": "DESIGN_PACKAGES_ENV"},
         "ATW_PRD_DIR": {"type": "string", "minLength": 1, "description": "The first PRD root; optional.", "x-constant": "PRD_DIR_ENV"},
+        "ATW_DOCS_INDEX_COMMAND": {"type": "string", "minLength": 1, "description": "The executable that re-indexes the project's graph index of its architecture documents, run with no arguments by the architecture's index step once per pass, after the documents are written; optional: absent means the project keeps no such index.", "x-constant": "DOCS_INDEX_ENV"},
         "PATH": {"type": "string", "minLength": 1, "description": "The controller runtime's bin directory first, de-duplicated.", "x-constant": "PATH_ENV"},
         "TMPDIR": {"type": "string", "minLength": 1, "description": "The dispatch scratch directory.", "x-constant": "TMPDIR_ENV", "x-group": "SCRATCH_ENV_KEYS"},
         "TMP": {"type": "string", "minLength": 1, "description": "The dispatch scratch directory.", "x-constant": "TMP_ENV", "x-group": "SCRATCH_ENV_KEYS"},
