@@ -44,7 +44,7 @@ from matrix_contract import (
 from matrixcall import EXIT_OK, EXIT_REFUSED, Call, Outcome
 from matrixcode import COMMAND_VERIFY, record_verified
 from matrixevents import CATALOG_PATH, CatalogEvent, EventsSynced, read_catalog, sync_events
-from matrixquery import approval_view, impact_view
+from matrixquery import impact_view
 from matrixreuse import check_reuse
 from matrixseed import (
     MERGE_FILE,
@@ -118,8 +118,6 @@ RELATIONSHIP_TABLE: Final[AttributeTable] = "relationshipKinds"
 STANDS_PARTS: Final = 2
 """How many values ``settle --stands`` takes: the document and the heading."""
 CONTROL_VARIABLES: Final[tuple[str, ...]] = (CONTROL_REPO_ENV,)
-COMMAND_APPROVAL: Final = "approval"
-"""The attributes no command line states: the step that promotes reviewed architecture sets them."""
 _CAMEL: Final[re.Pattern[str]] = re.compile(r"(?<=[a-z0-9])([A-Z])")
 
 
@@ -768,17 +766,6 @@ def _run_affected(call: Call) -> Outcome:
     return Outcome(affected(matrix, tasks, entry_id, impact_view(matrix, entry_id)["ids"]))
 
 
-def _run_approval(call: Call) -> Outcome:
-    """Run ``approval``.
-
-    Returns:
-        The matrix content the Epic reaches, split into what carries the approved flag and what
-        does not.
-
-    """
-    return Outcome(approval_view(read_matrix(call.matrix()), call.required("epic")))
-
-
 def _run_check_reuse(call: Call) -> Outcome:
     """Run ``check-reuse``.
 
@@ -861,7 +848,6 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     COMMAND_BUILT: _run_built,
     COMMAND_WORK: _run_work,
     COMMAND_AFFECTED: _run_affected,
-    COMMAND_APPROVAL: _run_approval,
     "check-reuse": _run_check_reuse,
     "shared-items": _run_shared_items,
     "record-judgments": _run_record_judgments,
@@ -1057,7 +1043,7 @@ def _build_parsers(
     where: argparse.ArgumentParser,
     sources: Mapping[str, argparse.ArgumentParser],
 ) -> None:
-    """Add the verified flag, the Task script's reads, the approval lookup and the reuse check."""
+    """Add the verified flag, the Task script's reads and the reuse check."""
     control: argparse.ArgumentParser = sources["control"]
     verified: argparse.ArgumentParser = commands.add_parser(
         COMMAND_VERIFY,
@@ -1084,12 +1070,6 @@ def _build_parsers(
         help="the open Tasks a change to an entry affects",
     )
     touched.add_argument("--id", required=True, help="the entry's id")
-    approval: argparse.ArgumentParser = commands.add_parser(
-        COMMAND_APPROVAL,
-        parents=[where],
-        help="the matrix content an Epic reaches, approved and not approved",
-    )
-    approval.add_argument("--epic", required=True, help="the Epic's beads id")
     reuse: argparse.ArgumentParser = commands.add_parser(
         "check-reuse",
         parents=[where],

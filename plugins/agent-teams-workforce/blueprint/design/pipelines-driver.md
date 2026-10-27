@@ -99,7 +99,7 @@ sequenceDiagram
             else every lane whose concurrency is above 0
                 par elaboration lane - up to --elaboration-concurrency Epics
                     S->>EL: starts the lane thread
-                    EL->>BD: select_elaboration - ready Epics, WSJF order, behind the Epics they rest on
+                    EL->>BD: select_elaboration - ready Epics, WSJF order, behind the Epics they rest on and the running Epics they share unapproved entries with
                     EL->>HS: one dispatch per Epic, for its elaboration composite
                     HS-->>EL: Stories and Tasks written to beads, or the cause it stopped
                 and build lane - up to --build-concurrency Tasks
@@ -182,7 +182,9 @@ flowchart TD
     eReady -->|"no"| skip["Not started this time"]
     eReady -->|"yes"| eDeps{"Are the Epics it waits for by its tracks edges elaborated?"}
     eDeps -->|"no"| skip
-    eDeps -->|"yes"| eOrder["Taken in WSJF order among the eligible Epics"]
+    eDeps -->|"yes"| eShare{"Does its approval scope share an entry with no approved mark with an Epic being elaborated?"}
+    eShare -->|"yes"| skip
+    eShare -->|"no"| eOrder["Taken in WSJF order among the eligible Epics"]
     eOrder --> eRun(["Elaboration of the Epic - pipelines-elaboration.md"])
     tReady -->|"no"| skip
     tReady -->|"yes"| tOrder["Taken in WSJF order among the ready Tasks"]
@@ -476,7 +478,11 @@ Notes on the diagram:
   purpose is that each step does not "research and scan or rediscover what pertains the task that
   step is performing" (the owner).
 - The elaboration lane reads, from beads, the ready Epics, their WSJF scores and the Epics each
-  waits for by its `tracks` edges (section 2).
+  waits for by its `tracks` edges (section 2). While an Epic is being elaborated, it also reads
+  from the matrix the entries of each Epic's approval scope with no approved mark
+  (`atw-matrix approval --epic`), and starts no Epic that shares one with an Epic being
+  elaborated, until that Epic's promotion approves the entry or its elaboration ends. Without
+  this, two architects review and approve the same entries at once and pay for that review twice.
 - `keeper.py` reads and writes no bead itself: it runs `supervisor.py`, whose lanes do.
 - The driver writes each bead state from the run's result, and the pipelines write content, because
   code sets a state the same way every time (section 4).

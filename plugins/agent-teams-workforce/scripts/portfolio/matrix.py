@@ -12,7 +12,7 @@ variable names another.
 Every sub-command prints one JSON object on stdout. This module holds the reads, which answer
 from the file and change nothing (``epic``, ``find``, ``node``, ``deps``, ``stacks``,
 ``layers``, ``resources``, ``parameters``, ``documents``, ``links``, ``impact``, ``related``,
-``uses``, ``story-scope``, ``review-scope``, ``summary``),
+``uses``, ``approval``, ``story-scope``, ``review-scope``, ``summary``),
 and ``check``, which reports every way the file fails its contract. ``matrixcli`` holds the
 sub-commands that change the matrix, bring it up to date, seed it and mark it. The registry's
 command table says which role may run each; the role is the value of the role variable, and the
@@ -42,6 +42,7 @@ from matrixquery import (
     LINK_DIRECTIONS,
     LINK_OUT,
     EpicView,
+    approval_view,
     deps_view,
     documents_view,
     epic_view,
@@ -264,6 +265,17 @@ def _run_related(call: Call) -> Outcome:
     return Outcome(related_view(read_matrix(call.matrix()), call.required("epic")))
 
 
+def _run_approval(call: Call) -> Outcome:
+    """Run ``approval``.
+
+    Returns:
+        The matrix content the Epic reaches, split into what carries the approved flag and what
+        does not.
+
+    """
+    return Outcome(approval_view(read_matrix(call.matrix()), call.required("epic")))
+
+
 def _run_uses(call: Call) -> Outcome:
     """Run ``uses``.
 
@@ -333,6 +345,7 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     "impact": _run_impact,
     "related": _run_related,
     "uses": _run_uses,
+    "approval": _run_approval,
     "story-scope": _run_story_scope,
     "review-scope": _run_review_scope,
     "summary": _run_summary,
@@ -431,6 +444,12 @@ def _read_parsers(
         help="the shared capabilities the work that builds some entries must use",
     )
     uses.add_argument("--ids", nargs="+", required=True, help="the ids of the entries the work builds")
+    approval: argparse.ArgumentParser = commands.add_parser(
+        "approval",
+        parents=[where],
+        help="the matrix content an Epic reaches, approved and not approved",
+    )
+    approval.add_argument("--epic", required=True, help="the Epic's beads id")
     scope: argparse.ArgumentParser = commands.add_parser(
         "story-scope",
         parents=[where],

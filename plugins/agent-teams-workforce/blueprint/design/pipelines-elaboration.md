@@ -117,7 +117,11 @@ Notes on the diagram:
 - Promotion sets effective exactly the documents this Epic's maintainers wrote, and commits those
   and the review log, and sets the approved mark on the architecture of the reach. Two Epics are
   never elaborated at the same time on the same unapproved architecture: the dependency edges
-  `epicorder.py` sets in advance order them, so promotion runs no check for that case.
+  `epicorder.py` sets in advance order them, and the driver's elaboration lane starts no Epic whose
+  approval scope shares an entry with no approved mark with an Epic being elaborated
+  (`atw-matrix approval --epic`), so promotion runs no check for that case. The held Epic starts
+  once that Epic's promotion approves the entry, and then confirms the entry's link instead of
+  reviewing it again.
 - The solutions architect is the reviewer; no other agent reviews the architecture. The owner:
   "The solutions architect is the reviewer. I do not want to introduce new reviewers in for
   architecture. I already took out reviewers." What the owner requires instead is proof: "what I
