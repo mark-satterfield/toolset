@@ -26,8 +26,10 @@ first step of the outermost step "Specs and Stories"; its script key is still
   repository of a stack that names none.
 - The repository inventory, read once without fetching (`polyrepo inventory --no-fetch`), and
   `polyrepo inventory --no-fetch --all --name <name>` for the one repository a creation looks up.
-- The GitHub owner of the repositories that one inventory lists (the `url` of each record's
-  `github` listing), for the GitHub membership check before a repository is created.
+- The GitHub organisation repositories are created in: `github_owner` of the `polyrepo` tool's
+  configuration (`.polyrepo/config.yaml`, found as the tool finds it: `$POLYREPO_CONFIG`, the
+  working directory or a folder above it, then the control repository), for the GitHub
+  membership check before a repository is created.
 
 ## What the Story builds
 
@@ -88,16 +90,19 @@ The order is fixed, and only the stacks of what the Stories build are reached:
 5. `create_repositories` takes each missing repository's creation lock (a file beside the
    matrix's lock, named for the repository), then reads the inventory for that name again: a
    repository that is cloned, on GitHub and in the manifest (another Epic created it meanwhile)
-   is used; one present in only some of them is an owner fact. Otherwise it checks once that the
+   is used; one absent or present in only some of them is created, since `polyrepo create`
+   completes a repository an earlier run made in part. It checks once that the
    GitHub CLI is signed in as an active member of the organisation, then runs
    `polyrepo create <name> --space <app>` once, with no retry and a timeout of
    `$ATW_REPO_CREATE_TIMEOUT` (3600 s); the `polyrepo` tool takes the template from the name.
    Success is judged from the JSON object it prints: it names the repository's absolute path and
    no `error`. A failed step after the push to GitHub (environment, formatting, matrix,
    rulesets, beads, GitNexus) leaves the repository made and is kept in the creation record as a
-   problem. When the check fails, or a repository was made only in part, the step fails with the
-   stage `requires-human-action` and states what the owner must do; the next dispatch starts at
-   this step again.
+   problem. A name the naming command refuses (checked for every name before any is created)
+   and a failed `polyrepo create` fail the step as an item failure at stage `repo-creation`,
+   cause `other`, with the cause as evidence; a failed GitHub check is a setup failure
+   (`SessionSetupError`). Either is recorded in the creation record, and the next dispatch
+   starts at this step again.
 6. When the created repository's name differs from the one recorded, the step records it on each
    stack (`put stack --repository`).
 7. The matrix file is committed and pushed (`atw-matrix commit`, naming the Epic), so the names

@@ -688,7 +688,7 @@ alias (section 0). The Fable allowance is handled per step, from structured fact
 | git push rejected because the branch moved | after the failed push, `git fetch` then `git merge-base --is-ancestor <remote>/<branch> HEAD` exits 1 | `contention`, after a pull with rebase |
 | any executable (`git`, `gh`, `uv run polyrepo.py`, `cdk`): the call outlived its timeout | `subprocess.TimeoutExpired` | `tool-timeout` |
 | any executable: the connection failed | `ConnectionError` | `network` |
-| any executable: any other non-zero exit | the exit status (the JSON results of `polyrepo.py` carry only `error` text, no code) | `other`, except the owner facts of section 11.3 |
+| any executable: any other non-zero exit | the exit status (the JSON results of `polyrepo.py` carry only `error` text, no code) | `other`, except the setup checks of section 11.3 |
 | the section 2 guard: its lock wait expired | the lock's own result (section 7.3) | `contention` |
 | a portfolio module raises `beadgraph.GraphError` | the exception's `cause` field | as the field says |
 | a portfolio module raises any other exception (the matrix file missing or not valid, its lock wait expired, a refused matrix command, a scoring or UI-source error) | the exception type | `other`, with the traceback in the evidence file |
@@ -1056,17 +1056,20 @@ The tool records the stack the new repository holds in the matrix.
   than one app and stacks that name no app fail the step. The folder inside
   the space comes from the placement in the steward's `.polyrepo/config.yaml`, which `polyrepo.py create` applies.
 
-**Owner facts.** Recognised before the first `polyrepo.py create` runs, by a preflight whose
-results are exit statuses and command output:
-1. `gh auth status` exits non-zero → owner fact: the GitHub CLI is not signed in on this machine;
-   run `gh auth login`.
-2. `gh api user/memberships/orgs/<github_owner> --jq .state` (`<github_owner>` is the owner
-   of the repositories `polyrepo inventory` lists on GitHub) exits non-zero or prints a value other than `active` → owner
-   fact: the signed-in GitHub account is not an active member of `<github_owner>`.
-Either is written to `repo-creation.json` and fails the span step at stage
-`requires-human-action`, with the owner fact as its evidence (section 8). A `polyrepo.py create`
-that fails after a passing preflight fails the step at stage `repo-creation`, cause `other` (its
-result carries only error text, section 6.1).
+**Setup checks.** The span step fails as a setup failure (`SessionSetupError`, classification
+`setup`) when the naming command is not configured or cannot run, checked before any other work,
+and, before the first `polyrepo.py create` runs, when a preflight whose results are exit statuses
+and command output finds this machine cannot create a repository:
+1. `gh auth status` exits non-zero: the GitHub CLI is not signed in on this machine.
+2. `gh api user/memberships/orgs/<github_owner> --jq .state` (`<github_owner>` is `github_owner`
+   of the `polyrepo` tool's `.polyrepo/config.yaml`) exits non-zero or prints a value other than
+   `active`: the signed-in GitHub account is not an active member of `<github_owner>`.
+
+**Item failures.** A repository name the naming command refuses, and a `polyrepo.py create` that
+fails, fail the step at stage `repo-creation`, cause `other` (its result carries only error text,
+section 6.1). Every failure is written to `repo-creation.json`. The next dispatch runs the step
+again: a repository present in only some of its places is created again, and `polyrepo.py create`
+completes it.
 
 ### 11.4 The TRD
 

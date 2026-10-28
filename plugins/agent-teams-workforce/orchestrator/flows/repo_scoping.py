@@ -26,7 +26,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, NamedTuple, TypedDict
-from urllib.parse import urlparse
+
+import yaml
 
 # The driver surface and the placement contract are defined once, in their skills.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
@@ -89,6 +90,7 @@ from target_contract import (
 )
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
+from orchestrator.core.agent_context import SessionSetupError
 from orchestrator.core.driver_contracts import dispatch_arguments
 from orchestrator.core.handback import failure_for
 from orchestrator.core.handback_contract import OTHER_CAUSE
@@ -98,7 +100,7 @@ from orchestrator.core.journal_steps import Completion, NewStep, StepGroup, Step
 from orchestrator.core.models import StepError
 from orchestrator.core.tool_locks import file_lock, seconds
 from orchestrator.core.tools import Tools, env_path
-from orchestrator.flows.architecture_files import HUMAN_ACTION_STAGE, read_context, read_result
+from orchestrator.flows.architecture_files import read_context, read_result
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_CREATION,
     ARTIFACT_ELEMENTS,
@@ -143,9 +145,10 @@ CREATE_PROBLEMS: Final[tuple[str, ...]] = (
 """The steps of ``polyrepo create`` after the push to GitHub whose failure leaves the repository made."""
 WEB_TYPE: Final = "web"
 """The stack type of a web front-end build, as the project's naming standard lists it."""
-KEY_GITHUB: Final = "github"
-KEY_URL: Final = "url"
-"""An inventory record's GitHub listing, and the repository's URL in it."""
+POLYREPO_CONFIG_ENV: Final = "POLYREPO_CONFIG"
+POLYREPO_CONFIG: Final = Path(".polyrepo") / "config.yaml"
+GITHUB_OWNER: Final = "github_owner"
+"""The ``polyrepo`` tool's configuration file, the variable that names it, and its key of the GitHub organisation."""
 EVIDENCE_RESULT: Final = "architecture result"
 """The evidence of every item: the architect's result lists it under addedOrChangedElements or unchangedWorkElements."""
 FIELD_ADDED_OR_CHANGED: Final = "addedOrChangedElements"
@@ -234,8 +237,7 @@ def _naming_preflight(missing: Sequence[MissingRepo]) -> str | None:
     """Check, before any repository is created, that the naming command accepts every name to create.
 
     Returns:
-        The owner fact that stops creation: each refused name with the naming command's violations;
-        None when every name is accepted.
+        Each refused name with the naming command's violations; None when every name is accepted.
 
     """
     refused: list[str] = []
@@ -252,21 +254,72 @@ def _naming_preflight(missing: Sequence[MissingRepo]) -> str | None:
     )
 
 
-def _preflight(tools: Tools, owner: str) -> str | None:
+def _polyrepo_config() -> Path:
+    """Find the ``polyrepo`` tool's configuration file the way the tool finds it.
+
+    ``$POLYREPO_CONFIG`` first, then ``.polyrepo/config.yaml`` in the working directory or a
+    folder above it, then in the control repository.
+
+    Returns:
+        The configuration file.
+
+    Raises:
+        SessionSetupError: No configuration file is found.
+
+    """
+    named: str = os.environ.get(POLYREPO_CONFIG_ENV, "").strip()
+    here: Path = Path.cwd().resolve()
+    candidates: list[Path] = [Path(named)] if named else []
+    candidates.extend(folder / POLYREPO_CONFIG for folder in (here, *here.parents))
+    candidates.append(env_path(CONTROL_REPO_ENV) / POLYREPO_CONFIG)
+    found: Path | None = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if found is None:
+        message: str = (
+            f"no {POLYREPO_CONFIG} found (${POLYREPO_CONFIG_ENV}, the working directory or the control repository)"
+        )
+        raise SessionSetupError(message)
+    return found
+
+
+def github_organisation() -> str:
+    """Read the GitHub organisation repositories are created in, as the ``polyrepo`` tool's configuration states it.
+
+    Returns:
+        The configuration's ``github_owner``.
+
+    Raises:
+        SessionSetupError: The configuration states no ``github_owner``.
+
+    """
+    config: Path = _polyrepo_config()
+    settings: object = yaml.safe_load(config.read_text(encoding="utf-8"))
+    owner: object = settings.get(GITHUB_OWNER) if isinstance(settings, dict) else None
+    if not isinstance(owner, str) or not owner.strip():
+        message: str = f"{config} states no {GITHUB_OWNER}: the GitHub organisation repositories are created in"
+        raise SessionSetupError(message)
+    return owner.strip()
+
+
+def _preflight(tools: Tools, owner: str) -> None:
+    """Check that the GitHub CLI is signed in as an active member of the organisation.
+
+    Raises:
+        SessionSetupError: It is not: this machine is not set up to create a repository.
+
+    """
     signed_in = tools.command(["gh", "auth", "status"], stage=CREATION_STAGE, check=False)
     if signed_in.exit:
-        return "The GitHub CLI is not signed in on this machine; run gh auth login."
+        message: str = f"the GitHub CLI is not signed in on this machine: {signed_in.stderr.strip()}"
+        raise SessionSetupError(message)
     membership = tools.command(
         ["gh", "api", f"user/memberships/orgs/{owner}", "--jq", ".state"],
         stage=CREATION_STAGE,
         check=False,
     )
     if membership.exit or membership.stdout.strip() != "active":
-        return (
-            f"The signed-in GitHub account is not an active member of {owner}; "
-            "sign in with an active member account or arrange organisation membership."
-        )
-    return None
+        state: str = membership.stdout.strip() or membership.stderr.strip()
+        message = f"the signed-in GitHub account is not an active member of {owner}: {state}"
+        raise SessionSetupError(message)
 
 
 def _record_repository(stacks: Sequence[EntryId], created: str) -> None:
@@ -364,29 +417,20 @@ def _ensure_repository(
 
     The inventory is read again under the lock, so a repository another Epic created while this
     one waited is used, not created twice. A repository is used only when it is cloned, on GitHub
-    and in the manifest; one present in only some of them is an owner fact, since creating it
-    again would fail on the part that exists.
+    and in the manifest; one absent or present in only some of them is created, since
+    ``polyrepo create`` completes a repository an earlier run made in part.
 
     Returns:
-        The outcome (the path, or the owner fact) and whether GitHub access was verified.
+        The outcome (the path) and whether GitHub access was verified.
 
     """
     name: str = missing[KEY_NAME]
     with file_lock(_creation_lock(name), seconds(CREATE_TIMEOUT_ENV, CREATE_TIMEOUT) * 2):
         present = _present(tools, name)
-        if present is not None:
-            if all(present[place] for place in PRESENT_WHERE) and present[KEY_REPO_PATH]:
-                return {KEY_REPO_PATH: present[KEY_REPO_PATH], "existed": True}, preflight_done
-            lacking: str = ", ".join(place for place in PRESENT_WHERE if not present[place])
-            fact: str = (
-                f"The repository {name} was made only in part: it is not present on {lacking}. "
-                "Complete it with the polyrepo-steward, or remove what was made, so it can be created again."
-            )
-            return {"error": fact, "ownerFact": True}, preflight_done
+        if present is not None and all(present[place] for place in PRESENT_WHERE) and present[KEY_REPO_PATH]:
+            return {KEY_REPO_PATH: present[KEY_REPO_PATH], "existed": True}, preflight_done
         if not preflight_done:
-            need = _preflight(tools, owner)
-            if need:
-                return {"error": need, "ownerFact": True}, False
+            _preflight(tools, owner)
         return _create(missing, tools, home), True
 
 
@@ -400,6 +444,9 @@ def create_repositories(
 ) -> dict[str, JsonValue]:
     """Create the repositories the span names and the inventory lacks, after verifying GitHub access.
 
+    Every failure is recorded in the creation record and fails the step, so the next dispatch runs
+    the step again and creates what is still missing.
+
     Args:
         ruling: The span, whose missing repositories are created.
         tools: The step's tools.
@@ -408,11 +455,12 @@ def create_repositories(
         work: The Epic's work directory, where the creation record is written.
 
     Returns:
-        Measured creation results, or the owner fact that stopped creation: a repository name the
-        naming command refuses (checked for every name before any is created) or missing GitHub access.
+        Measured creation results.
 
     Raises:
-        StepError: A deterministic repository operation fails.
+        StepError: The naming command refuses a repository name (checked for every name before any
+            is created), or a deterministic repository operation fails.
+        SessionSetupError: The GitHub CLI is not signed in as an active member of the organisation.
         ValueError: Repository output is invalid.
         OSError: A repository operation cannot access a required resource.
         KeyError: A required repository field is absent.
@@ -422,12 +470,8 @@ def create_repositories(
     failures: list[dict[str, JsonValue]] = []
     refused: str | None = _naming_preflight(ruling[KEY_MISSING_REPOS])
     if refused:
-        result_refused: dict[str, JsonValue] = json_object({
-            "created": created,
-            "failures": [{"error": refused, "ownerFact": True}],
-        })
-        write_json(work / "repo-creation.json", result_refused)
-        return result_refused
+        write_json(work / "repo-creation.json", {"created": created, "failures": [{"error": refused}]})
+        raise StepError(CREATION_STAGE, OTHER_CAUSE, (refused,))
     preflight_done = False
     for missing in ruling[KEY_MISSING_REPOS]:
         facts: dict[str, JsonValue] = {
@@ -442,20 +486,16 @@ def create_repositories(
                 owner,
                 preflight_done=preflight_done,
             )
-        except (StepError, ValueError, OSError, KeyError) as exc:
+        except (StepError, SessionSetupError, ValueError, OSError, KeyError) as exc:
             failures.append(
                 json_object({
                     **facts,
                     "error": list(exc.evidence) if isinstance(exc, StepError) else str(exc),
-                    "ownerFact": False,
                     "failure": failure_for(CREATION_STAGE, exc, agent_started=False),
                 }),
             )
             write_json(work / "repo-creation.json", {"created": created, "failures": failures})
             raise
-        if outcome.get("ownerFact"):
-            failures.append({**facts, **outcome})
-            break
         created.append({**facts, **outcome})
     result = json_object({"created": created, "failures": failures})
     write_json(work / "repo-creation.json", result)
@@ -1113,31 +1153,6 @@ def _spec_steps(run: StepRun, ruling: PlacementRuling, repos: list[str]) -> tupl
     return (StepGroup(tuple(steps)),) if steps else ()
 
 
-def _owner(repositories: Sequence[dict[str, JsonValue]]) -> str:
-    """Read the GitHub organisation repositories are created in: the owner of the inventory's repositories on GitHub.
-
-    Returns:
-        The organisation's name.
-
-    Raises:
-        StepError: The inventory's repositories on GitHub name no owner, or more than one.
-
-    """
-    owners: set[str] = set()
-    for repo in repositories:
-        github: JsonValue = repo.get(KEY_GITHUB)
-        if isinstance(github, dict) and isinstance(github.get(KEY_URL), str):
-            owners.add(urlparse(check_type(github[KEY_URL], str)).path.strip("/").split("/")[0])
-    owners.discard("")
-    if len(owners) != 1:
-        message: str = (
-            f"the repository inventory names {len(owners)} GitHub owners ({', '.join(sorted(owners)) or 'none'}), "
-            "so the organisation a repository is created in is not known"
-        )
-        raise StepError(HUMAN_ACTION_STAGE, OTHER_CAUSE, (message,))
-    return owners.pop()
-
-
 def _read_story_builds(run: StepRun) -> tuple[Matrix, list[DeltaItem]]:
     """Read what the Epic's Stories build, and name the repository of each stack that names none.
 
@@ -1197,23 +1212,26 @@ def span(run: StepRun) -> Completion:
     its stacks stated. The matrix file is then committed and pushed, so what the span recorded is
     in the control repository before any later step reads it.
 
+    The step fails as an item failure when the architecture adds or changes nothing to build,
+    what it lists cannot be built (:func:`story_build_problems`), or a repository cannot be
+    created (a name the naming command refuses, or a failed ``polyrepo create``); the next
+    dispatch runs it again.
+
     Returns:
         The span file, the elements file, the repository paths, the creation record when a
         repository had to be created, and the matrix commit when one was made or pushed; with the
         spec steps planned after this step.
 
     Raises:
-        StepError: The naming command is not configured or cannot run (checked before any other
-            work), the architecture adds or changes nothing to build, what it lists cannot be
-            built (:func:`story_build_problems`), or a repository can be created only after the
-            owner acts (a name the naming command refuses, or GitHub access).
+        SessionSetupError: The naming command is not configured or cannot run (checked before any
+            other work); a setup failure.
 
     """
     enter_phase(run.context, run.agents.emit, REPO_SCOPING_PHASE, SPAN)
     try:
         require_naming_command()
     except NamingCommandError as error:
-        raise StepError(HUMAN_ACTION_STAGE, OTHER_CAUSE, (str(error),)) from error
+        raise SessionSetupError(str(error)) from error
     matrix: Matrix
     items: list[DeltaItem]
     matrix, items = _read_story_builds(run)
@@ -1230,12 +1248,8 @@ def span(run: StepRun) -> Completion:
     write_json(work / ELEMENTS_FILE, elements)
     artifacts: list[Artifact] = [file_artifact(ARTIFACT_ELEMENTS, work / ELEMENTS_FILE)]
     if ruling[KEY_MISSING_REPOS]:
-        owner: str = _owner(repositories)
-        creation: dict[str, JsonValue] = create_repositories(ruling, run.tools, homes, owner, work)
+        creation: dict[str, JsonValue] = create_repositories(ruling, run.tools, homes, github_organisation(), work)
         artifacts.append(file_artifact(ARTIFACT_CREATION, work / "repo-creation.json"))
-        failures: list[dict[str, JsonValue]] = _objects(creation["failures"])
-        if failures:
-            raise StepError(HUMAN_ACTION_STAGE, OTHER_CAUSE, tuple(str(item["error"]) for item in failures))
         made: dict[str, str] = {
             check_type(repo[KEY_NAME], str).casefold(): check_type(repo[KEY_REPO_PATH], str)
             for repo in _objects(creation["created"])
