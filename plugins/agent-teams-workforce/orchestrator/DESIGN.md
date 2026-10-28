@@ -599,12 +599,12 @@ records the model in `run.json`; it passes no effort.
 | `aws-solutions-architect` | `solutions-architect` | by the script, each step a fresh session: Analyze, each Decide, a correction, a competing design |
 | Any agent the `find-specialists` catalog lists that has no row here (for example `persistence-architecture-specialist`, `c4-diagram-author`, `polyrepo-steward`) | its own, if any | by the script, by the name the architect gave it in a round of its requests (`questions.json` or its result's `requests`), or when the lead asks it for an opinion |
 | `trd-author` | | by the script: the TRD write from the architect's decisions, once the check passes; the correction `trd.confirm` plans; when left running |
-| `architecture-maintainer` | | by the script: one per document an accepted architect result changes, from the write request the script built |
+| `architecture-maintainer` | | by the script: one per group of arc42 sections an accepted architect result changes (1 to 5 with `detailed/`, 6 and 7, 8 to 12), at most three, from the write request the script built |
 | `architecture-team-lead` | `architecture-lead` | by the script, only when the architect's result is unsettled |
 | `architecture-decider` | `decider` | by the script, only for a step the lead plans |
 | `ui-design-source-selector` | | by the script, in a frontend repository's container under Specs and Stories: the UI sources step |
-| `api-specification-author`, `data-model-specification-author`, `acceptance-criteria-writer` | | by the script, in a repository's container under Specs and Stories: the step that writes its document, and a correction or a revision the review plans |
-| `dynamodb-schema-access-pattern-reviewer` | | by the script, once per repository whose stacks hold a DynamoDB store, beside the acceptance criteria and before the review |
+| `api-specification-author`, `data-model-specification-author` | | by the script, in a repository's container under Specs and Stories: the step that writes its documents (`api-specification-author` the contracts, then the criteria, in one session, once the data model is written), and one correction or revision of all its documents the review plans |
+| `dynamodb-schema-access-pattern-reviewer` | | by the script, once per repository whose stacks hold a DynamoDB store, beside the contracts and criteria session and before the review |
 | `spec-reviewer` | | by the script, once per repository, after the three documents |
 | `review-dispute-decider` | | by the script, only when an author disputed a finding of the review |
 | `task-decomposer` | | by the script, in a repository's container under Tasks: the decomposition, and one correction when the plan has a gap |
@@ -985,9 +985,11 @@ nothing else reviews it.
   Decide step, handed every answer and a digest of them (`answers-digest.schema.json`), so the
   architect reads a few KB per answer instead of each answer file. Decide writes the result; one
   that asks a second round gets it and one more Decide, and a Decide of round 2 that still asks
-  fails the step. A result with no open request plans one `architecture-maintainer` per home
-  document whose script-built write request changed; the step that accepts each write records
-  `describedBy` and `covers` for the facts' homes. The architect is handed a short example of
+  fails the step. A result with no open request plans one `architecture-maintainer` per group
+  of arc42 sections whose script-built write request changed, at most three, so each session
+  reads a neighbouring document once for every fact of its group; its output check renders each
+  changed Mermaid block once for syntax, at no token cost, and the step that accepts each write
+  records `describedBy` and `covers` for the facts' homes. The architect is handed a short example of
   each file it writes instead of its schema, and the output check returns every problem to the
   same session, the review log's included. Reason: one long Opus session per Epic, resumed for
   every round and correction, grew to 466K tokens of context re-sent on every turn and idled while

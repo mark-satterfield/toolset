@@ -181,13 +181,13 @@ The script starts `trd-author` once the architecture check passes, from the arch
 
 ## Spec Authoring
 
-Elaboration starts, per repository, `ui-design-source-selector` (frontend repositories), the two specification authors and `acceptance-criteria-writer`, `dynamodb-schema-access-pattern-reviewer` when a stack the Story builds in holds a DynamoDB store, `spec-reviewer`, and `review-dispute-decider` for each finding an author disputes. The other agents here are available to a caller that chooses them.
+Elaboration starts, per repository, `ui-design-source-selector` (frontend repositories), the two specification authors (`api-specification-author` also writes the acceptance criteria, after the contracts, in the same session), `dynamodb-schema-access-pattern-reviewer` when a stack the Story builds in holds a DynamoDB store, `spec-reviewer`, and `review-dispute-decider` for each finding an author disputes. The other agents here are available to a caller that chooses them.
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
 | spec-authoring-lead | orchestrate | Routes maker output to checkers and findings back to makers until checkers pass, then reports the spec packet; never evaluates spec quality, only pass/rework signals. |
 | ui-design-source-selector | plan | Chooses the design source of each UI item a frontend repository's Story builds, from the cds bundles the owner supplied and the configured Configurable Design System (cds) - a supplied bundle, the live design system, or no design change; designs nothing. |
-| api-specification-author | execute | Writes the spec of the API, event, error and UI contracts one repository's Story builds, from the recorded architecture and design; designs nothing. |
+| api-specification-author | execute | Writes the spec of the API, event, error and UI contracts one repository's Story builds, from the recorded architecture and design, then the acceptance criteria and Definition of Done of that Story from the TRD, the contracts and the data model; designs nothing. |
 | data-model-specification-author | execute | Writes the spec of the data one repository's Story builds, from the recorded architecture and design; designs nothing. |
 | acceptance-criteria-writer | execute | Derives traceable criteria and Definition of Done from the finished specification set. |
 | definition-of-done-writer | execute | Writes the Definition of Done of a given scope of work as independently verifiable true-or-false statements about the finished work, never checklist steps, each traced to the requirement or design decision it comes from. For a caller that needs a Definition of Done on its own; in elaboration the acceptance-criteria-writer writes it with the criteria. |

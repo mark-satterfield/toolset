@@ -12,8 +12,8 @@ everything between them (``architecture_rounds``).
    its decisions, and its matrix changes to one change file that the step accepting its result
    applies in one locked update. A result that asks a second round gets one more round and one
    more Decide; a Decide of the second round that still asks fails.
-4. The script writes one request per home document from the result and starts one
-   ``architecture-maintainer`` per document; the step that accepts each write records
+4. The script writes one request per group of arc42 sections from the result, at most three, and
+   starts one ``architecture-maintainer`` per group; the step that accepts each write records
    ``describedBy`` and ``covers`` for the headings written.
 
 A correction after the mechanical check, and a competing design the lead orders, are fresh
@@ -85,6 +85,7 @@ from orchestrator.core.journal_steps import (
 )
 from orchestrator.core.models import MalformedRequestError, StaleInputError
 from orchestrator.flows.architecture_check import check_step, review_log_findings
+from orchestrator.flows.architecture_diagrams import syntax_problems
 from orchestrator.flows.architecture_files import (
     ARCHITECT,
     ARCHITECTURE,
@@ -130,6 +131,7 @@ from orchestrator.flows.architecture_files import (
 from orchestrator.flows.architecture_index import index_step
 from orchestrator.flows.architecture_pack import PACK_REF, pack_file, pack_plan
 from orchestrator.flows.architecture_rounds import (
+    ID_LENGTH,
     MAX_ROUNDS,
     answered,
     round_of,
@@ -764,7 +766,7 @@ def architect(run: StepRun) -> AgentLaunch:
         follows: tuple[StepGroup, ...] = (
             (round_steps(accepted, open_requests, number + 1),)
             if open_requests
-            else write_steps(accepted, arch, Path(context["helpersFolder"]), result)
+            else write_steps(arch, Path(context["helpersFolder"]), result)
         )
         return Completion(
             add=follows,
@@ -1189,10 +1191,14 @@ def _record_homes(arch: Path, request: WriteRequest, written: WriteResult) -> Re
 def maintainer(run: StepRun) -> AgentLaunch:
     """Build the session of the document maintainer of one write request the script wrote.
 
-    The accepted result is mirrored in the matrix: each document written is set in review and its
-    entry is brought up to date with its headings and lifecycle, and the entry of a document that is gone is
-    removed; then each fact's home heading is recorded (:func:`_record_homes`). The session is
-    granted the architecture root, where it writes the arc42 documents.
+    A request holds one group of arc42 sections (``architecture_rounds.SECTION_GROUPS``). The
+    output check renders each Mermaid block of the documents written that the vault's last commit
+    does not hold, once, and sends one that does not render back to the session
+    (``architecture_diagrams.syntax_problems``). The accepted result is mirrored in the matrix:
+    each document written is set in review and its entry is brought up to date with its headings
+    and lifecycle, and the entry of a document that is gone is removed; then each fact's home
+    heading is recorded (:func:`_record_homes`). The session is granted the architecture root,
+    where it writes the arc42 documents.
 
     Returns:
         The launch from the write request the step's parameters name, else the saved one: the
@@ -1203,7 +1209,17 @@ def maintainer(run: StepRun) -> AgentLaunch:
     asked: Path
     name, asked = _saved_request(run, WRITE_REQUEST, LABEL_REQUEST)
     request: WriteRequest = _helper_request(run, asked, validate_write_request)
-    arch: Path = Path(read_context(run)["architectureRoot"])
+    context: ArchitectureContext = read_context(run)
+    arch: Path = Path(context["architectureRoot"])
+    rendered: Path = Path(context["helpersFolder"]) / "diagrams" / run.step["id"][:ID_LENGTH]
+
+    def check(path: Path) -> dict[str, JsonValue]:
+        document: dict[str, JsonValue] = strict_json(path)
+        written: WriteResult = validate_write_result(document, str(path))
+        problems: list[str] = syntax_problems(run, arch, written_paths(arch, request, written), rendered)
+        if problems:
+            raise ArchitectureWorkError("\n".join(problems))
+        return document
 
     def accept(accepted: StepRun, output: Path) -> Completion:
         written: WriteResult = checked_file(accepted, output, validate_write_result)
@@ -1222,7 +1238,7 @@ def maintainer(run: StepRun) -> AgentLaunch:
 
     return AgentLaunch(
         output=Path(request["resultPath"]),
-        validate=output_check(validate_write_result),
+        validate=check,
         outcome="The arc42 documents written as the request states, and the result at the path it names.",
         accept=accept,
         add_dirs=(run.context.work, arch),

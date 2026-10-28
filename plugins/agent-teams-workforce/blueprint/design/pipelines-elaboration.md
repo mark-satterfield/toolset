@@ -200,8 +200,8 @@ sequenceDiagram
     end
     SA-)WF: review log beside the result - the AWS tools, MCP servers, skills and specialists that reviewed each AWS resource, best practices, security best practices, Well-Architected review, every decision's options and reason
     SA-)MX: new and changed entries and relationships, not approved, not verified
-    WF-)A42: architecture-maintainer, one per document - new and changed arc42 documents, in-review
-    WF-)DA: architecture-maintainer, one per document - new and changed detailed architecture and design documents, in-review
+    WF-)A42: architecture-maintainer, one per group of arc42 sections, at most three - new and changed arc42 documents, in-review
+    WF-)DA: architecture-maintainer of sections 1 to 5 - new and changed detailed architecture and design documents, in-review
     Note over SA,WF: the architect reviews and approves its own architecture. The check step refuses a result whose review log is incomplete
     opt a matter the architect cannot settle
         SA->>DEC: through architecture-team-lead, both positions and their evidence
@@ -230,8 +230,12 @@ Notes on the diagram:
   agent, and each of its steps is a fresh session (`orchestrator/DESIGN.md`, section 11.1): one
   long session resumed for every round and correction grew to 466K tokens of context re-sent on
   every turn. The documents are written by `architecture-maintainer` sessions the script starts,
-  one per document, from the facts, restatements, settlements and diagrams of the architect's
-  result.
+  one per group of arc42 sections (1 to 5 with `detailed/`, 6 and 7, 8 to 12), at most three
+  and at the same time, from the facts, restatements, settlements and diagrams of the architect's
+  result, so each session reads a neighbouring document once for every fact of its group. The
+  step renders each diagram a maintainer changed once with the Mermaid CLI, to check its syntax
+  at no token cost; the maintainer renders and looks at a diagram new to the documents, and an
+  edited diagram is checked by its syntax only.
 - "Any updates or corrections to arc42 must also be made." (the owner): every correction written
   to the matrix at the end of the stage has its counterpart in the arc42 documents written in the
   same stage.
@@ -526,7 +530,10 @@ Notes on the diagram:
   Story needs (for example an API contract by `api-specification-author`, a data model by
   `data-model-specification-author`), named from the subjects the approved design records, and
   writes from the recorded design without designing, because the owner's spec writer "was supposed
-  to be a specialest that could write a spec document".
+  to be a specialest that could write a spec document". The acceptance criteria are derived from
+  the contracts and the data model, so `api-specification-author` writes them after the contracts
+  in the same session, once the data model is written: two makers in one session, which removes
+  no checker and one session per repository.
 - The workflow's reads are `spec_authoring.entry_scope` (the spec context's `buildScope`:
   work for each entry that is not verified, none for a verified one), `spec_authoring.component_documents`
   (`atw-matrix documents`, whose links `spec_authoring.link_documents` puts at the end of every
@@ -545,7 +552,7 @@ Notes on the diagram:
   sources for a UI item of a frontend repository; a script writes the document of a kind the
   Story does not need. After the one review at most three rounds follow, each round's sessions
   running together: one correction, the decider on the disputed findings, one revision to the
-  ruling.
+  ruling. In a correction or a revision an author works on all its documents in one session.
 - The repositories' containers under Specs and Stories run at the same time, and so do their
   containers under Tasks, at most `ATW_ORCH_SESSIONS` at once (`journal_run.concurrent_containers`),
   because no repository's specs or Tasks wait on another's and run time is a goal of the pipeline.

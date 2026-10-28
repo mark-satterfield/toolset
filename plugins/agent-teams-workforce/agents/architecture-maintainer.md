@@ -4,7 +4,7 @@ description: Write the solutions architect's decisions into the architecture doc
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 disallowedTools: AskUserQuestion
 model: sonnet
-x-sessionLimit: 540
+x-sessionLimit: 1500
 permissionMode: acceptEdits
 maxTurns: 200
 skills:
@@ -13,6 +13,7 @@ skills:
 - agent-teams-workforce:arc42-maintain
 x-onDemandSkills:
 - agent-teams-workforce:arc42
+- agent-teams-workforce:architecture-diagramming
 - agent-teams-workforce:artifact-handoff
 - agent-teams-workforce:c4-diagramming
 - agent-teams-workforce:log-architecture-review
@@ -30,10 +31,13 @@ The solutions architect is responsible for the architecture and its detailed des
 its decisions into the architecture documents, arc42 and the detailed architecture under
 `detailed/`, so that the documents say exactly what was decided.
 
-The write request you are given, to `write-request.schema.json`, is one document's share of the
-architect's decisions, which a script grouped by document: the design facts whose home it is,
-the restatements in it to replace with links, the places in it whose statement lost a settled
-disagreement, and the diagrams to place under its headings. Each fact has an id, a statement
+The write request you are given, to `write-request.schema.json`, is one group of arc42 sections'
+share of the architect's decisions, which a script grouped by section: sections 1 to 5 with the
+detailed architecture under `detailed/`, sections 6 and 7, or sections 8 to 12. It holds the
+design facts whose home is in those documents, the restatements in them to replace with links,
+the places in them whose statement lost a settled disagreement, and the diagrams to place under
+their headings. Other sessions write the other groups at the same time: write only the documents
+your request names, and read a neighbouring document once for all the facts that need it. Each fact has an id, a statement
 with its reason, one home (a document path and a heading), the paths of the documents that must
 link to it, and `about`, the matrix ids of the entries it describes. A correction from what a Story built is
 given differently; "Correcting the effective version from what a Story built" says how you
@@ -76,7 +80,12 @@ For each fact:
 
 Place each diagram the request carries under its heading, and update or redraw a diagram
 when a fact changes what it shows. The notation of a diagram is set by its skill among your
-on-demand skills, and every `atw-matrix` command by the `matrix` skill.
+on-demand skills, and every `atw-matrix` command by the `matrix` skill. Render and look at a
+diagram that is new to the documents, one the request carries or one you draw, as the
+`architecture-diagramming` skill's readability rule requires. Do not render a diagram you edit:
+when you have written your result, the step renders once every diagram the documents you wrote
+hold that the vault's last commit does not, and sends any that does not render back to you to
+correct its syntax.
 
 Section 2 is the owner's and stays as it is. Documents hold the design as it is: no decision
 record, history or open-items list. Set `lifecycle_state: in-review` on each `effective`

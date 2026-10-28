@@ -6,9 +6,10 @@ the step that accepts that file plans what follows it, among its siblings:
 - a round of requests (the Analyze step's ``questions.json``, or a result's ``requests``): one
   step per request whose answer is not yet a valid answer, each started as the agent the request
   names, then a fresh Decide step of the architect, handed every answer;
-- a result with no open request: one ``architecture-maintainer`` step per home document whose
-  write request differs from the one already written, each write request built here from the
-  result's ``facts``, ``restatements``, ``settlements`` and ``diagrams``.
+- a result with no open request: at most three ``architecture-maintainer`` steps, one per group of
+  arc42 sections (:data:`SECTION_GROUPS`) whose write request differs from the one already
+  written, each write request built here from the result's ``facts``, ``restatements``,
+  ``settlements`` and ``diagrams``, so one session reads each neighbouring document of its group once.
 
 A Decide step is handed a digest of its answers (:func:`write_digest`), so it reads a few KB
 instead of every answer file.
@@ -16,6 +17,7 @@ instead of every answer file.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -27,7 +29,6 @@ from architecture_work_contract import (
     validate_write_request,
     validate_write_result,
 )
-from matrixstore import slug
 
 from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
@@ -38,7 +39,6 @@ from orchestrator.flows.architecture_files import (
     LABEL_ANSWER,
     MAINTAINER,
     PARAM_REQUEST,
-    ArchitectureStepError,
     checked_file,
     cited_document,
     document_path,
@@ -74,6 +74,14 @@ WRITE_PREFIX: Final = "write-"
 DIGEST_PREFIX: Final = "digest-"
 ID_LENGTH: Final = 8
 """How much of a step id names a file the script writes for that step."""
+SECTION_GROUPS: Final[tuple[tuple[str, str, frozenset[int]], ...]] = (
+    ("structure", "the building blocks, the detailed design and the sections before them", frozenset(range(1, 6))),
+    ("runtime", "the runtime and deployment views", frozenset({6, 7})),
+    ("concepts", "the crosscutting concepts and the sections after them", frozenset(range(8, 13))),
+)
+"""The groups one ``architecture-maintainer`` session writes, each with what it covers and its arc42
+section numbers; ``detailed/`` and any other document go to the first."""
+_SECTION: Final[re.Pattern[str]] = re.compile(r"^arc42/(?P<number>\d{2})-")
 
 
 def answered(request: SpecialistRequest) -> bool:
@@ -235,7 +243,7 @@ def _document(arch: Path, citation: SourceHeading) -> str:
 
 
 def _empty(bead: str) -> WriteRequest:
-    """Start the write request of one document.
+    """Start the write request of one group of documents.
 
     Returns:
         A request with nothing to write and no result path yet.
@@ -244,38 +252,55 @@ def _empty(bead: str) -> WriteRequest:
     return {"bead": bead, "facts": [], "restatements": [], "settlements": [], "diagrams": [], "resultPath": ""}
 
 
-def write_requests(arch: Path, result: ArchitectureResult) -> dict[str, WriteRequest]:
-    """Group what an architecture result has written into one write request per document.
+def section_group(document: str) -> str:
+    """Name the group of arc42 sections a document is written with.
 
-    A fact and a diagram go to the request of their home, a restatement to the request of the
-    document it is in, and a settlement to the request of each document holding a statement that
-    lost, with only that document's places.
+    Args:
+        document: The document's path under the architecture root.
 
     Returns:
-        Each document's path under the architecture root with its request, whose ``resultPath``
-        is still empty; in path order.
+        The name of the group in :data:`SECTION_GROUPS` that holds its arc42 section; the first
+        group for a document under ``detailed/`` or outside the numbered sections.
+
+    """
+    found: re.Match[str] | None = _SECTION.match(document)
+    number: int = 0 if found is None else int(found["number"])
+    return next((name for name, _covers, numbers in SECTION_GROUPS if number in numbers), SECTION_GROUPS[0][0])
+
+
+def write_requests(arch: Path, result: ArchitectureResult) -> dict[str, WriteRequest]:
+    """Group what an architecture result has written into one write request per group of sections.
+
+    A fact and a diagram go to the request of their home's group, a restatement to the request of
+    the group of the document it is in, and a settlement to the request of each group holding a
+    statement that lost, with only that group's places.
+
+    Returns:
+        Each group's name with its request, whose ``resultPath`` is still empty; in the order of
+        :data:`SECTION_GROUPS`, holding only groups with something to write.
 
     """
     requests: dict[str, WriteRequest] = {}
 
-    def of(document: str) -> WriteRequest:
-        return requests.setdefault(document, _empty(result["bead"]))
+    def of(citation: SourceHeading) -> WriteRequest:
+        return requests.setdefault(section_group(_document(arch, citation)), _empty(result["bead"]))
 
     for fact in result["facts"]:
-        of(_document(arch, fact["home"]))["facts"].append(fact)
+        of(fact["home"])["facts"].append(fact)
     for restatement in result["restatements"]:
-        of(_document(arch, restatement["at"]))["restatements"].append(restatement)
+        of(restatement["at"])["restatements"].append(restatement)
     for drawn in result["diagrams"]:
-        of(_document(arch, drawn["home"]))["diagrams"].append(drawn)
+        of(drawn["home"])["diagrams"].append(drawn)
     settlement: AppliedSettlement
     for settlement in result["settlements"]:
-        documents: list[str] = list(dict.fromkeys(_document(arch, place) for place in settlement["corrections"]))
-        for document in documents:
-            places: list[SourceHeading] = [
-                place for place in settlement["corrections"] if _document(arch, place) == document
-            ]
-            of(document)["settlements"].append({**settlement, "corrections": places})
-    return dict(sorted(requests.items()))
+        placed: dict[str, list[SourceHeading]] = {}
+        for place in settlement["corrections"]:
+            placed.setdefault(section_group(_document(arch, place)), []).append(place)
+        for group, places in placed.items():
+            requests.setdefault(group, _empty(result["bead"]))["settlements"].append(
+                {**settlement, "corrections": places},
+            )
+    return {name: requests[name] for name, _covers, _numbers in SECTION_GROUPS if name in requests}
 
 
 def _written(asked: Path, request: WriteRequest) -> bool:
@@ -297,31 +322,25 @@ def _written(asked: Path, request: WriteRequest) -> bool:
     return True
 
 
-def write_steps(run: StepRun, arch: Path, helpers: Path, result: ArchitectureResult) -> tuple[StepGroup, ...]:
+def write_steps(arch: Path, helpers: Path, result: ArchitectureResult) -> tuple[StepGroup, ...]:
     """Plan the document writes an accepted architecture result needs, after the step that accepts it.
 
-    Each document's request (:func:`write_requests`) is written to the helpers folder; a document
-    whose request file already holds the same request with a valid result is not written again.
+    Each group's request (:func:`write_requests`) is written to the helpers folder; a group whose
+    request file already holds the same request with a valid result is not written again. The
+    steps are consecutive agent steps with done inputs, so their sessions run together.
 
     Returns:
-        One group of ``architecture-maintainer`` steps, one per document to write, each handed
-        its request as the parameter ``request``; none when every document is written as decided.
-
-    Raises:
-        ArchitectureStepError: A document's path gives no name to file its request under.
+        One group of at most three ``architecture-maintainer`` steps, one per group of sections to
+        write, each handed its request as the parameter ``request``; none when every group is
+        written as decided.
 
     """
+    covering: dict[str, str] = {name: covers for name, covers, _numbers in SECTION_GROUPS}
     steps: list[NewStep] = []
-    document: str
+    group: str
     request: WriteRequest
-    for document, request in write_requests(arch, result).items():
-        try:
-            name: str = f"{WRITE_PREFIX}{slug(document)}"
-        except ValueError as error:
-            raise ArchitectureStepError(
-                run,
-                f"the document {document!r} has no name to file its request under: {error}",
-            ) from None
+    for group, request in write_requests(arch, result).items():
+        name: str = f"{WRITE_PREFIX}{group}"
         asked: Path = helpers / f"{name}{REQUEST_SUFFIX}"
         stated: WriteRequest = {**request, "resultPath": str(helpers / f"{name}.result.json")}
         validate_write_request(stated)
@@ -331,7 +350,7 @@ def write_steps(run: StepRun, arch: Path, helpers: Path, result: ArchitectureRes
         steps.append(
             NewStep(
                 {
-                    "description": f"Write {document} as the solutions architect decided",
+                    "description": f"Write {covering[group]} as the solutions architect decided",
                     "purpose": "Each design fact is stated in its one home, and every other document links to it",
                     "agent": MAINTAINER,
                 },

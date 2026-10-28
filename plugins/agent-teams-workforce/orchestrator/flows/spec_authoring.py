@@ -3,12 +3,14 @@
 The span step plans one container per repository with its first step, the repository context.
 That step gathers what the repository builds, writes the spec pack its spec sessions read
 (``spec_pack``), and plans the rest as the kinds of entry the Story builds call for
-(:func:`story_surfaces`): for a frontend repository whose Story builds a UI item the UI bundle
-listing, the UI design-source session and its normalization; the contracts session and the
-data-model session, which run together, or for a document the Story does not need the script step
-that writes it; the UI section; the acceptance-criteria session and, for a repository whose stacks
-hold a DynamoDB store and whose Story builds a data store, the data-model access-pattern review,
-which run together; the review; the Story document; and the Story bead write. Each step takes
+(:func:`story_surfaces`): for a document the Story does not need, the script step that writes
+it; for a frontend repository whose Story builds a UI item the UI bundle listing and the UI
+design-source session, which runs together with the data-model session, then its normalization;
+one ``api-specification-author`` session that writes the contracts, when the Story needs them,
+and then the acceptance criteria, from the data model already written, which runs together with
+the data-model access-pattern review for a repository whose stacks hold a DynamoDB store and
+whose Story builds a data store; the UI section; the review; the Story document; and the Story
+bead write. Each step takes
 the files it reads from the artifacts of the steps its inputs name, and records what it writes
 right after writing it.
 
@@ -82,7 +84,6 @@ from orchestrator.flows.elaboration_files import (
     ARTIFACT_ELEMENTS,
     ARTIFACT_SPAN,
     AUTHOR_CONTRACTS,
-    AUTHOR_CRITERIA,
     AUTHOR_DATA_MODEL,
     CONTEXT,
     CRITERIA,
@@ -148,7 +149,7 @@ if TYPE_CHECKING:
     from matrixquery import Described, StoryScope
     from step_journal_contract import Artifact, Step, StepPlan
 
-    from orchestrator.core.models import OutputValidator
+    from orchestrator.core.models import OutputValidator, ValidationResult
 
 WORK_DOCUMENT: Final = "document"
 """What a step of an author agent, planned by the repository context step, does."""
@@ -191,6 +192,9 @@ INTERFACE_RESOURCE_PREFIXES: Final[tuple[str, ...]] = (
 """An infrastructure entry whose resource type starts with one of these carries an API or event contract."""
 KEY_DOCUMENT: Final = "document"
 """The parameter that names the spec document a step records as not applicable."""
+KEY_DOCUMENTS: Final = "documents"
+"""The parameter that names the spec documents an author step works on, in the order it writes them:
+by artifact name for the step that writes them, by document kind for a correction or a revision."""
 NOT_APPLICABLE_SUBJECT: Final[dict[str, str]] = {
     SPEC: "API, event, error or UI contract",
     DATA_MODEL: "data store",
@@ -201,16 +205,15 @@ DECISION_IDS: Final = "decision ids"
 KEY_STACKS: Final = "stacks"
 """The member of the repository context that lists the stacks the Story builds in, with their entries."""
 STORY_SUMMARY: Final = "story write"
-DOCUMENT_OF: Final[dict[str, str]] = {
-    AUTHOR_CONTRACTS: SPEC,
-    AUTHOR_DATA_MODEL: DATA_MODEL,
-    AUTHOR_CRITERIA: CRITERIA,
-}
-"""The spec document each author writes, by artifact name."""
 SUFFIX: Final[dict[str, str]] = {SPEC: ".md", DATA_MODEL: ".data-model.md", CRITERIA: ".criteria.md"}
-CONTRACTS_OUTCOME: Final = "The spec of the API, event and error contracts this repository's Story builds."
-DATA_MODEL_OUTCOME: Final = "The spec of the data this repository's Story builds."
-CRITERIA_OUTCOME: Final = "Acceptance criteria and definition of done for the saved specifications."
+OUTCOME: Final[dict[str, str]] = {
+    SPEC: "The spec of the API, event and error contracts this repository's Story builds.",
+    DATA_MODEL: "The spec of the data this repository's Story builds.",
+    CRITERIA: "Acceptance criteria and definition of done for the saved specifications.",
+}
+"""What a session writes, for each spec document it works on."""
+WRITTEN_AS: Final[dict[str, str]] = {SPEC: "the contracts", DATA_MODEL: "the data model", CRITERIA: "the criteria"}
+"""How a request names each spec document."""
 UI_SCHEMA: Final = "skills/artifact-handoff/schemas/spec-ui.schema.json"
 CONTEXT_PURPOSE: Final = "The items this repository builds and the steps that specify them are known"
 TASKS_PURPOSE: Final = "The Story has Tasks that name what to build"
@@ -331,24 +334,29 @@ def document_check(run: StepRun, name: str) -> OutputValidator:
     return lambda path: document(path, matrix, SPEC_FRONT_MATTER)
 
 
-def author_files(run: StepRun, name: str) -> tuple[tuple[str, Path], ...]:
-    """Name the files the author of one spec document reads.
+def author_files(run: StepRun, names: Sequence[str]) -> tuple[tuple[str, Path], ...]:
+    """Name the files an author session reads for the spec documents it works on.
+
+    Args:
+        run: The author step.
+        names: The spec documents the session works on, by artifact name.
 
     Returns:
         The TRD, the span and the elements; the UI sources for the contracts of a frontend
-        repository; the contracts and the data model for the criteria; then the repository
-        context, which names the PRD, whose headings the TRD cites, and the architecture headings;
-        and the spec pack, which holds the constraints and the TRD requirements the session reads.
+        repository; for the criteria, the contracts and the data model the session does not
+        itself write; then the repository context, which names the PRD, whose headings the TRD
+        cites, and the architecture headings; and the spec pack, which holds the constraints and
+        the TRD requirements the session reads.
 
     """
     files: list[tuple[str, Path]] = [
         (label, run.inputs.file(label)) for label in (ARTIFACT_TRD, ARTIFACT_SPAN, ARTIFACT_ELEMENTS)
     ]
     sources: Path | None = run.inputs.optional_file(UI_SOURCES)
-    if name == SPEC and sources is not None:
+    if SPEC in names and sources is not None:
         files.append((UI_SOURCES, sources))
-    if name == CRITERIA:
-        files.extend((label, run.inputs.file(label)) for label in (SPEC, DATA_MODEL))
+    if CRITERIA in names:
+        files.extend((label, run.inputs.file(label)) for label in (SPEC, DATA_MODEL) if label not in names)
     return (*files, (CONTEXT, run.inputs.file(CONTEXT)), (SPEC_PACK, run.inputs.file(SPEC_PACK)))
 
 
@@ -373,6 +381,7 @@ def _step(  # ruff: ignore[too-many-arguments] - One plan field each.
     script: str | None = None,
     work: str | None = None,
     document: str | None = None,
+    documents: Sequence[str] = (),
 ) -> NewStep:
     """Plan one step of a repository with the parameters that say what it does.
 
@@ -388,6 +397,8 @@ def _step(  # ruff: ignore[too-many-arguments] - One plan field each.
     params: dict[str, JsonValue] = {} if work is None else {WORK: work}
     if document is not None:
         params[KEY_DOCUMENT] = document
+    if documents:
+        params[KEY_DOCUMENTS] = list(documents)
     return NewStep(plan, params)
 
 
@@ -396,15 +407,19 @@ def _repository_steps(run: StepRun, held: Repository, surfaces: Surfaces, *, dyn
 
     A spec document whose session the Story does not need (:func:`story_surfaces`) is written by
     a script step instead, which states that the Story builds nothing it would specify; those
-    steps come first, so the author sessions that are planned are consecutive and run together.
+    steps come first. The data-model session runs together with the UI design-source session.
+    One ``api-specification-author`` session then writes the contracts, when the Story needs them,
+    and the acceptance criteria, which are derived from the contracts and the data model, so it
+    starts once the data model is written; the data-model access-pattern review runs together
+    with it.
 
     Args:
         run: The context step.
         held: The repository.
         surfaces: The spec sessions the Story needs.
         dynamodb: Whether a stack the Story builds in holds a DynamoDB store, which plans the
-            data-model access-pattern review beside the acceptance criteria when the Story
-            builds a data store.
+            data-model access-pattern review beside the contracts and criteria session when the
+            Story builds a data store.
 
     Returns:
         The steps in the order they run, after the context step.
@@ -445,25 +460,7 @@ def _repository_steps(run: StepRun, held: Repository, surfaces: Surfaces, *, dyn
                 ["bundles", *upstream],
                 agent=UI_SELECTOR,
             ),
-            _step(
-                "sources",
-                f"Check the UI design sources of {name} against the supplied bundles",
-                "Every design source can be built from",
-                ["ui", "bundles"],
-                script=UI_NORMALIZE,
-            ),
         ))
-    if surfaces.contracts:
-        steps.append(
-            _step(
-                "contracts",
-                f"Write the API, event and error contracts of {name}",
-                "The repository's contracts are specified",
-                [*upstream, *sources],
-                agent=AUTHOR_CONTRACTS,
-                work=WORK_DOCUMENT,
-            ),
-        )
     if surfaces.data_model:
         steps.append(
             _step(
@@ -473,27 +470,33 @@ def _repository_steps(run: StepRun, held: Repository, surfaces: Surfaces, *, dyn
                 upstream,
                 agent=AUTHOR_DATA_MODEL,
                 work=WORK_DOCUMENT,
+                documents=(DATA_MODEL,),
             ),
         )
-    if surfaces.ui and surfaces.contracts:
+    if surfaces.ui:
         steps.append(
             _step(
-                "ui-section",
-                f"Add the UI design sources to the contracts of {name}",
-                "The contracts name the design source of each UI item",
-                ["contracts", "sources"],
-                script=UI_APPEND,
+                "sources",
+                f"Check the UI design sources of {name} against the supplied bundles",
+                "Every design source can be built from",
+                ["ui", "bundles"],
+                script=UI_NORMALIZE,
             ),
         )
-    documents: list[str] = ["contracts", "data-model", "criteria"]
+    contracts: list[str] = [] if surfaces.contracts else ["contracts"]
     steps.append(
         _step(
             "criteria",
-            f"Write the acceptance criteria of {name}",
-            "The repository's work has criteria a test can be derived from",
-            ["contracts", "data-model", *upstream],
-            agent=AUTHOR_CRITERIA,
+            (
+                f"Write the API, event and error contracts and the acceptance criteria of {name}"
+                if surfaces.contracts
+                else f"Write the acceptance criteria of {name}"
+            ),
+            "The repository's contracts are specified, and its work has criteria a test can be derived from",
+            [*contracts, "data-model", *upstream, *sources],
+            agent=AUTHOR_CONTRACTS,
             work=WORK_DOCUMENT,
+            documents=(SPEC, CRITERIA) if surfaces.contracts else (CRITERIA,),
         ),
     )
     reviewed: list[str] = ["data-model-review"] if dynamodb and surfaces.data_model else []
@@ -507,6 +510,17 @@ def _repository_steps(run: StepRun, held: Repository, surfaces: Surfaces, *, dyn
                 agent=DATA_MODEL_REVIEWER,
             ),
         )
+    if surfaces.ui and surfaces.contracts:
+        steps.append(
+            _step(
+                "ui-section",
+                f"Add the UI design sources to the contracts of {name}",
+                "The contracts name the design source of each UI item",
+                ["criteria", "sources"],
+                script=UI_APPEND,
+            ),
+        )
+    documents: list[str] = [*contracts, "data-model", "criteria"]
     steps.extend((
         _step(
             "review",
@@ -979,30 +993,80 @@ def normalize(run: StepRun) -> Completion:
     return Completion(artifacts=(file_artifact(UI_SOURCES, path), value_artifact(WARNINGS, normalized["warnings"])))
 
 
-def spec_document(run: StepRun) -> AgentLaunch:
-    """Build the session that writes one spec document of a repository.
-
-    The document's citations stay in the document and on the Story (``decisionIds``); nothing is
-    recorded in the matrix, whose architecture side only arc42 and the architect write.
+def author_documents(run: StepRun) -> list[str]:
+    """Name the spec documents an author step works on.
 
     Returns:
-        The launch: the document at its file in the work directory, with its own check.
+        The documents the planning step named, by artifact name, in the order they are written.
+
+    Raises:
+        StepError: The step names no spec document.
+
+    """
+    named: JsonValue = run.params().get(KEY_DOCUMENTS)
+    if not isinstance(named, list) or not named or any(name not in SUFFIX for name in named):
+        evidence: str = f"step {run.step['id']} names no spec document to work on: {named!r}"
+        raise StepError(run.inputs.stage, OTHER_CAUSE, (evidence,))
+    return [check_type(name, str) for name in named]
+
+
+def documents_check(run: StepRun, held: Repository, names: Sequence[str]) -> OutputValidator:
+    """Give the check every spec document a session works on must pass each time it has written them.
+
+    Returns:
+        A check that runs :func:`document_check` on each document's file, whichever path it is
+        called with, and returns the citations and warnings of the documents that have them.
+
+    """
+    checks: list[tuple[Path, OutputValidator]] = [
+        (document_file(run, held, name), document_check(run, name)) for name in names
+    ]
+
+    def check(_output: Path) -> tuple[list[str], list[str]] | None:
+        cited: list[str] = []
+        warned: list[str] = []
+        found: bool = False
+        for path, single in checks:
+            result: ValidationResult = single(path)
+            if isinstance(result, tuple):
+                found = True
+                cited.extend(result[0])
+                warned.extend(result[1])
+        return (cited, warned) if found else None
+
+    return check
+
+
+def spec_document(run: StepRun) -> AgentLaunch:
+    """Build the session that writes the spec documents an author step names, in order.
+
+    The data-model author writes the data model. The contracts author writes the contracts, when
+    the Story needs them, and then the acceptance criteria, in one session, so the criteria are
+    written by the session that knows the contracts; the session's output is the last document it
+    writes, and the request names the path of each. The documents' citations stay in the documents
+    and on the Story (``decisionIds``); nothing is recorded in the matrix, whose architecture side
+    only arc42 and the architect write.
+
+    Returns:
+        The launch: the last document at its file in the work directory, with every document's check.
 
     """
     held: Repository = repository(run.inputs)
-    name: str = DOCUMENT_OF[run.step.get("agent", "")]
-    enter_phase(run.context, run.agents.emit, SPEC_AUTHORING_PHASE, name, held.path)
+    names: list[str] = author_documents(run)
+    enter_phase(run.context, run.agents.emit, SPEC_AUTHORING_PHASE, "-".join(names), held.path)
 
-    def accept(_accepted: StepRun, output: Path) -> Completion:
-        return Completion(artifacts=(file_artifact(name, output),))
+    def accept(_accepted: StepRun, _output: Path) -> Completion:
+        return Completion(artifacts=tuple(file_artifact(name, document_file(run, held, name)) for name in names))
 
+    written: str = "; then ".join(f"{WRITTEN_AS[name]} at {document_file(run, held, name)}" for name in names)
     return AgentLaunch(
-        output=document_file(run, held, name),
-        validate=document_check(run, name),
-        outcome=CONTRACTS_OUTCOME if name == SPEC else DATA_MODEL_OUTCOME if name == DATA_MODEL else CRITERIA_OUTCOME,
+        output=document_file(run, held, names[-1]),
+        validate=documents_check(run, held, names),
+        outcome=" ".join(OUTCOME[name] for name in names),
         accept=accept,
         add_dirs=author_dirs(run, held),
-        files=author_files(run, name),
+        files=author_files(run, names),
+        request=f"{run.step['description']}. Write {written}.",
         hand_inputs=False,
     )
 

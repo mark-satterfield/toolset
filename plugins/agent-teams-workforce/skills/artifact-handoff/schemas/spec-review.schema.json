@@ -98,7 +98,7 @@
       }
     },
     "SpecCorrection": {
-      "description": "An author's result for its one correction of its own document. Every finding on the document that is not listed in disputes is corrected in the document.",
+      "description": "An author's result for its one correction of its own documents in a round. Every finding on them that is not listed in disputes is corrected in its document.",
       "type": "object",
       "additionalProperties": false,
       "required": ["disputes", "summary"],
@@ -110,7 +110,7 @@
           }
         },
         "summary": {
-          "description": "One or two sentences on what was changed in the document.",
+          "description": "One or two sentences on what was changed in the documents.",
           "type": "string",
           "minLength": 1
         }

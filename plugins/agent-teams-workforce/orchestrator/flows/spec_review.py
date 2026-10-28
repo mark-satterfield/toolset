@@ -6,7 +6,9 @@ DynamoDB access patterns first, and its findings join the review's. After the re
 three rounds of sessions follow, each round's sessions running together:
 
 1. One correction: every document with a finding goes once to its author, and the criteria go
-   to theirs as well when a document they are derived from has a finding, all in one round.
+   to theirs as well when a document they are derived from has a finding, all in one round. An
+   author works on all its documents of the round in one session: the contracts author writes
+   the criteria too.
 2. The decider, when an author disputed a finding, rules on every disputed finding at once.
 3. One revision: every document with an upheld finding goes back to its author with the
    ruling's directive, and the criteria with them when a document they are derived from does.
@@ -24,6 +26,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+
 from review_criteria import LEVEL_IMPLEMENTATION, load_criteria
 from spec_review_contract import (
     DOCUMENT_CRITERIA,
@@ -54,7 +57,6 @@ from orchestrator.core.models import StepError
 from orchestrator.flows.architecture_files import ARTIFACT_TRD
 from orchestrator.flows.elaboration_files import (
     AUTHOR_CONTRACTS,
-    AUTHOR_CRITERIA,
     AUTHOR_DATA_MODEL,
     CONTEXT,
     CRITERIA,
@@ -75,6 +77,7 @@ from orchestrator.flows.elaboration_files import (
 )
 from orchestrator.flows.elaboration_support import SPEC_AUTHORING_PHASE, enter_phase
 from orchestrator.flows.spec_authoring import (
+    KEY_DOCUMENTS,
     WORK_DOCUMENT,
     author_dirs,
     author_files,
@@ -112,7 +115,7 @@ ARTIFACT_OF: Final[dict[SpecDocument, str]] = {
 AUTHOR_OF: Final[dict[SpecDocument, str]] = {
     DOCUMENT_SPEC: AUTHOR_CONTRACTS,
     DOCUMENT_DATA_MODEL: AUTHOR_DATA_MODEL,
-    DOCUMENT_CRITERIA: AUTHOR_CRITERIA,
+    DOCUMENT_CRITERIA: AUTHOR_CONTRACTS,
 }
 
 REVIEW: Final = "spec review"
@@ -131,9 +134,9 @@ DATA_MODEL_REVIEW_RESULT: Final = "Review of the DynamoDB access patterns of thi
 FINDING_PREFIX_REVIEW: Final = "F"
 FINDING_PREFIX_DATA_MODEL: Final = "D"
 """The first letter of a finding id: the review's findings are F1, F2 and so on, the data-model review's D1, D2."""
-CORRECTION_RESULT: Final = "Correction of this specification document for the spec review findings."
+CORRECTION_RESULT: Final = "Correction of these specification documents for the spec review findings."
 RULING_RESULT: Final = "Ruling on each disputed spec review finding."
-REVISION_RESULT: Final = "Revision of this specification document to the directives of the ruling."
+REVISION_RESULT: Final = "Revision of these specification documents to the directives of the ruling."
 
 
 def _kind(value: JsonValue) -> SpecDocument:
@@ -206,9 +209,10 @@ def worked_on(findings: Sequence[Mapping[str, JsonValue]]) -> list[SpecDocument]
 def _round(run: StepRun, phase: Pass, findings: Sequence[Mapping[str, JsonValue]]) -> tuple[StepGroup, ...]:
     """Plan one round of author steps after the step that ends, all handed the same inputs.
 
-    The author steps are consecutive agent steps with done inputs, so their sessions run
-    together. After a correction round a script step plans the decider when an author disputed a
-    finding (:func:`settle`).
+    Each author gets one step for every document of the round it wrote (:data:`AUTHOR_OF`), so
+    the contracts and the criteria are worked on in one session. The author steps are consecutive
+    agent steps with done inputs, so their sessions run together. After a correction round a
+    script step plans the decider when an author disputed a finding (:func:`settle`).
 
     Args:
         run: The step that ends: the review, or the decider.
@@ -224,28 +228,37 @@ def _round(run: StepRun, phase: Pass, findings: Sequence[Mapping[str, JsonValue]
         return ()
     name: str = Path(repository(run.inputs).path).name
     handed: list[str] = list(dict.fromkeys([*run.step.get("inputs", []), run.step["id"]]))
-    steps: list[NewStep] = []
+    by_author: dict[str, list[SpecDocument]] = {}
     kind: SpecDocument
     for kind in kinds:
+        by_author.setdefault(AUTHOR_OF[kind], []).append(kind)
+    steps: list[NewStep] = []
+    refs: list[str] = []
+    agent: str
+    owned: list[SpecDocument]
+    for agent, owned in by_author.items():
+        joined: str = " and ".join(owned)
+        ref: str = f"{phase}-{'-'.join(owned)}"
+        refs.append(ref)
         plan: StepPlan = {
-            "ref": f"{phase}-{kind}",
+            "ref": ref,
             "description": (
-                f"Correct the {kind} document of {name} for the review's findings"
+                f"Correct the {joined} documents of {name} for the review's findings"
                 if phase == WORK_CORRECTION
-                else f"Revise the {kind} document of {name} to the ruling"
+                else f"Revise the {joined} documents of {name} to the ruling"
             ),
             "purpose": "Every finding against the implementation criteria is settled",
-            "agent": AUTHOR_OF[kind],
+            "agent": agent,
             "inputs": handed,
         }
-        steps.append(NewStep(plan, {WORK: phase, DOCUMENT: kind}))
+        steps.append(NewStep(plan, {WORK: phase, KEY_DOCUMENTS: list(owned)}))
     if phase == WORK_CORRECTION:
         settling: StepPlan = {
             "ref": "settle",
             "description": f"Decide whether a finding on the documents of {name} is disputed",
             "purpose": "Every disputed finding goes to the decider",
             "script": SPEC_REVIEW_SETTLE,
-            "inputs": [*handed, *(f"{phase}-{kind}" for kind in kinds)],
+            "inputs": [*handed, *refs],
         }
         steps.append(NewStep(settling))
     return (StepGroup(tuple(steps)),)
@@ -411,40 +424,50 @@ def _data_model_review(run: StepRun) -> tuple[tuple[str, Path], ...]:
 
 
 def correction(run: StepRun) -> AgentLaunch:
-    """Build the session in which an author works on its document again, after the review or the ruling.
+    """Build the session in which an author works on its documents again, after the review or the ruling.
 
-    The session continues the one in which the author wrote the document, when the journal holds it.
+    The session continues the one in which the author wrote the documents, when the journal holds
+    it. It works on every document of the round the step names (``documents``), in one account.
 
     Returns:
         The launch: the author's account of what it applied and disputed as output; when it is
-        accepted the document is checked again and what the step did is recorded.
+        accepted each document is checked again and what the step did is recorded.
 
     A document that no longer passes its own check after its author worked on it fails the step.
+
+    Raises:
+        StepError: The step names no spec document to work on.
 
     """
     held: Repository = repository(run.inputs)
     params: dict[str, JsonValue] = dict(run.params())
     phase: Pass = WORK_REVISION if params.get(WORK) == WORK_REVISION else WORK_CORRECTION
-    kind: SpecDocument = _kind(params.get(DOCUMENT))
-    name: str = ARTIFACT_OF[kind]
-    path: Path = run.inputs.file(name)
-    stage: str = f"{kind}.{phase}"
-    writing: Step | None = run.earlier_sibling(AUTHOR_OF[kind])
-    enter_phase(run.context, run.agents.emit, SPEC_AUTHORING_PHASE, f"{kind}.{phase}", held.path)
+    named: JsonValue = params.get(KEY_DOCUMENTS)
+    kinds: list[SpecDocument] = [_kind(value) for value in named] if isinstance(named, list) else []
+    if not kinds:
+        evidence: str = f"step {run.step['id']} names no spec document to work on: {named!r}"
+        raise StepError(run.inputs.stage, OTHER_CAUSE, (evidence,))
+    names: list[str] = [ARTIFACT_OF[kind] for kind in kinds]
+    paths: list[Path] = [run.inputs.file(name) for name in names]
+    joined: str = "-".join(kinds)
+    stage: str = f"{joined}.{phase}"
+    writing: Step | None = run.earlier_sibling(AUTHOR_OF[kinds[0]])
+    enter_phase(run.context, run.agents.emit, SPEC_AUTHORING_PHASE, stage, held.path)
     basis: list[tuple[str, Path]] = [(REVIEW, run.inputs.file(REVIEW)), *_data_model_review(run)]
     if phase == WORK_REVISION:
         basis.append((RULING, run.inputs.file(RULING)))
 
     def accept(accepted: StepRun, output: Path) -> Completion:
         account: SpecCorrection = validate_spec_correction(strict_json(output), str(output))
-        try:
-            document_check(accepted, name)(path)
-        except (OSError, ValueError) as exc:
-            raise StepError(stage, OTHER_CAUSE, (str(path), str(exc))) from None
-        own: set[JsonValue] = {finding["id"] for finding in _findings(accepted, phase) if finding[DOCUMENT] == kind}
+        for name, path in zip(names, paths, strict=True):
+            try:
+                document_check(accepted, name)(path)
+            except (OSError, ValueError) as exc:
+                raise StepError(stage, OTHER_CAUSE, (str(path), str(exc))) from None
+        own: set[JsonValue] = {finding["id"] for finding in _findings(accepted, phase) if finding[DOCUMENT] in kinds}
         disputed: list[JsonValue] = [d["findingId"] for d in account["disputes"] if d["findingId"] in own]
         foreign: list[JsonValue] = [
-            f"{AUTHOR_OF[kind]} disputed {d['findingId']}, which is no finding on its document"
+            f"{AUTHOR_OF[kinds[0]]} disputed {d['findingId']}, which is no finding on its documents"
             for d in account["disputes"]
             if d["findingId"] not in own
         ]
@@ -453,23 +476,23 @@ def correction(run: StepRun) -> AgentLaunch:
                 f"spec review finding {identifier} was disputed again after the ruling; the ruling stands"
                 for identifier in disputed
             )
-        record: dict[str, JsonValue] = {WORK: phase, DOCUMENT: kind, "disputed": disputed}
+        record: dict[str, JsonValue] = {WORK: phase, KEY_DOCUMENTS: list(kinds), "disputed": disputed}
         return Completion(
             artifacts=(
                 file_artifact(CORRECTION if phase == WORK_CORRECTION else REVISION, output),
-                file_artifact(name, path),
+                *map(file_artifact, names, paths, strict=True),
                 value_artifact(WORKED, record),
                 value_artifact(WARNINGS, foreign),
             ),
         )
 
     return AgentLaunch(
-        output=run.context.work / f"spec-{held.slug}.{kind}.{phase}.json",
+        output=run.context.work / f"spec-{held.slug}.{joined}.{phase}.json",
         validate=SPEC_CORRECTION_SCHEMA_PATH,
         outcome=CORRECTION_RESULT if phase == WORK_CORRECTION else REVISION_RESULT,
         accept=accept,
         add_dirs=author_dirs(run, held),
-        files=tuple(dict.fromkeys((*author_files(run, name), (name, path), *basis))),
+        files=tuple(dict.fromkeys((*author_files(run, names), *zip(names, paths, strict=True), *basis))),
         resume_from=None if writing is None or "session" not in writing else writing["id"],
         hand_inputs=False,
     )
@@ -527,7 +550,7 @@ def decider(run: StepRun) -> AgentLaunch:
     )
 
 
-@agent_step(AUTHOR_CONTRACTS, AUTHOR_DATA_MODEL, AUTHOR_CRITERIA)
+@agent_step(AUTHOR_CONTRACTS, AUTHOR_DATA_MODEL)
 def author(run: StepRun) -> AgentLaunch:
     """Build the session of any step an author of a spec document performs.
 

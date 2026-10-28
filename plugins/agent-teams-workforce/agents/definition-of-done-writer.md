@@ -5,7 +5,7 @@ description: >-
   verifiable true-or-false statements about the finished work, never checklist
   steps, each traced to the requirement or design decision it comes from. For a
   caller that needs a Definition of Done on its own; in elaboration the
-  acceptance-criteria-writer writes it with the criteria.
+  api-specification-author writes it with the criteria.
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill, Agent, Workflow
 disallowedTools: AskUserQuestion
 model: sonnet

@@ -127,14 +127,25 @@ hands it as `answers digest`. A result of round 2 (`MAX_ROUNDS`) that still requ
 step, because the architecture does not converge.
 
 The document writes: a result with no unanswered request is grouped into one write request per
-document (`architecture_rounds.write_requests`): a fact and a diagram go to the request of their
-home, a restatement to the request of the document it is in, and a settlement to the request of
-each document holding a statement that lost, with only that document's places. Each request is
-written to `<helpersFolder>/write-<document slug>.request.json`, its result path beside it. A
-document whose request file already holds the same request with a valid result is not written
-again; every other gets one `architecture-maintainer` step, handed the request as the parameter
-`request`. The maintainer steps run at the same time, after the step that planned them and before
-the index.
+group of arc42 sections (`architecture_rounds.write_requests`, `SECTION_GROUPS`): `structure`
+(sections 1 to 5, the detailed architecture under `detailed/`, and any other document),
+`runtime` (sections 6 and 7) and `concepts` (sections 8 to 12). A fact and a diagram go to the
+request of their home's group, a restatement to the request of the group of the document it is
+in, and a settlement to the request of each group holding a statement that lost, with only that
+group's places. Each request is written to `<helpersFolder>/write-<group>.request.json`, its
+result path beside it. A group whose request file already holds the same request with a valid
+result is not written again; every other gets one `architecture-maintainer` step, handed the
+request as the parameter `request`, so a pass starts at most three maintainers and each reads a
+neighbouring document once for every fact of its group. The maintainer steps run at the same
+time, after the step that planned them and before the index.
+
+A maintainer's output check renders, once, each Mermaid block of the documents its result and
+request name (`architecture_files.written_paths`) that the vault's last commit does not hold,
+with the `architecture-diagramming` skill's `scripts/render-check.sh`, into
+`<helpersFolder>/diagrams/<step id>/` (`architecture_diagrams.syntax_problems`). A block that does
+not render goes back to the same session as a problem to correct. The check is of syntax only:
+the maintainer renders and looks at a diagram new to the documents, and an edited diagram is not
+looked at.
 
 The same launch builder serves every step the architect performs. The architect writes its result
 as the work goes, and every step keeps a result already at the result path (`fresh_output` False),

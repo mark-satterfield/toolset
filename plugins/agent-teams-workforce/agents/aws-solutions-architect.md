@@ -470,9 +470,10 @@ You write no document and start no writer. State in your result what is to be wr
 - `diagrams`: each diagram to place under its home, a diagram author's as its answer file holds
   it, or one you drew.
 
-When your result lists no further request, the script writes one request per document from
-these members and starts one `architecture-maintainer` for each document whose request changed
-since it was last written. When each write is accepted, the script syncs the documents into the
+When your result lists no further request, the script writes one request per group of arc42
+sections from these members (sections 1 to 5 with `detailed/`, sections 6 and 7, sections 8 to
+12), at most three, and starts one `architecture-maintainer` for each group whose request changed
+since it was last written; the maintainers of the groups run at the same time. When each write is accepted, the script syncs the documents into the
 matrix and records `describedBy` from each entry a fact is `about` to the fact's home heading,
 and `covers` from that heading to each requirement a feature among them serves. Record in your
 change file `describedBy` and `covers` only for headings that already exist.

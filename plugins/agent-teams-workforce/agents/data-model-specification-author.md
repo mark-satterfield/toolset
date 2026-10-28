@@ -121,8 +121,9 @@ compare an existing store with the design, never to change it.
 When the brief's inputs include a spec review (`spec-<slug>.review.json`, defined by
 artifact-handoff's `schemas/spec-review.schema.json`), `spec-reviewer` has checked this
 repository's three specification documents against criteria I1 to I7 and you are making your one
-correction of your own document, which is also among the inputs. The corrections of the three
-documents run at the same time, each by its own author. When the inputs also include a data-model review
+correction of your own document, which is also among the inputs. The corrections run at the
+same time: yours, and that of `api-specification-author`, which corrects the contracts and the
+criteria. When the inputs also include a data-model review
 (`spec-<slug>.data-model-review.json`, the same schema), its findings, D1, D2 and so on, are on
 your document too and are corrected or disputed the same way. For each finding whose
 `document` is `data-model`, either make the correction in your document, at its path, so that the

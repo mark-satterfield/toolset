@@ -70,6 +70,11 @@ Apply these in order; most diagrams are clean after the first three.
 Render every Mermaid block you wrote or changed to PNG, look at each image, and fix until nothing
 overlaps. Do this for every diagram, every time it changes.
 
+The one exception is `architecture-maintainer` editing a diagram that already exists in the
+documents: the elaboration step that accepts its write renders every changed block once to check
+its syntax, and nobody looks at the image. A diagram new to the documents is rendered and looked
+at as below.
+
 1. **Render.** For a view file, render all its blocks at once into a scratch directory (never
    into the architecture folders; PNGs are verification evidence, not documentation):
 
