@@ -30,6 +30,11 @@ and link them.
   aliases. Keep each message to a few words. An arrow may cross the lifelines between its two
   participants, but its label must not sit on one: order participants so that frequent partners
   are adjacent, and use `"messageAlign": "left"` (as below) so each label starts at its sender.
+- **No `;` and no bare `#` in message or note text.** A `;` ends the statement, so the rest of
+  the line fails to parse. A `#` starts an entity code, so the label is cut silently and the
+  diagram still renders: `Put SMSCODE#{id}` shows as "Put SMSCODE". Write `,` (or a second
+  message) instead of `;`, and write `#35;` or words instead of `#` (`SMSCODE#35;{id}`, or
+  `SMSCODE item keyed by id`). The step that checks a maintainer's diagrams reports either one.
 
 ```mermaid
 %%{init: {"sequence": {"messageAlign": "left"}}}%%

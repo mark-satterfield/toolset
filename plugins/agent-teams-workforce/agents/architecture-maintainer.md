@@ -103,6 +103,9 @@ matrix holds for it, so that the document is found from the entry.
 
 Write the result at the path the request names, to `write-result.schema.json`: each heading
 you changed or created, each link you added, each restatement you removed, and anything in the request you could not apply and why.
+Every entry of `headingsChanged`, `headingsCreated`, `linksAdded` and `restatementsRemoved` is
+`{source, heading}`. For `linksAdded` that is where the link sits: the document you wrote the
+link in and the heading it sits under, never the link's target, and never `{from, to}`.
 
 ## Correcting the effective version from what a Story built
 

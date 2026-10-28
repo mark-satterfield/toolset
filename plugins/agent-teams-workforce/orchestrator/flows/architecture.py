@@ -200,6 +200,15 @@ REQUIREMENT_KEY_SEPARATOR: Final = "/"
 HEADING_MARK: Final = "#"
 ERRORS_SUFFIX: Final = ".errors.txt"
 """What the file of a request's validation errors adds to the request file's stem."""
+_NOTHING_WRITTEN: Final[WriteResult] = {
+    "headingsChanged": [],
+    "headingsCreated": [],
+    "linksAdded": [],
+    "restatementsRemoved": [],
+    "notApplied": [],
+    "summary": "-",
+}
+"""A result that names no document, for an invalid result: only the request's own homes are rendered."""
 CATALOG_AGENTS: Final[frozenset[str]] = agent_names()
 """Every agent the find-specialists skill's catalog lists: the names a request may give."""
 
@@ -1165,7 +1174,9 @@ def _record_homes(arch: Path, request: WriteRequest, written: WriteResult) -> Re
 
     For each fact the result does not list under ``notApplied``: ``describedBy`` from each entry
     it is about to its home heading, and ``covers`` from that heading to each requirement an
-    entry among them serves as a feature (``servedBy``), with that feature as ``via``.
+    entry among them serves as a feature (``servedBy``), with that feature as ``via``. A home
+    with no heading (a document that holds no Markdown heading) is the whole document: its
+    ``describedBy`` names no heading and it covers nothing, since ``covers`` requires a heading.
 
     Returns:
         What could not be recorded: a home that is no document the matrix holds, an entry it does not hold.
@@ -1180,6 +1191,7 @@ def _record_homes(arch: Path, request: WriteRequest, written: WriteResult) -> Re
                 continue
             home: EntryId | None = cited_document(arch, fact["home"]["source"])
             heading: str = fact["home"]["heading"].strip()
+            stated: dict[str, JsonValue] = {ATTR_HEADING: heading} if heading else {}
             if home is None or matrix.find(home) is None:
                 source: str = fact["home"]["source"]
                 problems.append(f"fact {fact['id']}: its home {source!r} is no document the matrix holds")
@@ -1188,7 +1200,9 @@ def _record_homes(arch: Path, request: WriteRequest, written: WriteResult) -> Re
                 entry: EntryId | None = _held(matrix, named, f"fact {fact['id']} about", problems)
                 if entry is None:
                     continue
-                _link(matrix, REL_DESCRIBED_BY, entry, home, problems, {ATTR_HEADING: heading})
+                _link(matrix, REL_DESCRIBED_BY, entry, home, problems, stated)
+                if not heading:
+                    continue
                 for served in matrix.incoming(entry, (REL_SERVED_BY,)):
                     covered: dict[str, JsonValue] = {ATTR_HEADING: heading, ATTR_VIA: entry}
                     _link(matrix, REL_COVERS, home, served.start, problems, covered)
@@ -1202,13 +1216,14 @@ def maintainer(run: StepRun) -> AgentLaunch:
     """Build the session of the document maintainer of one write request the script wrote.
 
     A request holds one group of arc42 sections (``architecture_rounds.SECTION_GROUPS``). The
-    output check renders each Mermaid block of the documents written that the vault's last commit
-    does not hold, once, and sends one that does not render back to the session
-    (``architecture_diagrams.syntax_problems``). The accepted result is mirrored in the matrix:
-    each document written is set in review and its entry is brought up to date with its headings
-    and lifecycle, and the entry of a document that is gone is removed; then each fact's home
-    heading is recorded (:func:`_record_homes`). The session is granted the architecture root,
-    where it writes the arc42 documents.
+    output check validates the result and, in the same pass, checks each Mermaid block of the
+    documents written that the vault's last commit does not hold
+    (``architecture_diagrams.syntax_problems``), so the session's one correction is handed every
+    problem at once; a result that does not validate still has the request's homes checked. The
+    accepted result is mirrored in the matrix: each document written is set in review and its
+    entry is brought up to date with its headings and lifecycle, and the entry of a document that
+    is gone is removed; then each fact's home heading is recorded (:func:`_record_homes`). The
+    session is granted the architecture root, where it writes the arc42 documents.
 
     Returns:
         The launch from the write request the step's parameters name, else the saved one: the
@@ -1225,8 +1240,13 @@ def maintainer(run: StepRun) -> AgentLaunch:
 
     def check(path: Path) -> dict[str, JsonValue]:
         document: dict[str, JsonValue] = strict_json(path)
-        written: WriteResult = validate_write_result(document, str(path))
-        problems: list[str] = syntax_problems(run, arch, written_paths(arch, request, written), rendered)
+        problems: list[str] = []
+        written: WriteResult = _NOTHING_WRITTEN
+        try:
+            written = validate_write_result(document, str(path))
+        except ArchitectureWorkError as invalid:
+            problems.append(str(invalid))
+        problems.extend(syntax_problems(run, arch, written_paths(arch, request, written), rendered))
         if problems:
             raise ArchitectureWorkError("\n".join(problems))
         return document

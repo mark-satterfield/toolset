@@ -39,7 +39,8 @@ frontmatter; its list of view types (`reference/diagram-and-model-types.md`) nam
    of the same graph under another type name.
 3. **Draw it** with the Mermaid kind and conventions the reference gives, adapting its example.
    Use the glossary's names for every element. Draw only what the design you were given
-   contains.
+   contains. In a sequence diagram's message and note text write no `;` and no bare `#`: write
+   `,` for `;` and `#35;` or words for `#` (`types-behaviour.md`, "Sequence diagram").
 4. **Make it readable and verify it** as `references/readability.md` requires: render every
    diagram to PNG, look at each image, and fix until nothing overlaps.
 5. **Write the prose** around the diagram: what the view is for, the detail the diagram leaves

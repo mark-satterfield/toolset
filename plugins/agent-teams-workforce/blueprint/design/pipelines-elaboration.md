@@ -234,8 +234,11 @@ Notes on the diagram:
   and at the same time, from the facts, restatements, settlements and diagrams of the architect's
   result, so each session reads a neighbouring document once for every fact of its group. The
   step renders each diagram a maintainer changed once with the Mermaid CLI, to check its syntax
-  at no token cost; the maintainer renders and looks at a diagram new to the documents, and an
-  edited diagram is checked by its syntax only.
+  at no token cost, and checks the message and note text of each changed sequence diagram for a
+  `;` (which breaks parsing) or a bare `#` (which renders without error but cuts the label); the
+  maintainer renders and looks at a diagram new to the documents, and an edited diagram is
+  checked by its syntax only. The step's output check reports the result's schema problems and
+  these diagram problems in one pass, so the maintainer's one correction is handed all of them.
 - "Any updates or corrections to arc42 must also be made." (the owner): every correction written
   to the matrix at the end of the stage has its counterpart in the arc42 documents written in the
   same stage.

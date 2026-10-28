@@ -548,7 +548,7 @@
       "properties": {
         "headingsChanged": {"type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},
         "headingsCreated": {"type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},
-        "linksAdded": {"description": "Each place a link to a home heading was added.", "type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},
+        "linksAdded": {"description": "Each place a link to a home heading was added, as {source, heading}: the document the link was written in and the heading it sits under, never the link's target.", "type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},
         "restatementsRemoved": {"type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},
         "notApplied": {"description": "Entries that could not be applied for any other reason.", "type": "array", "items": {"$ref": "#/$defs/UnappliedEntry"}},
         "summary": {"type": "string", "minLength": 1}
