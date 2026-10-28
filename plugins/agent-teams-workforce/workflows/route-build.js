@@ -1,7 +1,7 @@
 export const meta = {
   name: 'route-build',
   description:
-    'Routes a bead to the build composite that works it, deterministically from its type and labels. A Task and an infrastructure bead go to task-to-deploy, which adds its Infra Intent phase for a bead with an infrastructure type or label; a bug, a bead labelled `human`, an Epic, Story or feature, and every other kind are skipped with a reason. Returns { bead, action, composite, reason, ruledBy }: action is "work" or "skip".',
+    'Routes a bead to the build composite that works it, deterministically from its type and labels. A Task and an infrastructure bead go to task-to-deploy, which adds its Infra Intent phase for a bead with an infrastructure type or label; a bug, an Epic, Story or feature, and every other kind are skipped with a reason. Returns { bead, action, composite, reason, ruledBy }: action is "work" or "skip".',
   phases: [{ title: 'Classify', detail: 'maps the bead type and labels to a composite or a skip' }],
 }
 
@@ -48,11 +48,6 @@ function decide() {
   if (type === 'bug' || byLabel('bug', 'defect', 'regression', 'hotfix')) {
     return skip(
       `bug is a REPORTING MECHANISM and is never implemented directly (type="${type || 'n/a'}"${labelTail}); it is triaged by a person into an Epic, a Task, or a closure → SKIP`,
-    )
-  }
-  if (hasLabel('human')) {
-    return skip(
-      `held for a person: ${bead.id || 'this bead'} carries the \`human\` label → SKIP until the label is removed (\`atw-bd label remove ${bead.id || '<id>'} human\`)`,
     )
   }
   if (type === 'task' || byLabel('task')) {

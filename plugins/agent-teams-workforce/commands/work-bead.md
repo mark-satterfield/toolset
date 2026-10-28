@@ -48,7 +48,7 @@ Workflow({scriptPath: "$ROOT/workflows/route-build.js",
 
 Supply `parentType` and `ancestorTypes` from the parent chain. A Task is routed to
 `task-to-deploy` (which adds its infrastructure step for an infrastructure Task) with or without
-them; they only change the router's `reason`. A bead labelled `human` is skipped.
+them; they only change the router's `reason`.
 
 **Epic, Story, or Feature — ELABORATION work:**
 
