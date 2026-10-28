@@ -336,6 +336,19 @@ freshness check.
   `tooling_recommendation`, never as a human action, never in the owner inbox, and never in
   failure counting. Every other failure carries its cause and its classification; ordinary item
   failures are recorded and fatal defects stop new dispatch.
+- **7.9 at the build boundary.** A Task elaboration left unbuildable (not written by
+  elaboration, no parent Story, or a Story naming no usable repository: none recorded, not on
+  disk, or one `polyrepo create` left before its first commit), whether selection finds it or
+  `task-to-deploy` reports it at `blocked-upstream` with an `upstreamMissing` entry whose `what`
+  begins `elaboration:`, asks nobody anything: the build lane skips the Task, re-checks it on
+  every pass, and records it once per Task and reason as a ledger event of type
+  `unbuildable_task`, never as a human action and never in failure counting
+  (`taskdefects.py`). The driver never resets an Epic's step journal for it, so a live Epic's
+  elaboration is never re-entered at a step the driver picks: the journal alone decides where a
+  run begins, and only the owner starts one earlier (`elabmark.py --start-at`). The Epic's next
+  elaboration repairs what it wrote, because `beadwrite` finds each Story and Task by its
+  elaboration key and updates it in place, and `polyrepo create` finishes a repository it left
+  unfinished; a Task elaboration did not write stays skipped.
 - **7.2** Only the owner runs the pipeline; nothing in this contract is run as a test.
 - **7.8** Selection filters stay in `selection.py` / `elabstate.py` (§2), and only there: the
   driver is the only door, so `prd-to-spec` does not repeat them.
