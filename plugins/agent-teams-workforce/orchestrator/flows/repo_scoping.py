@@ -1077,9 +1077,14 @@ def _ruling(
 ) -> PlacementRuling:
     """Group what the Stories build by the repository of the stack each item is built in.
 
+    A repository counts as existing only when the inventory row of its name shows it cloned, on
+    GitHub and in the manifest (:data:`PRESENT_WHERE`). Every other name, a folder an earlier
+    failed ``polyrepo create`` left on disk included, is a missing repository, so the step runs
+    ``polyrepo create`` on it again.
+
     Returns:
         The span in the placement contract's shape: one placement per repository, with its path
-        when the inventory has it, and one missing repository per name it lacks.
+        when the repository exists, and one missing repository per name that does not.
 
     Raises:
         StepError: A repository may hold no product entry, or a missing repository cannot be
@@ -1099,7 +1104,9 @@ def _ruling(
         "spanRationale": "The repository of each entry's stack, as the matrix records it.",
     }
     for name, built in grouped.items():
-        known: JsonValue = live.get(name.casefold(), {}).get("path")
+        row: dict[str, JsonValue] = live.get(name.casefold(), {})
+        present = json_object(row.get("present") or {})
+        known: JsonValue = row.get("path") if all(present.get(place) for place in PRESENT_WHERE) else None
         path: str | None = str(Path(known).resolve()) if isinstance(known, str) and known else None
         if path is not None and forbidden(Path(path), control, arch):
             raise StepError(SPAN, OTHER_CAUSE, (f"{name} at {path} may hold no product entry",))

@@ -1038,8 +1038,11 @@ container per repository, each with its first step `spec_authoring.context`.
 
 ### 11.3 Repository creation (QUESTIONS 9; the verifier's finding 16)
 
-A repository of a stack a Story builds in that the inventory (`polyrepo.py inventory --name
-<name>`) lacks is created by the span step with `polyrepo.py create`, which requires `--space` and `--template`.
+A repository of a stack a Story builds in that is not cloned, on GitHub and in the manifest all
+three (the `present` of its row in `polyrepo.py inventory`) is created by the span step with
+`polyrepo.py create`, which requires `--space` and takes the template from the name. A folder an
+earlier failed `create` left is `create`'s own output, which the next `create` replaces or
+finishes.
 The tool records the stack the new repository holds in the matrix.
 
 - **The template** is the type of the repository's stacks, the last token of a stack's name

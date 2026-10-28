@@ -373,10 +373,13 @@ commit. When any of these does not hold, or the commit hook refuses the first co
 stops before the first commit and exits 1 with the cause in `error`, and nothing outside the
 folder records the repository yet. Repair the cause (a template fault in the template, checked
 with `polyrepo.py templates-check`, which builds every template as `create` would) and run the
-same `create` again: it replaces a folder that is its own unfinished output (a
-`.copier-answers.yml` naming the same template, no commit, no GitHub repository and no manifest
-entry of the name) and refuses any other existing folder, so no person cleans up a failed
-create. Never report a created repository as done while `error` is present.
+same `create` again. A folder is `create`'s own output when its `.git` holds the
+`polyrepo-create` file naming the template (written right after `git init`) and its
+`.copier-answers.yml` names the same template. A rerun replaces such a folder that holds no
+commit and is not on GitHub, and finishes one that holds only the scaffold commit: it pushes it
+(to the GitHub repository an earlier run created, when there is one) and adds the manifest
+entry and the other records. It refuses any other existing folder and a name the manifest has,
+so no person cleans up a failed create. Never report a created repository as done while `error` is present.
 `polyrepo.py environment <repo> --fix` repairs an existing repository's environment: it removes
 a `.venv` whose interpreter is missing, a dangling link or does not start, then runs
 `task install --force` so a Taskfile `status` check on the `.venv` folder cannot skip it.

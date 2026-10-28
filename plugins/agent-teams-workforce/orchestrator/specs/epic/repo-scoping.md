@@ -84,9 +84,12 @@ The order is fixed, and only the stacks of what the Stories build are reached:
    (`matrixstore._flags_settled`), so naming the repository after promotion does not undo the
    Epic's approval.
 3. The items are grouped by repository (`repository_stacks`), and `_ruling` looks each name up in
-   the inventory. A repository is a frontend repository when the type of its stacks is `web`.
-4. Each name the inventory lacks becomes a missing repository (`_missing`): its stacks must have
-   one app.
+   the inventory. A repository exists only when its row shows it cloned, on GitHub and in the
+   manifest (`present`, `PRESENT_WHERE`); only then is its path placed. A repository is a
+   frontend repository when the type of its stacks is `web`.
+4. Each name that does not exist in all three places becomes a missing repository (`_missing`),
+   a folder an earlier failed `polyrepo create` left on disk included: its stacks must have one
+   app.
 5. `create_repositories` takes each missing repository's creation lock (a file beside the
    matrix's lock, named for the repository), then reads the inventory for that name again: a
    repository that is cloned, on GitHub and in the manifest (another Epic created it meanwhile)
@@ -98,7 +101,9 @@ The order is fixed, and only the stacks of what the Stories build are reached:
    Success is judged from the JSON object it prints: it names the repository's absolute path and
    no `error`. An environment that does not set up or synthesize, and a first commit the commit
    hook refuses, stop `polyrepo create` before its first commit with an `error`; the folder it
-   leaves is its own unfinished output, which the next `polyrepo create` of the name replaces. A
+   leaves is its own unfinished output, which the next `polyrepo create` of the name replaces.
+   A failed GitHub creation or push after the first commit leaves the scaffold commit, and the
+   next `polyrepo create` of the name continues from the push and the manifest entry. A
    failed step after the push to GitHub (formatting, matrix, rulesets, beads, GitNexus) leaves
    the repository made and is kept in the creation record as a problem. A name the naming command refuses (checked for every name before any is created)
    and a failed `polyrepo create` fail the step as an item failure at stage `repo-creation`,

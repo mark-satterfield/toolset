@@ -123,13 +123,17 @@ judgment, and each has an obvious next step:
   template `cdk synth --profile dev`. When any of them does not hold, `create` stops before the
   first commit and exits 1 with the cause in `error`; so does a first commit the commit hook
   refuses.
-  A `create` that stopped before its first commit is rerun as it was run, with no cleanup: when
-  the destination folder exists, `create` replaces it only when it is its own unfinished output
-  (a `.copier-answers.yml` naming the same template, no commit in its git repository) and
-  neither GitHub nor the manifest has the name; any other existing folder is refused. The
-  result's `rerunnable` says whether a rerun will replace what the stopped run left. Fix the
-  cause (a template that no longer builds is fixed in the template, then `templates-check`),
-  then run `create` again.
+  A `create` that stopped before its manifest entry is rerun as it was run, with no cleanup.
+  Right after `git init`, `create` writes `.git/polyrepo-create` naming the template; a folder
+  with that file and a `.copier-answers.yml` naming the same template is its own output, and
+  any other existing folder is refused, as is a name the manifest has. A rerun replaces its own
+  output that holds no commit and is not on GitHub; it finishes its own output that holds only
+  the scaffold commit, pushing it to GitHub (using the GitHub repo an earlier run created, when
+  there is one) and then adding the manifest entry and the other records. A copier render that
+  fails leaves no folder. The result's `resumes` says where the run started (`new`, `replace`,
+  `push`, `push-existing`), and after a stop `rerunnable` says whether a rerun will replace or
+  finish what the stopped run left. Fix the cause (a template that no longer builds is fixed in
+  the template, then `templates-check`), then run `create` again.
   It also records the repo's stack in the matrix (see *The matrix*); the stack's purpose is
   the architect's, so `create` takes none.
 - **update** — Mechanical fields (`id`, `lifecycle`, archived state) are kept true

@@ -1916,12 +1916,14 @@ def point_origin(repo: Path, url: str) -> None:
     must(git(repo, "remote", verb, "origin", url))
 
 
-def create_on_github(cfg: Config, name: str, repo: Path) -> None:
+def create_on_github(cfg: Config, name: str, repo: Path, *, exists: bool = False) -> None:
     """Create the private GitHub repo with auto-merge allowed, point origin at it, and push.
 
+    With exists, the GitHub repo an earlier run created is used and only the rest is done.
     A gh or git failure propagates as the GitFailedError that `must` raises.
     """
-    must(run(["gh", "repo", "create", f"{cfg.owner}/{name}", "--private"], timeout=120))
+    if not exists:
+        must(run(["gh", "repo", "create", f"{cfg.owner}/{name}", "--private"], timeout=120))
     must(
         run(
             [
@@ -4054,43 +4056,65 @@ def _template_of_name(cfg: Config, name: str) -> str:
     raise PolyrepoError(msg)
 
 
-def _unfinished_create_problem(dest: Path, tdir: Path) -> str | None:
-    """Tell why an existing folder is not the unfinished output of an earlier `create` from a template.
+CREATE_MARKER = "polyrepo-create"
+"""The file `create` writes inside a new repo's `.git` right after `git init`, naming the template.
 
-    The unfinished output of `create` is a folder rendered from the template whose git
-    repository, if it has one yet, holds no commit: `create` stops before its first commit when
-    the environment or the commit hook fails, and nothing outside the folder records it yet.
+It marks the folder as `create`'s own output, which a later `create` of the name may replace or
+finish; git never commits it.
+"""
+
+type CreateResume = Literal["new", "replace", "push", "push-existing"]
+"""Where `create` starts for a destination (`_create_resume`).
+
+new: no folder. replace: its own output with no commit, rendered again. push: its own output
+holding only the scaffold commit, not yet on GitHub. push-existing: the same, with the GitHub
+repo an earlier run created.
+"""
+
+
+def _scaffold_message(name: str, template: str) -> str:
+    """Return the message of the first commit `create` makes.
+
+    Returns:
+        The commit message.
+
+    """
+    return f"chore(repo): scaffold {name} from the {template} template"
+
+
+def _unfinished_create_problem(dest: Path, tdir: Path) -> str | None:
+    """Tell why an existing folder is not the output of an earlier `create` from a template.
+
+    The output of `create` is a folder rendered from the template whose `.git` holds the
+    `CREATE_MARKER` file naming that template, written right after `git init`.
 
     Args:
         dest: The existing folder.
         tdir: The template folder the request renders.
 
     Returns:
-        None when the folder is that unfinished output, else the reason it is not.
+        None when the folder is that output, else the reason it is not.
 
     """
     answers = _read_yaml(dest / ".copier-answers.yml")
     src = str(answers.get("_src_path") or "")
     if not src or Path(src).resolve() != tdir.resolve():
         return f"its .copier-answers.yml does not name the {tdir.name} template {tdir}"
-    if (dest / ".git").exists():
-        refs = git_out(dest, "for-each-ref", "--count=1", "--format=%(refname)")
-        if refs is None:
-            return "git cannot read its repository"
-        if refs:
-            return f"its git repository holds commits ({refs})"
+    marker = dest / ".git" / CREATE_MARKER
+    if not marker.is_file() or marker.read_text().strip() != tdir.name:
+        return f"its .git holds no {CREATE_MARKER} file naming the {tdir.name} template, so create did not make it"
     return None
 
 
-def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path, bool]:
+def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path, CreateResume]:
     """Validate a create request against the naming command, the templates, disk and GitHub.
 
-    A destination folder that already exists is accepted only when it is the unfinished output
-    of an earlier `create` of the same name from the same template (`_unfinished_create_problem`)
-    and neither GitHub nor the manifest has the name; `create` then replaces it.
+    A destination folder that already exists is accepted only when it is the output of an
+    earlier `create` of the same name from the same template that stopped before its manifest
+    entry (`_create_resume`); `create` then replaces or finishes it.
 
     Returns:
-        (template folder, destination folder, whether the destination is unfinished output to replace).
+        (template folder, destination folder, where create starts).
 
     Raises:
         PolyrepoError: when the request breaks a rule or the name is taken.
@@ -4119,19 +4143,21 @@ def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path, b
         sub = cfg.placement_folder(space, name)
     space_dir = cfg.root / space
     dest = space_dir / sub / name if sub else space_dir / name
-    return tdir, dest, _replaceable_destination(cfg, name, tdir, dest)
+    return tdir, dest, _create_resume(cfg, name, tdir, dest)
 
 
-def _replaceable_destination(cfg: Config, name: str, tdir: Path, dest: Path) -> bool:
-    """Check that a new repo's name is free and tell whether its folder is unfinished output to replace.
+def _create_resume(cfg: Config, name: str, tdir: Path, dest: Path) -> CreateResume:
+    """Check that a new repo's name is free, and tell where `create` starts for its folder.
 
     Returns:
-        False when the folder does not exist, True when it is the unfinished output of an earlier
-        `create` from the same template.
+        new when the folder does not exist; replace when it is `create`'s own output with no
+        commit; push when it holds only the scaffold commit and GitHub lacks the name;
+        push-existing when GitHub has the name as well.
 
     Raises:
-        PolyrepoError: when a repo of the name is on disk elsewhere, GitHub or the manifest has the
-            name, or the folder exists and is anything but that unfinished output.
+        PolyrepoError: when a repo of the name is on disk elsewhere, the manifest has the name,
+            GitHub has the name and the folder holds no scaffold commit, or the folder exists
+            and is anything but `create`'s own output.
 
     """
     local, _ = discover(cfg)
@@ -4141,45 +4167,50 @@ def _replaceable_destination(cfg: Config, name: str, tdir: Path, dest: Path) -> 
     if elsewhere:
         msg = f"{name} already exists on disk at {', '.join(elsewhere)}"
         raise PolyrepoError(msg)
-    _require_new_name(cfg, name)
+    gh = GitHub(cfg, use_cache=False)
+    if name in Manifest(cfg.manifest, gh).entries():
+        msg = f"{name} already has a manifest entry"
+        raise PolyrepoError(msg)
+    on_github = gh.resolve(name) is not None
+    taken = f"{cfg.owner}/{name} already exists on GitHub"
     if not dest.exists():
-        return False
+        if on_github:
+            raise PolyrepoError(taken)
+        return "new"
     problem = _unfinished_create_problem(dest, tdir)
     if problem is not None:
         msg = f"{name} already exists on disk at {dest}, and it is not unfinished output of create: {problem}"
         raise PolyrepoError(msg)
-    return True
-
-
-def _require_new_name(cfg: Config, name: str) -> None:
-    """Refuse a name GitHub or the manifest already has.
-
-    Raises:
-        PolyrepoError: when a repository of the owner, or a manifest entry, has the name.
-
-    """
-    gh = GitHub(cfg, use_cache=False)
-    if gh.resolve(name) is not None:
-        msg = f"{cfg.owner}/{name} already exists on GitHub"
+    listed = git_out(dest, "rev-list", "--all")
+    if listed is None:
+        msg = f"git cannot read the repository at {dest}"
         raise PolyrepoError(msg)
-    if name in Manifest(cfg.manifest, gh).entries():
-        msg = f"{name} already has a manifest entry"
+    commits = listed.split()
+    if not commits:
+        if on_github:
+            msg = f"{taken}, and {dest} holds no commit to push to it"
+            raise PolyrepoError(msg)
+        return "replace"
+    if len(commits) != 1 or git_out(dest, "log", "-1", "--format=%s", commits[0]) != _scaffold_message(
+        name,
+        tdir.name,
+    ):
+        msg = f"{dest} holds commits other than the one scaffold commit create makes"
         raise PolyrepoError(msg)
+    return "push-existing" if on_github else "push"
 
 
 def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     """Create a repo from a template, on disk and on GitHub, with its manifest entry and its stack.
 
     Returns:
-        0 on success, 1 when a step after rendering failed.
-
-    Raises:
-        PolyrepoError: when the request is invalid or the template does not render.
+        0 on success, 1 when a step after rendering failed. A request that is invalid, and a
+        template that does not render, propagate as a PolyrepoError.
 
     """
     name, b = args.name, cfg.default_branch
     args.template = args.template or _template_of_name(cfg, name)
-    tdir, dest, unfinished = _create_checks(args, cfg)
+    tdir, dest, resume = _create_checks(args, cfg)
     data = _template_data(cfg, name, tdir)
     res: dict[str, object] = {
         "repo": name,
@@ -4188,10 +4219,16 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         "path": str(dest),
         "placement_missing": None if args.dir is not None else cfg.placement_missing(args.space, name),
         "dry_run": args.dry_run,
-        "replaces_unfinished": unfinished,
+        "resumes": resume,
         "steps": [
-            *([f"remove the unfinished output an earlier create left at {dest}"] if unfinished else []),
+            *([f"remove the unfinished output an earlier create left at {dest}"] if resume == "replace" else []),
+            *(
+                [f"finish the repo an earlier create committed at {dest}: push it, then add its records"]
+                if resume in {"push", "push-existing"}
+                else []
+            ),
             f"render the {args.template} template into {dest}",
+            f"git init on {b}, write .git/{CREATE_MARKER} naming the template, exclude {WORKTREES_LINE} locally",
             "write the shared AGENTS.md blocks, including GitNexus",
             "merge the shared hook registrations into .claude/settings.json (hooks_sync)",
             (
@@ -4200,7 +4237,6 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
             ),
             "install GitNexus: .gitnexusrc, the .gitnexus ignore rule and .claude/skills/gitnexus/",
             "run the repo's own formatters (.code-checks/run.py commit mode) over the rendered files once",
-            f"git init on {b}, exclude {WORKTREES_LINE} locally",
             (
                 "run the template's setup task (task install) and verify .venv/bin/python, "
                 f"every declared dependency, and for a {' or '.join(ENV_SYNTH_KINDS)} template cdk synth "
@@ -4220,25 +4256,20 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     }
     if args.dry_run:
         return _create_dry_run(args, cfg, tdir, data, res)
-    if unfinished:
-        shutil.rmtree(dest)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    cp = _copier_render(cfg, tdir, dest, data)
-    if cp.returncode != 0:
-        msg = f"copier failed: {_last_line(cp)}"
-        raise PolyrepoError(msg)
+    if resume in {"new", "replace"}:
+        _render_new(cfg, tdir, dest, data, replace=resume == "replace")
     try:
-        _create_scaffold(args, cfg, dest, res)
+        _create_scaffold(args, cfg, dest, res, resume)
     except (GitFailedError, CreateStoppedError) as exc:
         res["error"] = str(exc)
-        res["rerunnable"] = _unfinished_create_problem(dest, tdir) is None
+        res["rerunnable"] = _rerunnable(cfg, args.name, tdir, dest)
         emit(
             args,
             res,
             lambda: (
                 f"{name}: created at {dest} but stopped: {res['error']}"
                 + (
-                    "; fix the cause and run create again: it replaces this unfinished output"
+                    "; fix the cause and run create again: it replaces or finishes this unfinished output"
                     if res["rerunnable"]
                     else ""
                 )
@@ -4263,6 +4294,40 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         ),
     )
     return code
+
+
+def _render_new(cfg: Config, tdir: Path, dest: Path, data: dict[str, str], *, replace: bool) -> None:
+    """Render the template into the destination, removing first the unfinished output it replaces.
+
+    A render that fails leaves no folder, so the next `create` of the name starts anew.
+
+    Raises:
+        PolyrepoError: when the template does not render.
+
+    """
+    if replace:
+        shutil.rmtree(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    cp = _copier_render(cfg, tdir, dest, data)
+    if cp.returncode != 0:
+        if dest.exists():
+            shutil.rmtree(dest)
+        msg = f"copier failed: {_last_line(cp)}"
+        raise PolyrepoError(msg)
+
+
+def _rerunnable(cfg: Config, name: str, tdir: Path, dest: Path) -> bool:
+    """Tell whether a `create` of the name run again will replace or finish what a stopped one left.
+
+    Returns:
+        True when `_create_resume` accepts the destination.
+
+    """
+    try:
+        _create_resume(cfg, name, tdir, dest)
+    except PolyrepoError:
+        return False
+    return True
 
 
 def _create_dry_run(
@@ -4328,6 +4393,9 @@ def _prepare_rendered(cfg: Config, repo: NewRepo, dest: Path, res: dict[str, obj
 
     """
     name, space = repo.name, repo.space
+    must(git(dest, "init", f"--initial-branch={cfg.default_branch}"))
+    (dest / ".git" / CREATE_MARKER).write_text(f"{repo.template}\n")
+    _exclude_worktrees(dest)
     agents = dest / "AGENTS.md"
     agents.write_text(
         _with_blocks(
@@ -4337,8 +4405,6 @@ def _prepare_rendered(cfg: Config, repo: NewRepo, dest: Path, res: dict[str, obj
         ),
     )
     res["hooks_written"] = write_hooks(cfg, dest, name, space)
-    must(git(dest, "init", f"--initial-branch={cfg.default_branch}"))
-    _exclude_worktrees(dest)
     res["checks_written"] = write_checks(cfg, dest, name, space)
     # Before the first commit, so the lockfile the setup task writes is committed too.
     if env_applicable(dest):
@@ -4372,22 +4438,29 @@ def _first_commit(dest: Path, name: str, template: str) -> None:
             dest,
             "commit",
             "-m",
-            f"chore(repo): scaffold {name} from the {template} template",
+            _scaffold_message(name, template),
             timeout=300,
         ),
     )
 
 
-def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dict[str, object]) -> None:
-    """Prepare the rendered repo, commit it and create it on GitHub.
+def _create_scaffold(
+    args: argparse.Namespace,
+    cfg: Config,
+    dest: Path,
+    res: dict[str, object],
+    resume: CreateResume,
+) -> None:
+    """Prepare the rendered repo and commit it, unless an earlier run did, then create it on GitHub.
 
     A failed git or gh step propagates as the GitFailedError that `must` raises; an environment
     that does not set up stops it before the first commit as a CreateStoppedError.
     """
     name = args.name
-    _prepare_rendered(cfg, NewRepo(name=name, space=args.space, template=args.template), dest, res)
-    _first_commit(dest, name, args.template)
-    create_on_github(cfg, name, dest)
+    if resume in {"new", "replace"}:
+        _prepare_rendered(cfg, NewRepo(name=name, space=args.space, template=args.template), dest, res)
+        _first_commit(dest, name, args.template)
+    create_on_github(cfg, name, dest, exists=resume == "push-existing")
     failure = gitnexus_index(cfg, dest)
     failures = [*([failure] if failure else []), *gitnexus_register(cfg, dest, name)]
     if failures:
