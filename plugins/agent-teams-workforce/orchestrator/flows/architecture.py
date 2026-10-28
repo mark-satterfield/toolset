@@ -33,12 +33,13 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, TypeIs
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "find-specialists" / "scripts"))
 from architecture_work_contract import (
     ArchitectureWorkError,
+    schema_problems,
     validate_architecture_result,
     validate_architecture_state,
     validate_specialist_answer,
@@ -158,11 +159,12 @@ from orchestrator.flows.trd_authoring import (
 from orchestrator.flows.trd_steps import SEED_REF, WRITE_DESCRIPTION, seed_plan, write_request
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable, Collection, Mapping, Sequence
 
     from architecture_work_contract import (
         AgentRequest,
         ArchitectureResult,
+        FactEntry,
         SourceHeading,
         SpecialistRecommendation,
         SpecialistRequest,
@@ -598,22 +600,22 @@ def _request_problems(requests: Sequence[AgentRequest]) -> list[str]:
     return [*unknown, *started, *twice]
 
 
-def _about_problems(matrix: Matrix, result: ArchitectureResult) -> list[str]:
-    """Find each entry a fact of the result is about that the matrix does not hold.
+def _about_problems(matrix: Matrix, facts: Sequence[FactEntry]) -> list[str]:
+    """Find each entry a fact is about that the matrix does not hold.
 
     Returns:
         One sentence per id that is not an entry id, or is not held.
 
     """
     problems: list[str] = []
-    for fact in result["facts"]:
+    for fact in facts:
         for named in fact["about"]:
             _held(matrix, named, f"fact {fact['id']} about", problems)
     return problems
 
 
-def _home_problems(arch: Path, result: ArchitectureResult) -> list[str]:
-    """Find each fact of the result whose home is a folder index.
+def _home_problems(arch: Path, facts: Sequence[FactEntry]) -> list[str]:
+    """Find each fact whose home is a folder index.
 
     Returns:
         One sentence per fact whose home :func:`index_home` names a folder index.
@@ -623,7 +625,7 @@ def _home_problems(arch: Path, result: ArchitectureResult) -> list[str]:
         f"fact {fact['id']}: its home {fact['home']['source']!r} is a folder index: listing a view in its "
         "folder's index is part of filing the view, which the maintainer does, and is not a design fact; state "
         "the fact in the view that is its home"
-        for fact in result["facts"]
+        for fact in facts
         if index_home(arch, fact["home"]["source"])
     ]
 
@@ -646,10 +648,56 @@ def _decision_problems(
     """
     matrix: Matrix = read_matrix(matrix_file())
     problems: list[str] = _result_problems(matrix, bead, result, changes)
-    problems.extend(_about_problems(matrix, result))
-    problems.extend(_home_problems(arch, result))
+    problems.extend(_about_problems(matrix, result["facts"]))
+    problems.extend(_home_problems(arch, result["facts"]))
     if not result["requests"]:
         problems.extend(review_log_findings(bead, log, matrix, result))
+    return problems
+
+
+def _are_facts(value: object) -> TypeIs[list[FactEntry]]:
+    """Tell whether a value is a list of facts, each satisfying the FactEntry definition.
+
+    Returns:
+        True when every item of the list satisfies it.
+
+    """
+    return isinstance(value, list) and not any(schema_problems(item, "FactEntry") for item in value)
+
+
+def _are_requests(value: object) -> TypeIs[list[AgentRequest]]:
+    """Tell whether a value is a list of requests, each satisfying the AgentRequest definition.
+
+    Returns:
+        True when every item of the list satisfies it.
+
+    """
+    return isinstance(value, list) and not any(schema_problems(item, "AgentRequest") for item in value)
+
+
+def _invalid_result_problems(
+    arch: Path,
+    document: Mapping[str, JsonValue],
+    changes: Path,
+) -> list[str]:
+    """Find what can be found of an architecture result that does not satisfy its contract, writing nothing.
+
+    Returns:
+        Each operation of the change file that fails on a copy of the matrix that is never
+        written; then, when the result's ``facts`` satisfy their definition, each id they are
+        about that the copy does not hold and each home that is a folder index; then, when its
+        ``requests`` satisfy theirs, :func:`_request_problems`.
+
+    """
+    matrix: Matrix = read_matrix(matrix_file())
+    problems: list[str] = _change_problems(matrix, changes)
+    facts: JsonValue = document.get("facts")
+    if _are_facts(facts):
+        problems.extend(_about_problems(matrix, facts))
+        problems.extend(_home_problems(arch, facts))
+    requests: JsonValue = document.get("requests")
+    if _are_requests(requests):
+        problems.extend(_request_problems(requests))
     return problems
 
 
@@ -657,29 +705,40 @@ def result_check(run: StepRun) -> Callable[[Path], dict[str, JsonValue]]:
     """Build the output check of a session that writes the architecture result.
 
     Returns:
-        A check that reads the output as strict JSON, validates it with its contract, then runs
-        :func:`_decision_problems` with the change file beside the context file and the review
-        log, and :func:`_request_problems` on its ``requests``. Each problem is one line of the
-        ``ArchitectureWorkError`` it raises, which sends the session to its one correction.
+        A check that reads the output as strict JSON and validates it with its contract. A valid
+        result has :func:`_decision_problems` run with the change file beside the context file
+        and the review log, and :func:`_request_problems` on its ``requests``; an invalid one has
+        its schema problems and :func:`_invalid_result_problems`. Every problem is one line of the
+        one ``ArchitectureWorkError`` it raises, which sends the session to its one correction.
 
     """
     context: ArchitectureContext = read_context(run)
+    arch: Path = Path(context["architectureRoot"])
+    changes: Path = architecture_folder(run.context.work) / CHANGE_FILE
 
     def check(path: Path) -> dict[str, JsonValue]:
         document: dict[str, JsonValue] = strict_json(path)
-        result: ArchitectureResult = validate_architecture_result(document, str(path))
-        problems: list[str] = [
-            *run.tools.portfolio(
-                run.inputs.stage,
-                _decision_problems,
-                str(run.bead),
-                Path(context["architectureRoot"]),
-                result,
-                architecture_folder(run.context.work) / CHANGE_FILE,
-                Path(context["reviewLogPath"]),
-            ),
-            *_request_problems(result["requests"]),
-        ]
+        problems: list[str]
+        try:
+            result: ArchitectureResult = validate_architecture_result(document, str(path))
+        except ArchitectureWorkError as invalid:
+            problems = [
+                str(invalid),
+                *run.tools.portfolio(run.inputs.stage, _invalid_result_problems, arch, document, changes),
+            ]
+        else:
+            problems = [
+                *run.tools.portfolio(
+                    run.inputs.stage,
+                    _decision_problems,
+                    str(run.bead),
+                    arch,
+                    result,
+                    changes,
+                    Path(context["reviewLogPath"]),
+                ),
+                *_request_problems(result["requests"]),
+            ]
         if problems:
             raise ArchitectureWorkError("\n".join(problems))
         return document
@@ -1080,6 +1139,63 @@ def _record_trd(bead: str, arch: Path, answer: TrdAnswer) -> Recorded:
     return update_matrix(matrix_file(), change)
 
 
+def _texts(value: JsonValue, key: str | None = None) -> list[str]:
+    """Read the texts of a list in a document that may not satisfy its contract.
+
+    Returns:
+        Each text the list holds, or with ``key`` each text that member of an object in the list
+        holds; empty when the value is not a list.
+
+    """
+    if not isinstance(value, list):
+        return []
+    held: list[JsonValue] = value if key is None else [item.get(key) for item in value if isinstance(item, dict)]
+    return [text for text in held if isinstance(text, str)]
+
+
+def _trd_problems(
+    bead: str,
+    arch: Path,
+    trd: Path,
+    answer: Mapping[str, JsonValue],
+    stated: TrdAnswer | None,
+) -> list[str]:
+    """Find what a TRD and its answer leave unresolved, on a copy of the matrix that is never written.
+
+    Returns:
+        The TRD that cannot be read, alone; else each problem of the TRD's front matter and its
+        ``decisionIds`` citations (``trd_authoring.document``); then each requirement the matrix
+        would point at that is no heading of the TRD (``trd_authoring.unresolved_requirements``),
+        with the ids the answer removes and writes read from it even when it does not satisfy its
+        contract; then, for an answer that satisfies it (``stated``), what recording its
+        constraints could not record (:func:`_record_constraints`), such as an ``appliesTo`` that
+        is not an entry the matrix holds.
+
+    """
+    try:
+        text: str = trd.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as unreadable:
+        return [f"{trd}: {unreadable}"]
+    matrix: Matrix = read_matrix(matrix_file())
+    problems: list[str] = []
+    try:
+        document(trd, matrix, TRD_FRONT_MATTER)
+    except DocumentValidationError as invalid:
+        problems.append(f"{trd}: {invalid}")
+    problems.extend(
+        unresolved_requirements(
+            matrix,
+            bead,
+            text,
+            removed=_texts(answer.get("removed")),
+            written=_texts(answer.get("requirements"), "id"),
+        ),
+    )
+    if stated is not None:
+        problems.extend(_record_constraints(matrix, bead, arch, stated).problems)
+    return problems
+
+
 @agent_step(TRD_AUTHOR)
 def trd_author(run: StepRun) -> AgentLaunch:
     """Build the session of the TRD author: the one TRD write after the decisions, or a correction.
@@ -1089,8 +1205,10 @@ def trd_author(run: StepRun) -> AgentLaunch:
     session completes the TRD the seed wrote. A correction runs from the request file its step is
     handed, which the TRD confirm step writes. Every session of the author is handed the Epic's
     architecture pack. The answer is checked against
-    the TRD it names: its front matter and citations, and every constraint that points at a
-    requirement of this TRD names a heading of it once the answer is recorded. The accepted answer
+    the TRD it names in one pass that collects every problem (:func:`_trd_problems`): its
+    contract, the TRD's front matter and citations, that every constraint that points at a
+    requirement of this TRD names a heading of it once the answer is recorded, and that the
+    matrix can record the answer's constraints. The accepted answer
     is recorded in the matrix: one constraint for each technical requirement the answer states,
     none for each it lists as removed, and one for each obligation it lists with no source.
 
@@ -1114,18 +1232,15 @@ def trd_author(run: StepRun) -> AgentLaunch:
 
     def check(output: Path) -> dict[str, JsonValue]:
         answer: dict[str, JsonValue] = strict_json(output)
-        stated: TrdAnswer = validate_trd_answer(answer, str(output))
-        matrix: Matrix = read_matrix(matrix_file())
-        document(trd, matrix, TRD_FRONT_MATTER)
-        dangling: list[str] = unresolved_requirements(
-            matrix,
-            str(run.bead),
-            trd.read_text(encoding="utf-8"),
-            removed=stated["removed"],
-            written=[requirement["id"] for requirement in stated["requirements"]],
-        )
-        if dangling:
-            raise DocumentValidationError("; ".join(dangling))
+        problems: list[str] = []
+        stated: TrdAnswer | None = None
+        try:
+            stated = validate_trd_answer(answer, str(output))
+        except ArchitectureWorkError as invalid:
+            problems.append(str(invalid))
+        problems.extend(_trd_problems(str(run.bead), arch, trd, answer, stated))
+        if problems:
+            raise ArchitectureWorkError("\n".join(problems))
         return answer
 
     def accept(accepted: StepRun, output: Path) -> Completion:
@@ -1195,12 +1310,12 @@ def _sync(arch: Path, paths: Sequence[str]) -> DocumentsSynced:
     return update_matrix(matrix_file(), change)
 
 
-def _record_homes(arch: Path, request: WriteRequest, written: WriteResult) -> Recorded:
-    """Record the headings a write states the request's facts under, in one matrix change.
+def _home_links(matrix: Matrix, arch: Path, request: WriteRequest, skipped: Collection[str]) -> Recorded:
+    """Record in ``matrix`` the headings a write states the request's facts under.
 
-    For each fact the result does not list under ``notApplied``: ``describedBy`` from each entry
-    it is about to its home heading, and ``covers`` from that heading to each requirement an
-    entry among them serves as a feature (``servedBy``), with that feature as ``via``. A home
+    For each fact not in ``skipped`` (the result's ``notApplied``): ``describedBy`` from each
+    entry it is about to its home heading, and ``covers`` from that heading to each requirement
+    an entry among them serves as a feature (``servedBy``), with that feature as ``via``. A home
     with no heading (a document that holds no Markdown heading) is the whole document: its
     ``describedBy`` names no heading and it covers nothing, since ``covers`` requires a heading.
     A fact whose home is a folder index (:func:`index_home`) records nothing: the matrix never
@@ -1210,33 +1325,61 @@ def _record_homes(arch: Path, request: WriteRequest, written: WriteResult) -> Re
         What could not be recorded: a home that is no document the matrix holds, an entry it does not hold.
 
     """
+    problems: list[str] = []
+    for fact in request["facts"]:
+        if fact["id"] in skipped or not fact["about"] or index_home(arch, fact["home"]["source"]):
+            continue
+        home: EntryId | None = cited_document(arch, fact["home"]["source"])
+        heading: str = fact["home"]["heading"].strip()
+        stated: dict[str, JsonValue] = {ATTR_HEADING: heading} if heading else {}
+        if home is None or matrix.find(home) is None:
+            source: str = fact["home"]["source"]
+            problems.append(f"fact {fact['id']}: its home {source!r} is no document the matrix holds")
+            continue
+        for named in fact["about"]:
+            entry: EntryId | None = _held(matrix, named, f"fact {fact['id']} about", problems)
+            if entry is None:
+                continue
+            _link(matrix, REL_DESCRIBED_BY, entry, home, problems, stated)
+            if not heading:
+                continue
+            for served in matrix.incoming(entry, (REL_SERVED_BY,)):
+                covered: dict[str, JsonValue] = {ATTR_HEADING: heading, ATTR_VIA: entry}
+                _link(matrix, REL_COVERS, home, served.start, problems, covered)
+    return Recorded(problems=tuple(problems))
+
+
+def _record_homes(arch: Path, request: WriteRequest, written: WriteResult) -> Recorded:
+    """Record the headings a write states the request's facts under, in one matrix change (:func:`_home_links`).
+
+    Returns:
+        What could not be recorded.
+
+    """
     skipped: set[str] = {entry["entry"] for entry in written["notApplied"]}
 
     def change(matrix: Matrix) -> Recorded:
-        problems: list[str] = []
-        for fact in request["facts"]:
-            if fact["id"] in skipped or not fact["about"] or index_home(arch, fact["home"]["source"]):
-                continue
-            home: EntryId | None = cited_document(arch, fact["home"]["source"])
-            heading: str = fact["home"]["heading"].strip()
-            stated: dict[str, JsonValue] = {ATTR_HEADING: heading} if heading else {}
-            if home is None or matrix.find(home) is None:
-                source: str = fact["home"]["source"]
-                problems.append(f"fact {fact['id']}: its home {source!r} is no document the matrix holds")
-                continue
-            for named in fact["about"]:
-                entry: EntryId | None = _held(matrix, named, f"fact {fact['id']} about", problems)
-                if entry is None:
-                    continue
-                _link(matrix, REL_DESCRIBED_BY, entry, home, problems, stated)
-                if not heading:
-                    continue
-                for served in matrix.incoming(entry, (REL_SERVED_BY,)):
-                    covered: dict[str, JsonValue] = {ATTR_HEADING: heading, ATTR_VIA: entry}
-                    _link(matrix, REL_COVERS, home, served.start, problems, covered)
-        return Recorded(problems=tuple(problems))
+        return _home_links(matrix, arch, request, skipped)
 
     return update_matrix(matrix_file(), change)
+
+
+def _home_check(arch: Path, request: WriteRequest, skipped: Collection[str], paths: Sequence[str]) -> list[str]:
+    """Find what recording a write's fact homes would refuse, on a copy of the matrix that is never written.
+
+    The documents written are read into the copy as the accepting step syncs them (:func:`_sync`
+    sets each in review, which every document the maintainer writes already states), then the
+    homes are recorded in it (:func:`_home_links`).
+
+    Returns:
+        One sentence per home that is no document the copy holds, and per entry a fact is about
+        that it does not hold.
+
+    """
+    matrix: Matrix = read_matrix(matrix_file())
+    if paths:
+        sync_documents(matrix, arch, paths=paths)
+    return list(_home_links(matrix, arch, request, skipped).problems)
 
 
 @agent_step(MAINTAINER)
@@ -1246,8 +1389,10 @@ def maintainer(run: StepRun) -> AgentLaunch:
     A request holds one group of arc42 sections (``architecture_rounds.SECTION_GROUPS``). The
     output check validates the result and, in the same pass, checks each Mermaid block of the
     documents written that the vault's last commit does not hold
-    (``architecture_diagrams.syntax_problems``), so the session's one correction is handed every
-    problem at once; a result that does not validate still has the request's homes checked. The
+    (``architecture_diagrams.syntax_problems``), and what recording the facts' homes would refuse
+    (:func:`_home_check`), so the session's one correction is handed every problem at once; a
+    result that does not validate still has the request's homes checked, skipping the facts its
+    ``notApplied`` names. The
     accepted result is mirrored in the matrix: each document written is set in review and its
     entry is brought up to date with its headings and lifecycle, and the entry of a document that
     is gone is removed; then each fact's home heading is recorded (:func:`_record_homes`). The
@@ -1274,7 +1419,10 @@ def maintainer(run: StepRun) -> AgentLaunch:
             written = validate_write_result(document, str(path))
         except ArchitectureWorkError as invalid:
             problems.append(str(invalid))
-        problems.extend(syntax_problems(run, arch, written_paths(arch, request, written), rendered))
+        paths: list[str] = written_paths(arch, request, written)
+        problems.extend(syntax_problems(run, arch, paths, rendered))
+        skipped: list[str] = _texts(document.get("notApplied"), "entry")
+        problems.extend(_home_check(arch, request, skipped, paths))
         if problems:
             raise ArchitectureWorkError("\n".join(problems))
         return document

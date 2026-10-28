@@ -8,7 +8,7 @@ disallowedTools: AskUserQuestion
 mcpServers:
 - aws-mcp
 model: fable
-x-sessionLimit: 720
+x-sessionLimit: 1800
 permissionMode: acceptEdits
 maxTurns: 100
 skills:
@@ -107,6 +107,8 @@ TRD's fixed form is
 Keep `decisionIds` in the front matter: the arc42 paths, with headings, that the requirements
 cite, each one string `<path>#<heading>`, never an object, for example
 `decisionIds: ["arc42/08-crosscutting-concepts/email-channel-ownership.md#Ownership and the aggregate"]`.
-Replace a front matter that does not have this form. The step checks the TRD's front matter and
-every citation against the matrix when your session ends. Write the TRD file at the request's `trdPath` and the answer, to
+Replace a front matter that does not have this form. When your session ends the step checks, in
+one pass, the answer against its schema, the TRD's front matter and every citation against the
+matrix, that each requirement has its heading, and that each `appliesTo` is an entry the matrix
+holds. Write the TRD file at the request's `trdPath` and the answer, to
 `trd-answer.schema.json`, at its `answerPath`.
