@@ -135,7 +135,6 @@ CREATE_LOCK_PREFIX: Final = "repo-create-"
 PRESENT_WHERE: Final[tuple[str, ...]] = ("disk", "github", "manifest")
 """Where a repository that exists is present: its clone, GitHub and the manifest."""
 CREATE_PROBLEMS: Final[tuple[str, ...]] = (
-    "environment_error",
     "format_error",
     "matrix_error",
     "ruleset_error",
