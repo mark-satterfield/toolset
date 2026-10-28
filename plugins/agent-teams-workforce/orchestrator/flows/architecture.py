@@ -66,7 +66,14 @@ from matrix_contract import (
 )
 from matrixquery import epic_view
 from matrixstore import as_entry_id, make_id, name_key, read_matrix, slug, update_matrix
-from matrixsync import LIFECYCLE_IN_REVIEW, relative_path, set_lifecycle, sync_documents, vault_root
+from matrixsync import (
+    LIFECYCLE_IN_REVIEW,
+    front_matter_close,
+    relative_path,
+    set_lifecycle,
+    sync_documents,
+    vault_root,
+)
 from matrixtraverse import epic_id
 from matrixwrite import apply_change_file, apply_changes, link, put
 from specialist_catalog import agent_names
@@ -1179,7 +1186,7 @@ def _trd_problems(
     matrix: Matrix = read_matrix(matrix_file())
     problems: list[str] = []
     try:
-        document(trd, matrix, TRD_FRONT_MATTER)
+        document(trd, matrix, TRD_FRONT_MATTER, arch)
     except DocumentValidationError as invalid:
         problems.append(f"{trd}: {invalid}")
     problems.extend(
@@ -1367,19 +1374,26 @@ def _record_homes(arch: Path, request: WriteRequest, written: WriteResult) -> Re
 def _home_check(arch: Path, request: WriteRequest, skipped: Collection[str], paths: Sequence[str]) -> list[str]:
     """Find what recording a write's fact homes would refuse, on a copy of the matrix that is never written.
 
-    The documents written are read into the copy as the accepting step syncs them (:func:`_sync`
-    sets each in review, which every document the maintainer writes already states), then the
-    homes are recorded in it (:func:`_home_links`).
+    The documents written are read into the copy as the accepting step syncs them: :func:`_sync`
+    sets each in review first, so the copy reads each as in review, and a document that has no
+    front matter to state it in is a problem, as :func:`_sync` would refuse it. Then the homes are
+    recorded in the copy (:func:`_home_links`).
 
     Returns:
-        One sentence per home that is no document the copy holds, and per entry a fact is about
-        that it does not hold.
+        One sentence per written document with no front matter, per home that is no document the
+        copy holds, and per entry a fact is about that it does not hold.
 
     """
+    problems: list[str] = [
+        f"the document {arch / relative} has no front matter to state its lifecycle in"
+        for relative in paths
+        if (arch / relative).is_file()
+        and not front_matter_close((arch / relative).read_text(encoding="utf-8").splitlines())
+    ]
     matrix: Matrix = read_matrix(matrix_file())
     if paths:
-        sync_documents(matrix, arch, paths=paths)
-    return list(_home_links(matrix, arch, request, skipped).problems)
+        sync_documents(matrix, arch, paths=paths, lifecycle=LIFECYCLE_IN_REVIEW)
+    return [*problems, *_home_links(matrix, arch, request, skipped).problems]
 
 
 @agent_step(MAINTAINER)

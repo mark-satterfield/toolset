@@ -305,12 +305,13 @@ def _clear(matrix: Matrix, bead: str) -> tuple[str, ...]:
     return tuple(str(entry_id) for entry_id in gone)
 
 
-def write_seed(bead: str, reach: list[str]) -> Seed:
+def write_seed(bead: str, reach: list[str], arch: Path) -> Seed:
     """Start an Epic's TRD over from the matrix, as one change of the matrix.
 
     Args:
         bead: The Epic's beads id.
         reach: The ids of the entries of the Epic's reach.
+        arch: The architecture root.
 
     Returns:
         The TRD seed's text, how many requirements it holds, and the constraints of the Epic's
@@ -322,7 +323,7 @@ def write_seed(bead: str, reach: list[str]) -> Seed:
         cleared: tuple[str, ...] = _clear(matrix, bead)
         requirements: list[SeedRequirement] = seed_requirements(matrix, bead, reach)
         refs: dict[str, None] = dict.fromkeys(ref for requirement in requirements for ref in requirement["sources"])
-        citations: list[str] = sorted(ref for ref in refs if cited(matrix, ref) is not None)
+        citations: list[str] = sorted(ref for ref in refs if cited(matrix, arch, ref) is not None)
         name: str = matrix.entry(epic_id(bead)).name
         return Seed(seed_text(name, bead, requirements, citations), len(requirements), cleared)
 
@@ -345,7 +346,7 @@ def seed(run: StepRun) -> Completion:
         collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
     )
     reach: list[str] = [check_type(row["id"], str) for row in rows]
-    written: Seed = run.tools.portfolio(SEED_TRD, write_seed, str(run.bead), reach)
+    written: Seed = run.tools.portfolio(SEED_TRD, write_seed, str(run.bead), reach, Path(context["architectureRoot"]))
     trd: Path = Path(context["trdPath"])
     trd.parent.mkdir(parents=True, exist_ok=True)
     trd.write_text(written.text, encoding="utf-8")

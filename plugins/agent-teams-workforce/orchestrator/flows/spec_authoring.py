@@ -331,7 +331,8 @@ def document_check(run: StepRun, name: str) -> OutputValidator:
     if name == CRITERIA:
         return criteria_document
     matrix: Matrix = run.tools.portfolio(name, read_matrix, matrix_path(None, os.environ))
-    return lambda path: document(path, matrix, SPEC_FRONT_MATTER)
+    arch: Path = architecture_root(run)
+    return lambda path: document(path, matrix, SPEC_FRONT_MATTER, arch)
 
 
 def author_files(run: StepRun, names: Sequence[str]) -> tuple[tuple[str, Path], ...]:
@@ -587,13 +588,18 @@ def story_surfaces(matrix: Matrix, entries: Sequence[EntryId], *, frontend: bool
     return Surfaces(contracts=unknown or interface, data_model=unknown or store, ui=frontend and (unknown or ui))
 
 
-def _scope_documents(scopes: Sequence[StoryScope]) -> list[JsonValue]:
+def _scope_documents(root: Path, scopes: Sequence[StoryScope]) -> list[JsonValue]:
     """List the architecture documents some story scopes name, each with the headings to read.
+
+    Args:
+        root: The architecture root the documents' paths are relative to.
+        scopes: The story scopes of the stacks the Story builds in.
 
     Returns:
         One row per document, in id order: its entry id, its path relative to the architecture
-        root, which is the path a citation names (``trd_authoring.cited``), and the headings the
-        scopes name in it (none when a scope names the document as a whole).
+        root, which is the path a citation names (``trd_authoring.cited``), its absolute file,
+        which a session opens to read it, and the headings the scopes name in it (none when a
+        scope names the document as a whole).
 
     """
     headings: dict[EntryId, dict[str, None]] = {}
@@ -611,9 +617,11 @@ def _scope_documents(scopes: Sequence[StoryScope]) -> list[JsonValue]:
     rows: list[JsonValue] = []
     for identifier in sorted(headings):
         listed: list[JsonValue] = list(headings[identifier])
+        relative: str = identifier.partition(":")[2]
         rows.append({
             "document": identifier,
-            "path": identifier.partition(":")[2],
+            "path": relative,
+            "file": str(root / relative),
             "headings": listed,
         })
     return rows
@@ -844,7 +852,7 @@ def context(run: StepRun) -> Completion:
     entries: list[EntryId] = list(dict.fromkeys(entry for built in stacks.values() for entry in built))
     scoped: list[JsonValue] = [entry_scope(matrix, entry) for entry in entries]
     component: list[JsonValue] = component_documents(architecture_root(run), matrix, [*stacks, *entries])
-    documents: list[JsonValue] = _scope_documents(scopes)
+    documents: list[JsonValue] = _scope_documents(architecture_root(run), scopes)
     path: Path = write_contract(
         run.context.work / f"spec-{held.slug}.context.json",
         {
@@ -1138,6 +1146,7 @@ def story_document(run: StepRun) -> Completion:
     held: Repository = repository(run.inputs)
     dispatch: DispatchArguments = dispatch_arguments()
     matrix: Matrix = run.tools.portfolio(STORY_DOCUMENT_STEP, read_matrix, matrix_path(None, os.environ))
+    arch: Path = architecture_root(run)
     documents: list[Path] = [run.inputs.file(name) for name in (SPEC, DATA_MODEL, CRITERIA)]
     held_context: dict[str, JsonValue] = json_object(strict_json(run.inputs.file(CONTEXT)))
     component: list[dict[str, JsonValue]] = objects(held_context[KEY_COMPONENT_DOCUMENTS])
@@ -1147,7 +1156,7 @@ def story_document(run: StepRun) -> Completion:
         dict.fromkeys(
             value.strip()
             for path in documents[:2]
-            for value in document(path, matrix, SPEC_FRONT_MATTER)[0]
+            for value in document(path, matrix, SPEC_FRONT_MATTER, arch)[0]
             if value.strip()
         ),
     )

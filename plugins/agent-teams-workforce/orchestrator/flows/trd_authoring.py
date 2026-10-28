@@ -57,6 +57,7 @@ from orchestrator.flows.architecture_files import (
     TRD_AUTHOR,
     ArchitectureContext,
     ArchitectureStepError,
+    cited_document,
     read_context,
 )
 from orchestrator.flows.elaboration_support import TRD_AUTHORING_PHASE, emit_event, enter_phase
@@ -151,23 +152,45 @@ def _stated(document_entry: Entry, heading: str) -> str | None:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def cited(matrix: Matrix, citation: str) -> tuple[EntryId, str] | None:
+def relative_citation(arch: Path, citation: str) -> str:
+    """Write a citation with its document's path relative to the architecture root.
+
+    Args:
+        arch: The architecture root.
+        citation: The citation as a document's ``decisionIds`` writes it.
+
+    Returns:
+        The citation with an absolute path under the architecture root replaced by the path
+        relative to it; any other citation as it is.
+
+    """
+    stated, mark, heading = citation.partition(HEADING_SEPARATOR)
+    if not Path(stated.strip().removeprefix(f"{KIND_DOCUMENT}:")).is_absolute():
+        return citation
+    located: EntryId | None = cited_document(arch, stated)
+    return citation if located is None else f"{located.partition(':')[2]}{mark}{heading}"
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def cited(matrix: Matrix, arch: Path, citation: str) -> tuple[EntryId, str] | None:
     """Find the document entry and heading one citation names, as ``atw-matrix node document:<path>`` holds them.
 
-    A citation is a document's path under the architecture root, with or without the arc42
-    folder, or the document's entry id; a heading follows a ``#``.
+    A citation is a document's path relative to the architecture root, with or without the
+    arc42 folder, its absolute path under the root, or the document's entry id; a heading
+    follows a ``#``.
 
     Args:
         matrix: The matrix.
+        arch: The architecture root.
         citation: The citation as a document's ``decisionIds`` writes it.
 
     Returns:
         The document's entry id and the heading cited, as the entry holds its text (empty when
-        the citation names none); None when the matrix holds no such document, or the document
-        holds no such heading.
+        the citation names none); None when the matrix holds no such document, the document
+        holds no such heading, or the path is absolute and outside the architecture root.
 
     """
-    relative, _, heading = citation.partition(HEADING_SEPARATOR)
+    relative, _, heading = relative_citation(arch, citation).partition(HEADING_SEPARATOR)
     relative = relative.strip().removeprefix(f"{KIND_DOCUMENT}:")
     if not relative or Path(relative).is_absolute():
         return None
@@ -209,7 +232,7 @@ def _front_matter_problem(front: dict[str, JsonValue], definition: str) -> str |
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def document(path: Path, matrix: Matrix, definition: str) -> tuple[list[str], list[str]]:
+def document(path: Path, matrix: Matrix, definition: str, arch: Path) -> tuple[list[str], list[str]]:
     """Validate document frontmatter and check each architecture citation against the matrix.
 
     Args:
@@ -217,9 +240,11 @@ def document(path: Path, matrix: Matrix, definition: str) -> tuple[list[str], li
         matrix: The matrix, whose document entries hold every arc42 document and its headings.
         definition: The document's ``$defs`` entry in :data:`FRONT_MATTER_CONTRACT`
             (:data:`TRD_FRONT_MATTER` or :data:`SPEC_FRONT_MATTER`).
+        arch: The architecture root the citations' paths are relative to.
 
     Returns:
-        The citations of the document's ``decisionIds``, and the warnings the check raised.
+        The citations of the document's ``decisionIds``, each with its path relative to the
+        architecture root (:func:`relative_citation`), and the warnings the check raised.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -227,7 +252,12 @@ def document(path: Path, matrix: Matrix, definition: str) -> tuple[list[str], li
             citation names a document or a heading the matrix does not hold.
 
     """
-    if not (isinstance(path, Path)) or not (isinstance(matrix, Matrix)) or not isinstance(definition, str):
+    if (
+        not isinstance(path, Path)
+        or not isinstance(matrix, Matrix)
+        or not isinstance(definition, str)
+        or not isinstance(arch, Path)
+    ):
         raise TypeError(_ARGUMENT_ERROR)
     text: str = path.read_text(encoding="utf-8")
     if not text.strip():
@@ -254,12 +284,12 @@ def document(path: Path, matrix: Matrix, definition: str) -> tuple[list[str], li
         list[str],
         collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
     )
-    unresolved: list[str] = [citation for citation in ids if cited(matrix, citation) is None]
+    unresolved: list[str] = [citation for citation in ids if cited(matrix, arch, citation) is None]
     if unresolved:
         message = f"decisionIds the matrix holds no document and heading for: {unresolved}"
         raise DocumentValidationError(message)
     warnings: list[str] = [] if ids else ["decisionIds is empty"]
-    return ids, warnings
+    return [relative_citation(arch, citation) for citation in ids], warnings
 
 
 def _dangling(matrix: Matrix, bead: str, headings: set[str], removed: Collection[str]) -> list[tuple[EntryId, str]]:
@@ -488,7 +518,7 @@ def confirm(run: StepRun) -> Completion:
         for constraint, requirement in _dangling(matrix, str(run.bead), _headings(text), ())
     ]
     try:
-        cited, warnings = document(trd, matrix, TRD_FRONT_MATTER)
+        cited, warnings = document(trd, matrix, TRD_FRONT_MATTER, Path(context["architectureRoot"]))
     except DocumentValidationError as exc:
         changes.insert(0, _document_change(trd, str(exc)))
     if changes:

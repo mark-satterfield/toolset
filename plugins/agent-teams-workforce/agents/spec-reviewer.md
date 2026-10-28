@@ -82,8 +82,10 @@ The brief names six inputs: the contracts document (`spec-<slug>.md`), the data-
 what this repository's Story builds, and whose `documents` name the architecture headings the
 Story's scopes name) and the spec pack (`spec-pack.schema.json`), which holds the constraints and
 TRD requirements that bind what the Story builds. Read those. To check a statement against a
-heading a document cites, find the heading's line with Grep in the file at the `path` the
-context gives, and Read from that line to the next heading only. Open another file only to check
+heading a document cites, find the heading's line with Grep in the `file` the context gives
+for the document whose `path` the citation names, and Read from that line to the next heading
+only. A citation names a document by its `path`, relative to the architecture root, never by its
+`file`. Open another file only to check
 a statement one of them cites that none of these holds.
 
 Review the three documents against the specs-and-Tasks criteria, I1 to I7, as

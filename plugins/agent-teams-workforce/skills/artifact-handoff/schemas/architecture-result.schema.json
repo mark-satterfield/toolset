@@ -338,7 +338,7 @@
       }
     },
     "TrdChange": {
-      "description": "One change to the TRD. For `remove`, only `id` carries meaning and the other texts are empty.",
+      "description": "One change to the TRD. For `remove`, only `id` carries meaning: `statement` and `appliesTo` are empty, and `source` names the TRD's path with the removed requirement's id as its heading, since a source is never empty.",
       "type": "object",
       "additionalProperties": false,
       "required": ["change", "id", "kind", "statement", "source", "appliesTo"],

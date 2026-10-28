@@ -47,7 +47,9 @@ you change none of it. The brief hands you, by label: `data model` (`spec-<slug>
 `TRD` and `repository context` (`spec-context.schema.json`: its `items` are what the Story
 builds, and its `documents` name the architecture and design documents and headings the spec
 cites). Read those, and open another file only to check a statement one of them cites: the
-detailed design a store's section cites is the record you compare against.
+detailed design a store's section cites is the record you compare against. A citation names a
+document by its `path`, relative to the architecture root; open the `file` the context gives for
+that `path`.
 
 A spec designs nothing: it states each store as the detailed design records it. So you measure
 each DynamoDB table in the document against criteria I2 and I7 of

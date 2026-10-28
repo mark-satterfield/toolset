@@ -724,8 +724,15 @@ def _document_paths(matrix: Matrix) -> list[str]:
     return sorted(entry.id.partition(":")[2] for entry in matrix.entries((KIND_DOCUMENT,)))
 
 
-def _apply_documents(matrix: Matrix, arch: Path, wanted: Sequence[str]) -> DocumentsSynced:
+def _apply_documents(
+    matrix: Matrix,
+    arch: Path,
+    wanted: Sequence[str],
+    lifecycle: Lifecycle | None = None,
+) -> DocumentsSynced:
     """Correct the document entries of the matrix for some paths.
+
+    With ``lifecycle``, every document read is taken to state that lifecycle.
 
     Returns:
         What was added, changed and removed, the relationships added, the names that joined
@@ -754,14 +761,15 @@ def _apply_documents(matrix: Matrix, arch: Path, wanted: Sequence[str]) -> Docum
         document: DocumentRead | None = read.get(path)
         key: EntryId = make_id(KIND_DOCUMENT, path)
         existing: Entry | None = matrix.find(key)
-        if document is None or document.lifecycle is None:
+        state: Lifecycle | None = None if document is None else lifecycle or document.lifecycle
+        if document is None or state is None:
             if document is not None or (arch / path).is_file():
                 result["leftOut"].append(path)
             if existing is not None:
                 matrix.remove(key)
                 result["removed"].append(path)
             continue
-        entry: Entry = _document_entry(document, document.lifecycle, existing)
+        entry: Entry = _document_entry(document, state, existing)
         if entry != existing:
             matrix.put(entry)
             result["added" if existing is None else "changed"].append(path)
@@ -804,7 +812,13 @@ def _named_paths(arch: Path, paths: Sequence[str]) -> list[str]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def sync_documents(matrix: Matrix, arch: Path, *, paths: Sequence[str] | None = None) -> DocumentsSynced:
+def sync_documents(
+    matrix: Matrix,
+    arch: Path,
+    *,
+    paths: Sequence[str] | None = None,
+    lifecycle: Lifecycle | None = None,
+) -> DocumentsSynced:
     """Bring the document entries and their ``describedBy`` relationships up to date with the vault.
 
     Each architecture document that is effective, in review or draft has one entry on the architecture
@@ -826,6 +840,8 @@ def sync_documents(matrix: Matrix, arch: Path, *, paths: Sequence[str] | None = 
         arch: The architecture root inside the vault.
         paths: The files to read: absolute, or relative to the architecture root. None reads
             every document.
+        lifecycle: The lifecycle every document read is taken to state, as it will once
+            :func:`set_lifecycle` writes it; None reads the lifecycle each document states.
 
     Returns:
         What the read did.
@@ -839,8 +855,24 @@ def sync_documents(matrix: Matrix, arch: Path, *, paths: Sequence[str] | None = 
         message: str = f"the architecture root {arch} is not a directory"
         raise MatrixError(message)
     if paths is not None:
-        return _apply_documents(matrix, root, _named_paths(root, paths))
-    return _apply_documents(matrix, root, sorted({*_candidates(root), *_document_paths(matrix)}))
+        return _apply_documents(matrix, root, _named_paths(root, paths), lifecycle)
+    return _apply_documents(matrix, root, sorted({*_candidates(root), *_document_paths(matrix)}), lifecycle)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def front_matter_close(lines: Sequence[str]) -> int:
+    """Find the line that closes a document's front matter.
+
+    Args:
+        lines: The document's lines.
+
+    Returns:
+        The index of the closing fence; 0 when the document has no front matter.
+
+    """
+    if not lines or lines[0].strip() != FENCE:
+        return 0
+    return next((index for index in range(1, len(lines)) if lines[index].strip() == FENCE), 0)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -870,11 +902,7 @@ def set_lifecycle(vault: Path, relative: str, lifecycle: Lifecycle) -> bool:
     except (OSError, UnicodeDecodeError) as error:
         message = f"cannot read the document {file}: {error}"
         raise MatrixError(message) from error
-    close: int = (
-        next((index for index in range(1, len(lines)) if lines[index].strip() == FENCE), 0)
-        if lines and lines[0].strip() == FENCE
-        else 0
-    )
+    close: int = front_matter_close(lines)
     if not close:
         message = f"the document {file} has no front matter to state its lifecycle in"
         raise MatrixError(message)

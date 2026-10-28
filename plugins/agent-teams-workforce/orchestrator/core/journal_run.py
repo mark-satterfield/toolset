@@ -28,9 +28,10 @@ Work that already succeeded is never redone: an agent step that did not fail and
 file is valid and was written since the step started is recorded from that file, and its agent is
 not started again (``helper-steps.schema.json``). That covers a helper a lead agent ran in its own
 session and left unrecorded, and a session that wrote its output and stopped before the step was
-recorded. The output of a failed step is never reused: the failure was found in it, so the step
-runs a session, and that session is handed the earlier failure (:func:`_previous_failure`) to
-correct.
+recorded. The output of a step that failed in its work is never reused: the failure was found in
+it, so the step runs a session, and that session is handed the earlier failure
+(:func:`_previous_failure`) to correct. A step that failed for any other cause (a timeout, a
+transient cause, a defect of the pipeline) still reuses a valid output.
 
 An agent step that has child steps is closed only through its "Finish", its last child step
 (``helper-steps.schema.json``). A "Finish" the runner ran was accepted when it ran. A "Finish"
@@ -329,14 +330,15 @@ def _finished_output(step: Step, launch: AgentLaunch) -> bool:
     written when its session stops.
 
     Returns:
-        True when the launch allows reuse, the step did not fail, and the JSON file at
-        ``launch.output`` was written since the step started and passes the launch's check; an
-        invalid file, or the file of a failed step, is the session's to redo. A contract that
-        cannot be loaded raises ``PipelineDefectError`` from ``validate_output``.
+        True when the launch allows reuse, the step did not fail in its work
+        (:func:`_work_failure`), and the JSON file at ``launch.output`` was written since the step
+        started and passes the launch's check; an invalid file, or the file of a step that failed
+        in its work, is the session's to redo. A contract that cannot be loaded raises
+        ``PipelineDefectError`` from ``validate_output``.
 
     """
     if (
-        step["status"] == STATUS_FAILED
+        _work_failure(step) is not None
         or not launch.reuse_output
         or launch.output.suffix != JSON_SUFFIX
         or not _written_since_start(step, launch.output)
@@ -358,25 +360,41 @@ def _finished_output(step: Step, launch: AgentLaunch) -> bool:
     return True
 
 
+def _work_failure(step: Step) -> JsonValue | None:
+    """Read a failed step's failure when it is a failure of the work itself.
+
+    A failure recorded with another classification (a transient cause, a defect of the
+    pipeline) is nothing the agent can correct. A failure that is not the structured cause the
+    runner records counts as the work's, as it is.
+
+    Returns:
+        The failure, decoded when it is the structured cause; None when the step did not fail,
+        holds no failure, or failed for a cause that is not the work's.
+
+    """
+    failure: str | None = step.get("failure")
+    if step["status"] != STATUS_FAILED or failure is None:
+        return None
+    recorded: JsonValue = failure
+    with contextlib.suppress(json.JSONDecodeError):
+        recorded = json.loads(failure)
+    if isinstance(recorded, dict) and recorded.get("classification", ITEM_CLASS) != ITEM_CLASS:
+        return None
+    return recorded
+
+
 def _previous_failure(step: Step, output: Path) -> list[tuple[str, Path]]:
     """Write a failed step's earlier failure beside its output, for the step's next session.
 
-    Only a failure of the work itself is handed on: a failure recorded with another
-    classification (a transient cause, a defect of the pipeline) is nothing the agent can
-    correct. A failure that is not the structured cause the runner records is handed on as it is.
+    Only a failure of the work itself is handed on (:func:`_work_failure`).
 
     Returns:
         The labelled file of the failure; empty when the step did not fail or its failure is not
         the work's.
 
     """
-    failure: str | None = step.get("failure")
-    if step["status"] != STATUS_FAILED or failure is None:
-        return []
-    recorded: JsonValue = failure
-    with contextlib.suppress(json.JSONDecodeError):
-        recorded = json.loads(failure)
-    if isinstance(recorded, dict) and recorded.get("classification", ITEM_CLASS) != ITEM_CLASS:
+    recorded: JsonValue | None = _work_failure(step)
+    if recorded is None:
         return []
     path: Path = output.with_name(output.name + PREVIOUS_FAILURE_SUFFIX)
     write_json(path, {"step": step["id"], "output": str(output), "failure": recorded})

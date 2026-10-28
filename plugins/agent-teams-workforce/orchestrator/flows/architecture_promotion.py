@@ -197,7 +197,8 @@ def _commit_vault(run: StepRun, vault: Path, paths: list[str], message: str) -> 
     """Commit named paths of the vault and push them.
 
     Only the named paths that exist or that git tracks are staged and committed, so a document
-    that was never created is left out and one that was deleted is committed as deleted. The
+    that was never created is left out and one that was deleted is committed as deleted; when no
+    named path is left, nothing is staged, since git would stage the whole vault. The
     branch is pushed when this call made a commit or an earlier one was left unpushed.
 
     Returns:
@@ -209,13 +210,15 @@ def _commit_vault(run: StepRun, vault: Path, paths: list[str], message: str) -> 
         run.tools.command(["git", "ls-files", "-z", "--", *paths], stage=PROMOTE, cwd=vault).stdout.split("\0"),
     )
     named: list[str] = [path for path in paths if (vault / path).exists() or path in tracked]
-    run.tools.git(vault, ["add", "-A", "--", *named], stage=PROMOTE)
-    staged: str = run.tools.command(
-        ["git", "diff", "--cached", "--name-only", "--", *named],
-        stage=PROMOTE,
-        cwd=vault,
-    ).stdout.strip()
     made: str | None = None
+    staged: str = ""
+    if named:
+        run.tools.git(vault, ["add", "-A", "--", *named], stage=PROMOTE)
+        staged = run.tools.command(
+            ["git", "diff", "--cached", "--name-only", "--", *named],
+            stage=PROMOTE,
+            cwd=vault,
+        ).stdout.strip()
     if staged:
         run.tools.git(vault, ["commit", "-q", "-m", message, "--", *named], stage=PROMOTE)
         made = run.tools.command(["git", "rev-parse", "HEAD"], stage=PROMOTE, cwd=vault).stdout.strip()
