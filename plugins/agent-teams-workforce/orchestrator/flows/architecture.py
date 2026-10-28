@@ -94,6 +94,7 @@ from orchestrator.flows.architecture_files import (
     ARTIFACT_PACK,
     ARTIFACT_SPECIALIST_RECOMMENDATIONS,
     ARTIFACT_TRD,
+    ARTIFACT_TRD_ANSWER,
     CHANGE_FILE,
     EXAMPLE_RESULT,
     EXAMPLE_ROUND,
@@ -114,6 +115,7 @@ from orchestrator.flows.architecture_files import (
     MAINTAINER,
     PARAM_REQUEST,
     QUESTIONS_FILE,
+    SCRIPT_STARTED,
     TRD_AUTHOR,
     WRITE_REQUEST,
     WRITTEN,
@@ -557,11 +559,12 @@ def _compared(matrix: Matrix, bead: str, recorded: Recorded) -> Recorded:
 
 
 def _request_problems(requests: Sequence[AgentRequest]) -> list[str]:
-    """Hold a round of requests to the catalog and to one request per agent.
+    """Hold a round of requests to the catalog, to the agents a request may name, and to one request per agent.
 
     Returns:
-        One sentence for each agent the find-specialists catalog does not list, and one for each
-        agent named by more than one request.
+        One sentence for each agent the find-specialists catalog does not list, one for each agent
+        the script starts from the result itself (:data:`SCRIPT_STARTED`), and one for each agent
+        named by more than one request.
 
     """
     named: list[str] = [step_journal.agent_name(entry["agent"]) for entry in requests]
@@ -570,13 +573,19 @@ def _request_problems(requests: Sequence[AgentRequest]) -> list[str]:
         for agent in dict.fromkeys(named)
         if agent not in CATALOG_AGENTS
     ]
+    started: list[str] = [
+        f"requests: {agent} is started by the script from your result, never by a request: state each TRD "
+        "change in trdChanges, and what the documents must say in facts, restatements, settlements and diagrams"
+        for agent in dict.fromkeys(named)
+        if agent in SCRIPT_STARTED
+    ]
     twice: list[str] = [
         f"requests: {agent} is named by {named.count(agent)} requests; put all of its questions and draft reviews "
         "of this round in one request"
         for agent in dict.fromkeys(named)
         if named.count(agent) > 1
     ]
-    return [*unknown, *twice]
+    return [*unknown, *started, *twice]
 
 
 def _about_problems(matrix: Matrix, result: ArchitectureResult) -> list[str]:
@@ -1104,7 +1113,7 @@ def trd_author(run: StepRun) -> AgentLaunch:
         return Completion(
             artifacts=(
                 file_artifact(ARTIFACT_TRD, trd),
-                file_artifact(LABEL_ANSWER, output),
+                file_artifact(ARTIFACT_TRD_ANSWER, output),
                 value_artifact(NO_SOURCE, unsourced),
                 value_artifact(CONSTRAINTS, constraints),
             ),

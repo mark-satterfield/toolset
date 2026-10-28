@@ -112,6 +112,8 @@ ARTIFACT_CONCLUSION: Final = "conclusion"
 ARTIFACT_CHECK: Final = "check result"
 ARTIFACT_RESOLVED: Final = "every item is resolved"
 ARTIFACT_TRD: Final = "TRD"
+ARTIFACT_TRD_ANSWER: Final = "TRD answer"
+"""The ``trd-author``'s answer (``trd-answer.schema.json``), which is never a specialist's ``answer``."""
 ARTIFACT_SPECIALIST_RECOMMENDATIONS: Final = "specialist recommendations"
 """The solutions architect's recommendations to the owner to create or update a specialist agent."""
 
@@ -123,6 +125,10 @@ MAINTAINER: Final = "architecture-maintainer"
 """The agents of the architecture team's fixed steps, by name. The agents the architect or the lead
 chooses for a subject are named in their own files (``architecture-result.schema.json``
 ``requests``; ``lead-routing.schema.json``), never here."""
+SCRIPT_STARTED: Final[frozenset[str]] = frozenset({TRD_AUTHOR, MAINTAINER})
+"""The agents the script starts from the architect's result itself (its ``trdChanges``; its facts,
+restatements, settlements and diagrams), which no request of the architect names. Their files have
+their own contracts and are never a specialist's answer."""
 PARAM_REQUEST: Final = "request"
 """The parameter that hands a planned helper step the path of its request file."""
 REVIEW_LOG_FILE: Final = "review-log.json"

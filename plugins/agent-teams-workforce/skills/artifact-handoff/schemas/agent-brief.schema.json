@@ -71,7 +71,7 @@
     "TRD": "The Epic's TRD document, as the step that confirmed it recorded it.",
     "request": "What a helper or a design specialist is asked (specialist-request.schema.json, trd-request.schema.json or write-request.schema.json, as the receiver's definition names).",
     "question": "A question to the architecture decider (architecture-question.schema.json).",
-    "answer": "What a helper or a design specialist returned (specialist-answer.schema.json or trd-answer.schema.json).",
+    "answer": "What a helper or a design specialist returned (specialist-answer.schema.json).",
     "ruling": "A decider's ruling (architecture-ruling.schema.json).",
     "write request": "What the architecture maintainer is asked to write (write-request.schema.json).",
     "what was written": "The architecture maintainer's result (write-result.schema.json).",

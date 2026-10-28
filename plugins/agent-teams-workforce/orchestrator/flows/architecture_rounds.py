@@ -39,6 +39,7 @@ from orchestrator.flows.architecture_files import (
     LABEL_ANSWER,
     MAINTAINER,
     PARAM_REQUEST,
+    SCRIPT_STARTED,
     checked_file,
     cited_document,
     document_path,
@@ -131,14 +132,20 @@ def _answered_before(run: StepRun) -> dict[str, str]:
 
 
 def handed_answers(run: StepRun) -> list[Path]:
-    """Name every answer an architect step is handed.
+    """Name every specialist answer an architect step is handed.
+
+    An ``answer`` is a specialist's when the step that holds it is performed by an agent the
+    architect's requests may name; a step of an agent the script starts from the result itself
+    (:data:`SCRIPT_STARTED`) holds a file of that agent's own contract.
 
     Returns:
-        The answers its inputs hold, then each answer its chain did not start again
+        The specialists' answers its inputs hold, then each answer its chain did not start again
         (:data:`PARAM_ANSWERED`), each once.
 
     """
-    return list(dict.fromkeys([*run.inputs.files(LABEL_ANSWER), *map(Path, _answered_before(run))]))
+    agents: dict[str, str] = _answer_agents(run)
+    held: list[Path] = [path for path in run.inputs.files(LABEL_ANSWER) if agents.get(str(path)) not in SCRIPT_STARTED]
+    return list(dict.fromkeys([*held, *map(Path, _answered_before(run))]))
 
 
 def round_steps(run: StepRun, requests: Sequence[AgentRequest], number: int) -> StepGroup:

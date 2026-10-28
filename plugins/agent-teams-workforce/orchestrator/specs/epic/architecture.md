@@ -87,7 +87,8 @@ folder of the architecture or of the PRDs.
 
 The output check of the Analyze step validates the round and the state file, and refuses a request
 naming an agent the `find-specialists` catalog (`skills/find-specialists/catalog.json`) does not
-list, and two requests naming one agent: a round holds one request per agent, all of its
+list, a request naming `trd-author` or `architecture-maintainer`, which the script starts from the
+result itself, and two requests naming one agent: a round holds one request per agent, all of its
 questions and draft reviews together. An agent named with the plugin's prefix is the agent of that
 name (`step_journal.agent_name`). The step records the file `specialist round` and the file
 `state`.
@@ -120,6 +121,9 @@ A round: the accepting step writes each request beside its answer path
 answer, performed by the agent the request names and handed the request file as the parameter
 `request`; then a Decide step whose inputs are those steps and the accepting step's own inputs, so
 it is handed every answer of the chain and any findings and rulings, with the parameter `round`.
+An architect step is handed as `answer` only the answers of the specialists' steps among its
+inputs (`architecture_rounds.handed_answers`); the files of `trd-author` and
+`architecture-maintainer` steps have their own contracts.
 The specialist steps run at the same time. The Decide step's launch writes the digest of its answers
 (`<helpersFolder>/digest-<step>.json`, `answers-digest.schema.json`: each answer's sentence,
 assumptions, needs, decisions and diagram homes, with the agent and the answer file's path) and
@@ -155,7 +159,7 @@ taken as the step's finished output without the session (`reuse_output` False).
 | Helper step | Request artifact | Output | Records |
 |---|---|---|---|
 | any agent the architect's round or the lead named (the launch builder registered for every catalog agent with no builder of its own, `journal_registry.any_agent_step`) | the step's parameter `request`, else `request` or `question` | the answer path the request names | the request, file `answer`. The repository steward places nothing: an entry the architect's result builds in no stack fails the architect's output check |
-| `trd-author` (the TRD write after the check, and the `trd.confirm` correction) | `request`; for the TRD write, the request the launch builder writes | the answer path the request names; the TRD at the path the request names is kept and updated in place | the request, file `TRD`, file `answer`, value `obligations with no source`, value `constraints recorded`. The step records one `constraint` for each requirement the answer lists under `requirements` (every requirement that write added or changed), as a pointer `trd` (the Epic and the requirement id, a heading of the TRD) with no copy of its text, with `statedIn` and `appliesTo`, removes the constraint of each id the answer lists under `removed`, and records one with no `statedIn` for each `noSource` obligation; it fails when the matrix refuses one |
+| `trd-author` (the TRD write after the check, and the `trd.confirm` correction) | `request`; for the TRD write, the request the launch builder writes | the answer path the request names; the TRD at the path the request names is kept and updated in place | the request, file `TRD`, file `TRD answer`, value `obligations with no source`, value `constraints recorded`. The step records one `constraint` for each requirement the answer lists under `requirements` (every requirement that write added or changed), as a pointer `trd` (the Epic and the requirement id, a heading of the TRD) with no copy of its text, with `statedIn` and `appliesTo`, removes the constraint of each id the answer lists under `removed`, and records one with no `statedIn` for each `noSource` obligation; it fails when the matrix refuses one |
 | `architecture-maintainer` | the step's parameter `request`, else `write request` or `request` | the result path the request names | the request, file `what was written`, value `documents synced`. The session is granted the architecture root, where it writes; the step sets each document written that exists `in-review` in its front matter (`matrixsync.set_lifecycle`), so the check and the promotion of this run reach it, then runs `sync-documents --paths` on the documents written; then, in one matrix change, for each fact of the request the result does not list under `notApplied`, records `describedBy` from each entry the fact is `about` to its home heading, and `covers` from that heading to each requirement an entry among them serves as a feature, with that feature as `via`; it fails when the matrix refuses one |
 
 The TRD is written, then updated, during the architecture: the seed is written before the
