@@ -3203,7 +3203,7 @@
     },
     {
       "name": "ui-design-source-selector",
-      "description": "Choose the design source of each UI item a frontend repository's Story builds, from the cds bundles the owner supplied and the configured Configurable Design System (cds) - a supplied bundle, the live design system, or no design change; designs nothing.",
+      "description": "Owns the design source of each UI item, which is where UI and front-end screen design goes in this plugin - a screen's visual design, states, layout, components and accessibility come through the CDS route, never from the solutions architect or a front-end designer agent. Chooses, for each UI item a frontend repository's Story builds, the owner's cds bundle (mocks and stylesheets) where one packages it, otherwise the live Configurable Design System (cds), or no design change; cds-ui-implementer builds from the choice. Designs nothing itself.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:artifact-handoff",

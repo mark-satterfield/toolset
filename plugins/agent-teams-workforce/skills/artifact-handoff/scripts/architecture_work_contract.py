@@ -24,7 +24,6 @@ type TrdMode = Literal["complete", "update"]
 type TrdChangeKind = Literal["add", "change", "remove"]
 type RequirementKind = Literal["obligation", "reuse"]
 type Routing = Literal["reject", "correct", "opinion", "competing-design", "decider"]
-type OwnerConcernKind = Literal["business-conflict", "section-2-conflict"]
 type ReachVerdictKind = Literal["kept", "corrected", "pruned"]
 type RecommendationAction = Literal["create", "update"]
 
@@ -56,8 +55,6 @@ ROUTING_CORRECT: Final[Literal["correct"]] = "correct"
 ROUTING_OPINION: Final[Literal["opinion"]] = "opinion"
 ROUTING_COMPETING_DESIGN: Final[Literal["competing-design"]] = "competing-design"
 ROUTING_DECIDER: Final[Literal["decider"]] = "decider"
-OWNER_CONCERN_BUSINESS_CONFLICT: Final[Literal["business-conflict"]] = "business-conflict"
-OWNER_CONCERN_SECTION_2_CONFLICT: Final[Literal["section-2-conflict"]] = "section-2-conflict"
 VERDICT_KEPT: Final[Literal["kept"]] = "kept"
 VERDICT_CORRECTED: Final[Literal["corrected"]] = "corrected"
 VERDICT_PRUNED: Final[Literal["pruned"]] = "pruned"
@@ -109,10 +106,6 @@ ROUTINGS: Final[tuple[Routing, ...]] = (
     ROUTING_OPINION,
     ROUTING_COMPETING_DESIGN,
     ROUTING_DECIDER,
-)
-OWNER_CONCERN_KINDS: Final[tuple[OwnerConcernKind, ...]] = (
-    OWNER_CONCERN_BUSINESS_CONFLICT,
-    OWNER_CONCERN_SECTION_2_CONFLICT,
 )
 VERDICTS: Final[tuple[ReachVerdictKind, ...]] = (
     VERDICT_KEPT,
@@ -522,14 +515,6 @@ class LeadRouting(TypedDict):
     summary: str
 
 
-class OwnerConcern(TypedDict):
-    """Typed form of #/$defs/OwnerConcern in architecture-result.schema.json."""
-
-    kind: OwnerConcernKind
-    concern: str
-    requirements: list[SourceHeading]
-
-
 class ArchitectureRuling(TypedDict):
     """Typed form of #/$defs/ArchitectureRuling in architecture-result.schema.json."""
 
@@ -537,7 +522,6 @@ class ArchitectureRuling(TypedDict):
     stands: str
     reason: str
     losingPositionChanges: str
-    ownerConcerns: list[OwnerConcern]
     summary: str
 
 

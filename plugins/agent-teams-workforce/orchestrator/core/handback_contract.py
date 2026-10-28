@@ -235,6 +235,18 @@ class Refusal(TypedDict):
     owner: NotRequired[str]
 
 
+class ToolingRecommendation(TypedDict):
+    """The solutions architect's recommendation to create or update a specialist agent.
+
+    It is a note about the plugin's tooling, which the driver records once in its ledger; it is
+    never an action for a person and never holds the Epic.
+    """
+
+    agent: str
+    description: str
+    reason: str
+
+
 class HandbackDocument(TypedDict):
     """The version one orchestrator-to-driver result."""
 
@@ -250,6 +262,7 @@ class HandbackDocument(TypedDict):
     lifecycleDone: NotRequired[bool]
     beadsEmitted: NotRequired[int]
     requiredHumanActions: NotRequired[list[str]]
+    toolingRecommendations: NotRequired[list[ToolingRecommendation]]
     refusal: NotRequired[Refusal]
 
 

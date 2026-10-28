@@ -6,25 +6,25 @@ recorded, so the report is the same whichever dispatch ran the step.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeIs
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
 from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
-from orchestrator.core.handback_contract import PASSED_PHASE, SPEC_PHASE_PREFIX, TRD_PHASE, ArtifactReport
+from orchestrator.core.handback_contract import (
+    PASSED_PHASE,
+    SPEC_PHASE_PREFIX,
+    TRD_PHASE,
+    ArtifactReport,
+    ToolingRecommendation,
+)
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_steps import stage_of
 from orchestrator.core.models import RunContext
-from orchestrator.flows.architecture_files import (
-    ARTIFACT_SPECIALIST_RECOMMENDATIONS,
-    ARTIFACT_TRD,
-    CONFIRM_TRD,
-    HUMAN_ACTION_STAGE,
-)
+from orchestrator.flows.architecture_files import ARTIFACT_SPECIALIST_RECOMMENDATIONS, ARTIFACT_TRD, CONFIRM_TRD
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_CREATION,
     ARTIFACT_REPOSITORIES,
@@ -38,7 +38,7 @@ from orchestrator.flows.elaboration_support import FINISH_PHASE
 
 # isort: split
 # step_journal puts the pipeline-contracts scripts directory on sys.path; the contract import follows it.
-from step_journal_contract import STATUS_DONE, STATUS_FAILED, Artifact, Journal, Step
+from step_journal_contract import STATUS_DONE, Artifact, Journal, Step
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -68,49 +68,34 @@ def _values(journal: Journal, name: str) -> list[JsonValue]:
     return [held["value"] for held in _artifacts(journal, name) if held["kind"] == "value"]
 
 
-def _failure_of(step: Step) -> JsonObject:
-    """Read the structured cause a failed step holds.
+def _is_tooling_recommendation(value: object) -> TypeIs[ToolingRecommendation]:
+    """Tell whether a recorded value is a tooling recommendation.
 
     Returns:
-        The cause the runner recorded; empty when the step holds none or it is not an object.
+        True when it is an object whose ``agent``, ``description`` and ``reason`` are text and
+        that holds nothing else.
 
     """
-    try:
-        decoded: object = json.loads(step.get("failure", "") or "{}")
-    except json.JSONDecodeError:
-        return {}
-    return json_object(decoded) if isinstance(decoded, dict) else {}
+    return (
+        isinstance(value, dict)
+        and set(value) == set(ToolingRecommendation.__required_keys__)
+        and all(isinstance(value[key], str) and value[key] for key in value)
+    )
 
 
-def _owner_concerns(following: Step | None) -> list[JsonValue] | None:
-    """Read the owner concerns of a next step that failed for one.
-
-    Returns:
-        The concerns the failure carries as evidence; None when the next step did not fail with an
-        owner concern.
-
-    """
-    if following is None or following["status"] != STATUS_FAILED:
-        return None
-    cause: JsonObject = _failure_of(following)
-    if cause.get("stage") != HUMAN_ACTION_STAGE:
-        return None
-    evidence: JsonValue = cause.get("evidence", [])
-    return evidence if isinstance(evidence, list) else [evidence]
-
-
-def _recommendations(journal: Journal) -> list[JsonValue]:
+def _recommendations(journal: Journal) -> list[ToolingRecommendation]:
     """Read the solutions architect's latest recommendations to create or update a specialist agent.
 
-    Every architect step rewrites one result in place, so the last step's recommendations are all of them.
+    Every architect step rewrites one result in place, so the last step's recommendations are all
+    of them. A recorded value that is not a tooling recommendation is not one.
 
     Returns:
-        The recommendations, each one sentence for the owner; empty when there are none.
+        The recommendations; empty when there are none.
 
     """
     recorded: list[JsonValue] = _values(journal, ARTIFACT_SPECIALIST_RECOMMENDATIONS)
     latest: JsonValue = recorded[-1] if recorded else []
-    return latest if isinstance(latest, list) else []
+    return [entry for entry in latest if _is_tooling_recommendation(entry)] if isinstance(latest, list) else []
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -123,9 +108,9 @@ def journal_result(journal: Journal, context: RunContext) -> JsonObject:
 
     Returns:
         The repository span, the Stories and the Tasks written so far, the artifact report, the edges, whether the
-        Epic's lifecycle is done, and the stage the journal stands at; under the owner's required
-        actions, the solutions architect's latest recommendations to create or update a specialist
-        agent, and for a journal whose next step failed with an owner concern, that concern.
+        Epic's lifecycle is done, and the stage the journal stands at; under
+        ``toolingRecommendations``, the solutions architect's latest recommendations to create or
+        update a specialist agent, which ask nothing of a person.
 
     """
     dispatch: DispatchArguments = dispatch_arguments()
@@ -167,10 +152,7 @@ def journal_result(journal: Journal, context: RunContext) -> JsonObject:
         result.update({key: edges[key] for key in ("closureEdges", "crossStoryDependencies") if key in edges})
     for written in _values(journal, STORY_EDGES_RESULT):
         result["storyEdges"] = written
-    concerns: list[JsonValue] | None = _owner_concerns(following)
-    if concerns is not None:
-        result.update(stage=HUMAN_ACTION_STAGE, headline="Owner facts are required")
-    actions: list[JsonValue] = [*(concerns or []), *_recommendations(journal)]
-    if actions:
-        result["requiredHumanActions"] = actions
+    recommendations: list[ToolingRecommendation] = _recommendations(journal)
+    if recommendations:
+        result["toolingRecommendations"] = [json_object(dict(entry)) for entry in recommendations]
     return result

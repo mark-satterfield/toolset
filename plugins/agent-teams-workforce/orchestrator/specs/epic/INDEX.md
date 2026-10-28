@@ -63,6 +63,7 @@ the same contracts by artifact, writer and reader.
 |---|---|---|---|
 | `<arch-work>/context.json` | step `prd_to_spec.open_run` | every step of the Architecture container and step `trd.confirm` (handed through the journal); `aws-solutions-architect` as `context` | JSON: `architecture-context.schema.json` |
 | `<arch-work>/state.json` | agent `aws-solutions-architect`, its Analyze step, before anything else it writes | every later step of `aws-solutions-architect`, as `state`; the Analyze step's output check | JSON: `architecture-state.schema.json` |
+| `<arch-work>/ui-bundles.json` | the launch of the Analyze step of `aws-solutions-architect` (`cdsbundles.list_bundles`) | the Analyze step, as `ui bundles` | JSON: `ui-bundles.schema.json` |
 | `<arch-work>/questions.json` | agent `aws-solutions-architect`, its Analyze step | the step that accepts it, which plans one step per request and the Decide step (`architecture_rounds.round_steps`) | JSON: `specialist-round.schema.json` |
 | `<arch-work>/helpers/digest-<step>.json` | the launch builder of an architect step handed answers (`architecture_rounds.write_digest`) | `aws-solutions-architect`, as `answers digest` | JSON: `answers-digest.schema.json` |
 | `<arch-work>/result.json` | agent `aws-solutions-architect`, its Decide step; updated in place by its later Decide, correction and competing-design steps | step `atw-matrix check; atw-matrix review-scope` (criterion answers, conclusion, `addedOrChangedElements` for the review log's AWS resources; every conclusion, `no-change-needed` included, goes through it); the lead as `architecture result`; step `atw-matrix epic --closure` (`addedOrChangedElements` and `unchangedWorkElements`: what the Stories build, the elements the design adds or changes and the existing elements it leaves unchanged where the Epic has work) | JSON: `architecture-result.schema.json` |
@@ -79,7 +80,7 @@ the same contracts by artifact, writer and reader.
 | `<arch-work>/checks/<step id>/unlinked.json` | step `atw-matrix check; atw-matrix review-scope` | none: evidence of the links with nothing recorded at the other end | JSON: what `atw-matrix epic <id> --unlinked` prints (`matrixquery.EpicView`) |
 | `<arch-work>/routing-<step>.json` | `architecture-team-lead`, before it adds a step | the script (a routing that sends an item to further work adds a step for it) | JSON: `lead-routing.schema.json` |
 | a question file for the decider (under `<arch-work>/`) | `architecture-team-lead` (artifact `question` of its own step) | `architecture-decider` as `question` | JSON: `architecture-question.schema.json` |
-| `<arch-work>/ruling-<step>.json` | `architecture-decider`, which also records the ruling in the matrix | `architecture-team-lead`; `aws-solutions-architect` as `ruling`; an owner concern in it holds the Epic for the owner | JSON: `architecture-ruling.schema.json` |
+| `<arch-work>/ruling-<step>.json` | `architecture-decider`, which also records the ruling in the matrix | `architecture-team-lead`; `aws-solutions-architect` as `ruling` | JSON: `architecture-ruling.schema.json` |
 | `<arch-work>/promoted.json` | step `atw-matrix sync-documents; atw-matrix commit` | none: evidence, and the failure record when a document could not be set effective | JSON, written by `architecture_promotion.py` |
 
 ### Repository span (step `atw-matrix epic --closure`)

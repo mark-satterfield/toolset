@@ -332,14 +332,17 @@ Notes on the diagram:
   resurces and produce and approve the architecture." There is no specialist gap: a subject no
   specialist covers, or one a specialist covers without what it needs, takes the "no" edge, and
   the architect designs it with its own tools and resources.
-- For such a subject the architect also recommends to the owner a specialist to create or
+- For such a subject the architect also recommends a specialist to create or
   update (the owner: "At the very least I would have likeed to been given the opportunity to
   update the agent or perhaps create some new agents."). It lists each one in its result under
   `specialistRecommendations` (`skills/artifact-handoff/schemas/architecture-result.schema.json`);
   the architect step records them in the Epic's step journal, and the elaboration report
   (`orchestrator/flows/elaboration_result.py`) puts the latest ones in the handback's
-  `requiredHumanActions`, which the driver records in the owner's human-action log whether or
-  not the run succeeded. A recommendation never stops the run.
+  `toolingRecommendations`, which the driver records once per Epic and agent in its ledger as a
+  `tooling_recommendation` event whether or not the run succeeded. A recommendation asks nothing
+  of a person, never counts as a failure and never stops the run. A screen's UI or front-end
+  design is never its subject: it goes through the CDS route (`ui-design-source-selector`,
+  `cds-ui-implementer`), and the architect's result check refuses such a recommendation.
 - The subjects are open. The owner: "What if the architecture calls for us to to build a container
   using KMS? I doubt that's even in hour hardcoded resourceType list." No list of today's resource
   types limits the subjects, and no agent definition carries routing fields: the architect

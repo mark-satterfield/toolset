@@ -891,27 +891,20 @@ step sets effective and commits only the documents of its own review scope.
 
 ## 8. Owner holds and questions (S02 item 8)
 
-**Decision.** The orchestrator writes no owner inbox entry and no hold. It returns owner facts in
-the handback and the driver acts on them (`driver-contract.md` §4):
+**Decision.** No elaboration step needs a person, and the orchestrator writes no owner inbox
+entry and no hold. No step fails at stage `requires-human-action`, and the dispatch result never
+carries it:
 
-- a step that needs the owner fails with a `StepError` at stage `requires-human-action`, whose
-  evidence lines each name the fact and what the owner does; the journal records the failure on
-  the step;
-- the dispatch result, assembled from the journal (`flows/elaboration_result.py`), is then
-  `ok:false`, `stage: "requires-human-action"`, with `requiredHumanActions` set to those evidence
-  lines;
-- the driver's `lane._person_needed` holds the Epic (`elabstate.hold_for_person`:
-  elaboration state `bead_metadata.ELABORATION_AUTHORING`, cause
-  `bead_metadata.CAUSE_AWAITING_HUMAN`, both from
-  `skills/beads-contract/schemas/bead-metadata.schema.json`), and its `human_log`
-  writes the owner inbox (`ownerinbox.Writer`, `$ATW_OWNER_INBOX`) with the restore command;
-- the next dispatch after the owner acts begins at that same step.
+- the `architecture-decider` rules on every matter the lead sends it, a conflict between two
+  business requirements or with a section 2 constraint included, and records the ruling in the
+  matrix like any other (section 10);
+- the solutions architect's specialist recommendations travel in the handback's
+  `toolingRecommendations` (each `agent`, `description`, `reason`;
+  `core/handback_contract.ToolingRecommendation`), which the driver records once per Epic and
+  agent in its ledger as a `tooling_recommendation` event; they ask nothing of a person and never
+  count as a failure.
 
-Only owner facts become `requiredHumanActions` (CONTEXT 7.9): the owner concerns of an
-`architecture-decider` ruling (`business-conflict`: two business requirements no design meets
-together; `section-2-conflict`: the only workable design conflicts with a section 2 constraint),
-and the repository-creation owner facts of section 11.3. Every other failure returns a
-`failure.cause` and a classification (section 6.8). The orchestrator releases the Epic's lifecycle
+Every failure returns a `failure.cause` and a classification (section 6.8). The orchestrator releases the Epic's lifecycle
 owner (`elaboration.release`) on every exit after a successful claim unless the Epic was marked
 done (`prd-to-spec.md`, and section 6.7).
 
@@ -1020,8 +1013,8 @@ nothing else reviews it.
   opinion, a competing design, or the decider. A routing that rejects every matter adds no step.
 - **The decider** (`flows/architecture_ruling.py`) is handed one question file and writes one
   ruling, and settles each disagreement the question cites in the matrix (`atw-matrix settle`);
-  the step that accepts the ruling reads each back and fails when `stands` is unset. A ruling that
-  raises an owner concern fails the step at stage `requires-human-action`.
+  the step that accepts the ruling reads each back and fails when `stands` is unset. The decider
+  rules on every matter it is sent and hands none to the owner.
 - **The promotion step** (`flows/architecture_promotion.py`) sets the documents of the review
   scope to effective, files the review log in the vault at
   `<architectureRoot>/review-logs/<epic id>.json`, mirrors the documents in the matrix and links

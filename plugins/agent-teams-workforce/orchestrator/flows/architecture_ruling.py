@@ -23,7 +23,6 @@ from matrix_contract import KIND_DISAGREEMENT, REL_DISPUTES
 from matrixstore import read_matrix
 
 from orchestrator.core import step_journal
-from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.journal_registry import agent_step
 from orchestrator.core.journal_steps import (
     AgentLaunch,
@@ -32,12 +31,10 @@ from orchestrator.core.journal_steps import (
     file_artifact,
     value_artifact,
 )
-from orchestrator.core.models import StepError
 from orchestrator.flows.architecture_files import (
     ARCHITECTURE_FOLDER,
     ARTIFACT_RESOLVED,
     DECIDER,
-    HUMAN_ACTION_STAGE,
     LABEL_QUESTION,
     LABEL_RESULT,
     LABEL_RULING,
@@ -162,8 +159,8 @@ def decider(run: StepRun) -> AgentLaunch:
 
     The decider records its ruling in the matrix itself, with ``atw-matrix settle``, as the
     settlement of the matter. The accept step reads each disagreement the question is about back
-    from the matrix and fails the step when its ``stands`` is unset. A ruling that raises an owner
-    concern fails the step with the concerns as its evidence.
+    from the matrix and fails the step when its ``stands`` is unset. The decider rules on every
+    matter it is sent, a conflict between business requirements or with section 2 included.
 
     Returns:
         The launch, with the question as its only input.
@@ -181,9 +178,6 @@ def decider(run: StepRun) -> AgentLaunch:
 
     def accept(accepted: StepRun, output: Path) -> Completion:
         ruling: ArchitectureRuling = checked_file(accepted, output, validate_architecture_ruling)
-        concerns: tuple[str, ...] = tuple(f"{entry['kind']}: {entry['concern']}" for entry in ruling["ownerConcerns"])
-        if concerns:
-            raise StepError(HUMAN_ACTION_STAGE, OTHER_CAUSE, concerns)
         settled: list[JsonValue]
         unset: list[str]
         settled, unset = accepted.tools.portfolio(accepted.inputs.stage, _disagreements, arch, matter)

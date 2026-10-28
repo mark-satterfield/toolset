@@ -91,7 +91,10 @@ list, a request naming `trd-author` or `architecture-maintainer`, which the scri
 result itself, and two requests naming one agent: a round holds one request per agent, all of its
 questions and draft reviews together. An agent named with the plugin's prefix is the agent of that
 name (`step_journal.agent_name`). The step records the file `specialist round` and the file
-`state`.
+`state`. The Analyze step is also handed `ui bundles`: the listing of the owner's cds bundles
+(`cdsbundles.list_bundles` on the dispatch's `designSystem.packagesDir`, the listing spec authoring
+uses), written to `<arch-work>/ui-bundles.json` (`ui-bundles.schema.json`), so the architect knows
+which screens the owner has already mocked.
 
 The output check of a step that writes the result validates it against its schema, then applies the
 architect's change file (`matrix-changes.json`, beside the context file) to a copy of the matrix
@@ -108,7 +111,8 @@ neither served by a feature nor listed under the result's `noFeature`. It refuse
 `about` that the copy does not hold, a fact whose home is a folder index (`matrixsync.folder_index`:
 a Markdown file outside `arc42/` whose front matter states no catalog key, which the matrix never
 holds), since listing a view in its folder's index is part of filing the view and no design fact,
-and the request problems the Analyze step's check refuses.
+and the request problems the Analyze step's check refuses, and each `specialistRecommendations`
+entry whose agent or subject names UI or front-end design, which belongs to the CDS route.
 When the result asks no further round, it also checks the review log
 (`architecture_check.review_log_findings`, the same check the check step makes). Each problem is
 one sentence of the error the check raises, and goes back to the same session as its one
@@ -252,9 +256,9 @@ remains, the lead records the value `every item is resolved`, and the check runs
 file and writes one ruling (`<arch-work>/ruling-<step>.json`, file `ruling`, value `stands`), and
 settles each disagreement the question's evidence cites with `atw-matrix settle`. The step that
 accepts the ruling reads each of those disagreements back and fails when `stands` is unset; it
-records the value `disagreements settled`. A send-back is in the step journal only. A ruling that
-raises an owner concern fails the step at stage `requires-human-action`, with the concerns as its
-evidence.
+records the value `disagreements settled`. A send-back is in the step journal only. The decider
+rules on every matter it is sent, a conflict between business requirements or with section 2
+included, and hands none to the owner.
 
 ## The TRD write
 

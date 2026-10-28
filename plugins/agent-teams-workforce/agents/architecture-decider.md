@@ -57,9 +57,12 @@ nothing to rule on: the effective one stands
 `atw-matrix node document:<path>` returns a document's `lifecycle`; what it means is in the
 `effective-architecture` skill, "Lifecycle, the baseline and iteration".
 
-Raise an owner concern only when two business requirements cannot both be met by any design,
-or when the only workable design conflicts with section 2. A technical choice stays with the
-team.
+You rule on every matter you are sent; none goes to the owner. When two business requirements
+cannot both be met by any design, rule which requirement's position stands, from the PRD's
+priorities and the evidence, and state in `losingPositionChanges` what the losing position gives
+up. When the only workable design conflicts with section 2, the section 2 constraint stands: rule
+for the position that meets it. Record each such ruling in the matrix with `atw-matrix settle`,
+exactly as any other.
 
 The criteria and their levels are in `effective-architecture/review-standard.md`: a position
 that asks an arc42 document for detail the documentation model places in the detailed

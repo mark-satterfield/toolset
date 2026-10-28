@@ -53,11 +53,6 @@
       "type": "string",
       "enum": ["reject", "correct", "opinion", "competing-design", "decider"]
     },
-    "OwnerConcernKind": {
-      "description": "`business-conflict`: two business requirements cannot both be met by any design. `section-2-conflict`: the only workable design conflicts with a section 2 constraint.",
-      "type": "string",
-      "enum": ["business-conflict", "section-2-conflict"]
-    },
     "SourceHeading": {
       "description": "Where something is stated or can be checked.",
       "type": "object",
@@ -259,7 +254,7 @@
       "enum": ["create", "update"]
     },
     "SpecialistRecommendation": {
-      "description": "One recommendation to the owner to create a specialist agent or to update one, from a subject the solutions architect designed with its own tools and resources because no specialist covered it, or covered it without what the subject needed. Consumed by: the architect step of orchestrator/flows/architecture.py, which records it in the step journal; orchestrator/flows/elaboration_result.py adds it to the elaboration handback's `requiredHumanActions`, which the driver records in the owner's human-action log. The design of the subject is in the architecture, never left to the recommendation.",
+      "description": "One recommendation to create a specialist agent or to update one, from a subject the solutions architect designed with its own tools and resources because no specialist covered it, or covered it without what the subject needed. A screen's visual design, states, layout, components and accessibility are never its subject: they belong to the CDS route. Consumed by: the output check of orchestrator/flows/architecture.py, which refuses one whose subject is UI or front-end design; the architect step of orchestrator/flows/architecture.py, which records it in the step journal as a tooling recommendation (`agent`, `description`, `reason`); orchestrator/flows/elaboration_result.py, which carries it in the elaboration handback's `toolingRecommendations`, which the driver records once in its ledger as a tooling recommendation. It never asks a person for anything and never holds the Epic. The design of the subject is in the architecture, never left to the recommendation.",
       "type": "object",
       "additionalProperties": false,
       "required": ["action", "agent", "subject", "recommendation"],
@@ -371,7 +366,7 @@
         "criteria": {"description": "One answer for every criterion whose level is architecture or technical-requirement. A criterion with neither a place it is satisfied nor a reason it does not apply is unfinished work.", "type": "array", "items": {"$ref": "#/$defs/CriterionAnswer"}},
         "unsettled": {"description": "Empty unless `conclusion` is `unsettled`.", "type": "array", "items": {"$ref": "#/$defs/UnsettledMatter"}},
         "costEvidence": {"type": "array", "items": {"$ref": "#/$defs/CostEvidence"}},
-        "specialistRecommendations": {"description": "Each recommendation to the owner to create or update a specialist agent; empty when the specialists covered every subject.", "type": "array", "items": {"$ref": "#/$defs/SpecialistRecommendation"}},
+        "specialistRecommendations": {"description": "Each recommendation to create or update a specialist agent; empty when the specialists covered every subject.", "type": "array", "items": {"$ref": "#/$defs/SpecialistRecommendation"}},
         "trdChanges": {"description": "Every technical or architecture decision of this design that adds, changes or removes a requirement of the TRD, as one change each; empty when the design changes none. The TRD the architect works from is the seed the script wrote from the constraints that bind the Epic, each requirement headed by its constraint id. Consumed by: the TRD write that the check step of orchestrator/flows/architecture_check.py plans before the promotion, whose request (`trd-request.schema.json`, mode `complete`) carries these changes and this result's `sharedCapabilities`.", "type": "array", "items": {"$ref": "#/$defs/TrdChange"}},
         "requests": {"description": "A second round of requests, one per agent, for what the answers the step was handed raise; empty when the decisions need none. Consumed by: the step of orchestrator/flows/architecture.py that accepts the result, which plans after that step one step for each request whose answer file is not yet a valid answer, started as the agent the entry names and handed its request, then a fresh Decide step, handed every answer and a digest of them; a Decide of the second round whose result still requests work fails, because the architecture does not converge. The script decides nothing about which agent runs.", "type": "array", "items": {"$ref": "#/$defs/AgentRequest"}},
         "reach": {"description": "One verdict per entry of the Epic's reach: every row of the architecture pack's `reach`, and every entry the architect's corrections brought into the reach. Consumed by: the check step of orchestrator/flows/architecture_check.py, which recomputes the reach (`matrixtraverse.approval_scope`) on the matrix after the architect's change file is applied and fails each entry in it, other than the Epic and its requirements, with no `kept` or `corrected` verdict, and each `pruned` entry still in it; and the promotion step, which compares each `kept` entry with its `contentHash` before it approves.", "type": "array", "items": {"$ref": "#/$defs/ReachVerdict"}},
@@ -577,27 +572,16 @@
         "summary": {"type": "string", "minLength": 1}
       }
     },
-    "OwnerConcern": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "concern", "requirements"],
-      "properties": {
-        "kind": {"$ref": "#/$defs/OwnerConcernKind"},
-        "concern": {"type": "string", "minLength": 1},
-        "requirements": {"description": "The business requirements or section 2 constraints in conflict.", "type": "array", "items": {"$ref": "#/$defs/SourceHeading"}}
-      }
-    },
     "ArchitectureRuling": {
       "description": "architecture-decider's ruling on one matter.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["matter", "stands", "reason", "losingPositionChanges", "ownerConcerns", "summary"],
+      "required": ["matter", "stands", "reason", "losingPositionChanges", "summary"],
       "properties": {
         "matter": {"description": "The id of the matter in the question file.", "type": "string", "minLength": 1},
-        "stands": {"description": "The id of the position that stands; an empty string only when an owner concern is raised.", "type": "string"},
+        "stands": {"description": "The id of the position that stands. The decider rules on every matter it is sent, a conflict between business requirements or with a section 2 constraint included, and never hands one to the owner.", "type": "string", "minLength": 1},
         "reason": {"description": "Why that position stands, from the evidence the two sides gave.", "type": "string", "minLength": 1},
         "losingPositionChanges": {"description": "What the losing position must change.", "type": "string"},
-        "ownerConcerns": {"type": "array", "items": {"$ref": "#/$defs/OwnerConcern"}},
         "summary": {"type": "string", "minLength": 1}
       }
     }

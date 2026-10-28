@@ -45,7 +45,8 @@ description covers and that its skills and MCP servers equip it for. Choose from
 entries say, never from a habit or a fixed list. A subject the Epic does not reach gets no
 agent. A subject no agent covers, or one an agent covers without what the subject needs, is
 yours to design with your own tools and resources; your definition says how you then recommend
-a specialist to the owner.
+a specialist. A screen's UI or front-end design is never such a subject: `ui-design-source-selector`
+owns each UI item's design source, on the CDS route.
 
 ## Using the agents you chose
 

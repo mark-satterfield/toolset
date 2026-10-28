@@ -30,6 +30,7 @@ when the matrix shows it.
 
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +38,7 @@ from typing import TYPE_CHECKING, Final, TypeIs
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "find-specialists" / "scripts"))
+import cdsbundles
 from architecture_work_contract import (
     ArchitectureWorkError,
     schema_problems,
@@ -80,6 +82,8 @@ from specialist_catalog import agent_names
 
 from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
+from orchestrator.core.driver_contracts import dispatch_arguments
+from orchestrator.core.io import json_object
 from orchestrator.core.journal_registry import agent_step, any_agent_step, plan_under
 from orchestrator.core.journal_steps import (
     UNDER_CONTAINER,
@@ -152,12 +156,14 @@ from orchestrator.flows.architecture_rounds import (
     write_digest,
     write_steps,
 )
+from orchestrator.flows.elaboration_files import UI_BUNDLE_LIST, UI_BUNDLES, UI_BUNDLES_SCHEMA, write_contract
 from orchestrator.flows.repo_scoping import (
     FIELD_ADDED_OR_CHANGED,
     FIELD_UNCHANGED_WORK,
     story_build_entries,
     story_build_problems,
 )
+from orchestrator.flows.spec_authoring import design_system
 from orchestrator.flows.trd_authoring import (
     TRD_FRONT_MATTER,
     DocumentValidationError,
@@ -221,6 +227,13 @@ _NOTHING_WRITTEN: Final[WriteResult] = {
 """A result that names no document, for an invalid result: only the request's own homes are rendered."""
 CATALOG_AGENTS: Final[frozenset[str]] = agent_names()
 """Every agent the find-specialists skill's catalog lists: the names a request may give."""
+BUNDLES_FILE: Final = "ui-bundles.json"
+"""The listing of the owner's cds bundles the Analyze step is handed, in the architecture folder."""
+UI_DESIGN_SUBJECT: Final = re.compile(
+    r"\b(ui|ux|front[- ]?end|user[- ]interface|screens?|visual design|wireframes?|mock-?ups?|design system|cds)\b",
+    re.IGNORECASE,
+)
+"""A specialist recommendation's agent or subject that names UI or front-end design."""
 
 
 @dataclass(frozen=True)
@@ -745,6 +758,7 @@ def result_check(run: StepRun) -> Callable[[Path], dict[str, JsonValue]]:
                     Path(context["reviewLogPath"]),
                 ),
                 *_request_problems(result["requests"]),
+                *_ui_recommendation_problems(result["specialistRecommendations"]),
             ]
         if problems:
             raise ArchitectureWorkError("\n".join(problems))
@@ -777,16 +791,53 @@ def _round_check(context: ArchitectureContext) -> Callable[[Path], dict[str, Jso
 
 
 def _recommendation(entry: SpecialistRecommendation) -> JsonValue:
-    """State one specialist recommendation as the action the owner reads.
+    """State one specialist recommendation as the tooling recommendation the handback carries.
 
     Returns:
-        The recommendation as one sentence naming the agent, what it would hold and the subject.
+        The recommendation shaped as ``handback_contract.ToolingRecommendation``: the agent, what
+        to create or update in it, and the subject the architect designed itself for want of it.
 
     """
-    return (
-        f"Solutions architect recommends: {entry['action']} the specialist agent {entry['agent']!r}: "
-        f"{entry['recommendation']} (subject it designed itself: {entry['subject']})"
+    return {
+        "agent": entry["agent"],
+        "description": f"{entry['action']} the specialist agent {entry['agent']}: {entry['recommendation']}",
+        "reason": f"the solutions architect designed {entry['subject']} itself because no specialist covered it",
+    }
+
+
+def _ui_recommendation_problems(recommendations: Sequence[SpecialistRecommendation]) -> list[str]:
+    """Refuse each specialist recommendation whose subject is UI or front-end design.
+
+    A screen's visual design, states, layout, components and accessibility belong to the CDS
+    route, so no specialist is recommended for them.
+
+    Returns:
+        One sentence for each recommendation whose agent or subject names UI or front-end design.
+
+    """
+    return [
+        f"specialistRecommendations: {entry['agent']!r} is recommended for UI design ({entry['subject']}); a "
+        "screen's visual design, states, layout, components and accessibility belong to the CDS route: the "
+        "owner's cds bundle where one exists, otherwise the live design system, chosen per UI item by "
+        "ui-design-source-selector and built by cds-ui-implementer. Remove the recommendation and design no screen"
+        for entry in recommendations
+        if UI_DESIGN_SUBJECT.search(f"{entry['agent']} {entry['subject']}")
+    ]
+
+
+def _owner_bundles(run: StepRun) -> Path:
+    """List the cds bundles the owner supplied, as spec authoring lists them for the UI design source choice.
+
+    Returns:
+        The listing file (``ui-bundles.schema.json``) in the architecture folder: each bundle's
+        artifact kind and slug names a screen the owner has already mocked.
+
+    """
+    packages: JsonValue = design_system(run).get(dispatch_arguments().DS_PACKAGES_DIR)
+    listed: dict[str, JsonValue] = json_object(
+        run.tools.portfolio(UI_BUNDLES, cdsbundles.list_bundles, packages if isinstance(packages, str) else None),
     )
+    return write_contract(architecture_folder(run.context.work) / BUNDLES_FILE, listed, UI_BUNDLES_SCHEMA)
 
 
 def _analyze(run: StepRun, context: ArchitectureContext, prd: Path) -> AgentLaunch:
@@ -794,7 +845,9 @@ def _analyze(run: StepRun, context: ArchitectureContext, prd: Path) -> AgentLaun
 
     The output is the first round of requests, one per specialist; the state file is written
     first. The accepted round plans after the step one step per request whose answer is not yet
-    a valid answer, then the Decide step (``architecture_rounds.round_steps``).
+    a valid answer, then the Decide step (``architecture_rounds.round_steps``). The step is
+    handed the owner's cds bundles (:func:`_owner_bundles`), so the architect knows which
+    screens already have mocks.
 
     Returns:
         The launch.
@@ -814,7 +867,7 @@ def _analyze(run: StepRun, context: ArchitectureContext, prd: Path) -> AgentLaun
         outcome="The state file, then one request per specialist this Epic needs.",
         accept=accept,
         add_dirs=(architecture_folder(run.context.work),),
-        files=_handed_files(run, context, prd, EXAMPLE_STATE, EXAMPLE_ROUND),
+        files=(*_handed_files(run, context, prd, EXAMPLE_STATE, EXAMPLE_ROUND), (UI_BUNDLE_LIST, _owner_bundles(run))),
         hand_inputs=False,
     )
 

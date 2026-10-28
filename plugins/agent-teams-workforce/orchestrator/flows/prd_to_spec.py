@@ -63,7 +63,6 @@ from orchestrator.flows.architecture_files import (
     ARCHITECT,
     ARCHITECTURE,
     CONFIRM_TRD,
-    HUMAN_ACTION_STAGE,
     LABEL_CONTEXT,
     LABEL_PRD,
     OPEN_RUN,
@@ -465,8 +464,7 @@ class _Elaboration:
             failure = failed(self.context.stage, exc, agent_started=_started(self.context))
         reported: JsonObject = journal_result(step_journal.read_journal(loop.path), self.context)
         self.state["done"] = reported["lifecycleDone"] is True
-        owner_stop: bool = reported.get("stage") == HUMAN_ACTION_STAGE
-        self.result.update({**failure, **reported} if owner_stop else {**reported, **failure})
+        self.result.update({**reported, **failure})
 
     def _claim_and_elaborate(self) -> None:
         self.context.stage = LIFECYCLE_STAGE

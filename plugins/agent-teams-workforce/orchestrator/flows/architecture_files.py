@@ -140,7 +140,6 @@ EXAMPLES: Final[Path] = PLUGIN / "skills" / "artifact-handoff" / "examples"
 EXAMPLE_STATE: Final[Path] = EXAMPLES / "architecture-state.example.json"
 EXAMPLE_ROUND: Final[Path] = EXAMPLES / "specialist-round.example.json"
 EXAMPLE_RESULT: Final[Path] = EXAMPLES / "architecture-result.example.json"
-HUMAN_ACTION_STAGE: Final = "requires-human-action"
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

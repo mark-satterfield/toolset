@@ -130,7 +130,7 @@ Every field comes from the journal, so the result is the same whichever dispatch
 | `closureEdges`, `crossStoryDependencies` | value `edges result` of step `beadwrite.write_all_task_edges` |
 | `storyEdges` | value `story edges` |
 | `lifecycleDone` | value `lifecycle done` |
-| `requiredHumanActions` | the evidence of a next step that failed with the stage `requires-human-action` |
+| `toolingRecommendations` | the latest value `specialist recommendations` of an architect step: each `agent`, `description` and `reason` |
 | `failure` | the cause recorded on the failed step, when this dispatch ran it |
 
 ## Story and Task journals

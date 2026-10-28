@@ -44,7 +44,6 @@ VOCABULARIES: Final[dict[str, tuple[str, str]]] = {
     "TrdChangeKind": ("TRD_CHANGE", "TRD_CHANGE_KINDS"),
     "RequirementKind": ("REQUIREMENT", "REQUIREMENT_KINDS"),
     "Routing": ("ROUTING", "ROUTINGS"),
-    "OwnerConcernKind": ("OWNER_CONCERN", "OWNER_CONCERN_KINDS"),
     "RecommendationAction": ("RECOMMENDATION", "RECOMMENDATION_ACTIONS"),
     "ReachVerdictKind": ("VERDICT", "VERDICTS"),
 }

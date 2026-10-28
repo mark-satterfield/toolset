@@ -145,7 +145,8 @@ Readers: `attempts.py` (turns a handback into an `Outcome`), `failurecause.py`, 
 | failure origin | environment vs work (`ledgerevents.FailureOrigin`), recorded on the handback event; gates quota clearing |
 | headline | Outcome headline; quota/API pause detection (`breaker.pause_of`: Fable wall mark, usage-limit text and reset time); the human need when no action is named |
 | `Refusal` | read by `refusal.code_of`: a code in `refusal.WAIT_CODES` -> wait, hold until the Epic's tracker facts change; a code in `refusal.PERSON_CODES` -> human-action log |
-| required human actions | human-action log entries, which the supervisor's `human_log` writes to the owner inbox (`ownerinbox.Writer`); any entry also means "needs a person" -> Epic held (`lane._person_needed` -> `elabstate.hold_for_person`), with the restore command (`elabstate.restore_command`) logged. The driver is the one writer of this hold and this inbox entry; the Epic flows only return required human actions, and only for owner facts (§9). An ordinary item failure with none is recorded and excluded for the invocation; a fatal classification stops new dispatch |
+| required human actions | human-action log entries, which the supervisor's `human_log` writes to the owner inbox (`ownerinbox.Writer`); any entry also means "needs a person" -> Epic held (`lane._person_needed` -> `elabstate.hold_for_person`), with the restore command (`elabstate.restore_command`) logged. The driver is the one writer of this hold and this inbox entry; the Epic flows return no required human actions, which are reserved for the account wall (7.9). An ordinary item failure with none is recorded and excluded for the invocation; a fatal classification stops new dispatch |
+| `toolingRecommendations` | each `{agent, description, reason}` recorded once per Epic and agent as a `tooling_recommendation` ledger event (deduplicated against the ledger across supervisor invocations); never a human action, never the owner inbox, never failure counting (7.9) |
 | `ArtifactReport` | **only after** the lane reads `ELABORATION_DONE` from the tracker: `artifactio.file_in_vault(<working dir>, phases, prd, trd_target)` files the TRD (target from the report's filing entry for the TRD file, a literal key in `lane.py`, or `KEY_TRD_PATH`) and Spec documents in the vault; `lane._vault_metadata` then composes the writes of the vault-path keys of the bead schema's `ARTIFACT_KEYS` group (the TRD's on the Epic, each Spec document's on its Story, matched by the Story's `KEY_ARTIFACT_SPEC_PATH` file name; kinds and the spec-file aspect map are `ARTIFACT_KINDS` and `SPEC_ASPECT_KIND`) |
 | detail paths, sessions | failure evidence; human-action detail paths |
 | beads emitted, lifecycle done | recorded on the handback event only; read by `outcomes.py` to word the ending ("Finished: N Story and Task beads written" when the lifecycle is done, else "unfinished") |
@@ -326,11 +327,15 @@ freshness check.
   into the Python run: the runner sets the cause (a `*_CAUSE` constant of `handback_contract.py`)
   from the session's structured result (exit status, stream events), exception types and script
   JSON fields. The remaining choices are open items in QUESTIONS.md.
-- **7.9 Who gets asked what.** Only owner facts become required human actions: the owner concerns
-  of an `architecture-decider` ruling (two business requirements no design meets together, or a
-  conflict with section 2), and a GitHub sign-in or organisation membership the span step needs
-  before it can create a repository. The driver alone writes the hold and the owner inbox from
-  them (§4). Every other failure carries its cause and its classification; ordinary item failures are recorded and fatal defects stop new dispatch. Neither creates an owner action automatically.
+- **7.9 Who gets asked what.** No elaboration step asks a person for anything: the handback
+  never carries the stage `requires-human-action`, and `requiredHumanActions` is reserved for the
+  Anthropic account wall (`humanq.HUMAN_WALL_MARKERS`), which only the owner can fix. The
+  `architecture-decider` rules on every matter itself. The solutions architect's specialist
+  recommendations arrive in `toolingRecommendations` (each `agent`, `description`, `reason`); the
+  driver records each distinct one once per Epic and agent as a ledger event of type
+  `tooling_recommendation`, never as a human action, never in the owner inbox, and never in
+  failure counting. Every other failure carries its cause and its classification; ordinary item
+  failures are recorded and fatal defects stop new dispatch.
 - **7.2** Only the owner runs the pipeline; nothing in this contract is run as a test.
 - **7.8** Selection filters stay in `selection.py` / `elabstate.py` (§2), and only there: the
   driver is the only door, so `prd-to-spec` does not repeat them.
