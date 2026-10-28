@@ -621,17 +621,22 @@ def _requires(matrix: Matrix, entry_id: EntryId, own: str, ids: Mapping[EntryId,
 def repository_name(matrix: Matrix, stack: EntryId) -> str:
     """Name the repository that holds a stack.
 
+    A stack in the matrix is named after the repository that holds it, so a stack that states no
+    ``repository`` attribute is held by the repository its own name names.
+
     Args:
         matrix: The matrix.
         stack: The stack's id.
 
     Returns:
-        The stack's ``repository`` attribute; when it states none, the repository name the
-        project's naming command converts the stack's name to (``name convert <stack> --from
-        cdk-stack --to repository``). Never the raw stack name.
+        The stack's ``repository`` attribute; when it states none, the stack's name when the
+        project's naming command validates it as a repository name (``name check <stack> --kind
+        repository``), else the repository name the command converts it to when it is a CDK stack
+        name (``name convert <stack> --from cdk-stack --to repository``).
 
     Raises:
-        ValueError: The stack states no repository and the naming command cannot name one.
+        ValueError: The stack states no repository and its name is neither a repository name nor
+            a CDK stack name the naming command converts to one.
 
     """
     entry: Entry = matrix.entry(stack)
@@ -640,6 +645,9 @@ def repository_name(matrix: Matrix, stack: EntryId) -> str:
         return stated
     message: str
     try:
+        check: NamingAnswer = run_naming(["name", "check", entry.name, "--kind", NAMING_REPOSITORY])
+        if check.ok:
+            return entry.name
         answer: NamingAnswer = run_naming([
             "name",
             "convert",
@@ -655,7 +663,8 @@ def repository_name(matrix: Matrix, stack: EntryId) -> str:
     name: str | None = produced(answer)
     if name is None:
         message = (
-            f"{stack} names no repository and the naming command cannot name one: {violations_text(answer.document)}"
+            f"{stack} names no repository and the naming command cannot name one: as a repository name, "
+            f"{violations_text(check.document)}; as a CDK stack name, {violations_text(answer.document)}"
         )
         raise ValueError(message)
     return name

@@ -309,8 +309,10 @@ Repositories do not depend on repositories, and control and documentation reposi
 product element.
 
 A new stack is designed with its name, its app, its execution use (`executable` or `imported`)
-and its purpose: why the stack exists, in one or two sentences, never a list of what it
-contains. Record it with a `put stack` operation, then one `link homeIn` for each placed entry,
+and its purpose. A stack's matrix name is the name of the repository that holds it, in the
+repository form the project's naming command gives (`name build repository ...`, for example
+`SkillSpoke-runtimeConfiguration-service`), never the CDK stack name. Its purpose is why the
+stack exists, in one or two sentences, never a list of what it contains. Record it with a `put stack` operation, then one `link homeIn` for each placed entry,
 and state each new stack's four facts in your result. Give its repository only for a repository
 that exists, with its name exactly as `atw-matrix node stack:<id>` or the repository inventory
 prints it. For a repository that does not exist yet, leave the repository out and never type a

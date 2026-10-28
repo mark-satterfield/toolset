@@ -21,8 +21,9 @@ first step of the outermost step "Specs and Stories"; its script key is still
   (`repo_scoping.placements`) and each stack's repository, the documents that describe it
   (`describedBy`), an event's description and architecture-side producers (as information on
   its item), and the architecture-side dependency relationships between the items.
-- The project's naming command (`$ATW_NAMING_COMMAND`, `name convert <stack name> --from
-  cdk-stack --to repository`), for the repository of a stack that names none.
+- The project's naming command (`$ATW_NAMING_COMMAND`, `name check <stack name> --kind
+  repository`, then `name convert <stack name> --from cdk-stack --to repository`), for the
+  repository of a stack that names none.
 - The repository inventory, read once without fetching (`polyrepo inventory --no-fetch`), and
   `polyrepo inventory --no-fetch --all --name <name>` for the one repository a creation looks up.
 - The GitHub owner of the repositories that one inventory lists (the `url` of each record's
@@ -70,10 +71,12 @@ The order is fixed, and only the stacks of what the Stories build are reached:
 
 1. The items are built (`story_builds`); an item whose entry carries the verified flag has
    `state` `built`.
-2. A stack that names no repository is given the name the naming command gives it
-   (`repository_name`: `name convert <stack name> --from cdk-stack --to repository`, run with
-   list arguments, not through a shell; for example, for `stack:acme-sms-service` it is
-   `Acme-sms-service`, never the raw stack name), written on the stack as its `repository`
+2. A stack that names no repository is given the repository name the naming command
+   validates or converts (`repository_name`, run with list arguments, not through a shell): a
+   stack is named after its repository, so its own name when `name check <stack name> --kind
+   repository` passes (for example, for `stack:Acme-sms-service` it is `Acme-sms-service`), else
+   the name `name convert <stack name> --from cdk-stack --to repository` gives a CDK stack name
+   (for `stack:acme-sms-service` it is `Acme-sms-service`), written on the stack as its `repository`
    on the architecture side in one matrix change, so the stack and the created repository carry
    one name. A change to a stack's `repository` alone keeps its approved flag
    (`matrixstore._flags_settled`), so naming the repository after promotion does not undo the

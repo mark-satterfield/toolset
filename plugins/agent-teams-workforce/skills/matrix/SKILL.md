@@ -138,7 +138,7 @@ object). It reads only. Each run takes a few seconds.
 ```bash
 R="${CLAUDE_PLUGIN_ROOT}/skills/matrix/scripts/matrix-reach"
 "$R" epics-reaching service:skillspoke-push-service   # the Epics that reach it, each with the document#heading or realizedBy feature
-"$R" epics-reaching stack:skillSpoke-push-service     # a stack: via names the reached entries that place it
+"$R" epics-reaching stack:SkillSpoke-push-service     # a stack: via names the reached entries that place it
 "$R" epic-needs ssbd-mx3vn            # services, stacks, repositories it reaches, and gaps; --full lists components and infrastructure
 "$R" unreached --kinds service,stack,repository   # entries of those kinds (repository = names stacks hold) no Epic reaches
 ```
