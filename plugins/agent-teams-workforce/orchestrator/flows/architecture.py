@@ -124,6 +124,7 @@ from orchestrator.flows.architecture_files import (
     architecture_folder,
     checked_file,
     cited_document,
+    index_home,
     journal_file,
     matrix_file,
     output_check,
@@ -611,18 +612,42 @@ def _about_problems(matrix: Matrix, result: ArchitectureResult) -> list[str]:
     return problems
 
 
-def _decision_problems(bead: str, result: ArchitectureResult, changes: Path, log: Path) -> list[str]:
+def _home_problems(arch: Path, result: ArchitectureResult) -> list[str]:
+    """Find each fact of the result whose home is a folder index.
+
+    Returns:
+        One sentence per fact whose home :func:`index_home` names a folder index.
+
+    """
+    return [
+        f"fact {fact['id']}: its home {fact['home']['source']!r} is a folder index: listing a view in its "
+        "folder's index is part of filing the view, which the maintainer does, and is not a design fact; state "
+        "the fact in the view that is its home"
+        for fact in result["facts"]
+        if index_home(arch, fact["home"]["source"])
+    ]
+
+
+def _decision_problems(
+    bead: str,
+    arch: Path,
+    result: ArchitectureResult,
+    changes: Path,
+    log: Path,
+) -> list[str]:
     """Find what an architecture result, its change file and its review log leave unfinished, writing nothing.
 
     Returns:
         :func:`_result_problems`; then each id a fact is about that the matrix, with the change
-        file applied, does not hold; then, when the result asks no further round, each problem of
+        file applied, does not hold; then each fact whose home is a folder index
+        (:func:`_home_problems`); then, when the result asks no further round, each problem of
         the review log (``architecture_check.review_log_findings``).
 
     """
     matrix: Matrix = read_matrix(matrix_file())
     problems: list[str] = _result_problems(matrix, bead, result, changes)
     problems.extend(_about_problems(matrix, result))
+    problems.extend(_home_problems(arch, result))
     if not result["requests"]:
         problems.extend(review_log_findings(bead, log, matrix, result))
     return problems
@@ -648,6 +673,7 @@ def result_check(run: StepRun) -> Callable[[Path], dict[str, JsonValue]]:
                 run.inputs.stage,
                 _decision_problems,
                 str(run.bead),
+                Path(context["architectureRoot"]),
                 result,
                 architecture_folder(run.context.work) / CHANGE_FILE,
                 Path(context["reviewLogPath"]),
@@ -1177,6 +1203,8 @@ def _record_homes(arch: Path, request: WriteRequest, written: WriteResult) -> Re
     entry among them serves as a feature (``servedBy``), with that feature as ``via``. A home
     with no heading (a document that holds no Markdown heading) is the whole document: its
     ``describedBy`` names no heading and it covers nothing, since ``covers`` requires a heading.
+    A fact whose home is a folder index (:func:`index_home`) records nothing: the matrix never
+    holds a folder index, and listing a view in it is part of filing the view.
 
     Returns:
         What could not be recorded: a home that is no document the matrix holds, an entry it does not hold.
@@ -1187,7 +1215,7 @@ def _record_homes(arch: Path, request: WriteRequest, written: WriteResult) -> Re
     def change(matrix: Matrix) -> Recorded:
         problems: list[str] = []
         for fact in request["facts"]:
-            if fact["id"] in skipped or not fact["about"]:
+            if fact["id"] in skipped or not fact["about"] or index_home(arch, fact["home"]["source"]):
                 continue
             home: EntryId | None = cited_document(arch, fact["home"]["source"])
             heading: str = fact["home"]["heading"].strip()

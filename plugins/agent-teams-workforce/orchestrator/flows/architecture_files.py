@@ -32,7 +32,7 @@ from architecture_work_contract import (
 )
 from matrix_contract import KIND_DOCUMENT, EntryId, MatrixError
 from matrixstore import ID_SEPARATOR, make_id, matrix_path
-from matrixsync import program_output, vault_root
+from matrixsync import folder_index, program_output, vault_root
 from step_journal_contract import STATUS_DONE
 
 from orchestrator.core import step_journal
@@ -240,6 +240,23 @@ def document_path(document: str) -> str:
 
     """
     return document.partition(ID_SEPARATOR)[2]
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def index_home(arch: Path, source: str) -> bool:
+    """Tell whether a citation's source is a folder index, which holds no design fact.
+
+    Args:
+        arch: The architecture root.
+        source: A citation's source, as :func:`cited_document` reads it.
+
+    Returns:
+        True when the source names a folder index that exists (``matrixsync.folder_index``):
+        listing a view there is part of filing the view, and the matrix holds no entry for it.
+
+    """
+    document: EntryId | None = cited_document(arch, source)
+    return document is not None and folder_index(arch, document_path(document))
 
 
 class ArchitectureStepError(StepError):

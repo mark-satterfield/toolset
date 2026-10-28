@@ -256,7 +256,10 @@ Notes on the diagram:
   the solutions architect answers, and reviews and approves its own design against. Specialists return each
   decision with where it belongs (an arc42 section or a `detailed/` folder), the architect's
   result names each fact's home document, and `architecture-maintainer` writes it there; `atw-matrix
-  sync-documents` records the documents. There is no free-text channel of details for the spec
+  sync-documents` records the documents. A fact's home is never a folder index (a `README.md`
+  outside `arc42/` that lists its folder's documents, which the matrix never holds): listing a
+  view in its folder's index is part of filing the view, which the maintainer does with no fact
+  naming it, and the architect's output check refuses a fact homed in one. There is no free-text channel of details for the spec
   authors: the specs-and-Tasks criteria carry the design "as the detailed design records them".
 - Architecture documents are of two classes, defined in
   `skills/artifact-handoff/schemas/document-front-matter.schema.json`: a view

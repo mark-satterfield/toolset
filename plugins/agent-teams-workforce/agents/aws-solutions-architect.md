@@ -425,6 +425,9 @@ document is a fact's home, arc42 or the detailed architecture under `detailed/`,
 `arc42` skill's `references/arc42-section-model.md` ("One home for each design fact", "Where a
 fact goes: arc42 or `detailed/`"); the review standard gives each criterion its level. For each
 decision, name its one home (document and heading) and the documents that must link to it.
+A fact's home is never a folder index (a `README.md` outside `arc42/`, such as each one under
+`detailed/`, that lists the documents of its folder): listing a view there is part of filing
+the view, which the maintainer does, and your output check refuses a fact with such a home.
 The matrix holds no entry for a design fact: it holds the heading, as `describedBy` from the
 entry the fact is about, with the heading. A heading the pack or `atw-matrix node <entry id>`
 shows already describing the entry is where a fact about it belongs. A technical requirement (a

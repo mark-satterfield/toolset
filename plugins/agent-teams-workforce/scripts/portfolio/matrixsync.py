@@ -596,6 +596,37 @@ def read_documents(arch: Path, paths: Sequence[str] | None = None) -> list[Docum
     return documents
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def folder_index(arch: Path, relative: str) -> bool:
+    """Tell whether a file under the architecture root is a folder index the matrix never holds.
+
+    A folder index is a Markdown file outside the arc42 folder whose front matter states no
+    catalog key (:func:`_is_document`): it lists the documents of its folder and is no
+    architecture document, so :func:`read_documents` leaves it out.
+
+    Args:
+        arch: The architecture root inside the vault.
+        relative: The file, relative to the architecture root.
+
+    Returns:
+        True for such a file that exists; False for a file that is gone, is not Markdown, is in
+        the built or target versions, or is an architecture document.
+
+    Raises:
+        MatrixError: The file cannot be read.
+
+    """
+    file: Path = arch.expanduser().resolve() / relative
+    if not _may_be_document(relative) or not file.is_file():
+        return False
+    try:
+        text: str = file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        message: str = f"cannot read the document {file}: {error}"
+        raise MatrixError(message) from error
+    return not _is_document(parse_document(relative, text))
+
+
 def _document_entry(document: DocumentRead, lifecycle: Lifecycle, existing: Entry | None) -> Entry:
     """Build the entry of a document from the document as it is now.
 

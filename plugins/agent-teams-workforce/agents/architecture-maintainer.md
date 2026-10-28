@@ -77,6 +77,10 @@ For each fact:
    its subject goes to its own home, and neighbouring text stays as it is.
 5. Create a new document only when the request names a home path that does not exist. Give it
    the catalog front matter and name the file for its subject.
+6. Filing a view includes listing it in its folder's index (the arc42 skill's
+   `references/arc42-section-model.md` says which folders have one): when you create a view, or
+   move one, keep that index true to the views of its folder. No fact names this; it is part of
+   filing the view.
 
 Place each diagram the request carries under its heading, and update or redraw a diagram
 when a fact changes what it shows. The notation of a diagram is set by its skill among your

@@ -58,7 +58,9 @@ The design is the solutions architect's. A fact that is not in the request is no
    catalog front matter (`view_type`, `scope`, `subject`, `shows`, `lifecycle_state`, `purpose`),
    or for a standard or policy `document_class: standard` or `policy` with no `view_type`,
    `scope`, `shows` or diagram; and a file name that names its subject. Extend an existing view of
-   the same subject and scope rather than create a second one.
+   the same subject and scope rather than create a second one. Filing a view includes listing it
+   in its folder's index (`../arc42/references/arc42-section-model.md` says which folders have
+   one): a view you create or move is listed there, though no fact of the request names it.
 6. **Place and update diagrams.** Place each diagram the request carries; update or redraw a
    diagram when a fact changes what it shows; check that it renders and reads well.
 7. **Keep the catalog true and check the invariants** in `references/consistency-rules.md` across
