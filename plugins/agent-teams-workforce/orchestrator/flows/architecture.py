@@ -117,6 +117,7 @@ from orchestrator.flows.architecture_files import (
     PARAM_REQUEST,
     QUESTIONS_FILE,
     SCRIPT_STARTED,
+    SYNCED,
     TRD_AUTHOR,
     WRITE_REQUEST,
     WRITTEN,
@@ -191,7 +192,6 @@ ARCHITECT_PURPOSE: Final = "One agent is responsible for the architecture this P
 ARCHITECT_REF: Final = "architect"
 NO_SOURCE: Final = "obligations with no source"
 NO_FEATURE: Final = "requirements with no feature"
-SYNCED: Final = "documents synced"
 CONSTRAINTS: Final = "constraints recorded"
 ATTR_HEADING: Final = "heading"
 ATTR_VIA: Final = "via"

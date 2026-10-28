@@ -546,7 +546,7 @@
       "additionalProperties": false,
       "required": ["headingsChanged", "headingsCreated", "linksAdded", "restatementsRemoved", "notApplied", "summary"],
       "properties": {
-        "headingsChanged": {"type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},
+        "headingsChanged": {"description": "Each heading whose text was changed, as {source, heading}, including the heading of each folder index where a view was listed, moved or removed: an index edit is reported here like any other change, so it is promoted and committed with the views.", "type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},
         "headingsCreated": {"type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},
         "linksAdded": {"description": "Each place a link to a home heading was added, as {source, heading}: the document the link was written in and the heading it sits under, never the link's target.", "type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},
         "restatementsRemoved": {"type": "array", "items": {"$ref": "#/$defs/SourceHeading"}},

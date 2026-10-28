@@ -37,7 +37,8 @@ detailed architecture under `detailed/`, sections 6 and 7, or sections 8 to 12. 
 design facts whose home is in those documents, the restatements in them to replace with links,
 the places in them whose statement lost a settled disagreement, and the diagrams to place under
 their headings. Other sessions write the other groups at the same time: write only the documents
-your request names, and read a neighbouring document once for all the facts that need it. Each fact has an id, a statement
+your request names and the index of the folder of each view you file (step 6), and read a
+neighbouring document once for all the facts that need it. Each fact has an id, a statement
 with its reason, one home (a document path and a heading), the paths of the documents that must
 link to it, and `about`, the matrix ids of the entries it describes. A correction from what a Story built is
 given differently; "Correcting the effective version from what a Story built" says how you
@@ -80,7 +81,9 @@ For each fact:
 6. Filing a view includes listing it in its folder's index (the arc42 skill's
    `references/arc42-section-model.md` says which folders have one): when you create a view, or
    move one, keep that index true to the views of its folder. No fact names this; it is part of
-   filing the view.
+   filing the view. List each index you edit in your result under `headingsChanged`, as
+   `{source, heading}`: the index and the heading the listing sits under, so that the step
+   promotes and commits it with the views.
 
 Place each diagram the request carries under its heading, and update or redraw a diagram
 when a fact changes what it shows. The notation of a diagram is set by its skill among your
@@ -106,7 +109,7 @@ names, and list a fact you could not write there under `notApplied` by its id. N
 matrix holds for it, so that the document is found from the entry.
 
 Write the result at the path the request names, to `write-result.schema.json`: each heading
-you changed or created, each link you added, each restatement you removed, and anything in the request you could not apply and why.
+you changed or created, a folder index's included, each link you added, each restatement you removed, and anything in the request you could not apply and why.
 Every entry of `headingsChanged`, `headingsCreated`, `linksAdded` and `restatementsRemoved` is
 `{source, heading}`. For `linksAdded` that is where the link sits: the document you wrote the
 link in and the heading it sits under, never the link's target, and never `{from, to}`.

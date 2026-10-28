@@ -7,9 +7,11 @@ the step that accepts that file plans what follows it, among its siblings:
   step per request whose answer is not yet a valid answer, each started as the agent the request
   names, then a fresh Decide step of the architect, handed every answer;
 - a result with no open request: at most three ``architecture-maintainer`` steps, one per group of
-  arc42 sections (:data:`SECTION_GROUPS`) whose write request differs from the one already
-  written, each write request built here from the result's ``facts``, ``restatements``,
-  ``settlements`` and ``diagrams``, so one session reads each neighbouring document of its group once.
+  arc42 sections (:data:`SECTION_GROUPS`) whose write request was not already written, each
+  write request built here from the result's ``facts``, ``restatements``, ``settlements`` and
+  ``diagrams``, so one session reads each neighbouring document of its group once. Each request
+  and its result are files of their own, named for the request's content, so a later write of a
+  group never replaces the files of an earlier one.
 
 A Decide step is handed a digest of its answers (:func:`write_digest`), so it reads a few KB
 instead of every answer file.
@@ -17,6 +19,8 @@ instead of every answer file.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import sys
 from pathlib import Path
@@ -364,12 +368,25 @@ def _written(asked: Path, request: WriteRequest) -> bool:
     return True
 
 
+def write_name(group: str, request: WriteRequest) -> str:
+    """Name the files of one group's write request, for the group and the request's content.
+
+    Returns:
+        ``write-<group>-<hash>``: the hash is the start of the SHA-256 of the request, so the same
+        request is always named the same and two different requests never share a file.
+
+    """
+    content: bytes = json.dumps(request, sort_keys=True, ensure_ascii=False).encode()
+    return f"{WRITE_PREFIX}{group}-{hashlib.sha256(content).hexdigest()[:ID_LENGTH]}"
+
+
 def write_steps(arch: Path, helpers: Path, result: ArchitectureResult) -> tuple[StepGroup, ...]:
     """Plan the document writes an accepted architecture result needs, after the step that accepts it.
 
-    Each group's request (:func:`write_requests`) is written to the helpers folder; a group whose
-    request file already holds the same request with a valid result is not written again. The
-    steps are consecutive agent steps with done inputs, so their sessions run together.
+    Each group's request (:func:`write_requests`) is written to the helpers folder under its own
+    name (:func:`write_name`), with its result path beside it; a group whose request was already
+    written with a valid result is not written again. The steps are consecutive agent steps with
+    done inputs, so their sessions run together.
 
     Returns:
         One group of at most three ``architecture-maintainer`` steps, one per group of sections to
@@ -382,7 +399,7 @@ def write_steps(arch: Path, helpers: Path, result: ArchitectureResult) -> tuple[
     group: str
     request: WriteRequest
     for group, request in write_requests(arch, result).items():
-        name: str = f"{WRITE_PREFIX}{group}"
+        name: str = write_name(group, request)
         asked: Path = helpers / f"{name}{REQUEST_SUFFIX}"
         stated: WriteRequest = {**request, "resultPath": str(helpers / f"{name}.result.json")}
         validate_write_request(stated)

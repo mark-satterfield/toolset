@@ -27,8 +27,6 @@ from architecture_work_contract import (
     ArchitectureWorkError,
     validate_architecture_context,
     validate_architecture_result,
-    validate_write_request,
-    validate_write_result,
 )
 from matrix_contract import KIND_DOCUMENT, EntryId, MatrixError
 from matrixstore import ID_SEPARATOR, make_id, matrix_path
@@ -104,7 +102,9 @@ record those files in the journal, as ``helper-steps.schema.json`` fixes them.
 
 WRITE_REQUEST: Final = "write request"
 WRITTEN: Final = "what was written"
-"""The artifacts a document maintainer's step holds: what it was asked to write, and its result."""
+SYNCED: Final = "documents synced"
+"""The artifacts a document maintainer's step holds: what it was asked to write, its result, and
+the documents its result and request name, which the step synced."""
 
 ARTIFACT_PACK: Final = "architecture pack"
 ARTIFACT_PACK_CONSTRAINTS: Final = "architecture constraints"
@@ -485,33 +485,28 @@ def held_file(step: Step, *names: str) -> Path | None:
     return None
 
 
-def written_documents(run: StepRun, arch: Path) -> list[str]:
+def written_documents(run: StepRun) -> list[str]:
     """List the documents this Epic's document maintainers wrote.
 
-    Every done step under the Epic's Architecture container that holds what a document
-    maintainer wrote and the write request it was launched from counts: a maintainer the script
-    ran and one the architect ran in its own session alike. The documents are those
-    :func:`written_paths` names for each.
+    Every done step under the Epic's Architecture container that records the documents a
+    document maintainer's write synced counts: a maintainer the script ran and one the architect
+    ran in its own session alike. Each step's own record is read, so a later write of the same
+    group of sections never hides what an earlier one wrote.
 
     Returns:
-        The path under the architecture root of each document written, once, in path order. A
-        write request or a result a done step holds that cannot be read raises
-        ``ArchitectureStepError`` from :func:`checked_file`; a result written to an earlier
-        contract by a session of another agent definition raises ``StaleInputError``
-        (:func:`checked_output`).
+        The path under the architecture root of each document written, once, in path order.
 
     """
     container: Step = run.step_named(ARCHITECTURE)
     paths: set[str] = set()
     step: Step
+    held: Artifact
     for step in step_journal.steps_in_order_from(container):
-        written: Path | None = held_file(step, WRITTEN)
-        asked: Path | None = held_file(step, WRITE_REQUEST, LABEL_REQUEST)
-        if step["status"] != STATUS_DONE or written is None or asked is None:
+        if step["status"] != STATUS_DONE:
             continue
-        request: WriteRequest = checked_file(run, asked, validate_write_request)
-        result: WriteResult = checked_output(run, written, validate_write_result, step)
-        paths.update(written_paths(arch, request, result))
+        for held in step["artifacts"]:
+            if held["name"] == SYNCED and held["kind"] == "value":
+                paths.update(check_type(held["value"], list[str]))
     return sorted(paths)
 
 

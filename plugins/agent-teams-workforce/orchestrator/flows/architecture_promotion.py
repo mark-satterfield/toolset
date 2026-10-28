@@ -2,13 +2,14 @@
 
 It follows the check step that passed the architect's result and its review log: the architect
 reviews and approves its own architecture. Under the matrix's lock, it sets the documents this
-Epic's document maintainers wrote effective in their front matter, files the Epic's review log in
-the vault beside the architecture, brings the documents' matrix entries up to date so that each
-mirrors its lifecycle, links the review log from the Epic's matrix entry, removes each
-disagreement a document maintainer of this run corrected the losing statement of, and sets the
-approved mark on the architecture the Epic's elaboration reviewed (its approval scope by the rule
-of reach, in the corrected matrix). It then commits and pushes those documents and the review log,
-and commits and pushes the matrix file. Anything else is a failure with a structured cause.
+Epic's document maintainers wrote effective in their front matter, folder indexes among them,
+files the Epic's review log in the vault beside the architecture, brings the documents' matrix
+entries up to date so that each mirrors its lifecycle (the matrix holds no folder index), links
+the review log from the Epic's matrix entry, removes each disagreement a document maintainer of
+this run corrected the losing statement of, and sets the approved mark on the architecture the
+Epic's elaboration reviewed (its approval scope by the rule of reach, in the corrected matrix).
+It then commits and pushes those documents and the review log, and commits and pushes the matrix
+file. Anything else is a failure with a structured cause.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifac
 from architecture_work_contract import validate_write_request, validate_write_result
 from matrix_contract import KIND_DISAGREEMENT, KIND_DOCUMENT, ROLE_SCRIPT
 from matrixstore import as_entry_id, make_id, read_matrix, update_matrix
-from matrixsync import LIFECYCLE_EFFECTIVE, relative_path, set_lifecycle, sync_documents, vault_root
+from matrixsync import LIFECYCLE_EFFECTIVE, folder_index, relative_path, set_lifecycle, sync_documents, vault_root
 from matrixtraverse import approval_scope, epic_id
 from matrixwrite import approve, commit
 from step_journal_contract import STATUS_DONE
@@ -80,7 +81,7 @@ class Promoted:
     documents: tuple[str, ...]
     """The documents set effective, each by its path under the architecture root."""
     not_effective: tuple[str, ...]
-    """Those of them whose matrix entry does not show the lifecycle effective afterwards."""
+    """Those of them, folder indexes aside, whose matrix entry does not show the lifecycle effective afterwards."""
     removed: tuple[EntryId, ...]
     """The disagreements removed: settled, and the losing statement corrected in this run."""
     approved: tuple[EntryId, ...]
@@ -126,7 +127,7 @@ def _promote(
     """Promote what the Epic reviewed.
 
     In one matrix change, under the matrix's lock: each document this Epic's maintainers wrote
-    that still exists is set effective in its front matter, the review log is copied into the
+    that still exists, a folder index included, is set effective in its front matter, the review log is copied into the
     vault, the entries of the written documents are brought up to date as ``atw-matrix
     sync-documents --paths`` does (a document that is gone loses its entry), the Epic's entry links
     the review log, each disagreement named that the matrix holds with a ruling is removed, and
@@ -142,8 +143,10 @@ def _promote(
         log: The Epic's review log, at the architecture context's ``reviewLogPath``.
 
     Returns:
-        The documents set effective, those the matrix does not show as effective afterwards, the
-        disagreements removed, the entries now approved, and where the review log was filed.
+        The documents set effective, those the matrix does not show as effective afterwards (a
+        folder index is never one: ``matrixsync.folder_index``, the matrix holds no entry for
+        it), the disagreements removed, the entries now approved, and where the review log was
+        filed.
 
     """
     path: Path = matrix_file()
@@ -175,8 +178,9 @@ def _promote(
     approved: ApproveResult
     removed, approved = update_matrix(path, change)
     after: Matrix = read_matrix(path)
+    checked: list[str] = [relative for relative in present if not folder_index(arch, relative)]
     not_effective: list[str] = []
-    for relative in present:
+    for relative in checked:
         mirrored = after.find(make_id(KIND_DOCUMENT, relative))
         if mirrored is None or mirrored.attributes.get(ATTR_LIFECYCLE) != LIFECYCLE_EFFECTIVE:
             not_effective.append(relative)
@@ -192,23 +196,28 @@ def _promote(
 def _commit_vault(run: StepRun, vault: Path, paths: list[str], message: str) -> str | None:
     """Commit named paths of the vault and push them.
 
-    Only the named paths are staged and committed. The branch is pushed when this call made a
-    commit or an earlier one was left unpushed.
+    Only the named paths that exist or that git tracks are staged and committed, so a document
+    that was never created is left out and one that was deleted is committed as deleted. The
+    branch is pushed when this call made a commit or an earlier one was left unpushed.
 
     Returns:
         The commit this call made or pushed, or None when the paths held nothing to commit and
         nothing was left to push.
 
     """
-    run.tools.git(vault, ["add", "-A", "--", *paths], stage=PROMOTE)
+    tracked: set[str] = set(
+        run.tools.command(["git", "ls-files", "-z", "--", *paths], stage=PROMOTE, cwd=vault).stdout.split("\0"),
+    )
+    named: list[str] = [path for path in paths if (vault / path).exists() or path in tracked]
+    run.tools.git(vault, ["add", "-A", "--", *named], stage=PROMOTE)
     staged: str = run.tools.command(
-        ["git", "diff", "--cached", "--name-only", "--", *paths],
+        ["git", "diff", "--cached", "--name-only", "--", *named],
         stage=PROMOTE,
         cwd=vault,
     ).stdout.strip()
     made: str | None = None
     if staged:
-        run.tools.git(vault, ["commit", "-q", "-m", message, "--", *paths], stage=PROMOTE)
+        run.tools.git(vault, ["commit", "-q", "-m", message, "--", *named], stage=PROMOTE)
         made = run.tools.command(["git", "rev-parse", "HEAD"], stage=PROMOTE, cwd=vault).stdout.strip()
     ahead = run.tools.command(
         ["git", "rev-list", "--count", f"{REMOTE}/{BRANCH}..HEAD"],
@@ -269,7 +278,7 @@ def promote(run: StepRun) -> Completion:
     """
     context: ArchitectureContext = read_context(run)
     arch: Path = Path(context["architectureRoot"])
-    documents: list[str] = written_documents(run, arch)
+    documents: list[str] = written_documents(run)
     promoted: Promoted = run.tools.portfolio(
         PROMOTE,
         _promote,

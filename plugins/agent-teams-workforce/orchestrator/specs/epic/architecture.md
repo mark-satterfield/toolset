@@ -139,9 +139,10 @@ group of arc42 sections (`architecture_rounds.write_requests`, `SECTION_GROUPS`)
 `runtime` (sections 6 and 7) and `concepts` (sections 8 to 12). A fact and a diagram go to the
 request of their home's group, a restatement to the request of the group of the document it is
 in, and a settlement to the request of each group holding a statement that lost, with only that
-group's places. Each request is written to `<helpersFolder>/write-<group>.request.json`, its
-result path beside it. A group whose request file already holds the same request with a valid
-result is not written again; every other gets one `architecture-maintainer` step, handed the
+group's places. Each request is written to `<helpersFolder>/write-<group>-<hash>.request.json`,
+named for its content (`architecture_rounds.write_name`), its result path beside it, so a later
+write of a group never replaces the files of an earlier one. A group whose request was already
+written with a valid result is not written again; every other gets one `architecture-maintainer` step, handed the
 request as the parameter `request`, so a pass starts at most three maintainers and each reads a
 neighbouring document once for every fact of its group. The maintainer steps run at the same
 time, after the step that planned them and before the index.
@@ -270,15 +271,17 @@ matrix holds each requirement it added or changed before the promotion commits t
 ## Promotion
 
 Script `atw-matrix sync-documents; atw-matrix commit`. It follows the TRD write after a check that found no defect.
-It sets the documents of the review scope effective in their front matter, copies the review log
+It sets the documents this Epic's maintainers wrote effective in their front matter, each folder
+index they listed a view in included: the value `documents synced` each maintainer step recorded
+(`architecture_files.written_documents`). It copies the review log
 into the vault at `<architectureRoot>/review-logs/<epic id>.json`, mirrors the documents'
-lifecycle in the matrix (`sync-documents --paths`), links the log from the Epic's matrix entry
+lifecycle in the matrix (`sync-documents --paths`; the matrix holds no folder index), links the log from the Epic's matrix entry
 (attribute `reviewLog`: its path in the vault and its SHA-256), removes each disagreement settled
 in this run whose losing statement a maintainer step corrected, commits and pushes those
-documents and the log in the vault, and commits and pushes the matrix file (`atw-matrix commit
+documents and the log in the vault (each that exists or that git tracks), and commits and pushes the matrix file (`atw-matrix commit
 --bead`). It writes `<arch-work>/promoted.json` and records it as the file `promoted documents`,
-with the values `vault commit` and `matrix commit` when a commit was made. A document that could
-not be set effective fails the step, naming each with the reason; anything else that fails ends
+with the values `vault commit` and `matrix commit` when a commit was made. A document other than
+a folder index whose matrix entry does not show it effective fails the step, naming each with the reason; anything else that fails ends
 the step with a structured cause.
 
 ## After the container
