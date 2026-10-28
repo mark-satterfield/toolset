@@ -44,7 +44,7 @@ Usage:
   polyrepo.py tier <path>
   polyrepo.py tiers
   polyrepo.py set-tier <repo> product|tooling
-  polyrepo.py templates-check
+  polyrepo.py templates-check [--compare-only]
   polyrepo.py beads-setup [repo ...] [--space S] [--all] [--check] [--dry-run] [--trailer TEXT]
   polyrepo.py beads-fleet [--fix]
   polyrepo.py environment [repo ...] [--space S] [--fix]
@@ -67,7 +67,7 @@ every repository, so it commits on `main` whatever the repository's recorded tie
 
 Every command takes --json (one JSON object on stdout) and --no-cache (ignore the fetch and
 GitHub-listing freshness window). Exit status: 0 success, 1 findings remain (reconcile, a
-repo left out of date by agents-sync or rebase, a template that lags), 2 usage or environment
+repo left out of date by agents-sync or rebase, a template that lags or does not build), 2 usage or environment
 error. grep follows rg: 0 matches, 1 no match, 2 error.
 """
 
@@ -296,6 +296,15 @@ class TemplateReport(TypedDict):
     render_errors: list[RenderError]
     files: list[TemplateFileRow]
     lags: bool
+
+
+class TemplateBuild(TypedDict):
+    """A template rendered as `create` renders a new repo, committed through its hook and tested."""
+
+    template: str
+    repo: str | None
+    steps: list[str]
+    problems: list[str]
 
 
 class KindWithoutTemplate(TypedDict):
@@ -4045,11 +4054,43 @@ def _template_of_name(cfg: Config, name: str) -> str:
     raise PolyrepoError(msg)
 
 
-def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path]:
-    """Validate a create request against the naming command, the templates, disk and GitHub.
+def _unfinished_create_problem(dest: Path, tdir: Path) -> str | None:
+    """Tell why an existing folder is not the unfinished output of an earlier `create` from a template.
+
+    The unfinished output of `create` is a folder rendered from the template whose git
+    repository, if it has one yet, holds no commit: `create` stops before its first commit when
+    the environment or the commit hook fails, and nothing outside the folder records it yet.
+
+    Args:
+        dest: The existing folder.
+        tdir: The template folder the request renders.
 
     Returns:
-        (template folder, destination folder).
+        None when the folder is that unfinished output, else the reason it is not.
+
+    """
+    answers = _read_yaml(dest / ".copier-answers.yml")
+    src = str(answers.get("_src_path") or "")
+    if not src or Path(src).resolve() != tdir.resolve():
+        return f"its .copier-answers.yml does not name the {tdir.name} template {tdir}"
+    if (dest / ".git").exists():
+        refs = git_out(dest, "for-each-ref", "--count=1", "--format=%(refname)")
+        if refs is None:
+            return "git cannot read its repository"
+        if refs:
+            return f"its git repository holds commits ({refs})"
+    return None
+
+
+def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path, bool]:
+    """Validate a create request against the naming command, the templates, disk and GitHub.
+
+    A destination folder that already exists is accepted only when it is the unfinished output
+    of an earlier `create` of the same name from the same template (`_unfinished_create_problem`)
+    and neither GitHub nor the manifest has the name; `create` then replaces it.
+
+    Returns:
+        (template folder, destination folder, whether the destination is unfinished output to replace).
 
     Raises:
         PolyrepoError: when the request breaks a rule or the name is taken.
@@ -4078,12 +4119,36 @@ def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path]:
         sub = cfg.placement_folder(space, name)
     space_dir = cfg.root / space
     dest = space_dir / sub / name if sub else space_dir / name
+    return tdir, dest, _replaceable_destination(cfg, name, tdir, dest)
+
+
+def _replaceable_destination(cfg: Config, name: str, tdir: Path, dest: Path) -> bool:
+    """Check that a new repo's name is free and tell whether its folder is unfinished output to replace.
+
+    Returns:
+        False when the folder does not exist, True when it is the unfinished output of an earlier
+        `create` from the same template.
+
+    Raises:
+        PolyrepoError: when a repo of the name is on disk elsewhere, GitHub or the manifest has the
+            name, or the folder exists and is anything but that unfinished output.
+
+    """
     local, _ = discover(cfg)
-    if dest.exists() or name.lower() in {n.lower() for n in local}:
-        msg = f"{name} already exists on disk"
+    elsewhere = [
+        str(r.path) for n, r in local.items() if n.lower() == name.lower() and r.path.resolve() != dest.resolve()
+    ]
+    if elsewhere:
+        msg = f"{name} already exists on disk at {', '.join(elsewhere)}"
         raise PolyrepoError(msg)
     _require_new_name(cfg, name)
-    return tdir, dest
+    if not dest.exists():
+        return False
+    problem = _unfinished_create_problem(dest, tdir)
+    if problem is not None:
+        msg = f"{name} already exists on disk at {dest}, and it is not unfinished output of create: {problem}"
+        raise PolyrepoError(msg)
+    return True
 
 
 def _require_new_name(cfg: Config, name: str) -> None:
@@ -4114,7 +4179,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     """
     name, b = args.name, cfg.default_branch
     args.template = args.template or _template_of_name(cfg, name)
-    tdir, dest = _create_checks(args, cfg)
+    tdir, dest, unfinished = _create_checks(args, cfg)
     data = _template_data(cfg, name, tdir)
     res: dict[str, object] = {
         "repo": name,
@@ -4123,7 +4188,9 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         "path": str(dest),
         "placement_missing": None if args.dir is not None else cfg.placement_missing(args.space, name),
         "dry_run": args.dry_run,
+        "replaces_unfinished": unfinished,
         "steps": [
+            *([f"remove the unfinished output an earlier create left at {dest}"] if unfinished else []),
             f"render the {args.template} template into {dest}",
             "write the shared AGENTS.md blocks, including GitNexus",
             "merge the shared hook registrations into .claude/settings.json (hooks_sync)",
@@ -4136,8 +4203,8 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
             f"git init on {b}, exclude {WORKTREES_LINE} locally",
             (
                 "run the template's setup task (task install) and verify .venv/bin/python, "
-                "every declared dependency, and for an infra template cdk synth --profile dev; "
-                "then commit"
+                f"every declared dependency, and for a {' or '.join(ENV_SYNTH_KINDS)} template cdk synth "
+                "--profile dev; stop before the first commit when any of it fails; then commit"
             ),
             f"create the private GitHub repo {cfg.owner}/{name} and push {b}",
             "give a product repo the GitHub rulesets whose required checks its workflows report (rulesets.files)",
@@ -4153,28 +4220,29 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     }
     if args.dry_run:
         return _create_dry_run(args, cfg, tdir, data, res)
+    if unfinished:
+        shutil.rmtree(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     cp = _copier_render(cfg, tdir, dest, data)
     if cp.returncode != 0:
         msg = f"copier failed: {_last_line(cp)}"
         raise PolyrepoError(msg)
-    agents = dest / "AGENTS.md"
-    agents.write_text(
-        _with_blocks(
-            agents.read_text() if agents.exists() else None,
-            _blocks_for(_agents_blocks(cfg), name, args.space),
-            name,
-        ),
-    )
-    res["hooks_written"] = write_hooks(cfg, dest, name, args.space)
     try:
         _create_scaffold(args, cfg, dest, res)
-    except GitFailedError as exc:
+    except (GitFailedError, CreateStoppedError) as exc:
         res["error"] = str(exc)
+        res["rerunnable"] = _unfinished_create_problem(dest, tdir) is None
         emit(
             args,
             res,
-            lambda: f"{name}: created at {dest} but stopped: {res['error']}",
+            lambda: (
+                f"{name}: created at {dest} but stopped: {res['error']}"
+                + (
+                    "; fix the cause and run create again: it replaces this unfinished output"
+                    if res["rerunnable"]
+                    else ""
+                )
+            ),
         )
         return 1
     code = _create_records(args, cfg, dest, res)
@@ -4184,7 +4252,6 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         lambda: "\n".join(
             [
                 f"{name}: created at {dest} and pushed to GitHub"
-                + (f"; environment setup failed: {res['environment_error']}" if res.get("environment_error") else "")
                 + (f"; formatting left findings: {res['format_error']}" if res.get("format_error") else "")
                 + (f"; matrix update failed: {res['matrix_error']}" if res.get("matrix_error") else "")
                 + (f"; rulesets failed: {res['ruleset_error']}" if res.get("ruleset_error") else "")
@@ -4235,44 +4302,91 @@ def _create_dry_run(
     return 0
 
 
-def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dict[str, object]) -> None:
-    """Initialise the rendered repo, set up its environment, commit it and create it on GitHub.
+class CreateStoppedError(Exception):
+    """`create` stopped before the new repo's first commit; the folder is left for a rerun to replace."""
 
-    The environment result is recorded in res; a failed git or gh step propagates as the
-    GitFailedError that `must` raises.
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class NewRepo:
+    """A repo `create` makes: its name, its app space and the template it is rendered from."""
+
+    name: str
+    space: str
+    template: str
+
+
+def _prepare_rendered(cfg: Config, repo: NewRepo, dest: Path, res: dict[str, object]) -> None:
+    """Make a rendered template a repo ready for its first commit, as `create` does.
+
+    It writes the shared AGENTS.md blocks and hook registrations, runs git init, writes the
+    canonical code checks, sets up and verifies the environment (with `cdk synth --profile dev`
+    for a kind that synthesizes), installs GitNexus's files, copies the shared tooling and runs
+    the repo's own formatters. What each step did is recorded in res.
+
+    Raises:
+        CreateStoppedError: when the environment does not set up or verify.
+
     """
-    name, b = args.name, cfg.default_branch
-    must(git(dest, "init", f"--initial-branch={b}"))
+    name, space = repo.name, repo.space
+    agents = dest / "AGENTS.md"
+    agents.write_text(
+        _with_blocks(
+            agents.read_text() if agents.exists() else None,
+            _blocks_for(_agents_blocks(cfg), name, space),
+            name,
+        ),
+    )
+    res["hooks_written"] = write_hooks(cfg, dest, name, space)
+    must(git(dest, "init", f"--initial-branch={cfg.default_branch}"))
     _exclude_worktrees(dest)
-    res["checks_written"] = write_checks(cfg, dest, name, args.space)
+    res["checks_written"] = write_checks(cfg, dest, name, space)
     # Before the first commit, so the lockfile the setup task writes is committed too.
     if env_applicable(dest):
         tspec = _map(
-            _map(_templates(cfg)[1].get("kinds") or {}, "templates kinds").get(args.template) or {},
+            _map(_templates(cfg)[1].get("kinds") or {}, "templates kinds").get(repo.template) or {},
             "template kind",
         )
-        synth = bool(tspec.get("synth", args.template in ENV_SYNTH_KINDS))
+        synth = bool(tspec.get("synth", repo.template in ENV_SYNTH_KINDS))
         env_res = setup_environment(dest, synth)
         res["environment"] = env_res
         if env_res["problems"]:
-            res["environment_error"] = "; ".join(env_res["problems"])
+            msg = f"environment setup failed before the first commit: {'; '.join(env_res['problems'])}"
+            raise CreateStoppedError(msg)
     res["gitnexus_files"] = gitnexus_install(cfg, dest)
-    res["tooling_files"] = write_tooling(cfg, dest, name, args.space)
+    res["tooling_files"] = write_tooling(cfg, dest, name, space)
     # The template's output is formatted as the repo's own checkers format it, so the first
     # commit carries no formatting findings and the commit hook has nothing to rewrite.
     format_problems = format_rendered(dest)
     if format_problems:
         res["format_error"] = "; ".join(format_problems)
+
+
+def _first_commit(dest: Path, name: str, template: str) -> None:
+    """Commit everything in the prepared repo through its commit hook.
+
+    A failed commit propagates as the GitFailedError that `must` raises.
+    """
     must(git(dest, "add", "-A"))
     must(
         git(
             dest,
             "commit",
             "-m",
-            f"chore(repo): scaffold {name} from the {args.template} template",
+            f"chore(repo): scaffold {name} from the {template} template",
             timeout=300,
         ),
     )
+
+
+def _create_scaffold(args: argparse.Namespace, cfg: Config, dest: Path, res: dict[str, object]) -> None:
+    """Prepare the rendered repo, commit it and create it on GitHub.
+
+    A failed git or gh step propagates as the GitFailedError that `must` raises; an environment
+    that does not set up stops it before the first commit as a CreateStoppedError.
+    """
+    name = args.name
+    _prepare_rendered(cfg, NewRepo(name=name, space=args.space, template=args.template), dest, res)
+    _first_commit(dest, name, args.template)
     create_on_github(cfg, name, dest)
     failure = gitnexus_index(cfg, dest)
     failures = [*([failure] if failure else []), *gitnexus_register(cfg, dest, name)]
@@ -4355,10 +4469,7 @@ def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict
         log.append(f"matrix update FAILED: {exc}")
         code = 1
     code = max(code, _create_rulesets(args, cfg, dest, res, log))
-    if res.get("environment_error"):
-        log.append(f"environment setup FAILED: {res['environment_error']}")
-        code = 1
-    elif res.get("environment"):
+    if res.get("environment"):
         log.append(f"environment set up: {'; '.join(_strs(_map(res['environment'], 'environment')['steps'], 'steps'))}")
     if res.get("gitnexus_error"):
         log.append(f"GitNexus index FAILED: {res['gitnexus_error']}")
@@ -4387,9 +4498,10 @@ def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict
 # development environment -------------------------------------------------------------------------
 # Creating a repo ends with a working environment: the template's setup task has run,
 # `.venv/bin/python` runs, every declared dependency is installed and importable, and for an
-# infra template `cdk synth --profile dev` succeeds. `doctor` reports a repo that lost any of it.
+# infra or service template `cdk synth --profile dev` succeeds, before the first commit.
+# `doctor` reports a repo that lost any of it.
 
-ENV_SYNTH_KINDS = ("infra",)
+ENV_SYNTH_KINDS = ("infra", "service")
 ENV_SETUP_TIMEOUT = 1800
 ENV_SYNTH_TIMEOUT = 900
 ENV_VERSION_TIMEOUT = 30
@@ -4496,13 +4608,7 @@ def env_applicable(path: Path) -> bool:
         True when it has a `pyproject.toml` and an `install` task.
 
     """
-    if not (path / "pyproject.toml").is_file():
-        return False
-    for name in ("Taskfile.yml", "Taskfile.yaml"):
-        tasks = _read_yaml(path / name).get("tasks")
-        if isinstance(tasks, dict) and "install" in tasks:
-            return True
-    return False
+    return (path / "pyproject.toml").is_file() and "install" in taskfile_tasks(path)
 
 
 def probe_environment(path: Path) -> list[str]:
@@ -4568,7 +4674,7 @@ def setup_environment(path: Path, synth: bool) -> EnvResult:
 
     A `.venv` whose interpreter is missing, a dangling link or does not start is removed first.
     The `install` task runs with `--force`, so a Taskfile `status` check that only tests for the
-    `.venv` folder cannot skip it. An infra repo also runs `cdk synth --profile dev`.
+    `.venv` folder cannot skip it. A repo of a kind that synthesizes also runs `cdk synth --profile dev`.
 
     Args:
         path: The repo's working tree.
@@ -9059,6 +9165,98 @@ def _check_template(
     )
 
 
+TEMPLATE_TEST_TIMEOUT = 1800
+
+
+def taskfile_tasks(path: Path) -> set[str]:
+    """Return the task names a repo's Taskfile declares.
+
+    Returns:
+        The names under `tasks` in Taskfile.yml or Taskfile.yaml; none when it has no Taskfile.
+
+    """
+    for name in ("Taskfile.yml", "Taskfile.yaml"):
+        tasks = _read_yaml(path / name).get("tasks")
+        if isinstance(tasks, dict):
+            return {str(t) for t in tasks}
+    return set()
+
+
+def _build_template(cfg: Config, tdir: Path, check_name: object) -> TemplateBuild:
+    """Build a template as `create` builds a new repo, in a temporary folder, and run its checks.
+
+    The template renders under its kind's `check_name`, and the render goes through what
+    `create` does before its first push (`_prepare_rendered`): the code checks, the environment
+    set up with the shared libraries current in CodeArtifact (with `cdk synth --profile dev` for
+    a kind that synthesizes), GitNexus's files, the shared tooling and the formatters. Then the
+    first commit runs the commit hook, and the Taskfile's `test` task runs. Nothing outside the
+    temporary folder changes.
+
+    Returns:
+        What ran and every problem found; a kind with no `check_name` is reported as a problem.
+
+    """
+    if not isinstance(check_name, str) or not check_name:
+        build = TemplateBuild(template=tdir.name, repo=None, steps=[], problems=[])
+        build["problems"].append(f"config templates.kinds.{tdir.name} names no check_name to build the template with")
+        return build
+    build = TemplateBuild(template=tdir.name, repo=check_name, steps=[], problems=[])
+    with tempfile.TemporaryDirectory(prefix="polyrepo-tb-") as tmp:
+        dest = Path(tmp) / check_name
+        try:
+            _build_until_first_commit(cfg, tdir, dest, build)
+        except (PolyrepoError, GitFailedError, CreateStoppedError) as exc:
+            build["problems"].append(str(exc))
+            return build
+        if "test" not in taskfile_tasks(dest):
+            build["problems"].append("the rendered Taskfile declares no test task")
+            return build
+        cp = run(["task", "--dir", str(dest), "test"], timeout=TEMPLATE_TEST_TIMEOUT, env={"VIRTUAL_ENV": None})
+        if cp.returncode != 0:
+            build["problems"].append(f"task test failed: {_tail(cp)}")
+        else:
+            build["steps"].append("task test passed")
+    return build
+
+
+def _build_until_first_commit(cfg: Config, tdir: Path, dest: Path, build: TemplateBuild) -> None:
+    """Render the template into dest, prepare it as `create` does and make its first commit, recording each step.
+
+    Raises:
+        PolyrepoError: when the template does not render.
+
+    """
+    name = str(build["repo"])
+    cp = _copier_render(cfg, tdir, dest, _template_data(cfg, name, tdir))
+    if cp.returncode != 0:
+        msg = f"copier failed: {_last_line(cp)}"
+        raise PolyrepoError(msg)
+    build["steps"].append("rendered")
+    res: dict[str, object] = {}
+    _prepare_rendered(cfg, NewRepo(name=name, space=cfg.expected_space(name), template=tdir.name), dest, res)
+    build["steps"].extend(_strs(_map(res.get("environment") or {"steps": []}, "environment")["steps"], "steps"))
+    if res.get("format_error"):
+        build["problems"].append(f"formatting left findings: {res['format_error']}")
+    _first_commit(dest, name, tdir.name)
+    build["steps"].append("first commit passed the commit hook")
+
+
+def _build_templates(cfg: Config, troot: Path, kinds: Mapping[str, object]) -> list[TemplateBuild]:
+    """Build every template kind in parallel (`_build_template`).
+
+    Returns:
+        One build per kind, in name order.
+
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+        return list(
+            ex.map(
+                lambda t: _build_template(cfg, troot / t, _map(kinds[t] or {}, "template kind").get("check_name")),
+                sorted(kinds),
+            ),
+        )
+
+
 type _TemplateMembers = dict[str, list[tuple[LocalRepo, str, dict[str, object]]]]
 
 
@@ -9095,10 +9293,13 @@ def _repos_by_template(
 
 
 def cmd_templates_check(args: argparse.Namespace, cfg: Config) -> int:
-    """Compare each template with the repos built from it, and name repo kinds with no template.
+    """Build each template, compare it with the repos built from it, and name repo kinds with no template.
+
+    Each template is built as `create` builds a new repo, against the shared libraries current
+    in CodeArtifact, and its checks run (`_build_template`); `--compare-only` skips the builds.
 
     Returns:
-        0 when no template lags and every repo kind has a template, else 1.
+        0 when every template builds, no template lags and every repo kind has a template, else 1.
 
     Raises:
         PolyrepoError: when the templates folder is missing.
@@ -9123,29 +9324,37 @@ def cmd_templates_check(args: argparse.Namespace, cfg: Config) -> int:
     no_template = [KindWithoutTemplate(kind=k, repos=sorted(v)) for k, v in sorted(untemplated.items())]
     made_without = [KindWithoutTemplate(kind=k, repos=sorted(v)) for k, v in sorted(by_design.items())]
     lagging: list[str] = [x["template"] for x in results if x["lags"]]
+    builds = [] if args.compare_only else _build_templates(cfg, troot, kinds)
     data: dict[str, object] = {
         "templates": results,
+        "builds": builds,
+        "broken_templates": [b["template"] for b in builds if b["problems"]],
         "kinds_without_template": no_template,
         "kinds_made_without_template": made_without,
         "lagging_templates": lagging,
     }
-    emit(args, data, lambda: _templates_text(results, no_template, made_without))
-    return 1 if lagging or no_template else 0
+    emit(args, data, lambda: _templates_text(results, builds, no_template, made_without))
+    return 1 if lagging or no_template or data["broken_templates"] else 0
 
 
 def _templates_text(
     results: list[TemplateReport],
+    builds: list[TemplateBuild],
     no_template: list[KindWithoutTemplate],
     made_without: list[KindWithoutTemplate],
 ) -> str:
     """Render the templates-check report as text.
 
     Returns:
-        One block per template, then the repo kinds with no template, then the kinds the config
-        says are made without one.
+        The build of each template, one block per template, then the repo kinds with no
+        template, then the kinds the config says are made without one.
 
     """
-    lines = []
+    lines = [
+        f"{b['template']} build as {b['repo']}: "
+        + ("BROKEN: " + "; ".join(b["problems"]) if b["problems"] else "; ".join(b["steps"]))
+        for b in builds
+    ]
     for x in results:
         how: dict[str, int] = {}
         for m in x["repos"]:
@@ -9962,6 +10171,59 @@ def _template_type_findings(cfg: Config) -> list[DoctorFinding]:
     return out
 
 
+AGENT_FILES = ("AGENTS.md", "CLAUDE.md")
+TEST_RUNNER = re.compile(
+    r"`[^`\n]*\b(?:pytest|vitest|jest|npm (?:run )?test|pnpm test|yarn test|task test|go test|cargo test|swift test"
+    r"|gradlew? test|xcodebuild test)\b[^`\n]*`",
+)
+
+
+def declares_test_command(path: Path) -> bool:
+    """Tell whether a repo declares the command that runs its whole test suite.
+
+    The suite-run workflow runs the command a repo declares: a `test` task in its Taskfile, or a
+    test command written as code in its AGENTS.md or CLAUDE.md.
+
+    Returns:
+        True when the Taskfile has a `test` task or an agent file names a test runner command in code.
+
+    """
+    if "test" in taskfile_tasks(path):
+        return True
+    for name in AGENT_FILES:
+        f = path / name
+        try:
+            text = f.read_text(encoding="utf-8") if f.is_file() else ""
+        except OSError:
+            continue
+        if TEST_RUNNER.search(text):
+            return True
+    return False
+
+
+def _test_command_findings(cfg: Config) -> list[DoctorFinding]:
+    """Report every active repository that declares no test command, so a build never needs a person for it.
+
+    The control repo is left out: it is tooling with no test suite.
+
+    Returns:
+        One `no-test-command` finding per such repository.
+
+    """
+    control = fleet_file(cfg).parent.parent.resolve()
+    return [
+        _finding(
+            "test-command",
+            r.name,
+            "no-test-command",
+            f"{r.path} declares no test command: add a `test` task to its Taskfile (or state the command in its "
+            "AGENTS.md); the suite-run workflow runs nothing without one",
+        )
+        for r in _local_repos(cfg)
+        if not cfg.is_deprecated_name(r.name) and r.path.resolve() != control and not declares_test_command(r.path)
+    ]
+
+
 ORGANIZATION_RECORD = "organization-structure.md"
 ORGANIZATION_VARIABLE = re.compile(r"^- ([A-Z][A-Z0-9_]*):.*?set as \"?([^\"\s]+)\"?")
 
@@ -10243,7 +10505,8 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     entries, the knowledge-store pointers, the template types against the naming command, the
     organization record's environment variables against
     the environment, every local clone with a deprecated name that may be the only copy of its
-    work (reported only; no repair acts on it), and the matrix's stacks against the repositories (repaired under --fix,
+    work (reported only; no repair acts on it), every active repository that declares no test
+    command (reported only), and the matrix's stacks against the repositories (repaired under --fix,
     and the matrix committed).
 
     Returns:
@@ -10279,12 +10542,22 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     findings.extend(_template_type_findings(cfg))
     findings.extend(_organization_findings(cfg))
     findings.extend(_deprecated_clone_findings(cfg))
+    findings.extend(_test_command_findings(cfg))
     matrix_fixed, matrix_open = _matrix_doctor(cfg, args.fix, args.no_cache)
     findings.extend(matrix_open)
     if args.fix:
         repairs["matrix"] = {"exit": 0, "fixed": matrix_fixed, "records": None, "error": None}
     counts: dict[str, int] = dict.fromkeys(
-        [*DOCTOR_CHECKS, "governance", "knowledge", "templates", "organization", "deprecated-clones", "matrix"],
+        [
+            *DOCTOR_CHECKS,
+            "governance",
+            "knowledge",
+            "templates",
+            "organization",
+            "deprecated-clones",
+            "test-command",
+            "matrix",
+        ],
         0,
     )
     for f in findings:
@@ -10366,7 +10639,18 @@ def build_parser() -> argparse.ArgumentParser:
     _add_tooling_commands(add)
     _add_rulesets_command(add)
     _add_tier_commands(add)
+    _add_templates_check_command(add)
     return p
+
+
+def _add_templates_check_command(add: Callable[[str, str], argparse.ArgumentParser]) -> None:
+    """Add templates-check."""
+    s = add(
+        "templates-check",
+        "build each template as create would and compare the templates with the repos built from them",
+    )
+    s.add_argument("--compare-only", action="store_true", help="skip building the templates")
+    s.set_defaults(func=cmd_templates_check)
 
 
 def _add_inspect_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> None:
@@ -10674,12 +10958,6 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
     s.add_argument("--repo", action="append", help="only this repo (repeatable)")
     s.add_argument("--space", help="only this app space (default: every app space)")
     s.set_defaults(func=cmd_gitnexus_sync)
-
-    s = add(
-        "templates-check",
-        "compare the templates with the repos built from them",
-    )
-    s.set_defaults(func=cmd_templates_check)
 
     s = add(
         "beads-fleet",

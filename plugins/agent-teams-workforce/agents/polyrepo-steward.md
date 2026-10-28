@@ -368,12 +368,22 @@ Every repo has GitNexus from creation, and it is part of a repo's standard setup
 A repository the steward creates is usable for development when creation ends. `polyrepo.py
 create` runs the template's setup task (`task install`), then verifies `.venv/bin/python` runs,
 every declared dependency is installed and importable, `aws_cdk` imports where the code uses it,
-and, for an infra template, `cdk synth --profile dev` succeeds. It exits 1 and reports
-`environment_error` when any of these does not hold; repair the cause and run
-`polyrepo.py environment <repo> --fix`, which removes a `.venv` whose interpreter is missing, a
-dangling link or does not start, then runs `task install --force` so a Taskfile `status` check
-on the `.venv` folder cannot skip it. Never report a created repository as done while
-`environment_error` is present. `polyrepo.py environment` (also a `doctor` check) lists any
+and, for an infra or service template, `cdk synth --profile dev` succeeds, all before the first
+commit. When any of these does not hold, or the commit hook refuses the first commit, `create`
+stops before the first commit and exits 1 with the cause in `error`, and nothing outside the
+folder records the repository yet. Repair the cause (a template fault in the template, checked
+with `polyrepo.py templates-check`, which builds every template as `create` would) and run the
+same `create` again: it replaces a folder that is its own unfinished output (a
+`.copier-answers.yml` naming the same template, no commit, no GitHub repository and no manifest
+entry of the name) and refuses any other existing folder, so no person cleans up a failed
+create. Never report a created repository as done while `error` is present.
+`polyrepo.py environment <repo> --fix` repairs an existing repository's environment: it removes
+a `.venv` whose interpreter is missing, a dangling link or does not start, then runs
+`task install --force` so a Taskfile `status` check on the `.venv` folder cannot skip it.
+Every repository declares the command that runs its tests, a `test` task in its Taskfile (every
+template renders one) or a test command in its AGENTS.md, because the build pipeline runs the
+suite a repository declares and has no person to ask; `doctor` reports a repository that
+declares none (`test-command`). `polyrepo.py environment` (also a `doctor` check) lists any
 active Python repository whose environment has drifted. Setup creates only gitignored local
 files; a failure that needs a change to a repository's code or `pyproject.toml` is reported, not
 edited.

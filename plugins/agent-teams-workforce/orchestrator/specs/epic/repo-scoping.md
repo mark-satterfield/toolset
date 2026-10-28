@@ -96,9 +96,11 @@ The order is fixed, and only the stacks of what the Stories build are reached:
    `polyrepo create <name> --space <app>` once, with no retry and a timeout of
    `$ATW_REPO_CREATE_TIMEOUT` (3600 s); the `polyrepo` tool takes the template from the name.
    Success is judged from the JSON object it prints: it names the repository's absolute path and
-   no `error`. A failed step after the push to GitHub (environment, formatting, matrix,
-   rulesets, beads, GitNexus) leaves the repository made and is kept in the creation record as a
-   problem. A name the naming command refuses (checked for every name before any is created)
+   no `error`. An environment that does not set up or synthesize, and a first commit the commit
+   hook refuses, stop `polyrepo create` before its first commit with an `error`; the folder it
+   leaves is its own unfinished output, which the next `polyrepo create` of the name replaces. A
+   failed step after the push to GitHub (formatting, matrix, rulesets, beads, GitNexus) leaves
+   the repository made and is kept in the creation record as a problem. A name the naming command refuses (checked for every name before any is created)
    and a failed `polyrepo create` fail the step as an item failure at stage `repo-creation`,
    cause `other`, with the cause as evidence; a failed GitHub check is a setup failure
    (`SessionSetupError`). Either is recorded in the creation record, and the next dispatch
