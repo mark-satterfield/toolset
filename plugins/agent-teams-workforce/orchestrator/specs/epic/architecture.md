@@ -81,7 +81,7 @@ folder of the architecture or of the PRDs.
 
 | Step | Planned by | Output | What its acceptance plans after it |
 |---|---|---|---|
-| Analyze ("Analyze the PRD against the architecture and put the questions and draft reviews to the specialists") | the open-run step | the state file, then `<arch-work>/questions.json` (`specialist-round.schema.json`): one request per specialist | one step per request whose answer is not yet a valid answer, then a Decide step (round 1) |
+| Analyze ("Analyze the PRD against the architecture and put the questions and draft reviews to the specialists") | the open-run step | the state file, then `<arch-work>/questions.json` (`specialist-round.schema.json`): one request per specialist | one step per request whose answer is not yet a valid answer, then a Decide step (round 1), handed every answer of the round: those the steps write, and as its parameter `answered` each that was already valid |
 | Decide ("Decide the architecture with the specialists' answers") | the step whose output asked a round | the architecture result at the context's `resultPath`, updated in place | a further round and a Decide (round 2) when the result's `requests` holds an unanswered request; otherwise the document writes |
 | A correction ("Correct what the mechanical check found"), or a step the lead adds | the check, or the lead | the architecture result, updated in place | as for Decide |
 

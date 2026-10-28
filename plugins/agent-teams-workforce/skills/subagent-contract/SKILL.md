@@ -64,7 +64,7 @@ the journal file its brief names; `atw-step-journal --help` gives each command's
 helper whose answer file is on disk and valid is recorded done by the script when it reaches
 that step, so an interruption never redoes it.
 
-An agent that starts no other agent adds no step.
+An agent that starts no other agent, and whose definition does not tell it to add steps, adds no step.
 
 ## Starting subagents and workflows
 

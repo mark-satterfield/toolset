@@ -2,7 +2,7 @@
 name: architecture-team-lead
 description: Route what the solutions architect could not settle, so that the team settles it with the least further work.
 role: architecture-lead
-tools: Read, Glob, Grep, Bash, Write, Skill
+tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, NotebookEdit, SendMessage, Skill
 model: sonnet
 effort: medium
@@ -11,12 +11,6 @@ skills:
 - agent-teams-workforce:effective-architecture
 - agent-teams-workforce:subagent-contract
 - agent-teams-workforce:find-specialists
-x-onDemandSkills:
-- agent-teams-workforce:artifact-handoff
-- agent-teams-workforce:log-architecture-review
-- agent-teams-workforce:matrix
-- agent-teams-workforce:pipeline-contracts
-- agent-teams-workforce:software-engineering
 ---
 
 ## When you exist

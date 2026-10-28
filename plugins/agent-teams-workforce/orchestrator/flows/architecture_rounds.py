@@ -66,6 +66,9 @@ if TYPE_CHECKING:
 DECIDE_DESCRIPTION: Final = "Decide the architecture with the specialists' answers"
 PARAM_ROUND: Final = "round"
 """The parameter that hands a Decide step the number of the round of answers it decides with."""
+PARAM_ANSWERED: Final = "answered"
+"""The parameter that hands a Decide step each answer of its chain that no step of it wrote, because
+the answer file already held a valid answer when its request was planned, with the agent asked."""
 MAX_ROUNDS: Final = 2
 """How many rounds of requests one chain of architect steps may put to the specialists."""
 REQUEST_SUFFIX: Final = ".request.json"
@@ -113,6 +116,31 @@ def round_of(run: StepRun) -> int:
     return held if isinstance(held, int) else 0
 
 
+def _answered_before(run: StepRun) -> dict[str, str]:
+    """Read the answers a step is handed that no step of its chain wrote.
+
+    Returns:
+        Each such answer file's path, with the agent its request named; none for a step planned
+        without them.
+
+    """
+    held: JsonValue = run.params().get(PARAM_ANSWERED, {})
+    if not isinstance(held, dict):
+        return {}
+    return {path: agent for path, agent in held.items() if isinstance(agent, str)}
+
+
+def handed_answers(run: StepRun) -> list[Path]:
+    """Name every answer an architect step is handed.
+
+    Returns:
+        The answers its inputs hold, then each answer its chain did not start again
+        (:data:`PARAM_ANSWERED`), each once.
+
+    """
+    return list(dict.fromkeys([*run.inputs.files(LABEL_ANSWER), *map(Path, _answered_before(run))]))
+
+
 def round_steps(run: StepRun, requests: Sequence[AgentRequest], number: int) -> StepGroup:
     """Plan one round of requests after an architect step, then the Decide step that uses the answers.
 
@@ -120,7 +148,9 @@ def round_steps(run: StepRun, requests: Sequence[AgentRequest], number: int) -> 
     one step, performed by the agent the request names and handed the request file as the
     parameter ``request``. The Decide step's inputs are those steps and the completing step's own
     inputs, so it is handed every answer of the chain, the findings and rulings the completing
-    step was handed, and the round's number.
+    step was handed, and the round's number. A request whose answer is already valid gets no step:
+    its answer file goes to the Decide step as the parameter ``answered``, with those the
+    completing step was handed the same way.
 
     Args:
         run: The architect step whose output holds the requests.
@@ -133,15 +163,17 @@ def round_steps(run: StepRun, requests: Sequence[AgentRequest], number: int) -> 
     """
     steps: list[NewStep] = []
     refs: list[str] = []
+    kept: dict[str, str] = _answered_before(run)
     index: int
     entry: AgentRequest
     for index, entry in enumerate(requests):
+        agent: str = step_journal.agent_name(entry["agent"])
         if answered(entry["request"]):
+            kept[entry["request"]["answerPath"]] = agent
             continue
         answer: Path = Path(entry["request"]["answerPath"])
         asked: Path = answer.with_name(answer.stem + REQUEST_SUFFIX)
         write_json(asked, json_object(entry["request"]))
-        agent: str = step_journal.agent_name(entry["agent"])
         ref: str = f"round-{number}-{index}"
         refs.append(ref)
         steps.append(
@@ -162,7 +194,10 @@ def round_steps(run: StepRun, requests: Sequence[AgentRequest], number: int) -> 
         "agent": ARCHITECT,
         "inputs": list(dict.fromkeys([*refs, *carried])),
     }
-    return StepGroup((*steps, NewStep(decide, params={PARAM_ROUND: number})))
+    params: dict[str, JsonValue] = {PARAM_ROUND: number}
+    if kept:
+        params[PARAM_ANSWERED] = dict(kept)
+    return StepGroup((*steps, NewStep(decide, params=params)))
 
 
 def _answer_agents(run: StepRun) -> dict[str, str]:
@@ -214,10 +249,10 @@ def write_digest(run: StepRun, helpers: Path) -> Path | None:
         handed no answer.
 
     """
-    answers: list[Path] = list(dict.fromkeys(run.inputs.files(LABEL_ANSWER)))
+    answers: list[Path] = handed_answers(run)
     if not answers:
         return None
-    agents: dict[str, str] = _answer_agents(run)
+    agents: dict[str, str] = {**_answered_before(run), **_answer_agents(run)}
     digest: AnswersDigest = {
         "answers": [
             _digested(agents.get(str(path), "unknown"), path, checked_file(run, path, validate_specialist_answer))

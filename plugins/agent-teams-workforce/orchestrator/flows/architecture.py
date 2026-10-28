@@ -134,6 +134,7 @@ from orchestrator.flows.architecture_rounds import (
     ID_LENGTH,
     MAX_ROUNDS,
     answered,
+    handed_answers,
     round_of,
     round_steps,
     write_digest,
@@ -306,7 +307,7 @@ def _handed_files(
         (LABEL_STATE, Path(context["statePath"])),
         *((LABEL_FINDINGS, path) for path in dict.fromkeys(findings)),
         *(() if digest is None else ((LABEL_DIGEST, digest),)),
-        *((LABEL_ANSWER, path) for path in dict.fromkeys(run.inputs.files(LABEL_ANSWER))),
+        *((LABEL_ANSWER, path) for path in handed_answers(run)),
         *((LABEL_RULING, path) for path in dict.fromkeys(run.inputs.files(LABEL_RULING))),
         *((LABEL_EXAMPLE, example) for example in examples),
     )
