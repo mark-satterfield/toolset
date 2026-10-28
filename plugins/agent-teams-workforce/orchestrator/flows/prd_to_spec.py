@@ -76,6 +76,7 @@ from orchestrator.flows.elaboration_files import (
     EDGES_CONTAINER,
     MARK_DONE,
     SCORE,
+    SPEC_CONTEXT,
     SPECS_CONTAINER,
     STORY_EDGES,
     STORY_WRITE,
@@ -135,10 +136,10 @@ class _Lifecycle(TypedDict):
 
 
 fills(ARCHITECTURE, OPEN_RUN)
-fills(TASKS_CONTAINER, SPAN, STORY_WRITE)
+fills(TASKS_CONTAINER, SPAN, SPEC_CONTEXT, STORY_WRITE)
 """The steps that fill the containers :func:`outermost_steps` plans empty: the open-run step plans
-the architecture steps; the span plans the repositories' containers whose Story bead write plans
-each repository's Tasks container."""
+the architecture steps; the span plans the repositories' containers, each repository's context
+step plans its Story bead write, and that write plans the repository's Tasks container."""
 children_together(SPECS_CONTAINER, TASKS_CONTAINER)
 """The repositories' containers under Specs and Stories, and under Tasks, run at the same time."""
 

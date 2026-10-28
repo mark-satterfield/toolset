@@ -88,7 +88,8 @@ requirements that bind them; and the contract files the repository holds today. 
 not the vault and not the matrix. Read the text of the headings your document turns on with
 `atw-matrix heading '<path>#<heading>' ...` (several in one call; a path alone for a document
 named as a whole), which prints each as the approved architecture states it. Cite a document by
-the `path` and `heading` the context gives. Run `atw-matrix node <id>` only for an entry the pack
+the `path` the context gives, which is relative to the architecture root, and a `heading` it
+lists, as `<path>#<heading>`; never cite an absolute path. Run `atw-matrix node <id>` only for an entry the pack
 does not hold. A
 constraint with `trd` in place of a `statement` is a TRD requirement: the pack's
 `trd.requirements` gives its text for this Epic's TRD (also handed to you as `TRD`); for another

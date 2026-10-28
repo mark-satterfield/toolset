@@ -250,7 +250,8 @@ def story_files(inputs: StepInputs, scope: hierarchy.SpanFiles | None = None) ->
         scope: The span's files, when ``inputs`` do not hold them.
 
     Returns:
-        The Story document, the spec documents, and the Tasks file when one is handed.
+        The Story document, the spec documents, the Tasks file when one is handed, and the UI
+        sources file when the repository's Story builds UI items.
 
     """
     held: Repository = repository(inputs)
@@ -261,6 +262,7 @@ def story_files(inputs: StepInputs, scope: hierarchy.SpanFiles | None = None) ->
         story=inputs.file(STORY_DOCUMENT),
         specs=tuple(inputs.file(name) for name in SPEC_FILES),
         tasks=inputs.optional_file(TASKS_FILE),
+        ui_sources=inputs.optional_file(UI_SOURCES),
     )
 
 
@@ -349,7 +351,15 @@ def span_stories(run: StepRun, task_deps: Path | None) -> hierarchy.SpanStories:
         if tasks is None:
             raise StepError(run.inputs.stage, OTHER_CAUSE, (f"the journal records no Tasks file for {files.repo}",))
         stories.append(
-            hierarchy.StoryFiles(files.slug, files.repo, scope, files.story, files.specs, tasks.file(TASKS_FILE)),
+            hierarchy.StoryFiles(
+                files.slug,
+                files.repo,
+                scope,
+                files.story,
+                files.specs,
+                tasks.file(TASKS_FILE),
+                files.ui_sources,
+            ),
         )
     return hierarchy.SpanStories(scope, tuple(stories), task_deps)
 

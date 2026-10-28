@@ -60,6 +60,7 @@ from beadgraph import (
 from contracts import JsonInput, JsonObject, JsonValue, json_object
 from hierarchy import (
     SIZE_KEYS,
+    STATE_VERIFIED,
     HierarchyError,
     ReadTaskOptions,
     SpanStories,
@@ -1573,10 +1574,14 @@ def _required_builders(name: str, item: str, requirement: str, context: _Closure
     """Locate prerequisite builders and explain any missing placement.
 
     Returns:
-        Matching builders and placement or coverage warnings.
+        Matching builders and placement or coverage warnings. A required item the span marks
+        verified (:data:`hierarchy.STATE_VERIFIED`) is built already, so it needs no builder and
+        nothing has to come first.
 
     """
     own_item: StoryBuild | None = context.detailed.get(requirement)
+    if own_item is not None and own_item.get("state") == STATE_VERIFIED:
+        return [], []
     if own_item is None:
         warnings: list[str] = (
             []

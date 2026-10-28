@@ -23,7 +23,7 @@
       "items": {"$ref": "#/$defs/StackEntries"}
     },
     "documents": {
-      "description": "The architecture documents (arc42 and the detailed architecture) the story scopes of `stacks` name, each with its id, its file and the headings to read (none when a scope names the document as a whole). `atw-matrix heading '<path>#<heading>'` prints a heading's text as the vault's last commit holds it (a path alone, the document's whole body); cite a document by the path and heading given here.",
+      "description": "The architecture documents (arc42 and the detailed architecture) the story scopes of `stacks` name, each with its id, its path relative to the architecture root and the headings to read (none when a scope names the document as a whole). `atw-matrix heading '<path>#<heading>'` prints a heading's text as the vault's last commit holds it (a path alone, the document's whole body); cite a document as `<path>#<heading>` with the path and a heading given here, never an absolute path.",
       "type": "array",
       "items": {
         "type": "object",

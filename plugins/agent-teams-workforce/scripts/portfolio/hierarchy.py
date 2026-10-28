@@ -46,14 +46,12 @@ from recon_contract import (
     KEY_KIND,
     KEY_SECTIONS,
     KEY_SLUG,
-    KEY_UI_AUTHORITY,
     KEY_UI_ITEMS,
     DesignSource,
-    ReconDetailing,
     UiArtifact,
     UiAuthority,
     UiItem,
-    read_detailing,
+    violations,
 )
 from recon_contract import ArtifactKind as UiArtifactKind
 
@@ -121,7 +119,7 @@ SIZE_KEYS: Final[tuple[str, ...]] = (
 #: The slug of an artifact whose item name yields no slug characters; a slug, not an artifact kind.
 _FALLBACK_ARTIFACT_SLUG: Final[str] = "page"
 
-#: The bead build-contract design source each detailing design source maps to.
+#: The bead build-contract design source each UI sources design source maps to.
 _BEAD_DESIGN_SOURCE: Final[dict[DesignSource, CdsDesignSource]] = {
     DESIGN_SOURCE_BUNDLE: CDS_DESIGN_SOURCE_BUNDLE,
     DESIGN_SOURCE_CDS: CDS_DESIGN_SOURCE_CDS,
@@ -152,8 +150,8 @@ class StoryFiles:
     """The saved files of one repository's Story, each at the path the caller was handed.
 
     ``specs`` are the contracts, data-model and criteria documents, in that order. ``tasks`` is
-    the Tasks file, once the Story is decomposed. ``detailing`` is the repository's detailing
-    file, when one was written.
+    the Tasks file, once the Story is decomposed. ``ui_sources`` is the repository's UI sources
+    file (``spec-<slug>.ui.json``, ``spec-ui.schema.json``), when its Story builds UI items.
     """
 
     slug: str
@@ -162,7 +160,7 @@ class StoryFiles:
     story: Path
     specs: tuple[Path, ...] = ()
     tasks: Path | None = None
-    detailing: Path | None = None
+    ui_sources: Path | None = None
 
     @property
     def tasks_file(self) -> Path:
@@ -255,7 +253,7 @@ def _acyclic(
 
 
 def _artifact_slug(text: str) -> str:
-    """Return a kebab-case slug of a name, for an artifact a detailing named no slug for.
+    """Return a kebab-case slug of a name, for an artifact a UI sources file named no slug for.
 
     Returns:
         The slug.
@@ -777,7 +775,7 @@ UI_SURFACE = "web-ui"
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass
 class UiDesign:
-    """The design source one `ui` delta item takes, as the detailing resolved it."""
+    """The design source one `ui` delta item takes, as the UI sources file records it."""
 
     source: str
     bundle: str | None = None
@@ -796,7 +794,7 @@ def _supplied_bundle(entry: UiItem, named: UiArtifact | None, warn: str) -> UiDe
     """Return the design of a `bundle` ui item built from its supplied bundle, or None.
 
     Args:
-        entry: The detailing's `uiItems` entry, validated against the recon contract.
+        entry: The UI sources file's `uiItems` entry, validated against the recon contract.
         named: The artifact the entry names, or None.
         warn: The prefix a warning about the entry carries.
 
@@ -824,45 +822,66 @@ def _supplied_bundle(entry: UiItem, named: UiArtifact | None, warn: str) -> UiDe
     )
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def ui_authority(
-    detailing_file: Path | None,
-    packages_dir: str | None = None,
-) -> dict[str, UiDesign]:
-    """Return the design source of each `ui` delta item the detailing resolved.
-
-    Reads `uiAuthority.uiItems` of the repository's saved detailing,
-    validated against the artifact-handoff recon contract. Each item takes `bundle` (a cds
-    bundle the owner supplied packages it), `cds` (it changes design and is designed with the
-    CDS design system) or `none` (it changes no design). A `bundle` item whose bundle or build
-    spec cannot be built from is `cds`; a `cds` item with no artifact gets the contract's
-    default artifact kind named for the item. Each is noted in `take_warnings`.
+def _read_ui_sources(path: Path) -> UiAuthority:
+    """Read a repository's UI sources file as the design source of each UI item.
 
     Args:
-        detailing_file: The repository's detailing file, or None when none was written.
+        path: The UI sources file (``spec-<slug>.ui.json``).
+
+    Returns:
+        Its ``uiItems`` and ``mocksDir``, validated against the recon contract's ``UiAuthority``.
+
+    Raises:
+        HierarchyError: The file cannot be read, or its UI items violate the contract.
+
+    """
+    held: JsonObject = _read_json(path)
+    authority: JsonObject = {KEY_UI_ITEMS: held.get(KEY_UI_ITEMS, []), "mocksDir": held.get("mocksDir")}
+    problems: list[str] = violations(authority, "UiAuthority")
+    if problems:
+        msg: str = f"{path.name} violates the recon contract's UiAuthority: {'; '.join(problems)}"
+        raise HierarchyError(msg)
+    return check_type(authority, UiAuthority, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def ui_authority(
+    sources_file: Path | None,
+    packages_dir: str | None = None,
+) -> dict[str, UiDesign]:
+    """Return the design source of each `ui` delta item the repository's UI sources file records.
+
+    Reads the `uiItems` of the UI sources file the ui-design-source-selector's choices were
+    normalized into, validated against the artifact-handoff recon contract. Each item takes
+    `bundle` (a cds bundle the owner supplied packages it), `cds` (it changes design and is
+    designed with the CDS design system) or `none` (it changes no design). A `bundle` item whose
+    bundle or build spec cannot be built from is `cds`; a `cds` item with no artifact gets the
+    contract's default artifact kind named for the item. Each is noted in `take_warnings`.
+
+    Args:
+        sources_file: The repository's UI sources file, or None when none was written.
         packages_dir: The packages directory a cited bundle must sit in, or None.
 
     Returns:
         Per delta item id its design: the source, and for a `bundle` item the bundle path
         and its build-spec citations (the absolute `build-spec.md` path, followed by
-        `#<Section ID>` for each Section it builds). No detailing yields no designs.
+        `#<Section ID>` for each Section it builds). No UI sources file yields no designs.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
-    if not (isinstance(detailing_file, Path) or detailing_file is None) or not (
+    if not (isinstance(sources_file, Path) or sources_file is None) or not (
         isinstance(packages_dir, str) or packages_dir is None
     ):
         raise TypeError(_ARGUMENT_ERROR)
     del packages_dir
-    if detailing_file is None:
+    if sources_file is None:
         return {}
-    name: str = detailing_file.name
-    detailing: ReconDetailing = read_detailing(detailing_file)
-    authority: UiAuthority | None = detailing.get(KEY_UI_AUTHORITY)
+    name: str = sources_file.name
+    authority: UiAuthority = _read_ui_sources(sources_file)
     designs: dict[str, UiDesign] = {}
-    for entry in authority[KEY_UI_ITEMS] if authority is not None else []:
+    for entry in authority[KEY_UI_ITEMS]:
         item: str = entry[KEY_ITEM]
         if item in designs:
             continue
@@ -1185,7 +1204,7 @@ def read_tasks(files: StoryFiles, root: Path | None, options: ReadTaskOptions) -
         json_object(saved[ARG_TEST_STRATEGY]) if isinstance(saved.get(ARG_TEST_STRATEGY), dict) else None,
         edges,
         scores,
-        ui_authority(files.detailing, options.packages_dir)
+        ui_authority(files.ui_sources, options.packages_dir)
         if any(UI_SURFACE in (_surfaces(t.get(ARG_SURFACES)) or []) for t in unique)
         else {},
         elements,

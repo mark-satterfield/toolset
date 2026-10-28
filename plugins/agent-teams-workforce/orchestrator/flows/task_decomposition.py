@@ -239,7 +239,7 @@ def context(run: StepRun) -> Completion:
 
 
 def task_grouping_check(context_file: Path, schema_file: Path) -> OutputValidator:
-    """Build the check of the decomposer's Tasks file: its schema, then how its Tasks group what the Story builds.
+    """Build the check of the decomposer's Tasks file: its schema and how its Tasks group what the Story builds.
 
     Args:
         context_file: The repository context (``spec-context.schema.json``), whose ``items`` are
@@ -247,19 +247,21 @@ def task_grouping_check(context_file: Path, schema_file: Path) -> OutputValidato
         schema_file: The Tasks file's schema.
 
     Returns:
-        A check that reads the Tasks file as strict JSON, validates it against the schema
-        (``jsonschema.ValidationError``), and raises ``ValueError`` with every problem
-        ``hierarchy.task_grouping_problems`` reports; both send the session to its one
-        correction (``agents.CONTENT_FAILURES``).
+        A check that reads the Tasks file as strict JSON and, in one pass, collects every place
+        it violates the schema and every problem ``hierarchy.task_grouping_problems`` reports
+        for the Tasks that are objects, and raises one ``ValueError`` naming all of them, so the
+        session's one correction (``agents.CONTENT_FAILURES``) is handed every problem at once.
 
     """
+    validator = strictschema.validator(strict_json(schema_file), location=schema_file)
 
     def check(path: Path) -> dict[str, JsonValue]:
         document: dict[str, JsonValue] = strict_json(path)
-        strictschema.validate(document, strict_json(schema_file), location=schema_file)
+        problems: list[str] = [f"{error.json_path}: {error.message}" for error in validator.iter_errors(document)]
         items: list[JsonValue] = check_type(json_object(strict_json(context_file))["items"], list[JsonValue])
-        tasks: list[JsonValue] = check_type(document["tasks"], list[JsonValue])
-        problems: list[str] = hierarchy.task_grouping_problems(items, tasks)
+        listed: JsonValue = document.get("tasks")
+        tasks: list[JsonValue] = [task for task in listed if isinstance(task, dict)] if isinstance(listed, list) else []
+        problems.extend(hierarchy.task_grouping_problems(items, tasks))
         if problems:
             raise ValueError("; ".join(problems))
         return document

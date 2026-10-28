@@ -587,12 +587,13 @@ def story_surfaces(matrix: Matrix, entries: Sequence[EntryId], *, frontend: bool
     return Surfaces(contracts=unknown or interface, data_model=unknown or store, ui=frontend and (unknown or ui))
 
 
-def _scope_documents(arch: Path, scopes: Sequence[StoryScope]) -> list[JsonValue]:
+def _scope_documents(scopes: Sequence[StoryScope]) -> list[JsonValue]:
     """List the architecture documents some story scopes name, each with the headings to read.
 
     Returns:
-        One row per document, in id order: its entry id, its file under the architecture root,
-        and the headings the scopes name in it (none when a scope names the document as a whole).
+        One row per document, in id order: its entry id, its path relative to the architecture
+        root, which is the path a citation names (``trd_authoring.cited``), and the headings the
+        scopes name in it (none when a scope names the document as a whole).
 
     """
     headings: dict[EntryId, dict[str, None]] = {}
@@ -612,7 +613,7 @@ def _scope_documents(arch: Path, scopes: Sequence[StoryScope]) -> list[JsonValue
         listed: list[JsonValue] = list(headings[identifier])
         rows.append({
             "document": identifier,
-            "path": str(arch / identifier.partition(":")[2]),
+            "path": identifier.partition(":")[2],
             "headings": listed,
         })
     return rows
@@ -843,7 +844,7 @@ def context(run: StepRun) -> Completion:
     entries: list[EntryId] = list(dict.fromkeys(entry for built in stacks.values() for entry in built))
     scoped: list[JsonValue] = [entry_scope(matrix, entry) for entry in entries]
     component: list[JsonValue] = component_documents(architecture_root(run), matrix, [*stacks, *entries])
-    documents: list[JsonValue] = _scope_documents(architecture_root(run), scopes)
+    documents: list[JsonValue] = _scope_documents(scopes)
     path: Path = write_contract(
         run.context.work / f"spec-{held.slug}.context.json",
         {
@@ -1014,8 +1015,11 @@ def documents_check(run: StepRun, held: Repository, names: Sequence[str]) -> Out
     """Give the check every spec document a session works on must pass each time it has written them.
 
     Returns:
-        A check that runs :func:`document_check` on each document's file, whichever path it is
-        called with, and returns the citations and warnings of the documents that have them.
+        A check that runs :func:`document_check` on every document's file, whichever path it is
+        called with, and returns the citations and warnings of the documents that have them. A
+        document that fails does not stop the others from being checked: the check raises one
+        ``ValueError`` naming the problems of every document that failed, so the session's one
+        correction is handed all of them.
 
     """
     checks: list[tuple[Path, OutputValidator]] = [
@@ -1025,13 +1029,20 @@ def documents_check(run: StepRun, held: Repository, names: Sequence[str]) -> Out
     def check(_output: Path) -> tuple[list[str], list[str]] | None:
         cited: list[str] = []
         warned: list[str] = []
+        problems: list[str] = []
         found: bool = False
         for path, single in checks:
-            result: ValidationResult = single(path)
+            try:
+                result: ValidationResult = single(path)
+            except (OSError, ValueError) as failed:
+                problems.append(f"{path.name}: {failed}")
+                continue
             if isinstance(result, tuple):
                 found = True
                 cited.extend(result[0])
                 warned.extend(result[1])
+        if problems:
+            raise ValueError("\n".join(problems))
         return (cited, warned) if found else None
 
     return check
