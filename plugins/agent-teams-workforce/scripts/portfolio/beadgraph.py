@@ -95,13 +95,22 @@ CONTENTION: Final[str] = handback_contract.CONTENTION_CAUSE
 RETRIED_CAUSES: Final[frozenset[str]] = frozenset({BD_TIMEOUT, CONTENTION})
 #: The cause of any other failure.
 OTHER_CAUSE: Final[str] = handback_contract.OTHER_CAUSE
+#: What `bd` prints when it exits because its Dolt server dropped or refused the connection.
+DOLT_CONNECTION_FAILURES: Final[tuple[str, ...]] = (
+    "i/o timeout",
+    "invalid connection",
+    "bad connection",
+    "connection refused",
+    "failed to open database",
+)
 
 
 class GraphError(RuntimeError):
     """The tracker could not be read, or answered with something unusable.
 
     `cause` is CONTENTION when acquiring the shared lock timed out, BD_TIMEOUT when the
-    subprocess timed out, and OTHER_CAUSE for other failures. No message text is classified.
+    subprocess timed out or `bd` exited because its Dolt server connection failed
+    (DOLT_CONNECTION_FAILURES), and OTHER_CAUSE for other failures.
     """
 
     def __init__(self, message: str, cause: str = OTHER_CAUSE) -> None:
@@ -405,7 +414,9 @@ def run_bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
         raise GraphError(str(exc), OTHER_CAUSE) from exc
     if done.returncode:
         msg: str = f"`{' '.join(command)}` exited {done.returncode}: {done.stdout} {done.stderr}"
-        raise GraphError(msg, OTHER_CAUSE)
+        printed: str = f"{done.stdout}\n{done.stderr}".lower()
+        dropped: bool = any(failure in printed for failure in DOLT_CONNECTION_FAILURES)
+        raise GraphError(msg, BD_TIMEOUT if dropped else OTHER_CAUSE)
     return done.stdout
 
 

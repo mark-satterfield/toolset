@@ -24,10 +24,13 @@ and whose inputs are all done run as concurrent sessions under the dispatch's se
 child containers of a container the registry names (``Registry.children_together``) run at the
 same time, each its own steps in walk order, at most ``ATW_ORCH_SESSIONS`` of them.
 
-Work that already succeeded is never redone: an agent step whose output file is valid and was
-written since the step started is recorded from that file, and its agent is not started again
-(``helper-steps.schema.json``). That covers a helper a lead agent ran in its own session and left
-unrecorded, and a session that wrote its output and stopped before the step was recorded.
+Work that already succeeded is never redone: an agent step that did not fail and whose output
+file is valid and was written since the step started is recorded from that file, and its agent is
+not started again (``helper-steps.schema.json``). That covers a helper a lead agent ran in its own
+session and left unrecorded, and a session that wrote its output and stopped before the step was
+recorded. The output of a failed step is never reused: the failure was found in it, so the step
+runs a session, and that session is handed the earlier failure (:func:`_previous_failure`) to
+correct.
 
 An agent step that has child steps is closed only through its "Finish", its last child step
 (``helper-steps.schema.json``). A "Finish" the runner ran was accepted when it ran. A "Finish"
@@ -59,7 +62,8 @@ from orchestrator.flows.elaboration_support import emit_event, parallel
 from . import step_journal
 from .agents import CONTENT_FAILURES, AgentRunner, SessionNotResumedError, validate_output
 from .handback import failure_for, stop_stage
-from .handback_contract import OTHER_CAUSE, Failure, Session, StepTokens, step_event, warning_note
+from .handback_contract import ITEM_CLASS, OTHER_CAUSE, Failure, Session, StepTokens, step_event, warning_note
+from .io import write_json
 from .journal_changes import apply_completion
 from .journal_registry import REGISTRY, Registry
 from .journal_steps import (
@@ -91,6 +95,7 @@ from .tools import Tools
 # step_journal puts the pipeline-contracts scripts directory on sys.path; the contract import follows it.
 from step_journal_contract import (
     STATUS_DONE,
+    STATUS_FAILED,
     STATUS_PLANNED,
     STATUS_RUNNING,
     Artifact,
@@ -296,6 +301,10 @@ def _running_unclosed(journal: Journal, within: StepId | None) -> list[Step]:
 
 JSON_SUFFIX: Final = ".json"
 """The suffix of an output the runner may reuse."""
+PREVIOUS_FAILURE_LABEL: Final = "the previous attempt's problems: correct every one of them in the output"
+"""The label of the file that hands a failed step's earlier failure to its next session."""
+PREVIOUS_FAILURE_SUFFIX: Final = ".previous-failure.json"
+"""Appended to an agent step's output name to name the file of its earlier failure."""
 
 
 def _written_since_start(step: Step, output: Path) -> bool:
@@ -320,13 +329,18 @@ def _finished_output(step: Step, launch: AgentLaunch) -> bool:
     written when its session stops.
 
     Returns:
-        True when the launch allows reuse and the JSON file at ``launch.output`` was written
-        since the step started and passes the launch's check; an invalid file is the session's
-        to redo. A contract that cannot be loaded raises ``PipelineDefectError`` from
-        ``validate_output``.
+        True when the launch allows reuse, the step did not fail, and the JSON file at
+        ``launch.output`` was written since the step started and passes the launch's check; an
+        invalid file, or the file of a failed step, is the session's to redo. A contract that
+        cannot be loaded raises ``PipelineDefectError`` from ``validate_output``.
 
     """
-    if not launch.reuse_output or launch.output.suffix != JSON_SUFFIX or not _written_since_start(step, launch.output):
+    if (
+        step["status"] == STATUS_FAILED
+        or not launch.reuse_output
+        or launch.output.suffix != JSON_SUFFIX
+        or not _written_since_start(step, launch.output)
+    ):
         return False
     request: AgentStep = AgentStep(
         stage=stage_of(step),
@@ -342,6 +356,31 @@ def _finished_output(step: Step, launch: AgentLaunch) -> bool:
     except CONTENT_FAILURES:
         return False
     return True
+
+
+def _previous_failure(step: Step, output: Path) -> list[tuple[str, Path]]:
+    """Write a failed step's earlier failure beside its output, for the step's next session.
+
+    Only a failure of the work itself is handed on: a failure recorded with another
+    classification (a transient cause, a defect of the pipeline) is nothing the agent can
+    correct. A failure that is not the structured cause the runner records is handed on as it is.
+
+    Returns:
+        The labelled file of the failure; empty when the step did not fail or its failure is not
+        the work's.
+
+    """
+    failure: str | None = step.get("failure")
+    if step["status"] != STATUS_FAILED or failure is None:
+        return []
+    recorded: JsonValue = failure
+    with contextlib.suppress(json.JSONDecodeError):
+        recorded = json.loads(failure)
+    if isinstance(recorded, dict) and recorded.get("classification", ITEM_CLASS) != ITEM_CLASS:
+        return []
+    path: Path = output.with_name(output.name + PREVIOUS_FAILURE_SUFFIX)
+    write_json(path, {"step": step["id"], "output": str(output), "failure": recorded})
+    return [(PREVIOUS_FAILURE_LABEL, path)]
 
 
 def _held_session(journal: Journal, step: Step, launch: AgentLaunch) -> str | None:
@@ -1021,7 +1060,8 @@ class JournalRunner:
 
         A step that holds no session of its own conversation and whose output is already its
         finished work (:func:`_finished_output`) is recorded from that file with what the
-        launch's accept function returns, and no session starts. After a session the journal is
+        launch's accept function returns, and no session starts. A step that failed is handed
+        its earlier failure (:func:`_previous_failure`). After a session the journal is
         read again. An ordinary step is completed with what the launch's accept function returns.
         A step whose child steps are all done and end with a "Finish" the session closed is
         completed through that "Finish" (:meth:`_accept_finish`), whatever session id the
@@ -1040,9 +1080,13 @@ class JournalRunner:
             self._complete(step["id"], launch.accept(reused, launch.output))
             return
         session: str = held or str(uuid4())
+        handed: list[tuple[str, Path]] = [
+            *(inputs.labelled_files() if launch.hand_inputs else []),
+            *launch.files,
+            *_previous_failure(step, launch.output),
+        ]
         run: StepRun = self._step_run(self._start(step["id"], session, launch.keep), inputs, saved)
-        handed: list[tuple[str, Path]] = inputs.labelled_files() if launch.hand_inputs else []
-        labelled: list[tuple[str, Path]] = list(dict.fromkeys([*handed, *launch.files, (JOURNAL_LABEL, self.path)]))
+        labelled: list[tuple[str, Path]] = list(dict.fromkeys([*handed, (JOURNAL_LABEL, self.path)]))
         request: AgentStep = AgentStep(
             stage=stage_of(step),
             agent=step.get("agent", ""),
