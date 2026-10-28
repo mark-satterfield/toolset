@@ -5,7 +5,8 @@ description: >-
   project's naming command, so no agent composes a name by hand. Use whenever you name, rename
   or review the name of a repository, CDK stack or stack file, Lambda function, DynamoDB table,
   S3 bucket, API Gateway API, IAM role, log group, state machine, EventBridge bus, rule or
-  schema, SQS queue, SNS topic, CloudWatch alarm, DynamoDB global secondary index, secret,
+  schema, SQS queue, SNS topic, CloudWatch alarm, CloudWatch dashboard, CloudWatch RUM app
+  monitor, DynamoDB global secondary index, secret,
   SSM parameter, VPC, subnet, security group, KMS alias, Cognito user pool or app client,
   Powertools service or metrics namespace, environment variable, Python module, package or
   distribution, or any other name the project's naming standard covers. Find the command with
