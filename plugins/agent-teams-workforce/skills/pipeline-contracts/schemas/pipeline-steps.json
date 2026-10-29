@@ -99,7 +99,9 @@
           "records": [
             {"name": "regressionScope", "kind": "value", "holds": "{ requiredKinds }: the test layers the scope requires"}
           ],
-          "adds": []
+          "adds": [
+            {"kinds": ["build:regression-reassess", "build:regression-review", "build:regression-validate"], "when": "the validation fails because the scope's review, written by an earlier run of the workflow, did not approve it: the regression-impact-assessor corrects the scope from that review, the corrected scope is reviewed, and it is validated again; the step records nothing"}
+          ]
         },
         "build:baseline": {
           "description": "Resolve the repository's suite command and run the suite before any change",
@@ -333,14 +335,16 @@
           "adds": []
         },
         "build:regression-verify": {
-          "description": "Run the mapped regression tests and record their evidence",
+          "description": "Run the mapped regression runs, each after its setup, and record their evidence",
           "purpose": "The commit carries fresh per-test evidence for every requirement the change can affect",
           "runBy": "task-to-deploy",
           "reads": ["worktree", "regressionPlan", "regressionMapped", "regressionMappedReview"],
           "records": [
             {"name": "regressionEvidence", "kind": "file", "holds": "the verification result and the evidence of each mapped run"}
           ],
-          "adds": []
+          "adds": [
+            {"kinds": ["build:regression-remap", "build:regression-map-review", "build:regression-verify"], "when": "the verification fails because the mapping's review, written by an earlier run of the workflow, did not approve it: the regression-impact-assessor corrects the mapping from that review, the corrected mapping is reviewed, and it is verified again; the step records nothing"}
+          ]
         },
         "build:commit": {
           "description": "Commit the Task to the Story's branch",

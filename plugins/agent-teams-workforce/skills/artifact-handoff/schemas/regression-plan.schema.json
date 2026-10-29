@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Regression plan",
+  "description": "The regression artifact the regression-impact-assessor writes for one Task: the impact scope before Red (plan mode) and the final mapping of the approved scope after Red (finalize mode). task-to-deploy.js accepts it against this file; scripts/portfolio/regression.py check, validate and verify it and run its runs. In finalize mode components, discovery, requirements and sourceFiles stay exactly as approved; only mappings, replacements and runs change.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["components", "discovery", "requirements", "mappings", "runs", "sourceFiles", "replacements"],
+  "properties": {
+    "sourceFiles": {
+      "description": "The absolute path of each regular file actually read to establish the scope, vault document backing files included; never a directory, a worktree or a repository root. Section citations go in the sourceRef fields. regression.py checks each is an existing regular file and binds its bytes when the scope is approved.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "pattern": "^/"}
+    },
+    "components": {
+      "description": "The components the Task changes.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "files"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "files": {"description": "The component's actual repository-relative files.", "type": "array", "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "discovery": {
+      "description": "How the requirements were found.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceRefs", "priorRequirementsSearched", "greenfield", "evidence"],
+      "properties": {
+        "sourceRefs": {"description": "The documents and sections searched, each a real document and requirement or section.", "type": "array", "items": {"type": "string", "minLength": 1}},
+        "priorRequirementsSearched": {"description": "True only when earlier PRDs and the connected components and consumers were actually searched.", "type": "boolean"},
+        "greenfield": {"description": "True only with evidence that the component has no prior valid obligations; a missing ledger is not that evidence.", "type": "boolean"},
+        "evidence": {"description": "What the search found, and every missing or inaccessible source as an explicit gap.", "type": "string", "minLength": 1}
+      }
+    },
+    "requirements": {
+      "description": "Every current requirement the changed components carry: each still-valid prior requirement, and each this change can affect.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "sourceRef", "componentIds", "repoPath", "impacted", "impactReason", "applicability", "supersedes"],
+        "properties": {
+          "id": {"description": "Source-qualified, so equal local IDs in different PRDs cannot collide; unique in the plan.", "type": "string", "minLength": 1},
+          "sourceRef": {"description": "The document and the requirement or section that states it.", "type": "string", "minLength": 1},
+          "componentIds": {"description": "IDs from components.", "type": "array", "items": {"type": "string", "minLength": 1}},
+          "repoPath": {"description": "The repository whose runs prove it; a run mapped to it has the same repoPath.", "type": "string", "minLength": 1},
+          "impacted": {"description": "True when this change can affect it; an unaffected retained requirement is false, and its runs do not execute.", "type": "boolean"},
+          "impactReason": {"description": "The evidence for impacted, either way.", "type": "string", "minLength": 1},
+          "applicability": {
+            "description": "Exactly one entry for each of the four layers.",
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "required", "reason", "sourceRefs"],
+              "properties": {
+                "kind": {"$ref": "#/$defs/Layer"},
+                "required": {"description": "Whether the requirement needs evidence at this layer. A required layer of an impacted requirement needs a mapping to a run before verification.", "type": "boolean"},
+                "reason": {"description": "Why the layer is required or excluded, from the sources.", "type": "string", "minLength": 1},
+                "sourceRefs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+              }
+            }
+          },
+          "supersedes": {
+            "description": "Prior requirements this one replaces. Each needs an explicit accepted requirement or owner decision that authorizes the replacement; a new test, a changed implementation or a failing old test never does.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "sourceRef", "reason"],
+              "properties": {
+                "id": {"description": "The superseded requirement's ID.", "type": "string", "minLength": 1},
+                "sourceRef": {"description": "The accepted source that authorizes it.", "type": "string", "minLength": 1},
+                "reason": {"type": "string", "minLength": 1}
+              }
+            }
+          }
+        }
+      }
+    },
+    "mappings": {
+      "description": "Which run proves which layer of which requirement. In plan mode a mapping may be left out for tests still to be written; after Red every required layer of every impacted requirement has one. A mapping to a junit run names the tests whose assertions cover the requirement; a mapping to an exitStatus run is for the nonfunctional layer and names no tests.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["requirementId", "kind", "runId", "testIds"],
+        "properties": {
+          "requirementId": {"type": "string", "minLength": 1},
+          "kind": {"$ref": "#/$defs/Layer"},
+          "runId": {"description": "The id of a run in runs, in the requirement's repository.", "type": "string", "minLength": 1},
+          "testIds": {"description": "For a junit run, the exact classname::name IDs its report emits, each one passing in it; empty for an exitStatus run.", "type": "array", "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "replacements": {
+      "description": "A legitimate rename or consolidation of a prior mapped test, with equivalent assertion coverage. Distinct from requirement supersession.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["requirementId", "kind", "oldTestId", "newTestIds", "reason"],
+        "properties": {
+          "requirementId": {"type": "string"},
+          "kind": {"type": "string"},
+          "oldTestId": {"type": "string"},
+          "newTestIds": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "reason": {"description": "Why the new tests assert what the old one did.", "type": "string", "minLength": 1}
+        }
+      }
+    },
+    "runs": {
+      "description": "The commands the verification gate executes, each the repository's own supported command, run with /bin/sh in repoPath after its setup. A run executes only when an impacted requirement is mapped to it.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "repoPath", "command", "format", "setup"],
+        "properties": {
+          "id": {"description": "Unique in the plan.", "type": "string", "minLength": 1},
+          "repoPath": {"description": "The absolute path of the repository (or its worktree) the command runs in.", "type": "string", "minLength": 1},
+          "command": {"description": "The command, never narrowed to a subset of the suite it gates.", "type": "string", "minLength": 1},
+          "format": {
+            "description": "junit: a test run that writes a fresh JUnit XML report to reportPath; the gate requires exit 0 and every mapped test ID passing in the report. exitStatus: a check whose whole result is its exit status, such as a lint, format or type check (for example the repository's ruff or mypy command); exit 0 passes the nonfunctional layer of each requirement mapped to it.",
+            "enum": ["junit", "exitStatus"]
+          },
+          "reportPath": {"description": "For a junit run only: the XML report the command writes, under the repository's .agent-workforce/reports/, relative to repoPath or absolute.", "type": "string", "minLength": 1},
+          "setup": {
+            "description": "The preconditions of the run, in order: each a command the gate runs with /bin/sh in repoPath before the run, such as installing the repository's dependencies (for example `task install`). A setup command that exits non-zero fails the run with its output. A command shared by several runs of one repository runs once. Empty when the run needs nothing prepared.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["command", "reason"],
+              "properties": {
+                "command": {"type": "string", "minLength": 1},
+                "reason": {"description": "What the run needs from it, and what it needs to succeed (environment variables, credentials), from the repository's own instructions.", "type": "string", "minLength": 1}
+              }
+            }
+          }
+        },
+        "if": {"properties": {"format": {"const": "junit"}}},
+        "then": {"required": ["reportPath"]},
+        "else": {"not": {"required": ["reportPath"]}}
+      }
+    }
+  },
+  "$defs": {
+    "Layer": {"description": "The test layer: unit, contract, integration, or nonfunctional (performance, resilience, security, and the repository's lint, format and type checks).", "enum": ["unit", "contract", "integration", "nonfunctional"]}
+  }
+}

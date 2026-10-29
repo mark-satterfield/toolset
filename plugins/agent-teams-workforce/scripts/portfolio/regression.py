@@ -1,4 +1,4 @@
-"""Validate cumulative requirement coverage and confirm fresh JUnit execution evidence."""
+"""Validate cumulative requirement coverage and confirm fresh execution evidence for it."""
 
 from __future__ import annotations
 
@@ -261,11 +261,11 @@ def _requirement_errors(plan: JsonObject, requirements: list[JsonObject], ids: l
     return errors
 
 
-def _coverage_errors(plan: JsonObject, requirements: list[JsonObject], ids: list[str]) -> list[str]:
-    """Check that every required impacted layer maps to concrete tests in a matching run.
+def _run_errors(plan: JsonObject, ids: list[str]) -> list[str]:
+    """Check run identity and what each mapping may claim of the run it names.
 
     Returns:
-        The coverage errors.
+        The run errors.
 
     """
     errors: list[str] = []
@@ -273,6 +273,28 @@ def _coverage_errors(plan: JsonObject, requirements: list[JsonObject], ids: list
     runs: dict[str, JsonObject] = {_str(r, "id"): r for r in plan_runs}
     if len(runs) != len(plan_runs):
         errors.append("Duplicate run IDs")
+    for m in _objs(plan, "mappings"):
+        req_id: str = _str(m, "requirementId")
+        run: JsonObject | None = runs.get(_str(m, "runId"))
+        if req_id not in ids or run is None:
+            errors.append(f"{req_id}: mapping references unknown requirement or run {_str(m, 'runId')}")
+        elif _str(run, "format") == "exitStatus" and (_str(m, "kind") != "nonfunctional" or _flag(m, "testIds")):
+            errors.append(
+                f"{req_id}/{_str(m, 'kind')}: exitStatus run {_str(run, 'id')} proves only the nonfunctional layer "
+                "and names no tests",
+            )
+    return errors
+
+
+def _coverage_errors(plan: JsonObject, requirements: list[JsonObject]) -> list[str]:
+    """Check that every required impacted layer maps to a run in its repository, with concrete tests for a junit run.
+
+    Returns:
+        The coverage errors.
+
+    """
+    errors: list[str] = []
+    runs: dict[str, JsonObject] = {_str(r, "id"): r for r in _objs(plan, "runs")}
     mappings: list[JsonObject] = _objs(plan, "mappings")
     for req in requirements:
         if not _flag(req, "impacted"):
@@ -285,17 +307,14 @@ def _coverage_errors(plan: JsonObject, requirements: list[JsonObject], ids: list
             matched: list[JsonObject] = [
                 m for m in mappings if _str(m, "requirementId") == req_id and _str(m, "kind") == kind
             ]
-            if not matched or any(not _flag(m, "testIds") for m in matched):
-                errors.append(f"{req_id}/{kind}: no concrete tests")
+            if not matched:
+                errors.append(f"{req_id}/{kind}: no mapping to a run")
             for m in matched:
                 run: JsonObject | None = runs.get(_str(m, "runId"))
-                if not run or run["repoPath"] != req["repoPath"]:
-                    errors.append(f"{req_id}: mapping has no matching repository execution")
-        errors.extend(
-            "Mapping references unknown requirement/run"
-            for m in mappings
-            if _str(m, "requirementId") not in ids or _str(m, "runId") not in runs
-        )
+                if run is None or run["repoPath"] != req["repoPath"]:
+                    errors.append(f"{req_id}/{kind}: mapping has no matching repository execution")
+                elif _str(run, "format") == "junit" and not _flag(m, "testIds"):
+                    errors.append(f"{req_id}/{kind}: no concrete tests")
     return errors
 
 
@@ -371,6 +390,7 @@ def validate(plan: JsonObject, previous: JsonObject | None = None, *, complete: 
     errors: list[str] = _discovery_errors(plan, requirements)
     ids: list[str] = [_str(r, "id") for r in requirements]
     errors.extend(_requirement_errors(plan, requirements, ids))
+    errors.extend(_run_errors(plan, ids))
     old: dict[str, JsonObject] = {_str(r, "id"): r for r in _optional_objs(previous, "requirements")}
     superseded: set[str] = {
         _str(s, "id")
@@ -385,7 +405,7 @@ def validate(plan: JsonObject, previous: JsonObject | None = None, *, complete: 
     if old and _flag(_obj(plan, "discovery"), "greenfield"):
         errors.append("Existing cumulative requirements contradict greenfield declaration")
     if complete:
-        errors.extend(_coverage_errors(plan, requirements, ids))
+        errors.extend(_coverage_errors(plan, requirements))
         errors.extend(_prior_mapping_errors(plan, previous, superseded))
         errors.extend(_prior_layer_errors(requirements, old, ids, superseded))
     return errors
@@ -426,13 +446,13 @@ def junit_results(report: Path, run_id: str) -> tuple[set[str], list[str]]:
 
 
 def _report_path(run: JsonObject, root: Path) -> Path:
-    """Resolve and check the run's JUnit report path.
+    """Resolve and check a junit run's report path.
 
     Returns:
         The resolved report path under the repository's report folder.
 
     Raises:
-        ValueError: The report is not a regular XML file under the report folder, or the run is not JUnit.
+        ValueError: The report is not a regular XML file under the report folder.
 
     """
     report: Path = Path(_str(run, "reportPath"))
@@ -445,9 +465,6 @@ def _report_path(run: JsonObject, root: Path) -> Path:
         or (report.exists() and not report.is_file())
     ):
         message: str = "JUnit report must be a regular XML file under .agent-workforce/reports"
-        raise ValueError(message)
-    if run["format"] != "junit":
-        message = "Unsupported test report format; configure a JUnit reporter"
         raise ValueError(message)
     return report
 
@@ -462,14 +479,66 @@ def _tree_digest(root: Path) -> str:
     return cmd_hash_files(argparse.Namespace(tree=str(root), files=[]))["treeDigest"]
 
 
+@dataclass(slots=True)
+class Execution:
+    """The state one verification shares across its runs."""
+
+    folder: Path
+    deadline: float
+    setups: dict[tuple[str, str], int]
+
+    def remaining(self) -> int:
+        """Seconds left of the execution budget.
+
+        Returns:
+            The remaining seconds.
+
+        Raises:
+            ValueError: The budget is exhausted.
+
+        """
+        left: int = int(self.deadline - time.monotonic())
+        if left <= 0:
+            message: str = "Regression execution time budget exhausted; evidence retained"
+            raise ValueError(message)
+        return left
+
+    def shell(self, command: str, root: Path, record: str, context: JsonObject) -> int:
+        """Run one command with /bin/sh in the repository and archive its output.
+
+        Returns:
+            The command's exit status.
+
+        """
+        result: subprocess.CompletedProcess[str] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - The reviewed plan's commands run by design.
+            ["/bin/sh", "-c", command],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=self.remaining(),
+            check=False,
+        )
+        write(
+            self.folder / record,
+            {
+                **context,
+                "command": command,
+                "exitCode": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            },
+        )
+        return result.returncode
+
+
 def execute(plan: JsonObject, folder: Path) -> tuple[list[str], list[JsonValue]]:
-    """Run mapped suites; exit zero alone never establishes per-test coverage.
+    """Run each mapped run after its setup; exit zero alone never establishes per-test coverage of a junit run.
 
     Returns:
         The execution errors and the per-run evidence records.
 
     """
-    deadline: float = time.monotonic() + EXECUTION_BUDGET_SECONDS
+    state: Execution = Execution(folder=folder, deadline=time.monotonic() + EXECUTION_BUDGET_SECONDS, setups={})
     evidence: list[JsonValue] = []
     errors: list[str] = []
     mappings: list[JsonObject] = _objs(plan, "mappings")
@@ -478,66 +547,78 @@ def execute(plan: JsonObject, folder: Path) -> tuple[list[str], list[JsonValue]]
     for index, run in enumerate(_objs(plan, "runs")):
         if _str(run, "id") not in needed:
             continue
-        run_errors, record = _execute_run(run, index, folder, deadline, mappings)
+        run_errors, record = _execute_run(run, index, state, mappings)
         errors.extend(run_errors)
         evidence.append(record)
     return errors, evidence
 
 
+def _setup_errors(run: JsonObject, index: int, root: Path, state: Execution) -> tuple[list[str], list[JsonValue]]:
+    """Run the run's setup commands in order, each once per repository per verification.
+
+    Returns:
+        The setup errors (the first failing command stops the setup) and the setup records.
+
+    """
+    run_id: str = _str(run, "id")
+    records: list[JsonValue] = []
+    for position, setup in enumerate(_objs(run, "setup")):
+        command: str = _str(setup, "command")
+        key: tuple[str, str] = (str(root), command)
+        if key not in state.setups:
+            record: str = f"run-{index}-setup-{position}.json"
+            state.setups[key] = state.shell(command, root, record, {"runId": run_id, "setup": setup})
+            records.append({"command": command, "exitCode": state.setups[key], "output": str(state.folder / record)})
+        if state.setups[key] != 0:
+            return [f"{run_id}: setup `{command}` exited {state.setups[key]}; the run did not execute"], records
+    return [], records
+
+
 def _execute_run(
     run: JsonObject,
     index: int,
-    folder: Path,
-    deadline: float,
+    state: Execution,
     mappings: list[JsonObject],
 ) -> tuple[list[str], JsonObject]:
-    """Run one mapped suite and archive its output and JUnit report.
+    """Run one mapped run after its setup and archive its output and, for a junit run, its report.
 
     Returns:
         The run's errors and its evidence record.
 
-    Raises:
-        ValueError: The report path or format is invalid, or the time budget is exhausted.
-
     """
-    errors: list[str] = []
     run_id: str = _str(run, "id")
     root: Path = Path(_str(run, "repoPath")).resolve()
-    report: Path = _report_path(run, root)
-    report.parent.mkdir(parents=True, exist_ok=True)
-    report.unlink(missing_ok=True)
-    remaining: int = int(deadline - time.monotonic())
-    if remaining <= 0:
-        message: str = "Regression execution time budget exhausted; evidence retained"
-        raise ValueError(message)
+    junit: bool = _str(run, "format") == "junit"
+    report: Path | None = _report_path(run, root) if junit else None
+    if report is not None:
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.unlink(missing_ok=True)
+    errors, setups = _setup_errors(run, index, root, state)
+    record: JsonObject = {"runId": run_id, "format": _str(run, "format"), "setup": setups}
+    if errors:
+        return errors, record
     revision: str = _tree_digest(root)
-    result: subprocess.CompletedProcess[str] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - The reviewed plan's suite command runs by design.
-        ["/bin/sh", "-c", _str(run, "command")],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        timeout=remaining,
-        check=False,
-    )
-    output: Path = folder / f"run-{index}.json"
-    write(output, {"run": run, "exitCode": result.returncode, "stdout": result.stdout, "stderr": result.stderr})
+    output: str = f"run-{index}.json"
+    exit_code: int = state.shell(_str(run, "command"), root, output, {"run": run})
+    record |= {"output": str(state.folder / output), "testedTreeDigest": revision, "exitCode": exit_code}
+    if report is None:
+        if exit_code != 0:
+            errors.append(f"{run_id}: check exited {exit_code}")
+        return errors, record
     passed: set[str] = set()
-    if result.returncode != 0 or not report.is_file():
+    if exit_code != 0 or not report.is_file():
         errors.append(f"{run_id}: failed command or missing fresh JUnit report")
     else:
         passed, report_errors = junit_results(report, run_id)
         errors.extend(report_errors)
         expected: set[str] = {test for m in mappings if _str(m, "runId") == run_id for test in _strs(m, "testIds")}
         errors.extend(f"{run_id}: mapped test not executed successfully: {test}" for test in expected - passed)
-    archived_report: Path = folder / f"run-{index}.xml"
+    archived_report: Path = state.folder / f"run-{index}.xml"
     if report.is_file():
         archived_report.write_bytes(report.read_bytes())
         report.unlink()
     passed_ids: list[JsonValue] = [*sorted(passed)]
-    record: JsonObject = {
-        "runId": run_id,
-        "output": str(output),
-        "testedTreeDigest": revision,
+    record |= {
         "report": str(archived_report),
         "reportSha256": hashlib.sha256(archived_report.read_bytes()).hexdigest() if archived_report.is_file() else "",
         "passedTestIds": passed_ids,
@@ -653,7 +734,10 @@ def main() -> None:
         return
     errors: list[str] = validate(plan, previous, complete=args.mode == "verify")
     review: JsonObject = read(args.review) if args.review else {}
-    if review.get("approved") is not True or review.get("findings") or not review.get("evidence"):
+    review_approved: bool = (
+        review.get("approved") is True and not review.get("findings") and bool(review.get("evidence"))
+    )
+    if not review_approved:
         errors.append("Independent source/coverage/supersession review is not approved")
     if args.approved_plan and scope(plan) != scope(read(args.approved_plan)):
         errors.append("Final mapping changed the approved impact scope")
@@ -689,6 +773,7 @@ def main() -> None:
             "path": args.output,
             "ledger": args.ledger,
             "requiredKinds": required_kinds,
+            "reviewApproved": review_approved,
         },
     )
 

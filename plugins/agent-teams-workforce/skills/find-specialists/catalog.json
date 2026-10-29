@@ -2722,7 +2722,7 @@
     },
     {
       "name": "regression-impact-assessor",
-      "description": "Maps the components a Task changes to every current requirement they can affect, across all PRDs and the repositories that consume them, and to the unit, contract, integration and nonfunctional test layers each requires — before Red as the regression scope, after Red as the final mapping to actual test IDs and JUnit-reporting run commands — retaining earlier requirements unless an accepted source supersedes them.",
+      "description": "Maps the components a Task changes to every current requirement they can affect, across all PRDs and the repositories that consume them, and to the unit, contract, integration and nonfunctional test layers each requires — before Red as the regression scope, after Red as the final mapping to actual test IDs and to the repository's test and check commands, each with its setup — retaining earlier requirements unless an accepted source supersedes them.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:artifact-handoff",
