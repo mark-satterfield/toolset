@@ -628,6 +628,9 @@ def _check_failure_rules(failure: Mapping[str, object], path: str, payload: obje
     if classification == INTERRUPTED_CLASS and cause != SHUTDOWN_CAUSE:
         message = f"{path}: an interrupted failure requires cause {SHUTDOWN_CAUSE!r}, not {cause!r}"
         raise HandbackValidationError(message, payload)
+    if cause == SHUTDOWN_CAUSE and classification != INTERRUPTED_CLASS:
+        message = f"{path}: cause {SHUTDOWN_CAUSE!r} requires an interrupted failure, not {classification!r}"
+        raise HandbackValidationError(message, payload)
 
 
 def _is_failure(value: object, path: str, payload: object) -> TypeIs[Failure]:
@@ -664,6 +667,10 @@ def _check_document_rules(value: Mapping[str, object]) -> None:
     stated: object = failure.get("classification") if isinstance(failure, dict) else None
     if isinstance(stage, str) and stage in STOP_STAGES and stated != INTERRUPTED_CLASS:
         message = f"handback: stop stage {stage!r} requires an interrupted failure"
+        raise HandbackValidationError(message, value)
+    failed_at: object = failure.get("stage") if isinstance(failure, dict) else None
+    if stated == INTERRUPTED_CLASS and stage != failed_at:
+        message = f"handback: an interrupted failure requires its stop stage {failed_at!r}, not {stage!r}"
         raise HandbackValidationError(message, value)
 
 

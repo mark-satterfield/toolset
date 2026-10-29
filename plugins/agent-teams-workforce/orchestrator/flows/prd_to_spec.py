@@ -37,6 +37,7 @@ from orchestrator.core.events import EventWriter
 from orchestrator.core.handback_contract import (
     EVENT_KEY,
     FATAL_CLASSES,
+    INTERRUPTED_CLASS,
     NOTE_EVENT,
     OTHER_CAUSE,
     VERDICT_EVENT,
@@ -418,9 +419,11 @@ class _Elaboration:
             prior: dict[str, JsonValue] = json_object(self.result.get("failure") or {})
             prior_class: JsonValue = prior.get("classification")
             cleanup_class: JsonValue = cleanup_failure.get("classification")
-            prior_fatal: bool = isinstance(prior_class, str) and prior_class in FATAL_CLASSES
+            prior_stands: bool = isinstance(prior_class, str) and (
+                prior_class in FATAL_CLASSES or prior_class == INTERRUPTED_CLASS
+            )
             cleanup_fatal: bool = isinstance(cleanup_class, str) and cleanup_class in FATAL_CLASSES
-            if prior_fatal and not cleanup_fatal:
+            if prior_stands and not cleanup_fatal:
                 prior["originalFailure"] = {
                     "priorEvidence": prior.get("originalFailure"),
                     "releaseFailure": cleanup_failure,
@@ -432,7 +435,12 @@ class _Elaboration:
                     "headline": self.result.get("headline"),
                     "failure": prior,
                 })
-                self.result.update(ok=False, failure=cleanup_failure)
+                self.result.update(
+                    ok=False,
+                    stage=release["stage"],
+                    headline=release["headline"],
+                    failure=cleanup_failure,
+                )
             else:
                 self.result.update(release)
 
