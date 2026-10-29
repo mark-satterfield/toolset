@@ -228,11 +228,11 @@ Reading the marks to decide what is planned and what exists:
   stack.
 - Keep it current in the same piece of work: `rename --from <id> --to <id>`,
   `remove <id> [--held]`, `move-repository --from <repo> --to <repo>`, `unlink ...`.
-- Many changes in one step: write them to one change file
-  (`skills/artifact-handoff/schemas/matrix-change.schema.json`: `{"operations": [{"op": "put" | "link" | "unlink" | "settle", ...}]}`,
-  each operation with the arguments of its sub-command, attributes under `attributes`) and run
-  `atw-matrix apply --file <path>`: one locked update, all or nothing, every failed operation
-  reported with its index.
+- Many changes in one step: write them to one change file, whose shape is
+  `skills/artifact-handoff/schemas/matrix-change.schema.json` (write exactly the shape that
+  schema defines, and no other fields; each operation takes the arguments of its sub-command),
+  and run `atw-matrix apply --file <path>`: one locked update, all or nothing, every failed
+  operation reported with its index.
 - Commit the file alone with `atw-matrix commit --bead <id>` (it pushes).
 - A seeding or session result file is recorded by a script step (`seed-apply`), never entry by
   entry by the session.

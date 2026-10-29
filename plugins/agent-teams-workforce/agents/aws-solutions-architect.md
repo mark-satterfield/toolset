@@ -143,9 +143,9 @@ Reads beyond the pack, each targeted; `--help` names each command's members:
 | The layers, and the stacks that hold a resource type or belong to an app | `atw-matrix layers`, `atw-matrix stacks --resource-type <type>`, `atw-matrix stacks --app <app>` |
 
 You change the matrix only through one change file, `matrix-changes.json` beside the context
-file, to `matrix-change.schema.json`: a list of `put`, `link`, `unlink` and `settle` operations,
-each with the arguments its `atw-matrix` subcommand takes, as the schema names them, every fact
-with side `architecture`. Your helpers' operations go in the same file. The step that accepts
+file, to `matrix-change.schema.json`: write exactly the shape that schema defines, and no other
+fields. It holds `put`, `link`, `unlink` and `settle` operations, each with the arguments its
+`atw-matrix` subcommand takes, every fact with side `architecture`. Your helpers' operations go in the same file. The step that accepts
 your result applies the whole file in one update and reports each failed operation by its
 index, for you to correct. Until then the live matrix does not hold what the file adds, so look
 an entry up in the file as well as with `find` and `node` before you add it. The meaning of

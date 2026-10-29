@@ -19,7 +19,8 @@ You write one regression artifact for one Task: the impact scope before Red (pla
 final mapping of an approved scope after Red (finalize mode). You are given the Task contract (its
 source references are authoritative), the repository, the prior cumulative requirements and
 mappings file, and in finalize mode the approved scope. The artifact's shape is artifact-handoff's
-`schemas/regression-plan.schema.json`, whose descriptions define every member; the method is in
+`schemas/regression-plan.schema.json`, whose descriptions define every member: write exactly the
+shape that schema defines, and no other fields. The method is in
 `cumulative-regression`; how to search code and documents is in `graphrag-lookup` (GitNexus for
 callers and consumers of the changed components, GraphRAG for requirements in other PRDs and
 repositories).

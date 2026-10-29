@@ -50,5 +50,10 @@ one home of the output's shape: an agent definition, and a skill that states the
 it and say only what goes in each field; the agent writes exactly the shape that schema defines,
 and no other fields. `node scripts/check-agent-output-formats.mjs` (run by the pre-commit hook)
 checks every pairing, and every structured-output schema a workflow dispatch hands the runtime,
-against the agent definitions and those skills; add a pairing there when code starts checking a
-new agent output.
+against the agent definitions and those skills, and fails when a text calls a name a field that
+the output does not define. Every session an orchestrator flow launches with an `AgentLaunch`
+must be named, by the function that builds it, in the `launches` of a pairing, so a new
+validated output cannot be added without its pairing. A session any catalog agent may run (an
+answer to the solutions architect's request) carries its contract in its brief: that pairing's
+`pointer` is `brief`, and the check reads the schema and the rule in the code that writes the
+brief instead of in each agent's definition.

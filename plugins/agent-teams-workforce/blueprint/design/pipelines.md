@@ -100,7 +100,11 @@ Notes on the diagram:
   and say only what goes in each field. `skills/artifact-handoff/agent-outputs.json` pairs each
   file output with its agents, its schema and the code that makes the pairing, and
   `scripts/check-agent-output-formats.mjs` checks every pairing, the structured-output schemas
-  the workflows dispatch included, in the pre-commit hook, so a mismatch fails the commit
+  the workflows dispatch included, and that every session an orchestrator flow validates is
+  paired, in the pre-commit hook, so a mismatch fails the commit. A request's answer, which any
+  catalog agent may write, carries its schema and the rule in the session's brief. An answer
+  written to an earlier contract by a session of an earlier definition sends its writer's step to
+  run again when the architect's Decide step reads it
   ([requirements/pipelines.md](../requirements/pipelines.md), "Choosing specialists takes reasoning, and every agent has a reason to be used", the paragraph on contracts).
 
 ## Where the stores are read and written

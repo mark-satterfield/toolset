@@ -104,10 +104,10 @@
           ]
         },
         "build:baseline": {
-          "description": "Resolve the repository's suite command and run the suite before any change",
-          "purpose": "The command the build is judged by is the one the repository declares, and the tests failing before the Task are known",
+          "description": "Run the setup the approved regression plan declares for the tree, then resolve the repository's suite command and run the suite before any change",
+          "purpose": "The command the build is judged by is the one the repository declares, it runs on a tree prepared as the reviewed plan states, and the tests failing before the Task are known",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "regressionScope"],
+          "reads": ["worktree", "regressionScope", "regressionPlan"],
           "records": [
             {"name": "suiteCommand", "kind": "value", "holds": "the command that runs the whole suite, a string"},
             {"name": "baseline", "kind": "value", "holds": "{ exitCode, summary, failing, tail, relayFile }: the suite run before any change"}

@@ -47,6 +47,7 @@ from jsonartifact import (
     binding_matches,
     canonical,
     checkpoint_report,
+    contract_name,
     decode,
     read_checkpoint,
     require_schema,
@@ -68,17 +69,27 @@ def load_json(path: Path) -> JsonValue:
     return decode(path.read_text(encoding="utf-8"))
 
 
-def validate_candidate(candidate: Path, schema: JsonObject) -> JsonValue:
-    """Validate the candidate artifact against its schema.
+@dataclass(frozen=True)
+class Contract:
+    """The schema a candidate must satisfy, with the contract a refusal names."""
+
+    schema: JsonObject
+    name: str
+    location: Path | None
+    """The file the schema is exactly as read; None for a schema assembled from its file or given whole."""
+
+
+def validate_candidate(candidate: Path, contract: Contract) -> JsonValue:
+    """Validate the candidate artifact against its contract.
 
     Returns:
         The candidate value; a candidate the schema refuses raises ``SchemaProblemsError`` from
-        ``require_schema``, every problem stated in full.
+        ``require_schema``, every problem stated in full with the contract named.
 
     """
-    Draft202012Validator.check_schema(schema)
+    Draft202012Validator.check_schema(contract.schema)
     value: JsonValue = load_json(candidate)
-    require_schema(value, schema, str(candidate))
+    require_schema(value, contract.schema, str(candidate), contract.name, contract.location)
     return value
 
 
@@ -111,7 +122,7 @@ def verify_files(paths: JsonValue, root: Path, *, relative_only: bool = True) ->
             raise ValueError(message)
 
 
-def artifact_status(candidate: Path, schema: JsonObject, revision: str) -> StatusReport:
+def artifact_status(candidate: Path, contract: Contract, revision: str) -> StatusReport:
     """Report where the producer of `candidate` stands, from its checkpoint sidecar.
 
     Returns:
@@ -121,7 +132,7 @@ def artifact_status(candidate: Path, schema: JsonObject, revision: str) -> Statu
     saved: CheckpointRecord | None = read_checkpoint(candidate)
     if saved is None:
         return {"status": REPORT_INCOMPLETE, "reason": "checkpoint missing"}
-    report: StatusReport = checkpoint_report(candidate, schema, revision)
+    report: StatusReport = checkpoint_report(candidate, contract.schema, revision)
     if not binding_matches(saved, report):
         return {"status": REPORT_INCOMPLETE, "reason": "checkpoint binding changed"}
     if saved["status"] == STATUS_IN_PROGRESS:
@@ -130,7 +141,7 @@ def artifact_status(candidate: Path, schema: JsonObject, revision: str) -> Statu
         return {"status": REPORT_BLOCKED, "remaining": saved["remaining"], "reason": saved.get("reason", "")}
     # A candidate rewritten after its completion is judged as it is now: it is valid
     # against the schema or validate_candidate raises.
-    value: JsonValue = validate_candidate(candidate, schema)
+    value: JsonValue = validate_candidate(candidate, contract)
     report["candidateSha256"] = hashlib.sha256(canonical(value)).hexdigest()
     return report
 
@@ -139,7 +150,7 @@ def artifact_status(candidate: Path, schema: JsonObject, revision: str) -> Statu
 class _Options:
     operation: str
     candidate: Path
-    schema: JsonObject
+    contract: Contract
     revision: str
     progress_file: Path | None
     status: CheckpointStatus | None
@@ -186,7 +197,7 @@ def _record(options: _Options) -> CommandResult:
     if status is None:
         message: str = f"checkpoint requires --status {' or '.join(AUTHORED_STATUSES)}"
         raise ValueError(message)
-    report: StatusReport = checkpoint_report(options.candidate, options.schema, options.revision)
+    report: StatusReport = checkpoint_report(options.candidate, options.contract.schema, options.revision)
     saved: CheckpointRecord = {
         "task": progress["task"],
         "completed": progress["completed"],
@@ -202,7 +213,7 @@ def _record(options: _Options) -> CommandResult:
     value: JsonValue = None
     if status == STATUS_COMPLETE:
         saved["remaining"] = []
-        value = validate_candidate(options.candidate, options.schema)
+        value = validate_candidate(options.candidate, options.contract)
         if options.files_root is not None and options.files_field is not None:
             if not isinstance(value, dict) or options.files_field not in value:
                 message = "declared files field is missing from candidate"
@@ -229,9 +240,9 @@ def _execute(options: _Options) -> CommandResult | StatusReport:
 
     """
     if options.operation == OPERATION_STATUS:
-        return artifact_status(options.candidate, options.schema, options.revision)
+        return artifact_status(options.candidate, options.contract, options.revision)
     if options.operation == OPERATION_VALIDATE:
-        validate_candidate(options.candidate, options.schema)
+        validate_candidate(options.candidate, options.contract)
         return {"status": RESULT_SCHEMA_VALID, "artifactPath": str(options.candidate)}
     result: CommandResult = _record(options)
     if options.operation == OPERATION_SUBMIT:
@@ -276,10 +287,11 @@ def _options(args: argparse.Namespace) -> _Options:
         if contract is not None or schema_json is not None:
             message_one: str = "--schema-file excludes --schema and --schema-json"
             raise ValueError(message_one)
-        schema: JsonObject = json_object(load_json(schema_file))
-        Draft202012Validator.check_schema(schema)
+        read: JsonObject = json_object(load_json(schema_file))
+        Draft202012Validator.check_schema(read)
+        checked: Contract = Contract(read, str(schema_file), schema_file)
     else:
-        schema = schema_from_option(contract, schema_json)
+        checked = Contract(schema_from_option(contract, schema_json), contract_name(contract), None)
     files_root: Path | None = args.files_root
     files_field: str | None = args.files_field
     if (files_root is None) != (files_field is None):
@@ -294,7 +306,7 @@ def _options(args: argparse.Namespace) -> _Options:
     return _Options(
         operation=operation,
         candidate=candidate.absolute(),
-        schema=schema,
+        contract=checked,
         revision=revision,
         progress_file=progress_file,
         status=_authored_status(status),

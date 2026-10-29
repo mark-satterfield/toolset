@@ -44,7 +44,7 @@ from orchestrator.flows.architecture_files import (
     MAINTAINER,
     PARAM_REQUEST,
     SCRIPT_STARTED,
-    checked_file,
+    checked_output,
     cited_document,
     document_path,
 )
@@ -211,6 +211,27 @@ def round_steps(run: StepRun, requests: Sequence[AgentRequest], number: int) -> 
     return StepGroup((*steps, NewStep(decide, params=params)))
 
 
+def _answer_writer(run: StepRun, path: Path) -> Step | None:
+    """Find the agent step that wrote an answer file.
+
+    Returns:
+        The last agent step in walk order that holds the file as its answer; None when no step
+        of the journal holds it.
+
+    """
+    writer: Step | None = None
+    step: Step
+    for step in step_journal.steps_in_order(run.journal()):
+        if "agent" not in step:
+            continue
+        if any(
+            held["name"] == LABEL_ANSWER and held["kind"] != "value" and held["path"] == str(path)
+            for held in step["artifacts"]
+        ):
+            writer = step
+    return writer
+
+
 def _answer_agents(run: StepRun) -> dict[str, str]:
     """Name the agent that wrote each answer file the journal records.
 
@@ -255,6 +276,10 @@ def _digested(agent: str, path: Path, answer: SpecialistAnswer) -> DigestedAnswe
 def write_digest(run: StepRun, helpers: Path) -> Path | None:
     """Write the digest of the answers an architect step is handed.
 
+    Each answer is read with :func:`checked_output`: an answer the current contract refuses,
+    written by a session made under another agent definition or contracts, sends its writer's
+    step to run again (``StaleInputError``) instead of failing the architect's step.
+
     Returns:
         The digest file, in the helpers folder and named for the step; None when the step is
         handed no answer.
@@ -266,7 +291,11 @@ def write_digest(run: StepRun, helpers: Path) -> Path | None:
     agents: dict[str, str] = {**_answered_before(run), **_answer_agents(run)}
     digest: AnswersDigest = {
         "answers": [
-            _digested(agents.get(str(path), "unknown"), path, checked_file(run, path, validate_specialist_answer))
+            _digested(
+                agents.get(str(path), "unknown"),
+                path,
+                checked_output(run, path, validate_specialist_answer, _answer_writer(run, path)),
+            )
             for path in answers
         ],
     }

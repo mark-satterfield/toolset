@@ -1,8 +1,5 @@
 {
-  "description": "Every agent output written to a file and validated against a schema: which agents write it, the schema (file and $defs entry) that checks it, the code that makes the pairing (each anchor must still be in that file), and the skills whose text states the output. scripts/check-agent-output-formats.mjs reads this table and adds every workflow dispatch that hands the runtime a literal structured-output schema; a dispatch whose agentType is not a literal is listed here by its locator (workflow file:schema constant).",
-  "notOwned": [
-    "regression-impact-assessor"
-  ],
+  "description": "Every agent output written to a file and validated against a schema: which agents write it, the schema (file and $defs entry) that checks it, the code that makes the pairing (each anchor must still be in that file), and the skills whose text states the output. scripts/check-agent-output-formats.mjs reads this table and adds every workflow dispatch that hands the runtime a literal structured-output schema; a dispatch whose agentType is not a literal is listed here by its locator (workflow file:schema constant). Every session an orchestrator flow launches with an AgentLaunch is named, by the function that builds it, in the launches of an entry. An entry whose pointer is brief gives its contract to its agents in the session's brief (the code names the schema file and states the rule), so their definitions are not checked.",
   "pairings": [
     {
       "output": "architect's round of specialist requests",
@@ -17,6 +14,9 @@
         "validate_specialist_round",
         "QUESTIONS_FILE",
         "EXAMPLE_ROUND"
+      ],
+      "launches": [
+        "_analyze"
       ],
       "inputs": [
         "skills/artifact-handoff/schemas/architecture-result.schema.json#/$defs/ArchitectureContext"
@@ -42,6 +42,9 @@
         "validate_architecture_state",
         "EXAMPLE_STATE"
       ],
+      "launches": [
+        "_analyze"
+      ],
       "inputs": [
         "skills/artifact-handoff/schemas/architecture-result.schema.json#/$defs/ArchitectureContext"
       ],
@@ -63,11 +66,35 @@
         "result_check(run)",
         "EXAMPLE_RESULT"
       ],
+      "launches": [
+        "architect"
+      ],
       "inputs": [
         "skills/artifact-handoff/schemas/architecture-result.schema.json#/$defs/ArchitectureContext"
       ],
       "examples": [
         "skills/artifact-handoff/examples/architecture-result.example.json"
+      ]
+    },
+    {
+      "output": "architect's matrix change file",
+      "agents": [
+        "aws-solutions-architect"
+      ],
+      "schema": "skills/artifact-handoff/schemas/matrix-change.schema.json",
+      "named": "matrix-change.schema.json",
+      "pointer": "file",
+      "code": "orchestrator/flows/architecture.py",
+      "anchors": [
+        "CHANGE_FILE",
+        "apply_changes"
+      ],
+      "skills": [
+        "matrix"
+      ],
+      "tolerate": [
+        "noFeature",
+        "noSource"
       ]
     },
     {
@@ -84,8 +111,27 @@
         "output_check(validate_specialist_answer)",
         "@any_agent_step(CATALOG_AGENTS)"
       ],
+      "launches": [
+        "specialist"
+      ],
       "inputs": [
         "skills/artifact-handoff/schemas/architecture-result.schema.json#/$defs/SpecialistRequest"
+      ]
+    },
+    {
+      "output": "any catalog agent's answer to a request",
+      "agentsCatalog": "skills/find-specialists/catalog.json",
+      "schema": "skills/artifact-handoff/schemas/architecture-result.schema.json#/$defs/SpecialistAnswer",
+      "named": "architecture-result.schema.json",
+      "pointer": "brief",
+      "code": "orchestrator/flows/architecture.py",
+      "anchors": [
+        "@any_agent_step(CATALOG_AGENTS)",
+        "SPECIALIST_ANSWER_SCHEMA",
+        "outcome=SPECIALIST_ANSWER_OUTCOME"
+      ],
+      "launches": [
+        "specialist"
       ]
     },
     {
@@ -100,6 +146,9 @@
       "anchors": [
         "validate_trd_answer",
         "@agent_step(TRD_AUTHOR)"
+      ],
+      "launches": [
+        "trd_author"
       ],
       "inputs": [
         "skills/artifact-handoff/schemas/architecture-result.schema.json#/$defs/TrdRequest"
@@ -131,6 +180,9 @@
         "validate_write_result",
         "@agent_step(MAINTAINER)"
       ],
+      "launches": [
+        "maintainer"
+      ],
       "inputs": [
         "skills/artifact-handoff/schemas/architecture-result.schema.json#/$defs/WriteRequest"
       ]
@@ -147,6 +199,9 @@
       "anchors": [
         "output_check(validate_lead_routing)",
         "@agent_step(LEAD)"
+      ],
+      "launches": [
+        "lead"
       ],
       "inputs": [
         "skills/artifact-handoff/schemas/architecture-result.schema.json#/$defs/CheckResult"
@@ -165,6 +220,9 @@
         "output_check(validate_architecture_ruling)",
         "@agent_step(DECIDER)"
       ],
+      "launches": [
+        "decider"
+      ],
       "inputs": [
         "skills/artifact-handoff/schemas/architecture-result.schema.json#/$defs/UnsettledMatter"
       ]
@@ -180,6 +238,9 @@
       "anchors": [
         "UI_SCHEMA",
         "@agent_step(UI_SELECTOR)"
+      ],
+      "launches": [
+        "ui_sources"
       ]
     },
     {
@@ -196,6 +257,10 @@
         "validate_spec_review",
         "@agent_step(REVIEWER)",
         "@agent_step(DATA_MODEL_REVIEWER)"
+      ],
+      "launches": [
+        "reviewer",
+        "data_model_reviewer"
       ]
     },
     {
@@ -211,6 +276,9 @@
       "anchors": [
         "SPEC_FRONT_MATTER",
         "documents_check(run, held, names)"
+      ],
+      "launches": [
+        "spec_document"
       ]
     },
     {
@@ -226,6 +294,9 @@
       "anchors": [
         "SPEC_CORRECTION_SCHEMA_PATH",
         "@agent_step(AUTHOR_CONTRACTS, AUTHOR_DATA_MODEL)"
+      ],
+      "launches": [
+        "correction"
       ],
       "inputs": [
         "skills/artifact-handoff/schemas/spec-review.schema.json#/$defs/SpecReview"
@@ -243,6 +314,9 @@
       "anchors": [
         "SPEC_RULING_SCHEMA_PATH",
         "@agent_step(DECIDER)"
+      ],
+      "launches": [
+        "decider"
       ],
       "inputs": [
         "skills/artifact-handoff/schemas/spec-review.schema.json#/$defs/SpecReview",
@@ -262,6 +336,9 @@
       "anchors": [
         "\"tasks.schema.json\"",
         "@agent_step(DECOMPOSER)"
+      ],
+      "launches": [
+        "decomposer"
       ],
       "inputs": [
         "skills/artifact-handoff/schemas/tasks-correction.schema.json",
@@ -295,6 +372,9 @@
       "anchors": [
         "TASK_DEPS_SCHEMA",
         "@agent_step(MAPPER)"
+      ],
+      "launches": [
+        "mapper"
       ],
       "inputs": [
         "skills/artifact-handoff/schemas/task-edge-proposal.schema.json",
@@ -674,6 +754,24 @@
       ],
       "inputs": [
         "workflows/task-to-deploy.js#REGRESSION_SCHEMA"
+      ]
+    },
+    {
+      "output": "regression plan",
+      "agents": [
+        "regression-impact-assessor"
+      ],
+      "schema": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+      "named": "regression-plan.schema.json",
+      "pointer": "file",
+      "code": "workflows/task-to-deploy.js",
+      "anchors": [
+        "REGRESSION_CONTRACT",
+        "REGRESSION_SCHEMA"
+      ],
+      "locator": "workflows/task-to-deploy.js:REGRESSION_SCHEMA",
+      "skills": [
+        "cumulative-regression"
       ]
     }
   ]

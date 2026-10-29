@@ -11,7 +11,10 @@
 // check fails when that code no longer holds the entry's anchors. Every workflow dispatch that
 // hands the runtime a structured-output schema is read from the workflow itself: an
 // `agentType: '<name>'` and the `schema:` of the same call. A dispatch whose agentType is not a
-// literal must be covered by an agent-outputs.json entry naming its locator.
+// literal must be covered by an agent-outputs.json entry naming its locator. Every `AgentLaunch(`
+// in orchestrator/flows must be named, by its enclosing function, in an entry's `launches`.
+// An entry whose `pointer` is `brief` gives its contract in the session's brief: the code must
+// name the schema file and state the rule, and its agents' definitions are not checked.
 //
 // For each pairing it fails when:
 // - the schema file, its $defs entry, the workflow constant or the anchored code is missing;
@@ -20,8 +23,9 @@
 // - the agent definition or a named skill writes a field path (`a.b`, `a[].b`) that does not
 //   resolve in the schema, gives a field a shape (`field` {x, y}) its items do not have, writes a
 //   brace shape `{x, y}` no object of the schema has, names in backticks a field another output
-//   defines but this one does not, or holds a JSON example of the output with a field the
-//   schema does not define.
+//   defines but this one does not, calls a backticked name a field ("the `x` field", "set `x` on
+//   each reason") that the output does not define, or holds a JSON example of the output with a
+//   field the schema does not define.
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -32,6 +36,7 @@ const STRUCTURED = 'structured'
 const RULE_TEXT = 'write exactly the shape that schema defines, and no other fields'
 const RULE = new RegExp(RULE_TEXT.replace(/ /g, '\\s+'), 'i')
 const FILE = 'file'
+const BRIEF = 'brief'
 const findings = []
 const fail = (where, what) => findings.push(`${where}: ${what}`)
 const read = (rel) => readFileSync(path.join(ROOT, rel), 'utf8')
@@ -271,6 +276,9 @@ function skillText(name) {
 const IDENT = /^[a-z][A-Za-z0-9]*$/
 const CAMEL = /^[a-z]+[A-Z][A-Za-z0-9]*$/
 const FILE_NAME = /\.(json|md|mjs|js|cjs|py|ya?ml|txt)$/
+// A backticked name the text calls a field: "the `x` field", "a field `x`", "the key `x`", or
+// sets on an object: "set `x` on each reason", "add `x` to every entry".
+const NAMED_FIELD = /`([a-z][A-Za-z0-9]*)`\s+(?:field|key|property|member)s?\b|\b(?:field|key|property|member)s?\s+`([a-z][A-Za-z0-9]*)`|\b(?:set|add|include|fill in|populate)\s+(?:an?\s+|the\s+)?`([a-z][A-Za-z0-9]*)`(?=\s+(?:on|to|in|for)\s+(?:each|every|the|its|an?)\b)/g
 const PATH = /^([a-z][A-Za-z0-9]*)((?:\[\d*\])?(?:\.[a-z][A-Za-z0-9]*(?:\[\d*\])?)+)$/
 
 function prose(text) {
@@ -352,6 +360,10 @@ function textProblems(text, at, pairing, knownFields, own) {
     })
     if (!own.has(field) || !targets.length) { fail(`shape ${field}`, SKIP); continue }
     if (!fits) fail(`shape ${field}`, `\`${field}\` {${keys.join(', ')}} is not the shape the output gives \`${field}\``)
+  }
+  for (const named of body.matchAll(NAMED_FIELD)) {
+    const token = named[1] || named[2] || named[3]
+    if (!own.has(token) && !tolerated.has(token)) fail(`named ${token}`, `\`${token}\` is called a field, but the output defines no field \`${token}\``)
   }
   let example = 0
   for (const block of text.matchAll(/^```json\n([\s\S]*?)^```/gm)) {
@@ -484,9 +496,15 @@ function strings(value) {
 }
 
 // The agents of an entry: those it names, the agent names held in the workflow constants it
-// names (`agentsFrom`, as file#CONSTANT), and every agent that loads the skill it names.
+// names (`agentsFrom`, as file#CONSTANT), every agent the catalog it names lists
+// (`agentsCatalog`), and every agent that loads the skill it names.
 function agentsOf(entry, where) {
   const named = new Set(entry.agents || [])
+  if (entry.agentsCatalog) {
+    const listed = JSON.parse(read(entry.agentsCatalog)).agents || []
+    if (!listed.length) fail(where, `${entry.agentsCatalog} lists no agent`)
+    for (const held of listed) named.add(held.name)
+  }
   for (const ref of entry.agentsFrom || []) {
     const [file, constant] = ref.split('#')
     const text = constLiteral(read(file), constant)
@@ -505,13 +523,37 @@ function agentsOf(entry, where) {
 const table = JSON.parse(read(TABLE_PATH))
 const pairings = []
 const covered = new Set()
+const launches = new Set()
 for (const entry of table.pairings) {
   const where = `${TABLE_PATH} ${entry.output}`
   if (!existsSync(path.join(ROOT, entry.code))) { fail(where, `${entry.code} does not exist`); continue }
   const code = read(entry.code)
   for (const anchor of entry.anchors) if (!code.includes(anchor)) fail(where, `${entry.code} no longer holds ${anchor}`)
   if (entry.locator) covered.add(entry.locator)
+  for (const launch of entry.launches || []) {
+    if (!new RegExp(`^def ${launch}\\(`, 'm').test(code)) fail(where, `${entry.code} has no function ${launch}`)
+    launches.add(`${entry.code}:${launch}`)
+  }
+  if (entry.pointer === BRIEF) {
+    if (!code.includes(entry.named)) fail(where, `${entry.code} does not name ${entry.named} in the brief it gives`)
+    if (!RULE.test(code.replace(/"\s*\n\s*f?"/g, ''))) fail(where, `${entry.code} does not state the rule "${RULE_TEXT}" in the brief it gives`)
+  }
   pairings.push({ ...entry, agents: agentsOf(entry, where), where })
+}
+
+// Every session the orchestrator launches whose output it validates (an `AgentLaunch(` in
+// orchestrator/flows) is the launch of an entry, named by the function that builds it.
+const FLOWS = 'orchestrator/flows'
+for (const file of readdirSync(path.join(ROOT, FLOWS)).filter(f => f.endsWith('.py')).sort()) {
+  const rel = `${FLOWS}/${file}`
+  const src = read(rel)
+  for (const match of src.matchAll(/\bAgentLaunch\(/g)) {
+    const before = src.slice(0, match.index)
+    const def = [...before.matchAll(/^def (\w+)\(/gm)].pop()
+    const line = before.split('\n').length
+    if (!def) { fail(`${rel}:${line}`, 'an AgentLaunch outside any function'); continue }
+    if (!launches.has(`${rel}:${def[1]}`)) fail(`${rel}:${line}`, `the session ${def[1]} launches is validated, and no ${TABLE_PATH} entry names ${def[1]} in its launches`)
+  }
 }
 
 for (const file of readdirSync(path.join(ROOT, 'workflows')).filter(f => f.endsWith('.js')).sort()) {
@@ -546,7 +588,6 @@ for (const pairing of pairings) {
 const knownFields = new Set()
 for (const pairing of pairings) if (!pairing.broken) for (const name of allProperties(pairing.at)) knownFields.add(name)
 
-const EXCLUDED = new Set(table.notOwned || [])
 for (const pairing of pairings) {
   if (pairing.broken) continue
   pairing.own = allProperties(pairing.at)
@@ -557,7 +598,7 @@ for (const pairing of pairings) {
 // What one agent's definition may name: every field of every output it writes and input it reads.
 const agentOwn = new Map()
 for (const pairing of pairings) {
-  if (pairing.broken) continue
+  if (pairing.broken || pairing.pointer === BRIEF) continue
   for (const name of pairing.agents) {
     if (!agentOwn.has(name)) agentOwn.set(name, new Set())
     for (const field of [...pairing.own, ...(pairing.tolerate || [])]) agentOwn.get(name).add(field)
@@ -583,7 +624,7 @@ for (const pairing of pairings) {
   const fileName = pairing.pointer === FILE ? (pairing.named || path.posix.basename(pairing.schema.split('#')[0])) : null
   for (const name of pairing.agents) {
     if (!agentFiles.has(name)) { fail(pairing.where, `agent ${name} does not exist`); continue }
-    if (EXCLUDED.has(name)) continue
+    if (pairing.pointer === BRIEF) continue
     const held = agent(name)
     for (const skill of pairing.skills || []) if (!held.skills.has(skill)) fail(`agents/${name}.md`, `does not load ${skill}, which states its ${pairing.output}`)
     if (fileName && !held.body.includes(fileName) && !skillTexts.some(s => s.text.includes(fileName))) {

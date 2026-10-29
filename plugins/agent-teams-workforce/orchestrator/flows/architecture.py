@@ -227,6 +227,15 @@ _NOTHING_WRITTEN: Final[WriteResult] = {
 """A result that names no document, for an invalid result: only the request's own homes are rendered."""
 CATALOG_AGENTS: Final[frozenset[str]] = agent_names()
 """Every agent the find-specialists skill's catalog lists: the names a request may give."""
+SPECIALIST_ANSWER_SCHEMA: Final[Path] = (
+    Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "schemas" / "architecture-result.schema.json"
+)
+"""The contract of every answer to a request, whichever catalog agent writes it."""
+SPECIALIST_ANSWER_OUTCOME: Final = (
+    "The answer to the request, at the path the request names, as the SpecialistAnswer definition of "
+    f"{SPECIALIST_ANSWER_SCHEMA} states it: write exactly the shape that schema defines, and no other fields."
+)
+"""The outcome of a request's session, which carries the answer's contract to an agent whose definition does not."""
 BUNDLES_FILE: Final = "ui-bundles.json"
 """The listing of the owner's cds bundles the Analyze step is handed, in the architecture folder."""
 UI_DESIGN_SUBJECT: Final = re.compile(
@@ -1079,7 +1088,7 @@ def specialist(run: StepRun) -> AgentLaunch:
     return AgentLaunch(
         output=Path(request["answerPath"]),
         validate=output_check(validate_specialist_answer),
-        outcome="The answer to the request, at the path the request names.",
+        outcome=SPECIALIST_ANSWER_OUTCOME,
         accept=accept,
         add_dirs=(run.context.work,),
         files=((LABEL_REQUEST, asked),),

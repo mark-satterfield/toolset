@@ -13,7 +13,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, NotRequired, TypedDict
+from typing import Final, Literal, NotRequired, TypedDict
 
 # The artifact checkpoint contract is generated into the artifact-handoff skill, its one place.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
@@ -23,6 +23,7 @@ import researchrecovery
 import strictschema
 from checkpoint_contract import (
     BINDING_KEYS,
+    CHECKPOINT_SCHEMA_PATH,
     REPORT_COMPLETE_UNACCEPTED,
     STATUS_BLOCKED,
     STATUS_COMPLETE,
@@ -33,7 +34,7 @@ from checkpoint_contract import (
 )
 from contracts import JsonObject, JsonValue, json_object
 from jsonschema import Draft202012Validator
-from jsonschema.exceptions import SchemaError, ValidationError
+from jsonschema.exceptions import SchemaError
 from researchrecovery import recover
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
@@ -407,7 +408,8 @@ def read_checkpoint(candidate: Path) -> CheckpointRecord | None:
     """Read and validate the checkpoint sidecar of a candidate.
 
     A read failure (OSError), a decode failure (ValueError) or a schema violation
-    (ValidationError) of an existing sidecar propagates; it is never read as absent.
+    (``SchemaProblemsError``, every problem stated) of an existing sidecar propagates; it is
+    never read as absent.
 
     Returns:
         The validated checkpoint, or None when the candidate has no sidecar.
@@ -423,17 +425,28 @@ def read_checkpoint(candidate: Path) -> CheckpointRecord | None:
     if not sidecar.exists():
         return None
     value: JsonValue = decode(sidecar.read_text(encoding="utf-8"))
-    Draft202012Validator(load_checkpoint_schema()).validate(value)
+    require_schema(value, load_checkpoint_schema(), str(sidecar), str(CHECKPOINT_SCHEMA_PATH), CHECKPOINT_SCHEMA_PATH)
     return check_type(value, CheckpointRecord, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
-def require_schema(value: JsonValue, schema: JsonObject, where: str) -> None:
+def require_schema(
+    value: JsonValue,
+    schema: JsonObject,
+    where: str,
+    contract: str,
+    location: Path | None = None,
+) -> None:
     """Refuse a value its contract schema does not accept, stating every problem in full.
 
     Args:
         value: The decoded value.
-        schema: The contract schema, self-contained (``load_contract``).
+        schema: The contract schema.
         where: What holds the value, such as the candidate file.
+        contract: The contract the schema comes from, as the refusal names it: the contract
+            file (with its fragment), or what gave the schema.
+        location: The file ``schema`` is exactly as read, whose JSON pointers the problems give;
+            None for a schema assembled from its file (``load_contract`` inlines references),
+            whose pointers are into the schema as assembled.
 
     Raises:
         SchemaProblemsError: The schema refuses the value; each problem is stated by
@@ -443,14 +456,28 @@ def require_schema(value: JsonValue, schema: JsonObject, where: str) -> None:
     found: list[str] = strictschema.explain_all(
         Draft202012Validator(schema).iter_errors(value),
         root=schema,
-        location=None,
+        location=location,
     )
     if found:
-        raise strictschema.SchemaProblemsError(where, "its contract schema", found)
+        raise strictschema.SchemaProblemsError(where, contract, found)
+
+
+SCHEMA_JSON_CONTRACT: Final = "the schema given with --schema-json"
+"""How a refusal names a contract given as the schema itself."""
+
+
+def contract_name(schema: str | None) -> str:
+    """Name the contract a command line gives, as a refusal names it.
+
+    Returns:
+        The contract file with its fragment (``--schema``), else :data:`SCHEMA_JSON_CONTRACT`.
+
+    """
+    return SCHEMA_JSON_CONTRACT if schema is None else schema
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def accept(candidate: Path, final: Path, schema: JsonObject, revision: str = "") -> ArtifactReceipt:
+def accept(candidate: Path, final: Path, schema: JsonObject, revision: str = "", *, contract: str) -> ArtifactReceipt:
     """Validate a candidate and publish it as the accepted result.
 
     A different accepted result already at `final` is replaced; its bytes are kept as
@@ -480,7 +507,7 @@ def accept(candidate: Path, final: Path, schema: JsonObject, revision: str = "")
     value: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = decode(
         candidate.read_text(encoding="utf-8"),
     )
-    require_schema(value, schema, str(candidate))
+    require_schema(value, schema, str(candidate), contract)
     data: bytes = canonical(value)
     try:
         previous_value: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = (
@@ -688,6 +715,7 @@ class _Acceptance:
     candidate: Path
     final: Path
     schema: JsonObject
+    contract: str
     revision: str
     probe: bool
     research_agent: str
@@ -822,6 +850,7 @@ def _execute_cli(args: _CliOptions, parser: argparse.ArgumentParser) -> JsonObje
         check_type(args.candidate, Path),
         check_type(args.final, Path),
         schema_from_option(args.schema, args.schema_json),
+        contract_name(args.schema),
         check_type(args.revision, str),
         check_type(args.probe, bool),
         check_type(args.research_agent, str),
@@ -833,7 +862,7 @@ def _execute_cli(args: _CliOptions, parser: argparse.ArgumentParser) -> JsonObje
         if pending is not None:
             return pending
     if receipt is None:
-        receipt = accept(options.candidate, options.final, options.schema, options.revision)
+        receipt = accept(options.candidate, options.final, options.schema, options.revision, contract=options.contract)
     return _receipt_options(receipt, options.final, args)
 
 
@@ -869,11 +898,6 @@ def main() -> int:
     except (ImportError, OSError, ValueError) as exc:
         prefix: str = "" if args.document or args.source else f"{args.candidate}: "
         sys.stdout.write(json.dumps({"error": prefix + str(exc)[:300]}) + "\n")
-        return 2
-    except ValidationError as exc:
-        location: str = ".".join(str(part) for part in exc.absolute_path) or "(root)"
-        message: str = f"{args.candidate} at {location}: {exc.validator} validation failed; {exc.message[:240]}"
-        sys.stdout.write(json.dumps({"error": message}) + "\n")
         return 2
     sys.stdout.write(json.dumps(result) + "\n")
     return 0

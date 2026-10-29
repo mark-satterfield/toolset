@@ -41,5 +41,5 @@ repos:
         name: Agent definitions match the schemas their outputs are checked against
         entry: node plugins/agent-teams-workforce/scripts/check-agent-output-formats.mjs
         language: system
-        files: ^(plugins/agent-teams-workforce/(agents/.*\.md|skills/.*|workflows/.*\.js|orchestrator/flows/.*\.py|scripts/check-agent-output-formats\.mjs)|\.pre-commit-config\.yaml)$
+        files: ^(plugins/agent-teams-workforce/(agents/.*\.md|skills/.*|workflows/.*\.js|orchestrator/(flows|core)/.*\.py|scripts/portfolio/.*\.py|scripts/check-agent-output-formats\.mjs)|\.pre-commit-config\.yaml)$
         pass_filenames: false

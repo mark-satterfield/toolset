@@ -405,6 +405,89 @@ def _definition_of(pointer: str) -> str | None:
     return named[-1].replace("~1", "/").replace("~0", "~") if named else None
 
 
+def _pointer_parts(pointer: str) -> list[str | int]:
+    """Split a JSON pointer into the path ``_follow`` takes, array indexes as numbers.
+
+    Returns:
+        The unescaped segments.
+
+    """
+    parts: list[str | int] = []
+    for segment in pointer.split("/")[1:]:
+        key: str = segment.replace("~1", "/").replace("~0", "~")
+        parts.append(int(key) if key.isdigit() else key)
+    return parts
+
+
+def _follow(root: JsonValue, start: JsonValue, path: Iterable[str | int]) -> JsonValue:
+    """Follow a schema path from one node, through any ``$ref`` into the same document.
+
+    Returns:
+        The node the path ends at; None when the path cannot be followed from ``start``.
+
+    """
+    node: JsonValue = start
+    for part in path:
+        reference: JsonValue = node.get("$ref") if isinstance(node, dict) else None
+        if part == "$ref" and isinstance(reference, str) and reference.startswith("#"):
+            target: JsonValue = root
+            for segment in reference[1:].split("/")[1:]:
+                key: str = segment.replace("~1", "/").replace("~0", "~")
+                if not isinstance(target, dict) or key not in target:
+                    return None
+                target = target[key]
+            node = target
+        elif isinstance(node, dict) and str(part) in node:
+            node = node[str(part)]
+        elif isinstance(node, list) and isinstance(part, int) and 0 <= part < len(node):
+            node = node[part]
+        else:
+            return None
+    return node
+
+
+def _forbidden_fields(
+    error: ValidationError,
+    root: JsonValue,
+    nodes: Mapping[int, str],
+    definition: str | None,
+) -> tuple[list[str], str | None]:
+    """Name the fields a ``false`` property schema forbids, and where the rule that forbids them is.
+
+    jsonschema reports a field whose subschema is ``false`` with no validator, at the path of the
+    object that holds it, and with a schema path that ends at the ``properties`` keyword and may
+    start inside a referenced definition. The schema node the path starts from is found by
+    trying every node of the schema, those inside ``definition`` first.
+
+    Returns:
+        The names the ``properties`` sets to ``false``, and the JSON pointer of the node the
+        schema path starts from (the conditional that applies the ``properties``); nothing when
+        the failure is not such a field or the node cannot be found.
+
+    """
+    if error.validator is not None or error.schema is not False or not isinstance(root, dict):
+        return [], None
+    preferred: str | None = f"/$defs/{definition}" if definition else None
+    found: list[tuple[str, list[str]]] = []
+    pending: list[JsonValue] = [root]
+    while pending:
+        start: JsonValue = pending.pop()
+        if isinstance(start, list):
+            pending.extend(start)
+            continue
+        if not isinstance(start, dict):
+            continue
+        pending.extend(start.values())
+        properties: JsonValue = _follow(root, start, error.relative_schema_path)
+        if isinstance(properties, dict) and any(subschema is False for subschema in properties.values()):
+            names: list[str] = sorted(str(name) for name, subschema in properties.items() if subschema is False)
+            found.append((nodes.get(id(start), ""), names))
+    if not found:
+        return [], None
+    found.sort(key=lambda match: (preferred is None or not match[0].startswith(preferred), match[0]))
+    return found[0][1], found[0][0]
+
+
 def _object_names(error: ValidationError) -> list[str]:
     """Name the fields an object-shape failure is about, as the schema rule decides them.
 
@@ -487,14 +570,20 @@ def _branches(error: ValidationError) -> list[str]:
     return stated
 
 
-def _short(error: ValidationError) -> str:
+def _short(error: ValidationError, forbidden: list[str] | None = None) -> str:
     """State what failed at an error's path, with every field name the failure is about.
+
+    Args:
+        error: The failure.
+        forbidden: The fields a ``false`` subschema forbids at the path (:func:`_forbidden_fields`).
 
     Returns:
         ``<path>: <what failed>``.
 
     """
     path: str = "/".join(str(part) for part in error.absolute_path) or "<root>"
+    if forbidden:
+        return f"{path}: field(s) {', '.join(repr(name) for name in forbidden)} not allowed here"
     names: list[str] = _object_names(error)
     if error.validator == "required" and names:
         return f"{path}: missing required field(s) {', '.join(repr(name) for name in names)}"
@@ -504,7 +593,14 @@ def _short(error: ValidationError) -> str:
     return f"{path}: {message if len(message) <= _QUOTE_LIMIT else message[: _QUOTE_LIMIT - 1] + '…'}"
 
 
-def explain(error: ValidationError, *, nodes: Mapping[int, str], location: Path | None, definition: str | None) -> str:
+def explain(
+    error: ValidationError,
+    *,
+    nodes: Mapping[int, str],
+    location: Path | None,
+    definition: str | None,
+    root: JsonValue = None,
+) -> str:
     """State one schema failure so the writer of the value can correct it without guessing.
 
     The line carries the path in the value, the field names the failure is about (the fields
@@ -518,23 +614,33 @@ def explain(error: ValidationError, *, nodes: Mapping[int, str], location: Path 
         nodes: ``_schema_nodes`` of the schema the value was validated against.
         location: The schema file.
         definition: The definition validated against, when the pointer names none.
+        root: The schema validated against; it names the fields a ``false`` subschema forbids,
+            and the conditional that forbids them is quoted as the rule.
 
     Returns:
         One line.
 
     """
-    parts: list[str] = [_short(error)]
+    forbidden: list[str]
+    forbidding: str | None
+    forbidden, forbidding = _forbidden_fields(error, root, nodes, definition)
+    parts: list[str] = [_short(error, forbidden)]
     allowed: str = _allowed(error)
     if allowed:
         parts.append(allowed)
-    parts.append(f"rule: {_quoted({str(error.validator): error.validator_value})}")
-    branches: list[str] = _branches(error)
-    if branches:
-        parts.append("why each option failed: " + " | ".join(branches))
-    if not isinstance(error.instance, dict | list):
-        parts.append(f"value given: {_quoted(error.instance)}")
-    node: str | None = nodes.get(id(error.schema))
-    pointer: str = f"#{node}/{_pointer_part(str(error.validator))}" if node is not None else ""
+    pointer: str
+    if forbidding is not None:
+        parts.append(f"rule: {_quoted(_follow(root, root, _pointer_parts(forbidding)))}")
+        pointer = f"#{forbidding}"
+    else:
+        parts.append(f"rule: {_quoted({str(error.validator): error.validator_value})}")
+        branches: list[str] = _branches(error)
+        if branches:
+            parts.append("why each option failed: " + " | ".join(branches))
+        if not isinstance(error.instance, dict | list):
+            parts.append(f"value given: {_quoted(error.instance)}")
+        node: str | None = nodes.get(id(error.schema))
+        pointer = f"#{node}/{_pointer_part(str(error.validator))}" if node is not None else ""
     named: str | None = _definition_of(pointer) or definition
     where: str = f"schema: {location}{pointer}" if location is not None else f"schema pointer: {pointer or '#'}"
     parts.append(where + (f" (definition {named})" if named else ""))
@@ -572,9 +678,9 @@ def explain_all(
     narrowed.sort(key=_path_order)
     nodes: dict[int, str] = _schema_nodes(root)
     stated: list[str] = [
-        explain(error, nodes=nodes, location=location, definition=definition)
+        explain(error, nodes=nodes, location=location, definition=definition, root=root)
         if index < EXPLAINED_IN_FULL
-        else _short(error)
+        else _short(error, _forbidden_fields(error, root, nodes, definition)[0])
         for index, error in enumerate(narrowed)
     ]
     return list(dict.fromkeys(stated))

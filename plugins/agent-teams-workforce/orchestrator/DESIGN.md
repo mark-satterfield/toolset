@@ -979,7 +979,11 @@ nothing else reviews it.
   one to the next. Analyze writes the state file and `questions.json`, one request per specialist.
   Its acceptance plans one step per request (the specialists run at the same time) and then a
   Decide step, handed every answer and a digest of them (`answers-digest.schema.json`), so the
-  architect reads a few KB per answer instead of each answer file. Decide writes the result; one
+  architect reads a few KB per answer instead of each answer file. Each request's session is told
+  the answer's schema and the rule in its outcome, whichever catalog agent it is. An answer the
+  current contract refuses, written by a session of an earlier definition or contracts, sends
+  its writer's step back to planned when the digest is built (`StaleInputError`), so it is
+  written again to the current contract. Decide writes the result; one
   that asks a second round gets it and one more Decide, and a Decide of round 2 that still asks
   fails the step. A result with no open request plans one `architecture-maintainer` per group
   of arc42 sections whose script-built write request changed, at most three, so each session

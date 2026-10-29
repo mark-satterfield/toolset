@@ -1,4 +1,4 @@
-"""Validate cumulative requirement coverage and confirm fresh execution evidence for it."""
+"""Validate cumulative requirement coverage, prepare a tree for its runs, and confirm fresh evidence for it."""
 
 from __future__ import annotations
 
@@ -20,8 +20,14 @@ from jsonartifact import read_artifact
 KINDS: Final[frozenset[str]] = frozenset({"unit", "contract", "integration", "nonfunctional"})
 EXECUTION_BUDGET_SECONDS: Final[int] = 500
 
-type Mode = Literal["prepare", "check", "validate", "verify"]
-MODES: Final[dict[str, Mode]] = {"prepare": "prepare", "check": "check", "validate": "validate", "verify": "verify"}
+type Mode = Literal["prepare", "check", "validate", "verify", "setup"]
+MODES: Final[dict[str, Mode]] = {
+    "prepare": "prepare",
+    "check": "check",
+    "validate": "validate",
+    "verify": "verify",
+    "setup": "setup",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +41,8 @@ class CliArgs:
     source: list[str]
     approved_plan: str | None
     output: str
+    tree: str | None
+    repos: list[str]
 
 
 def _str(obj: JsonObject, key: str) -> str:
@@ -553,6 +561,32 @@ def execute(plan: JsonObject, folder: Path) -> tuple[list[str], list[JsonValue]]
     return errors, evidence
 
 
+def prepare_tree(plan: JsonObject, tree: Path, repos: list[str], folder: Path) -> tuple[list[str], list[JsonValue]]:
+    """Run, in ``tree``, the setup of every run of the plan that runs in that tree or in one of ``repos``.
+
+    Each command runs once, in plan order, as verify runs it (:func:`_setup_errors`), so a suite
+    run in the tree finds the preconditions the reviewed plan declares.
+
+    Returns:
+        The setup errors and the setup records.
+
+    """
+    state: Execution = Execution(folder=folder, deadline=time.monotonic() + EXECUTION_BUDGET_SECONDS, setups={})
+    root: Path = tree.resolve()
+    held: set[Path] = {root, *(Path(repo).resolve() for repo in repos)}
+    errors: list[str] = []
+    records: list[JsonValue] = []
+    for index, run in enumerate(_objs(plan, "runs")):
+        if Path(_str(run, "repoPath")).resolve() not in held:
+            continue
+        run_errors, run_records = _setup_errors(run, index, root, state)
+        records.extend(run_records)
+        if run_errors:
+            errors.extend(run_errors)
+            break
+    return errors, records
+
+
 def _setup_errors(run: JsonObject, index: int, root: Path, state: Execution) -> tuple[list[str], list[JsonValue]]:
     """Run the run's setup commands in order, each once per repository per verification.
 
@@ -660,19 +694,26 @@ def _parse_args() -> CliArgs:
     parser.add_argument("--source", action="append", default=[])
     parser.add_argument("--approved-plan")
     parser.add_argument("--output", required=True)
+    parser.add_argument("--tree")
+    parser.add_argument("--repo", action="append", default=[])
     args: argparse.Namespace = parser.parse_args()
     mode: object = args.mode
     plan: str | None = _optional_arg(args.plan, "plan")
     ledger: str | None = _optional_arg(args.ledger, "ledger")
     output: str | None = _optional_arg(args.output, "output")
     source: object = args.source
+    repo: object = args.repo
     if plan is None or ledger is None or output is None:
         message: str = "--plan, --ledger and --output are required"
         raise TypeError(message)
     if not isinstance(source, list) or not all(isinstance(s, str) for s in source):
         message = "--source: expected strings"
         raise TypeError(message)
+    if not isinstance(repo, list) or not all(isinstance(r, str) for r in repo):
+        message = "--repo: expected strings"
+        raise TypeError(message)
     sources: list[str] = [s for s in source if isinstance(s, str)]
+    repos: list[str] = [r for r in repo if isinstance(r, str)]
     resolved: Mode | None = MODES.get(mode) if isinstance(mode, str) else None
     if resolved is not None:
         return CliArgs(
@@ -683,6 +724,8 @@ def _parse_args() -> CliArgs:
             source=sources,
             approved_plan=_optional_arg(args.approved_plan, "approved-plan"),
             output=output,
+            tree=_optional_arg(args.tree, "tree"),
+            repos=repos,
         )
     message = f"unsupported mode: {mode}"
     raise TypeError(message)
@@ -708,6 +751,22 @@ def _check(plan: JsonObject, previous: JsonObject | None, args: CliArgs) -> None
     _emit({"ok": not errors, "errors": error_values, "path": args.output})
 
 
+def _setup(plan: JsonObject, args: CliArgs) -> None:
+    """Run the setup the plan declares for one tree (:func:`prepare_tree`) and report it.
+
+    Raises:
+        ValueError: No ``--tree`` was given.
+
+    """
+    if args.tree is None:
+        message: str = "setup requires --tree"
+        raise ValueError(message)
+    errors, records = prepare_tree(plan, Path(args.tree), args.repos, Path(args.output).parent)
+    error_values: list[JsonValue] = [*errors]
+    write(args.output, {"ok": not errors, "errors": error_values, "setup": records})
+    _emit({"ok": not errors, "errors": error_values, "path": args.output, "setup": records})
+
+
 def main() -> None:
     """Prepare, validate or verify a cumulative regression plan and report the result as JSON."""
     args: CliArgs = _parse_args()
@@ -729,6 +788,9 @@ def main() -> None:
         )
         return
     plan: JsonObject = read(args.plan)
+    if args.mode == "setup":
+        _setup(plan, args)
+        return
     if args.mode == "check":
         _check(plan, previous, args)
         return
