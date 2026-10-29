@@ -38,6 +38,7 @@ from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
 from orchestrator.core.io import json_object, write_json
 from orchestrator.core.journal_steps import NewStep, StepGroup
+from orchestrator.core.models import StaleInputError
 from orchestrator.flows.architecture_files import (
     ARCHITECT,
     LABEL_ANSWER,
@@ -278,29 +279,40 @@ def write_digest(run: StepRun, helpers: Path) -> Path | None:
 
     Each answer is read with :func:`checked_output`: an answer the current contract refuses,
     written by a session made under another agent definition or contracts, sends its writer's
-    step to run again (``StaleInputError``) instead of failing the architect's step.
+    step to run again (``StaleInputError``) instead of failing the architect's step. Every answer
+    is read before that is raised, and the error names the first writer in walk order with the
+    evidence of every stale answer: the journal runner sets that step and every step after it
+    back to planned, so every stale answer's writer runs again in the one replan.
 
     Returns:
         The digest file, in the helpers folder and named for the step; None when the step is
         handed no answer.
+
+    Raises:
+        StaleInputError: At least one answer was written to an earlier contract.
 
     """
     answers: list[Path] = handed_answers(run)
     if not answers:
         return None
     agents: dict[str, str] = {**_answered_before(run), **_answer_agents(run)}
-    digest: AnswersDigest = {
-        "answers": [
-            _digested(
-                agents.get(str(path), "unknown"),
-                path,
-                checked_output(run, path, validate_specialist_answer, _answer_writer(run, path)),
-            )
-            for path in answers
-        ],
-    }
+    digested: list[DigestedAnswer] = []
+    stale: list[StaleInputError] = []
+    path: Path
+    for path in answers:
+        try:
+            answer: SpecialistAnswer = checked_output(run, path, validate_specialist_answer, _answer_writer(run, path))
+        except StaleInputError as found:
+            stale.append(found)
+            continue
+        digested.append(_digested(agents.get(str(path), "unknown"), path, answer))
+    if stale:
+        order: list[str] = [step["id"] for step in step_journal.steps_in_order(run.journal())]
+        first: StaleInputError = min(stale, key=lambda found: order.index(found.writer))
+        raise StaleInputError(first.stage, first.writer, tuple(text for found in stale for text in found.evidence))
+    digest: AnswersDigest = {"answers": digested}
     validate_answers_digest(digest)
-    path: Path = helpers / f"{DIGEST_PREFIX}{run.step['id'][:ID_LENGTH]}.json"
+    path = helpers / f"{DIGEST_PREFIX}{run.step['id'][:ID_LENGTH]}.json"
     write_json(path, json_object(digest))
     return path
 
