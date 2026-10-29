@@ -5,6 +5,10 @@ manifests, configuration files, workflow files) and from no list of repositories
 scanned are the ones git reports as tracked or untracked-but-not-ignored, without virtual
 environments, `node_modules`, build output and `.worktrees/`.
 
+A caller can name managed paths: files, or folders, that a sync writes into the repository (the
+shared tooling and the canonical checker files). They are still read as configuration but give no
+file-type evidence, so a copy of shared tooling never makes a repository hold its language.
+
 Every checker configuration carries a fingerprint: a hash of its normalised content (parsed
 and re-serialised when the format allows, otherwise its non-blank lines stripped), so identical
 copies in different repositories group together.
@@ -224,12 +228,27 @@ def _kind(rel: str) -> str | None:
     return NAME_KINDS.get(path.name) or SUFFIX_KINDS.get(path.suffix.lower())
 
 
-def read_tree(root: Path, git_output: GitOutput) -> Tree:
+def _is_managed(rel: str, managed: Sequence[str]) -> bool:
+    """Report whether a path is a managed file or lies inside a managed folder.
+
+    Args:
+        rel: A path relative to the tree root.
+        managed: The managed paths, relative to the tree root.
+
+    Returns:
+        True when the path is managed.
+
+    """
+    return any(rel == path or rel.startswith(f"{path}/") for path in managed)
+
+
+def read_tree(root: Path, git_output: GitOutput, managed: Sequence[str] = ()) -> Tree:
     """List the files of a working tree that git tracks or does not ignore.
 
     Args:
         root: The working tree.
         git_output: Runs git in a folder and returns its output, or None when git fails.
+        managed: Paths a sync writes into the tree; their files are listed but not counted as kinds.
 
     Returns:
         The tree.
@@ -243,7 +262,8 @@ def read_tree(root: Path, git_output: GitOutput) -> Tree:
         message: str = f"git ls-files failed in {root}"
         raise ValueError(message)
     files: tuple[str, ...] = tuple(sorted({rel for rel in listing.split("\0") if _is_scanned(rel)}))
-    kinds: Counter[str] = Counter(kind for kind in map(_kind, files) if kind)
+    counted: list[str] = [rel for rel in files if not _is_managed(rel, managed)]
+    kinds: Counter[str] = Counter(kind for kind in map(_kind, counted) if kind)
     return Tree(root, files, kinds)
 
 
@@ -935,20 +955,21 @@ def find_gaps(technologies: Iterable[Technology], tools: Iterable[str]) -> tuple
     )
 
 
-def scan_repository(repo: str, root: Path, git_output: GitOutput) -> RepoScan:
+def scan_repository(repo: str, root: Path, git_output: GitOutput, managed: Sequence[str] = ()) -> RepoScan:
     """Scan one working tree.
 
     Args:
         repo: The repository name.
         root: The working tree.
         git_output: Runs git in a folder and returns its output, or None when git fails.
+        managed: Paths a sync writes into the tree, which give no file-type evidence.
 
     Returns:
         The scan; a tree git cannot list comes back with its error and nothing else.
 
     """
     try:
-        tree: Tree = read_tree(root, git_output)
+        tree: Tree = read_tree(root, git_output, managed)
     except ValueError as error:
         return RepoScan(repo, str(root), (), (), (), (), str(error))
     manifests: Manifests = read_manifests(tree)

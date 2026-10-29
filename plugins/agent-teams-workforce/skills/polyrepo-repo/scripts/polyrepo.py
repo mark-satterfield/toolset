@@ -175,7 +175,7 @@ from naming_command import (
     type_problem,
 )
 from rulesets import RulesetSpec, RulesetSpecError, applies, load_rulesets, workflow_checks
-from technology_scan import scan_markdown, scan_repository, summarize, summary_markdown
+from technology_scan import RepoScan, scan_markdown, scan_repository, summarize, summary_markdown
 from tooling_sync import Copy, ToolingSpec, ToolingSyncError
 from tooling_sync import apply as apply_tooling
 from tooling_sync import copy_of as tooling_copy_of
@@ -8014,6 +8014,27 @@ class ChecksSync:
     spec: ChecksSpec
     exclude: frozenset[str]
     exclude_spaces: frozenset[str]
+    tooling: ToolingSpec | None
+
+    def managed(self, name: str) -> tuple[str, ...]:
+        """List the paths a sync writes into a repo: its shared tooling copies and the canonical checker files.
+
+        The scan reads none of them as evidence of a technology, so a copy of shared tooling (a script
+        in another language) or a checker file the sync itself wrote never puts a technology's checks
+        into a repo that holds none of its own sources.
+
+        Returns:
+            Repository-relative files and folders.
+
+        """
+        tooling = self.tooling
+        copies = (
+            [entry.target for entry in tooling.files if name not in entry.exclude]
+            if tooling is not None and name not in tooling.exclude
+            else []
+        )
+        canonical = [dest for technology in self.spec.technologies.values() for dest in technology.files]
+        return tuple(sorted({*copies, *canonical}))
 
     def applies_to(self, name: str, space: str) -> bool:
         """Say whether a repo receives the canonical checks.
@@ -8051,6 +8072,7 @@ def _checks_sync(cfg: Config) -> ChecksSync | None:
         spec,
         frozenset(_strs(section.get("exclude") or [], "checks_sync exclude")),
         frozenset(_strs(section.get("exclude_spaces") or [], "checks_sync exclude_spaces")),
+        _tooling_spec(cfg),
     )
 
 
@@ -8064,7 +8086,7 @@ def _checks_plan(sync: ChecksSync, path: Path, name: str) -> RepoPlan:
         PolyrepoError: when the tree cannot be scanned or a repository file cannot be parsed.
 
     """
-    scan = scan_repository(name, path, _git_output)
+    scan = scan_repository(name, path, _git_output, sync.managed(name))
     if scan.error:
         raise PolyrepoError(scan.error)
     try:
@@ -9082,8 +9104,13 @@ def cmd_tech_stacks(args: argparse.Namespace, cfg: Config) -> int:
 
     """
     targets = _tech_stack_targets(cfg, args.repo, args.space)
+    sync = _checks_sync(cfg)
+
+    def scan(target: tuple[str, Path]) -> RepoScan:
+        return scan_repository(target[0], target[1], _git_output, sync.managed(target[0]) if sync else ())
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        scans = list(ex.map(lambda target: scan_repository(target[0], target[1], _git_output), targets))
+        scans = list(ex.map(scan, targets))
     failed = any(scan.error for scan in scans)
     if args.summary:
         summary = summarize(scans)
