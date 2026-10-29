@@ -51,7 +51,12 @@ it and say only what goes in each field; the agent writes exactly the shape that
 and no other fields. `node scripts/check-agent-output-formats.mjs` (run by the pre-commit hook)
 checks every pairing, and every structured-output schema a workflow dispatch hands the runtime,
 against the agent definitions and those skills, and fails when a text calls a name a field that
-the output does not define. Every session an orchestrator flow launches with an `AgentLaunch`
+the output does not define. A text names an output field only in backticks: the check fails on a
+camelCase or snake_case name outside backticks that is a field of any schema or follows a write
+instruction ("set fooBar"), on a plain word called a field ("add a confidence field"), on a
+field of the output named in plain words in an instruction to put it on each object ("include
+its source with each reason"), and on a single plain word put on each object that the output
+does not define but another schema does ("give each reason a severity"). Every session an orchestrator flow launches with an `AgentLaunch`
 must be named, by the function that builds it, in the `launches` of a pairing, so a new
 validated output cannot be added without its pairing. A session any catalog agent may run (an
 answer to the solutions architect's request) carries its contract in its brief: that pairing's

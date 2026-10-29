@@ -101,7 +101,8 @@ Notes on the diagram:
   file output with its agents, its schema and the code that makes the pairing, and
   `scripts/check-agent-output-formats.mjs` checks every pairing, the structured-output schemas
   the workflows dispatch included, and that every session an orchestrator flow validates is
-  paired, in the pre-commit hook, so a mismatch fails the commit. A request's answer, which any
+  paired, in the pre-commit hook, so a mismatch fails the commit. A text names an output field
+  only in backticks, so a field named in plain words, or an invented one, fails the check too. A request's answer, which any
   catalog agent may write, carries its schema and the rule in the session's brief. An answer
   written to an earlier contract by a session of an earlier definition sends its writer's step to
   run again when the architect's Decide step reads it

@@ -25,7 +25,12 @@
 //   brace shape `{x, y}` no object of the schema has, names in backticks a field another output
 //   defines but this one does not, calls a backticked name a field ("the `x` field", "set `x` on
 //   each reason") that the output does not define, or holds a JSON example of the output with a
-//   field the schema does not define.
+//   field the schema does not define;
+// - outside backticks, the text writes a camelCase or snake_case name that is a field of any
+//   schema or follows a write instruction ("set fooBar"), calls a plain word a field ("add a
+//   confidence field"), names a field of the output in plain words in an instruction to put it on
+//   each object ("include its source with each reason"), or puts on each object a single plain
+//   word the output does not define and another schema does ("give each reason a severity").
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -280,9 +285,54 @@ const FILE_NAME = /\.(json|md|mjs|js|cjs|py|ya?ml|txt)$/
 // sets on an object: "set `x` on each reason", "add `x` to every entry".
 const NAMED_FIELD = /`([a-z][A-Za-z0-9]*)`\s+(?:field|key|property|member)s?\b|\b(?:field|key|property|member)s?\s+`([a-z][A-Za-z0-9]*)`|\b(?:set|add|include|fill in|populate)\s+(?:an?\s+|the\s+)?`([a-z][A-Za-z0-9]*)`(?=\s+(?:on|to|in|for)\s+(?:each|every|the|its|an?)\b)/g
 const PATH = /^([a-z][A-Za-z0-9]*)((?:\[\d*\])?(?:\.[a-z][A-Za-z0-9]*(?:\[\d*\])?)+)$/
+// A name written as an identifier (camelCase or snake_case) outside backticks, not part of a path,
+// a file name, a URL or a hyphenated name.
+const BARE_IDENTIFIER = /(?<![\w/.:@#$-])([a-z][a-z0-9]*(?:[A-Z][a-z0-9]*)+|[a-z][a-z0-9]*(?:_[a-z0-9]+)+)(?![\w/(-]|\.\w)/g
+// A word the text calls a field outside backticks: "add a confidence field", "set the severity key".
+const BARE_NAMED_FIELD = /\b(?:add|set|include|write|record|give|fill in|populate|put|attach)\s+(?:(?:an?|the|its|their|one|each|every|a new)\s+)?([a-z][A-Za-z0-9_]*)\s+(?:field|key|property|member)s?\b/gi
+// An instruction to put something on each object of the output: "include its source with each reason".
+// "give each reason a severity", "record the severity of each reason".
+const GIVE_EACH = /\b(?:give|mark|tag|label)\s+(?:each|every)\s+[a-z]+\s+(?:an?|its)\s+([a-z]+)\b/gi
+const OF_EACH = /\b(?:record|state|write|set|include|give)\s+(?:the|its)\s+([a-z]+)\s+of\s+(?:each|every)\b/gi
+const DISTRIBUTED = /\b(?:add|set|include|attach|give|record|put|write|state|carry)\s+((?:[A-Za-z]+\s+){1,3}?)(?:to|on|in|with|for|onto|into)\s+(?:each|every|all)\b/gi
+// A write instruction just before a name: "set fooBar", "add a fooBar".
+const WRITE_BEFORE = /\b(?:add|set|include|write|record|give|fill in|populate|put|attach)\s+(?:(?:an?|the|its|their|one|each|every)\s+)?$/i
+const FILLER = new Set(['a', 'an', 'the', 'its', 'their', 'one', 'them', 'it', 'this', 'that', 'these', 'those', 'each', 'every', 'own', 'new', 'and', 'or'])
+
+// Every property name any schema of the plugin defines, so a plain word that names a field is known.
+const SCHEMA_PROPERTIES = new Set()
+function collectProperties(node) {
+  if (Array.isArray(node)) { node.forEach(collectProperties); return }
+  if (!node || typeof node !== 'object') return
+  if (node.properties && typeof node.properties === 'object' && !Array.isArray(node.properties)) {
+    for (const name of Object.keys(node.properties)) SCHEMA_PROPERTIES.add(name)
+  }
+  Object.values(node).forEach(collectProperties)
+}
+for (const skill of readdirSync(path.join(ROOT, 'skills'))) {
+  const folder = path.join(ROOT, 'skills', skill, 'schemas')
+  if (!existsSync(folder)) continue
+  for (const file of readdirSync(folder).filter(f => f.endsWith('.json'))) collectProperties(schemaDocument(`skills/${skill}/schemas/${file}`))
+}
+
+// The field names a plain word may stand for: itself, its plural or singular, and the word joined
+// in camelCase to the word after it.
+function fieldForms(words, index) {
+  const word = words[index].toLowerCase()
+  const forms = [word, `${word}s`, word.replace(/s$/, ''), word.replace(/ies$/, 'y'), `${word.replace(/y$/, '')}ies`]
+  const next = words[index + 1]
+  if (next) forms.push(word + next[0].toUpperCase() + next.slice(1).toLowerCase())
+  return forms
+}
 
 function prose(text) {
   return text.replace(/^```[\s\S]*?^```/gm, '')
+}
+
+// The prose with every backticked span, link target and HTML comment replaced by a mark, so what
+// is left is the text a reader takes as plain words.
+function bare(text) {
+  return prose(text).replace(/<!--[\s\S]*?-->/g, ' ').replace(/\]\([^)]*\)/g, '] ').replace(/`[^`\n]*`/g, ' ¶ ')
 }
 
 function resolvePath(at, segments) {
@@ -364,6 +414,38 @@ function textProblems(text, at, pairing, knownFields, own) {
   for (const named of body.matchAll(NAMED_FIELD)) {
     const token = named[1] || named[2] || named[3]
     if (!own.has(token) && !tolerated.has(token)) fail(`named ${token}`, `\`${token}\` is called a field, but the output defines no field \`${token}\``)
+  }
+  const plain = bare(text)
+  const unquoted = (token) => own.has(token) || tolerated.has(token)
+    ? `${token} names a field of the output outside backticks; write it as \`${token}\``
+    : `${token} is written as a field name outside backticks, and the output defines no field ${token}`
+  for (const identifier of plain.matchAll(BARE_IDENTIFIER)) {
+    const token = identifier[1]
+    const told = WRITE_BEFORE.test(plain.slice(Math.max(0, identifier.index - 60), identifier.index))
+    if (own.has(token) || tolerated.has(token) || SCHEMA_PROPERTIES.has(token) || told) fail(`bare ${token}`, unquoted(token))
+  }
+  for (const named of plain.matchAll(BARE_NAMED_FIELD)) {
+    const word = named[1]
+    if (FILLER.has(word.toLowerCase())) continue
+    fail(`bare ${word}`, unquoted(word))
+  }
+  // A thing put on each object: a word of it that is a field of the output is named in plain
+  // words; a single word that is no field of the output but a field of another schema is an
+  // invented field. A phrase of several words ("the idempotency key") describes a value.
+  const distributedAt = [
+    ...[...plain.matchAll(DISTRIBUTED)].map(match => ({ text: match[0].trim(), words: match[1].trim().split(/\s+/) })),
+    ...[...plain.matchAll(GIVE_EACH), ...plain.matchAll(OF_EACH)].map(match => ({ text: match[0].trim(), words: [match[1]] })),
+  ]
+  for (const { text: said, words } of distributedAt) {
+    const content = words.map((word, index) => ({ word, index })).filter(({ word }) => !FILLER.has(word.toLowerCase()))
+    for (const { word, index } of content) {
+      const forms = fieldForms(words, index)
+      const field = forms.find(form => own.has(form) || tolerated.has(form))
+      if (field) fail(`bare ${word}`, `"${said}" names the field \`${field}\` in plain words; name the field in backticks as the output defines it`)
+      else if (content.length === 1 && forms.some(form => SCHEMA_PROPERTIES.has(form))) {
+        fail(`bare ${word}`, `"${said}" tells the agent to write ${word} on each object, and the output defines no field ${word}`)
+      }
+    }
   }
   let example = 0
   for (const block of text.matchAll(/^```json\n([\s\S]*?)^```/gm)) {

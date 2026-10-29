@@ -118,7 +118,7 @@ is opened only to read such a heading when the TRD's text does not settle a crit
 pack holds the constraints and TRD requirements that bind what the Story builds; read the text
 of an architecture heading only when a criterion turns on it. Cover required behaviour and
 failure and boundary cases without inventing scope or architecture. Preserve any test strategy
-the sources state, in the shape of the testStrategy property (`properties.testStrategy`) in
+the sources state, in the shape `properties.testStrategy` defines in
 artifact-handoff's `schemas/tasks.schema.json`; do not invent values the sources do not state.
 Requirements not checkable by unit tests may be assigned to human testing explicitly.
 

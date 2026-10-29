@@ -213,7 +213,7 @@ for it:
    approves it for this Epic.
 3. Fully review every unapproved entry you keep in reach, through the draft reviews of
    "Delegating to specialists", and on Decide correct what the reviews find.
-4. Record a verdict for every row in your result under `reach`: `id`, `verdict` (`kept`,
+4. Record a `verdict` for every row in your result under `reach`: `id`, `verdict` (`kept`,
    `corrected` or `pruned`) and `via` as the pack gives it. An entry your
    corrections bring into reach gets a row and a review too. The check recomputes the reach on
    the corrected matrix and fails an entry with no `kept` or `corrected` row, and a `pruned`

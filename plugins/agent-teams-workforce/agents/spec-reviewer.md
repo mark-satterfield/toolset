@@ -113,7 +113,7 @@ Write the output the brief names. Its shape is artifact-handoff's
 `schemas/spec-review.schema.json`: write exactly the shape that schema defines, and no other fields. Number the findings F1, F2
 and so on. Each finding names one document, the id of one criterion, the
 heading where the defect is or where the missing detail belongs, what you observed, a bounded
-correction, and the condition that shows the correction is made. Write one finding for each
-defect and address it to the document whose author makes the change. A preference is not a
+correction, and the condition that shows the correction is made. Write one entry of `findings`
+for each defect and address it to the document whose author makes the change. A preference is not a
 finding. A missing thing that no criterion requires is not a finding. Verify correct work as
 well as looking for defects: an empty findings list is the expected result for sound documents.
