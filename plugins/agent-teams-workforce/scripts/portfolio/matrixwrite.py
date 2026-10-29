@@ -91,7 +91,7 @@ from matrixstore import (
     slug,
     update_matrix,
 )
-from strictschema import validator
+from strictschema import explain_all, validator
 
 if TYPE_CHECKING:
     from matrixtraverse import ApprovalScope
@@ -926,8 +926,13 @@ def _shape_failures(document: JsonValue) -> tuple[list[dict[str, JsonValue]], li
             location=CHANGE_SCHEMA_PATH,
         )
         failures.extend(
-            _failure(index, op, f"{'/'.join(str(part) for part in error.absolute_path) or op}: {error.message}")
-            for error in checking.iter_errors(item)
+            _failure(index, op, problem)
+            for problem in explain_all(
+                checking.iter_errors(item),
+                root=checking.schema if isinstance(checking.schema, dict) else None,
+                location=CHANGE_SCHEMA_PATH,
+                definition=definition,
+            )
         )
     return operations, failures
 

@@ -760,6 +760,7 @@ def render(schema: Mapping[str, JsonValue], registry: Mapping[str, JsonValue]) -
         "",
         "import json",
         "import re",
+        "import sys",
         "from dataclasses import dataclass, field",
         "from functools import cache",
         "from pathlib import Path",
@@ -767,10 +768,12 @@ def render(schema: Mapping[str, JsonValue], registry: Mapping[str, JsonValue]) -
         "",
         "from jsonschema import Draft202012Validator",
         "",
+        'sys.path.append(str(Path(__file__).resolve().parents[3] / "scripts" / "portfolio"))',
+        "",
+        "import strictschema",
+        "",
         "if TYPE_CHECKING:",
         "    from collections.abc import Mapping, Sequence",
-        "",
-        "    from jsonschema.exceptions import ValidationError",
         "",
         "type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None",
         *aliases,
@@ -1141,10 +1144,6 @@ REVERSE_NAMES: Final[dict[str, RelationshipKind]] = {rule.reverse: kind for kind
 """The relationship kind each reverse name of a declared kind reports."""
 UNDECLARED_REVERSE_SUFFIX: Final = "Reverse"
 """What follows the name of a relationship kind the registry does not declare in its reverse name."""
-MESSAGE_LIMIT: Final = 300
-"""The most characters of one schema failure a problem line carries."""
-PROBLEMS_SHOWN: Final = 20
-"""The most problems an error message lists."""
 
 
 def entry_kind(text: str) -> EntryKind:
@@ -1293,6 +1292,7 @@ def _attribute_validator(table: str, kind: str, required: Sequence[str]) -> Draf
     one: list[str] = _names(rule.get("requiredOne", []), f"{table}/{kind}/requiredOne")
     if one:
         schema["oneOf"] = [{"required": [name]} for name in one]
+    schema["title"] = f"{REGISTRY_PATH.name}#/{table}/{kind}/attributes"
     return Draft202012Validator(schema)
 
 
@@ -1339,20 +1339,41 @@ def _shape_validator(definition: str | None) -> Draft202012Validator:
     return Draft202012Validator({"$ref": "#/$defs/" + definition, "$defs": definitions})
 
 
-def _failures(validator: Draft202012Validator, value: object) -> list[str]:
-    """Describe every way a value fails a validator.
+def _failures(
+    validator: Draft202012Validator,
+    value: object,
+    location: Path | None,
+    definition: str | None,
+) -> list[str]:
+    """Describe every way a value fails a validator, as ``strictschema.explain_all`` states each one.
+
+    Args:
+        validator: The validator; its schema is the one the failures are located in.
+        value: The decoded value.
+        location: The schema file the validator's schema is, or None for a schema assembled here.
+        definition: The definition validated against, named when a failure's pointer names none.
 
     Returns:
-        One "<path>: <message>" per failure, in document order; empty when the value conforms.
+        One line per failure, in path order: the path, the field names it is about, the fields
+        allowed there, the schema rule quoted and where the rule is; empty when the value conforms.
 
     """
-    problems: list[tuple[list[str], str]] = []
-    error: ValidationError
-    for error in validator.iter_errors(value):
-        path: list[str] = [str(part) for part in error.absolute_path]
-        detail: str = error.message if len(error.message) <= MESSAGE_LIMIT else error.message[:MESSAGE_LIMIT] + "..."
-        problems.append((path, f"{'/'.join(path) or '<root>'}: {detail}"))
-    return [text for _, text in sorted(problems)]
+    root: JsonValue = validator.schema if isinstance(validator.schema, dict) else None
+    return strictschema.explain_all(validator.iter_errors(value), root=root, location=location, definition=definition)
+
+
+def _attribute_failures(validator: Draft202012Validator, value: object) -> list[str]:
+    """Describe every way the attributes of an entry or a relationship fail their kind.
+
+    The validator's schema is assembled from the kinds registry, so each failure names the
+    registry's attributes of the kind (the schema's ``title``) as its definition.
+
+    Returns:
+        One line per failure, as :func:`_failures` states it.
+
+    """
+    title: object = validator.schema.get("title") if isinstance(validator.schema, dict) else None
+    return _failures(validator, value, None, title if isinstance(title, str) else None)
 
 
 def schema_problems(value: object, definition: str | None = None) -> list[str]:
@@ -1363,10 +1384,11 @@ def schema_problems(value: object, definition: str | None = None) -> list[str]:
         definition: The $defs entry to validate against; None validates a matrix file.
 
     Returns:
-        One "<path>: <message>" per failure, in document order; empty when the value conforms.
+        One line per failure, in path order, as ``strictschema.explain_all`` states it; empty when
+        the value conforms.
 
     """
-    return _failures(_shape_validator(definition), value)
+    return _failures(_shape_validator(definition), value, SCHEMA_PATH, definition)
 
 
 def definition_problems(name: str, value: object) -> list[str]:
@@ -1377,7 +1399,7 @@ def definition_problems(name: str, value: object) -> list[str]:
         value: The decoded value.
 
     Returns:
-        One "<path>: <message>" per failure; empty when the value conforms.
+        One line per failure, as ``strictschema.explain_all`` states it; empty when the value conforms.
 
     Raises:
         ValueError: The registry defines no such definition.
@@ -1387,7 +1409,8 @@ def definition_problems(name: str, value: object) -> list[str]:
     if name not in definitions:
         message: str = f"the matrix kinds registry defines no {name!r}"
         raise ValueError(message)
-    return _failures(Draft202012Validator({"$ref": "#/$defs/" + name, "$defs": definitions}), value)
+    validator: Draft202012Validator = Draft202012Validator({"$ref": "#/$defs/" + name, "$defs": definitions})
+    return _failures(validator, value, REGISTRY_PATH, name)
 
 
 def entry_problems(entry: Entry) -> list[str]:
@@ -1414,7 +1437,8 @@ def entry_problems(entry: Entry) -> list[str]:
     if rule.purpose_required and not entry.purpose.strip():
         problems.append(f"{entry.id}: a {entry.kind} must state its purpose")
     problems.extend(
-        f"{entry.id}: {failure}" for failure in _failures(_entry_validator(entry.kind), dict(entry.attributes))
+        f"{entry.id}: {failure}"
+        for failure in _attribute_failures(_entry_validator(entry.kind), dict(entry.attributes))
     )
     return problems
 
@@ -1457,7 +1481,7 @@ def relationship_problems(relationship: Relationship) -> list[str]:
         problems.append(f"{label}: a {relationship.kind} relationship is always on the {rule.side} side")
     problems.extend(
         f"{label}: {failure}"
-        for failure in _failures(_relationship_validator(relationship.kind), dict(relationship.attributes))
+        for failure in _attribute_failures(_relationship_validator(relationship.kind), dict(relationship.attributes))
     )
     return problems
 
@@ -1475,8 +1499,11 @@ def _raise_unless_shaped(value: object, definition: str | None, where: str) -> d
     problems: list[str] = schema_problems(value, definition)
     message: str
     if problems:
-        shown: str = "; ".join(problems[:PROBLEMS_SHOWN])
-        message = f"{where} does not satisfy the matrix schema ({len(problems)} problems): {shown}"
+        rule: str = SCHEMA_PATH.name + (f"#/$defs/{definition}" if definition else "")
+        message = (
+            f"{where} does not satisfy the matrix schema ({rule}): "
+            f"{len(problems)} problem(s), one per line below\\n" + "\\n".join(problems)
+        )
         raise MatrixError(message)
     try:
         typed: JsonValue = json_value(value)

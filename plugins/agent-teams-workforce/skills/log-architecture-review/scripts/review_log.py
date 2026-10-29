@@ -30,7 +30,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal, TypedDict, TypeIs
 
 from jsonschema import Draft202012Validator
-from jsonschema.exceptions import best_match
+
+sys.path.append(str(Path(__file__).resolve().parents[3] / "scripts" / "portfolio"))
+
+import strictschema
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -167,7 +170,9 @@ def schema_problems(value: object, definition: str | None = None) -> list[str]:
         definition: The ``$defs`` entry to validate against; None for the whole log.
 
     Returns:
-        One "<path>: <message>" per failure, in document order; empty when the value conforms.
+        One line per failure, in path order, as ``strictschema.explain_all`` states it: the path,
+        the field names it is about, the fields allowed there, the schema rule quoted and the
+        schema file with the pointer and definition of the rule; empty when the value conforms.
 
     Raises:
         ReviewLogError: The schema defines no such entry.
@@ -181,12 +186,22 @@ def schema_problems(value: object, definition: str | None = None) -> list[str]:
             message: str = f"the review log schema defines no {definition!r}"
             raise ReviewLogError(message)
         target = {"$ref": "#/$defs/" + definition, "$defs": definitions}
-    found: list[tuple[list[str], str]] = []
-    for error in Draft202012Validator(target).iter_errors(value):
-        relevant = best_match([error]) or error
-        path: list[str] = [str(part) for part in relevant.absolute_path]
-        found.append((path, f"{'/'.join(path) or '<root>'}: {relevant.message}"))
-    return [text for _, text in sorted(found)]
+    return strictschema.explain_all(
+        Draft202012Validator(target).iter_errors(value),
+        root=target,
+        location=SCHEMA_PATH,
+        definition=definition,
+    )
+
+
+def _listed(problems: list[str]) -> str:
+    """Render schema problems for an error message.
+
+    Returns:
+        How many there are, then each one on its own line.
+
+    """
+    return f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
 
 
 def is_review_log(value: object) -> TypeIs[ReviewLog]:
@@ -233,7 +248,9 @@ def load_log(path: Path) -> ReviewLog:
     decoded: object = read_log(path)
     if is_review_log(decoded):
         return decoded
-    message: str = f"the review log {path} does not satisfy its schema: " + "; ".join(schema_problems(decoded))
+    message: str = f"the review log {path} does not satisfy its schema ({SCHEMA_PATH.name}): " + _listed(
+        schema_problems(decoded),
+    )
     raise ReviewLogError(message)
 
 
@@ -337,7 +354,9 @@ def _entry(text: str, definition: str) -> dict[str, JsonValue]:
         raise ReviewLogError(message) from error
     failures: list[str] = schema_problems(decoded, definition)
     if failures or not isinstance(decoded, dict):
-        message = f"the entry does not satisfy {definition}: " + "; ".join(failures)
+        message = f"the entry does not satisfy {definition} ({SCHEMA_PATH.name}#/$defs/{definition}): " + _listed(
+            failures,
+        )
         raise ReviewLogError(message)
     return decoded
 
@@ -376,7 +395,9 @@ def _change(path: Path, member: str, entry: dict[str, JsonValue], key: str | Non
         )
         log[member] = list(_replaced(entries, entry, key))
     if not is_review_log(log):
-        message: str = "the change leaves the review log unsatisfied: " + "; ".join(schema_problems(log))
+        message: str = f"the change leaves the review log unsatisfied ({SCHEMA_PATH.name}): " + _listed(
+            schema_problems(log),
+        )
         raise ReviewLogError(message)
     _write(path, log)
     return log

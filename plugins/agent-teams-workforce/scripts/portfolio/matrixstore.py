@@ -93,8 +93,8 @@ RESOURCE_EVENTBRIDGE_RULE: Final = "eventbridge-rule"
 """The resource type of an EventBridge rule: it belongs to one bus, matches events and routes them to targets."""
 ATTR_MATCHES_ALL_EVENTS: Final = "matchesAllEvents"
 """The rule attribute that says its event pattern matches every event on its bus."""
-PROBLEMS_SHOWN: Final = 20
-"""The most problems an error message lists."""
+IDS_SHOWN: Final = 20
+"""The most entry ids a refusal to remove a stack lists."""
 ATTR_HEADING_HASHES: Final = "headingHashes"
 """The document attribute that holds the hash of each heading's own text, by heading."""
 ATTR_HEADINGS: Final = "headings"
@@ -446,8 +446,8 @@ def _raise_problems(problems: list[str], where: str) -> None:
 
     """
     if problems:
-        shown: str = "; ".join(problems[:PROBLEMS_SHOWN])
-        message: str = f"{where} does not conform ({len(problems)} problems): {shown}"
+        listed: str = "\n".join(problems)
+        message: str = f"{where} does not conform: {len(problems)} problem(s), one per line below\n{listed}"
         raise MatrixError(message)
 
 
@@ -1169,7 +1169,7 @@ class Matrix:
         if named and not held:
             message: str = (
                 f"{entry_id} cannot be removed alone: the ids of {len(named)} entries name it "
-                f"({', '.join(named[:PROBLEMS_SHOWN])}); remove it with what it holds"
+                f"({', '.join(named[:IDS_SHOWN])}); remove it with what it holds"
             )
             raise MatrixRefusedError(message)
         removed: dict[EntryId, None] = {entry_id: None}
