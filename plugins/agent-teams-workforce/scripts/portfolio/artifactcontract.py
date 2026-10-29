@@ -49,6 +49,7 @@ from jsonartifact import (
     checkpoint_report,
     decode,
     read_checkpoint,
+    require_schema,
     schema_from_option,
     write_atomic,
 )
@@ -71,12 +72,13 @@ def validate_candidate(candidate: Path, schema: JsonObject) -> JsonValue:
     """Validate the candidate artifact against its schema.
 
     Returns:
-        The candidate value.
+        The candidate value; a candidate the schema refuses raises ``SchemaProblemsError`` from
+        ``require_schema``, every problem stated in full.
 
     """
     Draft202012Validator.check_schema(schema)
     value: JsonValue = load_json(candidate)
-    Draft202012Validator(schema).validate(value)
+    require_schema(value, schema, str(candidate))
     return value
 
 

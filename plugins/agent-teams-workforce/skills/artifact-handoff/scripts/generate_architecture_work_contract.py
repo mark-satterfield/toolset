@@ -344,11 +344,15 @@ def render(schema: Mapping[str, object]) -> str:
         '"""',
         "",
         "import json",
+        "import sys",
         "from pathlib import Path",
         "from typing import Final, Literal, NotRequired, TypedDict, TypeIs",
         "",
         "from jsonschema import Draft202012Validator",
-        "from jsonschema.exceptions import best_match",
+        "",
+        'sys.path.append(str(Path(__file__).resolve().parents[3] / "scripts" / "portfolio"))',
+        "",
+        "import strictschema",
         "",
         "type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None",
         *sections.vocabularies,
@@ -426,7 +430,9 @@ def schema_problems(value: object, definition: str) -> list[str]:
         definition: The $defs entry to validate against.
 
     Returns:
-        One "<path>: <message>" per failure, in document order; empty when the value conforms.
+        One line per failure, in path order, as ``strictschema.explain_all`` states it: the path,
+        the field names it is about, the fields allowed there, the schema rule quoted and the
+        schema file with the pointer and definition of the rule; empty when the value conforms.
 
     Raises:
         ValueError: The schema defines no such entry.
@@ -437,12 +443,12 @@ def schema_problems(value: object, definition: str) -> list[str]:
         message: str = f"architecture work schema defines no {definition!r}"
         raise ValueError(message)
     target: dict[str, JsonValue] = {"$ref": "#/$defs/" + definition, "$defs": definitions}
-    problems: list[tuple[list[str], str]] = []
-    for error in Draft202012Validator(target).iter_errors(value):
-        relevant = best_match([error]) or error
-        path: list[str] = [str(part) for part in relevant.absolute_path]
-        problems.append((path, f"{'/'.join(path) or '<root>'}: {relevant.message}"))
-    return [text for _, text in sorted(problems)]
+    return strictschema.explain_all(
+        Draft202012Validator(target).iter_errors(value),
+        root=target,
+        location=ARCHITECTURE_RESULT_SCHEMA_PATH,
+        definition=definition,
+    )
 '''
 
 READER: Final[str] = '''
@@ -469,8 +475,12 @@ def validate_@SUFFIX@(value: object, where: str = "@RECORD@") -> @RECORD@:
     """
     if is_@SUFFIX@(value):
         return value
-    problems: str = "; ".join(schema_problems(value, "@RECORD@"))
-    message: str = f"{where} does not satisfy @RECORD@: {problems}"
+    problems: list[str] = schema_problems(value, "@RECORD@")
+    rule: str = f"{ARCHITECTURE_RESULT_SCHEMA_PATH.name}#/$defs/@RECORD@"
+    message: str = (
+        f"{where} does not satisfy @RECORD@ ({rule}): "
+        f"{len(problems)} problem(s), one per line below\\n" + "\\n".join(problems)
+    )
     raise ArchitectureWorkError(message)'''
 
 

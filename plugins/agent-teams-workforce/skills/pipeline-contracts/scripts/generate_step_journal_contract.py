@@ -457,12 +457,16 @@ def render(schema: Mapping[str, JsonValue]) -> str:
         "",
         "import json",
         "import re",
+        "import sys",
         "from functools import lru_cache",
         "from pathlib import Path",
         "from typing import Final, Literal, NewType, NotRequired, TypedDict, TypeIs",
         "",
         "from jsonschema import Draft7Validator",
-        "from jsonschema.exceptions import best_match",
+        "",
+        'sys.path.append(str(Path(__file__).resolve().parents[3] / "scripts" / "portfolio"))',
+        "",
+        "import strictschema",
         "",
         "type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None",
         *alias_lines,
@@ -543,7 +547,9 @@ def schema_problems(value: object, definition: str | None = None) -> list[str]:
         definition: The definitions entry to validate against; None validates a journal.
 
     Returns:
-        One "<path>: <message>" per failure, in document order; empty when the value conforms.
+        One line per failure, in path order, as ``strictschema.explain_all`` states it: the path,
+        the field names it is about, the fields allowed there, the schema rule quoted and the
+        schema file with the pointer and definition of the rule; empty when the value conforms.
 
     Raises:
         ValueError: The schema defines no such entry.
@@ -557,12 +563,23 @@ def schema_problems(value: object, definition: str | None = None) -> list[str]:
             message: str = f"step journal schema defines no {definition!r}"
             raise ValueError(message)
         target = {"$ref": "#/definitions/" + definition, "definitions": definitions}
-    problems: list[tuple[list[str], str]] = []
-    for error in Draft7Validator(target).iter_errors(value):
-        relevant = best_match([error]) or error
-        path: list[str] = [str(part) for part in relevant.absolute_path]
-        problems.append((path, f"{'/'.join(path) or '<root>'}: {relevant.message}"))
-    return [text for _, text in sorted(problems)]
+    return strictschema.explain_all(
+        Draft7Validator(target).iter_errors(value),
+        root=target,
+        location=SCHEMA_PATH,
+        definition=definition,
+    )
+
+
+def _refusal(where: str, definition: str | None, problems: list[str]) -> str:
+    """State why a value was refused: the rule it fails, then each problem on its own line.
+
+    Returns:
+        The message of the ``StepJournalError``.
+
+    """
+    rule: str = f"{SCHEMA_PATH.name}#/definitions/{definition}" if definition is not None else SCHEMA_PATH.name
+    return f"{where} does not satisfy {rule}: {len(problems)} problem(s), one per line below\\n" + "\\n".join(problems)
 
 
 def is_journal(value: object) -> TypeIs[Journal]:
@@ -617,7 +634,7 @@ def validate_journal(value: object, where: str = "step journal") -> Journal:
     """
     if is_journal(value):
         return value
-    message: str = f"{where} does not satisfy the step journal schema: " + "; ".join(schema_problems(value))
+    message: str = _refusal(where, None, schema_problems(value))
     raise StepJournalError(message)
 
 
@@ -633,7 +650,7 @@ def validate_artifact(value: object, where: str = "artifact") -> Artifact:
     """
     if is_artifact(value):
         return value
-    message: str = f"{where} does not satisfy artifact: " + "; ".join(schema_problems(value, "artifact"))
+    message: str = _refusal(where, "artifact", schema_problems(value, "artifact"))
     raise StepJournalError(message)
 
 
@@ -649,7 +666,7 @@ def validate_step_plan(value: object, where: str = "step plan") -> StepPlan:
     """
     if is_step_plan(value):
         return value
-    message: str = f"{where} does not satisfy stepPlan: " + "; ".join(schema_problems(value, "stepPlan"))
+    message: str = _refusal(where, "stepPlan", schema_problems(value, "stepPlan"))
     raise StepJournalError(message)
 
 
@@ -665,7 +682,7 @@ def validate_step_plans(value: object, where: str = "step plans") -> list[StepPl
     """
     if is_step_plans(value):
         return value
-    message: str = f"{where} does not satisfy stepPlans: " + "; ".join(schema_problems(value, "stepPlans"))
+    message: str = _refusal(where, "stepPlans", schema_problems(value, "stepPlans"))
     raise StepJournalError(message)
 
 
@@ -691,7 +708,7 @@ def validate_journal_change(value: object, where: str = "journal change") -> Jou
     """
     if is_journal_change(value):
         return value
-    message: str = f"{where} does not satisfy journalChange: " + "; ".join(schema_problems(value, "journalChange"))
+    message: str = _refusal(where, "journalChange", schema_problems(value, "journalChange"))
     raise StepJournalError(message)
 '''
 

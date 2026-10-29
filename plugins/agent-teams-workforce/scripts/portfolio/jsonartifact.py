@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifac
 
 import contracts
 import researchrecovery
+import strictschema
 from checkpoint_contract import (
     BINDING_KEYS,
     REPORT_COMPLETE_UNACCEPTED,
@@ -426,6 +427,28 @@ def read_checkpoint(candidate: Path) -> CheckpointRecord | None:
     return check_type(value, CheckpointRecord, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
+def require_schema(value: JsonValue, schema: JsonObject, where: str) -> None:
+    """Refuse a value its contract schema does not accept, stating every problem in full.
+
+    Args:
+        value: The decoded value.
+        schema: The contract schema, self-contained (``load_contract``).
+        where: What holds the value, such as the candidate file.
+
+    Raises:
+        SchemaProblemsError: The schema refuses the value; each problem is stated by
+            ``strictschema.explain_all``.
+
+    """
+    found: list[str] = strictschema.explain_all(
+        Draft202012Validator(schema).iter_errors(value),
+        root=schema,
+        location=None,
+    )
+    if found:
+        raise strictschema.SchemaProblemsError(where, "its contract schema", found)
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def accept(candidate: Path, final: Path, schema: JsonObject, revision: str = "") -> ArtifactReceipt:
     """Validate a candidate and publish it as the accepted result.
@@ -457,7 +480,7 @@ def accept(candidate: Path, final: Path, schema: JsonObject, revision: str = "")
     value: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = decode(
         candidate.read_text(encoding="utf-8"),
     )
-    Draft202012Validator(schema).validate(value)
+    require_schema(value, schema, str(candidate))
     data: bytes = canonical(value)
     try:
         previous_value: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] | None = (
@@ -840,6 +863,9 @@ def main() -> int:
     args: _CliOptions = _cli_options(parser.parse_args())
     try:
         result: JsonObject | ArtifactReceipt = _execute_cli(args, parser)
+    except strictschema.SchemaProblemsError as exc:
+        sys.stdout.write(json.dumps({"error": str(exc)}) + "\n")
+        return 2
     except (ImportError, OSError, ValueError) as exc:
         prefix: str = "" if args.document or args.source else f"{args.candidate}: "
         sys.stdout.write(json.dumps({"error": prefix + str(exc)[:300]}) + "\n")

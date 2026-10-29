@@ -7,11 +7,15 @@ type and value from here and validate documents with the readers below. Regenera
 """
 
 import json
+import sys
 from pathlib import Path
 from typing import Final, Literal, TypedDict, TypeIs
 
 from jsonschema import Draft202012Validator
-from jsonschema.exceptions import best_match
+
+sys.path.append(str(Path(__file__).resolve().parents[3] / "scripts" / "portfolio"))
+
+import strictschema
 
 type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
 type SpecDocument = Literal["spec", "data-model", "criteria"]
@@ -147,7 +151,9 @@ def schema_problems(value: object, definition: str) -> list[str]:
         definition: The $defs entry to validate against.
 
     Returns:
-        One "<path>: <message>" per failure, in document order; empty when the value conforms.
+        One line per failure, in path order, as ``strictschema.explain_all`` states it: the path,
+        the field names it is about, the fields allowed there, the schema rule quoted and the
+        schema file with the pointer and definition of the rule; empty when the value conforms.
 
     Raises:
         ValueError: The schema defines no such entry.
@@ -158,12 +164,12 @@ def schema_problems(value: object, definition: str) -> list[str]:
         message: str = f"spec review schema defines no {definition!r}"
         raise ValueError(message)
     target: dict[str, JsonValue] = {"$ref": "#/$defs/" + definition, "$defs": definitions}
-    problems: list[tuple[list[str], str]] = []
-    for error in Draft202012Validator(target).iter_errors(value):
-        relevant = best_match([error]) or error
-        path: list[str] = [str(part) for part in relevant.absolute_path]
-        problems.append((path, f"{'/'.join(path) or '<root>'}: {relevant.message}"))
-    return [text for _, text in sorted(problems)]
+    return strictschema.explain_all(
+        Draft202012Validator(target).iter_errors(value),
+        root=target,
+        location=SPEC_REVIEW_SCHEMA_PATH,
+        definition=definition,
+    )
 
 
 def is_spec_review(value: object) -> TypeIs[SpecReview]:
@@ -188,7 +194,12 @@ def validate_spec_review(value: object, where: str = "SpecReview") -> SpecReview
     """
     if is_spec_review(value):
         return value
-    message: str = f"{where} does not satisfy SpecReview: " + "; ".join(schema_problems(value, "SpecReview"))
+    problems: list[str] = schema_problems(value, "SpecReview")
+    rule: str = f"{SPEC_REVIEW_SCHEMA_PATH.name}#/$defs/SpecReview"
+    message: str = (
+        f"{where} does not satisfy SpecReview ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise SpecReviewError(message)
 
 
@@ -214,7 +225,12 @@ def validate_spec_correction(value: object, where: str = "SpecCorrection") -> Sp
     """
     if is_spec_correction(value):
         return value
-    message: str = f"{where} does not satisfy SpecCorrection: " + "; ".join(schema_problems(value, "SpecCorrection"))
+    problems: list[str] = schema_problems(value, "SpecCorrection")
+    rule: str = f"{SPEC_REVIEW_SCHEMA_PATH.name}#/$defs/SpecCorrection"
+    message: str = (
+        f"{where} does not satisfy SpecCorrection ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise SpecReviewError(message)
 
 
@@ -240,5 +256,10 @@ def validate_spec_ruling(value: object, where: str = "SpecRuling") -> SpecRuling
     """
     if is_spec_ruling(value):
         return value
-    message: str = f"{where} does not satisfy SpecRuling: " + "; ".join(schema_problems(value, "SpecRuling"))
+    problems: list[str] = schema_problems(value, "SpecRuling")
+    rule: str = f"{SPEC_REVIEW_SCHEMA_PATH.name}#/$defs/SpecRuling"
+    message: str = (
+        f"{where} does not satisfy SpecRuling ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise SpecReviewError(message)

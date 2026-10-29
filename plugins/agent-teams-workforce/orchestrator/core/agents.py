@@ -135,17 +135,18 @@ def strict_json(path: Path) -> dict[str, JsonValue]:
 def validate_output(step: AgentStep) -> dict[str, JsonValue] | None:
     """Validate an agent output against its declared schema or document check.
 
-    A failure of the output itself (unreadable, not strict JSON, or failing the schema with
-    ``jsonschema.ValidationError``) is the item's problem and goes to the corrective path. Any
-    other failure (the schema file cannot be read, the schema is invalid, a reference cannot be
-    resolved, or the validation machinery raises) is a pipeline-code defect.
+    A failure of the output itself (unreadable, not strict JSON, or failing the schema) is the
+    item's problem and goes to the corrective path; a schema failure is raised as
+    ``strictschema.SchemaProblemsError`` stating every problem in full. Any other failure (the
+    schema file cannot be read, the schema is invalid, a reference cannot be resolved, or the
+    validation machinery raises) is a pipeline-code defect.
 
     Returns:
         The validated JSON object, or None for a Markdown document.
 
     Raises:
         ValueError: A document is empty.
-        ValidationError: The output fails its schema.
+        SchemaProblemsError: The output fails its schema.
         PipelineDefectError: The schema could not be loaded or applied.
 
     """
@@ -158,7 +159,8 @@ def validate_output(step: AgentStep) -> dict[str, JsonValue] | None:
         try:
             strictschema.validate(result, schema, location=step.validate)
         except jsonschema.ValidationError:
-            raise
+            found: list[str] = strictschema.problems(result, schema, location=step.validate)
+            raise strictschema.SchemaProblemsError(step.output.name, step.validate.name, found) from None
         except Exception as exc:
             raise PipelineDefectError(step.stage, exc, (str(step.output), str(step.validate))) from exc
         return result
@@ -273,15 +275,29 @@ def _never_ran(facts: SessionFacts) -> bool:
     )
 
 
+CORRECTION: Final = (
+    "Rewrite the output so it satisfies its contract: correct every error listed, at the path it names, "
+    "using only the field names it allows there and the schema rule it quotes; keep everything else as it is."
+)
+"""What the errors file asks the corrective session to do."""
+
+
 def _write_errors(step: AgentStep, exc: Exception) -> Path:
     """Save the validation errors of ``step``'s output beside it for the corrective session.
+
+    The file holds the error's first line as ``headline`` and every further line, one problem
+    each, as ``errors``, in full; an error of one line is both.
 
     Returns:
         The errors file.
 
     """
     errors: Path = step.output.with_name(step.output.name + ".errors.json")
-    write_json(errors, {"output": str(step.output), "errors": [str(exc)]})
+    lines: list[str] = [text.strip() for text in str(exc).splitlines() if text.strip()] or [type(exc).__name__]
+    write_json(
+        errors,
+        {"output": str(step.output), "correction": CORRECTION, "headline": lines[0], "errors": lines[1:] or lines},
+    )
     return errors
 
 

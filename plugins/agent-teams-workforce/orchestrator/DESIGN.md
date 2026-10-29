@@ -733,7 +733,10 @@ carries one of the three causes above.
   a session continues it.
 - **One corrective retry** with specific feedback (CONTEXT 7.4): when an agent step's output is
   missing or invalid after a normal session end, Python writes the exact validation errors to
-  `<output>.errors.json` and resumes the same session once (`--resume <sessionId>`, with the flags
+  `<output>.errors.json` (a short `headline`, then every problem in full under `errors`: its path,
+  the field names it is about, the field names allowed there, the schema rule quoted and the schema
+  file with the pointer and definition of that rule, as `strictschema.explain_all` states them)
+  and resumes the same session once (`--resume <sessionId>`, with the flags
   of section 5.2) with a brief whose inputs add that file, labelled `validation errors`, and whose
   outcome line says "Correct the output named in the errors file." The session keeps what it
   already read, and the prompt cache makes the resume cheaper than a new session. A second failure

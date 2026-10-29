@@ -7,11 +7,15 @@ validate documents with the readers below. Regenerate with
 """
 
 import json
+import sys
 from pathlib import Path
 from typing import Final, Literal, NotRequired, TypedDict, TypeIs
 
 from jsonschema import Draft202012Validator
-from jsonschema.exceptions import best_match
+
+sys.path.append(str(Path(__file__).resolve().parents[3] / "scripts" / "portfolio"))
+
+import strictschema
 
 type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
 type NeedState = Literal["approved", "disagreement", "missing"]
@@ -369,7 +373,7 @@ class Reason(TypedDict):
     """Typed form of #/$defs/Reason in architecture-result.schema.json."""
 
     statement: str
-    source: SourceHeading
+    sources: list[SourceHeading]
 
 
 class NeededSpecialty(TypedDict):
@@ -584,7 +588,9 @@ def schema_problems(value: object, definition: str) -> list[str]:
         definition: The $defs entry to validate against.
 
     Returns:
-        One "<path>: <message>" per failure, in document order; empty when the value conforms.
+        One line per failure, in path order, as ``strictschema.explain_all`` states it: the path,
+        the field names it is about, the fields allowed there, the schema rule quoted and the
+        schema file with the pointer and definition of the rule; empty when the value conforms.
 
     Raises:
         ValueError: The schema defines no such entry.
@@ -595,12 +601,12 @@ def schema_problems(value: object, definition: str) -> list[str]:
         message: str = f"architecture work schema defines no {definition!r}"
         raise ValueError(message)
     target: dict[str, JsonValue] = {"$ref": "#/$defs/" + definition, "$defs": definitions}
-    problems: list[tuple[list[str], str]] = []
-    for error in Draft202012Validator(target).iter_errors(value):
-        relevant = best_match([error]) or error
-        path: list[str] = [str(part) for part in relevant.absolute_path]
-        problems.append((path, f"{'/'.join(path) or '<root>'}: {relevant.message}"))
-    return [text for _, text in sorted(problems)]
+    return strictschema.explain_all(
+        Draft202012Validator(target).iter_errors(value),
+        root=target,
+        location=ARCHITECTURE_RESULT_SCHEMA_PATH,
+        definition=definition,
+    )
 
 
 def is_architecture_result(value: object) -> TypeIs[ArchitectureResult]:
@@ -625,8 +631,12 @@ def validate_architecture_result(value: object, where: str = "ArchitectureResult
     """
     if is_architecture_result(value):
         return value
-    problems: str = "; ".join(schema_problems(value, "ArchitectureResult"))
-    message: str = f"{where} does not satisfy ArchitectureResult: {problems}"
+    problems: list[str] = schema_problems(value, "ArchitectureResult")
+    rule: str = f"{ARCHITECTURE_RESULT_SCHEMA_PATH.name}#/$defs/ArchitectureResult"
+    message: str = (
+        f"{where} does not satisfy ArchitectureResult ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise ArchitectureWorkError(message)
 
 
@@ -652,8 +662,12 @@ def validate_architecture_context(value: object, where: str = "ArchitectureConte
     """
     if is_architecture_context(value):
         return value
-    problems: str = "; ".join(schema_problems(value, "ArchitectureContext"))
-    message: str = f"{where} does not satisfy ArchitectureContext: {problems}"
+    problems: list[str] = schema_problems(value, "ArchitectureContext")
+    rule: str = f"{ARCHITECTURE_RESULT_SCHEMA_PATH.name}#/$defs/ArchitectureContext"
+    message: str = (
+        f"{where} does not satisfy ArchitectureContext ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise ArchitectureWorkError(message)
 
 
@@ -679,8 +693,12 @@ def validate_check_result(value: object, where: str = "CheckResult") -> CheckRes
     """
     if is_check_result(value):
         return value
-    problems: str = "; ".join(schema_problems(value, "CheckResult"))
-    message: str = f"{where} does not satisfy CheckResult: {problems}"
+    problems: list[str] = schema_problems(value, "CheckResult")
+    rule: str = f"{ARCHITECTURE_RESULT_SCHEMA_PATH.name}#/$defs/CheckResult"
+    message: str = (
+        f"{where} does not satisfy CheckResult ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise ArchitectureWorkError(message)
 
 
@@ -706,8 +724,12 @@ def validate_architecture_state(value: object, where: str = "ArchitectureState")
     """
     if is_architecture_state(value):
         return value
-    problems: str = "; ".join(schema_problems(value, "ArchitectureState"))
-    message: str = f"{where} does not satisfy ArchitectureState: {problems}"
+    problems: list[str] = schema_problems(value, "ArchitectureState")
+    rule: str = f"{ARCHITECTURE_RESULT_SCHEMA_PATH.name}#/$defs/ArchitectureState"
+    message: str = (
+        f"{where} does not satisfy ArchitectureState ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise ArchitectureWorkError(message)
 
 
@@ -733,8 +755,12 @@ def validate_specialist_round(value: object, where: str = "SpecialistRound") -> 
     """
     if is_specialist_round(value):
         return value
-    problems: str = "; ".join(schema_problems(value, "SpecialistRound"))
-    message: str = f"{where} does not satisfy SpecialistRound: {problems}"
+    problems: list[str] = schema_problems(value, "SpecialistRound")
+    rule: str = f"{ARCHITECTURE_RESULT_SCHEMA_PATH.name}#/$defs/SpecialistRound"
+    message: str = (
+        f"{where} does not satisfy SpecialistRound ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise ArchitectureWorkError(message)
 
 
@@ -760,8 +786,12 @@ def validate_specialist_request(value: object, where: str = "SpecialistRequest")
     """
     if is_specialist_request(value):
         return value
-    problems: str = "; ".join(schema_problems(value, "SpecialistRequest"))
-    message: str = f"{where} does not satisfy SpecialistRequest: {problems}"
+    problems: list[str] = schema_problems(value, "SpecialistRequest")
+    rule: str = f"{ARCHITECTURE_RESULT_SCHEMA_PATH.name}#/$defs/SpecialistRequest"
+    message: str = (
+        f"{where} does not satisfy SpecialistRequest ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise ArchitectureWorkError(message)
 
 
@@ -787,8 +817,12 @@ def validate_specialist_answer(value: object, where: str = "SpecialistAnswer") -
     """
     if is_specialist_answer(value):
         return value
-    problems: str = "; ".join(schema_problems(value, "SpecialistAnswer"))
-    message: str = f"{where} does not satisfy SpecialistAnswer: {problems}"
+    problems: list[str] = schema_problems(value, "SpecialistAnswer")
+    rule: str = f"{ARCHITECTURE_RESULT_SCHEMA_PATH.name}#/$defs/SpecialistAnswer"
+    message: str = (
+        f"{where} does not satisfy SpecialistAnswer ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise ArchitectureWorkError(message)
 
 
@@ -814,8 +848,12 @@ def validate_answers_digest(value: object, where: str = "AnswersDigest") -> Answ
     """
     if is_answers_digest(value):
         return value
-    problems: str = "; ".join(schema_problems(value, "AnswersDigest"))
-    message: str = f"{where} does not satisfy AnswersDigest: {problems}"
+    problems: list[str] = schema_problems(value, "AnswersDigest")
+    rule: str = f"{ARCHITECTURE_RESULT_SCHEMA_PATH.name}#/$defs/AnswersDigest"
+    message: str = (
+        f"{where} does not satisfy AnswersDigest ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise ArchitectureWorkError(message)
 
 
@@ -841,8 +879,12 @@ def validate_trd_request(value: object, where: str = "TrdRequest") -> TrdRequest
     """
     if is_trd_request(value):
         return value
-    problems: str = "; ".join(schema_problems(value, "TrdRequest"))
-    message: str = f"{where} does not satisfy TrdRequest: {problems}"
+    problems: list[str] = schema_problems(value, "TrdRequest")
+    rule: str = f"{ARCHITECTURE_RESULT_SCHEMA_PATH.name}#/$defs/TrdRequest"
+    message: str = (
+        f"{where} does not satisfy TrdRequest ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise ArchitectureWorkError(message)
 
 
@@ -868,8 +910,12 @@ def validate_trd_answer(value: object, where: str = "TrdAnswer") -> TrdAnswer:
     """
     if is_trd_answer(value):
         return value
-    problems: str = "; ".join(schema_problems(value, "TrdAnswer"))
-    message: str = f"{where} does not satisfy TrdAnswer: {problems}"
+    problems: list[str] = schema_problems(value, "TrdAnswer")
+    rule: str = f"{ARCHITECTURE_RESULT_SCHEMA_PATH.name}#/$defs/TrdAnswer"
+    message: str = (
+        f"{where} does not satisfy TrdAnswer ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise ArchitectureWorkError(message)
 
 
@@ -895,8 +941,12 @@ def validate_write_request(value: object, where: str = "WriteRequest") -> WriteR
     """
     if is_write_request(value):
         return value
-    problems: str = "; ".join(schema_problems(value, "WriteRequest"))
-    message: str = f"{where} does not satisfy WriteRequest: {problems}"
+    problems: list[str] = schema_problems(value, "WriteRequest")
+    rule: str = f"{ARCHITECTURE_RESULT_SCHEMA_PATH.name}#/$defs/WriteRequest"
+    message: str = (
+        f"{where} does not satisfy WriteRequest ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise ArchitectureWorkError(message)
 
 
@@ -922,8 +972,12 @@ def validate_write_result(value: object, where: str = "WriteResult") -> WriteRes
     """
     if is_write_result(value):
         return value
-    problems: str = "; ".join(schema_problems(value, "WriteResult"))
-    message: str = f"{where} does not satisfy WriteResult: {problems}"
+    problems: list[str] = schema_problems(value, "WriteResult")
+    rule: str = f"{ARCHITECTURE_RESULT_SCHEMA_PATH.name}#/$defs/WriteResult"
+    message: str = (
+        f"{where} does not satisfy WriteResult ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise ArchitectureWorkError(message)
 
 
@@ -949,8 +1003,12 @@ def validate_lead_routing(value: object, where: str = "LeadRouting") -> LeadRout
     """
     if is_lead_routing(value):
         return value
-    problems: str = "; ".join(schema_problems(value, "LeadRouting"))
-    message: str = f"{where} does not satisfy LeadRouting: {problems}"
+    problems: list[str] = schema_problems(value, "LeadRouting")
+    rule: str = f"{ARCHITECTURE_RESULT_SCHEMA_PATH.name}#/$defs/LeadRouting"
+    message: str = (
+        f"{where} does not satisfy LeadRouting ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise ArchitectureWorkError(message)
 
 
@@ -976,8 +1034,12 @@ def validate_architecture_question(value: object, where: str = "UnsettledMatter"
     """
     if is_architecture_question(value):
         return value
-    problems: str = "; ".join(schema_problems(value, "UnsettledMatter"))
-    message: str = f"{where} does not satisfy UnsettledMatter: {problems}"
+    problems: list[str] = schema_problems(value, "UnsettledMatter")
+    rule: str = f"{ARCHITECTURE_RESULT_SCHEMA_PATH.name}#/$defs/UnsettledMatter"
+    message: str = (
+        f"{where} does not satisfy UnsettledMatter ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise ArchitectureWorkError(message)
 
 
@@ -1003,6 +1065,10 @@ def validate_architecture_ruling(value: object, where: str = "ArchitectureRuling
     """
     if is_architecture_ruling(value):
         return value
-    problems: str = "; ".join(schema_problems(value, "ArchitectureRuling"))
-    message: str = f"{where} does not satisfy ArchitectureRuling: {problems}"
+    problems: list[str] = schema_problems(value, "ArchitectureRuling")
+    rule: str = f"{ARCHITECTURE_RESULT_SCHEMA_PATH.name}#/$defs/ArchitectureRuling"
+    message: str = (
+        f"{where} does not satisfy ArchitectureRuling ({rule}): "
+        f"{len(problems)} problem(s), one per line below\n" + "\n".join(problems)
+    )
     raise ArchitectureWorkError(message)
