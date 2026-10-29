@@ -317,6 +317,19 @@
           "records": [
             {"name": "regressionMappedReview", "kind": "file", "holds": "the regression-coverage-reviewer's review of the mapping"}
           ],
+          "adds": [
+            {"kinds": ["build:regression-remap", "build:regression-map-review"], "when": "the review does not approve the mapping or names findings: the regression-impact-assessor is given the review, and the corrected mapping is reviewed again"}
+          ],
+          "limit": "It adds no correction after two corrections of the mapping; build:regression-verify then fails with regression-coverage"
+        },
+        "build:regression-remap": {
+          "description": "Correct the regression mapping from its review",
+          "purpose": "The reviewer named findings in the mapping, and the assessor that wrote it corrects them",
+          "runBy": "task-to-deploy",
+          "reads": ["worktree", "regressionPlan", "regressionPrevious", "regressionMapped", "regressionMappedReview"],
+          "records": [
+            {"name": "regressionMapped", "kind": "file", "holds": "the corrected final mapping the regression-impact-assessor wrote"}
+          ],
           "adds": []
         },
         "build:regression-verify": {

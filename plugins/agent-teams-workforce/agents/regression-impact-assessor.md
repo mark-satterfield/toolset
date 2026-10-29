@@ -60,6 +60,8 @@ repositories).
   produces a fresh JUnit XML report under that repository's `.agent-workforce/reports/`.
 - Do not run the tests yourself, and do not remove scope because tests are missing or hard to run;
   report the gap.
+- Correction mode applies to the mapping as Plan mode describes it, with the saved test files and
+  the approved scope as the sources.
 
 ## Rules
 
