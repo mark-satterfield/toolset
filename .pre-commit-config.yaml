@@ -37,3 +37,9 @@ repos:
         language: system
         files: ^(plugins/agent-teams-workforce/(agents/.*\.md|skills/find-specialists/.*)|\.pre-commit-config\.yaml)$
         pass_filenames: false
+      - id: agent-output-formats
+        name: Agent definitions match the schemas their outputs are checked against
+        entry: node plugins/agent-teams-workforce/scripts/check-agent-output-formats.mjs
+        language: system
+        files: ^(plugins/agent-teams-workforce/(agents/.*\.md|skills/.*|workflows/.*\.js|orchestrator/flows/.*\.py|scripts/check-agent-output-formats\.mjs)|\.pre-commit-config\.yaml)$
+        pass_filenames: false

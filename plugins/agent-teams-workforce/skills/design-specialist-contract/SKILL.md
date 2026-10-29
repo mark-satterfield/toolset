@@ -23,8 +23,8 @@ Most requests are a question. Answer that question and nothing else.
 
 - Read only what the request names, plus what you must open to check a fact. When it names an
   extract of the architecture, read the parts it names in that extract, not their sources.
-- Give the answer in the first sentence. Then the reasons, each with its source: an arc42
-  path and heading, an AWS documentation URL, or a section 2 constraint.
+- Give the answer in the first sentence. Then the reasons, each with every source it rests on:
+  an arc42 path and heading, an AWS documentation URL, or a section 2 constraint.
 - State the assumptions the answer rests on.
 - Name the alternatives you considered only when the question asks for them.
 - When the answer needs another specialty, say which and why, in `needs`. The architect asks
@@ -45,9 +45,12 @@ stated bounds.
 
 ## In both cases
 
-Write only the answer file, to `specialist-answer.schema.json`. End your session with the
-answer file's path as your only final message: the answer is in the file, and the architect
-reads it there.
+Write only the answer file. Its shape is `specialist-answer.schema.json`, which is
+`architecture-result.schema.json#/$defs/SpecialistAnswer` in the plugin's
+`skills/artifact-handoff/schemas/`: read it, and write exactly the shape that schema defines,
+and no other fields. This skill and your definition say what to put in those fields, never
+their shape. End your session with the answer file's path as your only final message: the
+answer is in the file, and the architect reads it there.
 
 Work at the levels of `effective-architecture/review-standard.md`. Existing code is a hint of
 how something was once solved; only the code of the elements the request lists as trusted is

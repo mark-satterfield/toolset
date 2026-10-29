@@ -27,7 +27,8 @@ criteria are those of `effective-architecture/review-standard.md`. The specialis
 opinion is your choice: find it in the catalog of the `find-specialists` skill, by the subject
 of the choice, from what each entry's description, skills and MCP servers say. For each matter
 decide one of the following and write your decisions, with one sentence of reason each, at the
-brief's output path, to `lead-routing.schema.json`. Write that file before you add any step.
+brief's output path. Its shape is `lead-routing.schema.json`: write exactly the shape that schema defines, and no other fields. Write that
+file before you add any step.
 
 1. Reject the matter. Do this when it is no technical choice the criteria leave open: it asks
    an arc42 document for detail the criteria file places in the TRD or the specs, or concerns

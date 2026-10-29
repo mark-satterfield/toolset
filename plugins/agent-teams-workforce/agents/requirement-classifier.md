@@ -67,7 +67,7 @@ A business entry has `governs` and `rule` `""`, `archCoverage` `n/a` and `archRe
 ## Sources
 
 - `agent-teams-workforce:prd-writer`: what a PRD is (WHAT, never HOW; the template; what a reviewer judges in acceptance criteria) and the ground rules every validation lens applies.
-- `agent-teams-workforce:artifact-handoff`: the contract of your result, `schemas/prd-validation-analysis.schema.json`, whose descriptions define every member.
+- `agent-teams-workforce:artifact-handoff`: the contract of your result, `schemas/prd-validation-analysis.schema.json`, whose descriptions define every member: write exactly the shape that schema defines, and no other fields.
 - `agent-teams-workforce:validation-protocol`: evidence before a claim.
 - The matrix, through the matrix command the brief names: whether the architecture states a technical rule.
 

@@ -76,8 +76,8 @@ deployed resource or contract the dependent Task cannot be built or deployed wit
 out the edges of the other direction. The step drops, with a warning, any edge that would still
 make two Stories depend on each other.
 
-Write the output file to `task-deps.schema.json`, the one definition of its keys, edge
-direction and kinds. Run no submission or checkpoint helper here: the step validates the file
+Write the output file at the brief's output path. Its shape is `task-deps.schema.json`, the one
+definition of its keys, edge direction and kinds: write exactly the shape that schema defines, and no other fields. Run no submission or checkpoint helper here: the step validates the file
 against that contract and the span's Task keys, drops an edge that closes a cycle over the Tasks
 or over the Stories, and writes the beads edges. Validation errors, when present, are another input file; repair those specific findings and keep the valid content. No
 edge you add is written into the matrix; the beads edge alone carries build order. No Task
@@ -89,8 +89,8 @@ The brief hands you the context file written for one Task created outside elabor
 (`dependency-assessment.schema.json`, `#/$defs/TaskContext`, whose descriptions say what each
 member holds), the command that reads a Task (`beads-contract.py contract <id>`, which the beads-contract skill
 describes), the `atw-matrix` command, the
-candidate edge file and its contract (`task-edge-proposal.schema.json`), the reasoning file and
-the validation command. Work in this order:
+candidate edge file and its contract (`task-edge-proposal.schema.json`: as for the output file,
+write exactly the shape that schema defines, and no other fields), the reasoning file and the validation command. Work in this order:
 
 1. Read the Task.
 2. Name what it consumes and what it provides. When the context's `task.elements` is empty, the

@@ -374,12 +374,18 @@
       }
     },
     "Reason": {
+      "description": "One reason of an answer, or one finding of a review: what it states and every source it rests on.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["statement", "source"],
+      "required": ["statement", "sources"],
       "properties": {
         "statement": {"type": "string", "minLength": 1},
-        "source": {"$ref": "#/$defs/SourceHeading"}
+        "sources": {
+          "description": "Each place the statement is stated or can be checked, next to the claim it supports: for a review finding, the item observed and the criterion, requirement or constraint it is checked against.",
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/SourceHeading"}
+        }
       }
     },
     "NeededSpecialty": {

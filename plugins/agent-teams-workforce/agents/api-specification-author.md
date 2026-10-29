@@ -99,10 +99,10 @@ producers, as the project's event standard and the event's documents record it. 
 spec names no routing rule or target. Name each dependency's contract from `dependsOn`. State
 under "Shared capabilities used" which contract uses which shared capability, and specify no
 behaviour that a shared capability provides. Do not search code to decide which work can be
-omitted. Write nonempty UTF-8 Markdown with a YAML front matter whose `decisionIds` cites the views you
-read, each one string `<path>#<heading>`, never an object, for example
-`decisionIds: ["arc42/08-crosscutting-concepts/email-channel-ownership.md#Ownership and the aggregate"]`. If
-this surface is not applicable, state why in a short document rather than inventing work.
+omitted. Write nonempty UTF-8 Markdown with a YAML front matter whose `decisionIds` cite the views
+you read. The front matter's shape is artifact-handoff's
+`schemas/document-front-matter.schema.json#/$defs/SpecDocument`: write exactly the shape that schema defines, and no other fields.
+If this surface is not applicable, state why in a short document rather than inventing work.
 
 For a frontend repository the brief also hands you `ui sources` (`schemas/spec-ui.schema.json`):
 the design source already chosen for each UI item. Refer to those design sources by item, with
@@ -148,8 +148,8 @@ bring the criteria into agreement with what each finding on the contracts or the
 directs that document to become (its `correction` and `doneWhen`), keeping the ids of the
 criteria that stay. Change only what the findings and the corrected documents require, and keep
 every other section as it is, including the UI design sources section of the contracts. Write
-the output the brief names as `schemas/spec-correction.schema.json` defines it: the findings you
-dispute, and a summary of what you changed.
+the output the brief names: the findings you dispute, and a summary of what you changed. Its
+shape is `schemas/spec-correction.schema.json`: write exactly the shape that schema defines, and no other fields.
 
 When the inputs also include a ruling (`spec-<slug>.ruling.json`,
 `schemas/spec-ruling.schema.json`), `review-dispute-decider` has ruled on the disputed findings.

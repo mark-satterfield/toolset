@@ -80,8 +80,8 @@ statement is wrong, with both statements.
 
 Your answer's first sentence says whether the part reviewed holds. Each finding is one entry
 in `reasons`, as criterion P8 states a finding: the criterion id, the item, what you observed
-with its path and heading, its source, and a bounded correction with the condition that shows
-it is done. A preference is not a finding, and a missing thing no criterion requires is not a
+and a bounded correction with the condition that shows it is done, citing in its `sources` the
+item observed, by path and heading, and every source the criterion is checked against. A preference is not a finding, and a missing thing no criterion requires is not a
 finding. Passing sound work is the expected outcome. Name in `alternatives` another option only
 when an item rests on a choice whose other option was not considered and could plainly be
 better. Existing code that no pipeline built is not evidence of anything.

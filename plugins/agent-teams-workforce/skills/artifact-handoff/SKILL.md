@@ -41,3 +41,14 @@ restates a key, type or allowed value: it imports the module that
 | Schema | Generated module |
 |---|---|
 | `schemas/task-deps.schema.json` (Cross-Story Task dependencies) | `scripts/task_deps_contract.py` |
+
+## Which agent writes which output
+
+[agent-outputs.json](agent-outputs.json) pairs each file an agent writes with the schema (file
+and `$defs` entry) it is checked against and the code that makes the pairing. The schema is the
+one home of the output's shape: an agent definition, and a skill that states the output, point at
+it and say only what goes in each field; the agent writes exactly the shape that schema defines,
+and no other fields. `node scripts/check-agent-output-formats.mjs` (run by the pre-commit hook)
+checks every pairing, and every structured-output schema a workflow dispatch hands the runtime,
+against the agent definitions and those skills; add a pairing there when code starts checking a
+new agent output.

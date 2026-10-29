@@ -84,8 +84,8 @@ on in the AWS documentation (`aws___search_documentation`, `aws___read_documenta
 what you relied on in the finding's observation: the tool and its result, the documentation
 URL, or the design document and heading.
 
-Write the output the brief names as artifact-handoff's `schemas/spec-review.schema.json`
-defines it. Every finding's `document` is `data-model`, its `criterion` is `I2` or `I7`, and its
+Write the output the brief names. Its shape is artifact-handoff's
+`schemas/spec-review.schema.json`: write exactly the shape that schema defines, and no other fields. Every finding's `document` is `data-model`, its `criterion` is `I2` or `I7`, and its
 id is `D1`, `D2` and so on. Each finding names the heading where the defect is or where the
 missing detail belongs, what you observed, a bounded correction and the condition that shows it
 is made. A store that is not DynamoDB is not yours. A preference is not a finding, and an empty

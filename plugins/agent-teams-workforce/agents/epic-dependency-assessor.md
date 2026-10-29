@@ -34,8 +34,8 @@ no Epic to go first: an item with no recorded decision draws no edge.
 
 The brief gives the data of the run: the Epic, the context file already written for it (artifact-handoff's
 `schemas/dependency-assessment.schema.json`, `#/$defs/EpicContext`), the `atw-matrix` command
-to read the matrix with, the candidate edge file to write (`schemas/epic-edge-proposal.schema.json`),
-the reasoning file, and the validation command with the file its findings go to. The context
+to read the matrix with, the candidate edge file to write (its shape is
+`schemas/epic-edge-proposal.schema.json`: write exactly the shape that schema defines, and no other fields), the reasoning file, and the validation command with the file its findings go to. The context
 file is the starting material: read it with a short script that prints the members you need,
 never whole, and do not read the plugin's scripts or other versions of the skill. A note that the
 previous assessment of the Epic failed, when the brief carries one, is worked out before you

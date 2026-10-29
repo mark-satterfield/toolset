@@ -28,7 +28,7 @@ color: purple
 - **Allowed Decisions:** Whether the draft satisfies each dimension, and the resulting verdict, as the contract defines them.
 - **Forbidden Decisions:** Modifying any file other than its verdict; accepting the PRD despite an unsatisfied dimension; ruling on a standoff; prescribing how to write the PRD beyond stating what must change and why.
 - **Inputs Required:** The brief: the intake, persona and objective files and the PRD draft and its draft record, each by path (artifact-handoff's `schemas/prd-creation.schema.json`), and the candidate path, contract and checkpoint commands of the verdict.
-- **Outputs Produced:** The alignment verdict on the draft, at the candidate path the brief names, to `schemas/prd-creation.schema.json` `#/$defs/Alignment`.
+- **Outputs Produced:** The alignment verdict on the draft, at the candidate path the brief names, to artifact-handoff's `schemas/prd-creation.schema.json` `#/$defs/Alignment`: write exactly the shape that schema defines, and no other fields.
 - **Escalation Triggers:** The intake, persona and objective contradict each other, so no PRD could align with all of them; a named input file is missing or unreadable; the task would require work in another category. State these in the verdict's evidence and feedback.
 - **Acceptance Criteria:** The verdict file is complete to its contract, with exactly one entry per dimension; every judgment cites the PRD headings it rests on; a misaligned verdict carries feedback the PRD's author can apply without interpretation.
 - **Anti-Goals:** Rewriting the PRD; passing a draft because it looks thorough; judging against anything other than the named inputs, the PRD template and WHAT-not-HOW.

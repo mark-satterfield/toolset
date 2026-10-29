@@ -90,9 +90,11 @@ writes.
    competing design** the lead ordered: you continue from your result, as "Later steps" says.
 
 Never read `architecture-result.schema.json` or the other schemas of the files you write: each
-brief hands you an `example` of each file the step writes, valid and short. Write yours in that
-shape. The script validates each file when your session ends and hands every problem back to
-you in the same session, once, to correct.
+brief hands you an `example` of each file the step writes, valid against its schema and short.
+Write each file in the shape its example shows: write exactly the shape that schema defines, and
+no other fields. This definition says what to put in those fields, never their shape. The script
+validates each file when your session ends and hands every problem back to you in the same
+session, once, to correct.
 
 ## The brief
 

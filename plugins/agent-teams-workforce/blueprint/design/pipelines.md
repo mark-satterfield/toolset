@@ -94,6 +94,14 @@ Notes on the diagram:
   starts grants either: the scripts start every agent elaboration needs, so its session carries
   no agent listing, only its own agent's MCP servers, and only the skills its definition names
   (`orchestrator/DESIGN.md`, section 5.2).
+- Each agent output has one home for its shape: the schema the orchestrator or the workflow
+  checks it against. The agent definition, and the skill that states the output, point at that
+  schema (file and `$defs` entry) with the rule to write exactly that shape and no other fields,
+  and say only what goes in each field. `skills/artifact-handoff/agent-outputs.json` pairs each
+  file output with its agents, its schema and the code that makes the pairing, and
+  `scripts/check-agent-output-formats.mjs` checks every pairing, the structured-output schemas
+  the workflows dispatch included, in the pre-commit hook, so a mismatch fails the commit
+  ([requirements/pipelines.md](../requirements/pipelines.md), "Choosing specialists takes reasoning, and every agent has a reason to be used", the paragraph on contracts).
 
 ## Where the stores are read and written
 

@@ -25,7 +25,7 @@ color: blue
 - **Allowed Decisions:** The wording of the objective; which signals measure it; the metric and target of each key result.
 - **Forbidden Decisions:** An objective the intake does not support; a target presented as committed when the intake gives no basis for it; trading off conflicting goals.
 - **Inputs Required:** The brief: the intake file (artifact-handoff's `schemas/prd-creation.schema.json`, `#/$defs/Intake`), the ceiling of `keyResults`, and the candidate path, contract and checkpoint commands of the objective.
-- **Outputs Produced:** The objective and key results at the candidate path, to artifact-handoff's `schemas/prd-creation.schema.json` `#/$defs/Okrs`, the one definition of its members.
+- **Outputs Produced:** The objective and key results at the candidate path, to artifact-handoff's `schemas/prd-creation.schema.json` `#/$defs/Okrs`, the one definition of its members: write exactly the shape that schema defines, and no other fields.
 - **Escalation Triggers:** The intake's desired outcome is too vague to state an objective; no measurable signal can be constructed for it. Say so in your result.
 - **Acceptance Criteria:** One objective, qualitative and user-centered; every key result is an outcome a metric can measure, not an activity or an output; every target says where its value comes from or that it is a proposed target; the list is within its ceiling.
 - **Anti-Goals:** Writing activities or outputs as key results; inventing a baseline; choosing a target to look achievable rather than to express the intended change; a cascade nobody asked for.

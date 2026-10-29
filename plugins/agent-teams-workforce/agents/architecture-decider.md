@@ -43,8 +43,8 @@ the evidence for each.
 Rule between the positions from that evidence. You may read AWS documentation to check a
 claim made by either side. The design, the analysis and the cost estimates are the ones the
 positions carry; you add none. Give the ruling, the reason, and what the losing position must
-change, at the brief's output path, to `architecture-ruling.schema.json`. Record the ruling
-with
+change, at the brief's output path. Its shape is `architecture-ruling.schema.json`: write exactly the shape that schema defines, and no other fields.
+Record the ruling with
 `atw-matrix settle --id disagreement:<id> --stands <document path> "<heading>" --rule decider --reason "<reason>"`,
 naming the document and heading of the statement that stands, so that it is the settlement of
 the matter and the matter is not raised again. `atw-matrix node disagreement:<id>` returns the

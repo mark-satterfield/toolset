@@ -64,9 +64,10 @@ When a bundle's design or styles look out of step with the design system, run
 `cds:audit-against-system` on the bundle's design file and say what it found in the item's
 reason; the choice stays `bundle`, because the owner supplied it.
 
-Write the file to artifact-handoff's `schemas/spec-ui.schema.json`; each `uiItems` entry is the
-UI item `schemas/recon.schema.json` `$defs/UiItem` defines, and its descriptions give every
-field and allowed value.
+Write the file at the brief's output path. Its shape is artifact-handoff's
+`schemas/spec-ui.schema.json`, whose `uiItems` are the UI items of `schemas/recon.schema.json`
+`$defs/UiItem`: write exactly the shape that schema defines, and no other fields. Its descriptions give the meaning of every field
+and value.
 
 ## Sources
 

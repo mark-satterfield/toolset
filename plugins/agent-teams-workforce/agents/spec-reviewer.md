@@ -109,8 +109,9 @@ A criterion applies to an item the Story builds that has the thing the criterion
 repository with no route has nothing for I1 to find. A document that says, with its reason, that
 a surface does not apply meets the criteria for that surface.
 
-Write the output the brief names as artifact-handoff's `schemas/spec-review.schema.json` defines
-it, with ids F1, F2 and so on. Each finding names one document, the id of one criterion, the
+Write the output the brief names. Its shape is artifact-handoff's
+`schemas/spec-review.schema.json`: write exactly the shape that schema defines, and no other fields. Number the findings F1, F2
+and so on. Each finding names one document, the id of one criterion, the
 heading where the defect is or where the missing detail belongs, what you observed, a bounded
 correction, and the condition that shows the correction is made. Write one finding for each
 defect and address it to the document whose author makes the change. A preference is not a

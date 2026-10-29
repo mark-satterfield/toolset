@@ -61,8 +61,8 @@ criterion the finding names:
   criterion does not require is ruled `document-stands`.
 
 These two rulings are the only ones: no finding is accepted as a risk, deferred or split. Write
-the output as `schemas/spec-ruling.schema.json` defines it, with one ruling for each disputed
-finding.
+the output with one ruling for each disputed finding. Its shape is `schemas/spec-ruling.schema.json`:
+write exactly the shape that schema defines, and no other fields.
 
 ## PRD deadlock ruling
 

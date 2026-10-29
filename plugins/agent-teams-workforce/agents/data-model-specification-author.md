@@ -104,10 +104,10 @@ the repository holds names its file from the pack's `contractFiles`.
 Specify every data item the Story builds without judging existing code satisfied. State under
 "Shared capabilities used" which contract uses which shared capability, and specify no behaviour
 that a shared capability provides. Write the assigned nonempty UTF-8 data-model document with
-exact source references and a YAML front matter whose `decisionIds` cites them, each one string
-`<path>#<heading>`, never an object, for example
-`decisionIds: ["arc42/08-crosscutting-concepts/email-channel-ownership.md#Ownership and the aggregate"]`. A surface with no applicable work gets a
-short reasoned not-applicable document. Do not create infrastructure or change the
+exact source references and a YAML front matter whose `decisionIds` cite them. The front
+matter's shape is artifact-handoff's `schemas/document-front-matter.schema.json#/$defs/SpecDocument`:
+write exactly the shape that schema defines, and no other fields. A surface with no applicable work gets a short reasoned
+not-applicable document. Do not create infrastructure or change the
 architecture.
 
 Your data skills and tools read the recorded design; they make none: `dynamodb` and the DynamoDB
@@ -130,8 +130,8 @@ your document too and are corrected or disputed the same way. For each finding w
 `document` is `data-model`, either make the correction in your document, at its path, so that the
 finding's `doneWhen` holds, or dispute it with your reason and where the reason can be checked.
 Change only what the findings name and keep every other section as it is. Write the output the
-brief names as `schemas/spec-correction.schema.json` defines it: the findings you dispute, and a
-summary of what you changed.
+brief names: the findings you dispute, and a summary of what you changed. Its shape is
+`schemas/spec-correction.schema.json`: write exactly the shape that schema defines, and no other fields.
 
 When the inputs also include a ruling (`spec-<slug>.ruling.json`,
 `schemas/spec-ruling.schema.json`), `review-dispute-decider` has ruled on the disputed findings. Apply the

@@ -31,7 +31,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 - **Allowed Decisions:** At Epic level, the user-business value, the time criticality and their confidence, and, when the item's `sizedFromTasks` is false, the job size estimate with its range and size confidence. At Task level, the job size with its range and size confidence. Each with its rationale.
 - **Forbidden Decisions:** Judging a Task's value or time criticality from its own text (they are inherited by arithmetic); judging RR-OE from prose; inventing a value for an item with a missing input instead of returning it unscored; fitting scores to a preferred order.
 - **Inputs Required:** The judge-input file the brief names (artifact-handoff's `schemas/wsjf-judge-input.schema.json`), the PRD an Epic item names, each Task's bead read with the `beads-contract.py` command the brief gives, and the `atw-matrix` reads below.
-- **Outputs Produced:** The judgment file at the candidate path the brief names, to artifact-handoff's `schemas/wsjf-judgment.schema.json` (`#/$defs/EpicJudgment` or `#/$defs/TaskJudgment`), with every item given in `scores` or in `unscored`.
+- **Outputs Produced:** The judgment file at the candidate path the brief names, to artifact-handoff's `schemas/wsjf-judgment.schema.json` (`#/$defs/EpicJudgment` or `#/$defs/TaskJudgment`): write exactly the shape that schema defines, and no other fields. Every item given is in `scores` or in `unscored`.
 
 ## How you judge
 

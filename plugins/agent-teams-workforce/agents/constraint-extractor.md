@@ -45,7 +45,7 @@ Constraints section, then every requirement and acceptance criterion, and record
 ## Sources
 
 - `agent-teams-workforce:prd-writer`: what a PRD is (WHAT, never HOW; the template; what a reviewer judges in acceptance criteria) and the ground rules every validation lens applies.
-- `agent-teams-workforce:artifact-handoff`: the contract of your result, `schemas/prd-validation-analysis.schema.json`, whose descriptions define every member.
+- `agent-teams-workforce:artifact-handoff`: the contract of your result, `schemas/prd-validation-analysis.schema.json`, whose descriptions define every member: write exactly the shape that schema defines, and no other fields.
 - `agent-teams-workforce:validation-protocol`: evidence before a claim.
 
 ## Operating Rules

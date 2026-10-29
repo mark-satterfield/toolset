@@ -102,13 +102,11 @@ An `effective` arc42 document is approved content that still iterates with each 
 `effective-architecture` skill, "Lifecycle, the baseline and iteration".
 
 Write to the technical-requirement criteria of `effective-architecture/review-standard.md`. The
-TRD's fixed form is
-`document-front-matter.schema.json#/$defs/TrdDocument` in the artifact-handoff skill's schemas.
-Keep `decisionIds` in the front matter: the arc42 paths, with headings, that the requirements
-cite, each one string `<path>#<heading>`, never an object, for example
-`decisionIds: ["arc42/08-crosscutting-concepts/email-channel-ownership.md#Ownership and the aggregate"]`.
-Replace a front matter that does not have this form. When your session ends the step checks, in
+shape of the TRD's front matter is `document-front-matter.schema.json#/$defs/TrdDocument` in the
+artifact-handoff skill's schemas: write exactly the shape that schema defines, and no other fields. Its `decisionIds` are the
+arc42 paths, with headings, that the requirements cite. Replace a front matter that does not have
+that shape. When your session ends the step checks, in
 one pass, the answer against its schema, the TRD's front matter and every citation against the
 matrix, that each requirement has its heading, and that each `appliesTo` is an entry the matrix
-holds. Write the TRD file at the request's `trdPath` and the answer, to
-`trd-answer.schema.json`, at its `answerPath`.
+holds. Write the TRD file at the request's `trdPath` and the answer at its `answerPath`. The
+answer's shape is `trd-answer.schema.json`: write exactly the shape that schema defines, and no other fields.

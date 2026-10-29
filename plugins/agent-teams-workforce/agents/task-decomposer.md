@@ -74,19 +74,20 @@ Python derives the Task's matrix ids from what it cites (its stack, the entries 
 shared capabilities that work must use) and writes them into the Task's text and its
 `matrix_elements` key, so state no matrix id yourself. Nothing is written in the matrix for a
 Task.
-Write the result to artifact-handoff's tasks.schema.json, with each field meaning what the
-`tasks` section of artifact-handoff's Epic contracts says it means: the local key series (T1...),
-the surface set and what an empty list and null each mean, and the score rules (jobSize on the
-wsjf skill's Fibonacci scale inside its sizeLow..sizeHigh range, sizeConfidence an integer
-percent). Cite the work items, requirements and decisions each Task builds exactly as the inputs
+Write the result at the brief's output path. Its shape is artifact-handoff's `tasks.schema.json`:
+write exactly the shape that schema defines, and no other fields. Each field means what the `tasks` section of artifact-handoff's
+Epic contracts says it means: the local key series (T1...), the surface set and what an empty
+list and null each mean, and the score rules (the job size on the wsjf skill's Fibonacci scale
+inside its range, the confidence a percent). Cite the work items, requirements and decisions each Task builds exactly as the inputs
 name them. Take the test strategy from the spec, never invent one. Size every Task on the wsjf skill's scale with an honest range and confidence: judge
 volume, complexity and uncertainty, not calendar or human time. Split work the wsjf skill rates
 too large when feasible; otherwise record the judged size and explanation. Do not assign Epic
 value or WSJF arithmetic. Prefer one UI artifact per Task; if input forces two, preserve
 first-artifact normalization and record a warning, not a refusal. For an exact uncited or
 unsized-items correction, read the saved tasks and the task gaps (`task-gaps.schema.json`, whose
-uncited ids are items of the repository context) and write per artifact-handoff's
-tasks-correction.schema.json as the `tasks-correction` section of the Epic contracts defines it
-(its own new-key series, N1...), adding only the new Tasks, the edges into them and the sizes
+uncited ids are items of the repository context) and write the correction in the shape of
+artifact-handoff's `tasks-correction.schema.json` (as for the result, write exactly the shape that schema defines, and no other fields),
+with the meaning the `tasks-correction` section of the Epic contracts gives it (its own new-key
+series, N1...), adding only the new Tasks, the edges into them and the sizes
 the task gaps name. A correction never carries noWork. No status-based omission, no
 code-comparison pass, no empty-success escape. Python performs all Task and edge writes.

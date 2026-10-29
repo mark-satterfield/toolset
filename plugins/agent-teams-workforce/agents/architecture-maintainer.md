@@ -81,9 +81,9 @@ For each fact:
 6. Filing a view includes listing it in its folder's index (the arc42 skill's
    `references/arc42-section-model.md` says which folders have one): when you create a view, or
    move one, keep that index true to the views of its folder. No fact names this; it is part of
-   filing the view. List each index you edit in your result under `headingsChanged`, as
-   `{source, heading}`: the index and the heading the listing sits under, so that the step
-   promotes and commits it with the views.
+   filing the view. List each index you edit in your result under `headingsChanged`: the index
+   and the heading the listing sits under, so that the step promotes and commits it with the
+   views.
 
 Place each diagram the request carries under its heading, and update or redraw a diagram
 when a fact changes what it shows. The notation of a diagram is set by its skill among your
@@ -108,11 +108,11 @@ a fact is `about` to the fact's home heading. Write each fact under exactly the 
 names, and list a fact you could not write there under `notApplied` by its id. Name in `shows` each entry by the name the
 matrix holds for it, so that the document is found from the entry.
 
-Write the result at the path the request names, to `write-result.schema.json`: each heading
-you changed or created, a folder index's included, each link you added, each restatement you removed, and anything in the request you could not apply and why.
-Every entry of `headingsChanged`, `headingsCreated`, `linksAdded` and `restatementsRemoved` is
-`{source, heading}`. For `linksAdded` that is where the link sits: the document you wrote the
-link in and the heading it sits under, never the link's target, and never `{from, to}`.
+Write the result at the path the request names. Its shape is `write-result.schema.json`:
+write exactly the shape that schema defines, and no other fields. It holds each heading you changed or created, a folder
+index's included, each link you added, each restatement you removed, and anything in the
+request you could not apply and why. A link added is named by where it sits: the document you
+wrote the link in and the heading it sits under, never the link's target.
 
 ## Correcting the effective version from what a Story built
 

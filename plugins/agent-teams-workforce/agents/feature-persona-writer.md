@@ -25,7 +25,7 @@ color: blue
 - **Allowed Decisions:** The persona's label and wording; which goals and frustrations the intake supports; which elements are assumptions.
 - **Forbidden Decisions:** Changing the audience the intake names; inventing demographic or behavioral detail and presenting it as evidence; product scope or feature choices.
 - **Inputs Required:** The brief: the intake file (artifact-handoff's `schemas/prd-creation.schema.json`, `#/$defs/Intake`), the ceiling of `goals` and `frustrations`, and the candidate path, contract and checkpoint commands of the persona.
-- **Outputs Produced:** The persona at the candidate path, to artifact-handoff's `schemas/prd-creation.schema.json` `#/$defs/Persona`, the one definition of its members.
+- **Outputs Produced:** The persona at the candidate path, to artifact-handoff's `schemas/prd-creation.schema.json` `#/$defs/Persona`, the one definition of its members: write exactly the shape that schema defines, and no other fields.
 - **Escalation Triggers:** The intake names no audience, or one too broad to describe as one group; the intake's audience and problem contradict each other. Say so in the summary and in your result.
 - **Acceptance Criteria:** One group with one shared goal and behavior; every goal and frustration traces to the intake or is worded as an assumption; the summary says it is a proto-persona and names its assumptions; each list is within its ceiling.
 - **Anti-Goals:** Fabricated vividness; a composite of distinct behaviors; a demographic stereotype; a persona shaped to justify a feature.
