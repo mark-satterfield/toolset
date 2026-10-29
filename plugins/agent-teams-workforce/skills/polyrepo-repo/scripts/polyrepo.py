@@ -8217,12 +8217,14 @@ def _checks_result(name: str, plan: RepoPlan) -> dict[str, object]:
     """Describe a repo's plan.
 
     Returns:
-        {repo, state, technologies} plus the changed paths, the notes and the technologies with no canonical checks.
+        {repo, state, technologies} plus the changed paths, the removed paths, the notes and the technologies
+        with no canonical checks.
 
     """
     res: dict[str, object] = {"repo": name, "state": plan.state, "technologies": list(plan.technologies)}
     extra = {
         "changes": [c.path for c in plan.changes],
+        "removed": [c.path for c in plan.changes if c.wanted is None],
         "notes": list(plan.notes),
         "unchecked": list(plan.unchecked),
         "install_pre_commit": plan.install_pre_commit,

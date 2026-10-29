@@ -3,8 +3,8 @@
 The project's spec file (`checks_sync.spec_file` in the polyrepo config) names one pin per tool, the
 pre-commit fragment every repository receives, and per technology the canonical configuration files, the
 pre-commit fragment and the configurations the canonical files replace. A repository receives the
-common entries and the entries of each technology the tech-stacks scan finds in it; nothing here names a
-repository or a technology.
+common entries and the entries of each technology the tech-stacks scan finds in it, and loses the
+canonical files of a technology it no longer holds; nothing here names a repository or a technology.
 
 Into `.code-checks/` go the runner payload (the scripts in `code_checks/` beside this module) and
 `checks.json`, which tells the runner the repository's technologies, the pins, its CDK apps and the files
@@ -1294,6 +1294,58 @@ def _payload(root: Path, checks_json: str) -> dict[str, str | None]:
     return {**wanted, **stale}
 
 
+def _synced_technologies(root: Path) -> frozenset[str]:
+    """Read the technologies the repository's current checks.json names: what the last sync wrote for.
+
+    Args:
+        root: The working tree.
+
+    Returns:
+        The technologies; none when the repository has no readable checks.json.
+
+    """
+    text = _read(root, CHECKS_JSON)
+    try:
+        parsed: object = json.loads(text) if text is not None else None
+    except json.JSONDecodeError:
+        return frozenset()
+    names = parsed.get("technologies") if isinstance(parsed, dict) else None
+    return frozenset(name for name in names if isinstance(name, str)) if isinstance(names, list) else frozenset()
+
+
+def _retired(
+    root: Path,
+    spec: ChecksSpec,
+    found: frozenset[str],
+    canonical: Mapping[str, str],
+) -> dict[str, str | None]:
+    """Plan the removal of the canonical files of each technology the repository no longer holds.
+
+    A file goes only when no technology the repository holds writes it, and checks-sync owns it: its
+    text is the canonical copy, or the repository's checks.json names the technology, so the last sync
+    wrote it. A file the repository authored itself stays.
+
+    Args:
+        root: The working tree.
+        spec: The spec.
+        found: The technologies the repository holds.
+        canonical: The canonical files of those technologies.
+
+    Returns:
+        Path to None, for each file to remove.
+
+    """
+    synced = _synced_technologies(root)
+    wanted: dict[str, str | None] = {}
+    for technology in (t for name, t in spec.technologies.items() if name not in found):
+        for dest, source in technology.files.items():
+            current = None if dest in canonical else _read(root, dest)
+            owned = technology.name in synced or current == source.read_text(encoding="utf-8")
+            if current is not None and owned:
+                wanted[dest] = None
+    return wanted
+
+
 def _removals(root: Path, files: Sequence[str], technologies: Sequence[TechnologySpec]) -> dict[str, str | None]:
     """Plan the removal of every configuration the canonical files replace.
 
@@ -1413,6 +1465,7 @@ def plan_repository(root: Path, found_technologies: Iterable[str], spec: ChecksS
     canonical = _canonical_files(technologies)
     current_pre_commit = _read(root, PRE_COMMIT_CONFIG)
     wanted: dict[str, str | None] = {
+        **_retired(root, spec, found, canonical),
         **_payload(root, checks_json),
         **canonical,
         PRE_COMMIT_CONFIG: pre_commit_text(
