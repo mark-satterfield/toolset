@@ -21,6 +21,13 @@ from .models import RunContext, StepError
 
 RUN_MANIFEST_FILE: Final = "run.json"
 
+RETIRED_SESSION_KEYS: Final[frozenset[str]] = frozenset({"effort"})
+"""The keys a session row of a run record may hold that the ``Session`` contract no longer defines.
+
+:func:`read_manifest` drops them before the check, so the record is written back in the current
+shape; any other key the contract does not define still fails the check.
+"""
+
 _LOCK: Final = threading.Lock()
 
 
@@ -64,8 +71,28 @@ def parse_manifest(value: object) -> RunManifest:
         raise ValueError(message) from exc
 
 
+def _without_retired_keys(value: object) -> object:
+    """Drop the retired session keys (:data:`RETIRED_SESSION_KEYS`) from each session row of a decoded run record.
+
+    Returns:
+        The record with each session row that is an object rebuilt without those keys; any other
+        value, and every other key and row, as it was.
+
+    """
+    if not isinstance(value, dict):
+        return value
+    sessions: object = value.get("sessions")
+    if not isinstance(sessions, list):
+        return value
+    rows: list[object] = [
+        {key: held for key, held in row.items() if key not in RETIRED_SESSION_KEYS} if isinstance(row, dict) else row
+        for row in sessions
+    ]
+    return {**value, "sessions": rows}
+
+
 def read_manifest(path: Path) -> RunManifest | None:
-    """Read and validate a run record.
+    """Read and validate a run record, without the retired session keys (:func:`_without_retired_keys`).
 
     Returns:
         The validated run record, or None when the file does not exist.
@@ -87,7 +114,7 @@ def read_manifest(path: Path) -> RunManifest | None:
     except json.JSONDecodeError as exc:
         decode_error: str = f"run record {path} is not JSON: {exc}"
         raise ValueError(decode_error) from exc
-    return parse_manifest(decoded)
+    return parse_manifest(_without_retired_keys(decoded))
 
 
 def _current(context: RunContext, target: Path) -> RunManifest:

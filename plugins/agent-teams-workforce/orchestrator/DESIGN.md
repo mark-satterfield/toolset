@@ -200,8 +200,10 @@ contract other than its readers', and the failure is `PipelineDefectError`. A fi
 that is missing, is not JSON or is refused by its contract is the item's failure; a contract whose
 schema cannot be loaded or applied is a `PipelineDefectError` (`architecture_files.checked_file`).
 The solutions architect's result and a document maintainer's result are read the same way as a
-helper's request (`architecture_files.checked_output`): refused under a writer session of another
-fingerprint, they are stale and the writer runs again; refused under a current one, the item fails. A helper's request is stale only when the session of the step
+helper's request (`architecture_files.checked_output`): refused when the writer's step is done (its
+output passed its check when it was accepted, so the contract changed since), or under a writer
+session of another fingerprint, they are stale and the writer runs again; refused under a current
+one of a writer that is not done, the item fails. A helper's request is stale only when the session of the step
 above it was made under another agent definition or contracts (or that step holds none); a request
 that session wrote wrongly under the current ones (`MalformedRequestError`) is corrected in place
 by continuing that session with the errors, and the helper runs again, with nothing set back to
@@ -411,7 +413,10 @@ that fails validation is saved beside the handback as `.invalid.json` and replac
 contract's `rejected` document.
 
 `detailPath` is the run record `<work>/run.json`, whose shape is `orchestrator/core/manifest.py`
-`RunManifest`; each of its sessions is a `handback_contract.Session`. It also carries the flow's
+`RunManifest`; each of its sessions is a `handback_contract.Session`. A session row of an existing
+record that holds a key the contract retired (`manifest.RETIRED_SESSION_KEYS`) is read without it,
+and the record is written back in the current shape; any other key the contract does not define
+fails the read. It also carries the flow's
 report and the note and verdict events of the dispatch. For a failure that escapes the flow
 (section 6.7) `detailPath` is the traceback file beside the handback.
 
@@ -982,9 +987,10 @@ nothing else reviews it.
   Decide step, handed every answer and a digest of them (`answers-digest.schema.json`), so the
   architect reads a few KB per answer instead of each answer file. Each request's session is told
   the answer's schema and the rule in its outcome, whichever catalog agent it is. An answer the
-  current contract refuses, written by a session of an earlier definition or contracts, sends
-  its writer's step back to planned when the digest is built (`StaleInputError`), so it is
-  written again to the current contract. Decide writes the result; one
+  current contract refuses sends its writer's step back to planned when the digest is built
+  (`StaleInputError`), so it is written again to the current contract; a reason that holds its
+  one source under the retired key `source` is read as one listing it under `sources`
+  (`architecture_rounds.read_answer`), so that shape alone sends no writer back. Decide writes the result; one
   that asks a second round gets it and one more Decide, and a Decide of round 2 that still asks
   fails the step. A result with no open request plans one `architecture-maintainer` per group
   of arc42 sections whose script-built write request changed, at most three, so each session

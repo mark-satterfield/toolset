@@ -93,18 +93,55 @@ section numbers; ``detailed/`` and any other document go to the first."""
 _SECTION: Final[re.Pattern[str]] = re.compile(r"^arc42/(?P<number>\d{2})-")
 
 
+RETIRED_REASON_SOURCE: Final = "source"
+"""The key a reason of a specialist answer may hold for its one source, which the answer contract
+no longer defines: a reason lists its sources under ``sources`` (:func:`read_answer`)."""
+REASON_SOURCES: Final = "sources"
+
+
+def _reason_with_sources(reason: object) -> object:
+    """Move a reason's retired one source (:data:`RETIRED_REASON_SOURCE`) into ``sources``.
+
+    Returns:
+        The reason with ``sources`` holding that one source, when it is an object that holds the
+        retired key and no ``sources``; otherwise the reason as it was.
+
+    """
+    if not isinstance(reason, dict) or RETIRED_REASON_SOURCE not in reason or REASON_SOURCES in reason:
+        return reason
+    moved: dict[str, object] = {key: held for key, held in reason.items() if key != RETIRED_REASON_SOURCE}
+    moved[REASON_SOURCES] = [reason[RETIRED_REASON_SOURCE]]
+    return moved
+
+
+def read_answer(value: object, where: str = "SpecialistAnswer") -> SpecialistAnswer:
+    """Validate a decoded specialist answer, its reasons first brought to the current shape.
+
+    Each reason that holds the retired one source is read as one that lists it under ``sources``
+    (:func:`_reason_with_sources`); every other key and value is checked as it is.
+
+    Returns:
+        The answer, typed; ``validate_specialist_answer`` raises ``ArchitectureWorkError`` for an
+        answer that does not satisfy the SpecialistAnswer definition.
+
+    """
+    if isinstance(value, dict) and isinstance(value.get("reasons"), list):
+        value = {**value, "reasons": [_reason_with_sources(reason) for reason in value["reasons"]]}
+    return validate_specialist_answer(value, where)
+
+
 def answered(request: SpecialistRequest) -> bool:
     """Tell whether a request's answer file already holds a valid answer.
 
     Returns:
-        True when the file at the request's answer path is a valid specialist answer.
+        True when the file at the request's answer path is a valid specialist answer (:func:`read_answer`).
 
     """
     path: Path = Path(request["answerPath"])
     if not path.is_file():
         return False
     try:
-        validate_specialist_answer(strict_json(path), str(path))
+        read_answer(strict_json(path), str(path))
     except OSError, ValueError:
         return False
     return True
@@ -301,7 +338,7 @@ def write_digest(run: StepRun, helpers: Path) -> Path | None:
     path: Path
     for path in answers:
         try:
-            answer: SpecialistAnswer = checked_output(run, path, validate_specialist_answer, _answer_writer(run, path))
+            answer: SpecialistAnswer = checked_output(run, path, read_answer, _answer_writer(run, path))
         except StaleInputError as found:
             stale.append(found)
             continue

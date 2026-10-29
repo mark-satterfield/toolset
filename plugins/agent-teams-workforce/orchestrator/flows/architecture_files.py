@@ -398,18 +398,22 @@ def read_result(run: StepRun, context: ArchitectureContext) -> ArchitectureResul
 def checked_output[T](run: StepRun, path: Path, validate: Callable[[object], T], writer: Step | None) -> T:
     """Read a file an earlier agent step wrote, and validate it with its contract.
 
-    A file the contract refuses was written to an earlier contract when its writer's session was
-    made under another agent definition or contracts (``AgentRunner.resumable``), or the writer
-    holds no session: the writer runs again. Otherwise the refusal is the item's.
+    A file the contract refuses was written to an earlier contract when its writer is done (its
+    output passed its check when the step was accepted, so the contract changed since), its
+    writer's session was made under another agent definition or contracts
+    (``AgentRunner.resumable``), or the writer holds no session: the writer runs again. Otherwise
+    the refusal is the item's.
 
     Returns:
         The validated document.
 
     Raises:
         ArchitectureStepError: The file is missing or is not JSON, or the contract refuses it
-            and the writer is unknown or its session is one of the current definition and contracts.
-        StaleInputError: The contract refuses the file, and its writer's session is not one of
-            the current agent definition and contracts.
+            and the writer is unknown, or is not done and its session is one of the current
+            definition and contracts.
+        StaleInputError: The contract refuses the file, and its writer is done, holds no
+            session, or holds a session that is not one of the current agent definition and
+            contracts.
 
     """
     held: object = checked_file(run, path, lambda value: value)
@@ -418,7 +422,9 @@ def checked_output[T](run: StepRun, path: Path, validate: Callable[[object], T],
     except ArchitectureWorkError as exc:
         evidence: str = f"{path}: {exc}"
         session: str | None = None if writer is None else writer.get("session")
-        if writer is not None and (session is None or not run.agents.resumable(session)):
+        if writer is not None and (
+            writer["status"] == STATUS_DONE or session is None or not run.agents.resumable(session)
+        ):
             raise StaleInputError(run.inputs.stage, writer["id"], (evidence,)) from None
         raise ArchitectureStepError(run, evidence) from None
 
