@@ -76,6 +76,19 @@
           "records": [
             {"name": "regressionPlanReview", "kind": "file", "holds": "the regression-coverage-reviewer's review of the scope"}
           ],
+          "adds": [
+            {"kinds": ["build:regression-reassess", "build:regression-review"], "when": "the review does not approve the scope or names findings: the regression-impact-assessor is given the review, and the corrected scope is reviewed again"}
+          ],
+          "limit": "It adds no correction after two corrections of the scope; build:regression-validate then fails with regression-plan"
+        },
+        "build:regression-reassess": {
+          "description": "Correct the regression scope from its review",
+          "purpose": "The reviewer named findings in the scope, and the assessor that wrote it corrects them",
+          "runBy": "task-to-deploy",
+          "reads": ["worktree", "design", "provisioning", "regressionPrevious", "regressionPlan", "regressionPlanReview"],
+          "records": [
+            {"name": "regressionPlan", "kind": "file", "holds": "the corrected impact scope the regression-impact-assessor wrote"}
+          ],
           "adds": []
         },
         "build:regression-validate": {

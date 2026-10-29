@@ -31,9 +31,13 @@ repositories).
   for what it already records only where the Task changes a universal or shared component (a
   shared library, layer, chassis or service other repositories or components consume).
 - Cite the sources searched and concrete component bindings (repository-relative files per
-  component). List in `sourceFiles` the absolute paths of the physical source files actually read
-  (vault document backing files included), separately from the section references; the workflow
-  fingerprints their bytes. A missing or unreadable source blocks.
+  component). List in `sourceFiles` the absolute path of each regular file actually read (vault
+  document backing files included), separately from the section references; never a directory, a
+  worktree or a repository root. The workflow checks that each is an existing regular file when it
+  accepts the scope, and fingerprints its bytes. A missing or unreadable source blocks.
+- Correction mode: when the brief names checks your scope failed, or a review of it by the
+  regression-coverage-reviewer, read them, resolve every error and finding from the requirement
+  sources, and write the whole scope again at the same path.
 - Assess unit, contract, integration and nonfunctional layers explicitly for each requirement.
   Mark `impacted` only for requirements this change can affect, with an `impactReason` that is
   evidence; retain unrelated prior requirements and mappings with `impacted: false`, so no

@@ -20,8 +20,8 @@ from jsonartifact import read_artifact
 KINDS: Final[frozenset[str]] = frozenset({"unit", "contract", "integration", "nonfunctional"})
 EXECUTION_BUDGET_SECONDS: Final[int] = 500
 
-type Mode = Literal["prepare", "validate", "verify"]
-MODES: Final[dict[str, Mode]] = {"prepare": "prepare", "validate": "validate", "verify": "verify"}
+type Mode = Literal["prepare", "check", "validate", "verify"]
+MODES: Final[dict[str, Mode]] = {"prepare": "prepare", "check": "check", "validate": "validate", "verify": "verify"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,6 +170,20 @@ def write(path: str | Path, value: JsonValue) -> None:
     tmp.replace(target)
 
 
+def source_errors(paths: list[str]) -> list[str]:
+    """Name each requirement source that is not the absolute path of an existing regular file.
+
+    Returns:
+        One error per such source; empty when every source is a readable file.
+
+    """
+    return [
+        f"Requirement source is not an absolute readable file: {value}"
+        for value in paths
+        if not Path(value).is_absolute() or not Path(value).is_file()
+    ]
+
+
 def source_hashes(paths: list[str]) -> dict[str, str]:
     """Bind the actual source bytes, independent of model-authored evidence prose.
 
@@ -180,14 +194,10 @@ def source_hashes(paths: list[str]) -> dict[str, str]:
         ValueError: A source is not an absolute readable file.
 
     """
-    result: dict[str, str] = {}
-    for value in paths:
-        path: Path = Path(value)
-        if not path.is_absolute() or not path.is_file():
-            message: str = f"Requirement source is not an absolute readable file: {value}"
-            raise ValueError(message)
-        result[str(path)] = hashlib.sha256(path.read_bytes()).hexdigest()
-    return result
+    errors: list[str] = source_errors(paths)
+    if errors:
+        raise ValueError(errors[0])
+    return {str(Path(value)): hashlib.sha256(Path(value).read_bytes()).hexdigest() for value in paths}
 
 
 def scope(plan: JsonObject) -> JsonObject:
@@ -602,16 +612,32 @@ def _emit(value: JsonValue) -> None:
     sys.stdout.write(json.dumps(value) + "\n")
 
 
+def _check(plan: JsonObject, previous: JsonObject | None, args: CliArgs) -> None:
+    """Check a newly written plan for everything validate later requires that holds without a review.
+
+    The scope is checked as validate checks it; a final mapping (``--approved-plan`` given) also
+    as verify checks it before it runs the mapped tests.
+    """
+    errors: list[str] = source_errors(_strs(plan, "sourceFiles"))
+    errors.extend(validate(plan, previous, complete=args.approved_plan is not None))
+    if args.approved_plan and scope(plan) != scope(read(args.approved_plan)):
+        errors.append("Final mapping changed the approved impact scope")
+    error_values: list[JsonValue] = [*errors]
+    write(args.output, {"ok": not errors, "errors": error_values})
+    _emit({"ok": not errors, "errors": error_values, "path": args.output})
+
+
 def main() -> None:
     """Prepare, validate or verify a cumulative regression plan and report the result as JSON."""
     args: CliArgs = _parse_args()
     previous: JsonObject | None = read(args.ledger) if Path(args.ledger).is_file() else None
     if args.mode == "prepare":
         write(args.output, previous or {"requirements": [], "mappings": [], "runs": []})
-        plan_path: str = args.approved_plan or args.plan
-        saved: JsonObject | None = read(plan_path) if Path(plan_path).is_file() else None
+        approved: JsonObject | None = read(args.approved_plan) if args.approved_plan else None
         hashes: dict[str, str] = source_hashes(
-            sorted(set(args.source + _optional_strs(saved, "sourceFiles") + _optional_strs(previous, "sourceFiles"))),
+            sorted(
+                set(args.source + _optional_strs(approved, "sourceFiles") + _optional_strs(previous, "sourceFiles")),
+            ),
         )
         _emit(
             {
@@ -622,6 +648,9 @@ def main() -> None:
         )
         return
     plan: JsonObject = read(args.plan)
+    if args.mode == "check":
+        _check(plan, previous, args)
+        return
     errors: list[str] = validate(plan, previous, complete=args.mode == "verify")
     review: JsonObject = read(args.review) if args.review else {}
     if review.get("approved") is not True or review.get("findings") or not review.get("evidence"):
