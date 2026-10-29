@@ -24,8 +24,9 @@ submit StructuredOutput, or run artifact checkpoint or
 submission helpers. There is no machine mode or command-runner handoff in direct sessions.
 A structurally valid artifact is not automatically a semantically correct one.
 
-On a corrective pass, read the labeled validation-errors input and the existing output, repair the
-specific findings and affected references, and preserve valid work. On interruption retain the
+On a corrective pass, the brief's `correction` lists every problem in full (the labeled
+validation-errors input holds the same): read it and the existing output, repair the specific
+findings and affected references, and preserve valid work. On interruption retain the
 actual files; resumption continues those files. Do not fabricate completion for missing reasoning.
 Named missing inputs or remaining uncertainties belong in the contract's existing evidence fields;
 never add fields to a closed schema or return a success reference for absent work.

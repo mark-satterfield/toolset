@@ -478,6 +478,13 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
     return command
 
 
+CORRECTIVE_OUTCOME: Final = (
+    "Correct the output named in `output`: `correction` lists every problem in full (also in the "
+    "`validation errors` input); correct exactly those and keep everything else as it is."
+)
+"""The outcome of a corrective pass."""
+
+
 @functools.cache
 def _brief_contract() -> dict[str, JsonValue]:
     """Read the brief's contract file once per process.
@@ -495,13 +502,15 @@ def brief(
     step: AgentStep,
     inputs: list[tuple[str, Path]],
     *,
-    corrective: bool = False,
+    correction: dict[str, JsonValue] | None = None,
 ) -> str:
     """Serialize the one-line outcome and selected inputs for an agent.
 
     The brief is ``agent-brief.schema.json`` (:data:`BRIEF_SCHEMA`), and is checked against it.
     A step that states what is asked sends it as ``request``, and a step of the bead's step
-    journal sends its id as ``step``.
+    journal sends its id as ``step``. On a corrective pass, ``correction`` is the content of the
+    errors file (its ``correction``, ``headline`` and ``errors``); the brief carries it inline as
+    ``correction`` and the outcome names it, so the session has every problem in its prompt.
 
     Returns:
         A JSON brief containing paths and the expected outcome.
@@ -510,7 +519,7 @@ def brief(
         ValueError: The outcome contains multiple lines.
 
     """
-    outcome = "Correct the output named in the errors file." if corrective else step.outcome
+    outcome: str = CORRECTIVE_OUTCOME if correction is not None else step.outcome
     if "\n" in outcome:
         message = "an outcome must be one line"
         raise ValueError(message)
@@ -520,6 +529,12 @@ def brief(
         "output": str(step.output.resolve()),
         "outcome": outcome,
     }
+    if correction is not None:
+        facts["correction"] = {
+            "instruction": correction["correction"],
+            "headline": correction["headline"],
+            "errors": correction["errors"],
+        }
     if step.request is not None:
         facts["request"] = step.request
     if step.journal_step is not None:

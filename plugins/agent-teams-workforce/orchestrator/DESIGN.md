@@ -737,8 +737,9 @@ carries one of the three causes above.
   the field names it is about, the field names allowed there, the schema rule quoted and the schema
   file with the pointer and definition of that rule, as `strictschema.explain_all` states them)
   and resumes the same session once (`--resume <sessionId>`, with the flags
-  of section 5.2) with a brief whose inputs add that file, labelled `validation errors`, and whose
-  outcome line says "Correct the output named in the errors file." The session keeps what it
+  of section 5.2) with a brief whose inputs add that file, labelled `validation errors`, whose
+  `correction` carries the same instruction, headline and every problem inline, and whose outcome
+  line tells the session to correct the output from `correction`. The session keeps what it
   already read, and the prompt cache makes the resume cheaper than a new session. A second failure
   fails the step with cause `other`. A launch can switch the corrective retry off; the
   decomposer's correction step does.

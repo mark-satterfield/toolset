@@ -23,10 +23,26 @@
       "minLength": 1
     },
     "outcome": {
-      "description": "One line naming the result the session produces. On a corrective pass it is the instruction to correct the output named in the `validation errors` input.",
+      "description": "One line naming the result the session produces. On a corrective pass it is the instruction to correct the output named in `output` from the problems `correction` lists.",
       "type": "string",
       "minLength": 1,
       "pattern": "^[^\\n]*$"
+    },
+    "correction": {
+      "description": "On a corrective pass only: what to correct, inline, so the session has every problem in its prompt. The same content is in the `validation errors` input.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["instruction", "headline", "errors"],
+      "properties": {
+        "instruction": {"description": "How to correct the output.", "type": "string", "minLength": 1},
+        "headline": {"description": "The first line of the validation error.", "type": "string", "minLength": 1},
+        "errors": {
+          "description": "Every problem the validation found, in full, one per item: its path, the field names it is about, the field names allowed there, the schema rule quoted and where the rule is.",
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
     },
     "request": {
       "description": "What this step asks of the agent, when it asks more than the outcome says: the step's request, or else its description in the step journal.",
@@ -57,7 +73,7 @@
   },
   "x-labels": {
     "step journal": "The bead's step journal file (step-journal.schema.json). Every brief names it last. A session reads and records artifacts in it only through `atw-step-journal`.",
-    "validation errors": "The errors Python found in the output, on a corrective pass; correct exactly those.",
+    "validation errors": "The errors Python found in the output, on a corrective pass; correct exactly those. The brief's `correction` carries the same problems inline.",
     "prd": "The PRD of the Epic. Read only the headings a pointer names (a requirement's heading, a TRD requirement's source); a definition says when the whole PRD is read.",
     "criteria": "One repository's acceptance-criteria document. The review criteria are never handed as an input: every agent that works to them reads effective-architecture/review-standard.md through its effective-architecture skill.",
     "context": "The architecture context file of the Epic (architecture-context.schema.json).", "architecture pack": "The Epic's architecture pack, pack.json, an index: the PRD's path, the Epic's requirements, its reach with the heading references (<path>#<heading>) that describe each entry, the constraints that bind a reached entry by id, and the path of the file that holds every constraint that applies in full (orchestrator/flows/architecture_pack.py). `atw-matrix heading` prints a heading's text.",

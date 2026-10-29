@@ -282,23 +282,26 @@ CORRECTION: Final = (
 """What the errors file asks the corrective session to do."""
 
 
-def _write_errors(step: AgentStep, exc: Exception) -> Path:
+def _write_errors(step: AgentStep, exc: Exception) -> tuple[Path, dict[str, JsonValue]]:
     """Save the validation errors of ``step``'s output beside it for the corrective session.
 
     The file holds the error's first line as ``headline`` and every further line, one problem
     each, as ``errors``, in full; an error of one line is both.
 
     Returns:
-        The errors file.
+        The errors file, and its content, which the corrective brief carries inline.
 
     """
     errors: Path = step.output.with_name(step.output.name + ".errors.json")
     lines: list[str] = [text.strip() for text in str(exc).splitlines() if text.strip()] or [type(exc).__name__]
-    write_json(
-        errors,
-        {"output": str(step.output), "correction": CORRECTION, "headline": lines[0], "errors": lines[1:] or lines},
-    )
-    return errors
+    content: dict[str, JsonValue] = {
+        "output": str(step.output),
+        "correction": CORRECTION,
+        "headline": lines[0],
+        "errors": list(lines[1:] or lines),
+    }
+    write_json(errors, content)
+    return errors, content
 
 
 FIRST_ERROR_LIMIT: Final = 300
@@ -626,7 +629,7 @@ class AgentRunner:
         except (OSError, ValueError, KeyError, ImportError) as exc:
             raise SessionSetupError(str(exc)) from exc
         asked_to_resume: bool = resume
-        corrective: bool = False
+        correction: dict[str, JsonValue] | None = None
         attempt: int = 0
         while True:
             _check_stop()
@@ -655,7 +658,7 @@ class AgentRunner:
             stream: Path = scratch / f"{safe_key(step.stage)}-{session_id}-{attempt}.stream.jsonl"
             facts: SessionFacts = self._session(
                 command=command,
-                prompt=brief(self.context.bead, step, inputs, corrective=corrective),
+                prompt=brief(self.context.bead, step, inputs, correction=correction),
                 env=env,
                 stream=stream,
                 row=row,
@@ -677,11 +680,14 @@ class AgentRunner:
             try:
                 validate_output(step)
             except CONTENT_FAILURES as exc:
-                errors: Path = _write_errors(step, exc)
-                if corrective or not step.corrective:
+                errors: Path
+                content: dict[str, JsonValue]
+                errors, content = _write_errors(step, exc)
+                if correction is not None or not step.corrective:
                     raise StepError(step.stage, OTHER_CAUSE, (_first_error(exc), str(errors), str(stream))) from None
                 inputs.append(("validation errors", errors))
-                corrective = resume = True
+                correction = content
+                resume = True
                 continue
             return step.output
 
