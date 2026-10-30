@@ -49,10 +49,8 @@ property (`properties.testStrategy`) in the artifact-handoff skill's `schemas/ta
 do not invent values the sources do not state. Requirements not checkable by unit tests may be assigned to human testing explicitly.
 Write the assigned UTF-8 criteria document, keeping the set concise (guidance: 120 criteria and
 30 DoD items). Keep every id stable, and state requirements, not Task wording. Tasks cite the ids,
-and the step checks the structure: each criterion is a list item that opens with its id `AC-<n>`
-followed by its statement, each Definition of Done statement a list item that opens with its id
-`DOD-<n>`, every id appears once, and a criterion written as `Given` also states its `When` and
-`Then`.
+and the step checks the document against "A criteria document's structure" in the
+`acceptance-criteria` skill.
 
 Write the criteria to the specs-and-Tasks criteria of `effective-architecture/review-standard.md`
 (the criteria document's contract): each criterion names an observable outcome a test can show

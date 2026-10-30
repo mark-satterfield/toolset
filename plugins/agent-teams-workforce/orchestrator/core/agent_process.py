@@ -106,6 +106,19 @@ class SessionRequest:
             _duration(self.env, key, default)
 
 
+@dataclass(frozen=True)
+class WallProbe:
+    """One Claude CLI prompt run only to read the account's rate-limit event."""
+
+    argv: list[str]
+    prompt: str
+    directory: Path
+    env: dict[str, str]
+    stream: Path
+    """The file the probe's output is saved to."""
+    timeout: float
+
+
 class _SubagentWatch:
     """Find a subagent that stopped writing while its parent's Agent call is still open.
 
@@ -409,6 +422,38 @@ class SessionProcesses:
                 for pipe in (process.stdin, process.stdout):
                     if pipe is not None and not pipe.closed:
                         pipe.close()
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def account_wall(self, probe: WallProbe) -> dict[str, JsonValue] | None:
+        """Ask the Claude CLI whether the account is at its usage wall.
+
+        The probe runs one prompt and saves what it printed to ``probe.stream``. A rejected
+        rate-limit event in that output is the wall; a probe that cannot run or does not finish in
+        ``probe.timeout`` seconds reports none.
+
+        Returns:
+            The rejected rate-limit info, or None when the probe saw no wall.
+
+        """
+        facts: SessionFacts = {"result": None, "rate": None, "timeout": False, "exit": 0, "pid": 0}
+        try:
+            done = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Validated argv and explicit environment; no shell.
+                probe.argv,
+                input=probe.prompt.encode(),
+                capture_output=True,
+                cwd=probe.directory,
+                env=probe.env,
+                timeout=probe.timeout,
+                check=False,
+                start_new_session=True,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            probe.stream.write_text(f"{type(exc).__name__}: {exc}\n", encoding="utf-8")
+            return None
+        probe.stream.write_bytes(done.stdout + done.stderr)
+        for line in done.stdout.splitlines():
+            self._line(line, facts)
+        return facts["rate"]
 
     @staticmethod
     def _line(line: bytes, facts: SessionFacts) -> dict[str, JsonValue] | None:

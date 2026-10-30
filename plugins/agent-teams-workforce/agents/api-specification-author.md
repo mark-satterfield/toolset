@@ -124,11 +124,9 @@ Requirements not checkable by unit tests may be assigned to human testing explic
 
 Write the criteria document at the path the request gives, keeping the set concise (guidance:
 120 criteria and 30 DoD items). Keep every id stable, and state requirements, not Task wording.
-Tasks cite the ids, and the step checks the structure: each criterion is a list item that opens
-with its id `AC-<n>` followed by its statement, each Definition of Done statement a list item
-that opens with its id `DOD-<n>`, every id appears once, and a criterion written as `Given` also
-states its `When` and `Then`. Write the criteria to the specs-and-Tasks criteria of
-`effective-architecture/review-standard.md` (the criteria document's contract): each criterion
+Tasks cite the ids, and the step checks the document against "A criteria document's structure"
+in the `acceptance-criteria` skill: load the skill before you write the criteria. Write the
+criteria to the specs-and-Tasks criteria of `effective-architecture/review-standard.md` (the criteria document's contract): each criterion
 names an observable outcome a test can show true or false from its text alone, with the concrete
 input, boundary or failure case it covers; each Definition of Done statement is a true-or-false
 statement about the finished work, never a checklist step. Criteria add no requirement and

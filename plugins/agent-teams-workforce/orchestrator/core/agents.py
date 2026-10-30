@@ -8,6 +8,7 @@ import math
 import os
 import re
 import shutil
+import signal
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Fixed argv only; no shell execution.
 import sys
 import tempfile
@@ -42,7 +43,7 @@ from .agent_context import (
     load_agent,
     prepare,
 )
-from .agent_process import SessionProcesses, SessionRequest, subagent_transcripts
+from .agent_process import SessionProcesses, SessionRequest, WallProbe, subagent_transcripts
 from .constraints import Section2Guard
 from .driver_contracts import (
     DispatchArguments,
@@ -258,6 +259,46 @@ class SessionNotResumedError(StepError):
     """
 
 
+TERMINATED_EXITS: Final[frozenset[int]] = frozenset({-signal.SIGTERM, 128 + signal.SIGTERM})
+"""The exit statuses of a session process ended by SIGTERM: the signal itself, or the CLI's own exit on it."""
+WALL_PROBE_ARGUMENTS: Final[tuple[str, ...]] = (
+    "--model",
+    "haiku",
+    "--tools",
+    "",
+    "--setting-sources",
+    "",
+    "--strict-mcp-config",
+    "--disable-slash-commands",
+    "--no-session-persistence",
+)
+"""The probe's session: the smallest model, no tools, no settings, MCP servers, commands or saved transcript."""
+WALL_PROBE_PROMPT: Final = "Reply with the single word OK."
+WALL_PROBE_TIMEOUT: Final = 120.0
+"""Seconds the account-wall probe may take."""
+
+
+def _terminated_outside(facts: SessionFacts) -> bool:
+    """Tell whether a session process was ended by a SIGTERM this orchestrator did not send.
+
+    The orchestrator's own stops leave a usage wall, a timeout or a cancellation in the facts;
+    a SIGTERM with none of them came from outside, as the driver sends when another dispatch
+    reaches the account's usage wall.
+
+    Returns:
+        True when the process ended by SIGTERM with no result event, no usage wall, no timeout
+        and no cancellation.
+
+    """
+    return (
+        facts["result"] is None
+        and facts["rate"] is None
+        and not facts["timeout"]
+        and not facts.get("cancelledCause")
+        and facts["exit"] in TERMINATED_EXITS
+    )
+
+
 def _never_ran(facts: SessionFacts) -> bool:
     """Tell whether a session process ended without running a turn.
 
@@ -275,11 +316,17 @@ def _never_ran(facts: SessionFacts) -> bool:
     )
 
 
-CORRECTION: Final = (
+SCHEMA_CORRECTION: Final = (
     "Rewrite the output so it satisfies its contract: correct every error listed, at the path it names, "
     "using only the field names it allows there and the schema rule it quotes; keep everything else as it is."
 )
-"""What the errors file asks the corrective session to do."""
+"""What the errors file asks the corrective session to do for a JSON output checked against its schema."""
+DOCUMENT_CORRECTION: Final = (
+    "Edit the Markdown document so it passes its check: `headline` names the check that failed and each "
+    "entry of `errors` names the lines and the item the check found wrong and what the item must state; "
+    "change each item it names as that entry says; keep everything else as it is."
+)
+"""What the errors file asks the corrective session to do for a Markdown document."""
 
 
 def _write_errors(step: AgentStep, exc: Exception) -> tuple[Path, dict[str, JsonValue]]:
@@ -296,7 +343,7 @@ def _write_errors(step: AgentStep, exc: Exception) -> tuple[Path, dict[str, Json
     lines: list[str] = [text.strip() for text in str(exc).splitlines() if text.strip()] or [type(exc).__name__]
     content: dict[str, JsonValue] = {
         "output": str(step.output),
-        "correction": CORRECTION,
+        "correction": SCHEMA_CORRECTION if isinstance(step.validate, Path) else DOCUMENT_CORRECTION,
         "headline": lines[0],
         "errors": list(lines[1:] or lines),
     }
@@ -756,6 +803,17 @@ class AgentRunner:
             failure_cause = exc.cause
             raise
         else:
+            if _terminated_outside(facts):
+                facts["rate"] = self.processes.account_wall(
+                    WallProbe(
+                        [self.executable, "-p", "--output-format", "stream-json", "--verbose", *WALL_PROBE_ARGUMENTS],
+                        WALL_PROBE_PROMPT,
+                        directory,
+                        env,
+                        stream.with_suffix(".wall-probe.jsonl"),
+                        WALL_PROBE_TIMEOUT,
+                    ),
+                )
             return facts
         finally:
             with _finalization("persist session completion"):

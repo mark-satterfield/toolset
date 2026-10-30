@@ -684,6 +684,7 @@ alias (section 0). The Fable allowance is handled per step, from structured fact
 | Agent session: killed at its idle limit, its hard limit or a stalled subagent (section 5.6) | the runner's own timer | `timeout` |
 | Agent session: ended with no `result` event, a failure exit status, or a `result` whose `subtype` is not `success` | the exit status and the absence or `subtype` of the `result` event | `other` |
 | Agent session: stopped because another session of the run hit the usage wall or an API failure | the stop the runner recorded for the run's sessions | the cause of that stop (`quota` with its `resumeAt`, or `api`) |
+| Agent session: ended by a `SIGTERM` the runner did not send (exit status 143 or -15, no `result` event, no usage wall, no timeout, no cancellation), as the driver sends when another dispatch hits the usage wall | the `rate_limit_event` of one tool-less `haiku` prompt the runner then runs (`SessionProcesses.account_wall`), saved beside the stream as `.stream.wall-probe.jsonl` | `quota` with `failure.resumeAt` = `breaker.exhausted_reset(info)` when that event is rejected; otherwise `other` |
 | Agent session: no valid output file after the corrective retry | the parse or schema exception | `other` |
 | Agent session: its schema file cannot be read or applied | the exception of the schema load or of the validation machinery | `other`, classified `pipeline-code-defect` |
 | `bd` call: the call outlived its timeout | `subprocess.TimeoutExpired` (timeout `ATW_BD_TIMEOUT`, default 180 s) | `bd-timeout` |
@@ -738,10 +739,12 @@ carries one of the three causes above.
   a session continues it.
 - **One corrective retry** with specific feedback (CONTEXT 7.4): when an agent step's output is
   missing or invalid after a normal session end, Python writes the exact validation errors to
-  `<output>.errors.json` (a short `headline`, then every problem in full under `errors`: its path,
-  the field names it is about, the field names allowed there, the schema rule quoted and the schema
-  file with the pointer and definition of that rule, as `strictschema.explain_all` states them)
-  and resumes the same session once (`--resume <sessionId>`, with the flags
+  `<output>.errors.json` (a short `headline`, then every problem in full under `errors`: for a JSON
+  output its path, the field names it is about, the field names allowed there, the schema rule
+  quoted and the schema file with the pointer and definition of that rule, as
+  `strictschema.explain_all` states them; for a Markdown document the lines and the item its check
+  found wrong and what the item must state), with the instruction for that kind of output
+  (`SCHEMA_CORRECTION` or `DOCUMENT_CORRECTION`), and resumes the same session once (`--resume <sessionId>`, with the flags
   of section 5.2) with a brief whose inputs add that file, labelled `validation errors`, whose
   `correction` carries the same instruction, headline and every problem inline, and whose outcome
   line tells the session to correct the output from `correction`. The session keeps what it

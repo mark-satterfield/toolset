@@ -9,8 +9,10 @@ user-invocable: false
 An acceptance criterion is testable when a test author can build one passing case and one failing
 case from its text alone, without asking what was meant. Everything below serves that test. Where
 the criteria sit in a document, and what that document's contract adds (a PRD's P0 rule and its
-WHAT-not-HOW boundary in the `prd-writer` skill; a criteria document's ids, sources and schema in
-the brief and the artifact-handoff contract), is the document's own rule.
+WHAT-not-HOW boundary in the `prd-writer` skill; a criteria document's sources and schema in the
+brief and the artifact-handoff contract), is the document's own rule. The structure a
+specification's criteria document is checked against is stated once, below, under "A criteria
+document's structure".
 
 ## One criterion
 
@@ -61,6 +63,24 @@ the brief and the artifact-handoff contract), is the document's own rule.
   stage"). Without them it is a quality intent, not a criterion.
 - **Assigned when a unit test cannot check it.** A criterion only an integration, end-to-end,
   load or human test can check says so; it is not dropped for being hard to unit test.
+
+## A criteria document's structure
+
+A specification's criteria document (`spec-<slug>.criteria.md`) is checked by
+`spec_authoring.criteria_document` before Tasks cite it, against exactly these rules:
+
+1. **Each item is a list item that opens with its id.** An acceptance criterion opens with
+   `AC-<n>`, a Definition of Done statement with `DOD-<n>` (`- AC-3: Given …`). The document
+   holds at least one of each.
+2. **An item runs to the next item or heading.** Every line after the id line, up to the next list
+   item that opens with an `AC-` or `DOD-` id or the next heading, belongs to the item, so a
+   statement may wrap over as many lines as it needs.
+3. **Every id once, every id followed by its statement.**
+4. **A criterion that opens with `Given` states its `When` and `Then`.** The keywords are matched
+   as words anywhere in the whole item, wrapped lines included, in any letter case. A criterion
+   that does not open with `Given` (a boolean assertion) needs neither.
+
+Each problem the check reports names the lines of the item, its id and what it lacks.
 
 ## Definition of Done
 

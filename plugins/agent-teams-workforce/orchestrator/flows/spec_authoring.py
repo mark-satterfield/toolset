@@ -250,37 +250,101 @@ _CRITERION_LINE: Final[re.Pattern[str]] = re.compile(
     r"(?P<id>(?:AC|DOD)-[A-Za-z0-9][A-Za-z0-9.-]*)[*`]*[:.]?\s*(?P<text>.*)$",
 )
 """A list item that opens with a criterion id (``AC-<n>``) or a Definition of Done id (``DOD-<n>``)."""
+_HEADING: Final[re.Pattern[str]] = re.compile(r"^\s{0,3}#{1,6}(?:\s|$)")
+"""A Markdown heading, which ends the item before it."""
+_OPENS_WITH_GIVEN: Final[re.Pattern[str]] = re.compile(r"^[*_`\s]*given\b", re.IGNORECASE)
+_KEYWORDS: Final[tuple[str, ...]] = ("When", "Then")
+"""The keywords a criterion that opens with ``Given`` also states, in any letter case."""
+
+
+@dataclass(frozen=True)
+class _Item:
+    """One criterion or Definition of Done statement: its id and its whole text, wrapped lines joined."""
+
+    id: str
+    first: int
+    last: int
+    text: str
+
+    def where(self) -> str:
+        """Name the lines the item spans.
+
+        Returns:
+            ``line <n>`` for an item on one line, ``lines <n>-<m>`` for a wrapped one.
+
+        """
+        return f"line {self.first}" if self.first == self.last else f"lines {self.first}-{self.last}"
+
+
+def _criteria_items(lines: Sequence[str]) -> list[_Item]:
+    """Read every criterion and Definition of Done statement of a criteria document.
+
+    An item opens on a list item that starts with its id and runs over every following line up to
+    the next such list item or the next heading; its text is those lines joined by spaces.
+
+    Returns:
+        The items, in document order.
+
+    """
+    items: list[_Item] = []
+    opened: list[tuple[str, int, list[tuple[int, str]]]] = []
+    for number, line in enumerate(lines, start=1):
+        found: re.Match[str] | None = _CRITERION_LINE.match(line)
+        if found is not None:
+            opened.append((found["id"], number, [(number, found["text"].strip())]))
+        elif _HEADING.match(line):
+            opened.append(("", number, []))
+        elif opened and opened[-1][0] and line.strip():
+            opened[-1][2].append((number, line.strip()))
+    for identifier, first, parts in opened:
+        if identifier:
+            items.append(_Item(identifier, first, parts[-1][0], " ".join(text for _, text in parts if text)))
+    return items
+
+
+def _missing_keywords(text: str) -> list[str]:
+    """Name the keywords a criterion that opens with ``Given`` leaves out.
+
+    Returns:
+        ``When`` and ``Then`` where the text does not state each as a word, in any letter case.
+
+    """
+    if not _OPENS_WITH_GIVEN.match(text):
+        return []
+    return [word for word in _KEYWORDS if not re.search(rf"\b{word}\b", text, re.IGNORECASE)]
 
 
 def criteria_document(path: Path) -> None:
     """Require the structure of a criteria document that Tasks cite by id.
 
-    Each acceptance criterion is a list item that opens with its id, ``AC-<n>``, and each
-    Definition of Done statement one that opens with ``DOD-<n>``. The document holds at least one
-    of each, every id once, every id followed by its statement, and a criterion that states a
-    ``Given`` also states its ``When`` and ``Then``.
+    The structure is the one the ``acceptance-criteria`` skill states under "A criteria
+    document's structure": each acceptance criterion is a list item that opens with its id,
+    ``AC-<n>``, and each Definition of Done statement one that opens with ``DOD-<n>``; an item runs
+    up to the next such list item or heading, so a statement may wrap over several lines. The
+    document holds at least one of each, every id once, every id followed by its statement, and a
+    criterion whose statement opens with ``Given`` also states ``When`` and ``Then``, in any
+    letter case.
 
     Raises:
         ValueError: Every structural problem the document has, one per line.
 
     """
-    seen: dict[str, int] = {}
+    seen: dict[str, _Item] = {}
     problems: list[str] = []
-    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        found: re.Match[str] | None = _CRITERION_LINE.match(line)
-        if found is None:
-            continue
-        criterion: str = found["id"]
-        text: str = found["text"].strip()
-        if criterion in seen:
+    for item in _criteria_items(path.read_text(encoding="utf-8").splitlines()):
+        if item.id in seen:
             problems.append(
-                f"line {number}: {criterion} is also the id on line {seen[criterion]}; give each its own id",
+                f"{item.where()}: {item.id} is also the id on {seen[item.id].where()}; give each its own id",
             )
-        seen.setdefault(criterion, number)
-        if not text:
-            problems.append(f"line {number}: {criterion} states nothing after its id")
-        elif re.search(r"\bGiven\b", text) and not (re.search(r"\bWhen\b", text) and re.search(r"\bThen\b", text)):
-            problems.append(f"line {number}: {criterion} states a Given with no When and Then")
+        seen.setdefault(item.id, item)
+        missing: list[str] = _missing_keywords(item.text)
+        if not item.text:
+            problems.append(f"{item.where()}: {item.id} states nothing after its id")
+        elif missing:
+            problems.append(
+                f"{item.where()}: {item.id} opens with Given but states no {' and no '.join(missing)}; "
+                f"add the {' and the '.join(missing)} clause to the item",
+            )
     for prefix, what in ((CRITERION_PREFIX, "acceptance criterion"), (DONE_PREFIX, "Definition of Done statement")):
         if not any(criterion.startswith(f"{prefix}-") for criterion in seen):
             problems.append(f"no {what}: each is a list item that opens with its id, {prefix}-<n>")

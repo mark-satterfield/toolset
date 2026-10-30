@@ -78,10 +78,8 @@ the full architecture of the component.
 
 The contracts and the data model must have the front matter of
 `document-front-matter.schema.json#/$defs/SpecDocument`, whose `decisionIds` each resolve to a file
-under the architecture root; in the criteria, each criterion is a list item opening with its id
-`AC-<n>` and each Definition of Done statement one opening with `DOD-<n>`, with at least one of
-each, every id once, and a `Given` criterion also stating its `When` and `Then`
-(`criteria_document`). A document that fails its check
+under the architecture root; the criteria must have the structure that "A criteria document's structure" in
+the `acceptance-criteria` skill states (`criteria_document`). A document that fails its check
 goes back to its session once, with the errors as an input. Accepting a document records the
 document and nothing else: its citations stay in its `decisionIds` and reach the Story through
 step 9, and nothing is written to the matrix, whose architecture side only arc42 (through
