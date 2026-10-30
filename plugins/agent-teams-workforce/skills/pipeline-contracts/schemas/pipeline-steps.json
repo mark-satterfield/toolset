@@ -58,7 +58,7 @@
           "adds": []
         },
         "build:regression-assess": {
-          "description": "Map the Task's change to the current and earlier requirements it can affect",
+          "description": "Find the existing requirements the code this Task edits already meets",
           "purpose": "Earlier requirements stay covered: the tests are written and run against the cumulative scope, not only this Task",
           "runBy": "task-to-deploy",
           "reads": ["worktree", "design", "provisioning"],
