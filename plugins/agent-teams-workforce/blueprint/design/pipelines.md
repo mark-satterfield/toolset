@@ -107,6 +107,18 @@ Notes on the diagram:
   written to an earlier contract by a session of an earlier definition sends its writer's step to
   run again when the architect's Decide step reads it
   ([requirements/pipelines.md](../requirements/pipelines.md), "Choosing specialists takes reasoning, and every agent has a reason to be used", the paragraph on contracts).
+- Each rule a deterministic checker enforces beyond an output's shape has one instruction home
+  too, the agent definition, skill or schema that tells the producing agent the rule.
+  `skills/artifact-handoff/checker-rules.json` registers every checker (the functions an
+  orchestrator flow hands an AgentLaunch as `validate`, the script steps that send an output back
+  for correction, and the script modes a workflow runs on an agent's output) with each rule it
+  enforces, the text of the code that enforces it and the text of the home that states it, and
+  each reader of saved state with the schema of its writer. `scripts/check-contract-conformance.mjs`
+  checks, in the pre-commit hook, that the code holds each rule, the home states it, every
+  producing agent reaches the home, every message a checker writes is a registered rule, every
+  checker in the code is registered, and every reader reads only what its writer's schema
+  defines, so a checker that refuses what its producer was never told fails the commit, at every
+  stage, run or not.
 
 ## Where the stores are read and written
 

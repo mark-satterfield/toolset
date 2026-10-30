@@ -698,7 +698,9 @@ def validate(
     `notTaskToTask`), a cycle, a dangling id, a self-edge, an edge onto a closed bead, an
     edge out of a closed bead, and — for a proposal covering one item — a scope that is
     not an open item of the level (at Task level, also one elaboration wrote), an edge
-    that does not touch that item, an edge or withdrawal with an empty reason, an owned
+    that does not touch that item, an edge or withdrawal with an empty reason, an Epic
+    edge with an empty architecture check, an edge the item's withdrawal history covers
+    that does not answer the recorded withdrawal reason, an owned
     edge standing on that item that is neither kept nor withdrawn, a withdrawal that is
     not an owned edge standing on that item (every hand-made edge is one), and a pair
     both kept and withdrawn.
@@ -751,6 +753,8 @@ def validate(
         or scoped.outside
         or scoped.bad_scope
         or scoped.missing_reason
+        or scoped.missing_arch_check
+        or scoped.readds_withdrawn
         or scoped.unaccounted
         or scoped.withdrawn_not_owned
         or scoped.kept_and_withdrawn

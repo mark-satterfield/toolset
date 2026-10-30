@@ -61,8 +61,9 @@
       }
     },
     "evidence": {
-      "description": "The sources read and what each showed, each with its reference: what the review accepts as well as what it finds.",
+      "description": "The sources read and what each showed, each with its reference: what the review accepts as well as what it finds; at least one, since regression.py refuses a review that cites no evidence.",
       "type": "array",
+      "minItems": 1,
       "items": { "type": "string", "minLength": 1 }
     }
   },

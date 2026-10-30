@@ -26,19 +26,19 @@
       }
     },
     "discovery": {
-      "description": "How the requirements were found.",
+      "description": "How the requirements were found. regression.py check refuses discovery whose `priorRequirementsSearched` is false, whose `sourceRefs` is empty or whose `evidence` is blank: the search the scope rule bounds is always made and evidenced.",
       "type": "object",
       "additionalProperties": false,
       "required": ["sourceRefs", "priorRequirementsSearched", "greenfield", "evidence"],
       "properties": {
-        "sourceRefs": {"description": "The documents and sections searched, each a real document and requirement or section.", "type": "array", "items": {"type": "string", "minLength": 1}},
+        "sourceRefs": {"description": "The documents and sections searched, each a real document and requirement or section; at least one.", "type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
         "priorRequirementsSearched": {"description": "True only when the sources the scope rule of skills/cumulative-regression/SKILL.md reaches (earlier PRDs, and the components and consumers it names) were actually searched; that rule bounds the search.", "type": "boolean"},
         "greenfield": {"description": "True only with evidence that the component has no prior valid obligations; a missing ledger is not that evidence.", "type": "boolean"},
         "evidence": {"description": "What the search found, and every missing or inaccessible source as an explicit gap.", "type": "string", "minLength": 1}
       }
     },
     "requirements": {
-      "description": "Every current requirement the changed components carry: each still-valid prior requirement, and each this change can affect.",
+      "description": "Every current requirement the changed components carry: each still-valid prior requirement, and each this change can affect. At least one requirement is impacted and needs evidence at one or more layers: regression.py check refuses a plan with no impacted requirement that has a required layer.",
       "type": "array",
       "items": {
         "type": "object",
@@ -47,7 +47,7 @@
         "properties": {
           "id": {"description": "Source-qualified, so equal local IDs in different PRDs cannot collide; unique in the plan.", "type": "string", "minLength": 1},
           "sourceRef": {"description": "The document and the requirement or section that states it.", "type": "string", "minLength": 1},
-          "componentIds": {"description": "IDs from components.", "type": "array", "items": {"type": "string", "minLength": 1}},
+          "componentIds": {"description": "One or more ids from `components`.", "type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
           "repoPath": {"description": "The repository whose runs prove it; a run mapped to it has the same repoPath.", "type": "string", "minLength": 1},
           "impacted": {"description": "True when this change can affect it; an unaffected retained requirement is false, and its runs do not execute.", "type": "boolean"},
           "impactReason": {"description": "The evidence for impacted, either way.", "type": "string", "minLength": 1},
@@ -62,7 +62,7 @@
               "required": ["kind", "required", "reason", "sourceRefs"],
               "properties": {
                 "kind": {"$ref": "#/$defs/Layer"},
-                "required": {"description": "Whether the requirement needs evidence at this layer. A required layer of an impacted requirement needs a mapping to a run before verification.", "type": "boolean"},
+                "required": {"description": "Whether the requirement needs evidence at this layer. A required layer of an impacted requirement needs a mapping to a run before verification. A layer the prior ledger required stays required unless the requirement is superseded.", "type": "boolean"},
                 "reason": {"description": "Why the layer is required or excluded, from the sources.", "type": "string", "minLength": 1},
                 "sourceRefs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
               }
@@ -101,7 +101,7 @@
       }
     },
     "replacements": {
-      "description": "A legitimate rename or consolidation of a prior mapped test, with equivalent assertion coverage. Distinct from requirement supersession.",
+      "description": "A legitimate rename or consolidation of a prior mapped test, with equivalent assertion coverage. Distinct from requirement supersession. regression.py keeps a prior mapped test only when the mapping of the same requirement and layer still names it, or a replacement names it as `oldTestId` with a reason and `newTestIds` that the mapping of that requirement and layer names.",
       "type": "array",
       "items": {
         "type": "object",

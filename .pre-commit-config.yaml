@@ -43,3 +43,9 @@ repos:
         language: system
         files: ^(plugins/agent-teams-workforce/(agents/.*\.md|skills/.*|workflows/.*\.js|orchestrator/(flows|core)/.*\.py|scripts/portfolio/.*\.py|scripts/check-agent-output-formats\.mjs)|\.pre-commit-config\.yaml)$
         pass_filenames: false
+      - id: contract-conformance
+        name: Checkers enforce only rules their producers are told, readers read only what writers write
+        entry: node plugins/agent-teams-workforce/scripts/check-contract-conformance.mjs
+        language: system
+        files: ^(plugins/agent-teams-workforce/(agents/.*\.md|skills/.*|workflows/.*\.js|orchestrator/.*\.py|scripts/portfolio/.*\.py|scripts/shared-blocks/.*\.js|scripts/check-contract-conformance\.mjs)|\.pre-commit-config\.yaml)$
+        pass_filenames: false

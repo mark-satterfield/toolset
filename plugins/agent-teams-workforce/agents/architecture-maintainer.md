@@ -73,7 +73,12 @@ For each fact:
    is written under `detailed/` and linked from that home. No fact is returned for being too
    detailed. A new document carries the front matter of
    its class, a view or a standard or policy, as the artifact-handoff skill's
-   `schemas/document-front-matter.schema.json` defines it.
+   `schemas/document-front-matter.schema.json` defines it. Every document you write, an existing
+   one and a folder index included, carries front matter, because the step states its lifecycle
+   there: the output check refuses a document you write that has no front matter. Give one that
+   has none the front matter of its class; a folder index carries the classification keys
+   (`document_class: overview`, `lifecycle_state`, `authority`, `provenance`, `purpose`) and no
+   catalog key.
 4. Write what the request contains and only that. A document has one purpose: a fact outside
    its subject goes to its own home, and neighbouring text stays as it is.
 5. Create a new document only when the request names a home path that does not exist. Give it

@@ -1,0 +1,1077 @@
+{
+  "description": "The rules each deterministic checker of an agent's output enforces beyond its schema's shape, each with the one instruction home that states it, and the readers of saved state with the schema of the writer they read. scripts/check-contract-conformance.mjs (run in pre-commit) verifies that each checker's code holds each rule, that the home states it, that every producing agent reaches the home, that every message a checker writes is a registered rule, that every checker in the code is registered, and that each reader reads only what its writer's schema defines. The shapes of the outputs are agent-outputs.json's, checked by scripts/check-agent-output-formats.mjs.",
+  "discover": [
+    {
+      "pattern": "regressionInvoke\\(\\s*\\w+,\\s*'(check|validate|verify)'",
+      "key": "regression.py {1}"
+    },
+    {
+      "pattern": "depscore\\('(validate)'",
+      "key": "depscore.py {1}"
+    },
+    {
+      "pattern": "depscore\\('[^']+',\\s*[^,]+,\\s*`(arch-state|arch-approve)",
+      "key": "depscore.py {1}"
+    },
+    {
+      "pattern": "matrixCommand\\(\\s*'[^']+',\\s*\\['(check-reuse)'",
+      "key": "atw-matrix {1}"
+    }
+  ],
+  "schemaOnly": [
+    {
+      "function": "skills/artifact-handoff/scripts/architecture_work_contract.py#validate_specialist_answer",
+      "reason": "A generated or generic validator that applies only the output's schema, whose shape check-agent-output-formats.mjs checks against the producer's instructions."
+    },
+    {
+      "function": "skills/artifact-handoff/scripts/architecture_work_contract.py#validate_lead_routing",
+      "reason": "A generated or generic validator that applies only the output's schema, whose shape check-agent-output-formats.mjs checks against the producer's instructions."
+    },
+    {
+      "function": "skills/artifact-handoff/scripts/architecture_work_contract.py#validate_architecture_ruling",
+      "reason": "A generated or generic validator that applies only the output's schema, whose shape check-agent-output-formats.mjs checks against the producer's instructions."
+    },
+    {
+      "function": "skills/artifact-handoff/scripts/architecture_work_contract.py#validate_specialist_round",
+      "reason": "A generated or generic validator that applies only the output's schema, whose shape check-agent-output-formats.mjs checks against the producer's instructions."
+    },
+    {
+      "function": "skills/artifact-handoff/scripts/architecture_work_contract.py#validate_architecture_state",
+      "reason": "A generated or generic validator that applies only the output's schema, whose shape check-agent-output-formats.mjs checks against the producer's instructions."
+    },
+    {
+      "function": "skills/artifact-handoff/scripts/architecture_work_contract.py#validate_architecture_result",
+      "reason": "A generated or generic validator that applies only the output's schema, whose shape check-agent-output-formats.mjs checks against the producer's instructions."
+    },
+    {
+      "function": "skills/artifact-handoff/scripts/architecture_work_contract.py#validate_trd_answer",
+      "reason": "A generated or generic validator that applies only the output's schema, whose shape check-agent-output-formats.mjs checks against the producer's instructions."
+    },
+    {
+      "function": "skills/artifact-handoff/scripts/architecture_work_contract.py#validate_write_result",
+      "reason": "A generated or generic validator that applies only the output's schema, whose shape check-agent-output-formats.mjs checks against the producer's instructions."
+    },
+    {
+      "function": "orchestrator/flows/architecture_files.py#output_check",
+      "reason": "A generated or generic validator that applies only the output's schema, whose shape check-agent-output-formats.mjs checks against the producer's instructions."
+    },
+    {
+      "function": "scripts/portfolio/strictschema.py#validate",
+      "reason": "A generated or generic validator that applies only the output's schema, whose shape check-agent-output-formats.mjs checks against the producer's instructions."
+    },
+    {
+      "function": "skills/artifact-handoff/scripts/spec_review_contract.py#validate_spec_review",
+      "reason": "A generated or generic validator that applies only the output's schema, whose shape check-agent-output-formats.mjs checks against the producer's instructions."
+    }
+  ],
+  "checkers": [
+    {
+      "checker": "architect's Analyze round",
+      "output": "the Analyze step's round of specialist requests (questions.json) and the state file",
+      "agents": [
+        "aws-solutions-architect"
+      ],
+      "functions": [
+        "orchestrator/flows/architecture.py#_round_check",
+        "orchestrator/flows/architecture.py#_round_check.check",
+        "orchestrator/flows/architecture.py#_request_problems"
+      ],
+      "rules": [
+        {
+          "id": "catalog-agents",
+          "enforced": "the find-specialists catalog lists no agent named",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "it refuses a name the catalog does not list"
+        },
+        {
+          "id": "script-started-agents",
+          "enforced": "is started by the script from your result, never by a request",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "You start no `trd-author` and write no TRD request"
+        },
+        {
+          "id": "one-request-per-agent",
+          "enforced": "put all of its questions and draft reviews of this round in one request",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "A round holds one request per agent"
+        }
+      ]
+    },
+    {
+      "checker": "architect's result",
+      "output": "the architecture result, its matrix change file and the review log",
+      "agents": [
+        "aws-solutions-architect"
+      ],
+      "functions": [
+        "orchestrator/flows/architecture.py#result_check",
+        "orchestrator/flows/architecture.py#result_check.check",
+        "orchestrator/flows/architecture.py#_invalid_result_problems",
+        "orchestrator/flows/architecture.py#_decision_problems",
+        "orchestrator/flows/architecture.py#_result_problems",
+        "orchestrator/flows/architecture.py#_change_problems",
+        "orchestrator/flows/architecture.py#_about_problems",
+        "orchestrator/flows/architecture.py#_home_problems",
+        "orchestrator/flows/architecture.py#_ui_recommendation_problems",
+        "orchestrator/flows/architecture.py#_compared",
+        "orchestrator/flows/architecture_check.py#review_log_findings",
+        "orchestrator/flows/repo_scoping.py#story_build_problems",
+        "orchestrator/flows/architecture.py#_record_design",
+        "orchestrator/flows/architecture.py#_held",
+        "skills/log-architecture-review/scripts/review_log.py#problems",
+        "orchestrator/flows/architecture.py#_link",
+        "skills/log-architecture-review/scripts/review_log.py#schema_problems",
+        "skills/log-architecture-review/scripts/review_log.py#_decision_problems"
+      ],
+      "rules": [
+        {
+          "id": "change-file-applies",
+          "enforced": "operation",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "You change the matrix only through one change file, `matrix-changes.json`"
+        },
+        {
+          "id": "story-build-named",
+          "enforced": "are both empty, so no Story builds anything",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "The step that accepts your result fails when both lists are empty"
+        },
+        {
+          "id": "story-build-one-list",
+          "enforced": "named in both",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "name each element in one list only"
+        },
+        {
+          "id": "story-build-matrix-ids",
+          "enforced": "which is not a matrix id",
+          "home": "skills/artifact-handoff/schemas/architecture-result.schema.json",
+          "stated": "The matrix ids, as recorded, of every element this design adds or changes"
+        },
+        {
+          "id": "fact-home-not-index",
+          "enforced": "is a folder index",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "A fact's home is never a folder index"
+        },
+        {
+          "id": "no-ui-specialist",
+          "enforced": "is recommended for UI design",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "A screen's design is never its subject"
+        },
+        {
+          "id": "requirements-served",
+          "enforced": "is served by no feature and the result does not list it under noFeature",
+          "home": "skills/artifact-handoff/schemas/architecture-result.schema.json",
+          "stated": "The step that accepts the result fails on a requirement that is neither served by a feature nor listed here"
+        },
+        {
+          "id": "served-recorded",
+          "enforced": "the matrix does not show",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "Every requirement of the Epic is served by a feature (`servedBy`)"
+        },
+        {
+          "id": "feature-requirements",
+          "enforced": "which is not a requirement of",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "`link servedBy` from `requirement:<epic id>/<key>` to `feature:<id>`"
+        },
+        {
+          "id": "entries-held",
+          "enforced": "the matrix holds no entry",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "A heading the pack or `atw-matrix node <entry id>`"
+        },
+        {
+          "id": "review-log-shape",
+          "enforced": "the review log does not satisfy its schema",
+          "home": "skills/log-architecture-review/SKILL.md",
+          "stated": "`schemas/review-log.schema.json` is the log's one contract"
+        },
+        {
+          "id": "review-log-epic",
+          "enforced": "the review log is for",
+          "home": "skills/log-architecture-review/SKILL.md",
+          "stated": "$LOG init --log <reviewLogPath> --bead <epic id>"
+        },
+        {
+          "id": "review-log-unique-decision",
+          "enforced": "two decisions have the id",
+          "home": "skills/log-architecture-review/SKILL.md",
+          "stated": "`decision` the one with the same `id`"
+        },
+        {
+          "id": "review-log-unique-resource",
+          "enforced": "two resource entries review",
+          "home": "skills/log-architecture-review/SKILL.md",
+          "stated": "`resource` replaces the entry with the same `element`"
+        },
+        {
+          "id": "review-log-resources",
+          "enforced": "has no review entry in the review log",
+          "home": "skills/log-architecture-review/SKILL.md",
+          "stated": "One entry per AWS resource the design adds or changes"
+        },
+        {
+          "id": "review-log-well-architected",
+          "enforced": "has no Well-Architected review",
+          "home": "skills/log-architecture-review/SKILL.md",
+          "stated": "Null only when the design defines no AWS resource"
+        },
+        {
+          "id": "review-log-pillars",
+          "enforced": "does not cover each of",
+          "home": "skills/log-architecture-review/SKILL.md",
+          "stated": "one assessment per pillar, each of the six once"
+        },
+        {
+          "id": "decision-options",
+          "enforced": "does not state two or more distinct options",
+          "home": "skills/log-architecture-review/SKILL.md",
+          "stated": "Every decision between two or more options"
+        },
+        {
+          "id": "decision-option-once",
+          "enforced": "names an option twice",
+          "home": "skills/log-architecture-review/SKILL.md",
+          "stated": "Every decision between two or more options"
+        },
+        {
+          "id": "decision-chosen",
+          "enforced": "which is not one of its options",
+          "home": "skills/log-architecture-review/SKILL.md",
+          "stated": "`decision` refuses a choice that is not one of its options"
+        },
+        {
+          "id": "decision-reason",
+          "enforced": "states no reason for its choice",
+          "home": "skills/log-architecture-review/SKILL.md",
+          "stated": "the reason it was chosen over each other option"
+        }
+      ],
+      "notRules": [
+        "the review log schema defines no"
+      ]
+    },
+    {
+      "checker": "TRD author's answer and TRD",
+      "output": "the TRD answer and the TRD it writes",
+      "agents": [
+        "trd-author"
+      ],
+      "functions": [
+        "orchestrator/flows/architecture.py#trd_author.check",
+        "orchestrator/flows/architecture.py#_trd_problems",
+        "orchestrator/flows/trd_authoring.py#unresolved_requirements",
+        "orchestrator/flows/architecture.py#_record_constraints",
+        "orchestrator/flows/architecture.py#_constraint",
+        "orchestrator/flows/trd_authoring.py#document",
+        "orchestrator/flows/trd_authoring.py#_front_matter_problem"
+      ],
+      "rules": [
+        {
+          "id": "requirement-heading",
+          "enforced": "which the TRD has no heading for",
+          "home": "agents/trd-author.md",
+          "stated": "Each requirement is a heading of the TRD whose text is exactly its id"
+        },
+        {
+          "id": "applies-to-held",
+          "enforced": "applies to",
+          "home": "agents/trd-author.md",
+          "stated": "`appliesTo` is a matrix id as the pack or `atw-matrix node` gives it"
+        },
+        {
+          "id": "document-present",
+          "enforced": "missing or empty document",
+          "home": "agents/trd-author.md",
+          "stated": "Write the TRD file at the request's `trdPath`"
+        },
+        {
+          "id": "front-matter-present",
+          "enforced": "YAML frontmatter is missing",
+          "home": "agents/trd-author.md",
+          "stated": "Replace a front matter that does not have that shape"
+        },
+        {
+          "id": "front-matter-yaml",
+          "enforced": "invalid YAML frontmatter",
+          "home": "agents/trd-author.md",
+          "stated": "Replace a front matter that does not have that shape"
+        },
+        {
+          "id": "front-matter-object",
+          "enforced": "frontmatter must be an object",
+          "home": "agents/trd-author.md",
+          "stated": "Replace a front matter that does not have that shape"
+        },
+        {
+          "id": "front-matter-shape",
+          "enforced": "front matter does not satisfy",
+          "home": "agents/trd-author.md",
+          "stated": "The shape of the TRD's front matter is `document-front-matter.schema.json#/$defs/TrdDocument`"
+        },
+        {
+          "id": "citations-resolve",
+          "enforced": "decisionIds the matrix holds no document and heading for",
+          "home": "skills/artifact-handoff/schemas/document-front-matter.schema.json",
+          "stated": "Every citation must resolve to a document, and a heading to a heading of it, that the matrix holds"
+        }
+      ],
+      "notRules": [
+        "decisionIds is empty"
+      ]
+    },
+    {
+      "checker": "architecture maintainer's write",
+      "output": "the arc42 documents a write request names and the write result",
+      "agents": [
+        "architecture-maintainer"
+      ],
+      "functions": [
+        "orchestrator/flows/architecture.py#maintainer.check",
+        "orchestrator/flows/architecture.py#_home_check",
+        "orchestrator/flows/architecture_diagrams.py#syntax_problems",
+        "orchestrator/flows/architecture.py#_home_links",
+        "orchestrator/flows/architecture_diagrams.py#sequence_text_problems",
+        "orchestrator/flows/architecture_files.py#cited_document",
+        "orchestrator/flows/architecture.py#_link"
+      ],
+      "rules": [
+        {
+          "id": "front-matter",
+          "enforced": "has no front matter to state its lifecycle in",
+          "home": "agents/architecture-maintainer.md",
+          "stated": "refuses a document you write that has no front matter"
+        },
+        {
+          "id": "mermaid-renders",
+          "enforced": "does not render; correct its syntax",
+          "home": "agents/architecture-maintainer.md",
+          "stated": "sends any that does not render back to you to correct its syntax"
+        },
+        {
+          "id": "sequence-text",
+          "enforced": "write ',' for ';' and '#35;' or words for '#'",
+          "home": "skills/architecture-diagramming/SKILL.md",
+          "stated": ",` for `;` and `#35;` or words for `#`"
+        },
+        {
+          "id": "fact-home-held",
+          "enforced": "is no document the matrix holds",
+          "home": "agents/architecture-maintainer.md",
+          "stated": "Write it in its home, under the heading named"
+        }
+      ],
+      "notRules": [
+        "the render script exited"
+      ]
+    },
+    {
+      "checker": "specification documents",
+      "output": "the contracts, data-model and criteria documents of one repository's Story",
+      "agents": [
+        "api-specification-author",
+        "data-model-specification-author"
+      ],
+      "functions": [
+        "orchestrator/flows/spec_authoring.py#documents_check",
+        "orchestrator/flows/spec_authoring.py#documents_check.check",
+        "orchestrator/flows/spec_authoring.py#document_check",
+        "orchestrator/flows/spec_authoring.py#criteria_document",
+        "orchestrator/flows/spec_authoring.py#_missing_keywords",
+        "orchestrator/flows/trd_authoring.py#document",
+        "orchestrator/flows/trd_authoring.py#_front_matter_problem"
+      ],
+      "rules": [
+        {
+          "id": "criteria-ids",
+          "enforced": "each is a list item that opens with its id",
+          "home": "skills/acceptance-criteria/SKILL.md",
+          "stated": "Each item is a list item that opens with its id",
+          "agents": [
+            "api-specification-author"
+          ]
+        },
+        {
+          "id": "criteria-unique",
+          "enforced": "give each its own id",
+          "home": "skills/acceptance-criteria/SKILL.md",
+          "stated": "Every id once, every id followed by its statement",
+          "agents": [
+            "api-specification-author"
+          ]
+        },
+        {
+          "id": "criteria-statement",
+          "enforced": "states nothing after its id",
+          "home": "skills/acceptance-criteria/SKILL.md",
+          "stated": "Every id once, every id followed by its statement",
+          "agents": [
+            "api-specification-author"
+          ]
+        },
+        {
+          "id": "criteria-given-when-then",
+          "enforced": "opens with Given but states no",
+          "home": "skills/acceptance-criteria/SKILL.md",
+          "stated": "A criterion that opens with `Given` states its `When` and `Then`",
+          "agents": [
+            "api-specification-author"
+          ]
+        },
+        {
+          "id": "criteria-structure",
+          "enforced": "is not structured as Tasks cite it",
+          "home": "skills/acceptance-criteria/SKILL.md",
+          "stated": "A criteria document's structure",
+          "agents": [
+            "api-specification-author"
+          ]
+        },
+        {
+          "id": "document-present",
+          "enforced": "missing or empty document",
+          "home": "agents/api-specification-author.md",
+          "stated": "Write nonempty UTF-8 Markdown with a YAML front matter",
+          "agents": [
+            "api-specification-author"
+          ]
+        },
+        {
+          "id": "document-present-data-model",
+          "enforced": "missing or empty document",
+          "home": "agents/data-model-specification-author.md",
+          "stated": "Write the assigned nonempty UTF-8 data-model document",
+          "agents": [
+            "data-model-specification-author"
+          ]
+        },
+        {
+          "id": "front-matter-present",
+          "enforced": "YAML frontmatter is missing",
+          "home": "skills/artifact-handoff/schemas/document-front-matter.schema.json",
+          "stated": "the YAML front matter a script reads"
+        },
+        {
+          "id": "front-matter-yaml",
+          "enforced": "invalid YAML frontmatter",
+          "home": "skills/artifact-handoff/schemas/document-front-matter.schema.json",
+          "stated": "the YAML front matter a script reads"
+        },
+        {
+          "id": "front-matter-object",
+          "enforced": "frontmatter must be an object",
+          "home": "skills/artifact-handoff/schemas/document-front-matter.schema.json",
+          "stated": "the YAML front matter a script reads"
+        },
+        {
+          "id": "front-matter-shape",
+          "enforced": "front matter does not satisfy",
+          "home": "skills/artifact-handoff/schemas/document-front-matter.schema.json",
+          "stated": "The front matter of one repository's contracts document"
+        },
+        {
+          "id": "citations-resolve",
+          "enforced": "decisionIds the matrix holds no document and heading for",
+          "home": "skills/artifact-handoff/schemas/document-front-matter.schema.json",
+          "stated": "Every citation must resolve to a document, and a heading to a heading of it, that the matrix holds"
+        }
+      ],
+      "notRules": [
+        "decisionIds is empty",
+        "Definition of Done statement"
+      ]
+    },
+    {
+      "checker": "spec reviews",
+      "output": "the spec review and the data-model access-pattern review",
+      "agents": [
+        "spec-reviewer",
+        "dynamodb-schema-access-pattern-reviewer"
+      ],
+      "functions": [
+        "orchestrator/flows/spec_review.py#review_check",
+        "orchestrator/flows/spec_review.py#review_check.check"
+      ],
+      "rules": [
+        {
+          "id": "finding-ids",
+          "enforced": "every id starts with",
+          "home": "skills/artifact-handoff/schemas/spec-review.schema.json",
+          "stated": "F1, F2 and so on from the spec review; D1, D2 and so on from the data-model access-pattern review"
+        },
+        {
+          "id": "data-model-document",
+          "enforced": "names one of",
+          "home": "agents/dynamodb-schema-access-pattern-reviewer.md",
+          "stated": "Every finding's `document` is `data-model`",
+          "agents": [
+            "dynamodb-schema-access-pattern-reviewer"
+          ]
+        }
+      ]
+    },
+    {
+      "checker": "Task decomposition",
+      "output": "the decomposer's Tasks file",
+      "agents": [
+        "task-decomposer"
+      ],
+      "functions": [
+        "orchestrator/flows/task_decomposition.py#task_grouping_check",
+        "orchestrator/flows/task_decomposition.py#task_grouping_check.check",
+        "scripts/portfolio/hierarchy.py#task_grouping_problems"
+      ],
+      "rules": [
+        {
+          "id": "tasks-group",
+          "enforced": "covers one thing: group the things this Story builds into coherent Tasks",
+          "home": "agents/task-decomposer.md",
+          "stated": "refuses a Task that covers one thing when the Story builds two or more"
+        }
+      ]
+    },
+    {
+      "checker": "cross-Story Task dependencies",
+      "output": "the mapper's cross-Story dependency file",
+      "agents": [
+        "task-dependency-mapper"
+      ],
+      "functions": [
+        "orchestrator/flows/task_edges.py#task_deps_check",
+        "orchestrator/flows/task_edges.py#task_deps_check.check"
+      ],
+      "rules": [
+        {
+          "id": "task-keys",
+          "enforced": "not a Task key of the span",
+          "home": "skills/artifact-handoff/schemas/task-deps.schema.json",
+          "stated": "checks that every from and to names a Task key of the span"
+        }
+      ]
+    },
+    {
+      "checker": "regression artifact",
+      "output": "the regression artifact (scope and final mapping) and the review that approves it",
+      "agents": [
+        "regression-impact-assessor"
+      ],
+      "functions": [
+        "scripts/portfolio/regression.py#_check",
+        "scripts/portfolio/regression.py#validate",
+        "scripts/portfolio/regression.py#_discovery_errors",
+        "scripts/portfolio/regression.py#_requirement_errors",
+        "scripts/portfolio/regression.py#_run_errors",
+        "scripts/portfolio/regression.py#_coverage_errors",
+        "scripts/portfolio/regression.py#_prior_mapping_errors",
+        "scripts/portfolio/regression.py#_prior_layer_errors",
+        "scripts/portfolio/regression.py#source_errors",
+        "scripts/portfolio/regression.py#main",
+        "scripts/portfolio/regression.py#blocking_findings",
+        "scripts/portfolio/regression.py#source_hashes",
+        "scripts/portfolio/regression.py#execute",
+        "scripts/portfolio/regression.py#_execute_run",
+        "scripts/portfolio/regression.py#_setup_errors",
+        "scripts/portfolio/regression.py#junit_results"
+      ],
+      "rules": [
+        {
+          "id": "discovery-evidenced",
+          "enforced": "Prior product requirements and affected dependencies were not evidenced",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "regression.py check refuses discovery whose `priorRequirementsSearched` is false, whose `sourceRefs` is empty or whose `evidence` is blank"
+        },
+        {
+          "id": "source-files",
+          "enforced": "Requirement discovery has no physical source files",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "The absolute path of each regular file actually read to establish the scope"
+        },
+        {
+          "id": "source-files-readable",
+          "enforced": "Requirement source is not an absolute readable file",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "regression.py checks each is an existing regular file"
+        },
+        {
+          "id": "impacted-coverage",
+          "enforced": "Build has no impacted requirement with required test coverage",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "At least one requirement is impacted and needs evidence at one or more layers"
+        },
+        {
+          "id": "requirement-ids",
+          "enforced": "Requirement IDs must be nonempty, source-qualified and unique",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "Source-qualified, so equal local IDs in different PRDs cannot collide; unique in the plan"
+        },
+        {
+          "id": "requirement-binding",
+          "enforced": "missing source or component binding",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "One or more ids from `components`"
+        },
+        {
+          "id": "layer-dispositions",
+          "enforced": "every test layer needs an applicability disposition",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "Exactly one entry for each of the four layers"
+        },
+        {
+          "id": "layer-evidence",
+          "enforced": "applicability lacks source evidence",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "Why the layer is required or excluded, from the sources"
+        },
+        {
+          "id": "run-ids",
+          "enforced": "Duplicate run IDs",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "Unique in the plan"
+        },
+        {
+          "id": "mapping-references",
+          "enforced": "mapping references unknown requirement or run",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "The id of a run in runs, in the requirement's repository"
+        },
+        {
+          "id": "exit-status-layer",
+          "enforced": "proves only the nonfunctional layer and names no tests",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "a mapping to an exitStatus run is for the nonfunctional layer and names no tests"
+        },
+        {
+          "id": "prior-requirements",
+          "enforced": "prior requirement dropped without explicit supersession",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "Prior requirements this one replaces. Each needs an explicit accepted requirement or owner decision"
+        },
+        {
+          "id": "greenfield",
+          "enforced": "contradict greenfield declaration",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "True only with evidence that the component has no prior valid obligations"
+        },
+        {
+          "id": "layers-mapped",
+          "enforced": "no mapping to a run",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "after Red every required layer of every impacted requirement has one"
+        },
+        {
+          "id": "mapping-repository",
+          "enforced": "mapping has no matching repository execution",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "a run mapped to it has the same repoPath"
+        },
+        {
+          "id": "junit-tests",
+          "enforced": "no concrete tests",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "A mapping to a junit run names the tests whose assertions cover the requirement"
+        },
+        {
+          "id": "prior-tests",
+          "enforced": "prior test mapping removed without explicit supersession",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "regression.py keeps a prior mapped test only when the mapping of the same requirement and layer still names it"
+        },
+        {
+          "id": "prior-layers",
+          "enforced": "previously required layer removed without supersession",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "A layer the prior ledger required stays required unless the requirement is superseded"
+        },
+        {
+          "id": "scope-unchanged",
+          "enforced": "Final mapping changed the approved impact scope",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "In finalize mode components, discovery, requirements and sourceFiles stay exactly as"
+        },
+        {
+          "id": "review-approved",
+          "enforced": "Independent source/coverage/supersession review is not approved",
+          "home": "skills/artifact-handoff/schemas/regression-review.schema.json",
+          "stated": "accept the artifact only with a review that is approved, names no blocking finding and cites evidence",
+          "agents": [
+            "regression-coverage-reviewer"
+          ]
+        },
+        {
+          "id": "source-bytes",
+          "enforced": "Requirement source bytes changed since scope approval",
+          "home": "skills/cumulative-regression/SKILL.md",
+          "stated": "Changed source evidence requires reassessment"
+        },
+        {
+          "id": "setup-exit",
+          "enforced": "the run did not execute",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "A setup command that exits non-zero fails the run with its output"
+        },
+        {
+          "id": "mapped-tests-pass",
+          "enforced": "mapped test not executed successfully",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "the gate requires exit 0 and every mapped test ID passing in the report"
+        },
+        {
+          "id": "fresh-report",
+          "enforced": "failed command or missing fresh JUnit report",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "a test run that writes a fresh JUnit XML report to reportPath"
+        }
+      ],
+      "notRules": [
+        "unsupported JUnit root",
+        "report contains failed/error tests despite command exit zero",
+        "suite reports failures or errors",
+        "ambiguous duplicate test ID",
+        "run-{index}-setup-{position}.json",
+        "check exited"
+      ],
+      "invokedAs": [
+        "regression.py check",
+        "regression.py validate",
+        "regression.py verify"
+      ]
+    },
+    {
+      "checker": "edge proposals",
+      "output": "the Epic and Task edge proposals",
+      "agents": [
+        "epic-dependency-assessor",
+        "task-dependency-mapper"
+      ],
+      "functions": [
+        "scripts/portfolio/edgeset.py#validate",
+        "scripts/portfolio/edgeset.py#_scope_defects"
+      ],
+      "rules": [
+        {
+          "id": "touch-item-epic",
+          "enforced": "or scoped.outside",
+          "home": "skills/artifact-handoff/schemas/epic-edge-proposal.schema.json",
+          "stated": "and no edge that does not touch it",
+          "agents": [
+            "epic-dependency-assessor"
+          ]
+        },
+        {
+          "id": "touch-item-task",
+          "enforced": "or scoped.outside",
+          "home": "skills/artifact-handoff/schemas/task-edge-proposal.schema.json",
+          "stated": "and no edge that does not touch it",
+          "agents": [
+            "task-dependency-mapper"
+          ]
+        },
+        {
+          "id": "owned-accounted-epic",
+          "enforced": "or scoped.unaccounted",
+          "home": "skills/artifact-handoff/schemas/epic-edge-proposal.schema.json",
+          "stated": "Every owned standing edge (the context's `standing` with `owned: true`) that `edges` does not keep",
+          "agents": [
+            "epic-dependency-assessor"
+          ]
+        },
+        {
+          "id": "owned-accounted-task",
+          "enforced": "or scoped.unaccounted",
+          "home": "skills/artifact-handoff/schemas/task-edge-proposal.schema.json",
+          "stated": "Every owned standing edge (the context's `standing` with `owned: true`) that `edges` does not keep",
+          "agents": [
+            "task-dependency-mapper"
+          ]
+        },
+        {
+          "id": "withdraw-owned-epic",
+          "enforced": "or scoped.withdrawn_not_owned",
+          "home": "skills/artifact-handoff/schemas/epic-edge-proposal.schema.json",
+          "stated": "An edge with `owned: false` is in neither list",
+          "agents": [
+            "epic-dependency-assessor"
+          ]
+        },
+        {
+          "id": "withdraw-owned-task",
+          "enforced": "or scoped.withdrawn_not_owned",
+          "home": "skills/artifact-handoff/schemas/task-edge-proposal.schema.json",
+          "stated": "An edge with `owned: false` is in neither list",
+          "agents": [
+            "task-dependency-mapper"
+          ]
+        },
+        {
+          "id": "arch-check",
+          "enforced": "or scoped.missing_arch_check",
+          "home": "skills/artifact-handoff/schemas/epic-edge-proposal.schema.json",
+          "stated": "An edge without it is refused",
+          "agents": [
+            "epic-dependency-assessor"
+          ]
+        },
+        {
+          "id": "readd-answers-epic",
+          "enforced": "or scoped.readds_withdrawn",
+          "home": "skills/artifact-handoff/schemas/epic-edge-proposal.schema.json",
+          "stated": "Without it that edge is refused",
+          "agents": [
+            "epic-dependency-assessor"
+          ]
+        },
+        {
+          "id": "readd-answers-task",
+          "enforced": "or scoped.readds_withdrawn",
+          "home": "skills/artifact-handoff/schemas/task-edge-proposal.schema.json",
+          "stated": "Without it that edge is refused",
+          "agents": [
+            "task-dependency-mapper"
+          ]
+        },
+        {
+          "id": "reason",
+          "enforced": "or scoped.missing_reason",
+          "home": "skills/artifact-handoff/schemas/epic-edge-proposal.schema.json",
+          "stated": "The item, the Epic that goes first, the basis and the recorded reason, in one line",
+          "agents": [
+            "epic-dependency-assessor"
+          ]
+        },
+        {
+          "id": "level-epic",
+          "enforced": "or wrong_kind",
+          "home": "skills/artifact-handoff/schemas/epic-edge-proposal.schema.json",
+          "stated": "`from` is elaborated before `to`; both are Epics",
+          "agents": [
+            "epic-dependency-assessor"
+          ]
+        },
+        {
+          "id": "level-task",
+          "enforced": "or wrong_kind",
+          "home": "skills/artifact-handoff/schemas/task-edge-proposal.schema.json",
+          "stated": "Both ends are open Tasks",
+          "agents": [
+            "task-dependency-mapper"
+          ]
+        }
+      ],
+      "invokedAs": [
+        "depscore.py validate"
+      ]
+    },
+    {
+      "checker": "built-version approval",
+      "output": "the built views the comparison writes, the correction of the effective version and the conformance review that approves it",
+      "agents": [
+        "architecture-maintainer"
+      ],
+      "functions": [
+        "scripts/portfolio/archstate.py#promote",
+        "scripts/portfolio/archstate.py#states"
+      ],
+      "rules": [
+        {
+          "id": "inside-architecture",
+          "enforced": "outside the architecture at",
+          "home": "agents/architecture-maintainer.md",
+          "stated": "The effective version is every view under the architecture root",
+          "agents": [
+            "architecture-maintainer"
+          ]
+        },
+        {
+          "id": "built-inside-architecture",
+          "enforced": "outside the architecture at",
+          "home": "agents/built-architecture-comparer.md",
+          "stated": "in `built/<element>/` under the architecture root",
+          "agents": [
+            "built-architecture-comparer"
+          ]
+        },
+        {
+          "id": "section-2",
+          "enforced": "in section 2, which holds the owner's constraints",
+          "home": "agents/architecture-maintainer.md",
+          "stated": "Section 2 is the owner's and stays as it is",
+          "agents": [
+            "architecture-maintainer"
+          ]
+        },
+        {
+          "id": "reviewed",
+          "enforced": "\"unreviewed\"",
+          "home": "agents/architecture-conformance-reviewer.md",
+          "stated": "in `reviewedFiles` the absolute path of every file you checked and found conforming",
+          "agents": [
+            "architecture-conformance-reviewer"
+          ]
+        }
+      ],
+      "notRules": [
+        "not a file",
+        "arguments do not satisfy the declared input contract"
+      ],
+      "invokedAs": [
+        "depscore.py arch-approve",
+        "depscore.py arch-state"
+      ]
+    },
+    {
+      "checker": "shared capability reuse",
+      "output": "the production code an implementer changes in TDD Green",
+      "agents": [],
+      "agentsLoading": "implementer-contract",
+      "functions": [
+        "scripts/portfolio/matrixreuse.py#check_reuse",
+        "scripts/portfolio/matrixreuse.py#_unused",
+        "scripts/portfolio/matrixreuse.py#_duplicates"
+      ],
+      "rules": [
+        {
+          "id": "capability-used",
+          "enforced": "nothing references",
+          "home": "skills/implementer-contract/SKILL.md",
+          "stated": "Each behaviour the brief lists under the shared capabilities comes from the shared library, layer, chassis or service named, through the interface named"
+        },
+        {
+          "id": "no-local-equivalent",
+          "enforced": "exists to do",
+          "home": "skills/implementer-contract/SKILL.md",
+          "stated": "The repository holds none of it: no copy, no local equivalent"
+        }
+      ],
+      "notRules": [
+        "check-reuse needs the id of at least one entry",
+        "is not a directory"
+      ],
+      "invokedAs": [
+        "atw-matrix check-reuse"
+      ]
+    },
+    {
+      "checker": "architecture check step",
+      "output": "the accepted architecture result, checked against the corrected matrix and the review criteria before promotion",
+      "agents": [
+        "aws-solutions-architect"
+      ],
+      "functions": [
+        "orchestrator/flows/architecture_check.py#check",
+        "orchestrator/flows/architecture_check.py#_mechanical",
+        "orchestrator/flows/architecture_check.py#check_step",
+        "scripts/portfolio/matrixstore.py#file_problems",
+        "orchestrator/flows/architecture_check.py#_reach_problems",
+        "skills/artifact-handoff/scripts/matrix_contract.py#parse_document",
+        "scripts/portfolio/matrixstore.py#heading_problems",
+        "skills/artifact-handoff/scripts/matrix_contract.py#_raise_unless_shaped",
+        "skills/artifact-handoff/scripts/matrix_contract.py#schema_problems"
+      ],
+      "rules": [
+        {
+          "id": "criteria-answered",
+          "enforced": "has no answer in the architecture result",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "record in your result either where it is satisfied (the document and heading, or the TRD requirement id) or why it does not apply to this PRD"
+        },
+        {
+          "id": "reach-verdicts",
+          "enforced": "give it a {VERDICT_KEPT} or {VERDICT_CORRECTED} verdict",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "Every reach row has its verdict"
+        },
+        {
+          "id": "reach-stackless",
+          "enforced": "has no home stack: place it in a stack, or list it under excluded",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "every stackless reached entry is placed or under `excluded`"
+        },
+        {
+          "id": "headings-held",
+          "enforced": "names the heading",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "A heading the pack or `atw-matrix node <entry id>`"
+        }
+      ],
+      "notRules": [
+        "the matrix has no entry for the Epic",
+        "its verdict is",
+        "it has no verdict",
+        "the entry filed under",
+        "does not satisfy the matrix schema",
+        "is not JSON",
+        "is not a JSON object"
+      ]
+    },
+    {
+      "checker": "TRD confirmation step",
+      "output": "the TRD, checked once more before its path and digest are recorded on the Epic",
+      "agents": [
+        "trd-author"
+      ],
+      "functions": [
+        "orchestrator/flows/trd_authoring.py#confirm"
+      ],
+      "rules": [],
+      "notRules": [
+        "problems sent to the TRD author for one update",
+        "citations and every requirement pointer resolve"
+      ]
+    },
+    {
+      "checker": "Task plan step",
+      "output": "the decomposer's Tasks, checked for coverage of what the Story builds before the Task beads are written",
+      "agents": [
+        "task-decomposer"
+      ],
+      "functions": [
+        "orchestrator/flows/task_decomposition.py#plan"
+      ],
+      "rules": []
+    }
+  ],
+  "readers": [
+    {
+      "reader": "scripts/portfolio/regression.py",
+      "functions": [
+        "scope",
+        "validate",
+        "_discovery_errors",
+        "_requirement_errors",
+        "_run_errors",
+        "_coverage_errors",
+        "_prior_mapping_errors",
+        "_prior_layer_errors",
+        "_check",
+        "prepare_tree"
+      ],
+      "schema": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+      "tolerate": []
+    },
+    {
+      "reader": "scripts/portfolio/regression.py",
+      "functions": [
+        "blocking_findings"
+      ],
+      "schema": "skills/artifact-handoff/schemas/regression-review.schema.json",
+      "tolerate": []
+    },
+    {
+      "reader": "scripts/shared-blocks/step-journal.js",
+      "variables": {
+        "journal": "skills/pipeline-contracts/schemas/step-journal.schema.json#",
+        "raw": "skills/pipeline-contracts/schemas/step-journal.schema.json#/definitions/step",
+        "held": "skills/pipeline-contracts/schemas/step-journal.schema.json#/definitions/artifact"
+      },
+      "tolerate": [],
+      "between": [
+        "const copyStep",
+        "let changes = 0"
+      ]
+    }
+  ]
+}
