@@ -84,6 +84,8 @@ const stepJournal = (() => {
     const parent = under ? walk(roots).find((step) => step.id === under) || null : null
     if (under && !parent) throw new Error(`stepJournal.open: the journal of ${journal.bead} holds no step ${under}`)
     let changes = 0
+    /** The keys of the steps this run started: a cap on a loop counts only the rounds of the run it is in. */
+    const startedHere = new Set()
 
     /** Writes one change on the log, as one line or as part lines when it is longer than the chunk. */
     function report(change) {
@@ -184,12 +186,17 @@ const stepJournal = (() => {
         const from = since ? all.indexOf(since) + 1 : 0
         return all.slice(from).filter((candidate) => candidate.status === 'done' && kinds.includes(candidate.kind))
       },
+      /** The done steps `earlier` returns that this run started: the rounds of a loop this run made. */
+      thisRun(kinds, step, since = null) {
+        return this.earlier(kinds, step, since).filter((candidate) => startedHere.has(candidate.key))
+      },
       /** A directory name for the files of `step`, unique in the journal. */
       folder: (step) => step.key.replace(/^([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/, '$1').replace(/[^A-Za-z0-9._-]+/g, '-'),
       /** Marks a step running: it starts from its beginning, so the artifacts of an unfinished run of it are dropped. */
       start(step) {
         step.status = 'running'
         step.artifacts = []
+        startedHere.add(step.key)
         report({ op: 'start', step: step.key })
       },
       /** Records a step's artifacts, adds the steps its result calls for right after it, and marks it done. */

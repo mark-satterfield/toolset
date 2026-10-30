@@ -767,6 +767,27 @@ def _setup(plan: JsonObject, args: CliArgs) -> None:
     _emit({"ok": not errors, "errors": error_values, "path": args.output, "setup": records})
 
 
+def blocking_findings(review: JsonObject) -> list[JsonValue]:
+    """Return the findings of a review that withhold approval.
+
+    A finding the review marks non-blocking is a note; every other finding blocks, a finding
+    written as plain text by a review that carried no severity included.
+
+    Args:
+        review: The review, as regression-review.schema.json defines it.
+
+    Returns:
+        The blocking findings.
+
+    """
+    findings: JsonValue = review.get("findings")
+    if not isinstance(findings, list):
+        return []
+    return [
+        finding for finding in findings if not (isinstance(finding, dict) and finding.get("severity") == "non-blocking")
+    ]
+
+
 def main() -> None:
     """Prepare, validate or verify a cumulative regression plan and report the result as JSON."""
     args: CliArgs = _parse_args()
@@ -797,7 +818,7 @@ def main() -> None:
     errors: list[str] = validate(plan, previous, complete=args.mode == "verify")
     review: JsonObject = read(args.review) if args.review else {}
     review_approved: bool = (
-        review.get("approved") is True and not review.get("findings") and bool(review.get("evidence"))
+        review.get("approved") is True and not blocking_findings(review) and bool(review.get("evidence"))
     )
     if not review_approved:
         errors.append("Independent source/coverage/supersession review is not approved")

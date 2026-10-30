@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Regression review",
+  "description": "The review the regression-coverage-reviewer writes of one regression artifact: the scope before Red (plan review) or the final mapping after Red (mapping review). What each review stage checks, what makes a finding blocking and how a re-review treats the previous review are stated in skills/cumulative-regression/SKILL.md (Independent review). task-to-deploy.js accepts it against this file and corrects the artifact only from a review that names a blocking finding; scripts/portfolio/regression.py validate and verify accept the artifact only with a review that is approved, names no blocking finding and cites evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["approved", "previousFindings", "findings", "evidence"],
+  "properties": {
+    "approved": {
+      "description": "True exactly when no finding is blocking. A non-blocking finding never withholds approval.",
+      "type": "boolean"
+    },
+    "previousFindings": {
+      "description": "One ruling on each finding of the previous review the brief names, in that review's order; empty when the brief names no previous review.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding", "resolved", "evidence"],
+        "properties": {
+          "finding": {
+            "description": "The previous finding, as the previous review states it.",
+            "type": "string",
+            "minLength": 1
+          },
+          "resolved": {
+            "description": "Whether the artifact under review now resolves it.",
+            "type": "boolean"
+          },
+          "evidence": {
+            "description": "Where the artifact resolves it, or what still leaves it unresolved, with the source reference.",
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "findings": {
+      "description": "The findings of this review: each unresolved blocking finding of the previous review again, and each new finding the review stage allows.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "finding", "correction"],
+        "properties": {
+          "severity": {
+            "description": "blocking: the artifact misses or misstates an obligation, so the evidence the gate collects would not prove a current requirement; it fails approval and goes back to the assessor. non-blocking: a note that loses no evidence; it is carried with the review and fails nothing.",
+            "enum": ["blocking", "non-blocking"]
+          },
+          "finding": {
+            "description": "What is wrong, with the source reference that shows it.",
+            "type": "string",
+            "minLength": 1
+          },
+          "correction": {
+            "description": "The verifiable correction, in terms the regression plan contract can express.",
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "evidence": {
+      "description": "The sources read and what each showed, each with its reference: what the review accepts as well as what it finds.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "if": { "properties": { "approved": { "const": true } } },
+  "then": { "properties": { "findings": { "not": { "contains": { "properties": { "severity": { "const": "blocking" } } } } } } },
+  "else": { "properties": { "findings": { "contains": { "properties": { "severity": { "const": "blocking" } } } } } }
+}

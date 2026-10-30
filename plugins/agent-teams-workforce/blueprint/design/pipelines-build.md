@@ -589,6 +589,14 @@ Notes on the diagram:
   change can be undone.
 - The driver writes the Task's state from the run's result (closed, or released with its cause),
   so code sets a state the same way every time.
+- An artifact an agent authored is reused by a restarted run only when the inputs it was written
+  from are unchanged (the work tree's digest, its input files and its brief), so a run never
+  carries forward work written for a tree that has changed since.
+- Every cap on a loop (review corrections, Red and Green checks, the audits' one correction)
+  counts the rounds of the run it is in, so an earlier run cannot use up a later run's rounds.
+- A review loop converges: a re-review is given the previous review and rules on each of its
+  findings first, raises a new finding only when it is blocking and concerns content the previous
+  review could not judge, and only a blocking finding sends the work back.
 
 ## 8. A Task through the build
 

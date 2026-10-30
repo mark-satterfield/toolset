@@ -77,9 +77,9 @@
             {"name": "regressionPlanReview", "kind": "file", "holds": "the regression-coverage-reviewer's review of the scope"}
           ],
           "adds": [
-            {"kinds": ["build:regression-reassess", "build:regression-review"], "when": "the review does not approve the scope or names findings: the regression-impact-assessor is given the review, and the corrected scope is reviewed again"}
+            {"kinds": ["build:regression-reassess", "build:regression-review"], "when": "the review names a blocking finding, so it does not approve the scope: the regression-impact-assessor is given the review, and the corrected scope is reviewed again with that review"}
           ],
-          "limit": "It adds no correction after two corrections of the scope; build:regression-validate then fails with regression-plan"
+          "limit": "It adds no correction after two corrections of the scope in this run; build:regression-validate then fails with regression-plan"
         },
         "build:regression-reassess": {
           "description": "Correct the regression scope from its review",
@@ -140,7 +140,7 @@
           "adds": [
             {"kinds": ["build:red-write", "build:red-check"], "when": "Red does not hold: each test agent is given the suite result, and the suite is judged again"}
           ],
-          "limit": "It fails with red-unsatisfied when four checks have not shown Red, and with no-progress when the suite fails exactly as it did at the check before"
+          "limit": "It fails with red-unsatisfied when four checks in this run have not shown Red, and with no-progress when the suite fails exactly as it did at the check before"
         },
         "build:select-implementers": {
           "description": "Select the implementers whose specialties cover the Task",
@@ -181,7 +181,7 @@
             {"kinds": ["build:test-ruling", "build:green-check"], "when": "the suite is not green and an implementer named tests that stand between the code and the contract"},
             {"kinds": ["build:implement", "build:green-check"], "when": "the suite is not green and no named test awaits a ruling: each implementer is given the suite result"}
           ],
-          "limit": "It fails with green-modified-tests when an implementer changed a test file, with blocked-upstream when an implementer named something outside the Task, with no-progress when no file changed and the suite fails exactly as at the check before, and with green when eight checks since the implementers were selected have not shown a green suite"
+          "limit": "It fails with green-modified-tests when an implementer changed a test file, with blocked-upstream when an implementer named something outside the Task, with no-progress when no file changed and the suite fails exactly as at the check before, and with green when eight checks in this run since the implementers were selected have not shown a green suite"
         },
         "build:test-ruling": {
           "description": "Rule on the tests the implementers named, with tdd-unit-test-generator",
@@ -204,9 +204,9 @@
             {"name": "reuseAudit", "kind": "value", "holds": "{ clean, violations, judgment, unchecked }: whether the audit found no violation; each violation as text, those atw-matrix check-reuse found and each definition the shared-capability-reviewer ruled a duplicate; each definition the reviewer ruled on with its ruling and reason; and the relied-on behaviours that have no use signal"}
           ],
           "adds": [
-            {"kinds": ["build:implement", "build:green-check", "build:reuse-audit"], "when": "the first audit finds violations: each implementer is given them, the suite is judged, and the audit runs again"}
+            {"kinds": ["build:implement", "build:green-check", "build:reuse-audit"], "when": "the first audit of this run finds violations: each implementer is given them, the suite is judged, and the audit runs again"}
           ],
-          "limit": "It fails with reuse-violation when violations remain at the audit that follows the correction, and with reuse-audit when atw-matrix check-reuse does not rule or the shared-capability-reviewer leaves a definition unruled"
+          "limit": "It fails with reuse-violation when violations remain at the audit that follows this run's correction, and with reuse-audit when atw-matrix check-reuse does not rule or the shared-capability-reviewer leaves a definition unruled"
         },
         "build:refactor-snapshot": {
           "description": "Record the work tree as it is before the refactor",
@@ -262,9 +262,9 @@
             {"name": "cdsAudit", "kind": "value", "holds": "{ verdict, findings, scriptVersion, violations, gaps }: the audit verdict, the count of violations and gaps, and each as text"}
           ],
           "adds": [
-            {"kinds": ["build:implement", "build:green-check", "build:cds-audit"], "when": "the first audit finds violations: each implementer is given them, the suite is judged, and the audit runs again"}
+            {"kinds": ["build:implement", "build:green-check", "build:cds-audit"], "when": "the first audit of this run finds violations: each implementer is given them, the suite is judged, and the audit runs again"}
           ],
-          "limit": "It fails with cds-audit when violations remain at the audit that follows the correction, and with blocked-upstream when the design system lacks something the UI needs"
+          "limit": "It fails with cds-audit when violations remain at the audit that follows this run's correction, and with blocked-upstream when the design system lacks something the UI needs"
         },
         "build:docs-audit": {
           "description": "Audit which documents the change leaves stale",
@@ -320,9 +320,9 @@
             {"name": "regressionMappedReview", "kind": "file", "holds": "the regression-coverage-reviewer's review of the mapping"}
           ],
           "adds": [
-            {"kinds": ["build:regression-remap", "build:regression-map-review"], "when": "the review does not approve the mapping or names findings: the regression-impact-assessor is given the review, and the corrected mapping is reviewed again"}
+            {"kinds": ["build:regression-remap", "build:regression-map-review"], "when": "the review names a blocking finding, so it does not approve the mapping: the regression-impact-assessor is given the review, and the corrected mapping is reviewed again with that review"}
           ],
-          "limit": "It adds no correction after two corrections of the mapping; build:regression-verify then fails with regression-coverage"
+          "limit": "It adds no correction after two corrections of the mapping in this run; build:regression-verify then fails with regression-coverage"
         },
         "build:regression-remap": {
           "description": "Correct the regression mapping from its review",

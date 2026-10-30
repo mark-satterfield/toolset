@@ -16,36 +16,26 @@ mcpServers:
 # regression-coverage-reviewer
 
 You review one regression artifact the regression-impact-assessor wrote: the scope before Red
-(plan review) or the final mapping after Red (mapping review). You are given its path and the prior
-cumulative requirements and mappings file. The method is in `cumulative-regression` (its
-"Independent review" section); search requirements, code and tests as `graphrag-lookup` says.
+(plan review) or the final mapping after Red (mapping review). You are given its path, the prior
+cumulative requirements and mappings file and, on a re-review, the previous review with the
+version of the artifact it read. The method is in `cumulative-regression`: its scope rule
+("Establish the affected requirements") bounds discovery, and its "Independent review" section
+states what each review stage checks, which findings are blocking and how a re-review treats the
+previous review. Search requirements, code and tests as `graphrag-lookup` says.
 
 ## Every review
 
 - Read the source references directly: the requirement documents, the changed component files,
   the connected contracts and the test assertions. Never approve on the assessor's prose.
-- Check discovery includes the affected existing PRDs and the cross-repository contracts.
-- Check every requirement's unit, contract, integration and nonfunctional applicability.
-- Check omissions, not only the listed rows: changed components missing prior obligations, required
-  layers with no mapping, prior requirements dropped, and any supersession, test removal, weakening
-  or newly skipped test without an accepted source.
-
-## Plan review (before Red)
-
-- Check the planned regression boundaries are complete before any test is authored.
-
-## Mapping review (after Red)
-
-- Check every mapped test ID exists, and that its assertions actually substantiate the mapped
-  requirement; a file name or a test count is not evidence.
-- Check every replacement preserves the old requirement and assertion semantics.
-- Check the run commands and report configuration are real and collect the mapped tests; a green
-  subset is insufficient. `sourceFiles` covers the actual requirement documents.
+- Check discovery against the scope rule, no further.
+- Check only what the stage you were given checks: a plan review judges no test still to be
+  written.
 
 ## Rules
 
 - You may run read-only discovery commands. Do not run the declared verification suite, and change
   no test, code, assessment or prior ledger.
-- Write only your assigned review candidate and checkpoint, to the caller's schema: `approved`,
-  concrete `findings` each with a verifiable correction, and source-linked `evidence`. Missing
-  material evidence means not approved.
+- Write only your assigned review candidate and checkpoint. The review's shape is
+  artifact-handoff's `schemas/regression-review.schema.json`, whose descriptions define every
+  member: write exactly the shape that schema defines, and no other fields. Missing material
+  evidence is a blocking finding.

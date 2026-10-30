@@ -745,15 +745,20 @@
       "agents": [
         "regression-coverage-reviewer"
       ],
-      "schema": "workflows/task-to-deploy.js#REGRESSION_REVIEW_SCHEMA",
-      "locator": "workflows/task-to-deploy.js:REGRESSION_REVIEW_SCHEMA",
-      "pointer": "structured",
+      "schema": "skills/artifact-handoff/schemas/regression-review.schema.json",
+      "named": "regression-review.schema.json",
+      "pointer": "file",
       "code": "workflows/task-to-deploy.js",
       "anchors": [
-        "REGRESSION_REVIEW_SCHEMA, 'regression-coverage-reviewer'"
+        "REGRESSION_REVIEW_CONTRACT",
+        "REGRESSION_REVIEW_SCHEMA"
+      ],
+      "locator": "workflows/task-to-deploy.js:REGRESSION_REVIEW_SCHEMA",
+      "skills": [
+        "cumulative-regression"
       ],
       "inputs": [
-        "workflows/task-to-deploy.js#REGRESSION_SCHEMA"
+        "skills/artifact-handoff/schemas/regression-plan.schema.json"
       ]
     },
     {

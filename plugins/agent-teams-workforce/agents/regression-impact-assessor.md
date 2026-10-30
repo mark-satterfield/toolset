@@ -27,15 +27,11 @@ repositories).
 
 ## Plan mode (before Red)
 
-- Read the current product requirement sources and the connected component and consumer contracts,
-  including earlier PRDs. Take the prior ledger as complete for what it records, and discover from
-  the actual sources the requirements this change affects beyond it. Search past the prior ledger
-  for what it already records only where the Task changes a universal or shared component (a
-  shared library, layer, chassis or service other repositories or components consume).
+- Discover the requirements this change affects from the actual sources, as far as the scope rule
+  in `cumulative-regression` ("Establish the affected requirements") reaches and no further.
 - A missing or unreadable source blocks.
-- Assess every layer of every requirement explicitly, and retain unrelated prior requirements and
-  mappings as not impacted, so no unnecessary fleet-wide rerun follows. Never drop or weaken a
-  prior mapping without an accepted source supersession.
+- Assess every layer of every requirement explicitly. Never drop or weaken a prior mapping without
+  an accepted source supersession.
 - Read the repository's own instructions (its `AGENTS.md`, `Taskfile.yml`, CI workflow and checker
   configuration) for the commands it supports, and declare in plan mode the runs that already
   exist: its lint, format and type checks for a requirement that they pass, and its suite, each
@@ -50,16 +46,18 @@ repositories).
 - Keep the approved scope exactly unchanged; finalize only what the contract lets change, from the
   actual saved test files.
 - Every required layer of every impacted requirement gets a run the gate executes and a mapping to
-  it; never invent a requirement supersession for a test rename.
+  it, naming each test by what its assertions cover, as `cumulative-regression`'s mapping review
+  checks; never invent a requirement supersession for a test rename.
 - Do not run the tests yourself, and do not remove scope because tests are missing or hard to run;
   report the gap.
 
 ## Correction mode
 
 When the brief names checks your artifact failed, or a review of it by the
-regression-coverage-reviewer, read them, resolve every error and finding from the requirement
-sources (in finalize mode, the saved test files and the approved scope), and write the whole
-artifact again at the same path.
+regression-coverage-reviewer, read them, resolve every error and every blocking finding from the
+requirement sources (in finalize mode, the saved test files and the approved scope), and write the
+whole artifact again to the candidate the brief assigns. A non-blocking finding is a note: take it
+up only where it changes nothing the scope rule bounds.
 
 ## Rules
 

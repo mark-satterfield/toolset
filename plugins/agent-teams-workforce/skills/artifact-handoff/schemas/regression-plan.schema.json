@@ -32,7 +32,7 @@
       "required": ["sourceRefs", "priorRequirementsSearched", "greenfield", "evidence"],
       "properties": {
         "sourceRefs": {"description": "The documents and sections searched, each a real document and requirement or section.", "type": "array", "items": {"type": "string", "minLength": 1}},
-        "priorRequirementsSearched": {"description": "True only when earlier PRDs and the connected components and consumers were actually searched.", "type": "boolean"},
+        "priorRequirementsSearched": {"description": "True only when the sources the scope rule of skills/cumulative-regression/SKILL.md reaches (earlier PRDs, and the components and consumers it names) were actually searched; that rule bounds the search.", "type": "boolean"},
         "greenfield": {"description": "True only with evidence that the component has no prior valid obligations; a missing ledger is not that evidence.", "type": "boolean"},
         "evidence": {"description": "What the search found, and every missing or inaccessible source as an explicit gap.", "type": "string", "minLength": 1}
       }
