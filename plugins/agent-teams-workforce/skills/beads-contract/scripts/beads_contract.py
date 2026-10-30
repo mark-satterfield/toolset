@@ -137,6 +137,22 @@ class Fingerprint(TypedDict):
 #: seconds: 6 attempts, 62s of waiting in all, then the error is raised.
 CONNECTION_BACKOFF = (2, 4, 8, 16, 32)
 
+#: What `bd` prints, on stderr or as the `error` of its `--json` object on stdout, when a
+#: maintenance operation (for example `bd bootstrap`) holds the shared server's workspace gate.
+#: The gate refuses the command before it runs, so any command, a write included, is run again.
+MAINTENANCE_GATE = re.compile(r"a maintenance operation is running|workspace gate busy", re.IGNORECASE)
+
+#: The pause before each retry of a `bd` command the workspace gate refused, in seconds: 360s of
+#: waiting in all, longer than one `bd bootstrap` (`polyrepo create` bounds each at 300s), then
+#: the error is raised.
+MAINTENANCE_BACKOFF = (2, 4, 8, 16, *([30] * 11))
+
+#: Why a command the workspace gate refused is run again.
+MAINTENANCE_REASON = (
+    "a bd maintenance operation holds the shared server's workspace gate and refused the command "
+    "before it ran; the gate is released when that operation ends"
+)
+
 #: The `bd` subcommands that only read; any other subcommand without `--readonly` writes.
 READ_COMMANDS = frozenset(
     {"list", "ready", "show", "search", "count", "stats", "blocked"},
@@ -211,7 +227,7 @@ def failure_cause(stderr: str) -> str:
     if not (isinstance(stderr, str)):
         argument_error: str = "failure_cause: arguments do not satisfy the declared input contract"
         raise TypeError(argument_error)
-    if LOCK_CONTENTION.search(stderr):
+    if LOCK_CONTENTION.search(stderr) or MAINTENANCE_GATE.search(stderr):
         return CONTENTION_CAUSE
     return BD_TIMEOUT_CAUSE if SERVER_FAILURE.search(stderr) else OTHER_CAUSE
 
@@ -890,7 +906,9 @@ class Reader:
         """Run one `bd` command and return its stdout.
 
         A command that could not reach the beads server is run again after each pause in
-        CONNECTION_BACKOFF, as connection_retryable allows; every failed attempt is printed
+        CONNECTION_BACKOFF, as connection_retryable allows, and a command the workspace gate
+        refused (MAINTENANCE_GATE) after each pause in MAINTENANCE_BACKOFF; a failure is judged
+        on stderr and stdout, where `bd --json` prints its error. Every failed attempt is printed
         to stderr with the command and its error.
 
         Args:
@@ -906,15 +924,17 @@ class Reader:
                 retried or on its last attempt.
 
         """
-        attempt: int
         where: str = self.route(args) if repo is None else repo
         executable: str | None = shutil.which("bd")
         if executable is None:
             message: str = "bd executable is unavailable"
             raise BeadsError(message)
         command: list[str] = [executable] + (["-C", where] if where else []) + args
-        attempts: int = len(CONNECTION_BACKOFF) + 1
-        for attempt in range(1, attempts + 1):
+        disconnected: int = 0
+        refused: int = 0
+        attempt: int = 0
+        while True:
+            attempt += 1
             try:
                 done: subprocess.CompletedProcess[str] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Resolved bd executable, typed arguments, no shell.
                     command,
@@ -930,20 +950,26 @@ class Reader:
                 if attempt > 1:
                     sys.stderr.write(f"[beads-contract] `{' '.join(command)}` succeeded on attempt {attempt}" + "\n")
                 return done.stdout
-            stderr: str = done.stderr.strip()
-            msg = f"`{' '.join(command)}` exited {done.returncode}: {stderr[:2000]}"
-            why: str = connection_retryable(args, stderr)
-            if not why or attempt == attempts:
-                if why:
-                    msg += f" (failed {attempts} times to reach the beads server)"
-                raise BeadsError(msg, failure_cause(stderr))
-            pause: int = CONNECTION_BACKOFF[attempt - 1]
-            sys.stderr.write(
-                f"[beads-contract] attempt {attempt} of {attempts} failed: {msg}; retrying in {pause}s because {why}\n",
-            )
+            printed: str = "\n".join(part for part in (done.stderr.strip(), done.stdout.strip()) if part)
+            msg = f"`{' '.join(command)}` exited {done.returncode}: {printed[:2000]}"
+            pause: int
+            why: str
+            if MAINTENANCE_GATE.search(printed):
+                if refused == len(MAINTENANCE_BACKOFF):
+                    msg += f" (the workspace gate stayed held for {sum(MAINTENANCE_BACKOFF)}s)"
+                    raise BeadsError(msg, CONTENTION_CAUSE)
+                pause, why = MAINTENANCE_BACKOFF[refused], MAINTENANCE_REASON
+                refused += 1
+            else:
+                why = connection_retryable(args, printed)
+                if not why or disconnected == len(CONNECTION_BACKOFF):
+                    if why:
+                        msg += f" (failed {disconnected + 1} times to reach the beads server)"
+                    raise BeadsError(msg, failure_cause(printed))
+                pause = CONNECTION_BACKOFF[disconnected]
+                disconnected += 1
+            sys.stderr.write(f"[beads-contract] attempt {attempt} failed: {msg}; retrying in {pause}s because {why}\n")
             time.sleep(pause)
-        msg = f"`{' '.join(command)}` was never run"
-        raise BeadsError(msg)
 
     def _read(self, args: list[str], repo: str | None = None) -> JsonValue:
         """Run one read-only `bd` command live and parse its JSON.

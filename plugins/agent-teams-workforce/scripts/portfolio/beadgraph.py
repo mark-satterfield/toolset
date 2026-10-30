@@ -22,6 +22,7 @@ import json
 import math
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Serialized bd transport uses argv without a shell.
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -373,8 +374,10 @@ def _target(args: list[str], repo: Path | None) -> Path | None:
 def run_bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
     """Make one serialized, bounded bd call with a cause from structured facts.
 
-    The orchestrator retries the enclosing keyed operation, which rereads existing beads.
-    No command output is interpreted to guess whether a failed write is safe to repeat.
+    A command the workspace gate refused (beads_contract.MAINTENANCE_GATE, judged on stdout and
+    stderr) never ran, so it is run again after each pause in beads_contract.MAINTENANCE_BACKOFF.
+    Otherwise the orchestrator retries the enclosing keyed operation, which rereads existing beads.
+    No other command output is interpreted to guess whether a failed write is safe to repeat.
 
     Returns:
         The command stdout.
@@ -395,10 +398,41 @@ def run_bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
     if where is not None:
         command += ["-C", str(where)]
 
+    for pause in (*beads_contract.MAINTENANCE_BACKOFF, None):
+        done: subprocess.CompletedProcess[str] = _attempt_bd(command, args, stdin)
+        if not done.returncode:
+            return done.stdout
+        msg: str = f"`{' '.join(command)}` exited {done.returncode}: {done.stdout} {done.stderr}"
+        printed: str = f"{done.stdout}\n{done.stderr}"
+        if beads_contract.MAINTENANCE_GATE.search(printed):
+            if pause is None:
+                msg += f" (the workspace gate stayed held for {sum(beads_contract.MAINTENANCE_BACKOFF)}s)"
+                raise GraphError(msg, CONTENTION)
+            sys.stderr.write(
+                f"[beadgraph] {msg.strip()}; retrying in {pause}s because {beads_contract.MAINTENANCE_REASON}\n",
+            )
+            time.sleep(pause)
+            continue
+        dropped: bool = any(failure in printed.lower() for failure in DOLT_CONNECTION_FAILURES)
+        raise GraphError(msg, BD_TIMEOUT if dropped else OTHER_CAUSE)
+    unreached: str = f"`{' '.join(command)}` was never run"
+    raise GraphError(unreached)
+
+
+def _attempt_bd(command: list[str], args: list[str], stdin: str | None) -> subprocess.CompletedProcess[str]:
+    """Run one `bd` process under the shared bd gate.
+
+    Returns:
+        The finished process.
+
+    Raises:
+        GraphError: The gate, the process start or its timeout failed.
+
+    """
     gate: BdGate = BD_GATE or locks.bd_gate
     try:
         with gate(write=not beads_contract.is_read(args)):
-            done: subprocess.CompletedProcess[str] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - bd argv and separate repository argument; shell disabled.
+            return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - bd argv and separate repository argument; shell disabled.
                 command,
                 input=stdin,
                 capture_output=True,
@@ -412,12 +446,6 @@ def run_bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
         raise GraphError(str(exc), BD_TIMEOUT) from exc
     except (OSError, ValueError) as exc:
         raise GraphError(str(exc), OTHER_CAUSE) from exc
-    if done.returncode:
-        msg: str = f"`{' '.join(command)}` exited {done.returncode}: {done.stdout} {done.stderr}"
-        printed: str = f"{done.stdout}\n{done.stderr}".lower()
-        dropped: bool = any(failure in printed for failure in DOLT_CONNECTION_FAILURES)
-        raise GraphError(msg, BD_TIMEOUT if dropped else OTHER_CAUSE)
-    return done.stdout
 
 
 def _bd_json(args: list[str], repo: Path | None) -> JsonValue:
