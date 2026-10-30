@@ -25,6 +25,7 @@ import argparse
 import fcntl
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -43,6 +44,8 @@ from step_journal_contract import (
     ARTIFACT_KINDS,
     BEAD_ID_PATTERN,
     BEAD_TYPES,
+    CHANGE_PART_PREFIX,
+    CHANGE_PREFIX,
     JOURNAL_SUFFIX,
     LOCK_SUFFIX,
     PIPELINES,
@@ -70,6 +73,7 @@ from step_journal_contract import (
     schema_problems,
     validate_artifact,
     validate_journal,
+    validate_journal_change,
     validate_step_plans,
 )
 
@@ -82,6 +86,11 @@ WORKFLOW_RUNS_DIRECTORY: Final = "workflow-runs"
 """The directory of a control repository that holds saved run data, under ``.claude``."""
 JOURNALS_DIRECTORY: Final = "step-journals"
 """The one directory, inside the workflow runs directory, that holds every bead's step journal."""
+CHANGES_DIRECTORY: Final = "changes"
+"""The directory, beside the journals, that holds the changes each run of a workflow saved as it went."""
+CHANGES_SUFFIX: Final = ".jsonl"
+RUN_PATTERN: Final = re.compile(r"^[A-Za-z0-9._-]+$")
+"""A run name the driver gives a workflow run; it names that run's change log file."""
 EXIT_OK: Final = 0
 EXIT_REFUSED: Final = 1
 AGENT_PREFIX: Final = "agent-teams-workforce:"
@@ -172,6 +181,13 @@ class ValidationResult(TypedDict):
     problems: list[str]
 
 
+class RecordResult(TypedDict):
+    """What ``record`` prints: the change log the lines were added to and how many were added."""
+
+    log: str
+    recorded: int
+
+
 class ReadResult(TypedDict):
     """What ``read`` prints: the whole journal, for a workflow script that runs its steps."""
 
@@ -188,6 +204,7 @@ type CommandResult = (
     | InputsResult
     | Invalidation
     | ValidationResult
+    | RecordResult
     | ReadResult
 )
 
@@ -1062,6 +1079,113 @@ def journals_directory(location: Path) -> Path:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def change_log_path(journal: Path, run: str) -> Path:
+    """Name the file that holds the changes one run of a workflow saved for a journal as it went.
+
+    A workflow reports each change to the journal on its log, and the harness keeps those log
+    messages only in the record it writes when the workflow ends. A workflow also saves its changes
+    in this file while it runs (``record``), so the changes of a run stopped before it ended can
+    still be applied. This is the only place that names the file.
+
+    Args:
+        journal: The journal file.
+        run: The name the driver gave the run.
+
+    Returns:
+        ``<journals directory>/changes/<journal file name>.<run>.jsonl``.
+
+    Raises:
+        StepJournalError: ``run`` is not a run name.
+
+    """
+    if RUN_PATTERN.search(run) is None:
+        message: str = f"the run name {run!r} does not match {RUN_PATTERN.pattern}"
+        raise StepJournalError(message)
+    return journal.parent / CHANGES_DIRECTORY / f"{journal.name}.{run}{CHANGES_SUFFIX}"
+
+
+def _check_change_line(line: str, run: str) -> None:
+    """Refuse a line that is not a journal change log line of ``run``.
+
+    Raises:
+        StepJournalError: The line carries neither change prefix, or it is a whole change that is
+            not valid or belongs to another run.
+
+    """
+    if line.startswith(CHANGE_PREFIX):
+        change = validate_journal_change(_decode(line[len(CHANGE_PREFIX) :], "a journal change"), "a journal change")
+        if change["run"] != run:
+            message: str = f"the journal change belongs to run {change['run']!r}, not {run!r}"
+            raise StepJournalError(message)
+        return
+    if not line.startswith(CHANGE_PART_PREFIX):
+        message = f"a line to record starts with neither {CHANGE_PREFIX!r} nor {CHANGE_PART_PREFIX!r}"
+        raise StepJournalError(message)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def record_changes(journal: Path, run: str, lines: Sequence[str]) -> Path:
+    """Add the change log lines a workflow run reported to that run's change log, in order.
+
+    The journal itself is not touched: the driver applies the changes, each once. A ``run`` that
+    is not a run name, or a line that is not a change log line of it, raises ``StepJournalError``.
+
+    Args:
+        journal: The journal file the changes are for.
+        run: The name the driver gave the run.
+        lines: The log lines, each a whole change or one part of one, as the workflow logged them.
+
+    Returns:
+        The change log file.
+
+    """
+    for line in lines:
+        _check_change_line(line, run)
+    log: Path = change_log_path(journal, run)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("a", encoding="utf-8") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            handle.write("".join(json.dumps(line, ensure_ascii=False) + "\n" for line in lines))
+            handle.flush()
+            os.fsync(handle.fileno())
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+    return log
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def recorded_changes(journal: Path, run: str) -> list[str]:
+    """Read the change log lines one workflow run saved for a journal, in the order it saved them.
+
+    Args:
+        journal: The journal file.
+        run: The name the driver gave the run.
+
+    Returns:
+        The lines; empty when the run saved none.
+
+    Raises:
+        StepJournalError: ``run`` is not a run name, or the change log cannot be read or holds a
+            line that is not a JSON string.
+
+    """
+    log: Path = change_log_path(journal, run)
+    if not log.exists():
+        return []
+    found: list[str] = []
+    for number, raw in enumerate(_read_text(log).splitlines(), start=1):
+        if not raw.strip():
+            continue
+        value: JsonValue = _decode(raw, f"line {number} of {log}")
+        if not isinstance(value, str):
+            message: str = f"line {number} of {log} is not a JSON string"
+            raise StepJournalError(message)
+        found.append(value)
+    return found
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def steps_in_order(journal: Journal) -> list[Step]:
     """List every step of a journal in walk order.
 
@@ -1737,6 +1861,18 @@ def _run_validate(args: argparse.Namespace) -> Outcome:
     return Outcome({"valid": not problems, "problems": problems}, EXIT_REFUSED if problems else EXIT_OK)
 
 
+def _run_record(args: argparse.Namespace) -> Outcome:
+    """Run ``record``.
+
+    Returns:
+        The change log file and the number of lines added to it.
+
+    """
+    lines: list[str] = [str(line) for line in (getattr(args, "line", None) or [])]
+    log: Path = record_changes(_journal_argument(args), _required(args, "run"), lines)
+    return Outcome({"log": str(log), "recorded": len(lines)})
+
+
 def _run_read(args: argparse.Namespace) -> Outcome:
     """Run ``read``.
 
@@ -1760,6 +1896,7 @@ _COMMANDS: Final[dict[str, Callable[[argparse.Namespace], Outcome]]] = {
     "inputs": _run_inputs,
     "invalidate": _run_invalidate,
     "validate": _run_validate,
+    "record": _run_record,
     "read": _run_read,
 }
 
@@ -1831,6 +1968,13 @@ def _parser() -> argparse.ArgumentParser:
         help="set a step and every step after it back to planned",
     )
     commands.add_parser("validate", parents=[where], help="check a journal file against the contract")
+    record: argparse.ArgumentParser = commands.add_parser(
+        "record",
+        parents=[where],
+        help="save the change log lines a workflow run reported, beside the journal, for the driver to apply",
+    )
+    record.add_argument("--run", required=True, help="the name the driver gave the run")
+    record.add_argument("--line", action="append", help="one change log line, as the workflow logged it; repeatable")
     commands.add_parser("read", parents=[where], help="print the whole journal")
     return parser
 

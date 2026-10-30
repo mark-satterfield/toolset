@@ -158,8 +158,11 @@ supervisor survives a session ending, and it is not part of this plugin.
 `task-to-deploy`, `story-deploy-fix` and `built-version` run the steps of a bead's step journal. A run
 that stopped is continued by the next dispatch, which begins at the first step the journal does not
 mark done; nothing else decides where a run begins. The workflow reads the journal once, at its start,
-and reports each change on its log as a `STEP-JOURNAL` line; the driver applies each line to the
-journal file with `orchestrator/core/journal_lines.py`.
+and reports each change on its log as a `STEP-JOURNAL` line. After each step is done it also saves
+the lines reported since its last save to the run's change log beside the journal
+(`bin/atw-step-journal record`), because the harness keeps log lines only in the workflow record it
+writes when the workflow ends. The driver applies each line, from the change log and then from the
+workflow record, to the journal file with `orchestrator/core/journal_lines.py`, each change once.
 
 ### Dispatch by path, not by name
 

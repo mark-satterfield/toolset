@@ -29,7 +29,7 @@ from . import portfolio_bootstrap  # ruff: ignore[unused-import] - Imported for 
 # isort: split
 import jsonschema
 import strictschema
-from driver_surface_types import ARCH_PATH_ENV, SESSION_LIMIT_ENV, STOP_FILE_ENV
+from driver_surface_types import ARCH_PATH_ENV, EXECUTION_ID_ENV, SESSION_LIMIT_ENV, STOP_FILE_ENV
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from .agent_context import (
@@ -803,7 +803,8 @@ class AgentRunner:
             failure_cause = exc.cause
             raise
         else:
-            if _terminated_outside(facts):
+            # Under the driver (its execution id is set) the driver records the wall it stopped the session for.
+            if _terminated_outside(facts) and not os.environ.get(EXECUTION_ID_ENV):
                 facts["rate"] = self.processes.account_wall(
                     WallProbe(
                         [self.executable, "-p", "--output-format", "stream-json", "--verbose", *WALL_PROBE_ARGUMENTS],

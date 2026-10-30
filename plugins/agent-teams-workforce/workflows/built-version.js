@@ -634,8 +634,11 @@ ${operations.map(operation => `Command ${operation}: ${command(operation)}`).joi
 // memory, and begins at the first step that is not done. It cannot write a file, so it reports
 // each change (step started, step done with its artifacts and the steps its result adds, step
 // failed with its cause, child steps planned) as one log line the driver applies to the journal
-// file with orchestrator/core/journal_lines.py. The copy here changes exactly as the file does:
-// it follows step_journal.next_step, start_step and journal_changes.apply_completion.
+// file with orchestrator/core/journal_lines.py. The harness keeps log lines only in the record it
+// writes when the workflow ends, so after each step is done the lines reported since the last save
+// are also saved beside the journal (bin/atw-step-journal record), and the driver applies the
+// changes of a run stopped before it ended from there. The copy here changes exactly as the file
+// does: it follows step_journal.next_step, start_step and journal_changes.apply_completion.
 //
 // The line format and the artifact that hands a planned step its parameters are defined in
 // skills/pipeline-contracts/schemas/step-journal.schema.json; the step kinds, what each records
@@ -694,11 +697,15 @@ const stepJournal = (() => {
    * Opens the journal a workflow was handed. `journal` is the document atw-step-journal read
    * printed, `run` the name the driver gave this run, `runner` the name of this workflow script as
    * pipeline-steps.json names it, and `under` the id of the step whose child steps this workflow
-   * runs (absent for a workflow that runs the bead's outermost steps).
+   * runs (absent for a workflow that runs the bead's outermost steps). `keep` says how the changes
+   * are saved beside the journal file as the run goes: { dispatch, relayRunner, pluginRoot, path,
+   * relayDir, phase }, the dispatch and relay runner of the workflow's checked commands, the journal
+   * file, and the directory for the relay files of the saves.
    */
-  function open({ journal, run, runner, under = null }) {
+  function open({ journal, run, runner, under = null, keep }) {
     if (!journal || typeof journal !== 'object' || !Array.isArray(journal.steps)) throw new Error('stepJournal.open: no journal was read')
     if (typeof run !== 'string' || !run) throw new Error('stepJournal.open: no run name was supplied')
+    if (!keep || typeof keep.dispatch !== 'function' || !keep.relayRunner || !keep.pluginRoot || !keep.path || !keep.relayDir) throw new Error('stepJournal.open: no way to save the changes beside the journal was supplied')
     const pipeline = PIPELINES[journal.pipeline]
     if (!pipeline) throw new Error(`stepJournal.open: the journal lists ${journal.pipeline} steps, which pipeline-steps.json does not define`)
     const params = new Map()
@@ -716,12 +723,21 @@ const stepJournal = (() => {
     /** The keys of the steps this run started: a cap on a loop counts only the rounds of the run it is in. */
     const startedHere = new Set()
 
+    /** The change lines reported and not yet saved beside the journal, and the saves sent, one after another. */
+    const unsaved = []
+    let saves = 0
+    let saving = Promise.resolve()
+    /** Logs one change line and holds it for the next save. */
+    const emit = (line) => {
+      log(line)
+      unsaved.push(line)
+    }
     /** Writes one change on the log, as one line or as part lines when it is longer than the chunk. */
     function report(change) {
       changes += 1
       const body = JSON.stringify({ run, n: changes, ...change })
       if (body.length <= WIRE.changeChunk) {
-        log(`${WIRE.changePrefix}${body}`)
+        emit(`${WIRE.changePrefix}${body}`)
         return
       }
       const parts = []
@@ -732,7 +748,23 @@ const stepJournal = (() => {
         parts.push(body.slice(at, end))
         at = end
       }
-      parts.forEach((part, index) => log(`${WIRE.changePartPrefix}${changes} ${index + 1}/${parts.length} ${part}`))
+      parts.forEach((part, index) => emit(`${WIRE.changePartPrefix}${changes} ${index + 1}/${parts.length} ${part}`))
+    }
+    /**
+     * Saves the change lines reported since the last save to this run's change log beside the
+     * journal (bin/atw-step-journal record), after every earlier save. A save that fails is logged;
+     * the lines stay on the log, which the driver reads from the workflow record when the run ends.
+     */
+    function save() {
+      if (!unsaved.length) return saving
+      const lines = unsaved.splice(0)
+      saves += 1
+      const relayFile = `${keep.relayDir}/record-${run.replace(/[^A-Za-z0-9._-]+/g, '-')}-${saves}.json`
+      saving = saving.then(async () => {
+        const result = await relayKit.run(keep.dispatch, { label: 'journal:record', phase: keep.phase, runner: keep.relayRunner, argv: [`${keep.pluginRoot}/bin/atw-step-journal`, 'record', '--journal', keep.path, '--run', run, ...lines.flatMap((line) => ['--line', line])], file: relayFile })
+        if (!result.ok || result.exitCode !== 0) log(`journal:record: ${lines.length} change lines were not saved beside the journal (${result.ok ? `atw-step-journal record exited ${result.exitCode}; its output is in ${relayFile}` : result.error}); the workflow record still carries them`)
+      })
+      return saving
     }
 
     const everyStep = () => walk(roots)
@@ -887,6 +919,7 @@ const stepJournal = (() => {
             return { ok: false, step, fail: out.fail }
           }
           this.done(step, Array.isArray(out.artifacts) ? out.artifacts : [], Array.isArray(out.add) ? out.add : [])
+          await save()
           return null
         }
         for (;;) {
@@ -1442,7 +1475,7 @@ enterPhase('compare')
 const journalRef = builtArgs.journal
 const read = await stepJournal.read(run, { runner: `${pluginRoot}/scripts/portfolio/relayrun.py`, pluginRoot, path: journalRef.path, relayFile: `${SNAP_DIR}/relay/journal/read-${journalRef.run.replace(/[^A-Za-z0-9._-]+/g, '-')}.json`, phase: phaseTitle('compare') })
 if (read.error) return handback(false, read.noResult ? DISPATCH_FAILED_STAGE : 'journal', `Story ${beadId}: the step journal ${journalRef.path} could not be read: ${read.error}`)
-J = stepJournal.open({ journal: read.journal, run: journalRef.run, runner: COMPOSITE, under: journalRef.step })
+J = stepJournal.open({ journal: read.journal, run: journalRef.run, runner: COMPOSITE, under: journalRef.step, keep: { dispatch: run, relayRunner: `${pluginRoot}/scripts/portfolio/relayrun.py`, pluginRoot, path: journalRef.path, relayDir: `${SNAP_DIR}/relay/journal`, phase: phaseTitle('compare') } })
 if (J.parent().kind !== PARENT_KIND) return handback(false, 'input', `Story ${beadId}: the step ${journalRef.step} is a ${J.parent().kind || 'step with no kind'}, not a ${PARENT_KIND} step`)
 if (!J.parent().steps.length) J.planUnder(J.innerPlan(PARENT_KIND))
 

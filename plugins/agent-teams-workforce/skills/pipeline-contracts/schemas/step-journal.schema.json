@@ -285,7 +285,7 @@
       }
     },
     "journalChange": {
-      "description": "One change a workflow script reports for the journal of the bead it works on. The script writes it on its log as one line, the x-changePrefix followed by this object as JSON; an object longer than x-changeChunk characters is written as x-changePartPrefix lines, each '<n> <i>/<k> <text>', whose texts joined in order are the JSON. The driver applies each change once, in the order of n, with orchestrator/core/journal_lines.py.",
+      "description": "One change a workflow script reports for the journal of the bead it works on. The script writes it on its log as one line, the x-changePrefix followed by this object as JSON; an object longer than x-changeChunk characters is written as x-changePartPrefix lines, each '<n> <i>/<k> <text>', whose texts joined in order are the JSON. After each step is done the script also saves the lines reported since its last save to the run's change log beside the journal (atw-step-journal record; step_journal.change_log_path names the file). The driver applies each change once, in the order of n, with orchestrator/core/journal_lines.py, from the change log and then from the workflow record.",
       "type": "object",
       "required": ["run", "n", "op", "step"],
       "additionalProperties": false,
