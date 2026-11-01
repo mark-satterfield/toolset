@@ -104,7 +104,8 @@ the repository holds names its file from the pack's `contractFiles`.
 Specify every data item the Story builds without judging existing code satisfied. State under
 "Shared capabilities used" which contract uses which shared capability, and specify no behaviour
 that a shared capability provides. Write the assigned nonempty UTF-8 data-model document with
-exact source references and a YAML front matter whose `decisionIds` cite them. The front
+exact source references and a YAML front matter whose `decisionIds` cite them, each a quoted YAML
+string as the schema's `Citation` definition says. The front
 matter's shape is artifact-handoff's `schemas/document-front-matter.schema.json#/$defs/SpecDocument`:
 write exactly the shape that schema defines, and no other fields. A surface with no applicable work gets a short reasoned
 not-applicable document. Do not create infrastructure or change the

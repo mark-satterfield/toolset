@@ -62,6 +62,10 @@
     {
       "function": "skills/artifact-handoff/scripts/spec_review_contract.py#validate_spec_review",
       "reason": "A generated or generic validator that applies only the output's schema, whose shape check-agent-output-formats.mjs checks against the producer's instructions."
+    },
+    {
+      "function": "skills/artifact-handoff/scripts/spec_review_contract.py#validate_spec_correction",
+      "reason": "A generated or generic validator that applies only the output's schema, whose shape check-agent-output-formats.mjs checks against the producer's instructions."
     }
   ],
   "checkers": [
@@ -109,6 +113,7 @@
         "orchestrator/flows/architecture.py#_invalid_result_problems",
         "orchestrator/flows/architecture.py#_decision_problems",
         "orchestrator/flows/architecture.py#_result_problems",
+        "orchestrator/flows/architecture.py#_build_list_problems",
         "orchestrator/flows/architecture.py#_change_problems",
         "orchestrator/flows/architecture.py#_about_problems",
         "orchestrator/flows/architecture.py#_home_problems",
@@ -379,6 +384,7 @@
       "functions": [
         "orchestrator/flows/spec_authoring.py#documents_check",
         "orchestrator/flows/spec_authoring.py#documents_check.check",
+        "orchestrator/flows/spec_review.py#correction.check",
         "orchestrator/flows/spec_authoring.py#document_check",
         "orchestrator/flows/spec_authoring.py#criteria_document",
         "orchestrator/flows/spec_authoring.py#_missing_keywords",

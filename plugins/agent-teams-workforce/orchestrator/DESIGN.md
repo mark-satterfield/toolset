@@ -743,8 +743,10 @@ carries one of the three causes above.
   output its path, the field names it is about, the field names allowed there, the schema rule
   quoted and the schema file with the pointer and definition of that rule, as
   `strictschema.explain_all` states them; for a Markdown document the lines and the item its check
-  found wrong and what the item must state), with the instruction for that kind of output
-  (`SCHEMA_CORRECTION` or `DOCUMENT_CORRECTION`), and resumes the same session once (`--resume <sessionId>`, with the flags
+  found wrong and what the item must state; for any other output its check refused, each problem
+  the check found), with the instruction for that kind of output (`SCHEMA_CORRECTION` for an
+  output checked against its schema, `DOCUMENT_CORRECTION` for a Markdown document,
+  `CHECK_CORRECTION` for any other output), and resumes the same session once (`--resume <sessionId>`, with the flags
   of section 5.2) with a brief whose inputs add that file, labelled `validation errors`, whose
   `correction` carries the same instruction, headline and every problem inline, and whose outcome
   line tells the session to correct the output from `correction`. The session keeps what it

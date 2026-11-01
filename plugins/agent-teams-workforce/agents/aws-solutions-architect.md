@@ -306,7 +306,9 @@ infrastructure and layer the design adds or changes that has no stack, and of ev
 with no home stack; confirm that each element already placed still fits its stack. Prefer a
 suitable existing stack (`atw-matrix find --kinds stack --text "<what it does>"`, then
 `atw-matrix node stack:<id>` for its purpose and repository). An entry has at most one home; an
-event has none and is never placed; a routing rule is placed in its targets' stack.
+event has none and is never placed; a routing rule is placed in its targets' stack. A resource a
+shared construct creates in each stack that uses it is no entry of its own: it is a fact of the
+construct's component (the `matrix` skill, *Writing*).
 Repositories do not depend on repositories, and control and documentation repositories hold no
 product element.
 
@@ -554,8 +556,9 @@ element your design adds or changes. Under `unchangedWorkElements`, every existi
 design leaves unchanged where the Epic still has work, such as new wording on an existing page:
 the services, components, infrastructure, events, routing rules, layers or packages whose code,
 content or configuration the Epic's work changes without changing their architecture, each by
-its matrix id and each placed in a stack. An Epic can have both; name each element in one list
-only. Which unchanged elements the work lands in is your design judgment: read the PRD's
+its matrix id and each placed in a stack. A change to what a shared construct creates in each
+stack that uses it is named by the construct's component. An Epic can have both; name each
+element in one list only. Which unchanged elements the work lands in is your design judgment: read the PRD's
 requirements against what realizes the features they are served by, and name only where the
 work lands, not everything that realizes those features. The step that accepts your result fails
 when both lists are empty.

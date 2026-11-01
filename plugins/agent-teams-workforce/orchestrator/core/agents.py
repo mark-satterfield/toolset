@@ -327,6 +327,28 @@ DOCUMENT_CORRECTION: Final = (
     "change each item it names as that entry says; keep everything else as it is."
 )
 """What the errors file asks the corrective session to do for a Markdown document."""
+CHECK_CORRECTION: Final = (
+    "Correct what the output's check found: `headline` and each entry of `errors` state one problem, naming "
+    "the field, entry, item or operation it is about and, when it is not in the output, the file that holds "
+    "it; correct each one in that file as it states; keep everything else as it is."
+)
+"""What the errors file asks the corrective session to do for any other output its check refused."""
+DOCUMENT_SUFFIX: Final = ".md"
+"""The suffix of an output that is a Markdown document."""
+
+
+def _correction(step: AgentStep) -> str:
+    """Choose the instruction for the kind of output a step's check refused.
+
+    Returns:
+        :data:`SCHEMA_CORRECTION` for an output checked against its schema,
+        :data:`DOCUMENT_CORRECTION` for a Markdown document, and :data:`CHECK_CORRECTION` for any
+        other output.
+
+    """
+    if isinstance(step.validate, Path):
+        return SCHEMA_CORRECTION
+    return DOCUMENT_CORRECTION if step.output.suffix == DOCUMENT_SUFFIX else CHECK_CORRECTION
 
 
 def _write_errors(step: AgentStep, exc: Exception) -> tuple[Path, dict[str, JsonValue]]:
@@ -343,7 +365,7 @@ def _write_errors(step: AgentStep, exc: Exception) -> tuple[Path, dict[str, Json
     lines: list[str] = [text.strip() for text in str(exc).splitlines() if text.strip()] or [type(exc).__name__]
     content: dict[str, JsonValue] = {
         "output": str(step.output),
-        "correction": SCHEMA_CORRECTION if isinstance(step.validate, Path) else DOCUMENT_CORRECTION,
+        "correction": _correction(step),
         "headline": lines[0],
         "errors": list(lines[1:] or lines),
     }

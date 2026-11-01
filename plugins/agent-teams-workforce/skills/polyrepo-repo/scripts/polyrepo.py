@@ -1178,6 +1178,19 @@ class GitHub:
         self._resolved[name] = rec
         return rec
 
+    def holder(self, name: str) -> GhRepo | None:
+        """Return the owner's repo whose current name is the name, compared without case.
+
+        A name GitHub only redirects to a repo of another name is free: GitHub gives it to the
+        next repo created or renamed to it.
+
+        Returns:
+            The repo that holds the name, or None when the name is free on GitHub.
+
+        """
+        rec = self.resolve(name)
+        return rec if rec is not None and rec["name"].lower() == name.lower() else None
+
     def by_id(self, rid: str) -> GhRepo | None:
         """Look a repo up by GitHub's id in the listing.
 
@@ -2323,7 +2336,7 @@ def _name_mismatch(st: State, name: str, gh_name: str) -> Finding:
         The name-mismatch finding.
 
     """
-    taken = st.gh.resolve(name)
+    taken = st.gh.holder(name)
     if taken is None and st.cfg.is_valid_name(name):
         return Finding(
             "name-mismatch",
@@ -4171,7 +4184,7 @@ def _create_resume(cfg: Config, name: str, tdir: Path, dest: Path) -> CreateResu
     if name in Manifest(cfg.manifest, gh).entries():
         msg = f"{name} already has a manifest entry"
         raise PolyrepoError(msg)
-    on_github = gh.resolve(name) is not None
+    on_github = gh.holder(name) is not None
     taken = f"{cfg.owner}/{name} already exists on GitHub"
     if not dest.exists():
         if on_github:
@@ -5828,7 +5841,7 @@ def _rename_plan(
     r = st.local.get(old) or st.local.get(new)
     parsed = parse_github_url(r.origin_url) if r else None
     rec = st.gh.resolve(parsed[1] if parsed else old)
-    taken = st.gh.resolve(new)
+    taken = st.gh.holder(new)
     if taken is not None and (rec is None or taken["name"] != rec["name"]):
         msg = f"{cfg.owner}/{new} already exists on GitHub"
         raise PolyrepoError(msg)

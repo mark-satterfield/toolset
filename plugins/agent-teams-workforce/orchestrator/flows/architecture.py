@@ -539,11 +539,34 @@ def _result_problems(matrix: Matrix, bead: str, result: ArchitectureResult, chan
 
     """
     refused: list[str] = _change_problems(matrix, changes)
+    unbuildable: list[str] = _build_list_problems(
+        matrix,
+        bead,
+        result[FIELD_ADDED_OR_CHANGED],
+        result[FIELD_UNCHANGED_WORK],
+    )
+    recorded: Recorded = _compared(matrix, bead, _record_design(matrix, bead, result))
+    return [*refused, *unbuildable, *recorded.problems]
+
+
+def _build_list_problems(
+    matrix: Matrix,
+    bead: str,
+    added_or_changed: Sequence[str],
+    unchanged_work: Sequence[str],
+) -> list[str]:
+    """Check the two lists of what the Epic's Stories build against a matrix.
+
+    Returns:
+        The story-build problems of each list on its own (``repo_scoping.story_build_problems``),
+        one sentence when both lists are empty, and one naming each element named in both.
+
+    """
     unbuildable: list[str] = [
-        *story_build_problems(matrix, bead, result[FIELD_ADDED_OR_CHANGED], FIELD_ADDED_OR_CHANGED),
-        *story_build_problems(matrix, bead, result[FIELD_UNCHANGED_WORK], FIELD_UNCHANGED_WORK),
+        *story_build_problems(matrix, bead, added_or_changed, FIELD_ADDED_OR_CHANGED),
+        *story_build_problems(matrix, bead, unchanged_work, FIELD_UNCHANGED_WORK),
     ]
-    if not result[FIELD_ADDED_OR_CHANGED] and not result[FIELD_UNCHANGED_WORK]:
+    if not added_or_changed and not unchanged_work:
         nothing: str = (
             f"{bead}: {FIELD_ADDED_OR_CHANGED} and {FIELD_UNCHANGED_WORK} are both empty, so no Story builds "
             f"anything: name under {FIELD_ADDED_OR_CHANGED} what the design adds or changes, and under "
@@ -551,8 +574,7 @@ def _result_problems(matrix: Matrix, bead: str, result: ArchitectureResult, chan
         )
         unbuildable.append(nothing)
     both: list[EntryId] = sorted(
-        set(story_build_entries(result[FIELD_ADDED_OR_CHANGED]))
-        & set(story_build_entries(result[FIELD_UNCHANGED_WORK])),
+        set(story_build_entries(added_or_changed)) & set(story_build_entries(unchanged_work)),
     )
     if both:
         twice: str = (
@@ -561,8 +583,7 @@ def _result_problems(matrix: Matrix, bead: str, result: ArchitectureResult, chan
             f"leaves unchanged under {FIELD_UNCHANGED_WORK} only"
         )
         unbuildable.append(twice)
-    recorded: Recorded = _compared(matrix, bead, _record_design(matrix, bead, result))
-    return [*refused, *unbuildable, *recorded.problems]
+    return unbuildable
 
 
 def _compared(matrix: Matrix, bead: str, recorded: Recorded) -> Recorded:
@@ -704,7 +725,18 @@ def _are_requests(value: object) -> TypeIs[list[AgentRequest]]:
     return isinstance(value, list) and not any(schema_problems(item, "AgentRequest") for item in value)
 
 
+def _are_texts(value: object) -> TypeIs[list[str]]:
+    """Tell whether a value is a list of strings.
+
+    Returns:
+        True when it is a list and every item is a string.
+
+    """
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
 def _invalid_result_problems(
+    bead: str,
     arch: Path,
     document: Mapping[str, JsonValue],
     changes: Path,
@@ -715,7 +747,10 @@ def _invalid_result_problems(
         Each operation of the change file that fails on a copy of the matrix that is never
         written; then, when the result's ``facts`` satisfy their definition, each id they are
         about that the copy does not hold and each home that is a folder index; then, when its
-        ``requests`` satisfy theirs, :func:`_request_problems`.
+        ``requests`` satisfy theirs, :func:`_request_problems`; then, when its
+        ``addedOrChangedElements`` and ``unchangedWorkElements`` are both lists of strings,
+        :func:`_build_list_problems` against the copy, so the one correction sees them with the
+        schema problems.
 
     """
     matrix: Matrix = read_matrix(matrix_file())
@@ -727,6 +762,10 @@ def _invalid_result_problems(
     requests: JsonValue = document.get("requests")
     if _are_requests(requests):
         problems.extend(_request_problems(requests))
+    added_or_changed: JsonValue = document.get(FIELD_ADDED_OR_CHANGED)
+    unchanged_work: JsonValue = document.get(FIELD_UNCHANGED_WORK)
+    if _are_texts(added_or_changed) and _are_texts(unchanged_work):
+        problems.extend(_build_list_problems(matrix, bead, added_or_changed, unchanged_work))
     return problems
 
 
@@ -753,7 +792,14 @@ def result_check(run: StepRun) -> Callable[[Path], dict[str, JsonValue]]:
         except ArchitectureWorkError as invalid:
             problems = [
                 str(invalid),
-                *run.tools.portfolio(run.inputs.stage, _invalid_result_problems, arch, document, changes),
+                *run.tools.portfolio(
+                    run.inputs.stage,
+                    _invalid_result_problems,
+                    str(run.bead),
+                    arch,
+                    document,
+                    changes,
+                ),
             ]
         else:
             problems = [

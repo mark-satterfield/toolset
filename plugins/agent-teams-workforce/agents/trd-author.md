@@ -104,7 +104,8 @@ An `effective` arc42 document is approved content that still iterates with each 
 Write to the technical-requirement criteria of `effective-architecture/review-standard.md`. The
 shape of the TRD's front matter is `document-front-matter.schema.json#/$defs/TrdDocument` in the
 artifact-handoff skill's schemas: write exactly the shape that schema defines, and no other fields. Its `decisionIds` are the
-arc42 paths, with headings, that the requirements cite. Replace a front matter that does not have
+arc42 paths, with headings, that the requirements cite, each a quoted YAML string as the schema's
+`Citation` definition says. Replace a front matter that does not have
 that shape. When your session ends the step checks, in
 one pass, the answer against its schema, the TRD's front matter and every citation against the
 matrix, that each requirement has its heading, and that each `appliesTo` is an entry the matrix

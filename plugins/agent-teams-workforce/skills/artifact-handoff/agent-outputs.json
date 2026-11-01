@@ -292,7 +292,7 @@
       "pointer": "file",
       "code": "orchestrator/flows/spec_review.py",
       "anchors": [
-        "SPEC_CORRECTION_SCHEMA_PATH",
+        "validate_spec_correction(strict_json(output), str(output))",
         "@agent_step(AUTHOR_CONTRACTS, AUTHOR_DATA_MODEL)"
       ],
       "launches": [

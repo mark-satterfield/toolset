@@ -33,7 +33,6 @@ from spec_review_contract import (
     DOCUMENT_DATA_MODEL,
     DOCUMENT_SPEC,
     RULING_FINDING_STANDS,
-    SPEC_CORRECTION_SCHEMA_PATH,
     SPEC_RULING_SCHEMA_PATH,
     SpecDocument,
     validate_spec_correction,
@@ -81,7 +80,7 @@ from orchestrator.flows.spec_authoring import (
     WORK_DOCUMENT,
     author_dirs,
     author_files,
-    document_check,
+    documents_check,
     spec_document,
 )
 
@@ -430,10 +429,11 @@ def correction(run: StepRun) -> AgentLaunch:
     it. It works on every document of the round the step names (``documents``), in one account.
 
     Returns:
-        The launch: the author's account of what it applied and disputed as output; when it is
-        accepted each document is checked again and what the step did is recorded.
-
-    A document that no longer passes its own check after its author worked on it fails the step.
+        The launch: the author's account of what it applied and disputed as output, checked with
+        its schema and, together, every document of the round with its own check
+        (``spec_authoring.documents_check``), so a document that no longer passes after its author
+        worked on it is handed back in the session's one correction; when it is accepted what the
+        step did is recorded.
 
     Raises:
         StepError: The step names no spec document to work on.
@@ -457,13 +457,23 @@ def correction(run: StepRun) -> AgentLaunch:
     if phase == WORK_REVISION:
         basis.append((RULING, run.inputs.file(RULING)))
 
+    documents: OutputValidator = documents_check(run, held, names)
+
+    def check(output: Path) -> None:
+        problems: list[str] = []
+        try:
+            validate_spec_correction(strict_json(output), str(output))
+        except ValueError as invalid:
+            problems.append(str(invalid))
+        try:
+            documents(output)
+        except (OSError, ValueError) as failed:
+            problems.append(str(failed))
+        if problems:
+            raise ValueError("\n".join(problems))
+
     def accept(accepted: StepRun, output: Path) -> Completion:
         account: SpecCorrection = validate_spec_correction(strict_json(output), str(output))
-        for name, path in zip(names, paths, strict=True):
-            try:
-                document_check(accepted, name)(path)
-            except (OSError, ValueError) as exc:
-                raise StepError(stage, OTHER_CAUSE, (str(path), str(exc))) from None
         own: set[JsonValue] = {finding["id"] for finding in _findings(accepted, phase) if finding[DOCUMENT] in kinds}
         disputed: list[JsonValue] = [d["findingId"] for d in account["disputes"] if d["findingId"] in own]
         foreign: list[JsonValue] = [
@@ -488,7 +498,7 @@ def correction(run: StepRun) -> AgentLaunch:
 
     return AgentLaunch(
         output=run.context.work / f"spec-{held.slug}.{joined}.{phase}.json",
-        validate=SPEC_CORRECTION_SCHEMA_PATH,
+        validate=check,
         outcome=CORRECTION_RESULT if phase == WORK_CORRECTION else REVISION_RESULT,
         accept=accept,
         add_dirs=author_dirs(run, held),

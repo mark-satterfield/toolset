@@ -211,6 +211,12 @@ Reading the marks to decide what is planned and what exists:
   then `atw-matrix link <kind> --from <id> --to <id> --side architecture [--heading ...]`. A
   repository-side component, infrastructure or layer takes `--stack stack:<id>`. Look the entry
   up with `find` first so one capability is one feature.
+- A resource that a shared construct creates in each stack that uses it (for example an SSM
+  parameter or a CloudWatch metric filter a shared CDK construct writes into every consuming
+  service's stack) gets no entry of its own: it has no one home, and an entry has at most one.
+  State it as a fact of the construct's component, in the component's documents and its
+  `purpose`, and record and name only the component; a change to what the construct creates is a
+  change to the component.
 - The judgment of which Epic goes first on a shared item is one architecture-side `drives`
   from that Epic to the item (a feature or any architecture entry) with `basis` `owns` (the Epic
   builds and owns it; the others use it) or `shared` (the Epics share it independently; the Epic
