@@ -114,6 +114,11 @@ Notes on the diagram:
   corrected matrix: each entry needs a `kept` or `corrected` verdict in the result's `reach`, a
   `pruned` one must no longer be reached, and each reached service, component, piece of
   infrastructure or layer with no stack is placed or listed under `excluded`.
+- A step whose agent writes more than one file checks every one of them in one pass
+  (`agents.check_files`): the Analyze step's round of requests with the state file, and a spec
+  author's or correction's documents with its account. One file that fails does not stop the
+  others from being checked, and every problem names its file, so the session's one correction
+  is handed every problem of every file.
 - The project's graph index of the architecture documents is re-indexed by a script step
   (`orchestrator/flows/architecture_index.py`) once per pass, after every document is written and
   before the check, outside any agent session: no agent re-indexes, and no session waits on a

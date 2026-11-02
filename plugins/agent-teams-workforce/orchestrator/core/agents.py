@@ -247,6 +247,64 @@ def _contracts_of(plugin: Path, step: AgentStep) -> list[str]:
 
 CONTENT_FAILURES: tuple[type[Exception], ...] = (OSError, ValueError, UnicodeError, jsonschema.ValidationError)
 """Failures of an agent output itself; they take the corrective path, never the defect path."""
+
+
+class OutputFilesError(ValueError):
+    """Files a step's agent wrote fail their checks; every problem line names the file it is about."""
+
+    def __init__(self, problems: Sequence[str]) -> None:
+        """State every problem, one per line, under a headline that counts them."""
+        self.problems: list[str] = list(problems)
+        super().__init__(
+            f"the files this step wrote fail their checks: {len(self.problems)} problem(s), one per line below\n"
+            + "\n".join(self.problems),
+        )
+
+
+def _file_problems(path: Path, failed: Exception) -> list[str]:
+    """State each line of one file's check failure as a problem naming that file.
+
+    Returns:
+        The problems of an ``OutputFilesError`` as they are, since each already names its file;
+        otherwise every non-empty line of the failure, or its type when it has none, prefixed
+        with the file's path.
+
+    """
+    if isinstance(failed, OutputFilesError):
+        return failed.problems
+    lines: list[str] = [text.strip() for text in str(failed).splitlines() if text.strip()] or [type(failed).__name__]
+    return [f"{path}: {line}" for line in lines]
+
+
+def check_files[T](checks: Sequence[tuple[Path, Callable[[Path], T]]]) -> list[T]:
+    """Run the check of every file a step's agent writes, so one failing file does not hide another.
+
+    Each check runs whatever the others found; a content failure of one (``CONTENT_FAILURES``)
+    is collected and the next check still runs. The session's one correction is then handed
+    every problem of every file at once.
+
+    Args:
+        checks: Each file with the check it must pass.
+
+    Returns:
+        What each check returned, in the order given, when every file passes.
+
+    Raises:
+        OutputFilesError: One or more files fail; it states every problem of each, naming its file.
+
+    """
+    results: list[T] = []
+    problems: list[str] = []
+    for path, check in checks:
+        try:
+            results.append(check(path))
+        except CONTENT_FAILURES as failed:
+            problems.extend(_file_problems(path, failed))
+    if problems:
+        raise OutputFilesError(problems)
+    return results
+
+
 SESSION_DIRECTORY_PREFIX: Final = "atw-session-"
 
 

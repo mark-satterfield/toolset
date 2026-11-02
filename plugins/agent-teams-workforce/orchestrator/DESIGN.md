@@ -744,7 +744,9 @@ carries one of the three causes above.
   quoted and the schema file with the pointer and definition of that rule, as
   `strictschema.explain_all` states them; for a Markdown document the lines and the item its check
   found wrong and what the item must state; for any other output its check refused, each problem
-  the check found), with the instruction for that kind of output (`SCHEMA_CORRECTION` for an
+  the check found; for a step whose agent writes several files, every problem of every file,
+  each line naming its file, since `agents.check_files` checks each file whatever the others
+  found), with the instruction for that kind of output (`SCHEMA_CORRECTION` for an
   output checked against its schema, `DOCUMENT_CORRECTION` for a Markdown document,
   `CHECK_CORRECTION` for any other output), and resumes the same session once (`--resume <sessionId>`, with the flags
   of section 5.2) with a brief whose inputs add that file, labelled `validation errors`, whose

@@ -81,7 +81,7 @@ from matrixwrite import apply_change_file, apply_changes, link, put
 from specialist_catalog import agent_names
 
 from orchestrator.core import step_journal
-from orchestrator.core.agents import strict_json
+from orchestrator.core.agents import check_files, strict_json
 from orchestrator.core.driver_contracts import dispatch_arguments
 from orchestrator.core.io import json_object
 from orchestrator.core.journal_registry import agent_step, any_agent_step, plan_under
@@ -826,21 +826,29 @@ def _round_check(context: ArchitectureContext) -> Callable[[Path], dict[str, Jso
     """Build the output check of the Analyze step.
 
     Returns:
-        A check that reads the output as strict JSON, validates it as a round of requests, refuses
-        what :func:`_request_problems` finds, and validates the state file at the context's
-        ``statePath``, which the step writes first.
+        A check that reads the output as strict JSON, validates it as a round of requests and
+        refuses what :func:`_request_problems` finds, and validates the state file at the
+        context's ``statePath``, which the step writes first. Both files are checked in one pass
+        (``check_files``), so the one correction is handed the problems of each.
 
     """
+    state: Path = Path(context["statePath"])
 
-    def check(path: Path) -> dict[str, JsonValue]:
+    def round_check(path: Path) -> dict[str, JsonValue]:
         document: dict[str, JsonValue] = strict_json(path)
         stated: SpecialistRound = validate_specialist_round(document, str(path))
-        state: Path = Path(context["statePath"])
-        validate_architecture_state(strict_json(state), str(state))
         problems: list[str] = _request_problems(stated["requests"])
         if problems:
             raise ArchitectureWorkError("\n".join(problems))
         return document
+
+    def state_check(path: Path) -> dict[str, JsonValue]:
+        document: dict[str, JsonValue] = strict_json(path)
+        validate_architecture_state(document, str(path))
+        return document
+
+    def check(path: Path) -> dict[str, JsonValue]:
+        return check_files(((path, round_check), (state, state_check)))[0]
 
     return check
 

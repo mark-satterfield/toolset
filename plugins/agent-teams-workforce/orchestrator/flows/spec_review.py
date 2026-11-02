@@ -40,7 +40,7 @@ from spec_review_contract import (
     validate_spec_ruling,
 )
 
-from orchestrator.core.agents import strict_json
+from orchestrator.core.agents import check_files, strict_json
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.journal_registry import agent_step, script_step
 from orchestrator.core.journal_steps import (
@@ -459,18 +459,11 @@ def correction(run: StepRun) -> AgentLaunch:
 
     documents: OutputValidator = documents_check(run, held, names)
 
+    def account_check(output: Path) -> None:
+        validate_spec_correction(strict_json(output), str(output))
+
     def check(output: Path) -> None:
-        problems: list[str] = []
-        try:
-            validate_spec_correction(strict_json(output), str(output))
-        except ValueError as invalid:
-            problems.append(str(invalid))
-        try:
-            documents(output)
-        except (OSError, ValueError) as failed:
-            problems.append(str(failed))
-        if problems:
-            raise ValueError("\n".join(problems))
+        check_files(((output, account_check), (output, documents)))
 
     def accept(accepted: StepRun, output: Path) -> Completion:
         account: SpecCorrection = validate_spec_correction(strict_json(output), str(output))

@@ -78,6 +78,8 @@
       "functions": [
         "orchestrator/flows/architecture.py#_round_check",
         "orchestrator/flows/architecture.py#_round_check.check",
+        "orchestrator/flows/architecture.py#_round_check.round_check",
+        "orchestrator/flows/architecture.py#_round_check.state_check",
         "orchestrator/flows/architecture.py#_request_problems"
       ],
       "rules": [
@@ -385,6 +387,7 @@
         "orchestrator/flows/spec_authoring.py#documents_check",
         "orchestrator/flows/spec_authoring.py#documents_check.check",
         "orchestrator/flows/spec_review.py#correction.check",
+        "orchestrator/flows/spec_review.py#correction.account_check",
         "orchestrator/flows/spec_authoring.py#document_check",
         "orchestrator/flows/spec_authoring.py#criteria_document",
         "orchestrator/flows/spec_authoring.py#_missing_keywords",

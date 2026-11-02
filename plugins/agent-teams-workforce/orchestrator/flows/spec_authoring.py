@@ -62,7 +62,7 @@ from target_contract import KEY_ELEMENT, KEY_ID, KEY_MATRIX_ID, KEY_PUBLISHED_BY
 from typeguard import check_type
 
 from orchestrator.core import step_journal
-from orchestrator.core.agents import strict_json
+from orchestrator.core.agents import check_files, strict_json
 from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
@@ -1089,9 +1089,9 @@ def documents_check(run: StepRun, held: Repository, names: Sequence[str]) -> Out
     Returns:
         A check that runs :func:`document_check` on every document's file, whichever path it is
         called with, and returns the citations and warnings of the documents that have them. A
-        document that fails does not stop the others from being checked: the check raises one
-        ``ValueError`` naming the problems of every document that failed, so the session's one
-        correction is handed all of them.
+        document that fails does not stop the others from being checked (``check_files``): the
+        check raises one ``OutputFilesError`` stating every problem of every document that
+        failed, each naming its document, so the session's one correction is handed all of them.
 
     """
     checks: list[tuple[Path, OutputValidator]] = [
@@ -1099,23 +1099,11 @@ def documents_check(run: StepRun, held: Repository, names: Sequence[str]) -> Out
     ]
 
     def check(_output: Path) -> tuple[list[str], list[str]] | None:
-        cited: list[str] = []
-        warned: list[str] = []
-        problems: list[str] = []
-        found: bool = False
-        for path, single in checks:
-            try:
-                result: ValidationResult = single(path)
-            except (OSError, ValueError) as failed:
-                problems.append(f"{path.name}: {failed}")
-                continue
-            if isinstance(result, tuple):
-                found = True
-                cited.extend(result[0])
-                warned.extend(result[1])
-        if problems:
-            raise ValueError("\n".join(problems))
-        return (cited, warned) if found else None
+        results: list[ValidationResult] = check_files(checks)
+        found: list[tuple[list[str], list[str]]] = [result for result in results if isinstance(result, tuple)]
+        if not found:
+            return None
+        return [cite for result in found for cite in result[0]], [warning for result in found for warning in result[1]]
 
     return check
 
