@@ -78,7 +78,7 @@ Write the result at the brief's output path. Its shape is artifact-handoff's `ta
 write exactly the shape that schema defines, and no other fields. Each field means what the `tasks` section of artifact-handoff's
 Epic contracts says it means: the local key series (T1...), the surface set and what an empty
 list and null each mean, and the score rules (the job size on the wsjf skill's Fibonacci scale
-inside its range, the confidence a percent). Cite the work items, requirements and decisions each Task builds exactly as the inputs
+inside its range, the confidence a percent), and the title rule `tasks.schema.json` states. Cite the work items, requirements and decisions each Task builds exactly as the inputs
 name them. Take the test strategy from the spec, never invent one. Size every Task on the wsjf skill's scale with an honest range and confidence: judge
 volume, complexity and uncertainty, not calendar or human time. Split work the wsjf skill rates
 too large when feasible; otherwise record the judged size and explanation. Do not assign Epic

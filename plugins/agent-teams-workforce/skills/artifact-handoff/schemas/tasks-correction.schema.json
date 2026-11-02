@@ -19,7 +19,8 @@
             "type": "string"
           },
           "title": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 500
           },
           "description": {
             "type": "string"
