@@ -121,8 +121,9 @@ judgment, and each has an obvious next step:
   template's setup task (`task install`) before the first commit (so the lockfile is committed),
   then verifies `.venv/bin/python`, every declared dependency, and for an infra or service
   template `cdk synth --profile dev`. When any of them does not hold, `create` stops before the
-  first commit and exits 1 with the cause in `error`; so does a first commit the commit hook
-  refuses.
+  first commit and exits 1 with the cause in `error`. When the commit hook rewrites files of the
+  first commit, `create` stages those fixes (only files already staged) and commits once more; a
+  first commit the hook still refuses stops it the same way.
   A `create` that stopped before its manifest entry is rerun as it was run, with no cleanup.
   Right after `git init`, `create` writes `.git/polyrepo-create` naming the template; a folder
   with that file and a `.copier-answers.yml` naming the same template is its own output, and

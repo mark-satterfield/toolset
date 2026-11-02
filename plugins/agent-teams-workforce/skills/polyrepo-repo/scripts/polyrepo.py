@@ -4253,7 +4253,8 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
             (
                 "run the template's setup task (task install) and verify .venv/bin/python, "
                 f"every declared dependency, and for a {' or '.join(ENV_SYNTH_KINDS)} template cdk synth "
-                "--profile dev; stop before the first commit when any of it fails; then commit"
+                "--profile dev; stop before the first commit when any of it fails; then commit, and when the "
+                "commit hook rewrote staged files, stage its fixes and commit once more"
             ),
             f"create the private GitHub repo {cfg.owner}/{name} and push {b}",
             "give a product repo the GitHub rulesets whose required checks its workflows report (rulesets.files)",
@@ -4443,18 +4444,24 @@ def _prepare_rendered(cfg: Config, repo: NewRepo, dest: Path, res: dict[str, obj
 def _first_commit(dest: Path, name: str, template: str) -> None:
     """Commit everything in the prepared repo through its commit hook.
 
-    A failed commit propagates as the GitFailedError that `must` raises.
+    A hook that rewrites a file fails the commit and leaves its fix unstaged. When the failed
+    commit left changes, the changed files that were already staged are staged again and the
+    commit runs once more; a hook that reports a finding it cannot fix fails that commit too.
+    A commit that fails with no hook fix to stage, or fails again after the fixes are staged,
+    propagates as the GitFailedError that `must` raises.
     """
+    message = _scaffold_message(name, template)
     must(git(dest, "add", "-A"))
-    must(
-        git(
-            dest,
-            "commit",
-            "-m",
-            _scaffold_message(name, template),
-            timeout=300,
-        ),
-    )
+    staged = set((git_out(dest, "diff", "--cached", "--name-only", "-z") or "").split("\0")) - {""}
+    first = git(dest, "commit", "-m", message, timeout=300)
+    if first.returncode == 0:
+        return
+    changed = (git_out(dest, "diff", "--name-only", "-z") or "").split("\0")
+    fixed = sorted(staged.intersection(changed))
+    if not fixed:
+        must(first)
+    must(git(dest, "add", "--", *fixed))
+    must(git(dest, "commit", "-m", message, timeout=300))
 
 
 def _create_scaffold(

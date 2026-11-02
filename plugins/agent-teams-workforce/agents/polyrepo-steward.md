@@ -369,8 +369,8 @@ A repository the steward creates is usable for development when creation ends. `
 create` runs the template's setup task (`task install`), then verifies `.venv/bin/python` runs,
 every declared dependency is installed and importable, `aws_cdk` imports where the code uses it,
 and, for an infra or service template, `cdk synth --profile dev` succeeds, all before the first
-commit. When any of these does not hold, or the commit hook refuses the first commit, `create`
-stops before the first commit and exits 1 with the cause in `error`, and nothing outside the
+commit. When any of these does not hold, or the commit hook refuses the first commit (the
+`polyrepo-repo` skill says how `create` commits), `create` stops before the first commit and exits 1 with the cause in `error`, and nothing outside the
 folder records the repository yet. Repair the cause (a template fault in the template, checked
 with `polyrepo.py templates-check`, which builds every template as `create` would) and run the
 same `create` again. A folder is `create`'s own output when its `.git` holds the

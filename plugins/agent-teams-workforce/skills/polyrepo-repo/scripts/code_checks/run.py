@@ -345,20 +345,28 @@ def _mypy_targets(files: Sequence[str]) -> list[str]:
 def ruff_checks(mode: str, files: Sequence[str], spec: Spec) -> list[Outcome]:
     """Run `ruff check` and `ruff format`; at commit they fix, elsewhere they only report.
 
+    At commit the formatter runs first, so a line it can wrap is wrapped before the lint check
+    reads it, and again after `ruff check --fix`, whose fixes (a trailing comma, a sorted import)
+    can leave code the formatter rewrites. The files then come out of one run as the next run
+    leaves them.
+
     Args:
         mode: `edit`, `commit` or `all`.
         files: The paths to check (all: ignored, the whole tree is checked).
         spec: The spec.
 
     Returns:
-        The two outcomes.
+        The outcomes: three at commit (format, check with fixes, format), two elsewhere.
 
     """
     ruff = [_uvx(), f"ruff@{spec.pins['ruff']}"]
     targets = ["."] if mode == "all" else ["--force-exclude", *files]
     if mode == "commit":
-        fixed = run_tool("ruff check --fix", [*ruff, "check", "--fix", *targets])
-        return [fixed, run_tool("ruff format", [*ruff, "format", *targets])]
+        return [
+            run_tool("ruff format", [*ruff, "format", *targets]),
+            run_tool("ruff check --fix", [*ruff, "check", "--fix", *targets]),
+            run_tool("ruff format after fixes", [*ruff, "format", *targets]),
+        ]
     return [
         run_tool("ruff check", [*ruff, "check", "--no-fix", *targets]),
         run_tool("ruff format --check", [*ruff, "format", "--check", *targets]),
