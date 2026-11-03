@@ -728,10 +728,11 @@ owner-run portfolio commands goes through:
   (the `mkdir` lock at `$CENTRAL_BEADS_LOCK`, default `<temporary directory>/central-beads.lock`,
   the same lock the project's sync scripts take), taken after the gate (`core/tool_locks.py` `bd_gate`). With both
   held, the only writers that can overlap a pipeline write are a person's own `bd` commands.
-- **Cycle check here, not in `bd`.** A blocking edge is added with `bd dep add ... --no-cycle-check`
-  after `beadgraph.Writer.add_blocks` has checked, over every `blocks` and `parent-child` edge
-  read in one query, that it closes no cycle. `bd`'s own per-edge check enumerates every path of
-  the dependency graph, which outgrows the database client's read timeout once the graph is dense.
+- **Cycle check here, not in `bd`.** A bead's blocking edges are added in one
+  `bd dep add --file - --no-cycle-check` request after `beadgraph.Writer.add_blocks` has checked,
+  over every `blocks` and `parent-child` edge read in one query, that none closes a cycle. `bd`'s
+  own per-edge check is a recursive query that outgrows the database client's read timeout once the graph is dense,
+  and only the bulk `--file` form skips it: a positional `bd dep add` runs it whatever its flags.
 - **`contention`** = a lock above not acquired within its wait (`ATW_BD_LOCK_WAIT`, default 120 s).
 - **`bd-timeout`** = `subprocess.TimeoutExpired` on the `bd` call.
 - **`other`** = any other non-zero exit, with the command and `bd`'s output in the failure's

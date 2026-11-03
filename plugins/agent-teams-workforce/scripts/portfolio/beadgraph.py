@@ -709,10 +709,12 @@ class Writer:
     def add_blocks(self, bead_id: str, blockers: list[str]) -> None:
         """Make one bead blocked by each blocker, or record the edges in a dry run.
 
-        The cycle check runs here, over every blocking edge the tracker holds, read once; each
-        edge is then added with `--no-cycle-check`. The tracker's own per-edge check enumerates
-        every path of the dependency graph, which outgrows the database client's read timeout
-        once the graph is dense, so it fails with `i/o timeout` while it holds the bd gate.
+        The cycle check runs here, over every blocking edge the tracker holds, read once; the
+        edges are then added in one `bd dep add --file - --no-cycle-check` request. Only the bulk
+        form skips the tracker's per-edge check: a positional `bd dep add` runs it whatever its
+        flags, and that recursive query outgrows the database client's read timeout once the graph
+        is dense, so it fails with `i/o timeout` while it holds the bd gate. The bulk request adds
+        every edge in one transaction after one plain read of the dependency tables.
 
         Args:
             bead_id: The dependent bead.
@@ -720,26 +722,27 @@ class Writer:
 
         Raises:
             TypeError: An argument violates the declared input contract.
-            GraphError: An edge would close a cycle; no later edge is added.
+            GraphError: An edge would close a cycle; no edge is added.
 
         """
         if not (isinstance(bead_id, str)) or not (isinstance(blockers, list)):
             raise TypeError(_ARGUMENT_ERROR)
         if not blockers:
             return
+        args: list[str] = ["dep", "add", "--file", "-", "--no-cycle-check"]
+        lines: str = "".join(
+            json.dumps({"from": bead_id, "to": blocker, "type": "blocks"}) + "\n" for blocker in blockers
+        )
         if self.dry_run:
-            self.planned.extend(
-                {"op": "bd", "args": ["dep", "add", bead_id, b, "--type", "blocks", "--no-cycle-check"]}
-                for b in blockers
-            )
+            self.planned.append({"op": "bd", "args": args, "stdin": lines})
             return
         waits: dict[str, set[str]] = blocking_edges(self.repo)
         for blocker in blockers:
             if blocker == bead_id or bead_id in _reached(waits, blocker):
                 message: str = f"blocks edge {bead_id} -> {blocker} would close a dependency cycle"
                 raise GraphError(message, OTHER_CAUSE)
-            run_bd(["dep", "add", bead_id, blocker, "--type", "blocks", "--no-cycle-check"], self.repo)
             waits.setdefault(bead_id, set()).add(blocker)
+        run_bd(args, _target(["dep", "add", bead_id], self.repo), stdin=lines)
 
     def metadata(self, bead_id: str, pairs: dict[str, str]) -> None:
         """Write pipeline metadata onto one bead, or record it in a dry run.
