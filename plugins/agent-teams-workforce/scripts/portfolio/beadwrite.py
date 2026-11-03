@@ -1356,11 +1356,10 @@ class _TaskWriter:
                 notes=f"{KEY_REPO_PATH}: {self.task.repo_path}",
                 metadata=self.meta,
             )
-            if self.blockers or self.outer:
-                args += ["--deps", ",".join(f"blocked-by:{b}" for b in [*self.blockers, *self.outer])]
             if self.task.infrastructure:
                 args += ["--labels", INFRASTRUCTURE_LABEL]
             self.task_id, self.action = (self.writer.create(args, self.task.elab_key or self.key), "created")
+            self.writer.add_blocks(self.task_id, [*self.blockers, *self.outer])
             self.edges["added"] = len(self.blockers) + len(self.outer)
             self.outside = self.outer
         elif task_started(self.bead):
@@ -1374,11 +1373,7 @@ class _TaskWriter:
                 self.writer.bd(["label", "add", self.bead.id, INFRASTRUCTURE_LABEL])
             add: list[str] = [b for b in [*self.blockers, *self.outer] if b not in self.bead.blockers]
             drop: list[str] = [b for b in self.bead.blockers if b in self.story_ids and b not in self.blockers]
-            if add:
-                lines: list[str] = [
-                    _json({"issue_id": self.bead.id, "depends_on_id": b, "type": "blocks"}) for b in add
-                ]
-                self.writer.bd(["dep", "add", "--file", "-"], "\n".join(lines) + "\n")
+            self.writer.add_blocks(self.bead.id, add)
             for b in drop:
                 self.writer.bd(["dep", "remove", self.bead.id, b])
             self.edges = {
@@ -1877,9 +1872,7 @@ def _write_planned_task_edges(graph: Graph, writer: Writer, scope: _EdgeScope, n
         if task.status != OPEN
         else [b for b in task.blockers if story_of.get(b) not in {None, task.parent} and b not in wanted]
     )
-    if add:
-        lines: list[str] = [_json({"issue_id": task.id, "depends_on_id": b, "type": "blocks"}) for b in add]
-        writer.bd(["dep", "add", "--file", "-"], "\n".join(lines) + "\n")
+    writer.add_blocks(task.id, add)
     for dropped_id in drop:
         writer.bd(["dep", "remove", task.id, dropped_id])
     counts: EdgeCounts = {
@@ -2100,7 +2093,7 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
                 warnings.append(f"no written Task replaces {blocker}, which blocked {dependent.id}")
             for target in targets:
                 if target not in dependent.blockers:
-                    writer.bd(["dep", "add", dependent.id, target, "--type", "blocks"])
+                    writer.add_blocks(dependent.id, [target])
                 repointed.append({"dependent": dependent.id, "deleted": blocker, "replacement": target})
     deleted: list[ReplacedTask] = [
         {

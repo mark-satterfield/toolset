@@ -19,6 +19,9 @@ from typeguard import CollectionCheckStrategy, typechecked
 
 _LOG = logging.getLogger(__name__)
 
+#: The characters of a holder's command kept in the lock file.
+HOLDER_KEPT = 200
+
 
 class LockTimeoutError(TimeoutError):
     """A measured lock wait expired, without interpreting a command's stderr."""
@@ -62,8 +65,11 @@ def control_repo() -> Path:
 
 @contextmanager
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def file_lock(path: Path, wait: float) -> Generator[None]:
+def file_lock(path: Path, wait: float, holder: str | None = None) -> Generator[None]:
     """Acquire an exclusive flock with a bounded wait.
+
+    With ``holder``, the lock file names this process and what it runs (``<pid> <holder>``)
+    while the lock is held, the record the supervisor reads to name a gate's holder.
 
     Yields:
         Control while the exclusive lock is held.
@@ -84,8 +90,14 @@ def file_lock(path: Path, wait: float) -> Generator[None]:
                     raise LockTimeoutError(str(path)) from exc
                 time.sleep(min(0.1, max(0, deadline - time.monotonic())))
         try:
+            if holder is not None:
+                handle.truncate(0)
+                handle.write(f"{os.getpid()} {' '.join(holder.split())[:HOLDER_KEPT]}\n")
+                handle.flush()
             yield
         finally:
+            if holder is not None:
+                handle.truncate(0)
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
@@ -137,15 +149,17 @@ def central_lock(wait: float) -> Generator[None]:
 
 @contextmanager
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def bd_gate(*, write: bool) -> Generator[None]:
+def bd_gate(*, write: bool, command: str) -> Generator[None]:
     """Take the driver gate before the central write lock, in one fixed order.
+
+    The gate file names this process and ``command`` while it is held.
 
     Yields:
         Control while the requested gates are held.
 
     """
     wait = seconds("ATW_BD_LOCK_WAIT", 120)
-    with file_lock(control_repo() / "ops/sdlc-automation/state/bd-gate.lock", wait):
+    with file_lock(control_repo() / "ops/sdlc-automation/state/bd-gate.lock", wait, command):
         if write:
             with central_lock(wait):
                 yield

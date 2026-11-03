@@ -311,11 +311,56 @@ def join_ids(ids: list[str] | set[str] | tuple[str, ...]) -> str:
     return ",".join(sorted(set(ids)))
 
 
+#: Every edge that makes a bead wait for another: its own blockers and its parent.
+BLOCKING_EDGES_QUERY: Final[str] = (
+    "SELECT issue_id AS waiting, depends_on_issue_id AS waited FROM dependencies "
+    "WHERE type IN ('blocks', 'parent-child') AND depends_on_issue_id IS NOT NULL"
+)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def blocking_edges(repo: Path | None) -> dict[str, set[str]]:
+    """Read every blocking edge the tracker holds in one query.
+
+    Returns:
+        Bead id -> the ids it waits for.
+
+    Raises:
+        GraphError: The query failed or returned no rows list.
+
+    """
+    rows: JsonValue = _bd_json(["--readonly", "sql", "--json", BLOCKING_EDGES_QUERY], repo)
+    if not isinstance(rows, list):
+        message: str = f"{BLOCKING_EDGES_QUERY} returned {type(rows).__name__}, not rows"
+        raise GraphError(message, OTHER_CAUSE)
+    waits: dict[str, set[str]] = {}
+    for row in rows:
+        record: JsonObject = json_object(row)
+        waits.setdefault(str(record["waiting"]), set()).add(str(record["waited"]))
+    return waits
+
+
+def _reached(waits: dict[str, set[str]], start: str) -> set[str]:
+    """Collect every bead `start` waits for, directly or through others.
+
+    Returns:
+        The ids reached from `start`.
+
+    """
+    seen: set[str] = set()
+    stack: list[str] = [start]
+    while stack:
+        for nxt in waits.get(stack.pop(), set()) - seen:
+            seen.add(nxt)
+            stack.append(nxt)
+    return seen
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 class BdGate(Protocol):
     """Acquire the shared tracker gate using the requested access mode."""
 
-    def __call__(self, *, write: bool) -> AbstractContextManager[None]:
+    def __call__(self, *, write: bool, command: str) -> AbstractContextManager[None]:
         """Return the bounded tracker lock context."""
         ...
 
@@ -431,7 +476,8 @@ def _attempt_bd(command: list[str], args: list[str], stdin: str | None) -> subpr
     """
     gate: BdGate = BD_GATE or locks.bd_gate
     try:
-        with gate(write=not beads_contract.is_read(args)):
+        holder: str = " ".join(["bd", *args[:1], beads_contract.bead_operand(args)])
+        with gate(write=not beads_contract.is_read(args), command=holder):
             return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - bd argv and separate repository argument; shell disabled.
                 command,
                 input=stdin,
@@ -658,6 +704,41 @@ class Writer:
             self.planned.append({"op": "bd", "args": list(args)})
             return f"(new:{key})"
         return run_bd(args, self.repo).strip().splitlines()[-1].strip()
+
+    def add_blocks(self, bead_id: str, blockers: list[str]) -> None:
+        """Make one bead blocked by each blocker, or record the edges in a dry run.
+
+        The cycle check runs here, over every blocking edge the tracker holds, read once; each
+        edge is then added with `--no-cycle-check`. The tracker's own per-edge check enumerates
+        every path of the dependency graph, which outgrows the database client's read timeout
+        once the graph is dense, so it fails with `i/o timeout` while it holds the bd gate.
+
+        Args:
+            bead_id: The dependent bead.
+            blockers: The beads it waits for, in order.
+
+        Raises:
+            TypeError: An argument violates the declared input contract.
+            GraphError: An edge would close a cycle; no later edge is added.
+
+        """
+        if not (isinstance(bead_id, str)) or not (isinstance(blockers, list)):
+            raise TypeError(_ARGUMENT_ERROR)
+        if not blockers:
+            return
+        if self.dry_run:
+            self.planned.extend(
+                {"op": "bd", "args": ["dep", "add", bead_id, b, "--type", "blocks", "--no-cycle-check"]}
+                for b in blockers
+            )
+            return
+        waits: dict[str, set[str]] = blocking_edges(self.repo)
+        for blocker in blockers:
+            if blocker == bead_id or bead_id in _reached(waits, blocker):
+                message: str = f"blocks edge {bead_id} -> {blocker} would close a dependency cycle"
+                raise GraphError(message, OTHER_CAUSE)
+            run_bd(["dep", "add", bead_id, blocker, "--type", "blocks", "--no-cycle-check"], self.repo)
+            waits.setdefault(bead_id, set()).add(blocker)
 
     def metadata(self, bead_id: str, pairs: dict[str, str]) -> None:
         """Write pipeline metadata onto one bead, or record it in a dry run.

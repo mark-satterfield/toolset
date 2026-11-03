@@ -483,15 +483,8 @@ def _write_story_edges(
                 story,
                 {KEY_STORY_OWNED_BLOCKERS: join_ids(owned | set(adds)), KEY_STORY_OWNED_BLOCKERS_AT: now_iso()},
             )
-        for first in adds:
-            writer.bd(["dep", "add", story, first, "--type", "blocks"])
-            added.append(
-                {
-                    "later": story,
-                    "earlier": first,
-                    "reasons": _reasons_text(wanted[first]),
-                },
-            )
+        writer.add_blocks(story, adds)
+        added.extend({"later": story, "earlier": first, "reasons": _reasons_text(wanted[first])} for first in adds)
         for first in drops:
             writer.bd(["dep", "remove", story, first])
             removed.append({"later": story, "earlier": first})
