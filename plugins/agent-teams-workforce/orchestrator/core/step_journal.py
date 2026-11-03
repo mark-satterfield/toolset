@@ -978,8 +978,11 @@ def _invalidate(
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def invalidate_from(journal: Journal, step_id: StepId, moment: str) -> Invalidation:
+def invalidate_from(journal: Journal, step_id: StepId, moment: str, within: StepId | None = None) -> Invalidation:
     """Set a step and every step after it in walk order back to planned.
+
+    With ``within``, a step that contains ``step_id``, only the steps after it inside ``within``
+    are set back; every step outside ``within`` keeps its state.
 
     Each reset step loses ``started``, ``finished``, ``failure``, ``session`` and its artifacts. A reset step
     that has an agent or a script loses its child steps, which came from its result; a reset step
@@ -998,6 +1001,7 @@ def invalidate_from(journal: Journal, step_id: StepId, moment: str) -> Invalidat
         journal: The journal; changed in place.
         step_id: The first step to reset.
         moment: The present date-time, as :func:`timestamp` gives it.
+        within: The step whose steps alone are set back, or None for the whole journal.
 
     Returns:
         The ids reset, the ids removed, and the ids of the steps whose inputs lost a removed id.
@@ -1007,7 +1011,8 @@ def invalidate_from(journal: Journal, step_id: StepId, moment: str) -> Invalidat
     reset: list[StepId] = []
     removed: list[StepId] = []
     planned: list[StepId] = []
-    _invalidate(journal["steps"], step_id, reset, removed, planned)
+    scope: Sequence[Step] = journal["steps"] if within is None else find_step(journal, within)["steps"]
+    _invalidate(scope, step_id, reset, removed, planned)
     _remove_steps(journal["steps"], set(planned), removed)
     gone: set[StepId] = set(removed)
     reset = [held for held in reset if held not in gone]

@@ -10,8 +10,9 @@ record. A Task bead write is its own step, so the journal says which Task beads 
 
 The plan step, each Task bead write and the retiring step first check the Tasks file and the
 corrections they read against the contracts those files are written to now. A file its contract
-now refuses was written to an earlier contract: its writer, and every step after it, is set back
-to planned (``StaleInputError``), and the writer's next session is handed what the check found.
+now refuses was written to an earlier contract: its writer, and every step after it inside its
+repository's container, is set back to planned (``StaleInputError``), and the writer's next
+session is handed what the check found.
 """
 
 from __future__ import annotations
@@ -402,8 +403,9 @@ def refuse_stale_tasks(run: StepRun) -> None:
 
     Raises:
         StaleInputError: The first file in writing order the check refuses, naming its writer
-            (the decomposition, or the correction) and what the check found; the journal runner
-            sets that step and every step after it back to planned.
+            (the decomposition, or the correction), what the check found and the writer's
+            repository container as its scope; the journal runner sets that step and every step
+            after it inside the container back to planned.
 
     """
     corrections: list[Path] = run.inputs.files(TASK_CORRECTION)
@@ -416,7 +418,14 @@ def refuse_stale_tasks(run: StepRun) -> None:
         try:
             check(path)
         except CONTENT_FAILURES as refused:
-            raise StaleInputError(run.inputs.stage, _writer(run, name, path), (f"{path}: {refused}",)) from None
+            writer: StepId = _writer(run, name, path)
+            container: Step | None = step_journal.parent_step(run.journal(), writer)
+            raise StaleInputError(
+                run.inputs.stage,
+                writer,
+                (f"{path}: {refused}",),
+                within=None if container is None else container["id"],
+            ) from None
 
 
 def _stale_problems(run: StepRun, output: Path, check: OutputValidator) -> list[tuple[str, Path]]:

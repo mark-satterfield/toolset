@@ -705,21 +705,30 @@ class JournalRunner:
             self._run_group(journal, leaf["id"])
 
     def _replan_stale(self) -> None:
-        """Set the first step that wrote a stale file, and every step after it, back to planned.
+        """Set each step that wrote a stale file, and the steps after it, back to planned.
 
-        Every other writer comes after the first in walk order, so it is reset too. Runs after the
-        whole group, so no session of the group is running when its step is reset.
+        A writer whose stale file names a scope (``within``) is reset with the steps after it in
+        that scope only. Of the other writers, the first in walk order is reset with every step
+        after it, so every later writer is reset too. Runs after the whole group, so no session of
+        the group is running when its step is reset.
         """
-        writers: list[StepId] = list(dict.fromkeys(stale.writer for stale in self.stale))
+        scopes: dict[StepId, StepId | None] = {stale.writer: stale.within for stale in self.stale}
         self.stale = []
-        if not writers:
+        if not scopes:
             return
-        self.replanned.update(writers)
+        self.replanned.update(scopes)
 
         def change(journal: Journal) -> None:
-            order: list[StepId] = [step["id"] for step in step_journal.steps_in_order(journal)]
-            first: StepId = min(writers, key=order.index)
-            step_journal.invalidate_from(journal, first, step_journal.timestamp())
+            moment: str = step_journal.timestamp()
+            writer: StepId
+            scope: StepId | None
+            for writer, scope in scopes.items():
+                if scope is not None:
+                    step_journal.invalidate_from(journal, writer, moment, within=scope)
+            unscoped: list[StepId] = [writer for writer, scope in scopes.items() if scope is None]
+            if unscoped:
+                order: list[StepId] = [step["id"] for step in step_journal.steps_in_order(journal)]
+                step_journal.invalidate_from(journal, min(unscoped, key=order.index), moment)
 
         step_journal.update_journal(self.path, change)
 

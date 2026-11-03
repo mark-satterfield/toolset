@@ -67,7 +67,8 @@ merged into by `tasks.schema.json` and its unique titles, and each correction by
 `tasks-correction.schema.json` and its unique titles. A file
 passed its check when its writer's step was accepted, so a file the check refuses now was written
 to an earlier contract (`StaleInputError`): the step that wrote it (step 2, or the correction) and
-every step after it are set back to planned, and no Task bead is written from it. The writer's next
+every step after it inside its repository's container are set back to planned, and no Task bead
+is written from it. Every other repository's container keeps its state, since none reads the file. The writer's next
 session is handed what the check found in its earlier output (`tasks-<slug>.json.stale.json`).
 
 ## One step per Task bead

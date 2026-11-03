@@ -193,8 +193,9 @@ place to the current one by the step that reads it (`architecture_files.read_con
 step is set back to planned. A step that reads another file an earlier step wrote, and finds that
 it does not satisfy the contract the step reads it by (a request the step that planned a helper wrote),
 is not failed (`StaleInputError`): once the steps running with it end, the step
-that wrote the file and every step after it are set back to planned, and the run goes on from
-there, so the file is written again to the current contract. When the same writer is named twice
+that wrote the file and every step after it are set back to planned (only those inside the step
+the error names as its scope, when it names one), and the run goes on from there, so the file is
+written again to the current contract. When the same writer is named twice
 in one dispatch, the step fails; when that writer is a script step, its code wrote the file to a
 contract other than its readers', and the failure is `PipelineDefectError`. A file a step reads
 that is missing, is not JSON or is refused by its contract is the item's failure; a contract whose
