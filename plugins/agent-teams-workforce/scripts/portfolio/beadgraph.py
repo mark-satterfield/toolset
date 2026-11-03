@@ -476,7 +476,8 @@ def _attempt_bd(command: list[str], args: list[str], stdin: str | None) -> subpr
     """
     gate: BdGate = BD_GATE or locks.bd_gate
     try:
-        holder: str = " ".join(["bd", *args[:1], beads_contract.bead_operand(args)])
+        verb: list[str] = [arg for arg in args if not arg.startswith("-")][:1]
+        holder: str = " ".join(["bd", *verb, beads_contract.bead_operand(args)])
         with gate(write=not beads_contract.is_read(args), command=holder):
             return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - bd argv and separate repository argument; shell disabled.
                 command,
