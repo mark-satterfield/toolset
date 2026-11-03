@@ -7,6 +7,11 @@ session and another plan step when an item is uncited or a Task is unsized, at m
 times before a gap that remains fails the repository's Tasks as an item; otherwise one step per
 Task bead write, the step that retires the Task beads the plan no longer names, and the written
 record. A Task bead write is its own step, so the journal says which Task beads are written.
+
+The plan step, each Task bead write and the retiring step first check the Tasks file and the
+corrections they read against the contracts those files are written to now. A file its contract
+now refuses was written to an earlier contract: its writer, and every step after it, is set back
+to planned (``StaleInputError``), and the writer's next session is handed what the check found.
 """
 
 from __future__ import annotations
@@ -27,7 +32,8 @@ from bead_metadata import ARG_REQUIREMENT_IDS, KEY_ELAB_KEY, KEY_REQUIREMENT_IDS
 from matrixstore import Matrix, matrix_path, read_matrix
 from typeguard import CollectionCheckStrategy, check_type
 
-from orchestrator.core.agents import strict_json
+from orchestrator.core import step_journal
+from orchestrator.core.agents import CONTENT_FAILURES, strict_json
 from orchestrator.core.driver_contracts import dispatch_arguments
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
@@ -42,7 +48,7 @@ from orchestrator.core.journal_steps import (
     file_artifact,
     value_artifact,
 )
-from orchestrator.core.models import OutputValidator, StepError
+from orchestrator.core.models import OutputValidator, StaleInputError, StepError
 from orchestrator.flows.architecture_files import ARTIFACT_TRD
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_ELEMENTS,
@@ -92,12 +98,12 @@ from orchestrator.flows.spec_authoring import design_system, items_by_story
 
 # isort: split
 # The journal modules put the pipeline-contracts scripts directory on sys.path.
-from step_journal_contract import BEAD_TYPE_TASK, BeadId
+from step_journal_contract import BEAD_TYPE_TASK, KIND_VALUE, BeadId
 
 if TYPE_CHECKING:
     from beadcontracts import TaskPlan
     from matrix_contract import EntryId
-    from step_journal_contract import Artifact, Step, StepPlan
+    from step_journal_contract import Artifact, Step, StepId, StepPlan
 
 WORK_DECOMPOSE: Final = "decompose"
 WORK_GAPS: Final = "gaps"
@@ -107,6 +113,10 @@ RETIRED: Final = "tasks retired"
 TASK_WARNINGS: Final = "task warnings"
 TASKS_WRITTEN: Final = "tasks written"
 SCHEMAS: Final = "skills/artifact-handoff/schemas"
+TASKS_SCHEMA: Final = "tasks.schema.json"
+TASKS_CORRECTION_SCHEMA: Final = "tasks-correction.schema.json"
+STALE_LABEL: Final = "what the current check found in your earlier output: correct every one in the output"
+"""The label of the file that hands a decomposer step set back to planned what its earlier output fails."""
 TASK_GAPS_SCHEMA: Final = "task-gaps.schema.json"
 """The contract of the gaps file the plan step hands the decomposer's correction."""
 UNCITED_STAGE: Final = "uncited-items"
@@ -269,6 +279,122 @@ def task_grouping_check(context_file: Path, schema_file: Path) -> OutputValidato
     return check
 
 
+def schema_check(schema_file: Path) -> OutputValidator:
+    """Build the check of a file against its schema alone.
+
+    Returns:
+        A check that reads the file as strict JSON and raises one ``ValueError`` naming every
+        place it violates the schema.
+
+    """
+    validator = strictschema.validator(strict_json(schema_file), location=schema_file)
+
+    def check(path: Path) -> dict[str, JsonValue]:
+        document: dict[str, JsonValue] = strict_json(path)
+        problems: list[str] = [f"{error.json_path}: {error.message}" for error in validator.iter_errors(document)]
+        if problems:
+            raise ValueError("; ".join(problems))
+        return document
+
+    return check
+
+
+def _tasks_check(run: StepRun, *, merged: bool) -> OutputValidator:
+    """Choose the check of a Tasks file.
+
+    Returns:
+        The decomposer's own check (:func:`task_grouping_check`) for the file as the decomposer
+        wrote it; the schema alone for a file a correction was merged into, whose corrective
+        Tasks may each cover one thing.
+
+    """
+    schema: Path = run.tools.plugin / SCHEMAS / TASKS_SCHEMA
+    return schema_check(schema) if merged else task_grouping_check(run.inputs.file(CONTEXT), schema)
+
+
+def _correction_check(run: StepRun) -> OutputValidator:
+    """Build the check of a correction file: its schema.
+
+    Returns:
+        The check.
+
+    """
+    return schema_check(run.tools.plugin / SCHEMAS / TASKS_CORRECTION_SCHEMA)
+
+
+def _writer(run: StepRun, name: str, path: Path) -> StepId:
+    """Find the step among a step's inputs that recorded a file.
+
+    Returns:
+        The id of the step that holds the file artifact ``name`` at ``path``.
+
+    Raises:
+        StepError: No step the step reads from holds that file.
+
+    """
+    journal = run.journal()
+    named: StepId
+    for named in run.step.get("inputs", []):
+        source: Step = step_journal.find_step(journal, named)
+        recorded: list[str] = [
+            held["path"] for held in source["artifacts"] if held["name"] == name and held["kind"] != KIND_VALUE
+        ]
+        if str(path) in recorded:
+            return source["id"]
+    raise StepError(
+        run.inputs.stage,
+        OTHER_CAUSE,
+        (f"step {run.step['id']}: no step it reads from recorded the {name!r} file {path}",),
+    )
+
+
+def refuse_stale_tasks(run: StepRun) -> None:
+    """Check the Tasks file and the corrections a step reads against their current contracts.
+
+    A Tasks file and a correction passed their check when their writer's step was accepted, so a
+    file the check refuses now was written to an earlier contract.
+
+    Raises:
+        StaleInputError: The first file in writing order the check refuses, naming its writer
+            (the decomposition, or the correction) and what the check found; the journal runner
+            sets that step and every step after it back to planned.
+
+    """
+    corrections: list[Path] = run.inputs.files(TASK_CORRECTION)
+    correction_check: OutputValidator = _correction_check(run)
+    checks: list[tuple[str, Path, OutputValidator]] = [
+        (TASKS_FILE, run.inputs.file(TASKS_FILE), _tasks_check(run, merged=bool(corrections))),
+        *((TASK_CORRECTION, correction, correction_check) for correction in corrections),
+    ]
+    for name, path, check in checks:
+        try:
+            check(path)
+        except CONTENT_FAILURES as refused:
+            raise StaleInputError(run.inputs.stage, _writer(run, name, path), (f"{path}: {refused}",)) from None
+
+
+def _stale_problems(run: StepRun, output: Path, check: OutputValidator) -> list[tuple[str, Path]]:
+    """Hand a decomposer step set back to planned what the current check finds in its earlier output.
+
+    A step that failed is handed its failure by the journal runner; this covers a step a stale
+    file set back to planned, whose earlier output is still on disk.
+
+    Returns:
+        The labelled file of the problems, beside the output; empty when the step holds a
+        failure, there is no earlier output, or the check accepts it.
+
+    """
+    if "failure" in run.step or not output.is_file():
+        return []
+    try:
+        check(output)
+    except CONTENT_FAILURES as refused:
+        problems: Path = output.with_name(output.name + ".stale.json")
+        write_json(problems, {"output": str(output), "problems": str(refused)})
+        return [(STALE_LABEL, problems)]
+    return []
+
+
 @agent_step(DECOMPOSER)
 def decomposer(run: StepRun) -> AgentLaunch:
     """Build the session of a step the decomposer performs: the decomposition, or its correction.
@@ -299,18 +425,18 @@ def decomposer(run: StepRun) -> AgentLaunch:
     earlier: Step | None = run.earlier_sibling(DECOMPOSER) if correcting else None
     name: str = TASK_CORRECTION if correcting else TASKS_FILE
     turn: int = len(run.inputs.files(TASK_CORRECTION)) + 1
+    output: Path = run.context.work / (
+        f"tasks-{held.slug}.correction-{turn}.json" if correcting else f"tasks-{held.slug}.json"
+    )
+    check: OutputValidator = _correction_check(run) if correcting else _tasks_check(run, merged=False)
+    files.extend(_stale_problems(run, output, check))
 
     def accept(_accepted: StepRun, output: Path) -> Completion:
         return Completion(artifacts=(file_artifact(name, output),))
 
     return AgentLaunch(
-        output=run.context.work
-        / (f"tasks-{held.slug}.correction-{turn}.json" if correcting else f"tasks-{held.slug}.json"),
-        validate=(
-            run.tools.plugin / SCHEMAS / "tasks-correction.schema.json"
-            if correcting
-            else task_grouping_check(run.inputs.file(CONTEXT), run.tools.plugin / SCHEMAS / "tasks.schema.json")
-        ),
+        output=output,
+        validate=run.tools.plugin / SCHEMAS / TASKS_CORRECTION_SCHEMA if correcting else check,
         outcome=(
             "Task and size corrections for the recorded coverage gaps."
             if correcting
@@ -406,7 +532,9 @@ def _gap_detail(planned: TaskPlan, name: str) -> str:
 def plan(run: StepRun) -> Completion:
     """Read the Tasks the decomposer wrote and plan what they call for.
 
-    A correction the step is handed is merged into the Tasks file first.
+    The Tasks file and the corrections are checked against their current contracts first
+    (:func:`refuse_stale_tasks`); a correction the step is handed is then merged into the Tasks
+    file.
 
     Returns:
         For a plan with an uncited item, an unsized Task or no Task, while fewer than
@@ -421,6 +549,7 @@ def plan(run: StepRun) -> Completion:
     """
     held: Repository = repository(run.inputs)
     enter_phase(run.context, run.agents.emit, TASK_DECOMPOSITION_PHASE, TASK_PLAN, held.path)
+    refuse_stale_tasks(run)
     files: hierarchy.StoryFiles = story_files(run.inputs)
     correction: Path | None = run.inputs.optional_file(TASK_CORRECTION)
     merged: dict[str, JsonValue] = {}
@@ -478,7 +607,8 @@ def write_task(run: StepRun) -> Completion:
     """Write one Task bead of a Story and create its journal.
 
     The Task is found by its elaboration key under the Story, so a second run of this step
-    refreshes the Task it wrote and creates no other.
+    refreshes the Task it wrote and creates no other. The Tasks file is checked against its
+    current contract first (:func:`refuse_stale_tasks`).
 
     Returns:
         The Task as the dispatch reports it, the counts of its edges, and the write's warnings.
@@ -487,6 +617,7 @@ def write_task(run: StepRun) -> Completion:
     held: Repository = repository(run.inputs)
     key: str = check_type(run.params().get("key"), str)
     enter_phase(run.context, run.agents.emit, TASK_DECOMPOSITION_PHASE, TASK_WRITE, held.path)
+    refuse_stale_tasks(run)
     files: hierarchy.StoryFiles = story_files(run.inputs)
     control: Path = control_repository()
 
@@ -534,6 +665,7 @@ def retire(run: StepRun) -> Completion:
     """
     held: Repository = repository(run.inputs)
     enter_phase(run.context, run.agents.emit, TASK_DECOMPOSITION_PHASE, TASK_RETIRE, held.path)
+    refuse_stale_tasks(run)
     files: hierarchy.StoryFiles = story_files(run.inputs)
     control: Path = control_repository()
 

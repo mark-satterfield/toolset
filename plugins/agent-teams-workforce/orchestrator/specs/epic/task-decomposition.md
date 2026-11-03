@@ -56,6 +56,17 @@ A plan has a gap when it holds no Task, a thing the Story builds is cited by no 
 Task has no size. One correction is asked for. A correction that is merged a second time adds
 nothing, because its Tasks cite items the first merge covered.
 
+## A stored Tasks file
+
+Steps 3, 5, 6 and 7 read the Tasks file and the corrections the decomposer wrote earlier. Each of
+them first checks those files against their current contracts (`task_decomposition.refuse_stale_tasks`):
+the Tasks file as the decomposer wrote it by `task_grouping_check`, a Tasks file a correction was
+merged into by `tasks.schema.json`, and each correction by `tasks-correction.schema.json`. A file
+passed its check when its writer's step was accepted, so a file the check refuses now was written
+to an earlier contract (`StaleInputError`): the step that wrote it (step 2, or the correction) and
+every step after it are set back to planned, and no Task bead is written from it. The writer's next
+session is handed what the check found in its earlier output (`tasks-<slug>.json.stale.json`).
+
 ## One step per Task bead
 
 Each Task bead write is its own step. A run that stops after a Task is written starts again at the
