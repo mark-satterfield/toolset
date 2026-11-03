@@ -4,7 +4,8 @@
 The tracker is read live through `bd`, and only through `bd`. The `.beads/issues.jsonl`
 export is never read: `bd` exports only after a state-changing command, at most once per
 `export.interval`, and the export can be blocked, so it can lag the tracker by hours.
-Every live `bd` command holds the shared driver gate and has a timeout.
+Every live `bd` command has a timeout. The shared Dolt server takes concurrent writers itself;
+the one lock a `bd` call takes is the edge lock around `Writer.add_blocks` (`tool_locks.edge_lock`).
 Failures carry structured causes; the orchestrator owns retries of keyed operations.
 
 Two dependency types carry order, one per level. An Epic-to-Epic dependency is a `tracks`
@@ -26,7 +27,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, Protocol
+from typing import Final
 
 import contracts
 
@@ -49,9 +50,6 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 _ARGUMENT_ERROR: str = "Arguments violate the beadgraph input contract"
 
-
-if TYPE_CHECKING:
-    from contextlib import AbstractContextManager
 
 #: The `beads-contract` CLI — the one writer of this pipeline's bead metadata. Going
 #: through it is what keeps ONE statement of which keys exist and how they merge; a
@@ -109,7 +107,8 @@ DOLT_CONNECTION_FAILURES: Final[tuple[str, ...]] = (
 class GraphError(RuntimeError):
     """The tracker could not be read, or answered with something unusable.
 
-    `cause` is CONTENTION when acquiring the shared lock timed out, BD_TIMEOUT when the
+    `cause` is CONTENTION when acquiring the edge lock timed out or `bd` reported a conflict that
+    applied nothing (`beads_contract.LOCK_CONTENTION`, a child id another create took first), BD_TIMEOUT when the
     subprocess timed out or `bd` exited because its Dolt server connection failed
     (DOLT_CONNECTION_FAILURES), and OTHER_CAUSE for other failures.
     """
@@ -356,18 +355,6 @@ def _reached(waits: dict[str, set[str]], start: str) -> set[str]:
     return seen
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-class BdGate(Protocol):
-    """Acquire the shared tracker gate using the requested access mode."""
-
-    def __call__(self, *, write: bool, command: str) -> AbstractContextManager[None]:
-        """Return the bounded tracker lock context."""
-        ...
-
-
-BD_GATE: BdGate | None = None
-
-
 @functools.cache
 def _central() -> Path | None:
     """Resolve the central repository or use the working directory.
@@ -417,19 +404,21 @@ def _target(args: list[str], repo: Path | None) -> Path | None:
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def run_bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
-    """Make one serialized, bounded bd call with a cause from structured facts.
+    """Make one bounded bd call with a cause from structured facts.
 
     A command the workspace gate refused (beads_contract.MAINTENANCE_GATE, judged on stdout and
     stderr) never ran, so it is run again after each pause in beads_contract.MAINTENANCE_BACKOFF.
-    Otherwise the orchestrator retries the enclosing keyed operation, which rereads existing beads.
-    No other command output is interpreted to guess whether a failed write is safe to repeat.
+    A conflict that applied nothing (a lock or transaction conflict the server reported, or a child
+    id another create took first) fails with CONTENTION, and the orchestrator retries the enclosing
+    keyed operation, which rereads existing beads. No other command output is interpreted to guess
+    whether a failed write is safe to repeat.
 
     Returns:
         The command stdout.
 
     Raises:
         TypeError: An argument violates the declared input contract.
-        GraphError: The lock, process, or tracker command failed.
+        GraphError: The process or tracker command failed.
 
     """
     if (
@@ -444,7 +433,7 @@ def run_bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
         command += ["-C", str(where)]
 
     for pause in (*beads_contract.MAINTENANCE_BACKOFF, None):
-        done: subprocess.CompletedProcess[str] = _attempt_bd(command, args, stdin)
+        done: subprocess.CompletedProcess[str] = _attempt_bd(command, stdin)
         if not done.returncode:
             return done.stdout
         msg: str = f"`{' '.join(command)}` exited {done.returncode}: {done.stdout} {done.stderr}"
@@ -458,37 +447,47 @@ def run_bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
             )
             time.sleep(pause)
             continue
+        if beads_contract.LOCK_CONTENTION.search(printed) or _child_id_taken(args, printed):
+            raise GraphError(msg, CONTENTION)
         dropped: bool = any(failure in printed.lower() for failure in DOLT_CONNECTION_FAILURES)
         raise GraphError(msg, BD_TIMEOUT if dropped else OTHER_CAUSE)
     unreached: str = f"`{' '.join(command)}` was never run"
     raise GraphError(unreached)
 
 
-def _attempt_bd(command: list[str], args: list[str], stdin: str | None) -> subprocess.CompletedProcess[str]:
-    """Run one `bd` process under the shared bd gate.
+def _child_id_taken(args: list[str], printed: str) -> bool:
+    """Whether `bd create --parent` lost the race for the child id it chose.
+
+    `bd` reads the parent's highest child number and inserts the next one; a create under the same
+    parent committed in between makes the insert fail with `already exists` and nothing is created,
+    so the keyed operation that rereads the children and creates again is safe to repeat.
+
+    Returns:
+        True for that collision.
+
+    """
+    return bool(args) and args[0] == "create" and "--parent" in args and "already exists" in printed
+
+
+def _attempt_bd(command: list[str], stdin: str | None) -> subprocess.CompletedProcess[str]:
+    """Run one `bd` process with its timeout.
 
     Returns:
         The finished process.
 
     Raises:
-        GraphError: The gate, the process start or its timeout failed.
+        GraphError: The process start or its timeout failed.
 
     """
-    gate: BdGate = BD_GATE or locks.bd_gate
     try:
-        verb: list[str] = [arg for arg in args if not arg.startswith("-")][:1]
-        holder: str = " ".join(["bd", *verb, beads_contract.bead_operand(args)])
-        with gate(write=not beads_contract.is_read(args), command=holder):
-            return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - bd argv and separate repository argument; shell disabled.
-                command,
-                input=stdin,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=locks.seconds("ATW_BD_TIMEOUT", 180),
-            )
-    except locks.LockTimeoutError as exc:
-        raise GraphError(str(exc), CONTENTION) from exc
+        return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - bd argv and separate repository argument; shell disabled.
+            command,
+            input=stdin,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=locks.seconds("ATW_BD_TIMEOUT", 180),
+        )
     except subprocess.TimeoutExpired as exc:
         raise GraphError(str(exc), BD_TIMEOUT) from exc
     except (OSError, ValueError) as exc:
@@ -713,8 +712,10 @@ class Writer:
         edges are then added in one `bd dep add --file - --no-cycle-check` request. Only the bulk
         form skips the tracker's per-edge check: a positional `bd dep add` runs it whatever its
         flags, and that recursive query outgrows the database client's read timeout once the graph
-        is dense, so it fails with `i/o timeout` while it holds the bd gate. The bulk request adds
-        every edge in one transaction after one plain read of the dependency tables.
+        is dense, so it fails with `i/o timeout`. The bulk request adds every edge in one
+        transaction after one plain read of the dependency tables. The read, the check and the
+        write hold the edge lock (`tool_locks.edge_lock`), so two processes cannot each add an
+        edge that is safe alone and close a cycle together.
 
         Args:
             bead_id: The dependent bead.
@@ -722,7 +723,8 @@ class Writer:
 
         Raises:
             TypeError: An argument violates the declared input contract.
-            GraphError: An edge would close a cycle; no edge is added.
+            GraphError: An edge would close a cycle, or the edge lock stayed held past its wait;
+                no edge is added.
 
         """
         if not (isinstance(bead_id, str)) or not (isinstance(blockers, list)):
@@ -736,13 +738,37 @@ class Writer:
         if self.dry_run:
             self.planned.append({"op": "bd", "args": args, "stdin": lines})
             return
+        try:
+            with locks.edge_lock(f"bd dep add {bead_id}"):
+                self._add_acyclic(bead_id, blockers, lines)
+        except locks.LockTimeoutError as exc:
+            raise GraphError(str(exc), CONTENTION) from exc
+
+    def _add_acyclic(self, bead_id: str, blockers: list[str], lines: str) -> None:
+        """Read every blocking edge, refuse an edge that closes a cycle, then add the edges.
+
+        The caller holds the edge lock.
+
+        Args:
+            bead_id: The dependent bead.
+            blockers: The beads it waits for, in order.
+            lines: The `bd dep add --file -` request adding every edge.
+
+        Raises:
+            GraphError: An edge would close a cycle; no edge is added.
+
+        """
         waits: dict[str, set[str]] = blocking_edges(self.repo)
         for blocker in blockers:
             if blocker == bead_id or bead_id in _reached(waits, blocker):
                 message: str = f"blocks edge {bead_id} -> {blocker} would close a dependency cycle"
                 raise GraphError(message, OTHER_CAUSE)
             waits.setdefault(bead_id, set()).add(blocker)
-        run_bd(args, _target(["dep", "add", bead_id], self.repo), stdin=lines)
+        run_bd(
+            ["dep", "add", "--file", "-", "--no-cycle-check"],
+            _target(["dep", "add", bead_id], self.repo),
+            stdin=lines,
+        )
 
     def metadata(self, bead_id: str, pairs: dict[str, str]) -> None:
         """Write pipeline metadata onto one bead, or record it in a dry run.

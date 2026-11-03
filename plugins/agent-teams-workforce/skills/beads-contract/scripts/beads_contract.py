@@ -195,9 +195,10 @@ RETRYABLE_CONNECTION: tuple[tuple[re.Pattern[str], bool, str], ...] = (
 )
 
 
-#: What `bd` prints on standard error when another writer held a lock.
+#: What `bd` prints when another writer held a lock, or the server rolled the command's transaction
+#: back because another client committed a conflicting one first: nothing was applied.
 LOCK_CONTENTION = re.compile(
-    r"database is locked|lock wait timeout|deadlock",
+    r"database is locked|lock wait timeout|deadlock|serialization failure|try restarting transaction",
     re.IGNORECASE,
 )
 #: What `bd` prints on standard error when the beads server or its connection failed.

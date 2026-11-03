@@ -39,7 +39,7 @@ from .handback_contract import (
     TOOL_TIMEOUT_CAUSE,
 )
 from .models import RetryExhaustedError, StepError
-from .tool_locks import bd_gate, seconds
+from .tool_locks import seconds
 
 RETRY_CAUSES: frozenset[str] = frozenset({CONTENTION_CAUSE, BD_TIMEOUT_CAUSE, TOOL_TIMEOUT_CAUSE, NETWORK_CAUSE})
 CONTENT_ERRORS: tuple[type[Exception], ...] = (HierarchyError, MatrixError, ContractError, json.JSONDecodeError)
@@ -401,7 +401,6 @@ class Tools:
             # redirect_stdout is process-global. Serializing imported calls avoids one
             # worker restoring stdout while another is still printing diagnostics.
             with _IMPORT_LOCK, contextlib.redirect_stdout(sys.stderr):
-                beadgraph.BD_GATE = bd_gate
                 return operation(*args, **kwargs)
         except StepError, TypeCheckError:
             raise

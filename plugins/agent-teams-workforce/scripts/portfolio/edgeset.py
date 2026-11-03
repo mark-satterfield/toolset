@@ -1132,7 +1132,11 @@ class ApplyScope:
 
 
 def _write_plan(writer: Writer, plan: EdgePlan, ahead: dict[str, dict[str, str]], edge_type: str) -> None:
-    """Write the ownership-first records, then the adds, conversions and withdrawals of a plan.
+    """Write the ownership-first records, then the conversions, adds and withdrawals of a plan.
+
+    A converted edge is removed under its old type, then added with the plan's new edges. `blocks`
+    edges are added through `Writer.add_blocks`, one request per dependent bead, which checks them
+    for a cycle under the edge lock; `tracks` edges are added one `bd dep add` each.
 
     Args:
         writer: The tracker writer.
@@ -1143,15 +1147,21 @@ def _write_plan(writer: Writer, plan: EdgePlan, ahead: dict[str, dict[str, str]]
     """
     for bead_id, pairs in ahead.items():
         writer.metadata(bead_id, pairs)
-    for entry in plan["add"]:
-        writer.bd(
-            ["dep", "add", entry["blocked"], entry["blocker"], "--type", edge_type],
-        )
-    for entry in plan["convert"]:
-        writer.bd(["dep", "remove", entry["blocked"], entry["blocker"]])
-        writer.bd(
-            ["dep", "add", entry["blocked"], entry["blocker"], "--type", edge_type],
-        )
+    for converted in plan["convert"]:
+        writer.bd(["dep", "remove", converted["blocked"], converted["blocker"]])
+    added: list[PlannedEdge] = [
+        *plan["add"],
+        *({"blocked": c["blocked"], "blocker": c["blocker"]} for c in plan["convert"]),
+    ]
+    if edge_type == beadgraph.BLOCKS:
+        blockers: dict[str, list[str]] = {}
+        for entry in added:
+            blockers.setdefault(entry["blocked"], []).append(entry["blocker"])
+        for blocked, ids in blockers.items():
+            writer.add_blocks(blocked, ids)
+    else:
+        for entry in added:
+            writer.bd(["dep", "add", entry["blocked"], entry["blocker"], "--type", edge_type])
     for entry in plan["remove"]:
         writer.bd(["dep", "remove", entry["blocked"], entry["blocker"]])
 

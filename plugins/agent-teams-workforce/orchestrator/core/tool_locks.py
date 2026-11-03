@@ -1,23 +1,20 @@
-"""The driver's flock gate and the sync scripts' central mkdir lock."""
+"""The bounded file lock around the pipeline's blocking-edge write, and the timeouts its callers read."""
 
 from __future__ import annotations
 
 import fcntl
-import logging
 import os
-import tempfile
 import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Final
 
 from . import portfolio_bootstrap  # ruff: ignore[unused-import] -- sets sys.path
 
 # isort: split
 from driver_surface_types import CONTROL_REPO_ENV
 from typeguard import CollectionCheckStrategy, typechecked
-
-_LOG = logging.getLogger(__name__)
 
 #: The characters of a holder's command kept in the lock file.
 HOLDER_KEPT = 200
@@ -69,7 +66,7 @@ def file_lock(path: Path, wait: float, holder: str | None = None) -> Generator[N
     """Acquire an exclusive flock with a bounded wait.
 
     With ``holder``, the lock file names this process and what it runs (``<pid> <holder>``)
-    while the lock is held, the record the supervisor reads to name a gate's holder.
+    while the lock is held, so a waiter that times out can name the holder.
 
     Yields:
         Control while the exclusive lock is held.
@@ -101,67 +98,29 @@ def file_lock(path: Path, wait: float, holder: str | None = None) -> Generator[N
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+#: The lock file of the blocking-edge write, under the control repository.
+EDGE_LOCK: Final[str] = "ops/sdlc-automation/state/bd-edges.lock"
+
+#: Seconds an edge-lock waiter allows beyond the holder's two `bd` calls.
+EDGE_LOCK_MARGIN: Final[float] = 30.0
+
+
 @contextmanager
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def central_lock(wait: float) -> Generator[None]:
-    """Use the sync scripts' mkdir/pid protocol, including dead-owner recovery.
+def edge_lock(command: str) -> Generator[None]:
+    """Hold the one lock the pipeline's `bd` calls take: around a blocking-edge write.
+
+    The holder reads every blocking edge, checks in Python that no new edge closes a cycle and
+    adds the edges. Two processes doing that at once could each add an edge that is safe alone
+    and close a cycle together, so that read, check and write run one process at a time. Every
+    other `bd` call runs unlocked: the shared Dolt server takes concurrent writers itself. The
+    holder makes two `bd` calls, each bounded by `ATW_BD_TIMEOUT`, so a waiter waits longer than
+    both. The lock file names the holder (`<pid> <command>`) while it is held.
 
     Yields:
-        Control while the central lock is held.
-
-    Raises:
-        LockTimeoutError: The measured wait limit expires.
+        Control while the lock is held.
 
     """
-    path = Path(
-        os.environ.get("CENTRAL_BEADS_LOCK") or str(Path(tempfile.gettempdir()) / "central-beads.lock"),
-    )
-    deadline = time.monotonic() + wait
-    while True:
-        try:
-            path.mkdir()
-            break
-        except FileExistsError as existing:
-            try:
-                pid = int((path / "pid").read_text(encoding="utf-8").strip())
-                if pid > 0:
-                    os.kill(pid, 0)
-            except ProcessLookupError:
-                # Another contender may have removed it first. Never recursively delete.
-                try:
-                    (path / "pid").unlink()
-                    path.rmdir()
-                except FileNotFoundError:
-                    _LOG.debug("Another waiter removed expired lock %s", path)
-                continue
-            except (FileNotFoundError, ValueError, PermissionError) as exc:
-                _LOG.debug("Lock owner remains unverified for %s: %s", path, exc)
-            if time.monotonic() >= deadline:
-                raise LockTimeoutError(str(path)) from existing
-            time.sleep(min(0.1, max(0, deadline - time.monotonic())))
-    try:
-        (path / "pid").write_text(str(os.getpid()), encoding="utf-8")
+    wait: float = 2 * seconds("ATW_BD_TIMEOUT", 180) + EDGE_LOCK_MARGIN
+    with file_lock(control_repo() / EDGE_LOCK, wait, command):
         yield
-    finally:
-        (path / "pid").unlink(missing_ok=True)
-        path.rmdir()
-
-
-@contextmanager
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def bd_gate(*, write: bool, command: str) -> Generator[None]:
-    """Take the driver gate before the central write lock, in one fixed order.
-
-    The gate file names this process and ``command`` while it is held.
-
-    Yields:
-        Control while the requested gates are held.
-
-    """
-    wait = seconds("ATW_BD_LOCK_WAIT", 120)
-    with file_lock(control_repo() / "ops/sdlc-automation/state/bd-gate.lock", wait, command):
-        if write:
-            with central_lock(wait):
-                yield
-        else:
-            yield

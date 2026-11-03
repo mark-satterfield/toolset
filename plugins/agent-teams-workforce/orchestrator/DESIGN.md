@@ -721,25 +721,44 @@ defined once, in `core/handback_contract.py`.
 made at the call site, `beadgraph.run_bd`, which every `bd` call of the orchestrator and of the
 owner-run portfolio commands goes through:
 
-- **Serialize to prevent contention.** Every `bd` call holds the driver's gate, an exclusive
-  `fcntl.flock` on `<driver>/state/bd-gate.lock` (the gate the driver holds around its own `bd`
-  calls). While it holds the gate, a process writes `<pid> bd <subcommand> <bead>` into the
-  file, so a waiter that times out names the holder. Every `bd` write also holds the central beads lock the Linear sync and the fleet sync take
-  (the `mkdir` lock at `$CENTRAL_BEADS_LOCK`, default `<temporary directory>/central-beads.lock`,
-  the same lock the project's sync scripts take), taken after the gate (`core/tool_locks.py` `bd_gate`). With both
-  held, the only writers that can overlap a pipeline write are a person's own `bd` commands.
+- **Concurrent `bd` calls; one lock around the edge write.** Every `bd` database of the pipeline
+  is served by the shared `dolt sql-server` in server mode (each repository's
+  `.beads/metadata.json` names `dolt_mode: server`), which takes concurrent writers itself, so
+  `bd` calls run concurrently and take no lock of the pipeline's. A conflict the server reports
+  (a lock wait or a transaction another client committed first) rolls the command back, so the
+  command is made again (`contention`, below). The one lock is the edge lock
+  (`core/tool_locks.py` `edge_lock`), an exclusive `fcntl.flock` on
+  `<driver>/state/bd-edges.lock`, held around `beadgraph.Writer.add_blocks`: its read of every
+  blocking edge, its cycle check and its edge write. Two processes that each added an edge safe
+  alone could close a cycle together, so that read, check and write run one process at a time.
+  While it holds the lock, a process writes `<pid> bd dep add <bead>` into the file, so a waiter
+  that times out names the holder. Every `blocks` edge the pipeline writes goes through
+  `add_blocks`, `edgeset.py` apply-edges included. Nothing else the pipeline writes reads first
+  and writes on what it read across processes: a bead's children are found and created under
+  their keys only by the one process that elaborates its Epic, and a metadata write merges its
+  keys inside the one `bd update`, so concurrent writes of different keys to one bead all land.
+  `bd create --parent` reads the parent's highest child number and inserts the next; a create
+  under the same parent committed in between makes it fail with `already exists`, nothing
+  created, and that failure is `contention` too. The central beads lock the Linear sync and the
+  fleet sync take (`<control>/ops/lib/central-beads-lock.sh`) keeps those two from running
+  together; the pipeline does not take it. Both syncs make ordinary `bd` writes (`bd create`,
+  `bd update`, the import of `bd repo sync`), the kind the server takes concurrently; no `bd` of
+  this installation pushes after a write (`dolt.auto-push` is not set), and the passive JSONL
+  export (`export.auto`) is written to a temporary file and renamed.
 - **Cycle check here, not in `bd`.** A bead's blocking edges are added in one
   `bd dep add --file - --no-cycle-check` request after `beadgraph.Writer.add_blocks` has checked,
   over every `blocks` and `parent-child` edge read in one query, that none closes a cycle. `bd`'s
   own per-edge check is a recursive query that outgrows the database client's read timeout once the graph is dense,
   and only the bulk `--file` form skips it: a positional `bd dep add` runs it whatever its flags.
-- **`contention`** = a lock above not acquired within its wait (`ATW_BD_LOCK_WAIT`, default 120 s).
+- **`contention`** = the edge lock not acquired within its wait (twice `ATW_BD_TIMEOUT` plus 30 s,
+  longer than its holder's two `bd` calls), `bd` reporting a lock or transaction conflict on the
+  server (`beads_contract.LOCK_CONTENTION`), or `bd create --parent` finding its child id taken.
 - **`bd-timeout`** = `subprocess.TimeoutExpired` on the `bd` call.
 - **`other`** = any other non-zero exit, with the command and `bd`'s output in the failure's
   evidence.
 
-`beadgraph.run_bd` reads nothing from `bd`'s standard error to choose a cause; a `GraphError`
-carries one of the three causes above.
+`beadgraph.run_bd` reads `bd`'s output only for the conflicts and connection failures named above;
+a `GraphError` carries one of the three causes above.
 
 ### 6.3 Retry policy
 
@@ -856,8 +875,8 @@ repository run together. And the child containers of a container a flow names wi
 at the same time, at most `ATW_ORCH_SESSIONS` of them (`journal_run.concurrent_containers`): each
 runs its own steps in walk order and closes only its own finished steps, and a stale file is
 replanned once every container of the group has ended. Imported portfolio calls stay serialized
-(section 2.2); journal changes are serialized by the journal lock and `bd` calls by
-`bd-gate.lock`.
+(section 2.2); journal changes are serialized by the journal lock, and blocking-edge writes by
+the edge lock (section 6.2).
 
 **The cap.** At most `ATW_ORCH_SESSIONS` agent sessions at once per run (default 4). Steps beyond
 the cap wait. The account-wide number is this cap times the driver's `--elaboration-concurrency`;
@@ -865,9 +884,8 @@ the owner sets both.
 
 ### 7.2 `bd` writes
 
-Serialized by the two locks of section 6.2. The driver's `bd-gate.lock` is held by the orchestrator
-for every `bd` call, so orchestrators and the driver take turns; the central beads lock is held for
-writes, so the Linear and fleet syncs take turns with them too.
+Concurrent, as section 6.2 sets out: the shared Dolt server takes the orchestrators', the driver's
+and the syncs' writers at once, and only `beadgraph.Writer.add_blocks` takes a lock, the edge lock.
 
 ### 7.3 The section 2 guard across runs (QUESTIONS 4)
 
