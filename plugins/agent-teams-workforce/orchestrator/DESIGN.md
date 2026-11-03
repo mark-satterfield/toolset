@@ -515,6 +515,7 @@ claude -p --output-format stream-json --verbose
   --mcp-config <session dir>/mcp.json
   --strict-mcp-config
   --plugin-dir <plugin, or <session dir>/.plugin>
+  --plugin-dir <session dir>/.plugin-<name>   (once per other plugin whose skills the agents name)
   --permission-mode bypassPermissions
   --add-dir <each directory the launch names>
 ```
@@ -525,7 +526,8 @@ For example, the launch of `aws-solutions-architect`:
 claude -p --output-format stream-json --verbose --session-id <uuid>
   --agent agent-teams-workforce:aws-solutions-architect --model opus --setting-sources project
   --settings <session dir>/settings.json --mcp-config <session dir>/mcp.json --strict-mcp-config
-  --plugin-dir <session dir>/.plugin --permission-mode bypassPermissions
+  --plugin-dir <session dir>/.plugin --plugin-dir <session dir>/.plugin-aws-core
+  --permission-mode bypassPermissions
 ```
 
 - **Working directory.** A per-session directory outside every repository,
@@ -548,7 +550,7 @@ claude -p --output-format stream-json --verbose --session-id <uuid>
   blocks; `bashOutputMaxChars` at Claude Code's largest value, so a command's output reaches
   the session whole; and `disableBundledSkills`, so none of the skills bundled with Claude Code is
   listed. The settings are the same for every session; none depends on the agent.
-- **Plugins and skills.** `--plugin-dir` loads `agent-teams-workforce` and no other plugin
+- **Plugins and skills.** The first `--plugin-dir` loads `agent-teams-workforce`
   (`agent_context.session_plugin`). A session whose agent can start agents (its tools include
   `Agent` or `Workflow`) loads `<plugin>`, since the agents it starts run with their skills in it.
   Any other session loads `<session dir>/.plugin`, rebuilt at each launch: a link to every entry
@@ -559,6 +561,14 @@ claude -p --output-format stream-json --verbose --session-id <uuid>
   command and workflow of a loaded plugin to the model on every turn, and `skillOverrides` does
   not apply to plugin skills. The agent's front matter skills load with the agent (section 5.1);
   an `x-onDemandSkills` skill the agent loads itself with the Skill tool.
+  A skill of another plugin that the agent's front matter names (`<plugin>:<skill>`, for example
+  `aws-core:aws-serverless`) loads from one more `--plugin-dir <session dir>/.plugin-<plugin>`
+  (`agent_context.foreign_plugins`), rebuilt at each launch: a link to the installed plugin's
+  `.claude-plugin` manifest and its `skills/` listing only the named skills, so nothing else of
+  that plugin (agents, hooks, commands, MCP servers) loads. A session whose agent can start agents
+  gets the skills every agent of the plugin names. The installed plugin is the one
+  `<config>/plugins/installed_plugins.json` records for the control repository, else the
+  user-scope install; a named plugin installed for neither fails the launch.
 - **MCP servers.** `--mcp-config <session dir>/mcp.json` (`agent_context.session_servers`) with
   `--strict-mcp-config`, so no other MCP configuration loads: the servers the agent names in its
   front matter `mcpServers`, or, when the agent can start agents, every server some agent of the

@@ -71,6 +71,10 @@ SKILLS_FOLDER: Final = "skills"
 LISTED_FOLDERS: Final = frozenset({"commands", "workflows"})
 """The plugin folders whose files Claude Code lists to the model beside the skills, by file stem."""
 SESSION_PLUGIN: Final = ".plugin"
+INSTALLED_PLUGINS: Final = Path("plugins") / "installed_plugins.json"
+"""Where Claude Code records each installed plugin, inside its configuration directory."""
+MANIFEST_FOLDER: Final = ".claude-plugin"
+SKILL_SEPARATOR: Final = ":"
 """The folder in a session's directory that holds the plugin as that session sees it."""
 DISABLE_BUNDLED_SKILLS_KEY: Final = "disableBundledSkills"
 CONFIG_DIR_ENV: Final = "CLAUDE_CONFIG_DIR"
@@ -105,6 +109,7 @@ class AgentDefinition:
     agent's tools include one that starts other agents (``Agent`` or ``Workflow``, or no
     ``tools`` allow-list at all); ``servers`` are its front matter ``mcpServers``; ``skills`` are
     the plain names of this plugin's skills its front matter ``skills`` and ``x-onDemandSkills``
+    name; ``foreign_skills`` are the ``<plugin>:<skill>`` names of other plugins' skills they
     name. Claude Code applies the agent's tools; the launcher only reads them.
     """
 
@@ -115,6 +120,7 @@ class AgentDefinition:
     servers: tuple[str, ...]
     skills: frozenset[str]
     session_limit: int | None = None
+    foreign_skills: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         """Validate every constructed field."""
@@ -125,6 +131,7 @@ class AgentDefinition:
         check_type(self.servers, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.skills, frozenset[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.session_limit, int | None)
+        check_type(self.foreign_skills, frozenset[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -239,6 +246,9 @@ def load_agent(plugin: Path, name: str) -> AgentDefinition:
         servers=_names(metadata, MCP_SERVERS_KEY, name),
         skills=frozenset(skill.removeprefix(AGENT_PREFIX) for skill in named if skill.startswith(AGENT_PREFIX)),
         session_limit=limit,
+        foreign_skills=frozenset(
+            skill for skill in named if SKILL_SEPARATOR in skill and not skill.startswith(AGENT_PREFIX)
+        ),
     )
 
 
@@ -436,12 +446,82 @@ def session_plugin(plugin: Path, directory: Path, agent: AgentDefinition) -> Pat
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def installed_plugin(config: Path, name: str) -> Path:
+    """Find where the plugin ``name`` is installed, from Claude Code's record of installed plugins.
+
+    Returns:
+        The ``installPath`` of the install recorded for the control repository (a local or
+        project scope), else of the user-scope install.
+
+    Raises:
+        ValueError: The plugin is installed neither for the control repository nor for the user.
+
+    """
+    plugins: dict[str, JsonValue] = json_object(read_json(config / INSTALLED_PLUGINS).get("plugins", {}))
+    installs: list[dict[str, JsonValue]] = [
+        json_object(entry)
+        for key, entries in plugins.items()
+        if key.split("@", 1)[0] == name
+        for entry in check_type(entries, list[JsonValue])
+    ]
+    project: str = str(control_repo())
+    chosen: dict[str, JsonValue] | None = next(
+        (entry for entry in installs if entry.get("projectPath") == project),
+        next((entry for entry in installs if entry.get("scope") == "user"), None),
+    )
+    if chosen is None:
+        message: str = (
+            f"plugin {name} is installed neither for {project} nor for the user ({config / INSTALLED_PLUGINS})"
+        )
+        raise ValueError(message)
+    return Path(str(chosen["installPath"]))
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def foreign_plugins(plugin: Path, config: Path, directory: Path, agent: AgentDefinition) -> list[Path]:
+    """Build a plugin folder for each other plugin whose skills a session's agent names.
+
+    The skills are the agent's ``foreign_skills``, or, when the agent can start agents, those of
+    every agent of the plugin, since the agents it starts run in its session. Each folder,
+    ``<directory>/.plugin-<name>``, is rebuilt at each launch from the installed plugin
+    (:func:`installed_plugin`): its manifest and its ``skills/`` listing only the named skills
+    (:func:`_skill_folder`). Nothing else of the plugin (agents, hooks, commands, MCP servers)
+    loads.
+
+    Returns:
+        The folders to pass with ``--plugin-dir``, sorted by plugin name.
+
+    """
+    named: frozenset[str] = (
+        frozenset().union(*(load_agent(plugin, path.stem).foreign_skills for path in (plugin / "agents").glob("*.md")))
+        if agent.starts_agents
+        else agent.foreign_skills
+    )
+    wanted: dict[str, set[str]] = {}
+    for skill in named:
+        owner, _, short = skill.partition(SKILL_SEPARATOR)
+        wanted.setdefault(owner, set()).add(short)
+    built: list[Path] = []
+    for name, skills in sorted(wanted.items()):
+        source: Path = installed_plugin(config, name).resolve()
+        folder: Path = directory / f"{SESSION_PLUGIN}-{name}"
+        if folder.exists():
+            shutil.rmtree(folder)
+        folder.mkdir(mode=0o700)
+        _link(source / MANIFEST_FOLDER, folder / MANIFEST_FOLDER)
+        _skill_folder(source / SKILLS_FOLDER, folder / SKILLS_FOLDER, frozenset(skills))
+        built.append(folder)
+    return built
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch: Launch) -> list[str]:
     """Write private session settings and construct Claude CLI arguments.
 
     Returns:
         Explicit arguments selecting the agent by its name under the plugin prefix, the model,
-        the settings, the MCP servers (and no other) and the session's plugin folder.
+        the settings, the MCP servers (and no other), the session's plugin folder and the folder
+        of each other plugin whose skills the session's agents name (:func:`foreign_plugins`).
 
     Raises:
         TypeError: Session inputs do not satisfy the preparation contract.
@@ -471,6 +551,11 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
         "--strict-mcp-config",
         "--plugin-dir",
         str(session_plugin(plugin, directory, launched)),
+        *(
+            arg
+            for folder in foreign_plugins(plugin, config, directory, launched)
+            for arg in ("--plugin-dir", str(folder))
+        ),
         "--permission-mode",
         "bypassPermissions",
     ]
