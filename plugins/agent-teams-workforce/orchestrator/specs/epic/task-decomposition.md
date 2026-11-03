@@ -16,7 +16,7 @@ document and the Story; the span step hands over the span and the elements.
 | 1 | Gather what the Tasks are decomposed from | script `task_decomposition.context` | `story`, `span`, `elements`; the bead tracker | `tasks-<slug>.context.json` | value `repository`, file `task context`; plans steps 2 and 3 |
 | 2 | Decompose the Story into Tasks | agent `task-decomposer` | `spec`, `data model`, `criteria`, `story document`, `span`, `elements`, `ui sources` when there are any, `repository context`, `task context` | `tasks-<slug>.json`, checked by `task_decomposition.task_grouping_check` | file `tasks` |
 | 3 | Plan the Task beads | script `beadwrite.plan_story_tasks` | `tasks`, `story document`, the spec documents, `span`, `elements` | `tasks-<slug>.gaps.json` (`task-gaps.schema.json`) when the plan has a gap | a plan with a gap: file `task gaps`, value `gaps before the correction`, and steps 4 and 5 planned; otherwise value `task plan` and steps 6 to 8 planned |
-| 4 | Correct what the repository builds that no Task cites, and the unsized Tasks | agent `task-decomposer`, continuing the session of step 2 | the inputs of step 2, `tasks`, `task gaps` | `tasks-<slug>.correction.json` | file `task correction` |
+| 4 | Correct what the repository builds that no Task cites, and the unsized Tasks | agent `task-decomposer`, continuing the session of step 2 | the inputs of step 2, `tasks`, `task gaps` | `tasks-<slug>.correction.json`, checked by `tasks-correction.schema.json` and for titles that repeat a saved Task's or each other | file `task correction` |
 | 5 | Plan the Task beads with the correction | script `beadwrite.plan_story_tasks` | as step 3, and `task correction` | the correction merged into `tasks-<slug>.json` | value `task plan`, and steps 6 to 8 planned; a plan that still has a gap fails the step |
 | 6 | Write one Task bead | script `beadwrite.write_task`, one step per Task, in build order | `tasks`, `story document`, the spec documents, `span`, `elements` | the Task bead; the Task's journal | value `task`, value `task edge counts`, value `task warnings` |
 | 7 | Retire the Task beads the plan no longer names | script `beadwrite.retire_superseded_tasks` | as step 6; the bead tracker | bead edges and deletions | value `tasks retired`, value `task warnings` |
@@ -40,7 +40,9 @@ is a hint read from code: it may tell a Task where existing code sits, never wha
 ## The grouping check
 
 The decomposer's Tasks file is checked by `task_decomposition.task_grouping_check`: strict JSON,
-then `tasks.schema.json`, then `hierarchy.task_grouping_problems`, which raises `ValueError` with
+then `tasks.schema.json`, then `task_decomposition.duplicate_title_problems` ("Task <key> repeats
+the title of Task <key>": no two Tasks of a Story share a title), then
+`hierarchy.task_grouping_problems`, which raises `ValueError` with
 every problem (a content failure, so the session gets its one correction): when the Story builds
 two or more things, each Task that cites exactly one thing: "Task <key> covers one thing: group
 the things this Story builds into coherent Tasks".
@@ -61,7 +63,8 @@ nothing, because its Tasks cite items the first merge covered.
 Steps 3, 5, 6 and 7 read the Tasks file and the corrections the decomposer wrote earlier. Each of
 them first checks those files against their current contracts (`task_decomposition.refuse_stale_tasks`):
 the Tasks file as the decomposer wrote it by `task_grouping_check`, a Tasks file a correction was
-merged into by `tasks.schema.json`, and each correction by `tasks-correction.schema.json`. A file
+merged into by `tasks.schema.json` and its unique titles, and each correction by
+`tasks-correction.schema.json` and its unique titles. A file
 passed its check when its writer's step was accepted, so a file the check refuses now was written
 to an earlier contract (`StaleInputError`): the step that wrote it (step 2, or the correction) and
 every step after it are set back to planned, and no Task bead is written from it. The writer's next

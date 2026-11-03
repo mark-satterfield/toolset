@@ -89,5 +89,6 @@ uncited ids are items of the repository context) and write the correction in the
 artifact-handoff's `tasks-correction.schema.json` (as for the result, write exactly the shape that schema defines, and no other fields),
 with the meaning the `tasks-correction` section of the Epic contracts gives it (its own new-key
 series, N1...), adding only the new Tasks, the edges into them and the sizes
-the task gaps name. A correction never carries noWork. No status-based omission, no
+the task gaps name. A new Task meets the title rule `tasks.schema.json` states against the saved
+Tasks too; a correction never copies a saved Task to cite its items again. A correction never carries noWork. No status-based omission, no
 code-comparison pass, no empty-success escape. Python performs all Task and edge writes.

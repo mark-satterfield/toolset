@@ -248,6 +248,43 @@ def context(run: StepRun) -> Completion:
     )
 
 
+def _listed_tasks(document: dict[str, JsonValue]) -> list[JsonValue]:
+    """Read the Tasks of a Tasks or correction file that are objects.
+
+    Returns:
+        The objects of its ``tasks`` list; empty when it holds no list.
+
+    """
+    listed: JsonValue = document.get("tasks")
+    return [task for task in listed if isinstance(task, dict)] if isinstance(listed, list) else []
+
+
+def duplicate_title_problems(tasks: list[JsonValue]) -> list[str]:
+    """Find the Tasks whose title repeats an earlier Task's, ignoring case and spacing.
+
+    Returns:
+        One sentence per Task whose title an earlier Task of the list already has.
+
+    """
+    seen: dict[str, str] = {}
+    problems: list[str] = []
+    task: JsonValue
+    for task in tasks:
+        shaped: dict[str, JsonValue] = json_object(task)
+        title: JsonValue = shaped.get("title")
+        if not isinstance(title, str):
+            continue
+        key: str = str(shaped.get("key"))
+        same: str = " ".join(title.split()).casefold()
+        if same in seen:
+            problems.append(
+                f"Task {key} repeats the title of Task {seen[same]}: every Task title within a Story is unique",
+            )
+        else:
+            seen[same] = key
+    return problems
+
+
 def task_grouping_check(context_file: Path, schema_file: Path) -> OutputValidator:
     """Build the check of the decomposer's Tasks file: its schema and how its Tasks group what the Story builds.
 
@@ -258,8 +295,9 @@ def task_grouping_check(context_file: Path, schema_file: Path) -> OutputValidato
 
     Returns:
         A check that reads the Tasks file as strict JSON and, in one pass, collects every place
-        it violates the schema and every problem ``hierarchy.task_grouping_problems`` reports
-        for the Tasks that are objects, and raises one ``ValueError`` naming all of them, so the
+        it violates the schema, every Task whose title repeats another's
+        (:func:`duplicate_title_problems`) and every problem ``hierarchy.task_grouping_problems``
+        reports for the Tasks that are objects, and raises one ``ValueError`` naming all of them, so the
         session's one correction (``agents.CONTENT_FAILURES``) is handed every problem at once.
 
     """
@@ -269,8 +307,8 @@ def task_grouping_check(context_file: Path, schema_file: Path) -> OutputValidato
         document: dict[str, JsonValue] = strict_json(path)
         problems: list[str] = [f"{error.json_path}: {error.message}" for error in validator.iter_errors(document)]
         items: list[JsonValue] = check_type(json_object(strict_json(context_file))["items"], list[JsonValue])
-        listed: JsonValue = document.get("tasks")
-        tasks: list[JsonValue] = [task for task in listed if isinstance(task, dict)] if isinstance(listed, list) else []
+        tasks: list[JsonValue] = _listed_tasks(document)
+        problems.extend(duplicate_title_problems(tasks))
         problems.extend(hierarchy.task_grouping_problems(items, tasks))
         if problems:
             raise ValueError("; ".join(problems))
@@ -279,12 +317,18 @@ def task_grouping_check(context_file: Path, schema_file: Path) -> OutputValidato
     return check
 
 
-def schema_check(schema_file: Path) -> OutputValidator:
-    """Build the check of a file against its schema alone.
+def titled_check(schema_file: Path, saved: Path | None = None) -> OutputValidator:
+    """Build the check of a Tasks file a correction was merged into, or of a correction.
+
+    Args:
+        schema_file: The file's schema.
+        saved: For a correction, the Tasks file it adds to, whose titles its new Tasks must not
+            repeat; None to check the file's own Tasks alone.
 
     Returns:
         A check that reads the file as strict JSON and raises one ``ValueError`` naming every
-        place it violates the schema.
+        place it violates the schema and every Task whose title repeats another's, the saved
+        Tasks first (:func:`duplicate_title_problems`).
 
     """
     validator = strictschema.validator(strict_json(schema_file), location=schema_file)
@@ -292,6 +336,8 @@ def schema_check(schema_file: Path) -> OutputValidator:
     def check(path: Path) -> dict[str, JsonValue]:
         document: dict[str, JsonValue] = strict_json(path)
         problems: list[str] = [f"{error.json_path}: {error.message}" for error in validator.iter_errors(document)]
+        earlier: list[JsonValue] = [] if saved is None else _listed_tasks(strict_json(saved))
+        problems.extend(duplicate_title_problems([*earlier, *_listed_tasks(document)]))
         if problems:
             raise ValueError("; ".join(problems))
         return document
@@ -304,22 +350,22 @@ def _tasks_check(run: StepRun, *, merged: bool) -> OutputValidator:
 
     Returns:
         The decomposer's own check (:func:`task_grouping_check`) for the file as the decomposer
-        wrote it; the schema alone for a file a correction was merged into, whose corrective
-        Tasks may each cover one thing.
+        wrote it; the schema and the unique titles (:func:`titled_check`) for a file a
+        correction was merged into, whose corrective Tasks may each cover one thing.
 
     """
     schema: Path = run.tools.plugin / SCHEMAS / TASKS_SCHEMA
-    return schema_check(schema) if merged else task_grouping_check(run.inputs.file(CONTEXT), schema)
+    return titled_check(schema) if merged else task_grouping_check(run.inputs.file(CONTEXT), schema)
 
 
-def _correction_check(run: StepRun) -> OutputValidator:
-    """Build the check of a correction file: its schema.
+def _correction_check(run: StepRun, saved: Path | None = None) -> OutputValidator:
+    """Build the check of a correction file: its schema, and titles unique among its Tasks and ``saved``'s.
 
     Returns:
-        The check.
+        The check (:func:`titled_check`).
 
     """
-    return schema_check(run.tools.plugin / SCHEMAS / TASKS_CORRECTION_SCHEMA)
+    return titled_check(run.tools.plugin / SCHEMAS / TASKS_CORRECTION_SCHEMA, saved)
 
 
 def _writer(run: StepRun, name: str, path: Path) -> StepId:
@@ -436,7 +482,7 @@ def decomposer(run: StepRun) -> AgentLaunch:
 
     return AgentLaunch(
         output=output,
-        validate=run.tools.plugin / SCHEMAS / TASKS_CORRECTION_SCHEMA if correcting else check,
+        validate=_correction_check(run, run.inputs.file(TASKS_FILE)) if correcting else check,
         outcome=(
             "Task and size corrections for the recorded coverage gaps."
             if correcting

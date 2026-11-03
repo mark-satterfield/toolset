@@ -532,6 +532,7 @@
       "functions": [
         "orchestrator/flows/task_decomposition.py#task_grouping_check",
         "orchestrator/flows/task_decomposition.py#task_grouping_check.check",
+        "orchestrator/flows/task_decomposition.py#duplicate_title_problems",
         "scripts/portfolio/hierarchy.py#task_grouping_problems"
       ],
       "rules": [
@@ -540,6 +541,33 @@
           "enforced": "covers one thing: group the things this Story builds into coherent Tasks",
           "home": "agents/task-decomposer.md",
           "stated": "refuses a Task that covers one thing when the Story builds two or more"
+        },
+        {
+          "id": "task-titles-unique",
+          "enforced": "every Task title within a Story is unique",
+          "home": "skills/artifact-handoff/schemas/tasks.schema.json",
+          "stated": "no two Tasks of a Story share a title"
+        }
+      ]
+    },
+    {
+      "checker": "Task correction",
+      "output": "the decomposer's correction of its Tasks file",
+      "agents": [
+        "task-decomposer"
+      ],
+      "functions": [
+        "orchestrator/flows/task_decomposition.py#_correction_check",
+        "orchestrator/flows/task_decomposition.py#titled_check",
+        "orchestrator/flows/task_decomposition.py#titled_check.check",
+        "orchestrator/flows/task_decomposition.py#duplicate_title_problems"
+      ],
+      "rules": [
+        {
+          "id": "task-titles-unique",
+          "enforced": "every Task title within a Story is unique",
+          "home": "skills/artifact-handoff/schemas/tasks.schema.json",
+          "stated": "no two Tasks of a Story share a title, the Tasks a correction adds included"
         }
       ]
     },
