@@ -712,10 +712,15 @@ owner-run portfolio commands goes through:
 
 - **Serialize to prevent contention.** Every `bd` call holds the driver's gate, an exclusive
   `fcntl.flock` on `<driver>/state/bd-gate.lock` (the gate the driver holds around its own `bd`
-  calls). Every `bd` write also holds the central beads lock the Linear sync and the fleet sync take
+  calls). While it holds the gate, a process writes `<pid> bd <subcommand> <bead>` into the
+  file, so a waiter that times out names the holder. Every `bd` write also holds the central beads lock the Linear sync and the fleet sync take
   (the `mkdir` lock at `$CENTRAL_BEADS_LOCK`, default `<temporary directory>/central-beads.lock`,
   the same lock the project's sync scripts take), taken after the gate (`core/tool_locks.py` `bd_gate`). With both
   held, the only writers that can overlap a pipeline write are a person's own `bd` commands.
+- **Cycle check here, not in `bd`.** A blocking edge is added with `bd dep add ... --no-cycle-check`
+  after `beadgraph.Writer.add_blocks` has checked, over every `blocks` and `parent-child` edge
+  read in one query, that it closes no cycle. `bd`'s own per-edge check enumerates every path of
+  the dependency graph, which outgrows the database client's read timeout once the graph is dense.
 - **`contention`** = a lock above not acquired within its wait (`ATW_BD_LOCK_WAIT`, default 120 s).
 - **`bd-timeout`** = `subprocess.TimeoutExpired` on the `bd` call.
 - **`other`** = any other non-zero exit, with the command and `bd`'s output in the failure's
