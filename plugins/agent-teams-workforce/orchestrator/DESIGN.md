@@ -750,6 +750,14 @@ owner-run portfolio commands goes through:
   over every `blocks` and `parent-child` edge read in one query, that none closes a cycle. `bd`'s
   own per-edge check is a recursive query that outgrows the database client's read timeout once the graph is dense,
   and only the bulk `--file` form skips it: a positional `bd dep add` runs it whatever its flags.
+- **The workspace gate is a wait, not a failure.** While a `bd` maintenance operation (the
+  `bd -C <repo> bootstrap --yes` that `polyrepo create` runs) holds the shared server's workspace
+  gate, `bd` refuses every other command before running it (`beads_contract.MAINTENANCE_GATE`,
+  on stdout or stderr). `beadgraph.run_bd` waits inside the call, through the pauses of
+  `beads_contract.MAINTENANCE_BACKOFF`, and runs the command again, so the step does not fail;
+  each pause names the holder (`beads_contract.gate_holder`: its `bd` subcommand, its `-C`
+  repository and its pid). Only a gate held for the whole backoff fails the call with
+  `contention`, naming the holder, and that is retried as section 6.3 says.
 - **`contention`** = the edge lock not acquired within its wait (twice `ATW_BD_TIMEOUT` plus 30 s,
   longer than its holder's two `bd` calls), `bd` reporting a lock or transaction conflict on the
   server (`beads_contract.LOCK_CONTENTION`), or `bd create --parent` finding its child id taken.
@@ -757,7 +765,7 @@ owner-run portfolio commands goes through:
 - **`other`** = any other non-zero exit, with the command and `bd`'s output in the failure's
   evidence.
 
-`beadgraph.run_bd` reads `bd`'s output only for the conflicts and connection failures named above;
+`beadgraph.run_bd` reads `bd`'s output only for the workspace gate, the conflicts and the connection failures named above;
 a `GraphError` carries one of the three causes above.
 
 ### 6.3 Retry policy

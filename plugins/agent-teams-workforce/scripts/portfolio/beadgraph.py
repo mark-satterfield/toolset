@@ -439,11 +439,12 @@ def run_bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
         msg: str = f"`{' '.join(command)}` exited {done.returncode}: {done.stdout} {done.stderr}"
         printed: str = f"{done.stdout}\n{done.stderr}"
         if beads_contract.MAINTENANCE_GATE.search(printed):
+            holder: str = beads_contract.gate_holder(printed)
             if pause is None:
-                msg += f" (the workspace gate stayed held for {sum(beads_contract.MAINTENANCE_BACKOFF)}s)"
+                msg += f" ({holder} held the workspace gate for {sum(beads_contract.MAINTENANCE_BACKOFF)}s)"
                 raise GraphError(msg, CONTENTION)
             sys.stderr.write(
-                f"[beadgraph] {msg.strip()}; retrying in {pause}s because {beads_contract.MAINTENANCE_REASON}\n",
+                f"[beadgraph] waiting for {holder}; retrying in {pause}s because {beads_contract.MAINTENANCE_REASON}\n",
             )
             time.sleep(pause)
             continue

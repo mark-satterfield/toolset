@@ -142,16 +142,78 @@ CONNECTION_BACKOFF = (2, 4, 8, 16, 32)
 #: The gate refuses the command before it runs, so any command, a write included, is run again.
 MAINTENANCE_GATE = re.compile(r"a maintenance operation is running|workspace gate busy", re.IGNORECASE)
 
-#: The pause before each retry of a `bd` command the workspace gate refused, in seconds: 360s of
-#: waiting in all, longer than one `bd bootstrap` (`polyrepo create` bounds each at 300s), then
-#: the error is raised.
-MAINTENANCE_BACKOFF = (2, 4, 8, 16, *([30] * 11))
+#: The pause before each retry of a `bd` command the workspace gate refused, in seconds: 900s of
+#: waiting in all, then the error is raised. `polyrepo create` bounds each `bd` call at 300s and
+#: runs up to two `bd bootstrap` calls with a `rename-prefix` and a `dolt push` between them, so a
+#: gate held for longer is not a bootstrap ending.
+MAINTENANCE_BACKOFF = (2, 4, 8, 16, *([30] * 29))
 
 #: Why a command the workspace gate refused is run again.
 MAINTENANCE_REASON = (
     "a bd maintenance operation holds the shared server's workspace gate and refused the command "
     "before it ran; the gate is released when that operation ends"
 )
+
+#: The holder bd names in a workspace-gate refusal: `held by pid <pid> on <host> (<operation>)`.
+GATE_HOLDER = re.compile(r"held by pid (\d+) on \S+ \(([^)]*)\)", re.IGNORECASE)
+
+
+def _bd_words(args: str) -> tuple[str, str]:
+    """Read the subcommand and the `-C` repository name from a `bd` command line.
+
+    Returns:
+        (`bd <subcommand>`, repository directory name); empty strings for what is absent.
+
+    """
+    words: list[str] = args.split()
+    names: list[str] = [pathlib.Path(word).name for word in words]
+    if "bd" not in names:
+        return "", ""
+    rest: list[str] = words[names.index("bd") + 1 :]
+    repository: str = ""
+    subcommand: str = ""
+    skip: bool = False
+    for index, word in enumerate(rest):
+        if skip:
+            skip = False
+        elif word == "-C" and index + 1 < len(rest):
+            repository, skip = pathlib.Path(rest[index + 1]).name, True
+        elif not word.startswith("-") and not subcommand:
+            subcommand = word
+    return (f"bd {subcommand}" if subcommand else "", repository)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def gate_holder(printed: str) -> str:
+    """Name the bd process that holds the workspace gate, from its refusal and its command line.
+
+    Args:
+        printed: What the refused `bd` command printed.
+
+    Returns:
+        For example `bd bootstrap of SkillSpoke-financialRecords-service (pid 24379)`; the
+        operation bd names when the holder's command line cannot be read.
+
+    """
+    found: re.Match[str] | None = GATE_HOLDER.search(printed)
+    if found is None:
+        return "a bd maintenance operation"
+    pid: str = found.group(1)
+    try:
+        done: subprocess.CompletedProcess[str] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Fixed ps argument vector; no shell.
+            ["/bin/ps", "-o", "args=", "-p", pid],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        sys.stderr.write(f"[beads-contract] could not read the command line of pid {pid}: {exc}\n")
+        done = subprocess.CompletedProcess([], 1, "", "")
+    command, repository = _bd_words(done.stdout if done.returncode == 0 else "")
+    where: str = f" of {repository}" if repository else ""
+    return f"{command or found.group(2).strip() or 'a bd maintenance operation'}{where} (pid {pid})"
+
 
 #: The `bd` subcommands that only read; any other subcommand without `--readonly` writes.
 READ_COMMANDS = frozenset(
@@ -956,10 +1018,11 @@ class Reader:
             pause: int
             why: str
             if MAINTENANCE_GATE.search(printed):
+                holder: str = gate_holder(printed)
                 if refused == len(MAINTENANCE_BACKOFF):
-                    msg += f" (the workspace gate stayed held for {sum(MAINTENANCE_BACKOFF)}s)"
+                    msg += f" ({holder} held the workspace gate for {sum(MAINTENANCE_BACKOFF)}s)"
                     raise BeadsError(msg, CONTENTION_CAUSE)
-                pause, why = MAINTENANCE_BACKOFF[refused], MAINTENANCE_REASON
+                pause, why = MAINTENANCE_BACKOFF[refused], f"waiting for {holder}: {MAINTENANCE_REASON}"
                 refused += 1
             else:
                 why = connection_retryable(args, printed)
