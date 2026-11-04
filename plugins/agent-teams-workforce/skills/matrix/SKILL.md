@@ -152,7 +152,7 @@ feature with no covering document), `requirementsReachNothing`, `requirementsNoS
 
 | Field | On | Meaning | Who sets it, when, how |
 |---|---|---|---|
-| `approved: true` | any architecture entry or relationship (never an Epic) | The solutions architect approved the architecture for a feature: the architecture and design an Epic's elaboration reached are approved, and the matrix and arc42 are filled out or corrected for it. A plain yes or no: it records no Epic, stack, commit or owner, and absent means not approved. An entry goes through the same states by the same actions as a document (the `effective-architecture` skill, "Lifecycle, the baseline and iteration"): a change clears the mark, and the entry stays unapproved until an architect approves it again. The baseline carries no mark on purpose: no architect has reviewed it yet. | Only the promotion step of elaboration (`orchestrator/flows/architecture_promotion.py`, calling `matrixwrite.approve` as role `script`) on the Epic's approval scope without the Epic itself, its reach by the rule of reach in the corrected matrix (`atw-matrix approval --epic <id>` shows it), once its reviews pass. No `atw-matrix` command and no session sets it. Any later change to the entry or relationship, or to the heading text that describes it, clears it on that item alone; the next approval that covers it sets it again. Two Epics are never elaborated at the same time on the same unapproved architecture: the dependency edges `epicorder.py` sets in advance order them, and the driver's elaboration lane starts no Epic whose approval scope shares an entry with no approved mark with an Epic being elaborated, until that Epic's promotion approves it or its elaboration ends. |
+| `approved: true` | any architecture entry or relationship (never an Epic) | The solutions architect approved the architecture for a feature: the architecture and design an Epic's elaboration reached are approved, and the matrix and arc42 are filled out or corrected for it. A plain yes or no: it records no Epic, stack, commit or owner, and absent means not approved. The mark comes off an entry only when that entry itself is changed by a new Epic's architecture, and the entry then stays unapproved until an architect approves it again. The baseline carries no mark on purpose: no architect has reviewed it yet. | Only the promotion step of elaboration (`orchestrator/flows/architecture_promotion.py`, calling `matrixwrite.approve` as role `script`) on the Epic's approval scope without the Epic itself, its reach by the rule of reach in the corrected matrix (`atw-matrix approval --epic <id>` shows it), once its reviews pass. No `atw-matrix` command and no session sets it. Only the step that accepts an Epic's architect's result takes it off (`matrixwrite.withdraw_approval`, from `orchestrator/flows/architecture.py`): from each entry the result names as added or changed, and each entry its change file and links changed (the entry's own content, or an architecture-side relationship starting at it other than `describedBy` and `covers`), with the relationships starting at those entries. Nothing else takes it off: no document or heading change, however many entries that text describes, no reconciling sync, no correction outside an Epic's architecture, no change at the far end of a link. The next approval that covers the entry sets it again. Two Epics are never elaborated at the same time on the same unapproved architecture: the dependency edges `epicorder.py` sets in advance order them, and the driver's elaboration lane starts no Epic whose approval scope shares an entry with no approved mark with an Epic being elaborated, until that Epic's promotion approves it or its elaboration ends. |
 | `verified: true` | any entry or relationship | The architecture was built and its test passed, so it is verified correct: the CI checks and the test that its CDK deployment works (the deployment may be removed again after the test). A plain yes or no: it records no Epic, stack, commit or owner, and absent means not verified. A property of the stack or component itself, valid for every Epic that relates to it. Verified = real, its code trusted; not verified = still to be made real, used like anything else. | Only the build driver (`ops/sdlc-automation/matrixmarks.py`), when a Story's test passes: `atw-matrix verify --story <id>` as role `build-driver`, on every stack and entry the Story's Tasks state they built (`built`) and every relationship starting there. A merge never sets it; the merge is a separate step after the test. A known change to what the item must be built as (the entry or relationship itself, the heading text that describes it, or an architecture-side relationship starting at it) clears it on that item alone; the next build and test sets it again. |
 | `lifecycle` | `document` | Mirrors the document's `lifecycle_state`: `effective` (approved) or `in-review`, or another vault value such as `draft` or `superseded`. What the states and the approve action mean: the `effective-architecture` skill, "Lifecycle, the baseline and iteration". | `atw-matrix sync-documents`; the promotion step after `depscore.py arch-approve`. |
 | `side` | everything | `architecture` (authority) or `repository` (hint). | Whoever records the fact: `put` and `link` take `--side`. |
@@ -174,21 +174,21 @@ section 3.5 and R25 state it:
 - What a stack or Task only uses (a shared library, a layer, a chassis) was verified when it
   was itself built and tested; using it verifies nothing.
 
-Both marks are dirty bits on individual items, at the finest grain the matrix records: a known
-change clears a flag on the item it touches and nothing else; approval sets `approved` again,
-and building and testing the Story's Tasks (the CDK deployment test included) sets `verified`
-again. They are separate marks: each clears on a change that affects it, independently of the
-other; one change may clear only `approved`, only `verified`, or each at a different time.
-Never infer one mark from the other. Naming the repository that holds a stack (its `repository`
-attribute alone), or the owner's decision that no Epic drives it (its `epicDriver` attribute
-alone), changes no approved design, so it keeps `approved`.
+Both marks sit on individual items, at the finest grain the matrix records, and clear on the item
+alone. `approved` clears only when a new Epic's architecture changes that item, and approval sets
+it again. `verified` clears on any known change to what the item must be built as, and building
+and testing the Story's Tasks (the CDK deployment test included) sets it again. They are separate
+marks: one change may clear only `verified`, or both, or each at a different time. Never infer one
+mark from the other. Naming the repository that holds a stack (its `repository` attribute alone),
+or the owner's decision that no Epic drives it (its `epicDriver` attribute alone), changes no
+design, so an Epic's writing it does not take `approved` off.
 
 Reading the marks to decide what is planned and what exists:
 
 - Verified: it exists as recorded, at its current architecture. Build on it and trust its code;
   it needs no work.
 - Approved, not verified: it is the agreed design but is not built and tested yet, or the
-  architecture changed it since it was (a change clears verified, as it clears approved). Plan
+  architecture changed it since it was. Plan
   the work that brings the build, from the code already there, up to the approved design.
 - Neither: a planned or seeded fact, or a repository-side hint. Use it, check it, and do not
   count on code for it existing.
@@ -256,7 +256,7 @@ Reading the marks to decide what is planned and what exists:
 | Events, purposes and publishers from the event catalog (arc42 section 6) | `atw-matrix sync-events` |
 | Stacks against the repositories | the `polyrepo-doctor` `matrix` check (`atw-matrix stacks`, `check`) |
 | Validate the file | `atw-matrix check` |
-| Remove an alias from an entry (clears its approved flag) | `atw-matrix put <kind> --id <id> --side <side> --remove-aliases "<alias>"` |
+| Remove an alias from an entry | `atw-matrix put <kind> --id <id> --side <side> --remove-aliases "<alias>"` |
 
 Seeding fills an empty matrix in this order (`blueprint/design/matrix.md` section 3):
 

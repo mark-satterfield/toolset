@@ -110,7 +110,7 @@ ATTR_BASIS: Final = "basis"
 ATTR_REASON: Final = "reason"
 """The ``drives`` attribute that says why, in one sentence."""
 OUTSIDE_APPROVAL: Final[frozenset[str]] = frozenset({ATTR_REPOSITORY, ATTR_EPIC_DRIVER})
-"""The attributes whose change alone keeps the approved flag: neither changes an approved design."""
+"""The attributes whose change is no change of design: naming a stack's repository and ordering Epics."""
 _NOT_SLUG: Final[re.Pattern[str]] = re.compile(r"[^a-z0-9]+")
 
 
@@ -323,18 +323,16 @@ def relationship_id(relationship: Relationship) -> RelationshipId:
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def dirtied[T: (Entry, Relationship)](item: T) -> T:
-    """Take both flags off an entry or a relationship a change affects.
+    """Take the verified flag off an entry or a relationship a change affects; the approved flag stays.
 
     Args:
         item: An entry or a relationship of any kind.
 
     Returns:
-        The item without the approved and the verified flag; the item itself when it carries neither.
+        The item without the verified flag; the item itself when it does not carry it.
 
     """
-    if not item.approved and not item.verified:
-        return item
-    return replace(item, approved=False, verified=False)
+    return replace(item, verified=False) if item.verified else item
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -355,15 +353,12 @@ def same_content[T: (Entry, Relationship)](held: T, item: T) -> bool:
 def _flags_settled[T: (Entry, Relationship)](held: T | None, item: T) -> T:
     """Decide the flags an entry or a relationship carries once it replaces the one held.
 
-    Each flag is a dirty bit settled on its own. A change that leaves everything but the flags
-    as it was keeps both flags the held item carries. A change to the ``repository`` or the
-    ``epicDriver`` attribute alone keeps the approved flag: the name of the repository that holds a
-    stack is given when the Epic's repositories are spanned, after its design was approved, and the
-    owner's decision that no Epic drives a stack orders Epics; neither changes anything the
-    approval covers. Any other change clears the approved flag. A change clears the verified flag
-    only when the item is on the architecture side, because only that side states what the item
-    must be built as; a repository-side change keeps it. Flags the replacing item states are not
-    taken: only :meth:`Matrix.set_flags` sets a flag.
+    A write keeps the approved flag whatever it changes: the flag comes off only when an Epic's
+    architecture changes the item (``matrixwrite.withdraw_approval``). A change that leaves
+    everything but the flags as it was keeps the verified flag. Any other change clears the
+    verified flag only when the item is on the architecture side, because only that side states
+    what the item must be built as; a repository-side change keeps it. Flags the replacing item
+    states are not taken: only :meth:`Matrix.set_flags` sets a flag.
 
     Returns:
         The item as given when it is new; otherwise the item with the flags settled as above.
@@ -371,15 +366,18 @@ def _flags_settled[T: (Entry, Relationship)](held: T | None, item: T) -> T:
     """
     if held is None:
         return item
-    if same_content(held, item):
-        return replace(item, approved=held.approved, verified=held.verified)
     authority: bool = AUTHORITY_SIDE in {held.side, item.side}
-    approved: bool = held.approved and _outside_approval_alone_changed(held, item)
-    return replace(item, approved=approved, verified=held.verified and not authority)
+    kept: bool = held.verified and (same_content(held, item) or not authority)
+    return replace(item, approved=held.approved, verified=kept)
 
 
-def _outside_approval_alone_changed[T: (Entry, Relationship)](held: T, item: T) -> bool:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def same_design[T: (Entry, Relationship)](held: T, item: T) -> bool:
     """Tell whether two entries, or two relationships, differ in nothing but the flags and ``OUTSIDE_APPROVAL``.
+
+    Args:
+        held: The entry or relationship as it was.
+        item: The one to compare it with.
 
     Returns:
         True when the two are equal once the flags and the attributes outside approval are taken off both.
@@ -689,13 +687,13 @@ class Matrix:
         return frozenset(home for home in homes if home is not None)
 
     def _dirty(self, entry_id: EntryId) -> None:
-        """Clear both flags of one entry a change affects; an entry without them stays as it is."""
+        """Clear the verified flag of one entry a change affects; its approved flag stays."""
         held: Entry | None = self._entries.get(entry_id)
         if held is not None:
             self._entries[entry_id] = dirtied(held)
 
     def _dirty_described(self, document_id: EntryId, headings: frozenset[str]) -> None:
-        """Clear both flags of each entry whose describing text in a document changed.
+        """Clear the verified flag of each entry whose describing text in a document changed.
 
         An architecture-side ``describedBy`` that names a heading is affected when that heading's
         text changed; one that names no heading is described by the whole document, and is
@@ -717,8 +715,9 @@ class Matrix:
     def set_flags(self, item: Entry | Relationship) -> None:
         """Replace the flags of an entry or a relationship the matrix holds, and nothing else.
 
-        Only ``matrixwrite.approve`` (the approved flag) and ``matrixcode.verify`` (the verified
-        flag) call it; each states the other flag as the item holds it.
+        Only ``matrixwrite.approve`` and ``matrixwrite.withdraw_approval`` (the approved flag) and
+        ``matrixcode.verify`` (the verified flag) call it; each states the other flag as the item
+        holds it.
 
         Args:
             item: The held entry or relationship with the flags it is to carry.
@@ -927,15 +926,13 @@ class Matrix:
         An entry that breaks its kind, or whose id names a stack the matrix does not hold, raises
         ``MatrixError`` and changes nothing.
 
-        The flags are dirty bits, settled each on its own (:func:`_flags_settled`): an entry that
-        replaces another and differs from it in anything but its flags and its ``repository``
-        attribute loses the approved flag, and one that differs in anything but its flags loses the
-        verified flag when it is on the architecture side; one that differs in nothing else keeps
-        the held entry's flags. Flags the entry states are not taken. When the text under
+        The flags are settled by :func:`_flags_settled`: an entry that replaces another keeps its
+        approved flag, and one that differs in anything but its flags loses the verified flag when
+        it is on the architecture side. Flags the entry states are not taken. When the text under
         a heading of a document changes, each entry an architecture-side ``describedBy`` says that
-        heading describes loses both flags, and the other entries the document describes keep theirs
-        (:meth:`_dirty_described`); the front matter is under no heading, so the move of a document
-        to effective changes no entry's flags.
+        heading describes loses the verified flag, and the other entries the document describes
+        keep it (:meth:`_dirty_described`); the front matter is under no heading, so the move of a
+        document to effective changes no entry's flags.
 
         Args:
             entry: The entry, of any registered kind, with the side it came from.
@@ -1000,8 +997,8 @@ class Matrix:
         side, when on its side the start already has that many others, raises
         ``MatrixRefusedError`` (:meth:`_refuse_over_limit`) and changes nothing. The flags are
         settled as :meth:`put` settles an entry's. An architecture-side relationship that is added,
-        or changed in anything but its approved and verified flags, clears both flags of the entry
-        it starts from.
+        or changed in anything but its approved and verified flags, clears the verified flag of the
+        entry it starts from.
 
         Args:
             relationship: The relationship, of any registered kind, with the side that states it.
@@ -1031,7 +1028,7 @@ class Matrix:
 
         Returns:
             True when the matrix held it and it was removed; an architecture-side relationship
-            removed clears both flags of the entry it started from.
+            removed clears the verified flag of the entry it started from.
 
         """
         identity: RelationshipId = relationship_id(relationship)

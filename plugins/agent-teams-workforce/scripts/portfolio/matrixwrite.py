@@ -18,16 +18,17 @@ writes, so several sessions can record at once and none loses another's change.
 
 Nothing here sets the verified mark (``matrixcode`` sets it), and :func:`approve` leaves it as it
 is. The approved and verified marks are plain yes/no marks on the architecture, each cleared on its
-own: a change to an entry or a relationship clears its approved mark, except a change to a stack's
-``repository`` attribute alone, and a change on the architecture side clears its verified mark too
-(``matrixstore.Matrix.put`` and ``Matrix.link``).
+own: a change on the architecture side clears the verified mark (``matrixstore.Matrix.put`` and
+``Matrix.link``), and only :func:`withdraw_approval` clears the approved mark.
 
 The approved mark is set by :func:`approve` alone, which only the script role may run: the step
 that promotes a feature's reviewed architecture and design runs it on the matrix content the
 Epic's elaboration reached (``matrixtraverse.approval_scope``). :func:`put` and :func:`link` take
-attributes only, so neither can state a mark. A change to an entry or relationship, to an
-architecture-side relationship an entry starts, or to the text under the document heading that
-describes it, clears the mark on that item alone (``matrixstore.Matrix.put`` and ``Matrix.link``).
+attributes only, so neither can state a mark. The mark comes off an entry only when an Epic's
+architecture changes that entry: the step that accepts the architect's result runs
+:func:`withdraw_approval` on what the result names as added or changed and on what
+:func:`changed_by_design` finds its writes changed. No other write takes it off, and neither does
+a change to a document heading, whichever entries that heading describes.
 """
 
 import json
@@ -35,7 +36,7 @@ import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Fixed Git argv without a shell.
 import sys
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, TypedDict
@@ -54,6 +55,8 @@ from matrix_contract import (
     KIND_PACKAGE,
     KIND_REQUIREMENT,
     KIND_STACK,
+    REL_COVERS,
+    REL_DESCRIBED_BY,
     REL_DISPUTES,
     REL_PUBLISHES,
     ROLE_SCRIPT,
@@ -88,6 +91,7 @@ from matrixstore import (
     relationship_id,
     repository_side_id,
     require_role,
+    same_design,
     slug,
     update_matrix,
 )
@@ -98,6 +102,8 @@ if TYPE_CHECKING:
 
 NAMED_ID_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_STACK, KIND_PACKAGE, KIND_EVENT})
 """The kinds whose id is the kind and the entry's name as written: a stack name, a distribution name, a detail type."""
+DOCUMENTING_KINDS: Final[frozenset[RelationshipKind]] = frozenset({REL_DESCRIBED_BY, REL_COVERS})
+"""The relationships that say where the architecture is written, so changing one changes no entry's design."""
 STATED_ID_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_EPIC, KIND_REQUIREMENT, KIND_DOCUMENT})
 """The kinds whose id is built from something other than the name, so a new entry states its id."""
 ITEM_ID: Final = "id"
@@ -431,10 +437,9 @@ def put(  # ruff: ignore[too-many-arguments] - One keyword per member of an entr
     one held, except that the members of an object are laid over the held object's and the items
     of a list join the held list, where an object with the ``id`` of a held one replaces it; an
     attribute stated as null is removed.
-    The approved and verified flags are never stated. A call that changes an entry clears its
-    approved flag, unless it changes only the ``repository`` attribute, and on the architecture
-    side its verified flag too (``Matrix.put``). A call that states
-    what the entry already holds changes nothing. An entry that then breaks its
+    The approved and verified flags are never stated. A call that changes an entry keeps its
+    approved flag and, on the architecture side, clears its verified flag (``Matrix.put``). A call
+    that states what the entry already holds changes nothing. An entry that then breaks its
     kind raises ``MatrixError`` from ``Matrix.put`` and changes nothing.
 
     Args:
@@ -535,9 +540,9 @@ def link(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] - T
     A relationship is the same relationship when its kind, both ends, its kind's key attributes
     and its side are the same: each side that states a relationship holds its own, and stating
     it for one side leaves the other side's as it is. Stating it again lays the stated attributes
-    over the ones held, as :func:`put` does; a change clears its approved flag, and on the
-    architecture side its verified flag and both flags of the entry it starts from
-    (``Matrix.link``). A relationship that breaks its kind, names an entry the matrix does not
+    over the ones held, as :func:`put` does; a change on the architecture side clears its verified
+    flag and that of the entry it starts from, and keeps every approved flag (``Matrix.link``). A
+    relationship that breaks its kind, names an entry the matrix does not
     hold or joins kinds it may not join raises ``MatrixError`` from ``Matrix.link`` and changes
     nothing; so does a second relationship, on one
     side, of a kind an entry may start only one of (``MatrixRefusedError``: unlink the first).
@@ -747,6 +752,74 @@ def approve(matrix: Matrix, scope: ApprovalScope, role: Role) -> ApproveResult:
         "marked": marked,
         "markedRelationships": len(unmarked),
     }
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def changed_by_design(before: Matrix, after: Matrix) -> set[EntryId]:
+    """Name the entries whose own architecture differs between two reads of the matrix.
+
+    Args:
+        before: The matrix before the writes.
+        after: The matrix after them.
+
+    Returns:
+        Each entry held in both that differs in more than its flags and the attributes outside
+        approval, and the start of each architecture-side relationship added, changed or removed,
+        except the relationships that only say where the architecture is written.
+
+    """
+    entries: set[EntryId] = {
+        entry.id for entry in after.entries() if (held := before.find(entry.id)) and not same_design(held, entry)
+    }
+    was: dict[RelationshipId, Relationship] = _design_relationships(before)
+    now: dict[RelationshipId, Relationship] = _design_relationships(after)
+    starts: set[EntryId] = {
+        identity.start
+        for identity in {*was, *now}
+        if identity not in was or identity not in now or not same_design(was[identity], now[identity])
+    }
+    return entries | starts
+
+
+def _design_relationships(matrix: Matrix) -> dict[RelationshipId, Relationship]:
+    """Index the architecture-side relationships that state design.
+
+    Returns:
+        Each one by its identity, without those of :data:`DOCUMENTING_KINDS`.
+
+    """
+    return {
+        relationship_id(held): held
+        for held in matrix.relationships()
+        if held.side == AUTHORITY_SIDE and held.kind not in DOCUMENTING_KINDS
+    }
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def withdraw_approval(matrix: Matrix, entries: Collection[EntryId]) -> list[EntryId]:
+    """Take the approved mark off the entries an Epic's architecture changes, and nothing else.
+
+    The relationships that start at such an entry lose the mark with it. The verified mark is left
+    as it is (``Matrix.set_flags``). An id the matrix does not hold is passed over.
+
+    Args:
+        matrix: The matrix, changed in place.
+        entries: The entries the Epic's architecture changes.
+
+    Returns:
+        The entries whose mark this call took off, in id order.
+
+    """
+    held: list[Entry] = [found for entry_id in sorted(entries) if (found := matrix.find(entry_id)) is not None]
+    starting: list[Relationship] = [kept for item in held for kept in matrix.outgoing(item.id) if kept.approved]
+    relationship: Relationship
+    for relationship in starting:
+        matrix.set_flags(replace(relationship, approved=False))
+    marked: list[Entry] = [item for item in held if item.approved]
+    entry: Entry
+    for entry in marked:
+        matrix.set_flags(replace(entry, approved=False))
+    return [entry.id for entry in marked]
 
 
 class _ChangeRefusedError(MatrixError):

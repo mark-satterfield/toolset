@@ -80,9 +80,8 @@ The order is fixed, and only the stacks of what the Stories build are reached:
    the name `name convert <stack name> --from cdk-stack --to repository` gives a CDK stack name
    (for `stack:acme-sms-service` it is `Acme-sms-service`), written on the stack as its `repository`
    on the architecture side in one matrix change, so the stack and the created repository carry
-   one name. A change to a stack's `repository` alone keeps its approved flag
-   (`matrixstore._flags_settled`), so naming the repository after promotion does not undo the
-   Epic's approval.
+   one name. A write keeps the approved flag (`matrixstore._flags_settled`), so naming the repository
+   after promotion does not undo the Epic's approval.
 3. The items are grouped by repository (`repository_stacks`), and `_ruling` looks each name up in
    the inventory. A repository exists only when its row shows it cloned, on GitHub and in the
    manifest (`present`, `PRESENT_WHERE`); only then is its path placed. A repository is a

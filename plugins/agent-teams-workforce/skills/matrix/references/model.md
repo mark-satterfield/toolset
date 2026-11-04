@@ -68,5 +68,5 @@ approved and not verified. Both are plain yes/no marks on the architecture (arch
 and the relationships between them) and record no Epic, stack, commit or owner. Approved: the
 solutions architect approved the architecture for a feature (`matrixwrite.approve`, run by
 promotion; an Epic never carries it). Verified: that architecture was built and its test passed
-(`atw-matrix verify --story <id>`). A change to an entry or relationship clears its marks. The
-`matrix` skill, "Approved, verified, effective and side", says who sets each and how to read them.
+(`atw-matrix verify --story <id>`). A new Epic's architecture changing an entry clears its approved
+mark; a known change to what an item must be built as clears its verified mark. The `matrix` skill, "Approved, verified, effective and side", says who sets each and how to read them.

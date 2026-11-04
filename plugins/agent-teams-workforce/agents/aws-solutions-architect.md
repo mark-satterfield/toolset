@@ -209,8 +209,9 @@ for it:
    `service:skillspoke-securitynotifications-service` when the feature sends no security
    notification.
 2. Use an approved entry as it is: confirm its link, and review its design only when this PRD
-   needs it changed. A change to an approved entry clears its flag, and your review then
-   approves it for this Epic.
+   needs it changed. An approved entry you name under `addedOrChangedElements`, or change in your
+   change file, loses its flag, and your review then approves it for this Epic. Naming only what
+   this PRD really changes keeps every other Epic's approved entries approved.
 3. Fully review every unapproved entry you keep in reach, through the draft reviews of
    "Delegating to specialists", and on Decide correct what the reviews find.
 4. Record a `verdict` for every row in your result under `reach`: `id`, `verdict` (`kept`,

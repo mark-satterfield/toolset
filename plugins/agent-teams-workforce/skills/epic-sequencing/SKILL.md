@@ -96,8 +96,8 @@ edge and never a matrix relationship. The judgment is a `drives` from an Epic to
 to another Epic.
 
 Only the `approved` mark removes the need for an edge: a document at `lifecycle: effective` or
-an entry existing does not. A change to an item clears its `approved` mark and leaves its
-`drives` judgment as it is.
+an entry existing does not. A new Epic's architecture changing an item clears its `approved` mark
+and leaves its `drives` judgment as it is.
 
 ## What an edge decides
 

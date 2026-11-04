@@ -221,21 +221,16 @@ corrected for it.
   `atw-matrix` option states a mark. No session sets it. Two Epics are never elaborated at
   the same time on the same unapproved architecture, because the dependency edges
   `epicorder.py` sets in advance order them, so the promotion runs no check for that case.
-- **When it clears.** `Matrix.put` and `Matrix.link` clear it on an entry or relationship
-  replaced by one that differs in anything but its flags, and keep it when nothing else
-  differs (so `sync-epics` leaves an unchanged requirement approved, and setting `verified`
-  leaves `approved` as it is). A change to a stack's `repository` or `epicDriver` attribute alone keeps it: the
-  `span` step names the repository after promotion, and the name changes no approved design;
-  the owner's decision that a stack is deployed in advance orders Epics and changes no design either. When a document's text changes, only the entries whose
-  describing text changed lose it: each `describedBy` names the heading that describes its
-  entry, the document entry records a hash per heading (`headingHashes`, the front matter under
-  none), and an entry loses the flag when the text under its heading changed; a `describedBy`
-  that names no heading is described by the whole document, so any heading's change reaches it.
-  The other entries the document describes keep it, and the
-  move of a document that was not effective to effective changes no heading text. An
-  architecture-side relationship added, changed or removed clears it on the entry it starts
-  from. It returns when an Epic that reaches the
-  content has its architecture and design approved again.
+- **When it clears.** Only when that specific architecture is changing because of a new Epic.
+  `orchestrator/flows/architecture.py` `_record_result`, which accepts the architect's result,
+  runs `matrixwrite.withdraw_approval` on each entry the result names under
+  `addedOrChangedElements` and each entry `matrixwrite.changed_by_design` finds its change file and
+  links changed: the entry's own content, leaving out `repository` and `epicDriver`, or an
+  architecture-side relationship starting at it other than `describedBy` and `covers`. The
+  relationships that start at those entries lose it with them. `Matrix.put`, `Matrix.link`,
+  `Matrix.unlink` and `Matrix.remove` never clear it, and neither does a document's text: a heading
+  describes many entries, so a change to it says nothing about which of them changed. It returns
+  when an Epic that reaches the content has its architecture and design approved again.
 - **Where it shows.** Every read that returns an entry or a relationship returns it where
   set; `summary` counts it by kind (`approvedByKind`, `approvedRelationshipsByKind`);
   `approval --epic` lists the entries the Epic reaches, approved (under `approved`) and not

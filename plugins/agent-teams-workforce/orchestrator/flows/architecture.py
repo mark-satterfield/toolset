@@ -77,7 +77,7 @@ from matrixsync import (
     vault_root,
 )
 from matrixtraverse import epic_id
-from matrixwrite import apply_change_file, apply_changes, link, put
+from matrixwrite import apply_change_file, apply_changes, changed_by_design, link, put, withdraw_approval
 from specialist_catalog import agent_names
 
 from orchestrator.core import step_journal
@@ -480,13 +480,16 @@ def _record_result(bead: str, result: ArchitectureResult, changes: Path) -> Reco
     update (``matrixwrite.apply_change_file``), so the result's links are recorded on the entries
     it puts. A change file that fails is reported operation by operation, and the result is not
     recorded. Applying a file again is harmless: each operation leaves the matrix as it found it
-    when it already holds the fact.
+    when it already holds the fact. This is where the Epic's architecture takes the approved mark
+    off what it changes: each entry the result names under ``addedOrChangedElements``, and each
+    entry the change file and the result's links changed (``matrixwrite.changed_by_design``).
 
     Returns:
         :func:`_compared` on the matrix as the write left it; or only the problems, one per
         operation of the change file that failed.
 
     """
+    before: Matrix = read_matrix(matrix_file())
     if changes.is_file():
         applied: ApplyResult = apply_change_file(matrix_file(), changes, ROLE_SOLUTIONS_ARCHITECT)
         if applied["failures"]:
@@ -499,7 +502,10 @@ def _record_result(bead: str, result: ArchitectureResult, changes: Path) -> Reco
             )
 
     def change(matrix: Matrix) -> Recorded:
-        return _record_design(matrix, bead, result)
+        design: Recorded = _record_design(matrix, bead, result)
+        named: list[EntryId] = story_build_entries(result[FIELD_ADDED_OR_CHANGED])
+        withdraw_approval(matrix, {*named, *changed_by_design(before, matrix)})
+        return design
 
     recorded: Recorded = update_matrix(matrix_file(), change)
     return _compared(read_matrix(matrix_file()), bead, recorded)
