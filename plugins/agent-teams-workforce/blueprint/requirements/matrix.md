@@ -232,14 +232,13 @@ architecture-side relationships between those entries; it is the set the Epic's 
 reviews. What is read from the repositories is a hint and is never approved. Two Epics are never
 elaborated at the same time on the same unapproved architecture: the dependency edges that
 `epicorder.py` sets in advance, from the judgments the matrix records on the shared items whose
-architecture is not approved (R63), order them. The approval clears from an entry or a relationship
-when anything other than its marks changes: when the entry or relationship is replaced by one
-that differs, when the text that describes it in a document changes (only the entries whose
-describing text changed lose the mark; the other entries the same document describes keep it,
-and the move of a document to effective changes no text), and when an architecture-side
-relationship is added, changed or removed (the entry it starts from loses the mark). It does
-not matter who makes the change. The mark returns when an Epic that reaches the content has
-its architecture and design approved again.
+architecture is not approved (R63), order them. An approval is removed only if that specific
+architecture is changing due to a new Epic: the entries the Epic's solutions architect names as
+added or changed, and the entries whose own content or design relationships the architect's
+result changes, each with the relationships that start at it. Nothing else removes it: not a
+change to the text of a document, whichever entries that text describes, and not a write made
+outside an Epic's architecture. The mark returns when an Epic that reaches the content has its
+architecture and design approved again.
 
 **Verified.** The matrix has a verified mark. It says the architecture was verified correct
 because it was actually built and its test passed.
@@ -280,8 +279,8 @@ environment is a development environment where stacks are deployed and torn down
 **How the two marks change.** Both work like dirty bits. A known change clears a mark and
 marks the item dirty; approving the architecture sets approved again; building and testing the
 Story's Tasks, the CDK deployment test included, sets verified again. Each mark clears on its
-own kind of change, independently of the other: approved on any change to what the matrix or a
-document records about the item, verified on a change to what the item must be built as. They
+own kind of change, independently of the other: approved only when that specific architecture is
+changing due to a new Epic, verified on a change to what the item must be built as. They
 are separate marks: one change may clear only approved, only verified, or each at a different
 time; clearing one never clears the other. The marks sit on individual items at the finest grain the
 matrix records: architecture items and design details each carry their own marks, and only the
@@ -684,9 +683,9 @@ so nothing is seeded as verified.
   elaboration reaches, never on the Epic itself, once the Epic's architecture and design are
   approved by the solutions architect and the matrix and arc42 are filled out or corrected for
   that Epic. It is separate from verified, which says an item was built and tested, the test
-  that its deployment works included, and each clears on its own kind of change. Any change to
-  an entry or a relationship other than to its marks clears it on that item alone, whoever
-  makes the change, as section 3.5 states, until an Epic that reaches that content has its
+  that its deployment works included, and each clears on its own kind of change. The approved
+  mark is removed from an item only if that specific architecture is changing due to a new Epic,
+  as section 3.5 states, and stays off until an Epic that reaches that content has its
   architecture and design approved again. Two Epics are never elaborated at the same time on
   the same unapproved architecture: the dependency edges `epicorder.py` sets in advance order
   them, so the pipeline holds no check for that case. No session sets it by hand. Nothing is
