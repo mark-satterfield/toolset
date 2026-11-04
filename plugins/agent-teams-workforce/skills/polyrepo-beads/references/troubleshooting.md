@@ -231,6 +231,21 @@ schema drift (some queries may fail)" — do not rely on it for writes.
 
 ---
 
+## 10. Push refused: the git remote has no branches
+
+**Signature**
+```
+Error: push to origin/main: Error 1105: failed to get remote db; ... git remote has no branches
+```
+
+**Why** — Dolt writes `refs/dolt/data` through git, and refuses a remote with no branches.
+
+**Fix** — run `polyrepo beads-setup <repo>`, which gives the repository its default branch so the
+push can succeed. If it stops because the repo has no commit and has staged files, commit those
+files on the default branch and run it again.
+
+---
+
 ## Safety — before any destructive step
 
 | Action | Destroys | Only when |

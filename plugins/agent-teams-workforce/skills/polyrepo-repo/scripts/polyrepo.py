@@ -4932,6 +4932,10 @@ BEADS_TRACKED = (
 )
 BEADS_REQUIRED = BEADS_TRACKED[:3]
 BEADS_SCRIPTS = PLUGIN_ROOT / "skills" / "polyrepo-beads" / "scripts"
+BD_ARGV = ("env", "BD_ALLOW_REMOTE_MIGRATE=1", "bd", "-C")
+BD_TIMEOUT = 300
+BD_SLOW_TIMEOUT = 1800
+RUN_TIMED_OUT = 124
 
 
 def _ignore_key(line: str) -> str:
@@ -5235,11 +5239,71 @@ def _beads_files(t: _BeadsTarget, *, shared: bool) -> None:
     (beads / "metadata.json").write_text(json.dumps(meta, indent=2) + "\n")
 
 
-def _bd(path: Path, *args: str, timeout: int = 300) -> subprocess.CompletedProcess[str]:
-    return run(
-        ["env", "BD_ALLOW_REMOTE_MIGRATE=1", "bd", "-C", str(path), *args],
-        timeout=timeout,
-    )
+def _bd(path: Path, *args: str, timeout: int = BD_TIMEOUT) -> subprocess.CompletedProcess[str]:
+    return run([*BD_ARGV, str(path), *args], timeout=timeout)
+
+
+def _run_slow(argv: list[str]) -> subprocess.CompletedProcess[str]:
+    """Run one slow, idempotent step of the beads setup, and once more when it times out.
+
+    A rerun picks the step up where the timeout stopped it, so a slow clone needs no manual rerun.
+
+    Returns:
+        The last attempt's completed process.
+
+    """
+    cp = run(argv, timeout=BD_SLOW_TIMEOUT)
+    return run(argv, timeout=BD_SLOW_TIMEOUT) if cp.returncode == RUN_TIMED_OUT else cp
+
+
+def _first_branch_commit(cfg: Config, name: str, t: _BeadsTarget) -> str:
+    """Make the first commit of a repo that has none, so its default branch can be pushed.
+
+    The output of an unfinished `create` gets its scaffold commit, through the commit hook. Any
+    other repo starts its branch with its beads config. Files staged by anything but `create`
+    are not this setup's to commit.
+
+    Returns:
+        A line naming what was committed.
+
+    Raises:
+        GitFailedError: when other files are staged, or the commit fails.
+
+    """
+    path, b = t.path, cfg.default_branch
+    marker = path / ".git" / CREATE_MARKER
+    if marker.is_file():
+        _first_commit(path, name, marker.read_text().strip())
+        return "committed the scaffold create left uncommitted"
+    if git(path, "diff", "--cached", "--quiet").returncode != 0:
+        msg = f"{name} has no commit and has staged files: commit them on {b}, then run beads-setup again"
+        raise GitFailedError(msg)
+    if not (path / BEADS_CONFIG).is_file():
+        _beads_files(t, shared=True)
+    must(git(path, "add", "-f", "--", BEADS_CONFIG))
+    message = f"chore(beads): start {b} with the beads config so the Dolt remote can push"
+    must(git(path, "commit", "-m", message, timeout=300))
+    return "committed the beads config as the first commit"
+
+
+def _publish_default_branch(cfg: Config, name: str, t: _BeadsTarget) -> list[str]:
+    """Give a GitHub repository with no branch its default branch.
+
+    `bd dolt push` writes `refs/dolt/data` through git and refuses a remote with no branches,
+    so the branch has to exist before the setup's first push.
+
+    A failed first commit or push propagates as the GitFailedError that `must` raises.
+
+    Returns:
+        One line per step taken; none when origin already has a branch.
+
+    """
+    path, b = t.path, cfg.default_branch
+    if git_out(path, "ls-remote", "--heads", "origin"):
+        return []
+    steps = [] if git_out(path, "rev-parse", "--verify", "-q", "HEAD") else [_first_branch_commit(cfg, name, t)]
+    must(git(path, "push", "-u", "origin", b, timeout=120))
+    return [*steps, f"pushed {b} to origin, which had no branch"]
 
 
 def _create_beads_database(t: _BeadsTarget) -> list[str]:
@@ -5260,13 +5324,13 @@ def _create_beads_database(t: _BeadsTarget) -> list[str]:
     remote_has = git_out(path, "ls-remote", "origin", "refs/dolt/data")
     if not remote_has:
         _beads_files(t, shared=False)
-        must(_bd(path, "bootstrap", "--yes"))
-        must(_bd(path, "rename-prefix", f"{t.prefix}-", "--repair"))
-        must(_bd(path, "dolt", "push"))
+        must(_run_slow([*BD_ARGV, str(path), "bootstrap", "--yes"]))
+        must(_run_slow([*BD_ARGV, str(path), "rename-prefix", f"{t.prefix}-", "--repair"]))
+        must(_run_slow([*BD_ARGV, str(path), "dolt", "push"]))
         shutil.rmtree(path / ".beads" / "embeddeddolt", ignore_errors=True)
         steps.append("created the database (embedded) and pushed it to refs/dolt/data")
     _beads_files(t, shared=True)
-    must(_bd(path, "bootstrap", "--yes"))
+    must(_run_slow([*BD_ARGV, str(path), "bootstrap", "--yes"]))
     steps.append(f"cloned refs/dolt/data into the shared server as {t.db}")
     return steps
 
@@ -5330,7 +5394,7 @@ def _beads_converge(cfg: Config, name: str, t: _BeadsTarget) -> list[str]:
 
     """
     path = t.path
-    steps: list[str] = []
+    steps = _publish_default_branch(cfg, name, t)
     meta_f = path / ".beads" / "metadata.json"
 
     def project_id() -> str | None:
@@ -5349,11 +5413,11 @@ def _beads_converge(cfg: Config, name: str, t: _BeadsTarget) -> list[str]:
         _beads_files(t, shared=True)
         steps.append("wrote the missing .beads config files")
     if not (on_server and files_ok and project_id()):
-        _bd(path, "doctor", "--fix", "--yes")
+        _run_slow([*BD_ARGV, str(path), "doctor", "--fix", "--yes"])
         _bd(path, "vc", "commit", "-m", "chore: record project identity")
         env = f"{CONTROL_REPO_ENV}={fleet_file(cfg).parent.parent}"
         conv = ["env", env, "bash", str(BEADS_SCRIPTS / "converge-repo.sh"), str(path)]
-        must(run([*conv, "--clean"], timeout=600))
+        must(_run_slow([*conv, "--clean"]))
         steps.append("converged to the shared-server canonical state")
         if not project_id():
             msg = f"{name}: metadata.json has no project_id after convergence"
@@ -10052,6 +10116,9 @@ DOCTOR_REPAIRS: dict[str, list[str]] = {
 }  # fmt: skip
 
 
+DOCTOR_REPAIR_TIMEOUT = 7200
+"""A repair such as `beads-setup --all` runs slow steps across repos, each with BD_SLOW_TIMEOUT."""
+
 SYNC_CHECK_DETAIL: dict[str, str] = {
     "agents-sync": "shared AGENTS.md block not current",
     "hooks-sync": "shared hook registrations not current",
@@ -10064,14 +10131,14 @@ def _finding(check: str, subject: str, kind: str, detail: str) -> DoctorFinding:
     return DoctorFinding(check=check, subject=subject, kind=kind, detail=detail)
 
 
-def _run_json(argv: list[str], extra: list[str]) -> tuple[int, dict[str, object]]:
+def _run_json(argv: list[str], extra: list[str], timeout: int = 900) -> tuple[int, dict[str, object]]:
     """Run one of the tool's own checks or repairs as a separate process and read its JSON.
 
     Returns:
         (exit status, parsed output); unreadable output becomes {"error": ...}.
 
     """
-    cp = run([*argv, *extra], timeout=900)
+    cp = run([*argv, *extra], timeout=timeout)
     data: dict[str, object]
     try:
         parsed: object = json.loads(cp.stdout) if cp.stdout.strip() else {}
@@ -10640,7 +10707,7 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     repairs: dict[str, dict[str, object]] = {}
     if args.fix:
         for name, argv in DOCTOR_REPAIRS.items():
-            rc, data = _run_json(argv, extra)
+            rc, data = _run_json(argv, extra, DOCTOR_REPAIR_TIMEOUT)
             repairs[name] = {
                 "exit": rc,
                 "fixed": data.get("fixed"),
