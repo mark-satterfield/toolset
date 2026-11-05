@@ -171,3 +171,9 @@ flowchart LR
 A deterministic step sets verified on what a Story built and tested when the Story's test passes,
 before and apart from its merge ([pipelines-architecture-states.md](pipelines-architecture-states.md),
 section 3).
+
+## Repository Beads integration
+
+`polyrepo beads-setup` creates databases with `bd bootstrap`, which does not install Git hooks. Immediately before its existing `bd doctor --fix --yes` call, `_beads_converge` sets `doctor.suppress.git-hooks`, `doctor.suppress.pending-migrations` and `doctor.suppress.hooks-path` to `true` with `bd config set` and requires each command to succeed. Doctor filters the three hook warnings before automatic repairs. Other doctor repairs, quality hooks, GitNexus hooks and `refs/dolt/data` synchronization keep their existing paths. Fleet database setup never uses `bd init`; upstream supports `--skip-hooks` for that command.
+
+Before automatic doctor repairs, nonfixing `bd doctor --json` must return a valid, nonempty checks list. Exit 1 with unrelated findings still permits their repairs. Any remaining non-ok Git Hooks, Pending Migrations or Hooks Path check stops repair, including unsuppressible broken-marker errors. In Beads v1.3.4 Pending Migrations covers only Git hook migration.

@@ -254,6 +254,10 @@ management your tool does.
 
 Every command that works across repositories covers every app space, the marketing space included. A task that needs a narrower set says so when it runs the command: `--space S` for one app space, `--repo R` (or the repository names a command takes) for named repositories, `--skip-repo R` for `rename`. No repository or space is left out unless the run names the scope.
 
+Beads Git hooks are intentionally absent from every fleet repository and worktree. Never install or refresh them. Before any `bd doctor --fix`, set `bd config set doctor.suppress.<slug> true` for each of `git-hooks`, `pending-migrations` and `hooks-path`; preserve every other doctor repair, quality hook, pre-commit check and GitNexus hook. Creation uses `bd bootstrap`, which installs no Git hooks; do not substitute `bd init`. Dolt synchronization keeps its existing fleet commands and `refs/dolt/data`.
+
+Before automatic doctor repairs, nonfixing `bd doctor --json` must return a valid, nonempty checks list. Exit 1 with unrelated findings still permits their repairs. Any remaining non-ok Git Hooks, Pending Migrations or Hooks Path check stops repair, including unsuppressible broken-marker errors. In Beads v1.3.4 Pending Migrations covers only Git hook migration.
+
 Every repo that exists gets its beads setup when it is created, whatever its lifecycle (`planned` included); only deprecated and archived repos are exempt. Creating a repo includes its beads setup, its entry in the control repo's beads repository list, and a correct `.gitignore`. `create` does all three: the `.beads` config files committed, the repo's database on the shared server (never `bd init`), the list entry, and a `.gitignore` that covers the beads runtime and database files and the standard ignores for its template kind. A repo that is missing any of them is a `doctor` finding, and `doctor --fix` repairs it.
 
 ### Every repository is self-contained

@@ -4865,6 +4865,8 @@ BEADS_TRACKED = (
 BEADS_REQUIRED = BEADS_TRACKED[:3]
 BEADS_SCRIPTS = PLUGIN_ROOT / "skills" / "polyrepo-beads" / "scripts"
 BD_ARGV = ("env", "BD_ALLOW_REMOTE_MIGRATE=1", "bd", "-C")
+BEADS_HOOK_CHECKS = ("Git Hooks", "Pending Migrations", "Hooks Path")
+BEADS_HOOK_SUPPRESSIONS = ("git-hooks", "pending-migrations", "hooks-path")
 BD_TIMEOUT = 300
 BD_SLOW_TIMEOUT = 1800
 RUN_TIMED_OUT = 124
@@ -5315,6 +5317,54 @@ def beads_setup(
     return _beads_commit(cfg, name, path, steps, (trailer, head))
 
 
+def _beads_doctor_check(value: object) -> None:
+    """Validate a doctor check and reject any remaining Beads hook repair.
+
+    Args:
+        value: One check from the doctor's JSON output.
+
+    Raises:
+        PolyrepoError: If the check is malformed or could select a hook repair.
+
+    """
+    check = _map(value, "the beads doctor check")
+    name = _str(check.get("name"), "the beads doctor check name")
+    status = _str(check.get("status"), "the beads doctor check status")
+    if not name or status not in {"ok", "warning", "error"}:
+        msg = f"Unknown beads doctor status {status!r} for {name}"
+        raise PolyrepoError(msg)
+    if name in BEADS_HOOK_CHECKS and status != "ok":
+        msg = f"Refusing beads doctor repair: {name} is {status}; Beads Git hooks must remain absent"
+        raise PolyrepoError(msg)
+
+
+def _beads_doctor_preflight(path: Path) -> None:
+    """Require valid diagnostics with no remaining Beads hook repair candidates.
+
+    Args:
+        path: Repository to diagnose without applying fixes.
+
+    Raises:
+        PolyrepoError: If diagnostics are malformed or select a hook repair.
+
+    """
+    result = _run_slow([*BD_ARGV, str(path), "doctor", "--json"])
+    if result.returncode not in {0, 1}:
+        msg = f"Beads doctor failed for {path}: {result.stderr.strip() or result.returncode}"
+        raise PolyrepoError(msg)
+    try:
+        payload: object = json.loads(result.stdout)
+    except ValueError as error:
+        msg = f"Invalid beads doctor JSON for {path}"
+        raise PolyrepoError(msg) from error
+    checks = _seq(_map(payload, "the beads doctor result").get("checks"), "the beads doctor checks")
+    if not checks:
+        msg = f"Beads doctor returned no checks for {path}"
+        raise PolyrepoError(msg)
+    for check in checks:
+        _beads_doctor_check(check)
+
+
 def _beads_converge(cfg: Config, name: str, t: _BeadsTarget) -> list[str]:
     """Give the repo its database and config files, and converge its identity when it lacks one.
 
@@ -5345,6 +5395,9 @@ def _beads_converge(cfg: Config, name: str, t: _BeadsTarget) -> list[str]:
         _beads_files(t, shared=True)
         steps.append("wrote the missing .beads config files")
     if not (on_server and files_ok and project_id()):
+        for slug in BEADS_HOOK_SUPPRESSIONS:
+            must(_bd(path, "config", "set", f"doctor.suppress.{slug}", "true"))
+        _beads_doctor_preflight(path)
         _run_slow([*BD_ARGV, str(path), "doctor", "--fix", "--yes"])
         _bd(path, "vc", "commit", "-m", "chore: record project identity")
         env = f"{CONTROL_REPO_ENV}={fleet_file(cfg).parent.parent}"

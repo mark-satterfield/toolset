@@ -254,3 +254,7 @@ or the driver as the contracts state. A composite that nothing runs is not decla
 The rewrite of the build and deploy lanes implements their use of the matrix exactly as
 section 4 of `blueprint/design/matrix.md` specifies it, in its Build and Deploy tables. The
 rewrite is not complete without it.
+
+## Repository Beads integration
+
+Fleet repository creation and repair leave Beads Git hooks absent in primary checkouts and worktrees. Quality checks and code indexing hooks remain enabled. Database identity repair and Dolt synchronization retain their existing behavior.
