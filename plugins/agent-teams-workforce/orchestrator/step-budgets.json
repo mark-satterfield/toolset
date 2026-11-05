@@ -6,7 +6,7 @@
     "trd.seed": 30,
     "architecture.index": 600,
     "atw-matrix check; atw-matrix review-scope": 30,
-    "atw-matrix sync-documents; atw-matrix commit": 60,
+    "atw-matrix sync-documents": 60,
     "trd.confirm": 10,
     "atw-matrix epic --closure": 30,
     "spec_authoring.context": 30,

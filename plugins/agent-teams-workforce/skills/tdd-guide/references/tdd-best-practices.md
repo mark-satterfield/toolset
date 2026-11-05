@@ -16,8 +16,8 @@ Guidelines for effective test-driven development workflows.
 ## Red-Green-Refactor Cycle
 
 ### RED Phase
-1. Write a failing test before any implementation
-2. Test should fail for the right reason (not compilation errors)
+1. Review existing suite coverage and add or improve tests for the assigned behavior
+2. Record actual outcomes and distinguish product defects from test, setup and environment failures
 3. Name tests as specifications describing expected behavior
 4. Keep tests small and focused on single behaviors
 
@@ -35,9 +35,9 @@ Guidelines for effective test-driven development workflows.
 
 ### Cycle Discipline
 - Complete one cycle before starting the next
-- Commit after each successful GREEN phase
+- Commit only under the active repository and owner instructions
 - Small iterations lead to better designs
-- Resist temptation to write implementation first
+- Passing suites still require architecture, code and test quality review; never manufacture failure
 
 ---
 

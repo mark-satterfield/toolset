@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import shutil
+import signal
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Fixed argv, no shell.
 import sys
 import threading
@@ -255,6 +256,92 @@ class Tools:
             raise TypeError(message)
         self.evidence: Path = evidence
         self.plugin: Path = Path(__file__).resolve().parents[2]
+        self._commands_lock: threading.Lock = threading.Lock()
+        self._commands: dict[int, subprocess.Popen[str]] = {}
+        self._commands_stopped: bool = False
+
+    @staticmethod
+    def _kill_command(process: subprocess.Popen[str]) -> None:
+        """Kill only the process group created for this owned deterministic command."""
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+
+    def stop_all(self) -> None:
+        """Cancel owned deterministic commands and prevent further launches in this dispatch.
+
+        Their executing threads drain and reap the children before returning.
+        """
+        with self._commands_lock:
+            self._commands_stopped = True
+            for process in self._commands.values():
+                self._kill_command(process)
+
+    def _spawn_command(self, argv: Sequence[str], cwd: Path | None) -> subprocess.Popen[str]:
+        """Launch and register one owned POSIX session atomically with cancellation.
+
+        Returns:
+            The registered process whose group belongs to this tool boundary.
+
+        Raises:
+            OSError: Process-group cleanup is unavailable on the host.
+            InterruptedError: The dispatch already cancelled its commands.
+
+        """
+        if os.name != "posix":
+            message = "Deterministic commands require POSIX process-group cleanup"
+            raise OSError(message)
+        with self._commands_lock:
+            if self._commands_stopped:
+                message = "Deterministic commands were cancelled"
+                raise InterruptedError(message)
+            process: subprocess.Popen[str] = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] - Resolved argv; no shell.
+                argv,
+                cwd=cwd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+            self._commands[process.pid] = process
+        return process
+
+    def _ensure_running(self) -> None:
+        """Refuse to report a cancelled command as successful.
+
+        Raises:
+            InterruptedError: The dispatch cancelled its commands.
+
+        """
+        with self._commands_lock:
+            stopped = self._commands_stopped
+        if stopped:
+            message = "Deterministic commands were cancelled"
+            raise InterruptedError(message)
+
+    def _execute_command(
+        self,
+        argv: Sequence[str],
+        cwd: Path | None,
+        timeout: float,
+    ) -> subprocess.CompletedProcess[str]:
+        """Capture an owned command and reap its entire group on timeout or interruption.
+
+        Returns:
+            Its captured output and exit status.
+
+        """
+        process = self._spawn_command(argv, cwd)
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+            self._ensure_running()
+            return subprocess.CompletedProcess(list(argv), process.wait(), stdout, stderr)
+        except BaseException:
+            self._kill_command(process)
+            process.communicate()
+            raise
+        finally:
+            with self._commands_lock:
+                self._commands.pop(process.pid, None)
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def failure(self, stage: str, cause: str, facts: Mapping[str, JsonInput]) -> StepError:
@@ -333,6 +420,7 @@ class Tools:
 
         Raises:
             FileNotFoundError: The executable cannot be resolved.
+            InterruptedError: The dispatch cancelled its commands.
 
         """
         resolved: str | None = shutil.which(argv[0]) if argv else None
@@ -340,14 +428,9 @@ class Tools:
             message = f"executable not found: {argv[0] if argv else '<empty argv>'}"
             raise FileNotFoundError(message)
         try:
-            return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Resolved argv; no shell.
-                [resolved, *argv[1:]],
-                cwd=cwd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-            )
+            return self._execute_command([resolved, *argv[1:]], cwd, timeout)
+        except InterruptedError:
+            raise
         except subprocess.TimeoutExpired as exc:
             raise self.failure(stage, TOOL_TIMEOUT_CAUSE, {"argv": list(argv), "exception": repr(exc)}) from exc
         except ConnectionError as exc:

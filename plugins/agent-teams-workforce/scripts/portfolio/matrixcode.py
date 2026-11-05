@@ -3,9 +3,9 @@
 The verified mark is a plain yes on an architecture entry or relationship: the architecture it is
 part of was built and its test passed, the CI checks and the test that its CDK deployment works
 included; the deployment need not remain. It records nothing about who or which commit. The driver
-runs ``verify`` for one Story when that Story's test passes: its deploy to AWS dev was verified
-working and the CI checks on its branch pass. The test passing is the trigger: the call runs
-before, and apart from, any merge, and waits for no other Story or Task of any Epic.
+runs ``verify`` when a Story completes its build pipeline. An item with contributing work in
+another unfinished Story remains unverified. A feature is verified only when its recorded
+architecture realizers are verified; missing realization evidence never implies completion.
 
 The mark is recorded on each stack and entry the Story built, as the Task script's ``built`` read
 returns them (``matrixtasks.built``), and on each relationship, of any kind and either side, that
@@ -29,6 +29,9 @@ from typeguard import CollectionCheckStrategy, typechecked
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 from matrix_contract import (
+    AUTHORITY_SIDE,
+    KIND_FEATURE,
+    REL_REALIZED_BY,
     Entry,
     EntryId,
     JsonValue,
@@ -157,13 +160,41 @@ def record_verified(
 
     def change(matrix: Matrix) -> StoryVerified:
         read: BuiltRead = built(matrix, work.tasks, story)
+        pending: set[str] = {
+            element
+            for task in work.tasks
+            if not task.closed or (task.story != story and not work.stories.get(task.story or "", False))
+            for element in task.elements
+        }
+        read["stacks"] = [row for row in read["stacks"] if row["id"] not in pending]
+        read["entries"] = [row for row in read["entries"] if row["id"] not in pending]
         found: Verification = verify(matrix, read)
+        completed: set[EntryId] = set(found.entries)
+        feature_changes: int = 0
+        feature: Entry
+        for feature in matrix.entries((KIND_FEATURE,)):
+            realizers: list[EntryId] = [
+                link.end for link in matrix.outgoing(feature.id, (REL_REALIZED_BY,)) if link.side == AUTHORITY_SIDE
+            ]
+            if feature.side != AUTHORITY_SIDE or not completed.intersection(realizers) or feature.id in pending:
+                continue
+            if realizers and all(
+                (entry := matrix.find(realizer)) is not None
+                and entry.side == AUTHORITY_SIDE
+                and entry.verified
+                and realizer not in pending
+                for realizer in realizers
+            ):
+                if not feature.verified:
+                    matrix.set_flags(replace(feature, verified=True))
+                    feature_changes += 1
+                completed.add(feature.id)
         return {
             "command": COMMAND_VERIFY,
             "story": story.strip(),
-            "entries": found.entries,
+            "entries": sorted(completed),
             "relationships": found.relationships,
-            "changed": found.changed,
+            "changed": found.changed + feature_changes,
             "unmatched": sorted(row["id"] for row in read["unmatched"]),
         }
 

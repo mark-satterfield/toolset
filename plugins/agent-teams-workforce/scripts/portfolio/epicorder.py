@@ -18,9 +18,9 @@ architecture entries, which depend on other entries. No Epic relates directly to
 An item is shared when two or more Epics need it: a feature that serves a requirement of each,
 or an architecture entry each reaches by the rule of reach. Edges exist so that an Epic waits for
 the Epic that builds and owns something it uses, and so that two Epics never work on the same
-unapproved shared item at the same time.
+ordered shared item at the same time. Approval and verification never change the order.
 
-1. For each shared item whose architecture is not approved, the record that decides it: an
+1. For each shared item, the record that decides it: an
    architecture-side ``drives`` from Epic F to the item, with ``basis`` ``owns`` (F builds and
    owns it; the others use it) or ``shared`` (the Epics share it independently; F merely goes
    first); else the owner's ``drives`` with no basis from F to the stack the item is realized or
@@ -152,23 +152,23 @@ class Analysis:
 
 
 def deciding(items: Iterable[SharedItem]) -> list[SharedItem]:
-    """List the unapproved shared items a record decides and no ``epicDriver: none`` stack holds.
+    """List the shared items a record decides and no ``epicDriver: none`` stack holds.
 
     Returns:
         The items that make edges before the loop break, in the order given.
 
     """
-    return [item for item in items if not item.approved and item.decision is not None and not item.in_advance]
+    return [item for item in items if item.decision is not None and not item.in_advance]
 
 
 def unjudged(items: Iterable[SharedItem]) -> list[SharedItem]:
-    """List the unapproved shared items no record decides, outside every stack deployed in advance.
+    """List the shared items no record decides, outside every stack deployed in advance.
 
     Returns:
         The items, in the order given.
 
     """
-    return [item for item in items if not item.approved and item.decision is None and not item.in_advance]
+    return [item for item in items if item.decision is None and not item.in_advance]
 
 
 def label(analysis: Analysis, item: EntryId) -> str:
@@ -522,7 +522,7 @@ def summary(analysis: Analysis) -> JsonObject:
         "approved": len(analysis.items) - len(unapproved),
         "judged": judged,
         "ownerStack": len(decided) - judged,
-        "deployedInAdvance": sum(1 for item in unapproved if item.in_advance),
+        "deployedInAdvance": sum(1 for item in analysis.items.values() if item.in_advance),
         "unjudged": len(unjudged(analysis.items.values())),
         "itemsMakingEdges": len(made),
         "edges": len(result.edges),

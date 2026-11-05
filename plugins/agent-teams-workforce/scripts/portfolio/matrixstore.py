@@ -17,17 +17,20 @@ a write replaces the file in one move.
 """
 
 import fcntl
+import hashlib
 import json
+import marshal
 import os
 import re
+import stat
 import sys
 import tempfile
 import time
 from collections.abc import Callable, Collection, Generator, Mapping
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Final, NamedTuple
+from typing import Final, NamedTuple, TypeGuard
 
 from typeguard import CollectionCheckStrategy, typechecked
 
@@ -43,6 +46,7 @@ from matrix_contract import (
     HOME_RELATIONSHIP,
     KIND_DOCUMENT,
     KIND_EVENT,
+    KIND_FEATURE,
     KIND_INFRASTRUCTURE,
     LOCK_DIRECTORY,
     LOCK_SUFFIX,
@@ -52,6 +56,7 @@ from matrix_contract import (
     REL_DRIVES,
     REL_MATCHES,
     REL_PUBLISHES,
+    REL_REALIZED_BY,
     ROLE_ENV,
     ROLES,
     STACK_KIND,
@@ -78,10 +83,12 @@ from matrix_contract import (
 )
 
 DEFAULT_LOCK_WAIT: Final = 60.0
+CACHE_ENVELOPE_FIELDS: Final = 3
+"""The cache envelope contains its version, source generation and primitive payload."""
 """Seconds a change waits for another process's change to the same matrix to finish."""
 LOCK_POLL: Final = 0.05
 FILE_MODE: Final = 0o644
-"""The mode of a matrix file: it is committed to the control repository and read by every session."""
+"""The mode of the machine-local matrix file read by every session."""
 ID_SEPARATOR: Final = ":"
 STACK_SEPARATOR: Final = "/"
 """What follows the stack name in the id of an entry whose id names the stack that holds it."""
@@ -687,10 +694,14 @@ class Matrix:
         return frozenset(home for home in homes if home is not None)
 
     def _dirty(self, entry_id: EntryId) -> None:
-        """Clear the verified flag of one entry a change affects; its approved flag stays."""
+        """Clear implementation evidence for a changed item and features it realizes."""
         held: Entry | None = self._entries.get(entry_id)
         if held is not None:
             self._entries[entry_id] = dirtied(held)
+        for realizing in self.incoming(entry_id, (REL_REALIZED_BY,)):
+            feature: Entry | None = self._entries.get(realizing.start)
+            if realizing.side == AUTHORITY_SIDE and feature is not None and feature.kind == KIND_FEATURE:
+                self._entries[feature.id] = dirtied(feature)
 
     def _dirty_described(self, document_id: EntryId, headings: frozenset[str]) -> None:
         """Clear the verified flag of each entry whose describing text in a document changed.
@@ -958,6 +969,8 @@ class Matrix:
         stored: Entry = _flags_settled(held, entry)
         _raise_problems([*entry_problems(stored), *self._id_stack_problems(stored)], f"the entry {entry.id}")
         self._entries[entry.id] = stored
+        if held is not None and stored.side == AUTHORITY_SIDE and not same_design(held, stored):
+            self._dirty(stored.id)
         headings: frozenset[str] | None = _changed_headings(held, stored)
         if headings is not None:
             self._dirty_described(stored.id, headings)
@@ -1367,6 +1380,143 @@ def lock_path(path: Path) -> Path:
     return path.parent / LOCK_DIRECTORY / f"{path.stem}{LOCK_SUFFIX}"
 
 
+def _source_stamp(path: Path) -> tuple[int, int, int, int, int]:
+    """Identify one atomic generation of the canonical matrix file.
+
+    Returns:
+        Device, inode, size, modification time and change time, with nanosecond precision.
+
+    """
+    state: os.stat_result = path.stat()
+    return state.st_dev, state.st_ino, state.st_size, state.st_mtime_ns, state.st_ctime_ns
+
+
+def _decode_cache(path: Path) -> Path:
+    """Locate disposable decoded data in the environment's temporary directory.
+
+    Returns:
+        A cache isolated by user, Python version and canonical source path.
+
+    """
+    identity: str = hashlib.sha256(str(path.resolve()).encode()).hexdigest()
+    return (
+        Path(tempfile.gettempdir()) / f"atw-matrix-{os.getuid()}" / f"{sys.implementation.cache_tag}-{identity}.marshal"
+    )
+
+
+def _json_primitive(value: object, seen: frozenset[int] = frozenset()) -> TypeGuard[JsonValue]:
+    """Reject non-JSON objects and cycles in an optional binary cache.
+
+    Returns:
+        Whether the decoded value contains only JSON primitives.
+
+    """
+    if value is None or type(value) in {bool, int, float, str}:
+        return True
+    if id(value) in seen:
+        return False
+    nested: frozenset[int] = seen | {id(value)}
+    if isinstance(value, list):
+        return all(_json_primitive(item, nested) for item in value)
+    if isinstance(value, dict):
+        return all(isinstance(key, str) and _json_primitive(item, nested) for key, item in value.items())
+    return False
+
+
+def _private_cache_state(state: os.stat_result, *, directory: bool) -> bool:
+    """Check ownership, private permissions and the expected cache filesystem object kind.
+
+    Returns:
+        Whether only the current user can access this regular file or directory.
+
+    """
+    kind: bool = stat.S_ISDIR(state.st_mode) if directory else stat.S_ISREG(state.st_mode)
+    return kind and state.st_uid == os.getuid() and state.st_mode & 0o077 == 0
+
+
+def _read_cache_payload(cache: Path) -> bytes | None:
+    """Read only a private current-user cache through descriptors that reject symlinks.
+
+    Returns:
+        The optional cache bytes, or None when its ownership, permissions or kind is invalid.
+
+    """
+    directory: int = os.open(cache.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        if not _private_cache_state(os.fstat(directory), directory=True):
+            return None
+        descriptor: int = os.open(cache.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        try:
+            if not _private_cache_state(os.fstat(descriptor), directory=False):
+                return None
+            with os.fdopen(descriptor, "rb", closefd=False) as handle:
+                return handle.read()
+        finally:
+            os.close(descriptor)
+    finally:
+        os.close(directory)
+
+
+def _cached_decode(cache: Path, stamp: tuple[int, int, int, int, int]) -> object:
+    """Read a matching disposable cache, returning None when it needs rebuilding.
+
+    Returns:
+        Primitive decoded JSON for the exact source generation, or None.
+
+    """
+    try:
+        payload: bytes | None = _read_cache_payload(cache)
+        if payload is None:
+            return None
+        cached: object = marshal.loads(payload, allow_code=False)  # ruff: ignore[suspicious-marshal-usage] - Private owned fd; code disabled.
+        if (
+            isinstance(cached, tuple)
+            and len(cached) == CACHE_ENVELOPE_FIELDS
+            and cached[0] == 1
+            and cached[1] == stamp
+            and _json_primitive(cached[2])
+        ):
+            return cached[2]
+    except OSError, ValueError, TypeError, EOFError, RecursionError, OverflowError:
+        return None
+    return None
+
+
+def _write_cache_payload(descriptor: int, stamp: tuple[int, int, int, int, int], decoded: JsonValue) -> None:
+    """Write primitive cache data and flush it before its atomic publication."""
+    with os.fdopen(descriptor, "wb") as handle:
+        handle.write(marshal.dumps((1, stamp, decoded), allow_code=False))
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _prepare_cache_directory(directory: Path) -> bool:
+    """Create the optional private directory without accepting an existing symlink.
+
+    Returns:
+        Whether its ownership, permissions and kind allow cache publication.
+
+    """
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return _private_cache_state(directory.lstat(), directory=True)
+
+
+def _cache_decode(cache: Path, stamp: tuple[int, int, int, int, int], decoded: JsonValue) -> None:
+    """Publish optional primitive decoded data atomically; cache failure leaves JSON authoritative."""
+    scratch: Path | None = None
+    try:
+        if not _prepare_cache_directory(cache.parent):
+            return
+        descriptor, temporary = tempfile.mkstemp(dir=cache.parent, prefix="decode-", suffix=".tmp")
+        scratch = Path(temporary)
+        _write_cache_payload(descriptor, stamp, decoded)
+        scratch.replace(cache)
+    except OSError, ValueError:
+        if scratch is not None:
+            with suppress(OSError):
+                scratch.unlink(missing_ok=True)
+
+
 def _decode(path: Path) -> object:
     """Read a matrix file as decoded JSON.
 
@@ -1379,6 +1529,11 @@ def _decode(path: Path) -> object:
     """
     message: str
     try:
+        stamp: tuple[int, int, int, int, int] = _source_stamp(path)
+        cache: Path = _decode_cache(path)
+        cached: object = _cached_decode(cache, stamp)
+        if cached is not None and _source_stamp(path) == stamp:
+            return cached
         text: str = path.read_text(encoding="utf-8")
     except OSError as error:
         message = f"cannot read the matrix {path}: {error}"
@@ -1388,6 +1543,11 @@ def _decode(path: Path) -> object:
     except json.JSONDecodeError as error:
         message = f"the matrix {path} is not JSON: {error}"
         raise MatrixError(message) from error
+    try:
+        if _json_primitive(decoded) and _source_stamp(path) == stamp:
+            _cache_decode(cache, stamp, decoded)
+    except OSError, RecursionError:
+        pass
     return decoded
 
 

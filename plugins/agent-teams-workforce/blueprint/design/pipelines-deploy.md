@@ -76,7 +76,7 @@ merge, and never merge yourself."
 
 ```mermaid
 flowchart TD
-    start(["keeper.py runs supervisor.py, whose deploy lane takes a Story whose Tasks are all built"]) --> look["deploy-mechanism: the polyrepo-steward rules what the Story's repository publishes and deploys, and names its publish command"]
+    start(["keeper.py runs supervisor.py, whose deploy lane takes a Story whose Tasks are all built"]) --> look["deploy-mechanism: read the repository's stack command declarations from the matrix"]
     look --> what{"What does the repository publish and deploy?"}
     what -->|"a custom Python library"| pub["A script runs the repository's publish command in the Story's worktree, on the Story's branch, before the deploy - section 2"]
     what -->|"CDK stacks only"| dep
@@ -162,7 +162,7 @@ sequenceDiagram
     autonumber
     participant K as keeper.py - supervisor.py deploy lane
     participant DW as Deploy of the Story
-    participant ST as deploy-mechanism - polyrepo-steward
+    participant ST as deploy_mechanism.py
     participant RUN as Publish script
     box Stores
         participant BD as beads
@@ -203,8 +203,8 @@ sequenceDiagram
 
 Notes on the diagram:
 
-- The `deploy-mechanism` workflow asks the `polyrepo-steward` whether the repository publishes a
-  package and deploys with CDK, and the publish command as the repository declares it. A script
+- The Python `deploy-mechanism` flow reads the matrix's stack command declarations for the repository:
+  a publish command means it publishes, and a deploy command means it deploys with CDK. A script
   runs that command and reports its exit status and output; running a command needs no reasoning.
 - The publish runs from the Story's worktree on the Story's branch, after the workspace step and
   before `cdk synth`, the deploy, the verification, the built record and the pull request. It runs
@@ -621,7 +621,7 @@ sequenceDiagram
 
     KP->>BD: reads the Story and its Tasks
     PB->>MX: reads whether the stack is a shared library, and its test command
-    PB-)AWS: runs the publish command the polyrepo-steward named, which publishes to CodeArtifact
+    PB-)AWS: runs the repository's recorded publish command, which publishes to CodeArtifact
     DP->>MX: reads stacks, SSM parameter names, writing and reading stacks
     DP->>G: synthesizes from the Story's branch
     DP-)AWS: deploys stacks in dependency order, which read and write SSM parameters
@@ -661,7 +661,7 @@ knows to deploy a story."; `ops/sdlc-automation/keeper.py`, `supervisor.py`, `se
 | Role | Who fills it | Reason it is used |
 |---|---|---|
 | Starts the deploy of a Story, starts the verification of what it built, and closes the Story bead | The deploy lane of `supervisor.py`, which `keeper.py` runs (the owner: "keeper is what knows to deploy a story"; `selection.select_deploy`, `storydeploy.py`) | Knows the Story's Tasks are all built, and is the one setter of bead states |
-| Rules what the repository publishes and deploys, and names its publish command | `polyrepo-steward`, through the `deploy-mechanism` workflow | Its subject: the project's repositories and what each declares |
+| Reads what the repository publishes and deploys, and its publish command | `orchestrator/flows/deploy_mechanism.py` | The matrix's repository stack command declarations |
 | Runs the publish command and `cdk deploy` | A script | Running a named command needs no reasoning |
 | Writes the smoke tests | `smoke-test-author`, before the deploy | Its subject: smoke tests of a change's critical paths, parameterized by environment variables so they run against the deployment |
 | Decides that the deployment works | A script: every stack complete and the smoke tests passing | Deploy success alone does not show the code runs |

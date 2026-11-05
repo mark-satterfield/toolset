@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema and composites.json this module was generated from.
-SOURCE_SHA256: Final[str] = "5c197b79b56b517e2b627a80d3c18baae1835ca5073857d194b22eef1f6b799c"
+SOURCE_SHA256: Final[str] = "9f574d32363e2d20f902960ea10e2556c0d62ebc04bc871b9a00fda19a4ef5f3"
 
 #: Every composite id, active then retired.
 type CompositeId = Literal[
@@ -155,7 +155,7 @@ COMPOSITES: Final[Mapping[CompositeId, CompositeSpec]] = MappingProxyType({
         "openingKind": "epic",
     },
     TASK_TO_DEPLOY: {
-        "runner": "workflow",
+        "runner": "orchestrator",
         "phases": (
             {"id": "workspace", "title": "Workspace"},
             {"id": "infra-intent", "title": "Infra Intent"},
@@ -169,7 +169,7 @@ COMPOSITES: Final[Mapping[CompositeId, CompositeSpec]] = MappingProxyType({
             {"id": "documentation", "title": "Documentation"},
             {"id": "commit", "title": "Commit"},
         ),
-        "sets": frozenset({"target-repo", "code-build", "repo-required", "design-aware"}),
+        "sets": frozenset({"orchestrated", "target-repo", "code-build", "repo-required", "design-aware"}),
         "openingKind": "task",
     },
     STORY_DEPLOY: {
@@ -191,26 +191,26 @@ COMPOSITES: Final[Mapping[CompositeId, CompositeSpec]] = MappingProxyType({
         "sets": frozenset({"story"}),
     },
     STORY_DEPLOY_FIX: {
-        "runner": "workflow",
+        "runner": "orchestrator",
         "phases": (
             {"id": "fix", "title": "Fix"},
             {"id": "commit", "title": "Commit"},
         ),
-        "sets": frozenset({"story"}),
+        "sets": frozenset({"orchestrated", "story"}),
     },
     DEPLOY_MECHANISM: {
-        "runner": "workflow",
+        "runner": "orchestrator",
         "phases": ({"id": "ask", "title": "Ask"},),
-        "sets": frozenset({"story"}),
+        "sets": frozenset({"orchestrated", "story"}),
     },
     BUILT_VERSION: {
-        "runner": "workflow",
+        "runner": "orchestrator",
         "phases": (
             {"id": "compare", "title": "Compare"},
             {"id": "correct", "title": "Correct"},
             {"id": "remove", "title": "Remove"},
         ),
-        "sets": frozenset({"story"}),
+        "sets": frozenset({"orchestrated", "story"}),
     },
     PROBE: {
         "runner": "probe",
@@ -241,7 +241,13 @@ EVENT_PHASES: Final[Mapping[CompositeId, tuple[PhaseId, ...]]] = MappingProxyTyp
 
 # Role sets.
 #: The orchestrated set.
-ORCHESTRATED: Final[frozenset[CompositeId]] = frozenset({PRD_TO_SPEC})
+ORCHESTRATED: Final[frozenset[CompositeId]] = frozenset({
+    PRD_TO_SPEC,
+    TASK_TO_DEPLOY,
+    STORY_DEPLOY_FIX,
+    DEPLOY_MECHANISM,
+    BUILT_VERSION,
+})
 #: The target-repo set.
 TARGET_REPO: Final[frozenset[CompositeId]] = frozenset({TASK_TO_DEPLOY})
 #: The code-build set.

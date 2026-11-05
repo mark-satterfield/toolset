@@ -3,7 +3,7 @@
   "agents": [
     {
       "name": "acceptance-criteria-coverage-assessor",
-      "description": "Establishes, before any test is written, which acceptance criteria the repository's existing tests already encode and which are gaps, and — when every criterion is covered — runs only those tests and rules whether they are red, already-satisfied or not-encoded. Use before Red to avoid duplicate tests or a manufactured red for behaviour that already exists. Never writes or repairs a test.",
+      "description": "Reviews existing and newly authored suite coverage, including happy, negative, edge and boundary cases. Distinguishes poor tests and setup from product defects and environment failures using actual execution evidence. Reports findings without repairing tests or product code.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -545,7 +545,7 @@
     },
     {
       "name": "aws-integration-test-writer",
-      "description": "Writes failing integration tests covering the event delivery path the effective architecture describes, hop by hop. Use for Test Design work requiring AWS integration test authoring, event-driven flow assertions, and test harness design.",
+      "description": "Writes and improves integration tests covering the event delivery path the effective architecture describes, hop by hop. Use for Test Design work requiring AWS integration test authoring, event-driven flow assertions, and test harness design.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -1001,7 +1001,7 @@
     },
     {
       "name": "consumer-driven-contract-test-writer",
-      "description": "Writes failing consumer-driven contract tests from the spec's API and event contracts. Use for Test Design work requiring contract test authoring, consumer expectation modeling, and provider verification setup.",
+      "description": "Writes and improves consumer-driven contract tests from the spec's API and event contracts. Use for Test Design work requiring contract test authoring, consumer expectation modeling, and provider verification setup.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -1168,7 +1168,7 @@
     },
     {
       "name": "data-pipeline-test-writer",
-      "description": "Writes failing data pipeline tests — ETL correctness, CDC ordering, data quality, replay safety — confirming each fails for the intended reason. Use for Test Design work requiring pipeline test authoring, data quality assertions, and replay-safety checks.",
+      "description": "Writes and improves data pipeline tests — ETL correctness, CDC ordering, data quality, replay safety — recording actual outcomes against the required behavior. Use for Test Design work requiring pipeline test authoring, data quality assertions, and replay-safety checks.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -1571,7 +1571,7 @@
     },
     {
       "name": "espresso-test-writer",
-      "description": "Writes failing Espresso suites for Android features from spec acceptance criteria, confirming each test fails for the intended reason. Use for Test Design work requiring Espresso authoring, Android UI coverage, Compose semantics matchers, and Red confirmation.",
+      "description": "Writes and improves Espresso suites for Android features from spec acceptance criteria, recording actual outcomes against required behavior. Use for Test Design work requiring Espresso authoring, Android UI coverage, Compose semantics matchers, and suite outcome analysis.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -2186,7 +2186,7 @@
     },
     {
       "name": "ml-evaluation-tester",
-      "description": "Writes and runs ML evaluation suites — matching quality, recommendation relevance, embedding drift — confirming each fails before the component exists. Use for Test Design work requiring ML evaluation design, metric/threshold encoding, dataset construction, and drift detection.",
+      "description": "Writes and runs ML evaluation suites — matching quality, recommendation relevance, embedding drift — reviewing existing coverage and recording actual outcomes. Use for Test Design work requiring ML evaluation design, metric/threshold encoding, dataset construction, and drift detection.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -2258,7 +2258,7 @@
     },
     {
       "name": "mobile-e2e-test-writer",
-      "description": "Writes failing Detox and Maestro E2E tests for React Native and cross-platform mobile flows before implementation, confirming each fails for the intended reason. Use for Test Design work requiring mobile E2E authoring, Detox and Maestro scripting, and Red confirmation.",
+      "description": "Writes and improves Detox and Maestro E2E tests for React Native and cross-platform mobile flows in existing-suite context, recording each outcome for the intended reason. Use for Test Design work requiring mobile E2E authoring, Detox and Maestro scripting, and suite outcome analysis.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -2393,7 +2393,7 @@
     },
     {
       "name": "performance-benchmark-writer",
-      "description": "Writes failing performance benchmarks with budgets from the spec's non-functional requirements. Use for Test Design work requiring benchmark authoring, NFR-to-budget translation, and Red confirmation.",
+      "description": "Writes and improves performance benchmarks with budgets from the spec's non-functional requirements. Use for Test Design work requiring benchmark authoring, NFR-to-budget translation, and suite outcome analysis.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -2471,7 +2471,7 @@
     },
     {
       "name": "playwright-e2e-web-test-writer",
-      "description": "Writes failing Playwright E2E web tests for UI and API flows from spec acceptance criteria. Use for Test Design work requiring E2E test authoring, user journey coverage, and Red confirmation.",
+      "description": "Writes and improves Playwright E2E web tests for UI and API flows from spec acceptance criteria. Use for Test Design work requiring E2E test authoring, user journey coverage, and suite outcome analysis.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -2880,7 +2880,7 @@
     },
     {
       "name": "security-test-case-designer",
-      "description": "Designs failing security test cases from the threat model: abuse cases, negative paths, authorization matrices. Use for Test Design work requiring threat-model-driven test design, abuse case coverage, and authorization matrix verification.",
+      "description": "Designs and improves security test cases from the threat model: abuse cases, negative paths, authorization matrices. Use for Test Design work requiring threat-model-driven test design, abuse case coverage, and authorization matrix verification.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -3058,7 +3058,7 @@
     },
     {
       "name": "tdd-unit-test-generator",
-      "description": "Writes failing unit tests, including cdk synth assertion tests of CDK stacks, from acceptance criteria before the implementation exists and confirms each fails for the intended reason; and, in update mode, rules on every existing test of any kind an implementer names (update, delete or keep, citing the contract) and applies the ruling. Python and TypeScript, back end, front end and CDK.",
+      "description": "Reviews, writes and refactors unit tests, including CDK assertion tests, within the existing suite against the full requirements and design; in update mode, rules on every existing test of any kind an implementer names (update, delete or keep, citing the contract) and applies the ruling. Python and TypeScript, back end, front end and CDK.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
@@ -3086,7 +3086,7 @@
     },
     {
       "name": "test-design-lead",
-      "description": "Routes spec acceptance criteria to test writers, confirms Red (every new test fails), and assembles the Red readiness packet. Use for Test Design work requiring delegation and criterion-to-test routing.",
+      "description": "Routes requirements and design to test writers working in the existing suite, and assembles trustworthy coverage evidence. Use for Test Design work requiring delegation and criterion-to-test routing.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:agent-orchestration",
@@ -3110,14 +3110,6 @@
         "aws-mcp",
         "awslabs-dynamodb-mcp-server"
       ]
-    },
-    {
-      "name": "test-failure-parser",
-      "description": "Reads the saved output of one test-suite run and names every failure it reports — each failing test, and each test file the runner could not load — with the output line that names it and the runner's final summary, whatever the test runner. Never reruns the suite, fixes code or changes the log.",
-      "skills": [
-        "agent-teams-workforce:subagent-contract"
-      ],
-      "mcpServers": []
     },
     {
       "name": "test-isolation-specialist",
@@ -3324,14 +3316,6 @@
       ]
     },
     {
-      "name": "workflow-command-runner",
-      "description": "Executes one workflow-supplied checksum-guarded deterministic command and returns its exact compact machine receipt; never interprets or authors its payload.",
-      "skills": [
-        "agent-teams-workforce:artifact-handoff"
-      ],
-      "mcpServers": []
-    },
-    {
       "name": "workflow-orchestration-designer",
       "description": "Answer a question or do a bounded piece of design for the solutions architect on AWS Step Functions: Standard or Express workflows, state machine structure in Amazon States Language, service integration patterns, retries and catches, sagas and compensation, Map and Parallel states, callbacks, and execution logging.",
       "skills": [
@@ -3387,7 +3371,7 @@
     },
     {
       "name": "xcuitest-writer",
-      "description": "Writes failing XCUITest suites for iOS features from spec acceptance criteria pre-implementation, confirming each fails for the intended reason. Use for Test Design work requiring XCUITest authoring, iOS UI flow coverage, accessibility-identifier queries, and Red confirmation.",
+      "description": "Writes and improves XCUITest suites for iOS features from spec acceptance criteria in existing-suite context, recording each observed reason. Use for Test Design work requiring XCUITest authoring, iOS UI flow coverage, accessibility-identifier queries, and Red confirmation.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",

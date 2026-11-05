@@ -8,6 +8,11 @@ user-invocable: true
 
 Tests are executable specifications. A failing test is a diagnostic signal, not an automatic instruction to change either code or test.
 
+Review the existing suite and newly authored tests together. New tests can be poorly designed,
+assert the wrong contract, miss boundary cases or fail through setup and environment defects.
+Happy, negative, edge and boundary coverage and architecture/code quality still require review
+when all tests pass. No sabotage or manufactured initial failure is required.
+
 ## Dual Hypothesis
 
 Always consider both possibilities:

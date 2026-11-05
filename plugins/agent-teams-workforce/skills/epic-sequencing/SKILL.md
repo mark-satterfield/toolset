@@ -3,7 +3,7 @@ name: epic-sequencing
 description: >-
   The rule that orders Epics, and how to apply it to ONE Epic. Epic order comes from the matrix
   only: an item two or more Epics need (a feature serving their requirements, or an
-  architecture entry they reach by the rule of reach) whose architecture is not approved orders
+  architecture entry they reach by the rule of reach) orders
   them by the judgment recorded for it, a drives relationship from the Epic that goes first
   with basis owns or shared; every other Epic that needs the item waits for that Epic. An item
   with no recorded judgment orders nothing. Use when proposing, reviewing or correcting the
@@ -29,7 +29,7 @@ produced it.
 - Architecture is not fixed: later Epics may change shared architecture. `approved` and
   `verified` are plain yes/no marks, and nothing is approved yet, by design.
 - Epic-to-Epic edges exist so that (1) an Epic waits for the Epic that builds and owns
-  something it uses, and (2) two Epics never work on the same unapproved shared item at the
+  something it uses, and (2) two Epics never work on the same ordered shared item at the
   same time.
 - There is no fixed answer. For each shared item, either one Epic builds and owns it and the
   others use it, or the Epics share it independently (like two Epics whose Lambdas both need
@@ -48,9 +48,8 @@ lists those Epics, the standing edges to or from them and those items.
 1. The shared items are listed by `atw-matrix shared-items`: each feature that serves a
    requirement of two or more Epics, and each architecture-side entry two or more Epics reach by
    the rule of reach, with the Epics that need it and the requirements through which each does.
-2. An item whose architecture is approved makes no edge. A feature is approved when it is
-   `realizedBy` at least one architecture-side entry and every one carries the `approved` mark;
-   an entry, when it carries the mark.
+2. Approval and verified marks take no part in ordering. The same shared item and judgment
+   make the same edges before and after either mark changes.
 3. The judgment for an item is the one architecture-side `drives` relationship from an Epic F
    to the item, with `basis` `owns` (F builds and owns the item; the others use it) or `shared`
    (the Epics share it independently; F merely goes first) and a one-sentence `reason`, made
@@ -68,7 +67,7 @@ lists those Epics, the standing edges to or from them and those items.
 
 ## Recording judgments
 
-`atw-matrix shared-items --batches <folder>` writes the unapproved shared items no record
+`atw-matrix shared-items --batches <folder>` writes the shared items no record
 decides, outside every stack deployed in advance, in batches of about 25 items (items whose sets
 of Epics are identical stay in one batch), with `index.json`. Each item carries its id, kind,
 name, purpose and stack, and for each Epic that needs it the requirements through which it does;
@@ -95,14 +94,14 @@ relationships (the `matrix` skill holds the model). The Epic-to-Epic edge is a b
 edge and never a matrix relationship. The judgment is a `drives` from an Epic to an item, not
 to another Epic.
 
-Only the `approved` mark removes the need for an edge: a document at `lifecycle: effective` or
-an entry existing does not. A new Epic's architecture changing an item clears its `approved` mark
-and leaves its `drives` judgment as it is.
+Neither approval nor verification changes the need for an edge. Architecture changes leave
+the `drives` judgment in force until a new judgment changes it. The `matrix` skill defines
+both marks.
 
 ## What an edge decides
 
 - **The dependency graph decides ELIGIBILITY**: what may be elaborated at all. An Epic waits
-  until the Epic that goes first on every unapproved shared item it needs is elaborated. Each edge is stored
+  until the Epic that goes first on every ordered shared item it needs is elaborated. Each edge is stored
   as a beads `tracks` edge on the waiting Epic. `tracks` is non-blocking, so an Epic edge orders
   elaboration and never holds the Stories or Tasks beneath an Epic out of `atw-bd ready`; their
   build order is their own Task-to-Task `blocks` edges.
@@ -112,7 +111,7 @@ and leaves its `drives` judgment as it is.
 ## The test
 
 Set an edge from A to B exactly when the matrix records a shared item that both A and B need,
-its architecture is not approved, its stack is not deployed in advance, and A goes first on it
+its stack is not deployed in advance, and A goes first on it
 by its recorded judgment or by the owner's decision for its stack. Nowhere else: not for an
 item no judgment decides, not for importance, not for something that must exist, be built, be
 deployed or be read first (those are Task dependencies), not because a document names both
@@ -134,7 +133,7 @@ this one, and its `standing` and `withdrawn` lists are the edges on the Epic.
    first, the basis, the reason, and whether it is a judgment on the item or the owner's decision
    for its stack). When it lists none, say so in the reasoning and write an edge file with no
    edges.
-2. Drop every approved item and every item whose stack is deployed in advance.
+2. Drop every item whose stack is deployed in advance. Keep items regardless of either mark.
 3. For each item left with a decision, draw the edges that touch this Epic: when this Epic goes
    first, an edge from it to every other Epic that needs the item; otherwise one edge from the
    Epic that goes first to this Epic. The edges several items make between one pair are one edge.
@@ -156,12 +155,12 @@ tracker or the matrix, and records no judgment.
 The edge file's one definition is artifact-handoff's `schemas/epic-edge-proposal.schema.json`:
 its descriptions say what `edges` and `withdrawn` hold and what every member means. A reason
 names the item, the Epic that goes first, the basis and the recorded reason, for example
-"stack:<stack>: <beads id> goes first, owns (the owner's decision for the stack); its
-architecture is not approved". A withdrawal's reason says why the rule does not draw
+"stack:<stack>: <beads id> goes first, owns (the owner's decision for the stack)".
+A withdrawal's reason says why the rule does not draw
 the edge, for example "the only shared item both Epics need has no recorded judgment".
 
 Alongside the file, write the reasoning in prose: the shared items the Epic needs, for each the
-Epics that need it, its approval, its decision, and every edge kept, drawn or withdrawn, and the
+Epics that need it, its decision, and every edge kept, drawn or withdrawn, and the
 unjudged items.
 
 ## Checks before handing it over
@@ -169,21 +168,20 @@ unjudged items.
 - Every id is an Epic the matrix holds (`atw-matrix epic <id>`).
 - Every edge touches the assessed Epic.
 - Every edge carries its `archCheck`: the id of the shared item that makes it, the recorded
-  decision that names `from` as the Epic that goes first, and that the item's architecture is
-  not approved. The item is needed by both Epics.
+  decision that names `from` as the Epic that goes first. The item is needed by both Epics;
+  approval and verification are irrelevant.
 - Every owned standing edge is kept or withdrawn, and every edge and withdrawal carries a
   reason.
 - No edge onto a closed Epic, and none out of one.
 
 ## Errors to avoid
 
-- Adding an edge for anything but a decided, unapproved shared item: an unjudged item,
+- Adding an edge for anything but a decided shared item: an unjudged item,
   importance, a total order, a build fact, a data flow, a document both PRDs mention, or a
   repository's or stack's name.
 - Choosing who goes first yourself, or from counts of requirements or Epics. Only a recorded
   judgment or the owner's decision for the stack decides it.
 - Leaving out an edge a recorded decision draws because the fan-out looks large.
-- Reading approval from anything but the `approved` mark: a document at `lifecycle: effective`
-  or an entry existing is not approval.
+- Removing or adding an edge because an approval or verified mark changed.
 - Scoring anything. Value and size belong to the `wsjf` rubric, and RR-OE is computed from
   the edges.

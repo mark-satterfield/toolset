@@ -271,11 +271,10 @@ def _run_approval(call: Call) -> Outcome:
     """Run ``approval``.
 
     Returns:
-        The matrix content the Epic reaches, split into what carries the approved flag and what
-        does not.
+        The named architecture items, split by their approved mark.
 
     """
-    return Outcome(approval_view(read_matrix(call.matrix()), call.required("epic")))
+    return Outcome(approval_view(read_matrix(call.matrix()), call.entries("ids")))
 
 
 def _run_uses(call: Call) -> Outcome:
@@ -460,9 +459,9 @@ def _read_parsers(
     approval: argparse.ArgumentParser = commands.add_parser(
         "approval",
         parents=[where],
-        help="the matrix content an Epic reaches, approved and not approved",
+        help="the approval marks on named features and architecture items",
     )
-    approval.add_argument("--epic", required=True, help="the Epic's beads id")
+    approval.add_argument("--ids", nargs="+", required=True, help="the feature or architecture entry ids")
     scope: argparse.ArgumentParser = commands.add_parser(
         "story-scope",
         parents=[where],

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object", "additionalProperties": false,
+  "required": ["differences", "files", "summary"],
+  "properties": {
+    "differences": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["element", "effectiveViews", "built", "citations", "file"],
+      "properties": {
+        "element": {"type": "string"}, "itemId": {"type": "string"},
+        "effectiveViews": {"type": "array", "items": {"type": "string"}},
+        "built": {"type": "string"}, "citations": {"type": "array", "items": {"type": "string"}},
+        "file": {"type": "string"}
+      }
+    }},
+    "files": {"type": "array", "items": {"type": "string"}}, "summary": {"type": "string"}
+  }
+}

@@ -58,7 +58,7 @@ steward's organization record.
 `archive-due` archives every deprecated repo that is due (the project's scheduled
 `archive-due` job runs it daily too, so `doctor --fix` catches up a missed day).
 It then
-repairs the matrix's stacks and commits the matrix: `stack-missing` records the stack
+repairs the local matrix's stacks: `stack-missing` records the stack
 (repository side, purpose not stated), and `stack-repository-inactive` removes a hint stack that holds nothing or else unsets its
 repository.
 `beads-fleet --fix` removes every listed path that is missing or not an active fleet repo

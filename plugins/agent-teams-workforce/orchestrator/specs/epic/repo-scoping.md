@@ -111,8 +111,7 @@ The order is fixed, and only the stacks of what the Stories build are reached:
    starts at this step again.
 6. When the created repository's name differs from the one recorded, the step records it on each
    stack (`put stack --repository`).
-7. The matrix file is committed and pushed (`atw-matrix commit`, naming the Epic), so the names
-   recorded in steps 2 and 6 are in the control repository.
+7. The locked local matrix writes in steps 2 and 6 are complete and visible to later readers.
 8. Only then are the spec steps planned.
 
 A stack arc42 names that has no repository, and in which no Story builds, is never touched.
@@ -125,7 +124,6 @@ A stack arc42 names that has no repository, and in which no Story builds, is nev
 | `<work>/repo-scoping.json` | `span` | one placement per repository: its path, name, item ids and whether it is a frontend repository |
 | `<work>/repo-creation.json` | `repository creation` | only when a repository had to be created: what was created and what failed |
 | | `repositories` (value) | the repository paths of the span, in order |
-| | `matrix commit` (value) | the control-repository commit, when the matrix file was committed or pushed |
 
 ## What the step plans
 

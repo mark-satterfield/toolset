@@ -1,110 +1,41 @@
 ---
 description: "Assess the Epic-to-Epic edges of one Epic"
 argument-hint: "<epic-id> [--propose]"
-allowed-tools: [Bash, Workflow]
+allowed-tools: [Bash, Read, Write]
 ---
 
 # Dependency assessment
 
-Assess the Epic-to-Epic edges of one Epic in the beads tracker of the repository you are
-standing in, by dispatching the `dependency-assessment` workflow. The rule is the
-`agent-teams-workforce:epic-sequencing` skill's: a shared item two or more Epics need (a feature serving their requirements, or an architecture entry they reach by the rule of reach) whose architecture is not approved orders them by the judgment the matrix records for it: every other Epic that needs it waits for the Epic its `drives` judgment (basis owns or shared), or the owner's decision for its stack, names; an item with no record orders nothing. The workflow writes the Epic's edges to beads. It writes nothing to the matrix and scores
-nothing.
+The owner invokes this command for one Epic. Preserve the existing apply behavior: it writes
+that Epic's assessed edges unless `--propose` is present, which returns the diff without writing.
+The driver does not call it. Epic ordering follows the recorded shared-item judgments and does
+not depend on architecture approval or verified marks.
 
-The owner runs this command; the driver never dispatches the workflow. The order of every Epic
-is set before `keeper.py` runs by `scripts/portfolio/epicorder.py`, which computes it by the same
-rule from the matrix alone, and its `--apply` removes every Epic-to-Epic edge in beads, this
-command's included, and writes the computed ones. WSJF is scored once, before `keeper.py` runs,
-by the owner's own `/agent-teams-workforce:wsjf-scoring`.
+Require exactly one Epic ID. Read `pipeline-contracts` and `epic-sequencing`. Resolve the current
+repository with `git rev-parse --show-toplevel`, use `${CLAUDE_PLUGIN_ROOT}` as the plugin root,
+and create a unique run directory under the repository's `.claude/workflow-runs/dependency-assessment/`.
+Read the required project environment names from the generated driver-surface contract; preserve
+the current environment, including the PRD/vault location used by the matrix context reader.
 
-`<epic-id>` is required: the one Epic to assess. Report the usage and stop without it. The
-epic-dependency-assessor lists the shared items the Epic needs, the other Epics that need each,
-their approval and their recorded decisions (`atw-matrix shared-items --epic`); for every
-unapproved shared item a record decides it draws the edges that touch the Epic, and it lists the
-unjudged items. It keeps or withdraws, with a reason, every owned edge standing on
-it. Code refuses any edge that does not touch the Epic, a loop, an unaccounted standing edge
-and a missing reason, and writes only that Epic's edges. Hand-made edges are never touched.
-The session checks its proposal with the validate command and writes nothing to beads or the
-matrix. The workflow validates the proposal and runs apply-edges, which validates it again and
-writes nothing unless it passes. The Epic-to-Epic edge is a beads `tracks` edge, and the matrix
-records no Epic-to-Epic relationship.
-A proposal that does not validate stops the run, naming the Epic and each finding, and writes
-nothing.
+Write `args.json` in the run directory with these exact fields:
 
-It writes, unless `--propose` is given.
+- `repoPath`: the absolute repository root.
+- `pluginRoot`: the absolute installed plugin root.
+- `workDir`: the unique absolute run directory.
+- `epic`: the requested Epic ID.
+- `apply`: false only for `--propose`; true otherwise.
+- `archPath` and `projectRoot`: include the configured values when present.
 
-- `--propose` passes `apply: false`: the workflow computes the edge diff as a dry run,
-  returns it, and writes nothing — no edge, no reason, no matrix relationship.
-
-## Dispatch
-
-The environment variables read below are named and described by the `pipeline-contracts` skill
-(`${CLAUDE_PLUGIN_ROOT}/skills/pipeline-contracts/SKILL.md`, schema
-`schemas/driver-surface.schema.json`, `$defs.DriverEnvironment`). The block reads each name from
-that skill's generated module (`PRD_DIR_ENV`, `ARCH_PATH_ENV`, `PROJECT_ROOT_ENV`); never type a
-name from memory. The PRD folder is required: the matrix holds each PRD's path relative to the
-vault that folder is in, and the workflow's context step locates the vault from it. The other
-two are optional: the matrix, not the architecture folder, is what the assessment reads.
+Run the owner command once through Bash:
 
 ```bash
-CONTRACTS="${CLAUDE_PLUGIN_ROOT}/skills/pipeline-contracts/scripts"
-{ read -r PRD_VAR; read -r PRD_DIR; read -r ARCH; read -r PROJECT; } < <(PYTHONPATH="$CONTRACTS" python3 -c 'import os, driver_surface_types as d; print(d.PRD_DIR_ENV); print(os.environ.get(d.PRD_DIR_ENV, "")); print(os.environ.get(d.ARCH_PATH_ENV, "")); print(os.environ.get(d.PROJECT_ROOT_ENV, ""))')
-if [ -z "${PRD_VAR}" ]; then
-  echo "REFUSED: the pipeline-contracts skill could not be loaded from ${CONTRACTS}."
-  exit 1
-fi
-if [ -z "${PRD_DIR}" ]; then
-  echo "REFUSED: ${PRD_VAR} is not set. /agent-teams-workforce:dependency-assessment reads each Epic's PRD at the path the matrix holds for it, which is relative to the vault that folder is in. Export ${PRD_VAR} in your shell environment and start a new session."
-  exit 1
-fi
-REPO="$(git rev-parse --show-toplevel)"
-RUN="$(date -u +%Y%m%dT%H%M%SZ)"
-echo "REPO=$REPO"
-echo "ROOT=${CLAUDE_PLUGIN_ROOT}"
-echo "RUN=$RUN"
-echo "ARCH=${ARCH}"
-echo "PROJECT=${PROJECT}"
+"${CLAUDE_PLUGIN_ROOT}/bin/atw-portfolio" dependency-assessment --args "<run>/args.json" --output "<run>/result.json"
 ```
 
-When the block prints `REFUSED`, report that line verbatim and stop; dispatch nothing.
+`portfolio.py` runs the deterministic plan, context, validation and apply/diff commands directly.
+Only the Epic dependency judgment starts a reasoning agent. It uses the shared edge-proposal
+schema and validates the accepted proposal before any tracker mutation.
 
-Use the printed values below. Leave `archPath` out when it printed empty, and `projectRoot`
-likewise. `<REPO>` is the control repository: its tracker holds the Epics, and its
-`ops/sdlc-automation/matrix.json` is the matrix the workflow reads.
-
-```
-Workflow({name: "agent-teams-workforce:dependency-assessment", args: {
-  repoPath:    "<REPO>",
-  pluginRoot:  "<ROOT>",
-  workDir:     "<REPO>/.claude/workflow-runs/dependency-assessment/<RUN>",
-  archPath:    "<ARCH>",
-  projectRoot: "<PROJECT>",
-  epic:        "<epic-id>",
-  apply:       false         (with --propose only)
-}})
-```
-
-## Report back
-
-From the workflow's result:
-
-- `edges` — the counts `added`, `converted`, `removed`, `withdrawn` and `unchanged`. The
-  edges themselves are in the file `edges.resultFile` names: every edge added, converted or
-  removed as `blocker -> blocked` from its `plan.add`, `plan.convert` and `plan.remove`, and
-  every withdrawal with its reason from its `withdrawn`. Then the reasoning file
-  (`edges.reasoning`), which holds the shared items, their Epics, their approval
-  and the recorded decision of each, and the unjudged items. When `edges.applied` is false, its `reason`, or the validation
-  defects.
-- `stop` — when the proposal did not validate: the Epic and every finding in
-  `stop.findings`, with the `edgesFile` and `validationFile`, and what a person does: correct
-  the PRD, or the hand-made edge a cycle runs through, then assess the Epic again.
-- With `--propose`: `edges.proposed`, then the counts and the edges read from
-  `edges.resultFile` as above — there they are the diff that would be written — the proposed
-  edge set with its reasons (`edgesFile`) and the reasoning (`reasoning`).
-- `error` and `dispatchFailures`, verbatim, when present.
-
-## Never
-
-- Score anything, or start `wsjf-scoring`.
-- Write to the tracker with `--propose`.
-- Start a pipeline run, a supervisor, a keeper or the dashboard from here.
+Read the result file and report the added, converted, removed and unchanged edges, whether they
+were applied or proposed, the proposal path and any validation findings. A rejected proposal
+leaves the tracker unchanged. Do not invoke a Workflow or a command-runner agent.

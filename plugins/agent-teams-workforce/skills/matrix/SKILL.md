@@ -22,7 +22,8 @@ components, infrastructure, events, stacks, packages, layers and repositories re
 step scans documents or code to find out. It is read and written **only** through
 `${CLAUDE_PLUGIN_ROOT}/bin/atw-matrix <sub-command>`, which prints one JSON object. The file is
 found from `--matrix`, else `ATW_MATRIX`, else `ATW_CONTROL_REPO`. Every sub-command lists its
-options with `--help`.
+options with `--help`. This is machine-local current state, ignored by git; it is neither
+committed nor pushed. Worktree sessions use the same resolved file.
 
 What the code does outranks this page: the kinds are
 `skills/artifact-handoff/schemas/matrix-kinds.json`, the commands `scripts/portfolio/matrix.py`
@@ -56,7 +57,7 @@ it has (`shared-` names what is sharable at enterprise level, but `SkillSpoke-*`
 shared too): a feature that serves a requirement of each, or an architecture entry each reaches by
 the rule of reach (below). Architecture is not fixed: later Epics may change shared architecture.
 Epic-to-Epic edges exist so that an Epic waits for the Epic that builds and owns something it
-uses, and so that two Epics never work on the same unapproved shared item at the same time. For
+uses, and so that two Epics never work on the same ordered shared item at the same time. For
 each shared item, either one Epic builds and owns it and the others use it, or the Epics share it
 independently (like two Epics whose Lambdas both need the VPC). That is a judgment from the
 Epics' requirements, recorded as a `drives` from the Epic that goes first to the item (see
@@ -91,9 +92,9 @@ with direction and meaning, are in [references/model.md](references/model.md).
 | What a Story building some entries of a stack must be handed | `atw-matrix story-scope --stack stack:<id> --ids <id> ...` |
 | Documents an Epic reaches that are not effective | `atw-matrix review-scope --epic <beads id>` |
 | The text of document headings, as the vault's last commit holds them | `atw-matrix heading '<path>#<heading>' ...` (a path alone prints the whole document) |
-| Which of an Epic's content is approved, by the rule of reach | `atw-matrix approval --epic <beads id>` |
+| Whether named features and architecture items are approved | `atw-matrix approval --ids <entry id> ...` |
 | The shared items (two or more Epics need them), each with its Epics, the requirements through which each needs it, and what decides who goes first | `atw-matrix shared-items [--epic <beads id>]` |
-| The unapproved shared items no record decides, in batches for judging | `atw-matrix shared-items --batches <folder> [--batch-size 25]` |
+| The ordered shared items no record decides, in batches for judging | `atw-matrix shared-items --batches <folder> [--batch-size 25]` |
 | Open Tasks that name an entry / that a change affects / what a Story built | `atw-matrix work --id <id>` / `affected --id <id>` / `built --story <id>` |
 | Counts; repository-side entries with no architecture counterpart | `atw-matrix summary [--unlinked]` |
 | Does the file meet its contract? | `atw-matrix check` |
@@ -115,9 +116,9 @@ requirements is `realizedBy` the entry. It reaches a stack when an entry so reac
 stack or has its home in it (`homeIn` on the architecture side, else on the repository side).
 It reaches the direct far end of each dependency that starts at such an entry or stack, one
 hop, never the dependency family outward. Document headings (`covers`, `describedBy`) and
-`supportedBy` carry no reach. This is the Epic's approval scope
-(`matrixtraverse.approval_scope`): what `atw-matrix approval --epic` lists, what the architect
-reviews and what promotion approves. `atw-matrix epic <id> --realizers` lists, for each feature
+`supportedBy` carry no reach. This identifies the architecture the architect must review for
+the requirements in hand. Review reach never makes approval an Epic property: promotion
+records approval on the individual architecture items reviewed. `atw-matrix epic <id> --realizers` lists, for each feature
 that serves the Epic's requirements, the ends of its `realizedBy`, each with its stack.
 
 Example: Epic `ssbd-mb689` reaches `component:chat-turn-worker` because
@@ -150,38 +151,38 @@ feature with no covering document), `requirementsReachNothing`, `requirementsNoS
 
 ## Approved, verified, effective and side
 
+`approved` means the architecture agent has vetted the architecture for a feature or
+component, including arc42 and the architecture and design documents that describe it.
+Approval belongs to that item and remains valid for every Epic that overlaps it. A new Epic
+alone never withdraws approval. Only a change to that specific architecture requires
+architect reapproval; over time the mark should rarely change. Removed approvals are
+reapproved by the architect, never restored by hand.
+
+`verified` means the build pipeline has completed for the feature. Its architecture exists
+in code or infrastructure as code in a repository, rather than only on paper.
+
+Neither mark holds back an Epic or determines Epic order. Dependencies established ahead
+of time order shared work independently of both marks. A missing dependency on shared work
+is a dependency gap, not a reason to invent an approval hold.
+
 | Field | On | Meaning | Who sets it, when, how |
 |---|---|---|---|
-| `approved: true` | any architecture entry or relationship (never an Epic) | The solutions architect approved the architecture for a feature: the architecture and design an Epic's elaboration reached are approved, and the matrix and arc42 are filled out or corrected for it. A plain yes or no: it records no Epic, stack, commit or owner, and absent means not approved. The mark comes off an entry only when that entry itself is changed by a new Epic's architecture, and the entry then stays unapproved until an architect approves it again. The baseline carries no mark on purpose: no architect has reviewed it yet. | Only the promotion step of elaboration (`orchestrator/flows/architecture_promotion.py`, calling `matrixwrite.approve` as role `script`) on the Epic's approval scope without the Epic itself, its reach by the rule of reach in the corrected matrix (`atw-matrix approval --epic <id>` shows it), once its reviews pass. No `atw-matrix` command and no session sets it. Only the step that accepts an Epic's architect's result takes it off (`matrixwrite.withdraw_approval`, from `orchestrator/flows/architecture.py`): from each entry the result names as added or changed, and each entry its change file and links changed (the entry's own content, or an architecture-side relationship starting at it other than `describedBy` and `covers`), with the relationships starting at those entries. Nothing else takes it off: no document or heading change, however many entries that text describes, no reconciling sync, no correction outside an Epic's architecture, no change at the far end of a link. The next approval that covers the entry sets it again. Two Epics are never elaborated at the same time on the same unapproved architecture: the dependency edges `epicorder.py` sets in advance order them, and the driver's elaboration lane starts no Epic whose approval scope shares an entry with no approved mark with an Epic being elaborated, until that Epic's promotion approves it or its elaboration ends. |
-| `verified: true` | any entry or relationship | The architecture was built and its test passed, so it is verified correct: the CI checks and the test that its CDK deployment works (the deployment may be removed again after the test). A plain yes or no: it records no Epic, stack, commit or owner, and absent means not verified. A property of the stack or component itself, valid for every Epic that relates to it. Verified = real, its code trusted; not verified = still to be made real, used like anything else. | Only the build driver (`ops/sdlc-automation/matrixmarks.py`), when a Story's test passes: `atw-matrix verify --story <id>` as role `build-driver`, on every stack and entry the Story's Tasks state they built (`built`) and every relationship starting there. A merge never sets it; the merge is a separate step after the test. A known change to what the item must be built as (the entry or relationship itself, the heading text that describes it, or an architecture-side relationship starting at it) clears it on that item alone; the next build and test sets it again. |
+| `approved: true` | architecture for individual features and components, never an Epic | The architecture agent vetted the item's architecture and design. The mark remains valid across overlapping Epics and changes only when the specific architecture changes and needs reapproval. | Promotion records the architect's approval after reviews pass. Acceptance of an architect's changed design withdraws approval only for the affected architecture. No session restores a mark by hand. |
+| `verified: true` | completed architecture items and features | The feature's build pipeline completed and its architecture exists in code or infrastructure as code. The mark belongs to the item across all Epics. | The build driver records completion through `verify --story`. Unfinished contributing Stories defer an item. Features require all recorded architecture realizers verified; missing realizers remain unknown. No-PR completion uses the same rule. Known implementation changes clear only the affected item's mark. |
 | `lifecycle` | `document` | Mirrors the document's `lifecycle_state`: `effective` (approved) or `in-review`, or another vault value such as `draft` or `superseded`. What the states and the approve action mean: the `effective-architecture` skill, "Lifecycle, the baseline and iteration". | `atw-matrix sync-documents`; the promotion step after `depscore.py arch-approve`. |
 | `side` | everything | `architecture` (authority) or `repository` (hint). | Whoever records the fact: `put` and `link` take `--side`. |
 
-Nothing is seeded approved or verified, and nothing in the live matrix is either yet. No
-deployed or merged mark exists. Neither mark ever blocks reading, linking or designing on an
-entry.
+Seeding sets neither mark. Neither mark blocks reading, linking, designing or Epic work.
 
-The verified mark, as [the matrix requirements](../../blueprint/requirements/matrix.md)
-section 3.5 and R25 state it:
+Both marks sit on individual items and change independently. Approval changes only when that
+specific architecture changes and needs reapproval. Verification changes when the item's
+required implementation changes and its build completes. Naming a repository or adding an
+Epic alone changes neither. Reused verified components keep their marks.
 
-- It is set when an item has been built and tested, the CDK deployment test included. The
-  test passing is the trigger. No merge and no branch sets or clears it.
-- It belongs to the stack or component, not to an Epic. An Epic owns no stack and no
-  component; it is a vehicle for requirements, and many Epics relate to many stacks and
-  components. So never read verified as "this Epic's architecture is done".
-- At the start nothing is verified, so the first builds verify everything they build. After
-  that, only changes are not verified, and only changes become Tasks.
-- What a stack or Task only uses (a shared library, a layer, a chassis) was verified when it
-  was itself built and tested; using it verifies nothing.
-
-Both marks sit on individual items, at the finest grain the matrix records, and clear on the item
-alone. `approved` clears only when a new Epic's architecture changes that item, and approval sets
-it again. `verified` clears on any known change to what the item must be built as, and building
-and testing the Story's Tasks (the CDK deployment test included) sets it again. They are separate
-marks: one change may clear only `verified`, or both, or each at a different time. Never infer one
-mark from the other. Naming the repository that holds a stack (its `repository` attribute alone),
-or the owner's decision that no Epic drives it (its `epicDriver` attribute alone), changes no
-design, so an Epic's writing it does not take `approved` off.
+The driver marks only completed Task contributions. A component shared by two unfinished
+Stories waits for both contributions. A feature is verified only when its explicit
+architecture-side realizers all exist and are verified. No recorded realizers means unknown;
+broad reach and mere code presence never prove feature completion.
 
 Reading the marks to decide what is planned and what exists:
 
@@ -195,6 +196,15 @@ Reading the marks to decide what is planned and what exists:
 
 ## Writing
 
+The pipeline or an explicit owner-directed status correction records exact marks with
+`atw-matrix approve-reviewed --ids <entry ids>` or
+`atw-matrix approve-reviewed --kind <relationship kind> --from <source id> --to <destination id>`.
+Only the script role may do this; the command grants no independent architecture judgment authority.
+Each target must already exist on the
+architecture side; Epic and requirement entries are excluded. A relationship tuple must identify
+exactly one relationship. No endpoint or incident-relationship approval is inferred. All targets
+are validated before the locked write; existing verified marks are preserved.
+
 - Read and write only through `atw-matrix`. Never edit, `jq`, `sed` or rewrite the JSON file;
   `atw-matrix` takes a lock, checks every write against the kinds registry and keeps the two
   sides apart.
@@ -202,8 +212,7 @@ Reading the marks to decide what is planned and what exists:
   `solutions-architect`, `repository-steward`, `script`. `settle`: `solutions-architect`,
   `decider`. `rename` and `remove`: `solutions-architect`, `repository-steward`, `operator`
   (`remove` also `script`). `record-judgments`: `script`, `operator`. `move-repository`:
-  `repository-steward`, `operator`. `commit`:
-  `script`, `repository-steward`, `build-driver`, `operator`. `apply`: `solutions-architect`,
+  `repository-steward`, `operator`. `apply`: `solutions-architect`,
   `repository-steward`, `script`, `decider`, and each operation of the file needs the role its
   own sub-command needs. Reads need none.
 - Record a new fact:
@@ -239,7 +248,9 @@ Reading the marks to decide what is planned and what exists:
   schema defines, and no other fields; each operation takes the arguments of its sub-command),
   and run `atw-matrix apply --file <path>`: one locked update, all or nothing, every failed
   operation reported with its index.
-- Commit the file alone with `atw-matrix commit --bead <id>` (it pushes).
+- The matrix is machine-local state, ignored by git. A successful locked write completes
+  the operation; no matrix commit or push follows it. Every session reads the file resolved
+  by `matrixstore.matrix_path`, including sessions working in a git worktree.
 - A seeding or session result file is recorded by a script step (`seed-apply`), never entry by
   entry by the session.
 - The solutions architect and its helpers write no entry by command: they record each `put`,
@@ -271,4 +282,4 @@ Seeding fills an empty matrix in this order (`blueprint/design/matrix.md` sectio
 4. `seed-realizers` writes the feature batches; realizer sessions name what realizes each
    feature; `seed-apply --step realizers` records each `realizedBy`.
 5. Repository-side sessions read each stack's repository; `seed-apply --step repository`.
-6. `atw-matrix check`, then `atw-matrix commit`.
+6. `atw-matrix check`.

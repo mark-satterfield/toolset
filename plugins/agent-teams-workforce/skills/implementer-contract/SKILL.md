@@ -1,13 +1,14 @@
 ---
 name: implementer-contract
-description: How an implementer works a Task in TDD Green, the same for every implementer - the brief it is given, the minimum change that makes the failing tests pass, building to what the Task and the architecture record, the shared capabilities it must use, the tests it never changes (testIssues), what is missing outside the Task (upstreamMissing), an assigned baseline repair scope, working beside other implementers on one Task, the suite run that proves Green, and the result it returns. Loaded by every implementer; its own definition holds its specialty.
+description: How an implementer develops required behavior and prerequisites, resolves scoped quality findings, works with test authors in the existing suite, uses shared capabilities and returns factual build evidence.
 user-invocable: false
 ---
 
 # How an implementer works a Task
 
-The tdd-green workflow starts you for one Task whose failing tests already exist. It sends a brief
-that holds only this Task's data; how to do the job is here and in your own definition.
+The Python build selects you for one Task's required implementation or quality improvements.
+Tests may already pass. Read the facts and accepted journal artifacts; how to work is here,
+in `tdd-guide` and in your specialty definition.
 
 ## What the brief holds
 
@@ -22,7 +23,7 @@ that holds only this Task's data; how to do the job is here and in your own defi
   the build-spec items. Your definition says what each design source means for your work.
 - For infrastructure, the affected CDK stacks, the provisioning intent (resources, cross-stack
   references, rationale).
-- The affected files, the acceptance criteria, the failing tests and the Red evidence.
+- The affected files, required behavior, existing suite, current execution evidence and quality findings.
 - The suite command, when the repository declares one.
 - The shared capabilities this Task must use, when it has any.
 - The implementers on this Task in build order, when there is more than one.
@@ -31,15 +32,14 @@ that holds only this Task's data; how to do the job is here and in your own defi
 
 ## The change
 
-1. Make the failing tests pass with the minimum production change. Write nothing the tests and the
-   acceptance criteria do not require.
+1. Develop required behavior, its missing prerequisites and warranted improvements in the assigned scope. A passing suite does not eliminate architecture and code-quality review. Make no unrelated cleanup and manufacture no failure.
 2. Build to the contract. What the Task, its spec, the architecture views and the matrix record is
    decided: use every name and decision they give as given, read by the paths the brief names, and
    decide only a pure build detail none of them records. Never build, convert or change a name they
    give.
 3. A value known only at deploy time, such as the account, the region or the environment, is resolved
    at deploy time (a CDK prop or deploy-time reference, or an environment variable the stack sets).
-   Write no literal for it and never name it in `upstreamMissing`.
+   Write no literal for it and do not report a normal deploy-time value as a missing prerequisite.
 4. When the change alters what a deliverable imports, declares or packages, follow the
    `python-lambda-packaging` skill, which states when it applies, and put its packaging record in
    `notes`.
@@ -54,9 +54,10 @@ that holds only this Task's data; how to do the job is here and in your own defi
 Each behaviour the brief lists under the shared capabilities comes from the shared library, layer,
 chassis or service named, through the interface named. The repository holds none of it: no copy, no
 local equivalent, and no direct call to the AWS service or provider the capability wraps. Do what the
-"You must" text of each entry says. When a capability lacks something the Task needs, write nothing in
-its place and name it in `upstreamMissing` with the evidence. After the suite is green,
-`atw-matrix check-reuse` checks the files you changed against the list.
+"You must" text of each entry says. When a capability lacks something required, develop that
+prerequisite in its owning repository and normal worktree instead of duplicating it locally.
+SkillSpoke libraries still require publication before a consumer can resolve their changed code;
+do not edit version pins or lockfiles ahead of CodeArtifact.
 
 ## Tests you never change
 
@@ -68,12 +69,13 @@ with the rest of the work:
 - `defect`: it is wrong on its own terms.
 - `missing-config`: its fixtures lack configuration the contract now requires.
 
-## What is missing outside the Task
+## Missing prerequisites
 
-When the code cannot pass because a genuinely external dependency or resource does not exist yet (a
-package, stack, parameter, table or service outside the assigned repair scope), name each such thing
-in `upstreamMissing` with the evidence. A fixable defect or configuration inside an assigned repair
-scope is not `upstreamMissing` merely because it predates this Task.
+The build develops unbuilt prerequisite packages, stacks, parameters, tables and services that
+the assigned behavior requires. Use their owning repositories and normal Story worktrees, preserve
+their contracts and verify their own suites. Report the developed repository, worktree and evidence
+in `prerequisites`. An unavailable external authority or required library publication is an explicit
+blocking fact, not permission to invent a local substitute.
 
 ## An assigned repair scope
 
@@ -81,7 +83,8 @@ scope is not `upstreamMissing` merely because it predates this Task.
 outside this Task's feature. Diagnose and fix the repository code and configuration those failures
 need; this is authorized work, not scope expansion. Preserve accepted behaviour and published
 contracts. Test changes still go through `testIssues`. Do no unrelated cleanup and change no other
-repository. Missing external resources or authority remain `upstreamMissing`, with evidence.
+repository unless developing an identified prerequisite requires its owning repository. Missing
+authority remains an explicit blocking fact with evidence.
 
 ## Several implementers on one Task
 
@@ -100,9 +103,8 @@ before this Task. Run the target tests too and confirm they pass.
 Return, to the output schema the caller gives:
 
 - `changedFiles`: every file you created or changed, relative to the tree.
-- `greenConfirmed`: whether the target tests pass.
-- `noRegressions`: whether the full suite shows no regression.
-- `evidence`: the captured output of both runs.
-- `testIssues` and `upstreamMissing`, as above.
-- `notes`: anything else the result needs, such as a runtime or provisioning assumption the code
-  makes (job parameters, stream names, batch sizes, workgroups, bucket expectations).
+- `evidence`: actual suite and targeted execution evidence, including failures.
+- `testIssues`: tests that need their author's ruling against the full contract.
+- `prerequisites`: prerequisite work developed in its owning repository, with worktree and evidence.
+
+The exact Python result contract is `skills/pipeline-contracts/schemas/build-implementation.schema.json`.

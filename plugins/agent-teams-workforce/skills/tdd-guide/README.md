@@ -317,7 +317,7 @@ Guide TDD for email validation.
 
 Requirement: Email must contain @ and valid domain
 
-Phase: RED (write failing test)
+Phase: RED (review and extend the existing suite)
 ```
 
 **Output**:
@@ -325,14 +325,14 @@ Phase: RED (write failing test)
 ## TDD Phase: RED
 
 ### Goal
-Write a failing test that describes desired email validation behavior
+Review existing email validation coverage and add missing happy, negative, edge and boundary cases
 
 ### Steps
 1. ✅ Read requirement: Email must contain @ and valid domain
 2. ✅ Think about expected behavior
 3. ⏳ Write test that verifies this behavior
-4. ⏳ Run test and ensure it fails
-5. ⏳ Verify failure reason is correct (not syntax error)
+4. ⏳ Record the actual outcome in the existing suite
+5. ⏳ Review test quality and classify product, test, setup or environment failures
 
 ### Test Template (Jest)
 
@@ -358,9 +358,9 @@ describe('EmailValidator', () => {
 ```
 
 ### Next Steps
-1. Run the test (it should fail)
-2. Verify failure: "EmailValidator is not defined" or similar
-3. Share test result to proceed to GREEN phase
+1. Record actual suite outcomes; valid existing behavior may pass
+2. Review new and existing test quality before treating failure as a product defect
+3. Implement confirmed product gaps, then always review architecture, code and test quality; never manufacture failure
 ```
 
 ### Example 4: Test Quality Review

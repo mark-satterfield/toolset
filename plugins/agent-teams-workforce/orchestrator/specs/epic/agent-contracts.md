@@ -104,7 +104,7 @@ operational-readiness-reviewer, failure-mode-analyst, new-resource-cost-reviewer
 changed-resource-cost-reviewer: the solutions architect reviews and approves its own architecture,
 and may choose one of them through the find-specialists catalog and name it, with a review
 question, in a round of its requests, as it asks any specialist; the script starts it.
-workflow-command-runner is never an Epic session.
+Deterministic commands run directly in Python without agent sessions.
 
 ## Artifacts
 

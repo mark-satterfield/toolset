@@ -11,8 +11,7 @@
 // runtime validates it THERE. So a schema whose `required` names a property it never defines
 // is not a lint finding — it is an unsatisfiable contract that throws at DISPATCH, mid-run,
 // after every phase above it has already been paid for. The two existing checkers cannot see
-// it: check-workflow-syntax.mjs proves the file tokenizes and executes past its guards with
-// stubbed dispatches (a stub never validates the schema it was handed), and
+// it: check-workflow-syntax.mjs parses source and checks literal runner constraints, and
 // check-agent-types.mjs proves the agentType resolves. Neither one has ever read a schema.
 //
 // The same silence covers `meta.phases`. Those titles are what a progress reader groups on,

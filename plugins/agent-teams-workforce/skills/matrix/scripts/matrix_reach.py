@@ -10,7 +10,7 @@ answer:
   Epic reaches, and its gaps.
 - ``unreached --kinds <kinds>``: the entries of those kinds (and ``repository``) no Epic reaches.
 
-The rule of reach is ``matrixtraverse.rule_reach``, the one walk the approval scope, the
+The rule of reach is ``matrixtraverse.rule_reach``, the one walk architecture review reach, the
 architecture pack and the check use: an Epic reaches an entry when a feature serving one of its
 requirements is ``realizedBy`` the entry. It reaches a stack when an entry so reached is the stack
 or has its home in it (``homeIn``, the architecture side's, else the repository side's). It reaches

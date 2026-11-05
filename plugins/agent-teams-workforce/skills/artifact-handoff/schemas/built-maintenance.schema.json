@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object", "additionalProperties": false,
+  "required": ["changedFiles", "createdFiles", "deletedFiles", "matched", "constraintIssues", "contradictions", "summary"],
+  "properties": {
+    "changedFiles": {"type": "array", "items": {"type": "string"}},
+    "createdFiles": {"type": "array", "items": {"type": "string"}},
+    "deletedFiles": {"type": "array", "items": {"type": "string"}},
+    "matched": {"type": "array", "items": {"type": "string"}},
+    "constraintIssues": {"type": "array", "items": {"type": "string"}},
+    "contradictions": {"type": "array", "items": {"type": "string"}},
+    "summary": {"type": "string"}
+  }
+}

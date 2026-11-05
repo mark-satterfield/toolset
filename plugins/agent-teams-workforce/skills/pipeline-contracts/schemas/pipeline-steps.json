@@ -22,6 +22,18 @@
       ],
       "inner": {},
       "kinds": {
+        "build:baseline-resolved": {"description": "Run the resolved suite declaration", "purpose": "Record the factual baseline after configuration judgment", "runBy": "task-to-deploy", "reads": ["suiteDeclaration", "worktree"], "records": [], "adds": []},
+        "build:final-review": {"description": "Review the final code and tests", "purpose": "Independently assess the resulting changes before commit", "runBy": "task-to-deploy", "reads": [], "records": [], "adds": []},
+        "build:final-review-checked": {"description": "Require final code review approval", "purpose": "Correct findings and independently re-review", "runBy": "task-to-deploy", "reads": ["finalCodeReview"], "records": [], "adds": []},
+        "build:final-suite-checked": {"description": "Run the final suite after review", "purpose": "Verify resulting behavior before commit", "runBy": "task-to-deploy", "reads": ["finalCodeReview"], "records": [], "adds": []},
+        "build:plan-tests": {"description": "Plan the selected test specialists", "purpose": "Review and improve tests within the existing suite", "runBy": "task-to-deploy", "reads": ["testSelection"], "records": [], "adds": []},
+        "build:tests-authored": {"description": "Record accepted test-author file versions", "purpose": "Distinguish legitimate suite updates from implementation changes to tests", "runBy": "task-to-deploy", "reads": ["testFiles"], "records": [{"name": "testPrint", "kind": "value", "holds": "Exact file hashes and worktree digest"}], "adds": []},
+        "build:suite-reviewed": {"description": "Route the suite quality judgment", "purpose": "Distinguish test repair, product implementation and environment failure", "runBy": "task-to-deploy", "reads": ["suiteReview"], "records": [], "adds": []},
+        "build:code-reviewed": {"description": "Apply the independent code review", "purpose": "Consider architecture, quality and best practices even when tests pass", "runBy": "task-to-deploy", "reads": ["codeReview"], "records": [], "adds": []},
+        "build:plan-code": {"description": "Plan the selected implementers", "purpose": "Develop missing behavior and warranted improvements", "runBy": "task-to-deploy", "reads": ["implementationSelection", "implementers"], "records": [], "adds": []},
+        "build:green-reviewed": {"description": "Route the post-implementation suite judgment", "purpose": "Correct the artifact responsible for the failure", "runBy": "task-to-deploy", "reads": ["suiteReview"], "records": [], "adds": []},
+        "build:audit-reviewed": {"description": "Resolve the independent audit findings", "purpose": "Correct blocking and warranted improvement findings in scope", "runBy": "task-to-deploy", "reads": [], "records": [], "adds": []},
+        "build:docs-specialist": {"description": "Update stale documentation", "purpose": "Keep the changed contracts documented by the selected specialist", "runBy": "task-to-deploy", "reads": [], "records": [], "adds": []},
         "build:workspace": {
           "description": "Establish the Story's worktree and branch",
           "purpose": "Every step that reads or changes the Task's code works in one tree on the Story's branch",
@@ -117,30 +129,30 @@
           ]
         },
         "build:red-write": {
-          "description": "Write failing tests with {testAgent}",
-          "purpose": "The Task's acceptance criteria are encoded as tests that fail before the code exists",
+          "description": "Review and improve suite tests with {testAgent}",
+          "purpose": "Required behavior has trustworthy suite coverage, whether it is already implemented or needs code",
           "runBy": "task-to-deploy",
           "params": ["testAgent", "testAgents", "feedback"],
           "reads": ["worktree", "suiteCommand", "regressionPlan", "testFiles", "design", "provisioning"],
           "records": [
             {"name": "testFiles", "kind": "value", "holds": "the test files the agent created or changed, a list of paths"},
-            {"name": "redConfirmed", "kind": "value", "holds": "whether the agent saw its tests fail as intended, a boolean"}
+            {"name": "coverage", "kind": "value", "holds": "The writer's behavioral coverage evidence in existing-suite context"}
           ],
           "adds": []
         },
         "build:red-check": {
-          "description": "Run the suite and judge whether the new tests fail cleanly",
-          "purpose": "Red holds only when a new test fails, no test file fails to load and no other test regressed",
+          "description": "Run the suite and judge test quality and required behavior",
+          "purpose": "Passing behavior is accepted; poor tests, product defects and environment failures are distinguished",
           "runBy": "task-to-deploy",
           "reads": ["worktree", "suiteCommand", "baseline", "testFiles", "redRun"],
           "records": [
-            {"name": "redRun", "kind": "value", "holds": "{ exitCode, summary, failing, tail, relayFile, reasons }: the suite run and why Red does not hold, when it does not"},
+            {"name": "redRun", "kind": "value", "holds": "{ exitCode, summary, failing, tail, relayFile, reasons }: actual suite result with test-quality and failure-classification evidence"},
             {"name": "testPrint", "kind": "value", "holds": "{ files, treeDigest }: the git blob hash of each test file and the digest of the work tree"}
           ],
           "adds": [
-            {"kinds": ["build:red-write", "build:red-check"], "when": "Red does not hold: each test agent is given the suite result, and the suite is judged again"}
+            {"kinds": ["build:red-write", "build:red-check"], "when": "Suite quality review identifies test or setup defects requiring correction; a passing suite never requires a manufactured failure"}
           ],
-          "limit": "It fails with red-unsatisfied when four checks in this run have not shown Red, and with no-progress when the suite fails exactly as it did at the check before"
+          "limit": "At most three suite-quality correction rounds in one dispatch; no failure is manufactured"
         },
         "build:select-implementers": {
           "description": "Select the implementers whose specialties cover the Task",
@@ -157,14 +169,14 @@
         },
         "build:implement": {
           "description": "Write the code with {implementer}",
-          "purpose": "The failing tests pass with the minimum production change",
+          "purpose": "Required behavior, missing prerequisites and warranted quality improvements are implemented",
           "runBy": "task-to-deploy",
           "params": ["implementer", "implementers", "brief"],
           "reads": ["worktree", "suiteCommand", "baseline", "redRun", "greenRun", "cdsAudit", "reuseAudit", "sharedCapabilities", "testFiles", "testDecisions", "design", "provisioning"],
           "records": [
             {"name": "changedFiles", "kind": "value", "holds": "the files the implementer changed, a list of paths"},
             {"name": "testIssues", "kind": "value", "holds": "the tests the implementer names as standing between the code and the contract, a list of { testId, kind, reason, contractRef }"},
-            {"name": "upstreamMissing", "kind": "value", "holds": "what must exist outside the Task before the suite can pass, a list of { what, evidence }"}
+            {"name": "upstreamMissing", "kind": "value", "holds": "legacy prerequisite evidence, a list of { what, evidence }; develop required prerequisites in their owning repositories within the authorized scope"}
           ],
           "adds": []
         },
@@ -181,7 +193,7 @@
             {"kinds": ["build:test-ruling", "build:green-check"], "when": "the suite is not green and an implementer named tests that stand between the code and the contract"},
             {"kinds": ["build:implement", "build:green-check"], "when": "the suite is not green and no named test awaits a ruling: each implementer is given the suite result"}
           ],
-          "limit": "It fails with green-modified-tests when an implementer changed a test file, with blocked-upstream when an implementer named something outside the Task, with no-progress when no file changed and the suite fails exactly as at the check before, and with green when eight checks in this run since the implementers were selected have not shown a green suite"
+          "limit": "At most three implementation suite checks in one dispatch; failures are judged before code or tests are changed"
         },
         "build:test-ruling": {
           "description": "Rule on the tests the implementers named, with tdd-unit-test-generator",
@@ -623,12 +635,12 @@
           "adds": []
         },
         "deploy:mark-verified": {
-          "description": "Set what the Story built verified in the matrix once its CI checks pass",
-          "purpose": "The Story's test has passed when its deploy to AWS dev was verified working and every check on its pull request's head commit passed; what it built is then built and tested, before and apart from the merge, which decides nothing about verified",
+          "description": "Require every CI check on the Story's pull request head to pass",
+          "purpose": "The build cannot complete with pending or failed checks, including a pull request merged despite failed checks",
           "runBy": "driver",
           "reads": ["pullRequest"],
           "records": [
-            {"name": "matrixVerified", "kind": "value", "holds": "{ commit, entries, unmatched }: the head commit whose checks passed, the ids that carry the flag and the ids that matched no entry; commit is null and nothing is marked when the pull request merged with a check that did not pass"}
+            {"name": "matrixVerified", "kind": "value", "holds": "{ commit }: the pull request head whose checks passed; actual matrix marks are recorded at Story completion"}
           ],
           "adds": [],
           "waits": "a check on the pull request's head commit has not finished, or failed while the pull request is open"
@@ -645,12 +657,13 @@
           "waits": "the pull request is open and not merged"
         },
         "deploy:close": {
-          "description": "Close the Story and remove its worktree and local branch",
-          "purpose": "A Story with nothing left to deploy or merge is done",
+          "description": "Record verified build completion, close the Story and remove its workspace",
+          "purpose": "Both PR and no-PR completion record only completed contributions and fully realized features; the local matrix write must succeed before close completes",
           "runBy": "driver",
-          "reads": ["worktree", "branch"],
+          "reads": ["worktree", "branch", "matrixVerified"],
           "records": [
-            {"name": "closed", "kind": "value", "holds": "true"}
+            {"name": "closed", "kind": "value", "holds": "true"},
+            {"name": "matrixVerified", "kind": "value", "holds": "{ commit, entries, unmatched }: completed architecture items and features; commit may be null for no-PR completion"}
           ],
           "adds": []
         }

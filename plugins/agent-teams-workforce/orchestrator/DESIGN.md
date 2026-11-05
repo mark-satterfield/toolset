@@ -138,7 +138,7 @@ its code:
 - **Script step.** The step's `script` text is the key of a handler (`@script_step("<key>")`). The
   keys are defined in `flows/architecture_files.py`, `flows/repo_scoping.py` and
   `flows/elaboration_files.py`: `prd_to_spec.open_run`, `architecture.earlier_work`,
-  `atw-matrix check; atw-matrix review-scope`, `atw-matrix sync-documents; atw-matrix commit`, `trd.seed`, `trd.confirm`,
+  `atw-matrix check; atw-matrix review-scope`, `atw-matrix sync-documents`, `trd.seed`, `trd.confirm`,
   `atw-matrix epic --closure`, `spec_authoring.context`, `spec_authoring.not_applicable`,
   `cdsbundles.list_bundles`, `spec_authoring.normalize_ui`, `specui.spec_ui_append`,
   `spec_review.settle`, `spec_authoring.story_document`,

@@ -63,8 +63,8 @@
 // TWO CONTROLS, AND WHICH ONE CARRIES THE WEIGHT
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// (A) A RUNTIME CAPABILITY PROBE — `createCapabilityProbe` below, used by BOTH the
-//     syntax checker's execution pass and the unit-test harness. Each out-of-contract
+// (A) A RUNTIME CAPABILITY PROBE — `createCapabilityProbe` below, exported for runtime
+//     consumers and never called by the static source checker. Each out-of-contract
 //     name is bound as a PARAMETER of the function the script body is compiled into,
 //     shadowing the real binding with a tripwire that records and throws on any read,
 //     call or construct. This is a scope-level control, not a text-level one, so it is
@@ -801,8 +801,8 @@ export function findForbiddenConstructs(source) {
 // the capability-model question directly — "did this script reach anything the seven
 // injected globals do not provide".
 //
-// The mechanism is scope, not text. Both places that execute a workflow body — the
-// syntax checker's execution pass and the unit-test harness — compile it into a
+// The mechanism is scope, not text. Runtime consumers that execute a workflow body
+// through this helper compile it into a
 // function whose parameter list is the seven runner globals FOLLOWED BY every
 // out-of-contract name below. A parameter shadows the real binding for the whole body,
 // so inside the script `Function`, `eval`, `globalThis`, `process` and the rest resolve

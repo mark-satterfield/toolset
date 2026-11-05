@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Concrete provisioning intent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resources", "stacks", "crossStackRefs", "affectedStacks", "rationale"],
+  "properties": {
+    "resources": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["logicalId", "type", "stack", "properties"], "properties": {"logicalId": {"type": "string"}, "type": {"type": "string"}, "stack": {"type": "string"}, "properties": {"type": "string"}}}},
+    "stacks": {"type": "array", "items": {"type": "string"}},
+    "crossStackRefs": {"type": "array", "items": {"type": "string"}},
+    "affectedStacks": {"type": "array", "items": {"type": "string"}},
+    "rationale": {"type": "string"}
+  }
+}

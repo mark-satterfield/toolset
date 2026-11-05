@@ -90,7 +90,7 @@ class EpicWork:
 
     epic: str
     stories: Mapping[str, bool]
-    """Each Story of the Epic, by beads id, with whether it is closed."""
+    """Every Story, by beads id, with whether its build completed and it closed."""
     tasks: tuple[TaskBead, ...]
     """Every Task, of any Epic, as :func:`read_tasks` reads them."""
 
@@ -256,7 +256,7 @@ def epic_work(story: str, control: Path | None = None) -> EpicWork:
         raise MatrixRefusedError(message)
     return EpicWork(
         epic=epic.id,
-        stories={bead.id: bead.closed for bead in graph.descendants(epic.id) if bead.kind == STORY_TYPE},
+        stories={bead.id: bead.closed for bead in graph.beads.values() if bead.kind == STORY_TYPE},
         tasks=tuple(_tasks_of(graph)),
     )
 

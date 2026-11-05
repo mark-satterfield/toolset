@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cause", "changedFiles", "testCommand", "evidence"],
+  "properties": {
+    "cause": {"type": "string"},
+    "changedFiles": {"type": "array", "items": {"type": "string"}},
+    "testCommand": {"type": "string"},
+    "testsPassed": {"type": "boolean"},
+    "evidence": {"type": "string"},
+    "notes": {"type": "string"}
+  }
+}

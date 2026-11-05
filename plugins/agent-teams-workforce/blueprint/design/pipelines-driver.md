@@ -182,9 +182,7 @@ flowchart TD
     eReady -->|"no"| skip["Not started this time"]
     eReady -->|"yes"| eDeps{"Are the Epics it waits for by its tracks edges elaborated?"}
     eDeps -->|"no"| skip
-    eDeps -->|"yes"| eShare{"Does its approval scope share an entry with no approved mark with an Epic being elaborated?"}
-    eShare -->|"yes"| skip
-    eShare -->|"no"| eOrder["Taken in WSJF order among the eligible Epics"]
+    eDeps -->|"yes"| eOrder["Taken in WSJF order among the eligible Epics"]
     eOrder --> eRun(["Elaboration of the Epic - pipelines-elaboration.md"])
     tReady -->|"no"| skip
     tReady -->|"yes"| tOrder["Taken in WSJF order among the ready Tasks"]
@@ -209,7 +207,7 @@ Notes on the diagram:
 - The Epic-to-Epic `tracks` edges `epicorder.py` sets decide which ready Epics may be elaborated:
   an Epic waits for the Epic that goes first, by the judgment the matrix records, on each shared
   item they both need whose architecture is not approved, so that an Epic waits for the Epic that
-  builds and owns what it uses and no two Epics work at once on the same unapproved shared item. Ready Epics are taken in their WSJF order behind those
+  builds and owns what it uses and no two Epics work at once on the same ordered shared item. Ready Epics are taken in their WSJF order behind those
   dependencies, because it puts the most value per effort first.
 - A Task is ready when the Tasks it depends on (beads dependency edges) are closed, and ready Tasks
   are taken in WSJF order, because the edges carry build order and WSJF orders what is free to run.
@@ -478,13 +476,11 @@ Notes on the diagram:
   purpose is that each step does not "research and scan or rediscover what pertains the task that
   step is performing" (the owner).
 - The elaboration lane reads, from beads, the ready Epics, their WSJF scores and the Epics each
-  waits for by its `tracks` edges (section 2). While an Epic is being elaborated, it also reads
-  from the matrix the entries of each Epic's approval scope with no approved mark
-  (`atw-matrix approval --epic`), and starts no Epic that shares one with an Epic being
-  elaborated, until that Epic's promotion approves the entry or its elaboration ends. Without
-  this, two architects review and approve the same entries at once and pay for that review twice.
+  waits for by its `tracks` edges (section 2). Those dependencies order shared work; neither
+  approval nor verified marks affect eligibility.
 - `keeper.py` reads and writes no bead itself: it runs `supervisor.py`, whose lanes do.
 - The driver writes each bead state from the run's result, and the pipelines write content, because
   code sets a state the same way every time (section 4).
-- A deterministic step that runs when a Story's test passes sets verified on what the Story built
-  and tested, because the condition is factual; the merge that follows decides nothing.
+- A deterministic step at Story completion records verified on its completed architecture
+  items and features whose full realization is complete. Unfinished contributing Stories
+  leave an item unverified; reused verified architecture retains its mark.

@@ -29,9 +29,9 @@
       ]
     },
     "task-to-deploy": {
-      "runner": "workflow",
+      "runner": "orchestrator",
       "openingKind": "task",
-      "sets": ["target-repo", "code-build", "repo-required", "design-aware"],
+      "sets": ["orchestrated", "target-repo", "code-build", "repo-required", "design-aware"],
       "phases": [
         {"id": "workspace", "title": "Workspace"},
         {"id": "infra-intent", "title": "Infra Intent"},
@@ -65,23 +65,23 @@
       ]
     },
     "story-deploy-fix": {
-      "runner": "workflow",
-      "sets": ["story"],
+      "runner": "orchestrator",
+      "sets": ["orchestrated", "story"],
       "phases": [
         {"id": "fix", "title": "Fix"},
         {"id": "commit", "title": "Commit"}
       ]
     },
     "deploy-mechanism": {
-      "runner": "workflow",
-      "sets": ["story"],
+      "runner": "orchestrator",
+      "sets": ["orchestrated", "story"],
       "phases": [
         {"id": "ask", "title": "Ask"}
       ]
     },
     "built-version": {
-      "runner": "workflow",
-      "sets": ["story"],
+      "runner": "orchestrator",
+      "sets": ["orchestrated", "story"],
       "phases": [
         {"id": "compare", "title": "Compare"},
         {"id": "correct", "title": "Correct"},

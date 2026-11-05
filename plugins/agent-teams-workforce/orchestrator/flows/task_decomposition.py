@@ -214,16 +214,14 @@ def context(run: StepRun) -> Completion:
     story: str = check_type(json_object(run.inputs.value(STORY))["id"], str)
     control: Path = control_repository()
 
-    def read() -> beadgraph.Graph:
-        return run.tools.portfolio(TASK_CONTEXT, beadgraph.load, control, with_description=True)
+    def read() -> list[dict[str, JsonValue]]:
+        return run.tools.portfolio(TASK_CONTEXT, beadgraph.children, control, story, "task")
 
-    graph: beadgraph.Graph = run.tools.operation(TASK_CONTEXT, read)
+    records: list[dict[str, JsonValue]] = run.tools.operation(TASK_CONTEXT, read)
     existing: list[JsonValue] = [
         task_facts(bead)
-        for bead in graph.beads.values()
-        if bead.parent == story
-        and bead.kind == "task"
-        and (beadwrite.task_started(bead) or not str(bead.metadata.get(KEY_ELAB_KEY, "")).startswith("task:"))
+        for bead in (beadgraph.bead_of(record) for record in records)
+        if beadwrite.task_started(bead) or not str(bead.metadata.get(KEY_ELAB_KEY, "")).startswith("task:")
     ]
     facts: Path = _write_context(run, held, existing)
     name: str = Path(held.path).name
@@ -732,7 +730,7 @@ def retire(run: StepRun) -> Completion:
     control: Path = control_repository()
 
     def attempt() -> dict[str, JsonValue]:
-        graph: beadgraph.Graph = run.tools.portfolio(TASK_RETIRE, beadgraph.load, control, with_description=True)
+        graph: beadgraph.Graph = run.tools.portfolio(TASK_RETIRE, beadgraph.load, control)
         writer: beadgraph.Writer = run.tools.portfolio(TASK_RETIRE, beadgraph.Writer, control)
         return json_object(
             run.tools.portfolio(

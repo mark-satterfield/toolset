@@ -2,7 +2,7 @@
 
 It runs the matrix check, checks every criterion answer of the architect's result and the Epic's
 review log (``log-architecture-review``), holds the result's reach verdicts to the Epic's reach as
-the corrected matrix gives it (``matrixtraverse.approval_scope``, the set promotion approves), and
+the corrected matrix gives it (``matrixtraverse.architecture_review_scope``, the set promotion approves), and
 reads from the matrix the documents the Epic reaches
 that are not effective. It then plans what follows by rule: a mechanical defect goes back to the
 architect, a matter the architect could not settle goes to the lead, and otherwise the one TRD
@@ -40,7 +40,7 @@ from matrix_contract import (
 from matrixquery import epic_view
 from matrixreview import ReviewScope, review_scope
 from matrixstore import as_entry_id, file_problems, read_matrix
-from matrixtraverse import approval_scope, epic_id, stacks_of
+from matrixtraverse import architecture_review_scope, epic_id, stacks_of
 from review_criteria import LEVEL_ARCHITECTURE, LEVEL_TECHNICAL_REQUIREMENT, Criteria, load_criteria
 from review_log import ReviewLogError, read_log
 from review_log import problems as review_log_problems
@@ -79,7 +79,7 @@ if TYPE_CHECKING:
     from matrix_contract import Entry, EntryId, EntryKind
     from matrixquery import EpicView
     from matrixstore import Matrix
-    from matrixtraverse import ApprovalScope
+    from matrixtraverse import ArchitectureReviewScope
     from step_journal_contract import Artifact, StepPlan
 
 CHECK_DESCRIPTION: Final = "Check what code can check and list what is in review"
@@ -92,7 +92,7 @@ CORRECTION_PURPOSE: Final = (
 )
 LEAD_DESCRIPTION: Final = "Route what the architect could not settle"
 LEAD_PURPOSE: Final = "The team settles an open matter before the architecture is promoted"
-PROMOTE_DESCRIPTION: Final = "Set the approved documents effective and commit the matrix"
+PROMOTE_DESCRIPTION: Final = "Set the approved documents effective and record architecture approval"
 PROMOTE_PURPOSE: Final = "Approved content becomes effective and every later Epic finds it as effective"
 UNLINKED: Final = "links with nothing recorded at the other end"
 CORRECTIONS: Final = "corrections"
@@ -187,7 +187,7 @@ def _reach_problems(matrix: Matrix, bead: str, result: ArchitectureResult) -> li
         not listed under ``excluded``.
 
     """
-    scope: ApprovalScope = approval_scope(matrix, epic_id(bead))
+    scope: ArchitectureReviewScope = architecture_review_scope(matrix, epic_id(bead))
     verdicts: dict[str, str] = {row["id"]: row["verdict"] for row in result["reach"]}
     excluded: set[str] = {row["id"] for row in result["excluded"]}
     problems: list[str] = []

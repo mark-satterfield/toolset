@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Owner portfolio command arguments",
+  "$defs": {
+    "Path": {"type": "string", "pattern": "^/", "minLength": 2},
+    "DependencyArgs": {
+      "type": "object", "additionalProperties": false,
+      "required": ["repoPath", "pluginRoot", "workDir", "epic", "apply"],
+      "properties": {
+        "repoPath": {"$ref": "#/$defs/Path"}, "pluginRoot": {"$ref": "#/$defs/Path"}, "workDir": {"$ref": "#/$defs/Path"},
+        "archPath": {"$ref": "#/$defs/Path"}, "projectRoot": {"$ref": "#/$defs/Path"},
+        "epic": {"type": "string", "pattern": "^[A-Za-z0-9]+-[A-Za-z0-9]+$"}, "apply": {"type": "boolean"}
+      }
+    },
+    "ScoreArgs": {
+      "type": "object", "additionalProperties": false,
+      "required": ["repoPath", "pluginRoot", "workDir", "all", "rejudge", "only", "dryRun"],
+      "properties": {
+        "repoPath": {"$ref": "#/$defs/Path"}, "pluginRoot": {"$ref": "#/$defs/Path"}, "workDir": {"$ref": "#/$defs/Path"},
+        "archPath": {"$ref": "#/$defs/Path"}, "projectRoot": {"$ref": "#/$defs/Path"},
+        "all": {"type": "boolean"}, "rejudge": {"type": "boolean"}, "dryRun": {"type": "boolean"},
+        "only": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z0-9]+-[A-Za-z0-9.]+$"}}
+      }
+    }
+  }
+}

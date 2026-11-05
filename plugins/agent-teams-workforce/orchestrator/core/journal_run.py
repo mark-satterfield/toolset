@@ -621,6 +621,8 @@ class JournalRunner:
         self.path: Path = path
         self.agents: AgentRunner = agents
         self.tools: Tools = tools
+        if tools.stop_all not in agents.context.cleanup:
+            agents.context.cleanup.append(tools.stop_all)
         self.registry: Registry = registry
         self.bead: BeadId = step_journal.read_journal(path)["bead"]
         self.replanned: set[StepId] = set()
@@ -656,6 +658,31 @@ class JournalRunner:
             raise StepError(error.stage, OTHER_CAUSE, error.evidence) from error
         while self.run_next():
             pass
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def run_within(self, container: StepId) -> None:
+        """Run the children of a driver-owned container without advancing its outer lane.
+
+        Args:
+            container: Existing container step in this bead's journal.
+
+        Raises:
+            StepError: A child fails or its implementation is unavailable.
+
+        """
+        parent: Step = step_journal.find_step(step_journal.read_journal(self.path), container)
+        if not parent["steps"]:
+            message: str = f"{container} has no child steps to run"
+            msg = "journal"
+            raise StepError(msg, OTHER_CAUSE, (message,))
+        while True:
+            self._close_finished(within=container, keep_running=container)
+            journal: Journal = step_journal.read_journal(self.path)
+            leaf: Step | None = _open_leaf(step_journal.find_step(journal, container))
+            if leaf is None:
+                return
+            self._run_group(journal, leaf["id"])
+            self._replan_stale()
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def run_next(self) -> bool:
@@ -732,11 +759,12 @@ class JournalRunner:
 
         step_journal.update_journal(self.path, change)
 
-    def _close_finished(self, within: StepId | None = None) -> None:
+    def _close_finished(self, within: StepId | None = None, *, keep_running: StepId | None = None) -> None:
         """Close every running step whose child steps are all done, the last in walk order first.
 
         With ``within``, only the steps at or below that step are closed: a container that runs
-        at the same time as its siblings closes its own steps only.
+        at the same time as its siblings closes its own steps only. ``keep_running`` leaves a
+        driver-owned parent open so the driver can record its result and complete it itself.
 
         A step with no agent is marked done. An agent step is closed through its "Finish": one
         the runner ran (it holds a session id) was accepted when it ran, so the step is marked
@@ -745,7 +773,11 @@ class JournalRunner:
         Whatever accepting a "Finish" raises continues to the caller once the failure is recorded
         on a new "Finish" of the step (:meth:`_record_failure`).
         """
-        while waiting := _running_unclosed(step_journal.read_journal(self.path), within):
+        while waiting := [
+            step
+            for step in _running_unclosed(step_journal.read_journal(self.path), within)
+            if step["id"] != keep_running
+        ]:
             step: Step = waiting[-1]
             step_id: StepId = step["id"]
             finish: Step | None = _done_finish(step)

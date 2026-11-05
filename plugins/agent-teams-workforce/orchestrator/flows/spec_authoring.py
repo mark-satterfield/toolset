@@ -46,6 +46,7 @@ import beadwrite
 import cdsbundles
 import hierarchy
 import specui
+from bead_metadata import KEY_ELAB_KEY
 from matrix_contract import (
     KIND_COMPONENT,
     KIND_EVENT,
@@ -1283,7 +1284,25 @@ def story_bead(run: StepRun) -> Completion:
     control: Path = control_repository()
 
     def attempt() -> dict[str, JsonValue]:
-        graph: beadgraph.Graph = run.tools.portfolio(STORY_WRITE, beadgraph.load, control, with_description=True)
+        records: list[dict[str, JsonValue]] = run.tools.portfolio(
+            STORY_WRITE,
+            beadgraph.children,
+            control,
+            run.bead,
+            "story",
+        )
+        stories: list[beadgraph.Bead] = [beadgraph.bead_of(record) for record in records]
+        matching: beadgraph.Bead | None = next(
+            (story for story in stories if story.metadata.get(KEY_ELAB_KEY) == f"story:{files.slug}"),
+            None,
+        )
+        if matching is not None:
+            records.extend(run.tools.portfolio(STORY_WRITE, beadgraph.children, control, matching.id, "task"))
+        graph: beadgraph.Graph = beadgraph.Graph(
+            beads={str(record["id"]): beadgraph.bead_of(record) for record in records},
+            source="bd list --parent",
+            records=records,
+        )
         writer: beadgraph.Writer = run.tools.portfolio(STORY_WRITE, beadgraph.Writer, control)
         return json_object(
             run.tools.portfolio(

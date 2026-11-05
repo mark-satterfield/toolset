@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "f562f029d064242830624f86c231e0050eaf716f70972dc0dc367df5f2ac81d4"
+SCHEMA_SHA256: Final[str] = "08b8c130ad379270982335a93514ad92220ae2609d7e0f8bfec1d2c7b65e1122"
 #: The schema this module was generated from.
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "driver-surface.schema.json"
 
@@ -92,6 +92,28 @@ HEARTBEAT_ENV: Final[str] = "ATW_HEARTBEAT"
 #: Seconds between the heartbeats a running agent session announces. A positive finite float; a non-
 #: finite or non-positive value is a ValueError.
 HEARTBEAT_DEFAULT: Final[str] = "300"
+#: Configurable deadline in seconds for one repository suite command; positive and finite.
+SUITE_TIMEOUT_ENV: Final[str] = "ATW_SUITE_TIMEOUT"
+#: Configurable deadline in seconds for one repository suite command; positive and finite.
+SUITE_TIMEOUT_DEFAULT: Final[str] = "1200"
+#: Configurable deadline in seconds for one regression setup or evidence command; positive and finite.
+REGRESSION_TIMEOUT_ENV: Final[str] = "ATW_REGRESSION_TIMEOUT"
+#: Configurable deadline in seconds for one regression setup or evidence command; positive and finite.
+REGRESSION_TIMEOUT_DEFAULT: Final[str] = "540"
+#: Maximum correction rounds for build implementation, suite-quality and final-code review.
+BUILD_CORRECTION_ENV: Final[str] = "ATW_BUILD_CORRECTION_ROUNDS"
+#: Maximum correction rounds for build implementation, suite-quality and final-code review.
+BUILD_CORRECTION_DEFAULT: Final[str] = "3"
+#: Maximum corrections of regression scope or mapped evidence in one build dispatch.
+REGRESSION_CORRECTION_ENV: Final[str] = "ATW_REGRESSION_CORRECTION_ROUNDS"
+#: Maximum corrections of regression scope or mapped evidence in one build dispatch.
+REGRESSION_CORRECTION_DEFAULT: Final[str] = "2"
+#: Maximum additional architecture corrections after the initial correction during a Story built-
+#: version review.
+BUILT_CORRECTION_ENV: Final[str] = "ATW_BUILT_CORRECTION_ROUNDS"
+#: Maximum additional architecture corrections after the initial correction during a Story built-
+#: version review.
+BUILT_CORRECTION_DEFAULT: Final[str] = "2"
 #: Permission bits a consumer creates the stop marker file with.
 STOP_FILE_MODE: Final[int] = 0o600
 #: Seconds a terminated child process is given before it is killed.
@@ -246,6 +268,11 @@ class DriverEnvironment(TypedDict):
     ATW_SESSION_LIMIT: NotRequired[str]
     ATW_SUBAGENT_IDLE: NotRequired[str]
     ATW_HEARTBEAT: NotRequired[str]
+    ATW_SUITE_TIMEOUT: NotRequired[str]
+    ATW_REGRESSION_TIMEOUT: NotRequired[str]
+    ATW_BUILD_CORRECTION_ROUNDS: NotRequired[str]
+    ATW_REGRESSION_CORRECTION_ROUNDS: NotRequired[str]
+    ATW_BUILT_CORRECTION_ROUNDS: NotRequired[str]
 
 
 class UsageWindow(TypedDict):

@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Build improvement review",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["approved", "findings", "evidence"],
+  "properties": {
+    "approved": {"type": "boolean"},
+    "findings": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["severity", "detail"], "properties": {"severity": {"enum": ["blocking", "improvement", "note"]}, "detail": {"type": "string", "minLength": 1}, "file": {"type": "string"}, "line": {"type": "integer", "minimum": 1}}}},
+    "evidence": {"type": "string", "minLength": 1}
+  }
+}

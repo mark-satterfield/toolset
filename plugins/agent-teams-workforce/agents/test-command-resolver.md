@@ -1,8 +1,8 @@
 ---
 name: test-command-resolver
 description: Finds the command a repository itself declares for running its whole test suite — from its AGENTS.md or CLAUDE.md, else the test task of its Taskfile — and returns it exactly as declared, or a resolution error naming the files read. Runs nothing and changes nothing.
-tools: Read, Glob, Grep, Skill, Agent, Workflow
-disallowedTools: SendMessage, AskUserQuestion, Write, Edit, NotebookEdit
+tools: Read, Glob, Grep, Write, Skill, Agent, Workflow
+disallowedTools: SendMessage, AskUserQuestion, Edit, NotebookEdit
 model: sonnet
 maxTurns: 80
 skills: [agent-teams-workforce:subagent-contract]
@@ -28,6 +28,7 @@ command.
 
 ## Result
 
-Return the command exactly as declared, as it would be typed in a shell at the repository root,
-in the caller's schema. Sources are authoritative artifacts passed by reference: read them, and
-report a missing or unreadable one in `resolveError`.
+Return the command exactly as declared, its source path and a concrete reason under
+`skills/pipeline-contracts/schemas/build-command.schema.json`. This is a configuration judgment
+only when no structured suite declaration exists or declarations conflict. The Python build
+records and reuses the result; it does not start this agent for every suite execution.

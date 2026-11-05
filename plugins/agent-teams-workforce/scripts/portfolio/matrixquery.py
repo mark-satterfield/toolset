@@ -37,6 +37,7 @@ from typeguard import CollectionCheckStrategy, typechecked
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 from matrix_contract import (
+    AUTHORITY_SIDE,
     ENTRY_KINDS,
     KIND_COMPONENT,
     KIND_DOCUMENT,
@@ -46,6 +47,7 @@ from matrix_contract import (
     KIND_FILE,
     KIND_INFRASTRUCTURE,
     KIND_LAYER,
+    KIND_REQUIREMENT,
     KIND_SERVICE,
     KIND_STACK,
     REL_CONTAINS,
@@ -81,7 +83,6 @@ from matrixtraverse import (
     ATTR_REPOSITORY,
     ATTR_RESOURCE_TYPE,
     ATTR_SELECTOR,
-    ApprovalScope,
     CapabilityReach,
     ConstraintReach,
     Dependency,
@@ -89,7 +90,6 @@ from matrixtraverse import (
     Impact,
     Touch,
     Way,
-    approval_scope,
     capabilities,
     constraints_for,
     dependencies,
@@ -564,11 +564,11 @@ class Approval(TypedDict):
 class ApprovalView(TypedDict):
     """What ``approval`` prints."""
 
-    epic: EntryId
+    ids: list[EntryId]
     approved: list[Approval]
-    """The entries the Epic reaches that carry the flag."""
+    """The named entries that carry the flag."""
     notApproved: list[EntryId]
-    """The entries the Epic reaches that do not."""
+    """The named entries that do not."""
     relationships: int
     """How many architecture-side relationships join two of the entries the Epic reaches."""
     approvedRelationships: int
@@ -1518,41 +1518,46 @@ def summarize(matrix: Matrix, *, unlinked: bool = False) -> MatrixSummary:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def approval_view(matrix: Matrix, bead: str) -> ApprovalView:
-    """List which of the matrix content an Epic reaches carries the approved mark.
-
-    The content is ``matrixtraverse.approval_scope``: the Epic, its requirements and every
-    architecture-side entry it reaches by the rule of reach, with the architecture-side
-    relationships between them. An
-    Epic the matrix does not hold raises ``MatrixError``, and an empty beads id raises
-    ``ValueError`` from ``epic_id``.
+def approval_view(matrix: Matrix, ids: Sequence[EntryId]) -> ApprovalView:
+    """Read approval on named features and architecture items independently of any Epic.
 
     Args:
         matrix: The matrix.
-        bead: The Epic's beads id.
+        ids: The entries whose marks are requested.
 
     Returns:
-        The Epic; the entries it reaches that carry the mark and those that do not, in id order;
-        and how many of the relationships between them there are and carry the mark.
+        The requested entries, split by their marks, and the marks on relationships joining them.
+
+    Raises:
+        MatrixError: A requested entry is missing or is not an architecture item.
 
     """
-    epic: EntryId = epic_id(bead)
-    scope: ApprovalScope = approval_scope(matrix, epic)
+    selected: list[EntryId] = sorted(set(ids))
+    kept: set[EntryId] = set(selected)
+    relationships: list[Relationship] = [
+        held
+        for entry_id in selected
+        for held in matrix.outgoing(entry_id)
+        if held.side == AUTHORITY_SIDE and held.end in kept
+    ]
     approved: list[Approval] = []
     not_approved: list[EntryId] = []
     entry_id: EntryId
-    for entry_id in scope.entries:
+    for entry_id in selected:
         entry: Entry = matrix.entry(entry_id)
+        if entry.kind in {KIND_EPIC, KIND_REQUIREMENT} or entry.side != AUTHORITY_SIDE:
+            message: str = f"approval is a mark on architecture, not {entry_id}"
+            raise MatrixError(message)
         if entry.approved:
             approved.append({"id": entry.id, "kind": entry.kind, "name": entry.name})
         else:
             not_approved.append(entry_id)
     return {
-        "epic": epic,
+        "ids": selected,
         "approved": approved,
         "notApproved": not_approved,
-        "relationships": len(scope.relationships),
-        "approvedRelationships": sum(1 for held in scope.relationships if held.approved),
+        "relationships": len(relationships),
+        "approvedRelationships": sum(1 for held in relationships if held.approved),
     }
 
 

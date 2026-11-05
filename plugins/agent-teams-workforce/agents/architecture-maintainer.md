@@ -145,6 +145,8 @@ architecture documentation model's step 6 describes:
 6. On a pass that answers review findings, correct each finding in place and return the
    complete report, every pass together.
 
+For this built-version request, use `built-maintenance.schema.json`; write exactly the shape
+that schema defines, and no other fields.
 Return the result in the output schema the brief carries: every file you changed, created or
 deleted as an absolute path under the architecture root, in `matched` every built view the
 effective version now matches, every constraint issue, and every contradiction with another

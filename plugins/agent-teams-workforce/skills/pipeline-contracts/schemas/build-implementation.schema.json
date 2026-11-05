@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Build code work",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["changedFiles", "evidence", "testIssues", "prerequisites"],
+  "properties": {
+    "changedFiles": {"type": "array", "items": {"type": "string"}},
+    "evidence": {"type": "string", "minLength": 1},
+    "testIssues": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["testId", "reason"], "properties": {"testId": {"type": "string"}, "reason": {"type": "string"}, "contractRef": {"type": "string"}}}},
+    "prerequisites": {"type": "array", "description": "Prerequisites developed in this run, not reasons to stop at an unbuilt dependency.", "items": {"type": "object", "additionalProperties": false, "required": ["repository", "worktree", "evidence"], "properties": {"repository": {"type": "string"}, "worktree": {"type": "string"}, "evidence": {"type": "string"}}}}
+  }
+}

@@ -344,8 +344,8 @@ it changes the names only, no other word, commits and pushes the vault, and repo
 documents it changed. The rename or deprecation is not finished, and you do not report it done,
 until the filing-clerk has updated and pushed every listed document. The tool re-keys in the matrix each
 published package it holds (`atw-matrix rename --from package:<old> --to package:<new>`) and
-commits the matrix; once the filing-clerk has changed the documents, you run
-`atw-matrix sync-documents --paths` on them and `commit`. A new library name is importable only once the library is published to
+updates the local matrix; once the filing-clerk has changed the documents, you run
+`atw-matrix sync-documents --paths` on them. A new library name is importable only once the library is published to
 CodeArtifact, so publishing is the library's own declared publish command, which you never run by
 hand.
 

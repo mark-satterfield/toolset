@@ -22,7 +22,14 @@ if __package__ in {None, ""}:
 # The composite and driver surface contracts are defined once, in the pipeline-contracts skill.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "pipeline-contracts" / "scripts"))
 
-from composites_contract import ORCHESTRATED, PRD_TO_SPEC
+from composites_contract import (
+    BUILT_VERSION,
+    DEPLOY_MECHANISM,
+    ORCHESTRATED,
+    PRD_TO_SPEC,
+    STORY_DEPLOY_FIX,
+    TASK_TO_DEPLOY,
+)
 from driver_surface_types import CONTROL_REPO_ENV
 
 from orchestrator.core.agent_context import SessionCleanupError
@@ -42,11 +49,21 @@ from orchestrator.core.handback_contract import (
 from orchestrator.core.io import JsonValue, json_object, work_directory, write_json
 from orchestrator.core.models import RunContext, StepError
 from orchestrator.core.tools import env_path
+from orchestrator.flows.built_version import run as built_version
+from orchestrator.flows.deploy_mechanism import run as deploy_mechanism
 from orchestrator.flows.prd_to_spec import run as elaborate
+from orchestrator.flows.story_deploy_fix import run as story_deploy_fix
+from orchestrator.flows.task_to_deploy import run as build_task
 
 type SignalHandler = Callable[[int, FrameType | None], None] | int | None
 
-FLOWS: dict[str, Callable[[RunContext], dict[str, JsonValue]]] = {PRD_TO_SPEC: elaborate}
+FLOWS: dict[str, Callable[[RunContext], dict[str, JsonValue]]] = {
+    PRD_TO_SPEC: elaborate,
+    TASK_TO_DEPLOY: build_task,
+    DEPLOY_MECHANISM: deploy_mechanism,
+    STORY_DEPLOY_FIX: story_deploy_fix,
+    BUILT_VERSION: built_version,
+}
 if frozenset(FLOWS) != ORCHESTRATED:
     _drift: str = f"run.py flows {sorted(FLOWS)} are not the orchestrated composites {sorted(ORCHESTRATED)}"
     raise ImportError(_drift)

@@ -1,4 +1,4 @@
-"""The changes a session or a script makes to the matrix: entries, relationships, rulings, the commit.
+"""The local changes a session or a script makes to matrix entries, relationships and rulings.
 
 :func:`put`, :func:`link`, :func:`unlink`, :func:`settle` and :func:`move_repository` each edit a
 loaded matrix in place. ``atw-matrix`` runs each inside one locked read-modify-write
@@ -14,16 +14,15 @@ writes, so several sessions can record at once and none loses another's change.
   read from a repository never takes the place of what the architecture states.
 - :func:`settle` records which statement of a disagreement stands and the rule it was ruled by.
 - :func:`move_repository` gives every stack of one repository another repository's name.
-- :func:`commit` commits the matrix file alone in the repository that holds it, and pushes it.
 
 Nothing here sets the verified mark (``matrixcode`` sets it), and :func:`approve` leaves it as it
 is. The approved and verified marks are plain yes/no marks on the architecture, each cleared on its
 own: a change on the architecture side clears the verified mark (``matrixstore.Matrix.put`` and
 ``Matrix.link``), and only :func:`withdraw_approval` clears the approved mark.
 
-The approved mark is set by :func:`approve` alone, which only the script role may run: the step
-that promotes a feature's reviewed architecture and design runs it on the matrix content the
-Epic's elaboration reached (``matrixtraverse.approval_scope``). :func:`put` and :func:`link` take
+The approved mark is set by the promotion script's :func:`approve`, or by script-role
+:func:`approve_reviewed` recording an explicit owner-directed status correction. Promotion uses the matrix content the
+Epic's elaboration reached (``matrixtraverse.architecture_review_scope``). :func:`put` and :func:`link` take
 attributes only, so neither can state a mark. The mark comes off an entry only when an Epic's
 architecture changes that entry: the step that accepts the architect's result runs
 :func:`withdraw_approval` on what the result names as added or changed and on what
@@ -32,10 +31,7 @@ a change to a document heading, whichever entries that heading describes.
 """
 
 import json
-import shutil
-import subprocess  # ruff: ignore[suspicious-subprocess-import] - Fixed Git argv without a shell.
 import sys
-import time
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -87,7 +83,6 @@ from matrixstore import (
     id_stack,
     kind_of,
     make_id,
-    matrix_lock,
     relationship_id,
     repository_side_id,
     require_role,
@@ -98,7 +93,7 @@ from matrixstore import (
 from strictschema import explain_all, validator
 
 if TYPE_CHECKING:
-    from matrixtraverse import ApprovalScope
+    from matrixtraverse import ArchitectureReviewScope
 
 NAMED_ID_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_STACK, KIND_PACKAGE, KIND_EVENT})
 """The kinds whose id is the kind and the entry's name as written: a stack name, a distribution name, a detail type."""
@@ -118,18 +113,6 @@ MEMBER_NAME: Final = "name"
 MEMBER_ALIASES: Final = "aliases"
 MEMBER_PURPOSE: Final = "purpose"
 MEMBER_SIDE: Final = "side"
-GIT: Final = "git"
-GIT_TIMEOUT: Final = 300.0
-"""Seconds one git command may take; a push runs the repository's hooks."""
-COMMIT_MESSAGE: Final = "chore(matrix): record the matrix"
-UPSTREAM_RANGE: Final = "@{upstream}..HEAD"
-"""The commits the branch has that the branch it pushes to does not."""
-GIT_ATTEMPTS: Final = 3
-GIT_RETRY_DELAY: Final = 5.0
-"""Attempts at a git command another git process can block, and the pause before the next, in seconds."""
-INDEX_LOCK: Final = "index.lock"
-REBASE_STATES: Final[tuple[str, ...]] = ("rebase-merge", "rebase-apply")
-"""The git paths that exist while a git process holds the index, and while a rebase is stopped."""
 CHANGE_SCHEMA_PATH: Final[Path] = (
     Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "schemas" / "matrix-change.schema.json"
 )
@@ -197,6 +180,62 @@ class ApproveResult(TypedDict):
     """How many relationships had their mark set by this call."""
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def approve_reviewed(
+    matrix: Matrix,
+    entries: Sequence[EntryId],
+    relationships: Sequence[tuple[RelationshipKind, EntryId, EntryId]],
+    role: Role,
+) -> ApproveResult:
+    """Record exact approval statuses for the pipeline or an owner-directed correction.
+
+    Relationship tuples name kind, source and destination. Ambiguous tuples are refused;
+    endpoint approval and incident relationships are never inferred. Existing verified marks
+    remain unchanged.
+
+    Returns:
+        The exact approved targets and newly set mark counts.
+
+    Raises:
+        MatrixRefusedError: A target is missing, ambiguous, duplicated or not architecture.
+
+    """
+    require_role("approve-reviewed", role)
+    if not entries and not relationships:
+        message: str = "at least one explicitly reviewed target is required"
+        raise MatrixRefusedError(message)
+    if len(set(entries)) != len(entries) or len(set(relationships)) != len(relationships):
+        message = "reviewed targets must be unique"
+        raise MatrixRefusedError(message)
+    selected_entries: list[Entry] = [matrix.entry(entry_id) for entry_id in entries]
+    if any(entry.side != AUTHORITY_SIDE or entry.kind in {KIND_EPIC, KIND_REQUIREMENT} for entry in selected_entries):
+        message = "only architecture items may be approved"
+        raise MatrixRefusedError(message)
+    selected_relationships: list[Relationship] = []
+    for kind, start, end in relationships:
+        matches: list[Relationship] = [
+            held
+            for held in matrix.relationships({kind})
+            if held.start == start and held.end == end and held.side == AUTHORITY_SIDE
+        ]
+        if len(matches) != 1:
+            message = f"reviewed relationship must identify one architecture relationship: {kind} {start} {end}"
+            raise MatrixRefusedError(message)
+        selected_relationships.append(matches[0])
+    marked: list[EntryId] = [entry.id for entry in selected_entries if not entry.approved]
+    unmarked: list[Relationship] = [held for held in selected_relationships if not held.approved]
+    for entry in selected_entries:
+        matrix.set_flags(replace(entry, approved=True))
+    for relationship in selected_relationships:
+        matrix.set_flags(replace(relationship, approved=True))
+    return {
+        "entries": sorted(entries),
+        "relationships": len(relationships),
+        "marked": sorted(marked),
+        "markedRelationships": len(unmarked),
+    }
+
+
 class ChangeFailure(TypedDict):
     """One operation of a change file that could not be applied, or a fault of the file as a whole."""
 
@@ -229,18 +268,6 @@ class MoveResult(TypedDict):
     new: str
     stacks: list[EntryId]
     """The stacks whose repository changed, in id order."""
-
-
-class CommitResult(TypedDict):
-    """What :func:`commit` did."""
-
-    committed: bool
-    """False when the matrix file was already as the last commit holds it."""
-    pushed: bool
-    """False when the branch it pushes to already held every commit of the matrix file."""
-    head: str
-    """The commit the repository is at afterwards."""
-    message: str
 
 
 def _joined(current: JsonValue, stated: JsonValue) -> JsonValue:
@@ -704,12 +731,12 @@ def settle(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] -
     return {"id": entry_id, "stands": stands, "rule": rule.strip(), "entry": entry_json(settled)}
 
 
-def approve(matrix: Matrix, scope: ApprovalScope, role: Role) -> ApproveResult:
+def approve(matrix: Matrix, scope: ArchitectureReviewScope, role: Role) -> ApproveResult:
     """Set the approved mark on the architecture the solutions architect reviewed and approved.
 
     Run by the step that promotes reviewed architecture and design, once the reviews pass, in the
     same matrix change that brings the promoted documents' entries up to date. The content is the
-    scope the architect reviewed (``matrixtraverse.approval_scope``): every architecture-side entry
+    scope the architect reviewed (``matrixtraverse.architecture_review_scope``): every architecture-side entry
     it names except an Epic, which is not architecture, with the architecture-side relationships
     between them. The mark is a plain yes: it records nothing about who approved it. Only the
     approved mark is set: the verified mark each item carries is left as it is, because approving
@@ -730,7 +757,9 @@ def approve(matrix: Matrix, scope: ApprovalScope, role: Role) -> ApproveResult:
     if role != APPROVING_ROLE:
         message: str = f"the role {role} may not set the approved mark; only {APPROVING_ROLE} may"
         raise MatrixRefusedError(message)
-    entries: list[EntryId] = [entry_id for entry_id in scope.entries if matrix.entry(entry_id).kind != KIND_EPIC]
+    entries: list[EntryId] = [
+        entry_id for entry_id in scope.entries if matrix.entry(entry_id).kind not in {KIND_EPIC, KIND_REQUIREMENT}
+    ]
     approving: set[EntryId] = set(entries)
     relationships: list[Relationship] = [
         held for held in scope.relationships if held.start in approving and held.end in approving
@@ -1165,160 +1194,3 @@ def move_repository(matrix: Matrix, old: str, new: str) -> MoveResult:
             matrix.put(replace(stack, attributes={**stack.attributes, ATTR_REPOSITORY: new.strip()}))
             moved.append(stack.id)
     return {"old": old.strip(), "new": new.strip(), "stacks": moved}
-
-
-def _git(root: Path, *arguments: str) -> str:
-    """Run one git command in a directory.
-
-    Returns:
-        What the command printed, without the white space around it.
-
-    Raises:
-        MatrixError: git is not installed, did not run, ran out of time or exited with a failure.
-
-    """
-    command: str = f"git {' '.join(arguments)} in {root}"
-    message: str
-    executable: str | None = shutil.which(GIT)
-    if executable is None:
-        message = f"cannot run {command}: git is not on the PATH"
-        raise MatrixError(message)
-    try:
-        result: subprocess.CompletedProcess[str] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Resolved Git executable and separate argv.
-            [executable, "-C", str(root), *arguments],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=GIT_TIMEOUT,
-        )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        message = f"cannot run {command}: {error}"
-        raise MatrixError(message) from error
-    if result.returncode != 0:
-        message = f"{command} failed with exit status {result.returncode}: {(result.stderr or result.stdout).strip()}"
-        raise MatrixError(message)
-    return result.stdout.strip()
-
-
-def _git_path(root: Path, name: str) -> Path:
-    """Name a path inside the repository's git directory.
-
-    Returns:
-        The path ``git rev-parse --git-path`` gives, resolved against the repository.
-
-    """
-    return root / _git(root, "rev-parse", "--git-path", name)
-
-
-def _git_retried(root: Path, *arguments: str) -> str:
-    """Run one git command, again after a pause while another git process holds the index lock.
-
-    Returns:
-        What the command printed, without the white space around it.
-
-    Raises:
-        MatrixError: The command failed while no git process held the index lock, or on its last attempt.
-
-    """
-    attempt: int
-    for attempt in range(1, GIT_ATTEMPTS + 1):
-        try:
-            return _git(root, *arguments)
-        except MatrixError:
-            if attempt == GIT_ATTEMPTS or not _git_path(root, INDEX_LOCK).exists():
-                raise
-            time.sleep(GIT_RETRY_DELAY * attempt)
-    message: str = f"git {' '.join(arguments)} in {root} made no attempt"
-    raise MatrixError(message)
-
-
-def _rebase(root: Path) -> None:
-    """Rebase the branch on the branch it pushes to, keeping uncommitted changes (``--autostash``).
-
-    A rebase git stops is aborted, which puts the branch and the stashed changes back as they were.
-
-    Raises:
-        MatrixError: The pull failed; the message names what git printed.
-
-    """
-    try:
-        _git_retried(root, "pull", "--rebase", "--autostash")
-    except MatrixError:
-        if any(_git_path(root, state).exists() for state in REBASE_STATES):
-            _git(root, "rebase", "--abort")
-        raise
-
-
-def _push(root: Path, path: Path, file: Path, wait: float) -> bool:
-    """Push the commits of the matrix file, rebasing on the branch it pushes to first.
-
-    Each attempt rebases under the matrix's lock, so no matrix write is stashed or overwritten by
-    the rebase, then pushes outside it. A push the remote rejects, because its branch moved after
-    the rebase, is tried again after a pause and another rebase.
-
-    Returns:
-        False when the branch it pushes to already held every commit of the matrix file.
-
-    Raises:
-        MatrixError: The rebase failed, or the push failed on its last attempt.
-
-    """
-    attempt: int
-    for attempt in range(1, GIT_ATTEMPTS + 1):
-        with matrix_lock(path, wait):
-            if not _git(root, "log", "--format=%H", UPSTREAM_RANGE, "--", str(file)):
-                return False
-            _rebase(root)
-        try:
-            _git_retried(root, "push")
-        except MatrixError:
-            if attempt == GIT_ATTEMPTS:
-                raise
-            time.sleep(GIT_RETRY_DELAY * attempt)
-        else:
-            return True
-    message: str = f"the push of {file} made no attempt"
-    raise MatrixError(message)
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def commit(path: Path, bead: str = "", *, wait: float = DEFAULT_LOCK_WAIT) -> CommitResult:
-    """Commit the matrix file alone in the repository that holds it, and push it.
-
-    Whatever else the repository has staged or changed is left as it is. The commit is made
-    under the matrix's lock, so it holds the file as one change left it. Before the push the
-    branch is rebased on the branch it pushes to with ``--autostash``, under the matrix's lock;
-    the push follows outside it, and a rejected push is rebased and tried again (:func:`_push`).
-    A git command another git process blocks with the index lock is tried again after a pause.
-    The repository's own commit and push hooks run. A matrix file that is as the last commit
-    holds it is not committed again, and is pushed only when the branch it pushes to lacks a
-    commit of it. A git command that fails raises ``MatrixError`` naming the command and what
-    git printed; a commit already made stays, and the next call pushes it.
-
-    Args:
-        path: The matrix file.
-        bead: The beads id of the Epic or Story the recorded changes belong to; the commit
-            message names it. Empty for a change no bead owns.
-        wait: Seconds to wait for the matrix's lock.
-
-    Returns:
-        Whether a commit was made, whether it was pushed, the commit the repository is at and
-        the commit message.
-
-    Raises:
-        MatrixError: There is no matrix at ``path``.
-
-    """
-    if not path.is_file():
-        message: str = f"there is no matrix at {path}"
-        raise MatrixError(message)
-    file: Path = path.resolve()
-    root: Path = Path(_git(file.parent, "rev-parse", "--show-toplevel"))
-    subject: str = f"{COMMIT_MESSAGE} for {bead.strip()}" if bead.strip() else COMMIT_MESSAGE
-    with matrix_lock(path, wait):
-        committed: bool = bool(_git(root, "status", "--porcelain", "--", str(file)))
-        if committed:
-            _git_retried(root, "add", "--", str(file))
-            _git_retried(root, "commit", "-m", subject, "--", str(file))
-    pushed: bool = _push(root, path, file, wait)
-    return {"committed": committed, "pushed": pushed, "head": _git(root, "rev-parse", "HEAD"), "message": subject}

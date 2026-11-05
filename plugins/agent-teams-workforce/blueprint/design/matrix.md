@@ -16,6 +16,20 @@ The matrix is one JSON file, `ops/sdlc-automation/matrix.json` in the control re
 Sessions and scripts find it through the `ATW_MATRIX` variable and read and change it only
 through `bin/atw-matrix`.
 
+The JSON file is local current state and is ignored by git. `matrixstore._decode` keeps an
+optional primitive-only binary decode cache in the environment's temporary directory,
+isolated by user, Python version and resolved source path. A cache generation matches the
+source device, inode, size, modification time and change time at nanosecond precision. Cache
+hits avoid reading and parsing JSON text in each short-lived command; the existing document
+shape checks and graph indexing still run. No runtime service or second authority is added.
+
+Cache publication uses a unique temporary file and atomic replacement. Readers check source
+identity before and after a cache hit. Cold readers publish only if the source generation
+stayed unchanged during decoding. Concurrent old-generation publication is harmless because
+its generation key cannot match a newer source. Missing, incompatible or corrupt caches
+rebuild from canonical JSON, and cache-write failure never prevents a valid matrix read.
+Only JSON primitives are accepted from the binary cache, never executable objects.
+
 The file holds three members:
 
 | Member | Holds |
@@ -197,78 +211,39 @@ approved.
 
 ### 1.4.1 The approved mark
 
-`approved: true` says the solutions architect approved the architecture for a feature: an
-Epic's architecture and design are approved and the matrix and arc42 are filled out or
-corrected for it.
+The matrix skill defines approval. The architecture pack and check use
+`matrixtraverse.architecture_review_scope` to identify architecture requiring review for
+the requirements in hand. The scope identifies work; it does not make approval an Epic
+property. `matrixwrite.approve` records the architect's vetted items after reviews pass,
+excluding Epics and requirements, while preserving verified marks. Repository-side hints
+are not approved. `withdraw_approval` withdraws approval only from architecture the
+architect actually changes; adding an Epic or reusing an item withdraws nothing.
 
-- **What it covers.** The architecture the Epic's elaboration reaches,
-  `matrixtraverse.approval_scope(matrix, epic)` without the Epic itself: its requirements, and what
-  `rule_reach` reaches from them by the rule of reach that the architecture side states (the
-  features that serve the requirements, the entries a serving feature's `realizedBy` names,
-  the stack each is or has its home in, and the direct far end of each dependency from those,
-  one hop), with every architecture-side relationship that joins two
-  of those. The closure (`epic_reach`) is not used: it makes every Epic reach every service.
-  The architecture pack lists the same scope (`reach_rows`, each entry with whether it is
-  approved, how it is reached, the Epics that share it and the headings that describe it), and the check holds the
-  architect's verdicts to it, so what is reviewed and what is approved are one set.
-  Repository-side facts are hints and are not approved.
-- **Who sets it.** Only `matrixwrite.approve(matrix, scope, role)`, which refuses every role
-  but `script` (`APPROVING_ROLE`) and marks every entry of the scope but an Epic, with the
-  relationships between them. The promotion step (`orchestrator/flows/architecture_promotion.py`
-  `_promote`) runs it on `approval_scope(matrix, epic)` once the Epic's reviews pass, in the same matrix change that brings the
-  promoted documents' entries up to date and removes the settled disagreements, so the
-  matrix and arc42 are corrected first. `put` and `link` take attributes only, and no
-  `atw-matrix` option states a mark. No session sets it. Two Epics are never elaborated at
-  the same time on the same unapproved architecture, because the dependency edges
-  `epicorder.py` sets in advance order them, so the promotion runs no check for that case.
-- **When it clears.** Only when that specific architecture is changing because of a new Epic.
-  `orchestrator/flows/architecture.py` `_record_result`, which accepts the architect's result,
-  runs `matrixwrite.withdraw_approval` on each entry the result names under
-  `addedOrChangedElements` and each entry `matrixwrite.changed_by_design` finds its change file and
-  links changed: the entry's own content, leaving out `repository` and `epicDriver`, or an
-  architecture-side relationship starting at it other than `describedBy` and `covers`. The
-  relationships that start at those entries lose it with them. `Matrix.put`, `Matrix.link`,
-  `Matrix.unlink` and `Matrix.remove` never clear it, and neither does a document's text: a heading
-  describes many entries, so a change to it says nothing about which of them changed. It returns
-  when an Epic that reaches the content has its architecture and design approved again.
-- **Where it shows.** Every read that returns an entry or a relationship returns it where
-  set; `summary` counts it by kind (`approvedByKind`, `approvedRelationshipsByKind`);
-  `approval --epic` lists the entries the Epic reaches, approved (under `approved`) and not
-  approved (`notApproved`), with the count of the
-  relationships between them and of those approved.
+`approval --ids <entry id> ...` reads marks on named features and architecture items.
+`summary` counts marks by kind. Neither approval nor verification participates in Epic
+eligibility or order; recorded dependency judgments order shared work ahead of time.
 
 ### 1.4.2 The verified mark
 
-`verified: true` says the architecture was verified correct because it was built and its test
-passed: the entry or relationship was built and tested, the CI checks and the test that its
-CDK deployment works included. The deployment may be removed again after that test.
+The matrix skill defines verification as feature build completion. The common Story
+close path calls `matrixmarks.verified`, which runs `atw-matrix verify --story <id>`.
+PR checks and merge are completion prerequisites when a PR exists; no-PR completion
+uses the same local matrix write.
 
-- **When it is set.** The driver runs `atw-matrix verify --story <beads id>`, as the role
-  `build-driver`, when the Story's test passes: its deploy to AWS dev was verified working
-  (D4) and the CI checks on the Story's branch pass. It runs before, and apart from, the merge of the Story's pull request,
-  which follows as a separate step: no merge and no branch decides the flag.
-- **What it covers.** Each stack and entry the Story built, as the Task script's `built` read
-  returns them for the Story (section 1.5), and every relationship, of any kind and either
-  side, that starts at one of them. `built` lists as built the stacks and the entries of the
-  kinds a Task builds (`matrixtasks.BUILT_KINDS`: service, component, infrastructure, event,
-  package, layer, file); any other id a Task names, such as a shared capability it uses, is
-  listed under `notBuilt` and takes no flag, because what a Task only uses was verified when it
-  was itself built and tested. The flag belongs to the entry or relationship and holds for
-  every Epic that relates to it: it is not set per Epic and waits for no other Story.
-- For a stack with no CDK app, the publish of its package to CodeArtifact stands where the
-  CDK deploy does. A Story that closes with no pull request runs no `verify`.
-- **When it clears.** A known change to what the item must be built as clears it on that item
-  alone, as a dirty bit, settled separately from `approved` (one clearing never implies the
-  other): `Matrix.put` and `Matrix.link` clear it on an architecture-side entry or relationship
-  replaced by one that differs in anything but its flags; a change to the text under the
-  heading a `describedBy` names clears it on that entry only; an architecture-side relationship
-  added, changed or removed clears it on the entry it starts from. Setting `approved` neither
-  sets nor clears it. The next `verify` that covers the item sets it again.
-- Entries and relationships an Epic adds are not verified until the build that builds them passes its test. The spec step reads the flag of each
-  entry a Story builds to decide what the spec covers (`spec_authoring.entry_scope`).
-- `verify` takes no stack, element or repository name. It adds, changes and removes no entry
-  and no relationship: the flag is the only thing the build pipeline writes in the matrix
-  (requirement R46).
+`matrixcode.record_verified` reads Task contributions and Story completion before taking
+the matrix lock. It matches only the current Story's `matrix_elements` through
+`matrixtasks.built`. It defers an item while a contributing Task is unfinished or another
+contributing Story remains open. `verify` marks the remaining built entries and their
+outgoing relationships. Reached or reused prerequisites are not blanket-marked.
+
+A touched feature takes verified only when it has architecture-side `realizedBy` targets,
+every target exists on the architecture side and is verified, and no contributing work
+remains pending. Missing realizers mean unknown completion. Existing verified features
+and reused components retain their marks; the existence of another Epic erases nothing.
+
+Known implementation changes clear verified on the affected item through the matrix's
+existing dirty-bit rules. Approval changes neither set nor clear verified. The build
+writes only verified marks; it neither commits nor pushes the local matrix.
 
 ### 1.5 Stories and Tasks
 
@@ -342,9 +317,9 @@ today, each marked with its side.
 | Q30 | `links --id <id> [--depth <n>] [--direction out\|in\|both] [--kinds <k,...>]` | Breadth first from the entry over every relationship (or the kinds named), outward by default, to any depth unless `--depth` bounds it; each entry is reached once and each relationship followed is returned with its depth, the direction and the far end. |
 | Q25 | `summary --unlinked` | `noArchitecture`: over the whole matrix, the entries with `side: repository`, of the kinds read from a repository (`matrixquery.FOUND_KINDS`: component, infrastructure, layer, stack), that no `correspondsTo` ends at. It is the other direction of Q13's `noCounterpart`. |
 | Q26 | `epic <id> --realizers` | For each feature that serves one of the Epic's requirements, the ends of its `realizedBy` relationships; a feature reached only through `supportedBy` is not listed. Each realizer is returned once with its stack (`holder`: the architecture-side home, else the repository-side home), that stack's `repository`, its `resourceType` when it has one and, for an event, its publishers; `noStack` lists the realizers with no stack on either side. |
-| Approval | `approval --epic <id>` | `matrixtraverse.approval_scope`: the Epic, its requirements and every architecture-side entry it reaches by the rule of reach, with the architecture-side relationships between them. Each entry is returned under `approved` (with `kind` and `name`) when it carries `approved`, otherwise under `notApproved`; `relationships` and `approvedRelationships` count the relationships (section 1.4.1). |
+| Approval | `approval --ids <architecture entry id> ...` | `matrixtraverse.architecture_review_scope`: the Epic, its requirements and every architecture-side entry it reaches by the rule of reach, with the architecture-side relationships between them. Each entry is returned under `approved` (with `kind` and `name`) when it carries `approved`, otherwise under `notApproved`; `relationships` and `approvedRelationships` count the relationships (section 1.4.1). |
 | Shared items | `shared-items [--epic <id>]` | `matrixshared.shared_items`: every feature that serves a requirement of two or more Epics and every architecture-side service, component, infrastructure, event, stack, package or layer entry two or more Epics reach by the rule of reach, walked per requirement (`matrixtraverse.requirement_reach`), each with the Epics that need it and the requirements through which each does, whether its architecture is approved, its stack, whether that stack is deployed in advance (`epicDriver: none`), and its decision: the judgment (`drives` with a basis to the item) or the owner's decision for its stack (`drives` with no basis to the stack). |
-| Judging batches | `shared-items --batches <folder> [--batch-size <n>]` | `matrixshared.write_batches`: the unapproved shared items no record decides and no stack deployed in advance holds, grouped by identical sets of Epics, packed into batches of about `n` items (25 by default) without splitting a group, each item with its id, kind, name, purpose, stack and Epics with their requirement ids, each batch with the text of every requirement it names once (read from the PRDs under the vault of `--prd-dir`), and `index.json` with the counts. It reads the matrix only. |
+| Judging batches | `shared-items --batches <folder> [--batch-size <n>]` | `matrixshared.write_batches`: the ordered shared items no record decides and no stack deployed in advance holds, grouped by identical sets of Epics, packed into batches of about `n` items (25 by default) without splitting a group, each item with its id, kind, name, purpose, stack and Epics with their requirement ids, each batch with the text of every requirement it names once (read from the PRDs under the vault of `--prd-dir`), and `index.json` with the counts. It reads the matrix only. |
 
 `record-judgments --file <path>` (role `script` or `operator`) records a judgment file
 (`shared-item-judgments.schema.json`) in one locked update: each judgment becomes the one
@@ -445,7 +420,7 @@ done. The Agents column is the number of sessions at the measured sizes.
 | G3 Features recorded once | G1, G2 | all proposal files | 1 | One line for each proposed feature, its name and its purpose, which `seed-features --list` prints from every proposal file; `find --kinds feature --text` for the features the matrix already holds. | A merge file that maps each proposed feature to the feature it is, by the working test of requirements section 3.1.1 (`matrixseed.MERGE_HOLDS`): proposals that name the same capability, one the same part of the architecture provides, are one feature, and a shared subject, screen, channel, document or Epic is no reason to merge; a proposal that bundles capabilities different parts of the architecture provide is split, listed under `proposed` of each feature it bundles; a proposal that is a condition, quality or rule is listed under `proposed` of the feature of each capability it constrains. A proposed feature that is a feature the matrix already holds, from G1 or an earlier run, takes that feature's name, so that it is recorded once. `seed-apply` then records from the proposal files and the merge file: each `feature` once; `servedBy` from every requirement it serves, across PRDs, a split proposal serving its requirements through each feature it is split into; `describedBy` from the feature to each covering document and heading; `covers` from the document to the requirement, with `heading` and `via`. |
 | G4 Realizers | G1, G3 | batch of features, grouped by the first document that describes each and filled to the reading allowance; `seed-realizers` writes the batches once G1 and G3 are recorded | 6 | Each feature of the batch with the requirements it serves, the document headings that describe it, its candidates (the architecture-side entries the same headings describe) and what already realizes it; the documents named; `find --kinds service,component,infrastructure,event,layer,package,stack --text` and `node` for the entries that realize each feature (`matrixseed.REALIZER_HOLDS`). | `realizedBy` from each feature to every architecture-side service, component, infrastructure entry, event, layer, package or stack that provides its capability, alone or with others; no entry. `seed-apply --step realizers` records each with `side: architecture` and refuses any other relationship and any entry. |
 | G5 Repository side | G1 | batch of stacks: about 9 stacks | 7 | `node stack:<id>` for each stack of the batch, and in the stack's repository its CDK app, its handler entry points, its `pyproject.toml` and its file listing. | All with `side: repository`: what is in the stack today, at the grain arc42 describes things, as `component` entries for its Lambda functions and pages, `layer` entries with `contains`, and `infrastructure` entries for what its CDK code defines, each with `homeIn`; the dependencies across a stack boundary that its code shows, under their kinds; `correspondsTo` from each architecture-side entry of the stack to the thing found for it, where one exists. On the stack entry: the `commands` the repository itself declares, a command it does not declare staying empty. No entry is recorded for a module or a construct. README files are not accurate and are not a source. |
-| G6 Close | G4, G5 | none; a script step | 0 | Nothing. | `atw-matrix check`, then `atw-matrix commit`. |
+| G6 Close | G4, G5 | none; a script step | 0 | Nothing. | `atw-matrix check`. |
 
 Seeding uses 39 agent sessions in all. A stack no arc42 document gives a purpose for keeps
 the purpose not stated.
@@ -456,9 +431,10 @@ the purpose not stated.
 
 A step that records does so with `atw-matrix` in the step itself. Where the fact comes from
 an agent's result file, a script step of the flow or workflow reads the file and makes the
-calls, and the step is done only when `atw-matrix` confirms them. The matrix file is
-committed and pushed with `atw-matrix commit --bead <id>` at the end of E9, D8, every
-steward operation and seeding.
+calls, and the step is done only when `atw-matrix` confirms them. The matrix is local
+current state, ignored by git. A successful locked write completes the operation; promotion,
+verification, steward operations and seeding never commit or push the matrix. All sessions,
+including those in worktrees, read the one file resolved by `matrixstore.matrix_path`.
 
 Elaboration, assessment and repository work record facts. Elaboration and assessment record with `side: architecture`, and repository work with `side: repository` (section 1.2). The build and deploy steps read
 the matrix and record nothing in it except the verified flag at D8 (requirement R46). A
@@ -479,8 +455,8 @@ arc42 documents, the next run's E1 mirrors them, and the architect records what 
 | E6 TRD and Spec filed | `trd_authoring.py` `confirm()`, `_mark_trd()`, `document()`; `ops/sdlc-automation/lane.py` `_file_artifacts`, `_vault_metadata` | `document()` checks each cited path and heading with `node document:<path>`. | Nothing. The TRD and Spec paths and digests stay on the Epic and Story beads. |
 | E7 Architecture check | `architecture_check.py` `check()`, `_open_review()` | `check`; `review-scope --epic` (Q4, Q18); `epic <id> --unlinked` (Q13). | Nothing. |
 | E8 Ruling | `architecture_ruling.py` `lead()`, `decider()`, `_disagreements()`; `agents/architecture-team-lead.md`; `agents/architecture-decider.md` | The check step plans the lead only when the architect's result lists a matter it could not settle; nothing reviews the architect's work, which the architect reviews and approves itself. The lead reads the architect's result. The decider reads `node disagreement:<id>` for the statements a disagreement disputes and `node document:<path>` for a document's `lifecycle`. | `settle --id <disagreement> --stands <document> <heading> --rule <rule>`, by the decider. Its accept step reads back the disagreements the question is about and fails the step when `stands` is unset. The lead's routing is in the step journal only. |
-| E9 Promotion | `architecture_promotion.py` `promote()`, `_promote()`; `matrixwrite.approve`; `depscore.py` `arch-approve` | `review-scope --epic`. | The documents are set effective in their front matter, then `sync-documents --paths` mirrors `lifecycle`. `remove` for each disagreement settled in this run whose losing statement is corrected. The Epic's review log is filed in the vault at `<architectureRoot>/review-logs/<epic>.json`, and in the same matrix change the Epic entry's `reviewLog` attribute records its path and hash. Then, in the same matrix change, the approved mark on the architecture the Epic reaches (section 1.4.1). `commit --bead` commits and pushes. |
-| E10 Repository scoping | `repo_scoping.py` `span()`, `story_builds()`, `story_build_problems()`, `repository_name()`, `_ruling()`, `shared_capabilities()` | The architect's result (`addedOrChangedElements` and `unchangedWorkElements`, the existing elements the architect names as where the Epic's work that leaves them unchanged lands); per entry its `authority_holder` and that stack's `repository`, its `describedBy`, an event's architecture-side publishers, and the architecture-side dependency relationships between the entries; the stack type (Q11); the naming rules for a stack with no `repository`; `uses`. | The `repository` the naming rules give a stack a Story builds in that names none (architecture side), which keeps the stack's approved flag; then `commit --bead` commits and pushes. The step fails on each `story_build_problems` sentence. |
+| E9 Promotion | `architecture_promotion.py` `promote()`, `_promote()`; `matrixwrite.approve`; `depscore.py` `arch-approve` | `review-scope --epic`. | The documents are set effective in their front matter, then `sync-documents --paths` mirrors `lifecycle`. `remove` for each disagreement settled in this run whose losing statement is corrected. The Epic's review log is filed in the vault at `<architectureRoot>/review-logs/<epic>.json`, and in the same matrix change the Epic entry's `reviewLog` attribute records its path and hash. Then, in the same matrix change, the approved mark on the architecture the Epic reaches (section 1.4.1). The local matrix write completes the operation. |
+| E10 Repository scoping | `repo_scoping.py` `span()`, `story_builds()`, `story_build_problems()`, `repository_name()`, `_ruling()`, `shared_capabilities()` | The architect's result (`addedOrChangedElements` and `unchangedWorkElements`, the existing elements the architect names as where the Epic's work that leaves them unchanged lands); per entry its `authority_holder` and that stack's `repository`, its `describedBy`, an event's architecture-side publishers, and the architecture-side dependency relationships between the entries; the stack type (Q11); the naming rules for a stack with no `repository`; `uses`. | The `repository` the naming rules give a stack a Story builds in that names none (architecture side), which keeps the stack's approved flag; then the local write completes. The step fails on each `story_build_problems` sentence. |
 | M1 Event checks | `matrixstore.Matrix._event_problems()` in `problems()` (`atw-matrix check` and every write); `matrixwrite._side_kept`, `matrixwrite.unlink` | Each architecture-side event. | Nothing. A problem for an architecture-side event that states `externalSource` and has an architecture-side publisher; that has neither; or whose publishers are homed in more than one stack, unless one is in a stack whose `executionUse` is `imported` (skipped until the owner rules). A repository-side put that states `externalSource` on an architecture-side event is refused, and unlinking the last architecture-side publisher of an event with no `externalSource` is refused. |
 | E11 Repository creation | `repo_scoping.py` `create_repositories()`, `_create()` | The stack's `repository` (Q10) and `purpose` (Q7); `polyrepo inventory --name` for the clone path. | `put stack --repository` when the created repository's name differs from the one recorded. `polyrepo create` records the rest (S1). |
 | E12 Story and Spec | `spec_authoring.py` `context()`, `story_bead()`, `spec_document()` accept, `story_document()`; `agents/story-bead-writer.md`; `depscore.py` `write-story` | `story-scope` for the stack and the entries the Story builds: documents and headings, constraints, shared capabilities. `documents --id` (Q29) for every architecture and design document of the stacks and entries, which every spec links to. Each entry's verified flag (Q14) for what the spec covers: a verified entry needs no work to match its architecture; a not-verified entry needs the work that brings its build, from the code already there, up to the approved architecture. The stacks outside the Story come from `epic <id> --closure`. | One `describedBy` per document heading the Spec cites for an entry the Story builds, where absent. Nothing for the Story itself: beads holds it (R40). |
@@ -516,14 +492,14 @@ those lanes only as far as slices 29 and 31 of section 6 state.
 
 | Step | Where | Reads | Records |
 |---|---|---|---|
-| D1 Mechanism | `storydeploy.py` `_mechanism_step`, `mechanism_of`, `_usable`; `workflows/deploy-mechanism.js` | none. `mechanism_of` reads nothing from the matrix: unless the repository is the control repository or the repository that holds the architecture documentation (`_excluded_repositories`), which publish and deploy nothing, it always starts one `polyrepo-steward` session, which rules whether the repository publishes and deploys and names its publish command. | Nothing in the matrix. The ruling is recorded in the Story's step journal. |
+| D1 Mechanism | `storydeploy.py` `_mechanism_step`, `mechanism_of`, `_usable`; `orchestrator/flows/deploy_mechanism.py` | `stacks --repository <name>`: the repository's recorded publish and deploy commands. Conflicting publish commands fail the step. | Nothing in the matrix. The measured mechanism is recorded in the Story's step journal. |
 | D2 Publish | `storydeploy.py` `_publish_step`, `_library_tests_fail`; `matrixmarks.shared_library` | Only the shared-library check: the repository's stacks (`atw-matrix stacks --repository`), whether one has `executionUse` `imported`, and that stack's `commands.test`. The publish command is the steward's ruling from D1, not read from the matrix. | Nothing. |
 | D3 Synth and SSM check | `storydeploy.py` `_synth_step`, `_ssm_check_step`, `stacks_in`, `ssm_reads` | none; the assembly is the build's own output, read to deploy and check this Story. | Nothing. A missing parameter fails the step. |
 | D4 Deploy and stack verification | `workflows/deploy.js`; `storydeploy.py` `_verify_step` | The stack's `commands.deploy` (Q21) and the stacks D3 synthesized. | Nothing. Passing is a condition of D8 and is in the step journal. |
-| D5 Deploy fix | `storydeploy.py` `_fix_step`; `workflows/story-deploy-fix.js` | `node stack:<id>` and `deps --of` for the failed stacks (Q9). | Nothing. |
-| D6 Built comparison | `workflows/built-version.js` `stepCompare`; `agents/built-architecture-comparer.md`; `storydeploy.py` `_built_subject`, `built_args` | `built --story <id>`, then `story-scope` for those entries: the documents and headings that describe each (Q18). | Nothing. A difference is a file under `built/<subject>/` until D7 corrects the documents in the same run. |
-| D7 Built correction | `workflows/built-version.js` correct, conformance and approve steps; `agents/architecture-maintainer.md`; `skills/arc42-maintain/SKILL.md` step 8; `storydeploy.py` `_built_version_step` | `node <entry>` for every document that describes a changed entry (Q18). | Nothing. The corrected documents are effective in the vault; the next run's E1 `sync-documents` mirrors them. |
-| D8 Verify, merge and close | `storydeploy.py` `_mark_verified_step` (journal step `deploy:mark-verified`), `_merge_wait_step`, `_close_step`; `ops/sdlc-automation/matrixmarks.py`; `scripts/portfolio/matrixcode.py` | none | `verify --story <id>` once every check on the pull request's head commit has passed (the deploy test, D4, passed before the pull request opened), then `commit --bead`, both before and apart from the merge. `verify` sets the verified mark on what this Story built (section 1.4.2). The step is done only when both calls have succeeded; the merge wait and the close write nothing in the matrix. |
+| D5 Deploy fix | `storydeploy.py` `_fix_step`; `orchestrator/flows/story_deploy_fix.py` | `node stack:<id>` and `deps --of` for the failed stacks (Q9). | Nothing. |
+| D6 Built comparison | `orchestrator/flows/built_version.py` `_compare`; `agents/built-architecture-comparer.md`; `storydeploy.py` `_built_subject`, `built_args` | `built --story <id>`, then `story-scope` for those entries: the documents and headings that describe each (Q18). | Nothing. A difference is a file under `built/<subject>/` until D7 corrects the documents in the same run. |
+| D7 Built correction | `orchestrator/flows/built_version.py` correction, review and approval steps; `agents/architecture-maintainer.md`; `skills/arc42-maintain/SKILL.md` step 8; `storydeploy.py` `_built_version_step` | `node <entry>` for every document that describes a changed entry (Q18). | Nothing. The corrected documents are effective in the vault; the next run's E1 `sync-documents` mirrors them. |
+| D8 Verify, merge and close | `storydeploy.py` `_mark_verified_step`, `_merge_wait_step`, `_close_step`; `matrixmarks.py`; `matrixcode.py` | PR head checks, when a PR exists | Passing checks and merge permit completion. `_close_step` runs `verify --story <id>` for both PR and no-PR completion. It marks only built items without unfinished contributing Stories, and features whose recorded architecture realizers are all verified. Missing realizers remain unknown. The local write must succeed before close completes; no matrix commit or push occurs. |
 | D9 Close with no pull request | `storydeploy.py` `_close_step` | none | Nothing; no flag. |
 | D10 Driver dispatch and dashboard | `ops/sdlc-automation/workitems.py`, `reposcope.py`, `storyorder.py`, `decisions.py` | `epic <id>` for the PRD (Q1); the stack id a Story's Tasks state, then `node stack:<id>` for the repository (Q10); `epic <id> --closure` for the repository view (Q12). | Nothing. |
 
@@ -579,7 +555,7 @@ R14.
 | R20 | `skills/cumulative-regression/SKILL.md` "Establish the affected requirements"; `workflows/task-to-deploy.js` `regressionBrief`, `regressionReviewBrief` | Follows component and consumer references through PRDs, specs, architecture, the vault and `regression.json`. | Q19: `impact --id` for each entry the Task states. | The reference following, the component-to-requirement map in `regression.json`. |
 | R22 | `agents/story-bead-writer.md` `outOfRepoFindings` | Judges which work lies outside the Story's repository by reading the spec set. | Q12: `epic <id> --closure`. | The judgment by reading. |
 | R23 | `workflows/infra-intent.js` provisioning intent prompt; `workflows/deploy.js` deploy prompt; `workflows/story-deploy-fix.js` fix prompt | Works out the stacks, the deploy mechanism and the cross-stack references by reading the repository's CDK code and stack events. | Q6, Q9, Q11, Q21: `node stack:<id>`, `deps --of`. | The instructions to derive them from the repository. |
-| R24 | `workflows/deploy-mechanism.js` ask phase; `ops/sdlc-automation/storydeploy.py` `mechanism_of`, `_mechanism_step`, `_usable` | Starts one `polyrepo-steward` session per Story deploy to rule what the repository publishes and deploys. | Q21. | The session when the values are recorded; the mechanism in the step journal as the record. |
+| R24 | `orchestrator/flows/deploy_mechanism.py`; `ops/sdlc-automation/storydeploy.py` `mechanism_of`, `_mechanism_step`, `_usable` | Reads the repository's recorded stack publish and deploy commands directly; no model session runs. | Q21. | The mechanism in the Story's step journal. |
 | R25 | `ops/sdlc-automation/storydeploy.py` `_built_subject`, `_target_subject`, `built_args`, `_built_items` | Reads the Epic's target file and `recon-<slug>.json` for a subject and items, and passes the whole architecture root. | `built --story <id>`, then `story-scope`. | The target and recon reads, the root as an argument. |
 | R26 | `workflows/suite-run.js` `resolvePrompt` | One session reads AGENTS.md, CLAUDE.md and the Taskfile for the test command whenever the caller names none. | Q21: `commands.test`. | The session when the command is recorded. |
 
@@ -629,7 +605,7 @@ The Proof column names the command of a slice's sanity check where one fits.
 | 1 | Kinds registry and schema, with `side` on every entry and relationship and the `correspondsTo` relationship | `skills/artifact-handoff/schemas/matrix-kinds.json`, `matrix.schema.json`, `skills/artifact-handoff/scripts/generate_matrix_contract.py`, `matrix_contract.py` | `python3 skills/artifact-handoff/scripts/generate_matrix_contract.py --check` | none |
 | 2 | Store: generic entries and relationships, one relationship per side, both-end index, registry validation, `rename`, `remove` | `scripts/portfolio/matrixstore.py` | The sanity check, lint and strict type checking on the changed files | 1 |
 | 3 | Reads: `epic` with `--closure`, `--constraints` and `--unlinked`, `find`, `node`, `deps`, `stacks`, `layers`, `impact`, `related`, `story-scope`, `uses`, `summary`; every result carries `side` | `scripts/portfolio/matrixquery.py`, new `matrixtraverse.py` | The sanity check, lint and strict type checking on the changed files | 2 |
-| 4 | Changes: `put` and `link` with `side`, `unlink`, `settle`, `move-repository`, `commit`; `apply --file`, a change file (`matrix-change.schema.json`) of `put`, `link`, `unlink` and `settle` applied in one locked update, all or nothing, each failed operation reported by index (`apply_change_file`) | `scripts/portfolio/matrixwrite.py`, `matrixcli.py` | The sanity check, lint and strict type checking on the changed files | 2 |
+| 4 | Changes: `put` and `link` with `side`, `unlink`, `settle`, `move-repository`; `apply --file`, a change file (`matrix-change.schema.json`) of `put`, `link`, `unlink` and `settle` applied in one locked update, all or nothing, each failed operation reported by index (`apply_change_file`) | `scripts/portfolio/matrixwrite.py`, `matrixcli.py` | The sanity check, lint and strict type checking on the changed files | 2 |
 | 5 | `verify`; the Task script's `built`, `work` and `affected`; the three older marks and `story-built` leave | `scripts/portfolio/matrixcode.py`, new `matrixtasks.py` | The sanity check, lint and strict type checking on the changed files | 2 |
 | 6 | `sync-epics` with requirements; `sync-documents` with `describedBy`, removal and `--paths` | `scripts/portfolio/matrixsync.py` | `atw-matrix check` | 2 |
 | 7 | `seed` and its steps: the empty file, `seed-stacks`, `seed-packages`, `seed-inputs`, `seed-features --list`, `seed-realizers`, `seed-apply`; none runs a `cdk` command; `matrixcarry.py` leaves | new `scripts/portfolio/matrixseed.py`; `matrixcarry.py` | The sanity check, lint and strict type checking on the changed files | 2 |
@@ -640,7 +616,7 @@ The Proof column names the command of a slice's sanity check where one fits.
 | 12 | Seed, feature proposals (G2), 16 agents: one `aws-solutions-architect` per batch of 8 PRDs writes, per requirement, the features that serve it and the documents that cover each | The proposal files, one per PRD | Every requirement of every open Epic is in a proposal file | 10 |
 | 13 | Seed, features recorded once (G3), 1 agent: one `aws-solutions-architect` writes the merge file; `seed-apply` records the features, `servedBy`, `describedBy` and `covers` | The merge file; `ops/sdlc-automation/matrix.json` through `atw-matrix` | `atw-matrix check`; `atw-matrix epic <id>` returns the features of each open Epic | 12 |
 | 14 | Seed, repository side (G5), 7 agents: one `aws-solutions-architect` per batch of about 9 stacks writes what is in each stack today, `correspondsTo` and the stack's `commands`; `seed-apply` records the result files. The repositories are read and none is edited, those under `apps/marketing` included | The result files; `ops/sdlc-automation/matrix.json` through `atw-matrix` | `atw-matrix check`; `atw-matrix stacks` returns what each stack holds on the repository side | 11 |
-| 15 | Seed close (G6), no agent: `atw-matrix check`, then `atw-matrix commit` | `ops/sdlc-automation/matrix.json` | `atw-matrix check` | 13, 14 |
+| 15 | Seed close (G6), no agent: `atw-matrix check` | `ops/sdlc-automation/matrix.json` | `atw-matrix check` | 13, 14 |
 | 16 | Elaboration: architect, helpers and context (R3; E2 to E5) | `orchestrator/flows/architecture.py`, `architecture_files.py` | The sanity check, lint and strict type checking on the changed files | 9 |
 | 17 | Elaboration: check, ruling, promotion (E7 to E9) | `orchestrator/flows/architecture_check.py`, `architecture_ruling.py`, `architecture_promotion.py` | The sanity check, lint and strict type checking on the changed files | 9 |
 | 18 | Elaboration: scoping (R4, R5; E10, E11) | `orchestrator/flows/repo_scoping.py`, `repo_placement.py` | The sanity check, lint and strict type checking on the changed files | 9 |
@@ -656,7 +632,7 @@ The Proof column names the command of a slice's sanity check where one fits.
 | 28 | Sequencing and readiness instructions (R1, R2, R13, R17, R19, R22) | `agents/epic-dependency-assessor.md`, `architecture-impact-analyst.md`, `story-bead-writer.md`, `task-decomposer.md`, `root-cause-analyst.md`, `prd-writer.md`, `skills/epic-sequencing`, `epic-ready`, `task-ready` | The sanity check, lint and strict type checking on the changed files | 24 |
 | 29 | Build and deploy workflows, the minimum needed now: each call to an `atw-matrix` command that no longer exists is removed, or changed to the command of section 2 that returns the same thing, and every statement of the three older code marks is removed. Everything else in the Build and Deploy tables of section 4 is done in the rewrite of those lanes | The files under `workflows/` that call a removed command or state an older mark, among `task-to-deploy.js`, `tdd-green.js`, `infra-intent.js`, `suite-run.js`, `deploy-mechanism.js`, `deploy.js`, `story-deploy-fix.js`, `built-version.js` | `node scripts/check-workflow-syntax.mjs` | 24 |
 | 30 | Assessment workflows and commands (R13, R17, R18; A1 to A4) | `workflows/dependency-assessment.js`, `task-dependency-assessment.js`, `prd-validation.js`, `prd-creation.js`, `commands/dependency-assessment.md` | `node scripts/check-workflow-schemas.mjs` | 24 |
-| 31 | Driver deploy code, the minimum needed now: the three older code marks and the calls to `atw-matrix` commands that no longer exist are removed, and the one verified mark is set when the Story's test passes, before its merge, with `verify --story`, then `commit --bead` (D8, D9). Everything else in the Build and Deploy tables of section 4 is done in the rewrite of those lanes | `ops/sdlc-automation/matrixmarks.py`, `lane.py`, `storydeploy.py` | `python3 orchestrator/check_driver_contracts.py` | 9 |
+| 31 | Driver deploy code, the minimum needed now: the three older code marks and the calls to `atw-matrix` commands that no longer exist are removed, and the one verified mark is set at Story build completion, with `verify --story`, the local write completes D8/D9. Everything else in the Build and Deploy tables of section 4 is done in the rewrite of those lanes | `ops/sdlc-automation/matrixmarks.py`, `lane.py`, `storydeploy.py` | `python3 orchestrator/check_driver_contracts.py` | 9 |
 | 32 | Driver: work items (R1, R2; D10) | `ops/sdlc-automation/workitems.py`, `reposcope.py`, `storyorder.py`, `selection.py`, `storyview.py`, `startup.py` | The sanity check, lint and strict type checking on the changed files | 9 |
 | 33 | Driver: environment, decisions (R3, R16) | `ops/sdlc-automation/atw.py`, `decisions.py`, `CLAUDE.md` | The sanity check, lint and strict type checking on the changed files | 9 |
 | 34 | Second records and close, one script run once and not kept: the `prd:` labels on the open Epics and the `**Epic:**` lines in their PRDs are removed; the plugin version rises | beads, the vault PRDs, `plugin.json`, `marketplace.json` | `atw-matrix epic <id>` returns the PRD of every open Epic | 1 to 33 |
@@ -706,10 +682,10 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
    architecture for that service is no longer verified."
 10. **When and on what the verified flag is set.** On the stacks and entries a Story built, as
     the Task script returns them (R42), and the build-proved relationships that start at them,
-    when the Story's test passes: its CI checks and the test that its CDK deployment works
-    (requirements section 3.5, R25). The test passing is the trigger; the merge that follows is
-    a separate step and decides nothing, and no branch is named, so the flag holds whatever
-    branching the project uses. The flag is the entry's own, valid for every Epic that relates
+    when the Story build completes, including its CI checks and applicable deployment verification
+    (requirements section 3.5, R25). No current deployment or merge alone proves completion.
+    No branch is named, so the flag holds whatever branching the project uses.
+    The flag is the entry's own, valid for every Epic that relates
     to it, because an Epic owns no stack or component.
 11. **Concurrent changes.** Every change is one locked read-modify-write of the file, so two
     runs that write at the same moment both land.
@@ -746,12 +722,12 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
     architecture entries that depend on other entries; an item is shared when two or more
     Epics need it, whatever repository or name it has. Edges exist so that an Epic waits for
     the Epic that builds and owns something it uses, and so that two Epics never work on the
-    same unapproved shared item at the same time. Who goes first on a shared item is a
+    same ordered shared item at the same time. Who goes first on a shared item is a
     judgment from the Epics' requirements, recorded as an architecture-side `drives` from that
     Epic to the item with `basis` `owns` or `shared` and a `reason`; the owner's records stay
     in force (a `drives` with no basis to a stack: that Epic owns every shared item realized or
     homed in the stack; `epicDriver: none`: the stack's items make no edge). `epicorder.py`
-    never infers who goes first from counts or names: for each unapproved shared item with a
+    never infers who goes first from counts or names: for each ordered shared item with a
     decision, every other Epic that needs it waits for the Epic that goes first; an item with
     no decision makes no edge and is listed as unjudged. While the edges hold a loop it drops
     first an edge only `shared` items made, then one an `owns` item made, the edge made by the
@@ -791,9 +767,8 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
     repositories, for search by meaning. GitNexus indexes each repository's call graph for
     change impact and renames. Agents go to the matrix first for what it records and use
     these two for what it does not.
-25. **Committing the file.** `atw-matrix commit` commits and pushes the matrix alone at the
-    end of promotion, verification, steward operations and seeding. Requirement R20 leaves
-    history to git, and git holds it only when the file is committed.
+25. **Local current state.** The matrix is ignored by git and remains on disk. Its current
+    state is all that is needed; no matrix history, commit or push is maintained.
 26. **Recording by scripts.** Facts in an agent's result file are recorded by a script step
     that confirms the write, so recording does not depend on an agent remembering.
 27. **The comparison of built code with architecture.** Not recorded. The same run corrects

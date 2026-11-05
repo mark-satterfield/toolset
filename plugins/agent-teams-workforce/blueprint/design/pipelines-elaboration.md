@@ -105,7 +105,7 @@ Notes on the diagram:
   and not the vault. It holds no heading text: each reach row names the headings that describe it as
   `<path>#<heading>`, and a session reads a heading's words with `atw-matrix heading` only when a
   decision turns on them, so no session is handed the text of every heading the Epic reaches.
-  The reach is `matrixtraverse.approval_scope`, the one set the pack lists, the check holds the
+  The reach is `matrixtraverse.architecture_review_scope`, the one set the pack lists, the check holds the
   architect's verdicts to and promotion approves.
 - The architect writes its matrix changes to one change file, `matrix-changes.json` beside the
   context file. The output check applies it to a copy of the matrix and sends each failing
@@ -126,13 +126,9 @@ Notes on the diagram:
   under the architecture root runs nothing, and a failed re-index is recorded without failing the
   run.
 - Promotion sets effective exactly the documents this Epic's maintainers wrote, and commits those
-  and the review log, and sets the approved mark on the architecture of the reach. Two Epics are
-  never elaborated at the same time on the same unapproved architecture: the dependency edges
-  `epicorder.py` sets in advance order them, and the driver's elaboration lane starts no Epic whose
-  approval scope shares an entry with no approved mark with an Epic being elaborated
-  (`atw-matrix approval --epic`), so promotion runs no check for that case. The held Epic starts
-  once that Epic's promotion approves the entry, and then confirms the entry's link instead of
-  reviewing it again.
+  and the review log, and records architecture approval on the individual items reviewed.
+  Dependencies established ahead of time order shared work independently of approval and
+  verification. Neither mark holds an Epic back; missing ordering is corrected in dependencies.
 - The solutions architect is the reviewer; no other agent reviews the architecture. The owner:
   "The solutions architect is the reviewer. I do not want to introduce new reviewers in for
   architecture. I already took out reviewers." What the owner requires instead is proof: "what I

@@ -12,7 +12,7 @@ came from.
   another Epic could also reach.
 - :func:`rule_reach`: an Epic to what its elaboration needs by the rule of reach, each entry with
   the links that put it there; :func:`requirement_reach`: the same walk from one requirement;
-  :func:`approval_scope`: the architecture-side part of that, which
+  :func:`architecture_review_scope`: the architecture-side part of that, which
   the architect reviews and the approved mark covers once it is approved; :func:`reach_rows`: each
   entry of that scope with whether it is approved, how it is reached and the Epics that share it.
 - :func:`constraints_for`: some entries to the constraints that bind them.
@@ -240,8 +240,8 @@ class RuleReach:
 
 
 @dataclass(frozen=True, slots=True)
-class ApprovalScope:
-    """The matrix content one Epic's elaboration reaches, whose architecture its approval sets the approved mark on."""
+class ArchitectureReviewScope:
+    """The architecture reached for review of a set of requirements, identified by its Epic."""
 
     epic: EntryId
     entries: tuple[EntryId, ...]
@@ -254,7 +254,7 @@ class ApprovalScope:
 
 @dataclass(frozen=True, slots=True)
 class ReachRow:
-    """One entry of an Epic's approval scope, as the architecture pack lists it."""
+    """One entry reached for architecture review, as the architecture pack lists it."""
 
     id: EntryId
     kind: EntryKind
@@ -263,7 +263,7 @@ class ReachRow:
     via: str
     """The links that put the entry in the Epic's reach, as text."""
     shared_with: tuple[str, ...]
-    """The beads ids of the other Epics whose approval scope holds the entry, in id order."""
+    """The beads ids of the other Epics whose architecture review reach holds the entry, in id order."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -909,8 +909,8 @@ def rule_reach(matrix: Matrix, epic: EntryId) -> RuleReach:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def approval_scope(matrix: Matrix, epic: EntryId) -> ApprovalScope:
-    """Name the matrix content an Epic's elaboration reaches, for the review and the approved flag.
+def architecture_review_scope(matrix: Matrix, epic: EntryId) -> ArchitectureReviewScope:
+    """Name architecture reached for review of the requirements an Epic carries.
 
     It is the Epic, its requirements, the features that serve them and what :func:`rule_reach`
     reaches from them, as far as the architecture side states it, with every architecture-side
@@ -924,7 +924,7 @@ def approval_scope(matrix: Matrix, epic: EntryId) -> ApprovalScope:
         epic: The Epic's entry id.
 
     Returns:
-        The entries and relationships the Epic's approval covers, each entry with how it is reached.
+        The entries and relationships to review, each entry with how it is reached.
 
     """
     reach: RuleReach = rule_reach(matrix, epic)
@@ -937,7 +937,7 @@ def approval_scope(matrix: Matrix, epic: EntryId) -> ApprovalScope:
         for relationship in matrix.outgoing(entry_id)
         if relationship.side == AUTHORITY_SIDE and relationship.end in kept
     ]
-    return ApprovalScope(
+    return ArchitectureReviewScope(
         epic=epic,
         entries=tuple(entries),
         relationships=tuple(joining),
@@ -947,7 +947,7 @@ def approval_scope(matrix: Matrix, epic: EntryId) -> ApprovalScope:
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def reach_rows(matrix: Matrix, epic: EntryId) -> list[ReachRow]:
-    """List each entry of an Epic's approval scope with its approved mark, how it is reached and who shares it.
+    """List each entry reached for architecture review with its mark, reach and sharing.
 
     An Epic the matrix does not hold raises ``MatrixError``.
 
@@ -956,12 +956,12 @@ def reach_rows(matrix: Matrix, epic: EntryId) -> list[ReachRow]:
         epic: The Epic's entry id.
 
     Returns:
-        One row per entry of :func:`approval_scope`, in id order: its kind, whether it carries the
-        approved mark, the links that put it in reach and the other Epics whose approval scope
+        One row per entry of :func:`architecture_review_scope`, in id order: its kind, whether it carries the
+        approved mark, the links that put it in reach and the other Epics whose review reach
         holds it.
 
     """
-    scope: ApprovalScope = approval_scope(matrix, epic)
+    scope: ArchitectureReviewScope = architecture_review_scope(matrix, epic)
     sharing: dict[EntryId, list[str]] = {entry_id: [] for entry_id in scope.entries}
     other: Entry
     for other in matrix.entries((KIND_EPIC,)):

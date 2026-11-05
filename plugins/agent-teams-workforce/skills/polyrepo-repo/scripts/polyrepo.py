@@ -75,10 +75,8 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
-import contextlib
 import dataclasses
 import datetime as dt
-import fcntl
 import fnmatch
 import functools
 import hashlib
@@ -139,7 +137,6 @@ from gitnexus_setup import (
     remove_index,
     sync_group,
 )
-from matrix_contract import DEFAULT_MATRIX_PARTS, LOCK_DIRECTORY, LOCK_SUFFIX
 from name_sweep import (
     PYPROJECT,
     SRC_FOLDER,
@@ -183,7 +180,7 @@ from tooling_sync import load_spec as load_tooling_spec
 from tooling_sync import plan as plan_tooling
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterable, Mapping, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from name_sweep import FileEdit, FileMove, Rule
     from naming_command import RepositoryNames
@@ -1522,8 +1519,6 @@ MATRIX_ROLE = "repository-steward"
 MATRIX_ROLE_ENV = "ATW_MATRIX_ROLE"
 MATRIX_FILE_ENV = "ATW_MATRIX"
 MATRIX_TIMEOUT = 300
-MATRIX_LOCK_WAIT = 120.0
-MATRIX_LOCK_POLL = 0.1
 EXECUTION_IMPORTED = "imported"
 EXECUTION_EXECUTABLE = "executable"
 PURPOSE_NOT_STATED = "The purpose is not stated."
@@ -1618,17 +1613,6 @@ def read_matrix_stacks(cfg: Config, repository: str | None = None) -> list[Matri
 
     """
     return parse_matrix_stacks(matrix_run(cfg, ["stacks", *(["--repository", repository] if repository else [])]))
-
-
-def matrix_commit(cfg: Config) -> str:
-    """Commit and push the matrix file after a change (`atw-matrix commit`).
-
-    Returns:
-        One sentence saying whether a commit was made and pushed.
-
-    """
-    done = matrix_run(cfg, ["commit"])
-    return f"matrix committed: {bool(done.get('committed'))}, pushed: {bool(done.get('pushed'))}"
 
 
 def holds_stack(cfg: Config, name: str) -> bool:
@@ -2619,62 +2603,12 @@ def note_change(cfg: Config, title: str, lines: list[str]) -> None:
     cfg.change_lines.extend(lines)
 
 
-def matrix_file(cfg: Config) -> Path:
-    """Name the matrix file `atw-matrix` works on for this tool (see `matrix_run`).
-
-    Returns:
-        The file `$ATW_MATRIX` names, else the one under `$ATW_CONTROL_REPO`, else the one in the
-        control repository the config sits in.
-
-    """
-    stated = os.environ.get(MATRIX_FILE_ENV, "").strip()
-    if stated:
-        return Path(stated).expanduser()
-    control = os.environ.get(CONTROL_REPO_ENV, "").strip()
-    return (Path(control).expanduser() if control else cfg.file.parent.parent).joinpath(*DEFAULT_MATRIX_PARTS)
-
-
-@contextlib.contextmanager
-def matrix_lock(cfg: Config, wait: float = MATRIX_LOCK_WAIT) -> Generator[None]:
-    """Hold the matrix's lock, the one every `atw-matrix` write holds, while git changes the control repo.
-
-    Yields:
-        Control while the lock is held.
-
-    Raises:
-        GitFailedError: when another process held the lock for the whole wait.
-
-    """
-    path = matrix_file(cfg)
-    lock = path.parent / LOCK_DIRECTORY / f"{path.stem}{LOCK_SUFFIX}"
-    lock.parent.mkdir(parents=True, exist_ok=True)
-    deadline = time.monotonic() + wait
-    descriptor = os.open(lock, os.O_RDWR | os.O_CREAT, 0o644)
-    try:
-        while True:
-            try:
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError as exc:
-                if time.monotonic() >= deadline:
-                    msg = f"the matrix {path} stayed locked by another process for {wait} seconds"
-                    raise GitFailedError(msg) from exc
-                time.sleep(MATRIX_LOCK_POLL)
-        try:
-            yield
-        finally:
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
-    finally:
-        os.close(descriptor)
-
-
 def commit_records(cfg: Config, subject: str, body: list[str] | None = None) -> dict[str, object]:
     """Commit the steward's own files, then pull --rebase and push.
 
     The files are the manifest, knowledge store and fleet list, committed on the default branch
     of the repo that holds them. The body lines, when given, follow the subject in the message.
-    The pull stashes and restores what else the repo has changed, the matrix file among them, so
-    it runs under the matrix's lock: no `atw-matrix` write runs while the file is stashed.
+    The pull stashes and restores tracked changes. The ignored local matrix is outside git.
 
     Returns:
         {"status": "clean" | "pushed" | "failed", "files": [...], "error"?: str}.
@@ -2703,8 +2637,7 @@ def commit_records(cfg: Config, subject: str, body: list[str] | None = None) -> 
     try:
         _require_branch(root, branch, b)
         _commit_paths(root, files, message, force=True)
-        with matrix_lock(cfg):
-            must(git(root, "pull", "--rebase", "--autostash", "--quiet", timeout=120))
+        must(git(root, "pull", "--rebase", "--autostash", "--quiet", timeout=120))
         must(git(root, "push", "origin", b, timeout=120))
     except GitFailedError as exc:
         return {"status": "failed", "files": files, "error": str(exc)}
@@ -4491,8 +4424,7 @@ def _create_stack_records(cfg: Config, name: str, space: str) -> list[str]:
     """Record in the matrix the stack the new repo holds, when it holds one (S1).
 
     A repo holds a stack when the naming command reads its name as a repository that holds one.
-    A repo that some stack already names as its repository is left as it is. The matrix file is
-    committed after a change.
+    A repo that some stack already names as its repository is left as it is.
 
     Returns:
         One sentence for each thing done or left.
@@ -4504,7 +4436,7 @@ def _create_stack_records(cfg: Config, name: str, space: str) -> list[str]:
         return [f"matrix: {', '.join(held)} already name {name} as their repository"]
     if not holds_stack(cfg, name):
         return [f"matrix: no stack recorded; the naming command reads {name} as no repository that holds a stack"]
-    return [record_stack(cfg, name, space, known), matrix_commit(cfg)]
+    return [record_stack(cfg, name, space, known)]
 
 
 def _create_rulesets(
@@ -6069,7 +6001,7 @@ def _rename_record(st: State, old: str, new: str, plan: _RenamePlan, done: list[
         try:
             moved = _seq(matrix_run(cfg, ["move-repository", "--from", old, "--to", new]).get("stacks"), "moved stacks")
             if moved:
-                done.extend([f"matrix: {', '.join(str(i) for i in moved)} now name {new}", matrix_commit(cfg)])
+                done.append(f"matrix: {', '.join(str(i) for i in moved)} now name {new}")
         except PolyrepoError as exc:
             done.append(f"matrix NOT updated: {exc}")
         if plan.active and plan.new_path:
@@ -6625,7 +6557,7 @@ def _rename_names(
 
 
 def _update_matrix_names(cfg: Config, plan: _NamesPlan) -> list[str]:
-    """Re-key in the matrix every package a rename changed, and commit the matrix when one was re-keyed.
+    """Re-key in the local matrix every package a rename changed.
 
     A package entry is named by the distribution, so a distribution that changes re-keys its
     entry and both ends of every relationship it has; an entry already under the new name is
@@ -6639,8 +6571,6 @@ def _update_matrix_names(cfg: Config, plan: _NamesPlan) -> list[str]:
     steps: list[str] = []
     try:
         steps.extend(_rekey_packages(cfg, plan))
-        if steps:
-            steps.append(f"matrix: {matrix_commit(cfg)}")
     except PolyrepoError as exc:
         steps.append(f"matrix NOT updated: {exc}")
     return steps
@@ -10643,18 +10573,16 @@ def _stack_repository_findings(st: State, s: MatrixStack) -> list[Finding]:
 
 
 def _matrix_doctor(cfg: Config, fix: bool, no_cache: bool) -> tuple[int, list[DoctorFinding]]:
-    """Run the matrix check of the doctor, and with fix repair what it can and commit the matrix.
+    """Run the matrix check of the doctor, and with fix repair what it can.
 
     Returns:
         (the number of findings repaired, the findings still open). A matrix that cannot be
-        read or committed is one `error` finding.
+        read or updated is one `error` finding.
 
     """
     try:
         findings = _matrix_findings(gather(cfg, fetch=False, use_cache=not no_cache))
         fixed = _repair_matrix_findings(findings) if fix else 0
-        if fixed:
-            matrix_commit(cfg)
     except PolyrepoError as exc:
         return 0, [_finding("matrix", "-", "error", str(exc))]
     return fixed, [
@@ -10696,7 +10624,7 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     the environment, every local clone with a deprecated name that may be the only copy of its
     work (reported only; no repair acts on it), every active repository that declares no test
     command (reported only), and the matrix's stacks against the repositories (repaired under --fix,
-    and the matrix committed).
+    and the local matrix updated).
 
     Returns:
         0 when no check reports a finding, else 1.

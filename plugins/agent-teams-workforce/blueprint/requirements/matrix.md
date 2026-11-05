@@ -209,99 +209,40 @@ contains packages and is used by Lambdas.
 
 ### 3.5 Effective, approved and verified
 
-**Architecture.** An arc42 document that is effective is approved and can be trusted as of
-the moment it is read. That says nothing about whether it covers the PRD in hand: the same
-document may need additions or changes as the next feature is designed.
+**Architecture.** An effective arc42 document is approved architecture, but a new requirement
+may still need changes or additional detail. Document lifecycle and matrix marks are distinct.
 
-**Approved and verified are marks on the architecture.** They sit on architecture entries
-(services, components, infrastructure, events, stacks, packages and layers) and on the
-relationships between them. They are not marks on an Epic, a Story or a Task. Each is a plain
-yes or no: it records no who, no Epic, no stack, no commit and no owner. Architecture is
-expected to move in and out of approved and verified as it changes.
+**Approved.** The architecture agent has vetted the architecture for a feature or component,
+including arc42 and the architecture and design documents that describe it. Approval belongs
+to that item and remains valid for every overlapping Epic. A new Epic alone never removes
+approval. Only a change to the specific architecture requires reapproval; over time the mark
+should rarely change. A removed approval is reapproved by the architect, never restored by hand.
 
-**Approved.** The matrix has an approved mark. It says the solutions architect approved the
-architecture for a feature. It is similar to, but is not the same as, arc42's `effective`.
-What was seeded into the matrix from arc42 is not approved: the seeded architecture is
-high-level, and missing details and mistakes are expected in it. Once an Epic's elaboration has
-validated and filled out the architecture and design (the lower-level details) for the Epic,
-all of that is approved, and the matrix is filled out or corrected for that Epic, the
-architecture the Epic reaches is set to approved. The corrections to arc42 are made with it.
-That architecture is every entry the architecture side states that the Epic reaches by the rule
-of reach (what its elaboration needs, never the closure), except the Epic itself, and the
-architecture-side relationships between those entries; it is the set the Epic's architect
-reviews. What is read from the repositories is a hint and is never approved. Two Epics are never
-elaborated at the same time on the same unapproved architecture: the dependency edges that
-`epicorder.py` sets in advance, from the judgments the matrix records on the shared items whose
-architecture is not approved (R63), order them. An approval is removed only if that specific
-architecture is changing due to a new Epic: the entries the Epic's solutions architect names as
-added or changed, and the entries whose own content or design relationships the architect's
-result changes, each with the relationships that start at it. Nothing else removes it: not a
-change to the text of a document, whichever entries that text describes, and not a write made
-outside an Epic's architecture. The mark returns when an Epic that reaches the content has its
-architecture and design approved again.
+**Verified.** The build pipeline has completed for the feature. Its architecture exists in
+code or infrastructure as code in a repository, rather than only on paper. Completed builds
+record the mark on the individual items they built. A feature is complete only when all its
+recorded architecture realizers are verified and no contributing work remains unfinished.
+A missing realizer or incomplete evidence means completion is unknown, never implicitly true.
 
-**Verified.** The matrix has a verified mark. It says the architecture was verified correct
-because it was actually built and its test passed.
-Tested includes the CI checks and the CDK, and testing the CDK means testing that its
-deployment works: the stacks may be deployed to the development environment, checked and
-removed again, because what counts is the test that the deployment works, not that the
-deployment stays. An item is set to verified when that test passes. The test passing is the
-trigger. The work is committed and merged after it is tested, as a separate next step, and no
-merge and no branch decides whether anything is verified. An approved change that has not yet
-been built and tested is not verified.
+Approval and verification are durable item properties, not Epic, Story or Task properties.
+Neither mark holds back an Epic or determines Epic order. Dependencies established ahead of
+time order shared work independently of both marks. A missing dependency is corrected in
+that dependency model.
 
-What is set to verified is everything that was built and tested: each stack, and each
-service, component, piece of infrastructure, event, package, layer and file in it that was
-built, and every relationship, of any kind and on either side, that starts at one of them.
-Requirements, features, documents and constraints are never set to verified by a build.
-Anything a stack or a Task only uses was already verified when it was itself built and
-tested.
+The build records only what it completed, not every item it reached or used. Reusing an
+already verified shared component does not reverify it or erase its mark. Two Stories that
+contribute changes to the same item do not verify that item after only the first completes.
+Completion without a pull request follows the same verification rule as completion with one.
 
-Verified is a property of the item itself (a stack, a component, or any finer entry or
-relationship), valid for every Epic that relates to it.
-An Epic owns no stack and no component: an Epic is a vehicle for requirements, and many Epics
-relate to many stacks and components. So verified is not a link between an Epic and its
-architecture documents, and it is neither set nor held per Epic.
+A known change to an item's required implementation clears its verified mark; a change to
+its architecture clears approval when architect reapproval is needed. Merely adding an Epic
+or using the item changes neither mark. Each mark changes independently and records no Epic,
+person or commit. The current matrix state is sufficient.
 
-At the start nothing is verified, so the first builds verify everything they build. After
-that, Epics and builds are incremental: the matrix holds the verified current state, only
-changes show up as not verified, and only changes become Tasks.
-
-Verification is the only way to prove that the architecture is likely to work. When the
-architecture or design of something that is verified changes (for example, an existing service
-needs a new feature), that item's verified mark is cleared. When the change has been built and tested,
-the CDK deployment test included, the item is set to verified again. Any number of changes may
-be made before the next build; the item stays not verified until a build and test covers them
-all. The verified mark is available on every entry and every relationship, and required on none. No deployed
-mark and no merged mark exists. Whether something is currently deployed is not recorded: the
-environment is a development environment where stacks are deployed and torn down freely.
-
-**How the two marks change.** Both work like dirty bits. A known change clears a mark and
-marks the item dirty; approving the architecture sets approved again; building and testing the
-Story's Tasks, the CDK deployment test included, sets verified again. Each mark clears on its
-own kind of change, independently of the other: approved only when that specific architecture is
-changing due to a new Epic, verified on a change to what the item must be built as. They
-are separate marks: one change may clear only approved, only verified, or each at a different
-time; clearing one never clears the other. The marks sit on individual items at the finest grain the
-matrix records: architecture items and design details each carry their own marks, and only the
-item that changes becomes dirty. A service-to-service communication diagram that does not change
-stays clean while one detail of one feature that changes in the next Epic becomes dirty.
-
-An Epic can change the architecture at any point, and many Epics can go through elaboration
-with nothing built, so approved and verified apply to every Epic, not only to what was
-seeded. A relationship the code makes real is planned until a build proves it. "This service
-uses the chassis" is a relationship.
-
-Everything in the matrix is used, verified or not. Verified never decides whether an entry
-or a relationship is read, linked to, designed against or built on. The mark changes what
-the pipeline assumes, and it never blocks a step:
-
-- **Not verified** means "this still has to be made real". The entry or relationship
-  describes what is designed or planned, and it is theoretical until proven. The pipeline
-  uses it like any other and assumes it may still have to be built. Existing code for it is
-  a hint, and a difference between that code and an arc42 document is not a finding.
-- **Verified** means "this is real". The entry or relationship describes something that
-  exists. The pipeline counts on it existing, and its code is trusted.
+Everything in the matrix is available for reading, linking, design and use regardless of
+either mark. Unverified items describe planned architecture or implementation not yet proved
+by a completed build. Verified items describe completed implementation. Neither a current
+deployment nor a merge alone proves completion.
 
 ### 3.6 What the owner said the matrix holds and links
 
@@ -327,7 +268,7 @@ The owner:
 | Seeded | The matrix starts with what is known today, on two sides kept apart (section 4.1): every open Epic in beads with its PRD; every requirement of each of those PRDs with the feature or features that serve it, and every capability the effective arc42 documents provide that no requirement names, as a feature; every effective arc42 document with every service, component and piece of infrastructure it describes and the stack the document says each is in; every known repository, the stacks it contains and what is in each stack today; the purpose of each stack; and every link between these that can be established now. Nothing is seeded as approved or verified. | The seeding work, once, before the first pipeline run uses the matrix, from beads, the PRDs, the effective arc42 documents and the repositories. arc42 is the authority for how the product is to be built. The repositories are the source for which stacks and repositories exist and for what is in each stack today, which is recorded as what is there, not verified, a hint (R43, R45, R47 to R51). |
 | Filled in and corrected | As elaboration runs: the features derived from the Epic's requirements and from the architecture; which existing features and documents cover them; what the architect designs; each new or changed architecture document, mapped to the feature it supports; corrections to anything the run finds wrong. | The elaboration pipeline (`prd-to-spec`): the architect for features, design and their links; the `polyrepo-steward` for a stack's repository. |
 | Approved | The architecture-side entries and relationships an Epic reaches are set to approved once the Epic's architecture and design are approved and the matrix and arc42 are filled out or corrected for that Epic (section 3.5). | The elaboration pipeline (`prd-to-spec`), in the step that promotes the Epic's architecture once its reviews pass, after the documents are set effective and the matrix is corrected. |
-| Confirmed | What was built and tested, and every relationship that starts at it, is set to verified when its test passes: the CI checks and the test that its CDK deployment works (section 3.5). | The build pipeline (the driver in `ops/sdlc-automation`, when the test passes, before and apart from the commit and merge that follow), with no judgment by an agent. |
+| Confirmed | Completed items and features whose full recorded realization completed (section 3.5). | The build driver at Story completion, including no-PR completion; unfinished contributions defer verification. |
 | Kept current | When a stack, repository, feature or document is renamed, deprecated or removed, the matrix is updated in the same piece of work. | Whoever does that work. |
 
 ### 4.1 Seeding
@@ -486,7 +427,8 @@ so nothing is seeded as verified.
 
 ### Current state
 
-- **R20.** The matrix describes only what is current. Git holds history. An entry for
+- **R20.** The matrix describes only what is current. It is machine-local state, ignored
+  by git and absent from GitHub. It needs no history or audit trail. An entry for
   something that no longer exists, or a field whose only use is to record a past state,
   makes a lookup return things that are not there.
 - **R21.** The work that renames, deprecates or removes a stack, repository, feature or
@@ -510,18 +452,12 @@ so nothing is seeded as verified.
   describes something that exists: the pipeline counts on it existing and trusts its code. An
   entry or relationship that is not verified describes what is designed or planned and is
   theoretical until a build proves it.
-- **R25.** The build pipeline sets the verified mark on what was built and tested and on every
-  relationship that starts at it (section 3.5), when its test passes. Tested always includes
-  the CI checks and the CDK, and testing the CDK means testing that its deployment works; the
-  deployment may be removed again after the test. The test passing is the trigger: a merge is
-  not, and neither a merge nor a branch decides verified. The mark is a property of the stack
-  or component, or of a finer entry or relationship, valid for every Epic that relates to it,
-  and is never set per Epic. A change to what a verified item must be built as clears its mark
-  on that item alone, independently of the approved mark, and the next build and test of the
-  item sets it again.
-  Nothing else sets it. No deployed mark and no merged mark exists. No elaboration step reads code to
-  decide whether something is built. Whether something is currently deployed is not recorded
-  and has no bearing on verified.
+- **R25.** The build pipeline records verified when the build for the item completes.
+  Items with unfinished contributing work remain unverified. A feature is verified only
+  when all its recorded architecture realizers exist and are verified; missing realization
+  evidence means unknown completion. Reused prerequisites are not marked by another
+  feature's build. Completion without a pull request follows the same rule. Known changes
+  to the item's required implementation clear its mark independently of approval.
 - **R26.** The pipeline uses everything in the matrix, verified or not. Verified never
   decides whether an entry or a relationship is read, linked to, designed against or built
   on, and it never blocks a step. The mark changes only what the pipeline assumes: an entry
@@ -678,18 +614,14 @@ so nothing is seeded as verified.
 
 ### Architecture approval
 
-- **R57.** The approved mark (R24) is the one record of approval in the matrix: no second
-  approval mark exists beside it, and it names no Epic. It is set on the architecture an Epic's
-  elaboration reaches, never on the Epic itself, once the Epic's architecture and design are
-  approved by the solutions architect and the matrix and arc42 are filled out or corrected for
-  that Epic. It is separate from verified, which says an item was built and tested, the test
-  that its deployment works included, and each clears on its own kind of change. The approved
-  mark is removed from an item only if that specific architecture is changing due to a new Epic,
-  as section 3.5 states, and stays off until an Epic that reaches that content has its
-  architecture and design approved again. Two Epics are never elaborated at the same time on
-  the same unapproved architecture: the dependency edges `epicorder.py` sets in advance order
-  them, so the pipeline holds no check for that case. No session sets it by hand. Nothing is
-  approved today.
+- **R57.** Approval records the architecture agent's vetting of a feature or component's
+  architecture, including arc42 and detailed architecture and design documents. It belongs
+  to the item and remains valid across overlapping Epics. A new Epic alone never withdraws
+  approval; a change to the specific architecture requires architect reapproval. Verified
+  records completion of the build pipeline for the feature: its architecture exists in code
+  or infrastructure as code in a repository. Neither mark holds an Epic back or determines
+  Epic order. Dependencies set ahead of time order shared work independently of either mark.
+  No session restores a removed approval by hand.
 
 ### Links and resources
 
@@ -726,14 +658,14 @@ so nothing is seeded as verified.
   Epics may change shared architecture, and `approved` and `verified` are plain yes/no marks;
   nothing is approved by design at the start.
 - **R64.** Epic-to-Epic dependency edges exist so that an Epic waits for the Epic that builds
-  and owns something it uses, and so that two Epics never work on the same unapproved shared
+  and owns something it uses, and so that two Epics never work on the same shared
   item at the same time. For each shared item there is no fixed answer: either one Epic builds
   and owns it and the others use it, or the Epics share it independently (like two Epics whose
   Lambdas both need the VPC). It is a judgment from the Epics' requirements, recorded in the
   matrix as the one architecture-side `drives` from the Epic that goes first to the item, with
   `basis` `owns` or `shared` and a one-sentence `reason`. `epicorder.py` never infers it from
   counts or names, and a change to the item does not clear the record.
-- **R65.** The matrix lists every shared item whose architecture is not approved, with the
+- **R65.** The matrix lists every shared item independently of its approval mark, with the
   Epics that need it and, for each Epic, the requirements (id and text) through which it does,
   and writes those no record decides in batches for judging, keeping items whose sets of Epics
   are identical together. The owner's records stay in force: a `drives` with no basis from an

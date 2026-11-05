@@ -38,12 +38,26 @@ Test-driven development skill for generating tests, analyzing coverage, and guid
 
 ### TDD New Feature
 
-1. Write failing test first (RED)
-2. Run `tdd_workflow.py --phase red` to validate
-3. Implement minimal code to pass (GREEN)
-4. Run `tdd_workflow.py --phase green` to validate
-5. Refactor while keeping tests green (REFACTOR)
-6. **Validation:** All tests pass after each cycle
+1. Read the PRD, TRD, Story, specs and Task activity together. Review the repository's existing suite before choosing test work.
+2. Review, update, refactor or add tests for required happy paths, negative cases, edge cases and boundaries. Tests are code and receive the same quality judgment as product code.
+3. Run the whole suite and judge its quality. A failing suite can contain a poor test, a setup defect, an environment failure or missing product behavior; distinguish these before changing implementation.
+4. Implement missing behavior and prerequisite dependencies. A suite that already passes needs no manufactured failure, sabotage or mutation demonstration.
+5. Always review architecture conformance, code quality and best practices in the assigned scope. Improve code and tests where warranted, including when the suite already passes; a justified no-change result is valid.
+6. Verify the whole suite after improvements. Keep required earlier behavior covered and restore a regressing refactor to its recorded Green snapshot.
+
+### Python build contracts
+
+The Python build records each command and its complete output directly. Agents perform reasoning and writing; no model session merely relays a command, parses an exit code or repeats a file.
+
+Build agents receive a facts file and the current journal by path. Read the journal's accepted artifacts, including the existing suite, baseline, reviews and earlier corrections. Never treat a Task as the requirements document: it describes the implementation activity. Requirements and acceptance evidence also come from the PRD, TRD, Story, specs and architecture.
+
+The shared result schemas are in `skills/pipeline-contracts/schemas/`: `build-selection.schema.json` for specialist selection, `build-tests.schema.json` for test work, `build-suite-review.schema.json` for suite-quality/failure judgment, `build-review.schema.json` for architecture and quality review, and `build-implementation.schema.json` for code, refactor and documentation work. The launch names the exact schema to write; producers and consumers use that same contract.
+
+- Test specialists review the existing suite in context. Preserve legitimate earlier obligations while correcting poor tests. Report actual coverage, not just a test count or an exit code.
+- Suite reviewers choose `test-repair` when tests or their setup do not correctly establish the contract, `implementation` when valid tests expose required product work, and `environment` when execution cannot establish either. Provide concrete evidence. Never diagnose a product defect from a nonzero exit alone.
+- Code reviewers assess the architecture and design as well as correctness, quality and best practices. Findings stay within the assigned behavior and its dependencies; do not invent unrelated cleanup.
+- Implementers develop prerequisites that the assigned behavior needs, using the owning repositories and normal worktrees. Report test defects for test-author judgment; do not weaken tests to obtain Green. A dependency that exists only in an unpublished SkillSpoke library is reported for publication under the library rules.
+- Refactoring always receives a review opportunity, including when behavior already exists. Improve warranted issues while preserving required behavior. Do not force a change solely to show that the phase ran.
 
 ---
 
@@ -68,6 +82,7 @@ python scripts/test_generator.py --input math_utils.py --framework pytest
 ```python
 import pytest
 from math_utils import divide
+
 
 class TestDivide:
     def test_divide_positive_numbers(self):

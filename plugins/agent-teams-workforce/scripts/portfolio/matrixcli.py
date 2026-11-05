@@ -2,7 +2,7 @@
 
 ``matrix.py`` holds the reads and the command line; this module holds everything else: ``put``,
 ``link``, ``unlink``, ``settle``, ``apply`` (a whole change file of those four in one update),
-``rename``, ``remove``, ``move-repository`` and ``commit``;
+``rename``, ``remove`` and ``move-repository``;
 ``sync-epics``, ``sync-documents`` and ``sync-events``; ``seed`` and its steps (``seed-stacks``,
 ``seed-packages``, ``seed-inputs``, ``seed-features``, ``seed-realizers``, ``seed-apply``); ``verify`` and the Task
 script's ``built``, ``work`` and ``affected``; ``check-reuse``; ``shared-items`` and
@@ -74,6 +74,7 @@ from matrixshared import BATCH_SIZE, epic_titles, item_json, record_judgments, s
 from matrixstore import (
     Matrix,
     MatrixRefusedError,
+    as_entry_id,
     read_matrix,
     remove_entry,
     rename_entry,
@@ -84,13 +85,14 @@ from matrixsync import DocumentsSynced, EpicBead, EpicsSynced, read_epics, sync_
 from matrixtasks import COMMAND_AFFECTED, COMMAND_BUILT, COMMAND_WORK, TaskBead, affected, built, read_tasks, work
 from matrixwrite import (
     ApplyResult,
+    ApproveResult,
     LinkResult,
     MoveResult,
     PutResult,
     SettleResult,
     UnlinkResult,
     apply_change_file,
-    commit,
+    approve_reviewed,
     link,
     move_repository,
     put,
@@ -498,16 +500,6 @@ def _run_move_repository(call: Call) -> Outcome:
     return Outcome(update_matrix(call.matrix(), change, wait=call.lock_wait()))
 
 
-def _run_commit(call: Call) -> Outcome:
-    """Run ``commit``.
-
-    Returns:
-        Whether a commit was made, whether it was pushed, the commit and its message.
-
-    """
-    return Outcome(commit(call.matrix(), call.text("bead") or "", wait=call.lock_wait()))
-
-
 def _run_sync_epics(call: Call) -> Outcome:
     """Run ``sync-epics``.
 
@@ -813,6 +805,24 @@ def _run_shared_items(call: Call) -> Outcome:
     return Outcome({"epic": epic, "items": len(listed), "sharedItems": listed})
 
 
+def _run_approve_reviewed(call: Call) -> Outcome:
+    """Record exact pipeline or owner-directed statuses, with no reach expansion.
+
+    Returns:
+        Exact targets approved and newly set mark counts.
+
+    """
+    entries: list[EntryId] = [as_entry_id(value) for value in call.texts("ids")]
+    relationships: list[tuple[RelationshipKind, EntryId, EntryId]] = []
+    if any(call.text(name) is not None for name in ("kind", "source", "to")):
+        relationships.append((relationship_kind(call.required("kind")), call.entry("source"), call.entry("to")))
+
+    def change(matrix: Matrix) -> ApproveResult:
+        return approve_reviewed(matrix, entries, relationships, role_of(call.environ))
+
+    return Outcome(update_matrix(call.matrix(), change, wait=call.lock_wait()))
+
+
 def _run_record_judgments(call: Call) -> Outcome:
     """Run ``record-judgments``.
 
@@ -825,6 +835,7 @@ def _run_record_judgments(call: Call) -> Outcome:
 
 
 COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
+    "approve-reviewed": _run_approve_reviewed,
     "put": _run_put,
     "link": _run_link,
     "unlink": _run_unlink,
@@ -833,7 +844,6 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     "rename": _run_rename,
     "remove": _run_remove,
     "move-repository": _run_move_repository,
-    "commit": _run_commit,
     "sync-epics": _run_sync_epics,
     "sync-documents": _run_sync_documents,
     "sync-events": _run_sync_events,
@@ -889,7 +899,16 @@ def _change_parsers(
     commands: argparse._SubParsersAction[argparse.ArgumentParser],
     where: argparse.ArgumentParser,
 ) -> None:
-    """Add the sub-commands that change entries and relationships, and the commit."""
+    """Add the sub-commands that change entries and relationships."""
+    reviewed: argparse.ArgumentParser = commands.add_parser(
+        "approve-reviewed",
+        parents=[where],
+        help="record exact pipeline or owner-directed approval statuses",
+    )
+    reviewed.add_argument("--ids", nargs="+", help="explicitly reviewed architecture entry ids")
+    reviewed.add_argument("--kind", help="the reviewed relationship kind")
+    reviewed.add_argument("--from", dest="source", help="the reviewed relationship source")
+    reviewed.add_argument("--to", help="the reviewed relationship destination")
     entry: argparse.ArgumentParser = commands.add_parser("put", parents=[where], help="add or change one entry")
     entry.add_argument("kind", help=f"the entry's kind: one of {', '.join(ENTRY_KINDS)}")
     entry.add_argument("--side", required=True, help=f"the side the fact came from: one of {', '.join(SIDES)}")
@@ -963,12 +982,6 @@ def _change_parsers(
     )
     moved.add_argument("--from", dest="source", required=True, help="the repository's name as the stacks hold it")
     moved.add_argument("--to", required=True, help="the name they are to hold")
-    committed: argparse.ArgumentParser = commands.add_parser(
-        "commit",
-        parents=[where],
-        help="commit the matrix file alone and push it",
-    )
-    committed.add_argument("--bead", help="the Epic or Story the recorded changes belong to")
 
 
 def _sync_parsers(

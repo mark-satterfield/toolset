@@ -67,7 +67,7 @@ const { userLevelAgentNames } = createRequire(import.meta.url)('../hooks/lib/use
  * still accept --schema-json, so a differing relay block in these files is not drift: the check
  * does not flag it and --write does not touch it. Every other block in them is still checked.
  */
-const RELAY_FROZEN = Object.freeze(['built-version.js', 'deploy.js', 'settle.js', 'story-deploy-fix.js', 'suite-run.js', 'task-to-deploy.js', 'tdd-refactor.js', 'workspace.js'])
+const RELAY_FROZEN = Object.freeze([])
 
 /**
  * Every shared block: its name, the workflows that must carry it, and where its text is defined.
@@ -80,31 +80,31 @@ export const SHARED_BLOCKS = Object.freeze([
     name: 'architecture-artifacts',
     canonical: 'scripts/shared-blocks/architecture-artifacts.js',
     filledFrom: 'skills/artifact-handoff/schemas/{architecture-writer,architecture-review,conformance,built-conformance,architecture-common}.schema.json',
-    requiredIn: ['built-version.js'],
+    requiredIn: [],
   },
   {
     name: 'composite-phases',
     canonical: 'skills/pipeline-contracts/schemas/composites.json',
     regenerate: 'python3 skills/pipeline-contracts/scripts/generate_composites.py',
-    requiredIn: ['built-version.js', 'deploy-mechanism.js', 'story-deploy-fix.js', 'task-to-deploy.js'],
+    requiredIn: [],
   },
   {
     name: 'recon-contract',
     canonical: 'skills/artifact-handoff/schemas/recon.schema.json',
     regenerate: 'python3 skills/artifact-handoff/scripts/gen_recon_contract.py --write',
-    requiredIn: ['task-to-deploy.js', 'tdd-green.js'],
+    requiredIn: [],
   },
   {
     name: 'story-deploy-args',
     canonical: 'scripts/shared-blocks/story-deploy-args.js',
     filledFrom: 'skills/artifact-handoff/schemas/story-deploy-args.schema.json',
-    requiredIn: ['built-version.js', 'deploy-mechanism.js', 'story-deploy-fix.js'],
+    requiredIn: [],
   },
   {
     name: 'step-journal',
     canonical: 'scripts/shared-blocks/step-journal.js',
     filledFrom: 'skills/pipeline-contracts/schemas/{step-journal.schema,pipeline-steps}.json',
-    requiredIn: ['built-version.js', 'story-deploy-fix.js', 'task-to-deploy.js'],
+    requiredIn: [],
   },
   {
     name: 'fable',
@@ -112,45 +112,14 @@ export const SHARED_BLOCKS = Object.freeze([
     filledFrom: 'skills/pipeline-contracts/schemas/driver-surface.schema.json and agents/*.md',
     requiredIn: [
       'adversarial.js',
-      'built-version.js',
-      'dependency-assessment.js',
-      'deploy-mechanism.js',
-      'deploy.js',
-      'documentation.js',
       'gate-enforce.js',
-      'infra-intent.js',
-      'prd-creation.js',
-      'prd-validation.js',
-      'settle.js',
-      'story-deploy-fix.js',
-      'suite-run.js',
-      'task-dependency-assessment.js',
-      'task-to-deploy.js',
-      'tdd-green.js',
-      'tdd-red.js',
-      'tdd-refactor.js',
-      'workspace.js',
-      'wsjf-scoring.js',
     ],
   },
   {
     name: 'relay',
     canonical: 'scripts/shared-blocks/relay.js',
     filledFrom: 'skills/artifact-handoff/schemas/{checkpoint,relay-command-result,relay-registered-result,artifact-reference}.schema.json',
-    requiredIn: [
-      'built-version.js',
-      'dependency-assessment.js',
-      'deploy.js',
-      'prd-validation.js',
-      'settle.js',
-      'story-deploy-fix.js',
-      'suite-run.js',
-      'task-dependency-assessment.js',
-      'task-to-deploy.js',
-      'tdd-refactor.js',
-      'workspace.js',
-      'wsjf-scoring.js',
-    ],
+    requiredIn: [],
   },
 ])
 

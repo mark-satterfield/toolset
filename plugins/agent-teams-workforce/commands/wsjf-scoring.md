@@ -1,95 +1,40 @@
 ---
-description: "Score every open Epic and Task with WSJF from the dependency edges already in beads"
+description: "Score open Epics and Tasks with WSJF from their existing dependency edges"
 argument-hint: "[--all] [--rejudge]"
-allowed-tools: [Bash, Workflow]
+allowed-tools: [Bash, Read, Write]
 ---
 
 # WSJF scoring
 
-Score every open Epic and Task in the beads tracker of the repository you are standing in,
-by dispatching the `wsjf-scoring` workflow. The workflow does all of it; this command
-resolves its arguments, dispatches it, and reports.
+The owner invokes this command to score the portfolio. It reads dependency edges and sets none.
+Genuine judgment remains one session per Epic and one grouped Task session per Epic. Planning,
+input preparation, validation, recording and scoring arithmetic run directly in Python.
 
-Scoring reads the dependency edges from beads and never sets one. A model judges only
-values that are missing or whose source content changed: each Epic from its full PRD, one
-Epic per session, and each Epic's Tasks together, in a session per Epic. Then the
-arithmetic runs over the whole portfolio and only changed values are written.
+`--all` includes items with existing values. `--rejudge` judges the included existing values again.
+Without these flags, only missing or changed source content requires judgment. The command writes
+accepted judgments and computed values; a failed judgment leaves its items unjudged while other
+valid judgments remain eligible for recording.
 
-- `--all` includes items that already have a value.
-- `--rejudge` judges the existing values of the included items again.
+Read `pipeline-contracts` and the WSJF rubric. Resolve the current repository with
+`git rev-parse --show-toplevel` and create a unique run directory under its
+`.claude/workflow-runs/wsjf-scoring/`. Use `${CLAUDE_PLUGIN_ROOT}` as the plugin root. Preserve
+the configured project, architecture and PRD/vault environment from the generated driver-surface
+contract. Report missing required environment before launching reasoning work.
 
-Together they re-judge every Epic and Task. It writes.
+Write `args.json` in that directory:
 
-## Dispatch
+- `repoPath`, `pluginRoot`, `workDir`: their absolute paths.
+- `archPath`, `projectRoot`: the configured values when present.
+- `all`, `rejudge`: booleans corresponding to the requested flags.
+- `only`: an empty list unless the owner explicitly requests item IDs.
+- `dryRun`: false for the normal owner command.
 
-The environment variables read below are named and described by the `pipeline-contracts` skill
-(`${CLAUDE_PLUGIN_ROOT}/skills/pipeline-contracts/SKILL.md`, schema
-`schemas/driver-surface.schema.json`, `$defs.DriverEnvironment`). The block reads each name from
-that skill's generated module (`ARCH_PATH_ENV`, `PROJECT_ROOT_ENV`); never type a name from memory.
+Run once through Bash:
 
 ```bash
-CONTRACTS="${CLAUDE_PLUGIN_ROOT}/skills/pipeline-contracts/scripts"
-{ read -r ARCH_VAR; read -r ARCH; read -r PROJECT; } < <(PYTHONPATH="$CONTRACTS" python3 -c 'import os, driver_surface_types as d; print(d.ARCH_PATH_ENV); print(os.environ.get(d.ARCH_PATH_ENV, "")); print(os.environ.get(d.PROJECT_ROOT_ENV, ""))')
-if [ -z "${ARCH_VAR}" ]; then
-  echo "REFUSED: the pipeline-contracts skill could not be loaded from ${CONTRACTS}."
-  exit 1
-fi
-if [ -z "${ARCH}" ]; then
-  echo "REFUSED: ${ARCH_VAR} is not set. /agent-teams-workforce:wsjf-scoring judges against the architecture (the directory holding its arc42/ and built/ folders) and does not run without it. Set ${ARCH_VAR} in the project's environment (for Claude Code, the env block of the project's .claude/settings.json) and start a new session."
-  exit 1
-fi
-REPO="$(git rev-parse --show-toplevel)"
-RUN="$(date -u +%Y%m%dT%H%M%SZ)"
-echo "REPO=$REPO"
-echo "ROOT=${CLAUDE_PLUGIN_ROOT}"
-echo "RUN=$RUN"
-echo "ARCH=${ARCH}"
-echo "PROJECT=${PROJECT}"
+"${CLAUDE_PLUGIN_ROOT}/bin/atw-portfolio" wsjf-scoring --args "<run>/args.json" --output "<run>/result.json"
 ```
 
-When the block prints `REFUSED`, report that line verbatim and stop; dispatch nothing.
-
-Use the printed values below. Leave `projectRoot` out when it printed empty.
-
-```
-Workflow({name: "agent-teams-workforce:wsjf-scoring", args: {
-  repoPath:    "<REPO>",
-  pluginRoot:  "<ROOT>",
-  workDir:     "<REPO>/.claude/workflow-runs/wsjf-scoring/<RUN>",
-  archPath:    "<ARCH>",
-  projectRoot: "<PROJECT>",
-  all:         <true when $ARGUMENTS contains --all, otherwise false>,
-  rejudge:     <true when $ARGUMENTS contains --rejudge, otherwise false>
-}})
-```
-
-Anything else in `$ARGUMENTS` is ignored.
-
-## Report back
-
-From the workflow's result:
-
-- `plan` — how many Epics and Tasks were judged, the state counts (`missing`, `changed`,
-  `unfingerprinted`, `current`), and how many stored values were adopted.
-- `judging` — per level, the sessions run, the items judged, and the ids of the items
-  whose session failed (for Tasks, the failed groups too, in `failedGroups`).
-- `judgingFailed` — every Epic and Task a failed judging session left unjudged. Those items
-  keep no new value and stay to judge, while the judgments that did return are recorded and
-  scored; a failed session does not by itself make `ok` false.
-- `record` — values written and adopted; `rejected`, each judgment refused — a value off
-  the rubric's scale, an item judged twice, or an item the plan did not name — with its
-  reason from `<workDir>/record.json`; `unreadable`, each judgment file that could not be
-  read, with its reason; and `missing`, what the plan asked for and no session returned.
-  A rejected, unreadable or missing item keeps no new value; the run still records and
-  scores the rest, and `ok` is unaffected.
-- `score` — Epics and Tasks scored and written, and the counts of unscored, incomplete and
-  outside-range items. Name them from `<workDir>/score.json`: a Task with no inherited value
-  sits under an unscored Epic or under no Epic; an `incomplete` Epic has Tasks with no size.
-- `failures` and `dispatchFailures`, verbatim, when present.
-
-## Never
-
-- Assess or change a dependency edge. That is `/agent-teams-workforce:dependency-assessment`.
-- Start a pipeline run, a supervisor, a keeper or the dashboard from here.
-- Decide what is eligible to work on. Edges and scores are inputs to that decision, and
-  whatever consumes them makes it.
+Read the result file. Report the planned items, genuine judgment sessions, failed item IDs,
+recording rejections and final scores, with the evidence directory. Do not run a Workflow or
+start a command-runner agent. Do not assess or change any dependency edge.

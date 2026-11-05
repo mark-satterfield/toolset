@@ -56,7 +56,7 @@ bead, read with the `fingerprint-batch ... --scope judging --explain` command th
 judge-input file and name the comparison in the rationale. When `referenceJobs` is empty, judge
 knowledge and uncertainty from what the matrix says already exists, read with the `atw-matrix`
 command the brief gives: `epic <epic id> --closure` (everything the Epic reaches, by repository,
-each document with its `lifecycle`; `effective` is decided), `approval --epic <epic id>` (what
+each document with its `lifecycle`; `effective` is decided), `approval --ids <architecture entry id> ...` (what
 the Epic reaches, approved and not approved) and `node <id>` (one entry with its relationships
 and their `approved` and `verified` flags). Read a document heading or a code file only where an
 entry the matrix returns names it and the entry alone does not say whether it is decided or

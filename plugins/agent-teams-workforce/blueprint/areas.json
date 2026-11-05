@@ -45,9 +45,10 @@
       "name": "the deploy pipeline",
       "paths": [
         "workflows/deploy.js",
-        "workflows/deploy-mechanism.js",
-        "workflows/story-deploy-fix.js",
-        "workflows/built-version.js",
+        "orchestrator/flows/deploy_mechanism.py",
+        "orchestrator/flows/story_deploy_fix.py",
+        "orchestrator/flows/built_version.py",
+        "orchestrator/flows/deploy_support.py",
         "workflows/settle.js"
       ],
       "documents": ["blueprint/requirements/pipelines.md", "blueprint/design/pipelines-deploy.md"]

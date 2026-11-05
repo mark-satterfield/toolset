@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Build suite work",
+  "description": "Tests are code in the existing suite. Passing behavior is accepted; failure is not a completion requirement.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["testFiles", "coverage", "evidence"],
+  "properties": {
+    "testFiles": {"type": "array", "items": {"type": "string"}},
+    "coverage": {"type": "string", "minLength": 1},
+    "evidence": {"type": "string", "minLength": 1},
+    "decisions": {"type": "array", "items": {"type": "object", "required": ["testId", "action", "reason"], "additionalProperties": false, "properties": {"testId": {"type": "string"}, "action": {"enum": ["update", "delete", "keep"]}, "reason": {"type": "string"}}}}
+  }
+}

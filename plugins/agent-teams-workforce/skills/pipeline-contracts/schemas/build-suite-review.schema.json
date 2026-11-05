@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Suite quality and failure judgment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["route", "coverage", "evidence"],
+  "properties": {
+    "route": {"enum": ["test-repair", "implementation", "environment"]},
+    "coverage": {"type": "string", "minLength": 1},
+    "evidence": {"type": "string", "minLength": 1}
+  }
+}

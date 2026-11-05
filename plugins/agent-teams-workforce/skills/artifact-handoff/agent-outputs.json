@@ -382,299 +382,6 @@
       ]
     },
     {
-      "output": "Task edge proposal",
-      "agents": [
-        "task-dependency-mapper"
-      ],
-      "schema": "skills/artifact-handoff/schemas/task-edge-proposal.schema.json",
-      "pointer": "file",
-      "code": "workflows/task-dependency-assessment.js",
-      "anchors": [
-        "skills/artifact-handoff/schemas/task-edge-proposal.schema.json",
-        "agentType: 'task-dependency-mapper'"
-      ],
-      "inputs": [
-        "skills/artifact-handoff/schemas/task-deps.schema.json",
-        "skills/artifact-handoff/schemas/dependency-assessment.schema.json"
-      ]
-    },
-    {
-      "output": "Epic edge proposal",
-      "agents": [
-        "epic-dependency-assessor"
-      ],
-      "schema": "skills/artifact-handoff/schemas/epic-edge-proposal.schema.json",
-      "pointer": "file",
-      "code": "workflows/dependency-assessment.js",
-      "anchors": [
-        "skills/artifact-handoff/schemas/epic-edge-proposal.schema.json",
-        "agentType: 'epic-dependency-assessor'"
-      ],
-      "inputs": [
-        "skills/artifact-handoff/schemas/dependency-assessment.schema.json",
-        "skills/artifact-handoff/schemas/shared-item-judgments.schema.json"
-      ]
-    },
-    {
-      "output": "stakeholder request intake",
-      "agents": [
-        "stakeholder-request-intake-writer"
-      ],
-      "schema": "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/Intake",
-      "named": "prd-creation.schema.json",
-      "pointer": "file",
-      "code": "workflows/prd-creation.js",
-      "anchors": [
-        "contract: 'Intake'",
-        "agentType: 'stakeholder-request-intake-writer'"
-      ],
-      "inputs": [
-        "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/Request"
-      ]
-    },
-    {
-      "output": "feature persona",
-      "agents": [
-        "feature-persona-writer"
-      ],
-      "schema": "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/Persona",
-      "named": "prd-creation.schema.json",
-      "pointer": "file",
-      "code": "workflows/prd-creation.js",
-      "anchors": [
-        "contract: 'Persona'",
-        "agentType: 'feature-persona-writer'"
-      ],
-      "inputs": [
-        "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/Intake"
-      ]
-    },
-    {
-      "output": "feature objective and key results",
-      "agents": [
-        "feature-objective-writer"
-      ],
-      "schema": "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/Okrs",
-      "named": "prd-creation.schema.json",
-      "pointer": "file",
-      "code": "workflows/prd-creation.js",
-      "anchors": [
-        "contract: 'Okrs'",
-        "agentType: 'feature-objective-writer'"
-      ],
-      "inputs": [
-        "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/Intake"
-      ]
-    },
-    {
-      "output": "PRD draft record",
-      "agents": [
-        "prd-writer"
-      ],
-      "schema": "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/Draft",
-      "named": "prd-creation.schema.json",
-      "pointer": "file",
-      "code": "workflows/prd-creation.js",
-      "anchors": [
-        "contract: 'Draft'",
-        "agentType: 'prd-writer'"
-      ],
-      "inputs": [
-        "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/Intake",
-        "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/Persona",
-        "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/Okrs",
-        "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/Alignment"
-      ]
-    },
-    {
-      "output": "PRD alignment verdict",
-      "agents": [
-        "prd-alignment-verifier"
-      ],
-      "schema": "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/Alignment",
-      "named": "prd-creation.schema.json",
-      "pointer": "file",
-      "code": "workflows/prd-creation.js",
-      "anchors": [
-        "contract: 'Alignment'",
-        "agentType: 'prd-alignment-verifier'"
-      ],
-      "inputs": [
-        "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/Intake",
-        "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/Persona",
-        "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/Okrs",
-        "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/Draft"
-      ]
-    },
-    {
-      "output": "PRD deadlock ruling",
-      "agents": [
-        "review-dispute-decider"
-      ],
-      "schema": "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/DeadlockRuling",
-      "named": "prd-creation.schema.json",
-      "pointer": "file",
-      "code": "workflows/prd-creation.js",
-      "anchors": [
-        "contract: 'DeadlockRuling'",
-        "agentType: 'review-dispute-decider'"
-      ],
-      "inputs": [
-        "skills/artifact-handoff/schemas/prd-creation.schema.json#/$defs/Alignment",
-        "skills/artifact-handoff/schemas/spec-review.schema.json#/$defs/SpecRuling",
-        "skills/artifact-handoff/schemas/spec-review.schema.json#/$defs/SpecReview",
-        "skills/artifact-handoff/schemas/spec-review.schema.json#/$defs/SpecCorrection"
-      ]
-    },
-    {
-      "output": "requirement classification",
-      "agents": [
-        "requirement-classifier"
-      ],
-      "schema": "skills/artifact-handoff/schemas/prd-validation-analysis.schema.json#/$defs/ClassificationResult",
-      "named": "prd-validation-analysis.schema.json",
-      "pointer": "file",
-      "code": "workflows/prd-validation.js",
-      "anchors": [
-        "contract: 'ClassificationResult'",
-        "agentType: 'requirement-classifier'"
-      ]
-    },
-    {
-      "output": "ambiguity findings",
-      "agents": [
-        "ambiguity-detector"
-      ],
-      "schema": "skills/artifact-handoff/schemas/prd-validation-analysis.schema.json#/$defs/AmbiguityResult",
-      "named": "prd-validation-analysis.schema.json",
-      "pointer": "file",
-      "code": "workflows/prd-validation.js",
-      "anchors": [
-        "contract: 'AmbiguityResult'",
-        "agentType: 'ambiguity-detector'"
-      ]
-    },
-    {
-      "output": "completeness findings",
-      "agents": [
-        "completeness-checker"
-      ],
-      "schema": "skills/artifact-handoff/schemas/prd-validation-analysis.schema.json#/$defs/CompletenessResult",
-      "named": "prd-validation-analysis.schema.json",
-      "pointer": "file",
-      "code": "workflows/prd-validation.js",
-      "anchors": [
-        "contract: 'CompletenessResult'",
-        "agentType: 'completeness-checker'"
-      ]
-    },
-    {
-      "output": "requirement conflicts",
-      "agents": [
-        "requirements-conflict-detector"
-      ],
-      "schema": "skills/artifact-handoff/schemas/prd-validation-analysis.schema.json#/$defs/ConflictResult",
-      "named": "prd-validation-analysis.schema.json",
-      "pointer": "file",
-      "code": "workflows/prd-validation.js",
-      "anchors": [
-        "contract: 'ConflictResult'",
-        "agentType: 'requirements-conflict-detector'"
-      ]
-    },
-    {
-      "output": "extracted constraints",
-      "agents": [
-        "constraint-extractor"
-      ],
-      "schema": "skills/artifact-handoff/schemas/prd-validation-analysis.schema.json#/$defs/ConstraintResult",
-      "named": "prd-validation-analysis.schema.json",
-      "pointer": "file",
-      "code": "workflows/prd-validation.js",
-      "anchors": [
-        "contract: 'ConstraintResult'",
-        "agentType: 'constraint-extractor'"
-      ]
-    },
-    {
-      "output": "domain boundary findings",
-      "agents": [
-        "domain-boundary-validator"
-      ],
-      "schema": "skills/artifact-handoff/schemas/prd-validation-analysis.schema.json#/$defs/BoundaryResult",
-      "named": "prd-validation-analysis.schema.json",
-      "pointer": "file",
-      "code": "workflows/prd-validation.js",
-      "anchors": [
-        "contract: 'BoundaryResult'",
-        "agentType: 'domain-boundary-validator'"
-      ]
-    },
-    {
-      "output": "clarification questions",
-      "agents": [
-        "requirements-clarifier"
-      ],
-      "schema": "skills/artifact-handoff/schemas/prd-validation-analysis.schema.json#/$defs/ClarificationResult",
-      "named": "prd-validation-analysis.schema.json",
-      "pointer": "file",
-      "code": "workflows/prd-validation.js",
-      "anchors": [
-        "contract: 'ClarificationResult'",
-        "agentType: 'requirements-clarifier'"
-      ]
-    },
-    {
-      "output": "BRD traceability",
-      "agents": [
-        "brd-traceability-auditor"
-      ],
-      "schema": "skills/artifact-handoff/schemas/prd-validation-analysis.schema.json#/$defs/TraceabilityResult",
-      "named": "prd-validation-analysis.schema.json",
-      "pointer": "file",
-      "code": "workflows/prd-validation.js",
-      "anchors": [
-        "contract: 'TraceabilityResult'",
-        "agentType: 'brd-traceability-auditor'"
-      ]
-    },
-    {
-      "output": "WSJF Epic judgment",
-      "agents": [
-        "wsjf-scorer"
-      ],
-      "schema": "skills/artifact-handoff/schemas/wsjf-judgment.schema.json#/$defs/EpicJudgment",
-      "named": "wsjf-judgment.schema.json",
-      "pointer": "file",
-      "code": "workflows/wsjf-scoring.js",
-      "anchors": [
-        "wsjf-judgment.schema.json#/$defs/EpicJudgment",
-        "agentType: 'wsjf-scorer'"
-      ],
-      "inputs": [
-        "skills/artifact-handoff/schemas/wsjf-judge-input.schema.json",
-        "skills/artifact-handoff/schemas/wsjf-judgment.schema.json#/$defs/TaskJudgment"
-      ]
-    },
-    {
-      "output": "WSJF Task judgment",
-      "agents": [
-        "wsjf-scorer"
-      ],
-      "schema": "skills/artifact-handoff/schemas/wsjf-judgment.schema.json#/$defs/TaskJudgment",
-      "named": "wsjf-judgment.schema.json",
-      "pointer": "file",
-      "code": "workflows/wsjf-scoring.js",
-      "anchors": [
-        "wsjf-judgment.schema.json#/$defs/TaskJudgment",
-        "agentType: 'wsjf-scorer'"
-      ],
-      "inputs": [
-        "skills/artifact-handoff/schemas/wsjf-judge-input.schema.json",
-        "skills/artifact-handoff/schemas/wsjf-judgment.schema.json#/$defs/EpicJudgment"
-      ]
-    },
-    {
       "output": "attack lane findings",
       "agents": [
         "data-exposure-scanner",
@@ -693,90 +400,265 @@
       ]
     },
     {
-      "output": "documentation writer's update",
-      "schema": "workflows/documentation.js#WRITE_SCHEMA",
-      "locator": "workflows/documentation.js:WRITE_SCHEMA",
-      "pointer": "structured",
-      "code": "workflows/documentation.js",
-      "anchors": [
-        "const WRITERS = ",
-        "schema: WRITE_SCHEMA"
-      ],
-      "agentsFrom": [
-        "workflows/documentation.js#WRITERS"
-      ]
-    },
-    {
-      "output": "implementer's Green result",
-      "agentsLoading": "implementer-contract",
-      "skills": [
-        "implementer-contract"
-      ],
-      "schema": "workflows/tdd-green.js#GREEN_SCHEMA",
-      "locator": "workflows/tdd-green.js:GREEN_SCHEMA",
-      "pointer": "structured",
-      "code": "workflows/tdd-green.js",
-      "anchors": [
-        "schema: GREEN_SCHEMA"
-      ]
-    },
-    {
-      "output": "test writer's Red result",
+      "output": "build selected tests",
       "agents": [
         "tdd-unit-test-generator"
       ],
-      "schema": "workflows/tdd-red.js#RED_SCHEMA",
-      "locator": "workflows/tdd-red.js:RED_SCHEMA",
-      "pointer": "structured",
-      "code": "workflows/tdd-red.js",
+      "schema": "skills/pipeline-contracts/schemas/build-tests.schema.json",
+      "named": "schema",
+      "pointer": "brief",
+      "code": "orchestrator/flows/build_sessions.py",
       "anchors": [
-        "SURFACE_WRITERS",
-        "schema: RED_SCHEMA"
+        "params[\"schema\"]",
+        "validate=schema"
       ],
-      "agentsFrom": [
-        "workflows/tdd-red.js#SURFACE_WRITERS"
-      ],
-      "tolerate": [
-        "testIssues"
+      "launches": [
+        "_launch"
       ]
     },
     {
-      "output": "regression coverage review",
+      "output": "build selected implementation",
       "agents": [
-        "regression-coverage-reviewer"
+        "code-refactoring-specialist",
+        "chassis-extension-implementer"
       ],
-      "schema": "skills/artifact-handoff/schemas/regression-review.schema.json",
-      "named": "regression-review.schema.json",
-      "pointer": "file",
-      "code": "workflows/task-to-deploy.js",
+      "schema": "skills/pipeline-contracts/schemas/build-implementation.schema.json",
+      "named": "schema",
+      "pointer": "brief",
+      "code": "orchestrator/flows/build_sessions.py",
       "anchors": [
-        "REGRESSION_REVIEW_CONTRACT",
-        "REGRESSION_REVIEW_SCHEMA"
+        "params[\"schema\"]",
+        "validate=schema"
       ],
-      "locator": "workflows/task-to-deploy.js:REGRESSION_REVIEW_SCHEMA",
-      "skills": [
-        "cumulative-regression"
-      ],
-      "inputs": [
-        "skills/artifact-handoff/schemas/regression-plan.schema.json"
+      "launches": [
+        "_launch"
       ]
     },
     {
-      "output": "regression plan",
+      "output": "build selection",
+      "agents": [
+        "implementation-lead",
+        "documentation-lead",
+        "test-strategy-decider"
+      ],
+      "schema": "skills/pipeline-contracts/schemas/build-selection.schema.json",
+      "named": "schema",
+      "pointer": "brief",
+      "code": "orchestrator/flows/build_sessions.py",
+      "anchors": [
+        "params[\"schema\"]",
+        "validate=schema"
+      ],
+      "launches": [
+        "_launch"
+      ]
+    },
+    {
+      "output": "build quality review",
+      "agents": [
+        "code-correctness-reviewer",
+        "shared-capability-reviewer",
+        "cds-live-auditor"
+      ],
+      "schema": "skills/pipeline-contracts/schemas/build-review.schema.json",
+      "named": "schema",
+      "pointer": "brief",
+      "code": "orchestrator/flows/build_sessions.py",
+      "anchors": [
+        "params[\"schema\"]",
+        "validate=schema"
+      ],
+      "launches": [
+        "_launch"
+      ]
+    },
+    {
+      "output": "build suite review",
+      "agents": [
+        "acceptance-criteria-coverage-assessor"
+      ],
+      "schema": "skills/pipeline-contracts/schemas/build-suite-review.schema.json",
+      "named": "schema",
+      "pointer": "brief",
+      "code": "orchestrator/flows/build_sessions.py",
+      "anchors": [
+        "params[\"schema\"]",
+        "validate=schema"
+      ],
+      "launches": [
+        "_launch"
+      ]
+    },
+    {
+      "output": "suite declaration",
+      "agents": [
+        "test-command-resolver"
+      ],
+      "schema": "skills/pipeline-contracts/schemas/build-command.schema.json",
+      "named": "schema",
+      "pointer": "brief",
+      "code": "orchestrator/flows/build_sessions.py",
+      "anchors": [
+        "params[\"schema\"]",
+        "validate=schema"
+      ],
+      "launches": [
+        "_launch"
+      ]
+    },
+    {
+      "output": "infrastructure intent",
+      "agents": [
+        "cdk-infrastructure-designer"
+      ],
+      "schema": "skills/pipeline-contracts/schemas/build-infrastructure.schema.json",
+      "named": "schema",
+      "pointer": "brief",
+      "code": "orchestrator/flows/build_sessions.py",
+      "anchors": [
+        "params[\"schema\"]",
+        "validate=schema"
+      ],
+      "launches": [
+        "_launch"
+      ]
+    },
+    {
+      "output": "build regression plan",
       "agents": [
         "regression-impact-assessor"
       ],
       "schema": "skills/artifact-handoff/schemas/regression-plan.schema.json",
-      "named": "regression-plan.schema.json",
-      "pointer": "file",
-      "code": "workflows/task-to-deploy.js",
+      "named": "schema",
+      "pointer": "brief",
+      "code": "orchestrator/flows/build_sessions.py",
       "anchors": [
-        "REGRESSION_CONTRACT",
-        "REGRESSION_SCHEMA"
+        "params[\"schema\"]",
+        "validate=schema"
       ],
-      "locator": "workflows/task-to-deploy.js:REGRESSION_SCHEMA",
-      "skills": [
-        "cumulative-regression"
+      "launches": [
+        "_launch"
+      ]
+    },
+    {
+      "output": "build regression review",
+      "agents": [
+        "regression-coverage-reviewer"
+      ],
+      "schema": "skills/artifact-handoff/schemas/regression-review.schema.json",
+      "named": "schema",
+      "pointer": "brief",
+      "code": "orchestrator/flows/build_sessions.py",
+      "anchors": [
+        "params[\"schema\"]",
+        "validate=schema"
+      ],
+      "launches": [
+        "_launch"
+      ]
+    },
+    {
+      "output": "built comparison",
+      "agents": [
+        "built-architecture-comparer"
+      ],
+      "schema": "skills/artifact-handoff/schemas/built-comparison.schema.json",
+      "named": "schema",
+      "pointer": "brief",
+      "code": "orchestrator/flows/build_sessions.py",
+      "anchors": [
+        "params[\"schema\"]",
+        "validate=schema"
+      ],
+      "launches": [
+        "_launch"
+      ]
+    },
+    {
+      "output": "built maintenance",
+      "agents": [
+        "architecture-maintainer"
+      ],
+      "schema": "skills/artifact-handoff/schemas/built-maintenance.schema.json",
+      "named": "built-maintenance.schema.json",
+      "pointer": "file",
+      "code": "orchestrator/flows/build_sessions.py",
+      "anchors": [
+        "params[\"schema\"]",
+        "validate=schema"
+      ],
+      "launches": [
+        "_launch"
+      ]
+    },
+    {
+      "output": "deploy repair",
+      "agents": [
+        "deploy-failure-fixer"
+      ],
+      "schema": "skills/artifact-handoff/schemas/deploy-fix.schema.json",
+      "named": "schema",
+      "pointer": "brief",
+      "code": "orchestrator/flows/build_sessions.py",
+      "anchors": [
+        "params[\"schema\"]",
+        "validate=schema"
+      ],
+      "launches": [
+        "_launch"
+      ]
+    },
+    {
+      "output": "Epic edge proposal",
+      "agents": [
+        "epic-dependency-assessor"
+      ],
+      "schema": "skills/artifact-handoff/schemas/epic-edge-proposal.schema.json",
+      "pointer": "file",
+      "code": "orchestrator/portfolio.py",
+      "anchors": [
+        "epic-edge-proposal.schema.json",
+        "epic-dependency-assessor"
+      ],
+      "inputs": [
+        "skills/artifact-handoff/schemas/dependency-assessment.schema.json",
+        "skills/artifact-handoff/schemas/shared-item-judgments.schema.json"
+      ]
+    },
+    {
+      "output": "WSJF Epic judgment",
+      "agents": [
+        "wsjf-scorer"
+      ],
+      "schema": "skills/artifact-handoff/schemas/wsjf-judgment.schema.json#/$defs/EpicJudgment",
+      "named": "wsjf-judgment.schema.json",
+      "pointer": "file",
+      "code": "orchestrator/portfolio.py",
+      "anchors": [
+        "wsjf-judgment.schema.json",
+        "wsjf-scorer"
+      ],
+      "inputs": [
+        "skills/artifact-handoff/schemas/wsjf-judge-input.schema.json",
+        "skills/artifact-handoff/schemas/wsjf-judgment.schema.json#/$defs/TaskJudgment"
+      ]
+    },
+    {
+      "output": "WSJF Task judgment",
+      "agents": [
+        "wsjf-scorer"
+      ],
+      "schema": "skills/artifact-handoff/schemas/wsjf-judgment.schema.json#/$defs/TaskJudgment",
+      "named": "wsjf-judgment.schema.json",
+      "pointer": "file",
+      "code": "orchestrator/portfolio.py",
+      "anchors": [
+        "wsjf-judgment.schema.json",
+        "wsjf-scorer"
+      ],
+      "inputs": [
+        "skills/artifact-handoff/schemas/wsjf-judge-input.schema.json",
+        "skills/artifact-handoff/schemas/wsjf-judgment.schema.json#/$defs/EpicJudgment"
       ]
     }
   ]

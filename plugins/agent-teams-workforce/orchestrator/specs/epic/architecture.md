@@ -270,11 +270,11 @@ and its `sharedCapabilities`, at `<helpersFolder>/trd.request.json` with the ans
 (`trd.answer.json`). The session adds the requirements the PRD implies that the TRD does not
 state, applies the changes and writes each shared capability the TRD does not yet state as a
 `reuse` requirement. The step records what a `trd-author` step records (the table above), so the
-matrix holds each requirement it added or changed before the promotion commits the matrix.
+matrix holds each requirement it added or changed before promotion completes.
 
 ## Promotion
 
-Script `atw-matrix sync-documents; atw-matrix commit`. It follows the TRD write after a check that found no defect.
+Script `atw-matrix sync-documents`. It follows the TRD write after a check that found no defect.
 It sets the documents this Epic's maintainers wrote effective in their front matter, each folder
 index they listed a view in included: the value `documents synced` each maintainer step recorded
 (`architecture_files.written_documents`). It copies the review log
@@ -282,9 +282,9 @@ into the vault at `<architectureRoot>/review-logs/<epic id>.json`, mirrors the d
 lifecycle in the matrix (`sync-documents --paths`; the matrix holds no folder index), links the log from the Epic's matrix entry
 (attribute `reviewLog`: its path in the vault and its SHA-256), removes each disagreement settled
 in this run whose losing statement a maintainer step corrected, commits and pushes those
-documents and the log in the vault (each that exists or that git tracks), and commits and pushes the matrix file (`atw-matrix commit
---bead`). It writes `<arch-work>/promoted.json` and records it as the file `promoted documents`,
-with the values `vault commit` and `matrix commit` when a commit was made. A document other than
+documents and the log in the vault (each that exists or that git tracks). The matrix stays local.
+It writes `<arch-work>/promoted.json` and records it as the file `promoted documents`,
+with the value `vault commit` when a commit was made. A document other than
 a folder index whose matrix entry does not show it effective fails the step, naming each with the reason; anything else that fails ends
 the step with a structured cause.
 

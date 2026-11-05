@@ -7,7 +7,7 @@ a decision turns on them. ``pack.json`` holds:
 - ``epic``: the Epic's beads id;
 - ``prd``: the PRD's path;
 - ``epicView``: what ``atw-matrix epic`` returns for the Epic;
-- ``reach``: one row per entry of the Epic's approval scope (``matrixtraverse.reach_rows``, the rule
+- ``reach``: one row per entry of the architecture review reach (``matrixtraverse.reach_rows``, the rule
   of reach): its ``id``, ``kind``, ``approved`` (whether it carries the approved mark), ``via`` (the
   links that put it in reach), ``sharedWith`` (the other Epics that reach it) and ``headings``,
   each document heading that describes it (``covers`` for a requirement, ``describedBy`` for any

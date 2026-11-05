@@ -5,10 +5,10 @@ description: >-
   from the Task's build contract — its spec documents and the architecture
   views it was designed against. Use for Implementation work requiring
   implementer selection.
-tools: Read, Glob, Grep, Skill, mcp__mcp-graphrag-server, Agent, Workflow
+tools: Read, Glob, Grep, Write, Skill, mcp__mcp-graphrag-server, Agent, Workflow
 mcpServers:
 - mcp-graphrag-server
-disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash, SendMessage
+disallowedTools: AskUserQuestion, Edit, NotebookEdit, Bash, SendMessage
 model: sonnet
 permissionMode: default
 maxTurns: 150
@@ -18,6 +18,9 @@ color: green
 ---
 
 ## Environment Discovery:
+
+Write only the machine-readable selection result when the Python build supplies an output path and `build-selection.schema.json`. Code, tests and repository documents remain the selected specialists' work.
+
 Before executing any write or build tools, read the repository's `AGENTS.md` (or `CLAUDE.md`) for its build and test commands. Where the repository's hooks run lint, format and type checks after each edit and at commit, fix every finding they report and do not run those checks yourself.
 
 ## Charter

@@ -7,7 +7,7 @@
 #            impact, related, uses, story-scope,
 #            review-scope, summary, check, check-reuse, approval, shared-items, heading
 #   tasks:   built, work, affected
-#   changes: put, link, unlink, settle, rename, remove, move-repository, commit, record-judgments
+#   changes: put, link, unlink, settle, rename, remove, move-repository, record-judgments
 #   syncs:   sync-epics, sync-documents, sync-events
 #   seeding: seed, seed-stacks, seed-packages, seed-inputs, seed-features, seed-realizers, seed-apply
 #   code:    verify

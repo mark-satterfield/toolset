@@ -7,9 +7,9 @@ files the Epic's review log in the vault beside the architecture, brings the doc
 entries up to date so that each mirrors its lifecycle (the matrix holds no folder index), links
 the review log from the Epic's matrix entry, removes each disagreement a document maintainer of
 this run corrected the losing statement of, and sets the approved mark on the architecture the
-Epic's elaboration reviewed (its approval scope by the rule of reach, in the corrected matrix).
-It then commits and pushes those documents and the review log, and commits and pushes the matrix
-file. Anything else is a failure with a structured cause.
+Epic's elaboration reviewed (its architecture review reach in the corrected matrix).
+It then commits and pushes those documents and the review log. The matrix remains local.
+Anything else is a failure with a structured cause.
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ from architecture_work_contract import validate_write_request, validate_write_re
 from matrix_contract import KIND_DISAGREEMENT, KIND_DOCUMENT, ROLE_SCRIPT
 from matrixstore import as_entry_id, make_id, read_matrix, update_matrix
 from matrixsync import LIFECYCLE_EFFECTIVE, folder_index, relative_path, set_lifecycle, sync_documents, vault_root
-from matrixtraverse import approval_scope, epic_id
-from matrixwrite import approve, commit
+from matrixtraverse import architecture_review_scope, epic_id
+from matrixwrite import approve
 from step_journal_contract import STATUS_DONE
 
 from orchestrator.core import step_journal
@@ -56,14 +56,13 @@ if TYPE_CHECKING:
     from architecture_work_contract import WriteRequest, WriteResult
     from matrix_contract import Entry, EntryId
     from matrixstore import Matrix
-    from matrixwrite import ApproveResult, CommitResult
+    from matrixwrite import ApproveResult
     from step_journal_contract import Artifact, Step
 
     from orchestrator.core.io import JsonValue
 
 PROMOTED: Final = "promoted documents"
 VAULT_COMMIT: Final = "vault commit"
-MATRIX_COMMIT: Final = "matrix commit"
 BRANCH: Final = "main"
 REMOTE: Final = "origin"
 ATTR_LIFECYCLE: Final = "lifecycle"
@@ -131,7 +130,7 @@ def _promote(
     vault, the entries of the written documents are brought up to date as ``atw-matrix
     sync-documents --paths`` does (a document that is gone loses its entry), the Epic's entry links
     the review log, each disagreement named that the matrix holds with a ruling is removed, and
-    the architecture of the Epic's approval scope gets the approved mark (``matrixwrite.approve``,
+    the reviewed architecture gets the approved mark (``matrixwrite.approve``,
     as the script role).
 
     Args:
@@ -172,7 +171,7 @@ def _promote(
             if entry is not None and entry.kind == KIND_DISAGREEMENT and entry.attributes.get(ATTR_STANDS):
                 matrix.remove(entry.id)
                 removed.append(entry.id)
-        return removed, approve(matrix, approval_scope(matrix, epic_id(bead)), ROLE_SCRIPT)
+        return removed, approve(matrix, architecture_review_scope(matrix, epic_id(bead)), ROLE_SCRIPT)
 
     removed: list[EntryId]
     approved: ApproveResult
@@ -271,8 +270,7 @@ def promote(run: StepRun) -> Completion:
     wrote (``architecture_files.written_documents``), each staged by its path with the review log.
 
     Returns:
-        The file of what was promoted, and the vault commit and the matrix commit when one was
-        made or pushed.
+        The file of what was promoted, and the vault commit when one was made or pushed.
 
     Raises:
         ArchitectureStepError: The matrix does not show a promoted document as effective; the
@@ -310,9 +308,6 @@ def promote(run: StepRun) -> Completion:
     )
     if made is not None:
         artifacts.append(value_artifact(VAULT_COMMIT, made))
-    recorded: CommitResult = run.tools.portfolio(PROMOTE, commit, matrix_file(), str(run.bead))
-    if recorded["committed"] or recorded["pushed"]:
-        artifacts.append(value_artifact(MATRIX_COMMIT, recorded["head"]))
     if promoted.not_effective:
         raise ArchitectureStepError(
             run,

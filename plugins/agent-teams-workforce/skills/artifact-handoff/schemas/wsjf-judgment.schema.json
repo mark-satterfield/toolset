@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/wsjf-judgment.schema.json",
   "title": "WSJF judgment",
-  "description": "The judgment one wsjf-scorer session writes in the wsjf-scoring workflow: the candidate <workDir>/judgments/<level>/candidates/<key>.json, which jsonartifact.py validates against EpicJudgment or TaskJudgment here and publishes as judgments/<level>/<key>.json. `depscore.py record` (scoring.record) then writes the judged values to the beads; a value off the rubric's scale is rejected there. Only judged inputs belong here: RR-OE, reaches, cost of delay and WSJF are computed afterwards by `skills/wsjf/scripts/wsjf.py`, and a judgment never states them. Every item the session was given appears exactly once, in `scores` or in `unscored`.",
+  "description": "One wsjf-scorer session's judgment for its isolated Epic or Task group. The Python owner command validates the candidate against EpicJudgment or TaskJudgment and requires exactly one disposition per supplied item before publishing judgments/<level>/<key>.json. `depscore.py record` writes accepted judged values to beads and rejects values off the rubric's scale. RR-OE, reaches, cost of delay and WSJF are computed afterwards by arithmetic; a judgment never states them.",
   "oneOf": [
     {"$ref": "#/$defs/EpicJudgment"},
     {"$ref": "#/$defs/TaskJudgment"}

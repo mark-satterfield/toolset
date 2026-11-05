@@ -8,7 +8,7 @@ each, or an architecture entry each reaches by the rule of reach
 (``matrixtraverse.requirement_reach``: a serving feature's realizer, the stack it is or has its
 home in, or the far end of one dependency from either).
 
-While a shared item's architecture is not approved, one judgment decides the order of the Epics
+Independently of approval and verification, one judgment decides the order of the Epics
 that need it: an architecture-side ``drives`` relationship from one Epic to the item, with
 ``basis`` ``owns`` (this Epic builds and owns the item; the others use it) or ``shared`` (the
 Epics share it independently; this Epic merely goes first) and a one-sentence ``reason``. Every
@@ -19,7 +19,7 @@ it orders Epics (the stack is deployed in advance).
 
 - :func:`shared_items`: every shared item with the Epics that need it, through which
   requirements, its approval and the record that decides it.
-- :func:`write_batches`: the unapproved shared items no record decides, in batches for judging.
+- :func:`write_batches`: the shared items no record decides, in batches for judging.
 - :func:`record_judgments`: record a judgment file as ``drives`` relationships.
 """
 
@@ -370,10 +370,10 @@ def to_judge(items: Sequence[SharedItem]) -> list[SharedItem]:
     """Select the items a judgment is still needed for.
 
     Returns:
-        The unapproved items no record decides and whose stack is not deployed in advance.
+        The items no record decides and whose stack is not deployed in advance, regardless of approval.
 
     """
-    return [item for item in items if not item.approved and item.decision is None and not item.in_advance]
+    return [item for item in items if item.decision is None and not item.in_advance]
 
 
 def _groups(items: Sequence[SharedItem]) -> list[list[SharedItem]]:
@@ -502,11 +502,11 @@ def write_batches(matrix: Matrix, vault: Path, folder: Path, size: int = BATCH_S
     index: dict[str, JsonValue] = {
         "shared": len(items),
         "approved": len(items) - len(unapproved),
-        "judged": sum(1 for item in unapproved if item.decision is not None and item.decision.source == SOURCE_JUDGED),
+        "judged": sum(1 for item in items if item.decision is not None and item.decision.source == SOURCE_JUDGED),
         "ownerStack": sum(
-            1 for item in unapproved if item.decision is not None and item.decision.source == SOURCE_OWNER_STACK
+            1 for item in items if item.decision is not None and item.decision.source == SOURCE_OWNER_STACK
         ),
-        "deployedInAdvance": sum(1 for item in unapproved if item.in_advance),
+        "deployedInAdvance": sum(1 for item in items if item.in_advance),
         "toJudge": len(open_items),
         "toJudgeByKind": dict(sorted(by_kind.items())),
         "groups": sum(len(groups) for groups in packed),
