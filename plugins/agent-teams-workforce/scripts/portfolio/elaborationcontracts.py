@@ -1,6 +1,6 @@
 """Elaboration lifecycle writer contracts."""
 
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, TypedDict
 
 # isort: split
 import portfolio_path  # ruff: ignore[unused-import] - Standalone imports need the bundled plugin path before orchestrator imports.
@@ -8,20 +8,14 @@ import portfolio_path  # ruff: ignore[unused-import] - Standalone imports need t
 # isort: split
 from beadcontracts import PlannedWrite
 from orchestrator.core.handback_contract import Refusal
-from scoringcontracts import Applied, LevelUnscored
-from wsjf_types import Fault, OutsideRange, Unscored
 
 __all__: list[str] = [
     "EpicValue",
-    "FinishOptions",
-    "FinishSummary",
-    "Finished",
     "Refusal",
     "Refused",
     "RefusedSummary",
     "ReleaseSummary",
     "Released",
-    "Scored",
     "StartSummary",
     "Started",
 ]
@@ -76,42 +70,6 @@ class Started(TypedDict):
     summary: StartSummary
 
 
-class Scored(TypedDict):
-    """Describe the scored wire record."""
-
-    epics: list[Applied]
-    tasks: list[Applied]
-    unscored: list[LevelUnscored]
-    incomplete: list[Unscored]
-    sizeFaults: list[Fault]
-    outsideRange: list[OutsideRange]
-    cycles: dict[str, None]
-
-
-class FinishSummary(TypedDict):
-    """Describe the finish summary wire record."""
-
-    ok: bool
-    epic: str
-    epicsWritten: int
-    tasksScored: int
-    tasksWritten: int
-    unscored: int
-    done: bool
-
-
-class Finished(TypedDict):
-    """Describe the finished wire record."""
-
-    ok: bool
-    epic: str
-    score: Scored
-    lifecycle: dict[str, str] | None
-    dryRun: bool
-    planned: list[PlannedWrite]
-    summary: FinishSummary
-
-
 class ReleaseSummary(TypedDict):
     """Describe the release summary wire record."""
 
@@ -131,11 +89,3 @@ class Released(TypedDict):
     dryRun: bool
     planned: list[PlannedWrite]
     summary: ReleaseSummary
-
-
-class FinishOptions(TypedDict):
-    """Specify lifecycle ownership and the set of scores to finish."""
-
-    owner: str | None
-    done: bool
-    scope: NotRequired[str]

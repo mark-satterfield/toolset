@@ -176,7 +176,6 @@ ECHOED: Final[tuple[str, ...]] = ("source", "warnings", "planned", "command", "d
 #: Per command, the only top-level keys its view carries, when a workflow reads few of many.
 WHITELIST: Final[dict[str, tuple[str, ...]]] = {
     "elaboration-start": ("ok", "refusal", "owner", "previousState"),
-    "elaboration-finish": ("ok", "lifecycle", "summary", "storyEdges"),
 }
 
 

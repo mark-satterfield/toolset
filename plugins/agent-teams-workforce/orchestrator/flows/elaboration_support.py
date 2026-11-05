@@ -238,7 +238,7 @@ def lifecycle(  # ruff: ignore[non-pep695-generic-function] - Typeguard requires
 
     def attempt() -> R:
         repo: Path = Path(check_type(context.args[dispatch.KEY_BEADS_REPO_PATH], str))
-        graph: beadgraph.Graph = tools.portfolio(stage, beadgraph.load, repo, with_description=True)
+        graph: beadgraph.Graph = tools.portfolio(stage, beadgraph.load, repo)
         writer: beadgraph.Writer = tools.portfolio(stage, beadgraph.Writer, repo)
         return tools.portfolio(stage, operation, graph, writer, context.bead, *args, **kwargs)
 

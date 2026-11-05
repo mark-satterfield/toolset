@@ -28,7 +28,7 @@ one key, `*_KEYS` for a key group). This spec restates none of their names or sh
 ## Who calls it (the S01f question)
 
 - **The Epic pipeline does not call this flow.** Tasks written by elaboration carry
-  `KEY_ELAB_KEY` and get their `blocks` edges from elaboration (the step `beadwrite.write_task` within a Story,
+  `KEY_ELAB_KEY` and get their `blocks` edges from elaboration (the step `beadwrite.write_story_task_edges` within a Story,
   the step `beadwrite.write_all_task_edges` across Stories; see `<orch>/specs/epic/task-decomposition.md` and
   `<orch>/specs/epic/prd-to-spec.md`). `prd-to-spec` does dispatch the same agent,
   `task-dependency-mapper`, but in its other assignment (edges between Tasks of different Stories
@@ -189,7 +189,7 @@ Agents the workflow dispatches:
 - Ownership written before adds (`apply_edges`): as in the Epic spec.
 - Story-edge refusal on contradictory order or a cycle (`story_edges` writes the difference only
   for Stories it does not refuse): without it a Story-to-Story cycle reaches beads, and the next
-  `story_edges` run (from this flow or `elaboration-finish`) derives from that same contradictory
+  `story_edges` run (from this flow or elaboration's Story edge step) derives from that same contradictory
   input, so nothing later clears it.
 
 **In `jsonartifact.py`** (steps 4 and 6): the schema check, the receipt check and the reuse
@@ -206,7 +206,7 @@ As in `<orch>/specs/epic/dependency-assessment.md` section 7, with these differe
   are elaboration's).
 - Step 8 `story_edges` fails to read the tracker (`GraphError`): recorded in `storyEdges`
   (`bd-timeout` / `contention` / `other` as for any `bd` call); the applied Task edges stand.
-  `elaboration-finish` also re-runs `story_edges`, which repairs the Story order later.
+  Elaboration's Story edge step also runs `story_edges`, which repairs the Story order later.
 - A cycle through a hand-made Task edge is among the findings in `stop` and in the reasoning
   document.
 

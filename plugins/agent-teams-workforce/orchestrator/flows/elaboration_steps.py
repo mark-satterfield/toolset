@@ -41,7 +41,7 @@ from orchestrator.flows.elaboration_support import (
 )
 
 if TYPE_CHECKING:
-    from elaborationcontracts import Finished
+    from scoringcontracts import TaskScores
 
 TASK_SCORES_STAGE: Final = "task-scores"
 
@@ -93,16 +93,19 @@ def score(run: StepRun) -> Completion:
 
     """
     enter_phase(run.context, run.agents.emit, FINISH_PHASE, TASK_SCORES_STAGE)
-    finish: Finished = lifecycle(
+
+    def progress(detail: str) -> None:
+        enter_phase(run.context, run.agents.emit, FINISH_PHASE, f"{TASK_SCORES_STAGE}: {detail}")
+
+    scores: TaskScores = lifecycle(
         run.context,
         run.tools,
         FINISH_PHASE,
-        elaboration.finish,
+        elaboration.score_epic_tasks,
         owner=_owner(run),
-        done=False,
-        scope="epic-tasks",
+        progress=progress,
     )
-    unscored: list[JsonValue] = check_type(json_object(finish["score"])["unscored"], list[JsonValue])
+    unscored: list[JsonValue] = [json_object(row) for row in scores["unscored"]]
     return Completion(artifacts=(value_artifact(UNSCORED, unscored),))
 
 
@@ -141,10 +144,21 @@ def story_edges(run: StepRun) -> Completion:
     enter_phase(run.context, run.agents.emit, FINISH_PHASE, STORY_EDGES)
     repo: Path = Path(check_type(run.context.args[dispatch_arguments().KEY_BEADS_REPO_PATH], str))
 
+    def progress(detail: str) -> None:
+        enter_phase(run.context, run.agents.emit, FINISH_PHASE, f"{STORY_EDGES}: {detail}")
+
     def write() -> storyedges.StoryEdges:
         graph: beadgraph.Graph = run.tools.portfolio(FINISH_PHASE, beadgraph.load, repo)
+        progress(f"read {len(graph.beads)} beads")
         writer: beadgraph.Writer = run.tools.portfolio(FINISH_PHASE, beadgraph.Writer, repo)
-        return run.tools.portfolio(FINISH_PHASE, storyedges.story_edges, graph, writer, epic=str(run.bead))
+        return run.tools.portfolio(
+            FINISH_PHASE,
+            storyedges.story_edges,
+            graph,
+            writer,
+            epic=str(run.bead),
+            progress=progress,
+        )
 
     written: dict[str, JsonValue] = json_object(run.tools.operation(FINISH_PHASE, write))
     if written.get("ok") is False:

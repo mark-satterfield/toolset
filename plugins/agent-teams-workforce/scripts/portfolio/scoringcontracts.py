@@ -144,6 +144,16 @@ class ScoreSummary(TypedDict):
     taskCycle: None
 
 
+class TaskScores(TypedDict):
+    """Describe the wire record of scoring the Tasks of one Epic."""
+
+    tasks: list[Applied]
+    unscored: list[LevelUnscored]
+    sizeFaults: list[Fault]
+    dryRun: bool
+    planned: list[PlannedWrite]
+
+
 class ScoreResult(TypedDict):
     """Describe the score result wire record."""
 

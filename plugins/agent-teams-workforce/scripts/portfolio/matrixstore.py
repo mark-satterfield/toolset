@@ -25,7 +25,7 @@ import tempfile
 import time
 from collections.abc import Callable, Collection, Generator, Mapping
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final, NamedTuple
 
@@ -1409,6 +1409,49 @@ def read_matrix(path: Path) -> Matrix:
 
     """
     return Matrix(parse_document(_decode(path), str(path)))
+
+
+@dataclass(frozen=True)
+class _SharedRead:
+    """The matrix last read for reading only, and the state of the file it was read from."""
+
+    path: Path
+    stamp: tuple[int, int]
+    matrix: Matrix
+
+
+_shared_read: list[_SharedRead] = []
+
+
+def shared_matrix(path: Path) -> Matrix:
+    """Return the matrix of a file for reading only, read again only when the file has changed.
+
+    Validating the file on every read costs seconds, and a step can need it once per Story or per
+    Task. Every caller shares the one object, so a caller that changes the matrix uses
+    :func:`read_matrix`. A write replaces the file in one move, so its size and modification time
+    say whether the object is current.
+
+    Args:
+        path: The matrix file.
+
+    Returns:
+        The matrix, not to be changed.
+
+    Raises:
+        MatrixError: The file is missing, or :func:`read_matrix` refuses it.
+
+    """
+    try:
+        status: os.stat_result = path.stat()
+    except OSError as error:
+        message: str = f"cannot read the matrix {path}: {error}"
+        raise MatrixError(message) from error
+    stamp: tuple[int, int] = (status.st_mtime_ns, status.st_size)
+    if _shared_read and _shared_read[0].path == path and _shared_read[0].stamp == stamp:
+        return _shared_read[0].matrix
+    matrix: Matrix = read_matrix(path)
+    _shared_read[:] = [_SharedRead(path, stamp, matrix)]
+    return matrix
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

@@ -5,7 +5,7 @@ The tracker is read live through `bd`, and only through `bd`. The `.beads/issues
 export is never read: `bd` exports only after a state-changing command, at most once per
 `export.interval`, and the export can be blocked, so it can lag the tracker by hours.
 Every live `bd` command has a timeout. The shared Dolt server takes concurrent writers itself;
-the one lock a `bd` call takes is the edge lock around `Writer.add_blocks` (`tool_locks.edge_lock`).
+the one lock a `bd` call takes is the edge lock around `Writer.write_blocks` (`tool_locks.edge_lock`).
 Failures carry structured causes; the orchestrator owns retries of keyed operations.
 
 Two dependency types carry order, one per level. An Epic-to-Epic dependency is a `tracks`
@@ -24,6 +24,7 @@ import math
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Serialized bd transport uses argv without a shell.
 import sys
 import time
+from collections.abc import Mapping, Sequence  # ruff: ignore[typing-only-standard-library-import] - typeguard @typechecked resolves these at runtime.
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -43,7 +44,7 @@ import bead_metadata
 import beads_contract
 from bead_metadata import KEY_SEQ_OWNED_BLOCKERS, HashScope
 from beadcontracts import PlannedWrite
-from contracts import JsonObject, JsonValue, json_object
+from contracts import JsonObject, JsonValue
 from orchestrator.core import handback_contract
 from orchestrator.core import tool_locks as locks
 from typeguard import CollectionCheckStrategy, check_type, typechecked
@@ -145,18 +146,6 @@ class Bead:
     tracked: tuple[str, ...] = ()
     description: str = ""
 
-    def __post_init__(self) -> None:
-        """Validate every constructor field, including all collection entries."""
-        check_type(self.id, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.title, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.kind, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.status, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.parent, str | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.metadata, dict[str, str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.blockers, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.tracked, tuple[str, ...], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.description, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-
     @property
     def closed(self) -> bool:
         """Whether the bead is finished."""
@@ -186,13 +175,6 @@ class Graph:
     source: str
     records: list[JsonObject] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
-
-    def __post_init__(self) -> None:
-        """Validate every constructor field, including all collection entries."""
-        check_type(self.beads, dict[str, Bead], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.source, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.records, list[JsonObject], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.warnings, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
     def of_kind(self, *kinds: str) -> list[Bead]:
         """Select beads of the given issue types.
@@ -328,14 +310,17 @@ def blocking_edges(repo: Path | None) -> dict[str, set[str]]:
         GraphError: The query failed or returned no rows list.
 
     """
+    message: str
     rows: JsonValue = _bd_json(["--readonly", "sql", "--json", BLOCKING_EDGES_QUERY], repo)
     if not isinstance(rows, list):
-        message: str = f"{BLOCKING_EDGES_QUERY} returned {type(rows).__name__}, not rows"
+        message = f"{BLOCKING_EDGES_QUERY} returned {type(rows).__name__}, not rows"
         raise GraphError(message, OTHER_CAUSE)
     waits: dict[str, set[str]] = {}
     for row in rows:
-        record: JsonObject = json_object(row)
-        waits.setdefault(str(record["waiting"]), set()).add(str(record["waited"]))
+        if not isinstance(row, dict):
+            message = f"{BLOCKING_EDGES_QUERY} returned a row that is not an object"
+            raise GraphError(message, OTHER_CAUSE)
+        waits.setdefault(str(row["waiting"]), set()).add(str(row["waited"]))
     return waits
 
 
@@ -513,12 +498,34 @@ def _bd_json(args: list[str], repo: Path | None) -> JsonValue:
     """
     out: str = run_bd(args, repo)
     try:
-        value: object = json.loads(out or "null")
+        value: JsonValue = json.loads(out or "null")
     except json.JSONDecodeError as exc:
         msg: str = f"`bd {' '.join(args)}` printed no JSON: {exc}: {out.strip()[:400]}"
         raise GraphError(msg) from exc
-    checked: JsonValue = check_type(value, JsonValue, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    return checked
+    return value
+
+
+def _records(payload: JsonValue) -> list[JsonObject]:
+    """Check the shape of what `bd list --json` printed, the one check of `bd` output at entry.
+
+    Args:
+        payload: The parsed stdout.
+
+    Returns:
+        The records.
+
+    Raises:
+        GraphError: The output is not an array of objects.
+
+    """
+    if not isinstance(payload, list):
+        msg: str = "`bd list --json` did not return an array"
+        raise GraphError(msg)
+    records: list[JsonObject] = [record for record in payload if isinstance(record, dict)]
+    if len(records) != len(payload):
+        not_objects: str = "`bd list --json` returned an entry that is not an object"
+        raise GraphError(not_objects)
+    return records
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -645,6 +652,46 @@ def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> No
         raise GraphError(str(exc)) from exc
 
 
+#: The `bd` request that adds many edges in one transaction after one plain read of the tables.
+_BULK_DEP_ADD: Final[tuple[str, ...]] = ("dep", "add", "--file", "-", "--no-cycle-check")
+
+
+def _dep_lines(edges: Mapping[str, list[str]]) -> str:
+    """Render edges as the lines `bd dep add --file -` reads.
+
+    Args:
+        edges: Dependent bead -> the beads it waits for.
+
+    Returns:
+        One JSON line per `blocks` edge.
+
+    """
+    return "".join(
+        json.dumps({"from": bead_id, "to": blocker, "type": BLOCKS}) + "\n"
+        for bead_id, blockers in edges.items()
+        for blocker in blockers
+    )
+
+
+def _refuse_cycles(waits: dict[str, set[str]], bead_id: str, blockers: list[str]) -> None:
+    """Add a bead's new edges to the waits, refusing one that closes a cycle.
+
+    Args:
+        waits: Bead id -> the ids it waits for; changed in place.
+        bead_id: The dependent bead.
+        blockers: The beads it comes to wait for.
+
+    Raises:
+        GraphError: An edge would close a cycle.
+
+    """
+    for blocker in blockers:
+        if blocker == bead_id or bead_id in _reached(waits, blocker):
+            message: str = f"blocks edge {bead_id} -> {blocker} would close a dependency cycle"
+            raise GraphError(message, OTHER_CAUSE)
+        waits.setdefault(bead_id, set()).add(blocker)
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass
 class Writer:
@@ -660,12 +707,6 @@ class Writer:
     repo: Path | None
     dry_run: bool = False
     planned: list[PlannedWrite] = field(default_factory=list)
-
-    def __post_init__(self) -> None:
-        """Validate every constructor field, including all collection entries."""
-        check_type(self.repo, Path | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.dry_run, bool, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        check_type(self.planned, list[PlannedWrite], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
     def bd(self, args: list[str], stdin: str | None = None) -> None:
         """Run a `bd` command that changes the tracker, or record it in a dry run.
@@ -709,67 +750,75 @@ class Writer:
     def add_blocks(self, bead_id: str, blockers: list[str]) -> None:
         """Make one bead blocked by each blocker, or record the edges in a dry run.
 
-        The cycle check runs here, over every blocking edge the tracker holds, read once; the
-        edges are then added in one `bd dep add --file - --no-cycle-check` request. Only the bulk
-        form skips the tracker's per-edge check: a positional `bd dep add` runs it whatever its
-        flags, and that recursive query outgrows the database client's read timeout once the graph
-        is dense, so it fails with `i/o timeout`. The bulk request adds every edge in one
-        transaction after one plain read of the dependency tables. The read, the check and the
-        write hold the edge lock (`tool_locks.edge_lock`), so two processes cannot each add an
-        edge that is safe alone and close a cycle together.
-
         Args:
             bead_id: The dependent bead.
             blockers: The beads it waits for, in order.
 
         Raises:
             TypeError: An argument violates the declared input contract.
-            GraphError: An edge would close a cycle, or the edge lock stayed held past its wait;
-                no edge is added.
 
         """
         if not (isinstance(bead_id, str)) or not (isinstance(blockers, list)):
             raise TypeError(_ARGUMENT_ERROR)
-        if not blockers:
+        self.write_blocks({bead_id: blockers})
+
+    def write_blocks(self, added: Mapping[str, list[str]], removed: Sequence[tuple[str, str]] = ()) -> None:
+        """Add and remove the `blocks` edges of many beads at once, or record them in a dry run.
+
+        The cycle check runs here, over every blocking edge the tracker holds, read once, less the
+        edges removed; the removals then run, and the edges are added in one
+        `bd dep add --file - --no-cycle-check` request. Only the bulk form skips the tracker's
+        per-edge check: a positional `bd dep add` runs it whatever its flags, and that recursive
+        query outgrows the database client's read timeout once the graph is dense, so it fails with
+        `i/o timeout`. The read, the check and the writes hold the edge lock
+        (`tool_locks.edge_lock`) once, so two processes cannot each add an edge that is safe alone
+        and close a cycle together.
+
+        Args:
+            added: Dependent bead -> the beads it comes to wait for.
+            removed: The `(dependent, blocker)` edges to remove.
+
+        Raises:
+            GraphError: An edge would close a cycle, or the edge lock stayed held past its wait; no
+                edge is added or removed.
+
+        """
+        wanted: dict[str, list[str]] = {bead_id: blockers for bead_id, blockers in added.items() if blockers}
+        if not wanted and not removed:
             return
-        args: list[str] = ["dep", "add", "--file", "-", "--no-cycle-check"]
-        lines: str = "".join(
-            json.dumps({"from": bead_id, "to": blocker, "type": "blocks"}) + "\n" for blocker in blockers
-        )
         if self.dry_run:
-            self.planned.append({"op": "bd", "args": args, "stdin": lines})
+            self.planned.extend({"op": "bd", "args": ["dep", "remove", *pair]} for pair in removed)
+            if wanted:
+                self.planned.append({"op": "bd", "args": list(_BULK_DEP_ADD), "stdin": _dep_lines(wanted)})
             return
         try:
-            with locks.edge_lock(f"bd dep add {bead_id}"):
-                self._add_acyclic(bead_id, blockers, lines)
+            with locks.edge_lock(f"bd dep add for {len(wanted)} beads, bd dep remove {len(removed)} edges"):
+                self._write_acyclic(wanted, removed)
         except locks.LockTimeoutError as exc:
             raise GraphError(str(exc), CONTENTION) from exc
 
-    def _add_acyclic(self, bead_id: str, blockers: list[str], lines: str) -> None:
-        """Read every blocking edge, refuse an edge that closes a cycle, then add the edges.
+    def _write_acyclic(self, added: dict[str, list[str]], removed: Sequence[tuple[str, str]]) -> None:
+        """Read every blocking edge, refuse an edge that closes a cycle, then make the changes.
 
-        The caller holds the edge lock.
+        The caller holds the edge lock. Each bead's edges go to the database it was filed in.
 
         Args:
-            bead_id: The dependent bead.
-            blockers: The beads it waits for, in order.
-            lines: The `bd dep add --file -` request adding every edge.
-
-        Raises:
-            GraphError: An edge would close a cycle; no edge is added.
+            added: Dependent bead -> the beads it comes to wait for; none is empty.
+            removed: The `(dependent, blocker)` edges to remove.
 
         """
         waits: dict[str, set[str]] = blocking_edges(self.repo)
-        for blocker in blockers:
-            if blocker == bead_id or bead_id in _reached(waits, blocker):
-                message: str = f"blocks edge {bead_id} -> {blocker} would close a dependency cycle"
-                raise GraphError(message, OTHER_CAUSE)
-            waits.setdefault(bead_id, set()).add(blocker)
-        run_bd(
-            ["dep", "add", "--file", "-", "--no-cycle-check"],
-            _target(["dep", "add", bead_id], self.repo),
-            stdin=lines,
-        )
+        for bead_id, blocker in removed:
+            waits.get(bead_id, set()).discard(blocker)
+        for bead_id, blockers in added.items():
+            _refuse_cycles(waits, bead_id, blockers)
+        for bead_id, blocker in removed:
+            run_bd(["dep", "remove", bead_id, blocker], self.repo)
+        homes: dict[Path | None, dict[str, list[str]]] = {}
+        for bead_id, blockers in added.items():
+            homes.setdefault(_target(["dep", "add", bead_id], self.repo), {})[bead_id] = blockers
+        for home, edges in homes.items():
+            run_bd(list(_BULK_DEP_ADD), home, stdin=_dep_lines(edges))
 
     def metadata(self, bead_id: str, pairs: dict[str, str]) -> None:
         """Write pipeline metadata onto one bead, or record it in a dry run.
@@ -834,18 +883,11 @@ def _records_from_bd(repo: Path | None, *, with_description: bool) -> list[JsonO
     Returns:
         The tracker records.
 
-    Raises:
-        GraphError: The tracker response was not an array.
-
     """
     args: list[str] = ["list", "--all", "--json", "-n", "0", "--readonly"]
     if not with_description:
         args.append("--brief")
-    payload: JsonValue = _bd_json(args, repo)
-    if not isinstance(payload, list):
-        msg: str = "`bd list --json` did not return an array"
-        raise GraphError(msg)
-    return check_type(payload, list[JsonObject], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    return _records(_bd_json(args, repo))
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -862,17 +904,12 @@ def children(repo: Path | None, parent: str, kind: str) -> list[JsonObject]:
 
     Raises:
         TypeError: An argument violates the declared input contract.
-        GraphError: `bd` failed or did not return an array.
 
     """
     if not (isinstance(repo, Path) or repo is None) or not (isinstance(parent, str)) or not (isinstance(kind, str)):
         raise TypeError(_ARGUMENT_ERROR)
     args: list[str] = ["list", "--parent", parent, "--type", kind, "--all", "--json", "-n", "0"]
-    payload: JsonValue = _bd_json([*args, "--readonly"], repo)
-    if not isinstance(payload, list):
-        msg: str = "`bd list --json` did not return an array"
-        raise GraphError(msg)
-    return check_type(payload, list[JsonObject], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    return _records(_bd_json([*args, "--readonly"], repo))
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -907,19 +944,21 @@ def bead_of(record: JsonObject) -> Bead:
     Returns:
         The normalized bead.
 
+    Raises:
+        GraphError: The record's metadata is not an object.
+
     """
     metadata: int | float | str | list[contracts.JsonValue] | dict[str, contracts.JsonValue] = (
         record.get("metadata") or {}
     )
     if isinstance(metadata, str):
-        raw_metadata: object = json.loads(metadata or "{}")
-        metadata = json_object(raw_metadata)
-
-    metadata = json_object(metadata)
-    dependencies: list[contracts.JsonObject] = check_type(
-        record.get("dependencies") or [],
-        list[JsonObject],
-        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        metadata = json.loads(metadata or "{}")
+    if not isinstance(metadata, dict):
+        message: str = f"the metadata of {record.get('id')} is not an object"
+        raise GraphError(message)
+    listed: JsonValue = record.get("dependencies") or []
+    dependencies: list[JsonObject] = (
+        [dep for dep in listed if isinstance(dep, dict)] if isinstance(listed, list) else []
     )
 
     def targets(kind: str) -> list[str]:

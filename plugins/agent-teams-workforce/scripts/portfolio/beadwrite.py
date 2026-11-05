@@ -13,8 +13,8 @@ from __future__ import annotations
 import json
 import os
 import re
-from collections.abc import Iterator
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
 from operator import itemgetter
 from pathlib import Path
 from typing import Final, Unpack
@@ -37,11 +37,11 @@ from beadcontracts import (
     ReplacedTask,
     RepointedEdge,
     StoryBuild,
+    StoryEdgeWrite,
     StoryWrite,
     SupersededTasks,
     TaskCorrection,
     TaskEdge,
-    TaskEdgeWrite,
     TaskPlan,
     TaskReplacement,
     TaskWrite,
@@ -123,7 +123,7 @@ from matrix_contract import (
     REL_RUNS_IN,
     family_kinds,
 )
-from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix
+from matrixstore import Matrix, as_entry_id, matrix_path, shared_matrix
 from placement_contract import KEY_ITEM_ID, PlacementError, PlacementRuling, parse_placement_ruling
 from recon_contract import DESIGN_SOURCES, DesignSource
 from task_deps_contract import KIND_CONTRACT, KIND_DATA, KIND_INFRASTRUCTURE
@@ -1156,14 +1156,14 @@ def write_task(
     files: StoryFiles,
     **options: Unpack[TaskWriteOptions],
 ) -> TaskWrite:
-    """Write one Task of a Story from its saved Tasks file.
+    """Write one Task bead of a Story from its saved Tasks file; its edges are written apart.
 
     The Task is found by its elaboration key among the Story's Task beads: one that exists is
     refreshed where it differs, or left as it is once building has started, and is never created
-    a second time.
+    a second time. `write_story_task_edges` sets the edges once every Task of the Story is written.
 
     Returns:
-        The Task identity, content action, edges, and warnings.
+        The Task identity, content action, and warnings.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -1187,7 +1187,6 @@ class _TaskWriter:
     repo: str
     key: str
     root: Path | None
-    external: list[str] | None
     packages_dir: str | None
     tasks: list[Task]
     by_key: dict[str, Task]
@@ -1201,16 +1200,10 @@ class _TaskWriter:
     keyed: dict[str, Bead]
     items: dict[str, StoryBuild]
     matched: dict[str, Bead]
-    blockers: list[str]
     warnings: list[str]
-    story_ids: set[str]
-    outer: list[str]
-    inner: list[str]
     bead: Bead | None
     text: str
     meta: dict[str, str]
-    edges: EdgeCounts
-    outside: list[str]
     task_id: str
     action: str
 
@@ -1231,7 +1224,6 @@ class _TaskWriter:
         check_type(self.options, TaskWriteOptions, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         self.slug, self.repo = self.files.slug, self.files.repo
         self.key, self.root = self.options["key"], self.options["root"]
-        self.external = self.options.get("external")
         self.packages_dir = self.options.get("packages_dir")
         if not self.repo.strip():
             msg: str = f"Task {self.key} of story:{self.slug} has no repository: a Task is never written without one"
@@ -1248,7 +1240,6 @@ class _TaskWriter:
 
         """
         msg: str
-        dep: str
         self._prepare_options()
         take_warnings()
         self.tasks = plan_tasks(self.files, self.root, self.packages_dir)
@@ -1272,28 +1263,8 @@ class _TaskWriter:
         self.keyed = _keyed(self.beads)
         self.items = story_builds(self.files.scope)
         self.matched, _ = _match_tasks(self.tasks, self.beads, self.slug, self.items)
-
-        def found(t: Task) -> Bead | None:
-            return self.matched.get(t.key)
-
-        self.blockers: list[str] = []
         self.warnings: list[str] = take_warnings()
-        for dep in self.task.depends_on:
-            blocker: beadgraph.Bead | None = found(self.by_key[dep]) if dep in self.by_key else None
-            if blocker is None:
-                msg = f"{self.key} depends on {dep}, which is not written under {self.story_id}"
-                raise HierarchyError(msg)
-            self.blockers.append(blocker.id)
-        self.story_ids = {b.id for b in self.keyed.values()}
-        self.outer = self._held(list(dict.fromkeys([*self.task.blocked_by_external, *(self.external or [])])))
-        self.inner = [b for b in self.outer if b in self.story_ids]
-        if self.inner:
-            self.warnings.append(
-                f"{self.key}: {', '.join(self.inner)} are Tasks of {self.story_id}; taken as Story edges",
-            )
-            self.blockers = list(dict.fromkeys([*self.blockers, *self.inner]))
-            self.outer = [b for b in self.outer if b not in self.story_ids]
-        self.bead = found(self.task)
+        self.bead = self.matched.get(self.task.key)
         self.text = task_text(self.task, self.root)
         self.meta = task_metadata(self.task)
         if self.task.sizes:
@@ -1313,9 +1284,7 @@ class _TaskWriter:
                 "action": self.action,
                 "title": self.task.title,
                 "dependsOn": self.task.depends_on,
-                "outsideBlockers": self.outside,
             },
-            "edges": self.edges,
             "warnings": self.warnings,
             "dryRun": self.writer.dry_run,
             "planned": self.writer.planned,
@@ -1323,29 +1292,12 @@ class _TaskWriter:
                 "key": self.task.key,
                 "id": self.task_id,
                 "action": self.action,
-                **self.edges,
                 "warnings": len(self.warnings),
             },
         }
 
-    def _held(self, ids: list[str]) -> list[str]:
-        """Keep the blocker ids the tracker holds, with a warning for each it does not.
-
-        Returns:
-            The ids, in order, that name a bead.
-
-        """
-        held: set[str] = beadgraph.existing(self.writer.repo, ids)
-        missing: list[str] = [bead_id for bead_id in ids if bead_id not in held]
-        if missing:
-            self.warnings.append(f"{self.key}: blockers {', '.join(missing)} name no bead; left out")
-        return [bead_id for bead_id in ids if bead_id in held]
-
     def _persist(self) -> None:
-        """Create, retain, or refresh the prepared Task and its edges."""
-        b: str
-        self.edges: EdgeCounts = {"added": 0, "removed": 0, "standing": 0}
-        self.outside: list[str] = []
+        """Create, retain, or refresh the prepared Task."""
         if self.bead is None:
             args: list[str] = _create_args(
                 "task",
@@ -1359,9 +1311,6 @@ class _TaskWriter:
             if self.task.infrastructure:
                 args += ["--labels", INFRASTRUCTURE_LABEL]
             self.task_id, self.action = (self.writer.create(args, self.task.elab_key or self.key), "created")
-            self.writer.add_blocks(self.task_id, [*self.blockers, *self.outer])
-            self.edges["added"] = len(self.blockers) + len(self.outer)
-            self.outside = self.outer
         elif task_started(self.bead):
             self.task_id, self.action = (self.bead.id, "unchanged-started")
         else:
@@ -1371,19 +1320,222 @@ class _TaskWriter:
             )
             if self.task.infrastructure:
                 self.writer.bd(["label", "add", self.bead.id, INFRASTRUCTURE_LABEL])
-            add: list[str] = [b for b in [*self.blockers, *self.outer] if b not in self.bead.blockers]
-            drop: list[str] = [b for b in self.bead.blockers if b in self.story_ids and b not in self.blockers]
-            self.writer.add_blocks(self.bead.id, add)
-            for b in drop:
-                self.writer.bd(["dep", "remove", self.bead.id, b])
-            self.edges = {
-                "added": len(add),
-                "removed": len(drop),
-                "standing": len(self.blockers) + len(self.outer) - len(add),
-            }
-            self.outside = list(
-                dict.fromkeys([*(b for b in self.bead.blockers if b not in self.story_ids), *self.outer]),
-            )
+
+
+@dataclass
+class _StoryEdges:
+    """What setting the edges within one Story, and to other Epics, changes."""
+
+    added: dict[str, list[str]] = field(default_factory=dict)
+    removed: list[tuple[str, str]] = field(default_factory=list)
+    standing: int = 0
+    outside: dict[str, list[str]] = field(default_factory=dict)
+    missing: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+    def counts(self) -> EdgeCounts:
+        """Count the edges added, removed and left standing.
+
+        Returns:
+            The counts.
+
+        """
+        return {
+            "added": sum(len(blockers) for blockers in self.added.values()),
+            "removed": len(self.removed),
+            "standing": self.standing,
+        }
+
+
+def _story_edge_changes(
+    story_id: str,
+    tasks: list[Task],
+    beads: list[Bead],
+    matched: dict[str, Bead],
+    held: set[str],
+) -> _StoryEdges:
+    """Compare the edges a Story's saved Tasks name with what beads holds.
+
+    A Task whose build has started is left as it is. A Task gains each blocker it lacks, and loses
+    each blocker among the Story's Tasks that the saved Tasks no longer name; a blocker outside the
+    Story is only ever added.
+
+    Args:
+        story_id: The Story bead.
+        tasks: The Story's saved Tasks.
+        beads: The Story's Task beads, read with their edges.
+        matched: Task key -> its bead.
+        held: The external blockers the tracker holds.
+
+    Returns:
+        The changes, the blockers outside the Story by Task bead, the Tasks not written, and the
+        warnings.
+
+    """
+    changes: _StoryEdges = _StoryEdges()
+    story_ids: set[str] = {bead.id for bead in _keyed(beads).values()}
+    for task in tasks:
+        bead: Bead | None = matched.get(task.key)
+        if bead is None:
+            changes.missing.append(task.key)
+            continue
+        if task_started(bead):
+            continue
+        blockers: list[str] = []
+        for dep in task.depends_on:
+            blocker: Bead | None = matched.get(dep)
+            if blocker is None:
+                changes.missing.append(dep)
+            else:
+                blockers.append(blocker.id)
+        external: list[str] = list(dict.fromkeys(task.blocked_by_external))
+        unknown: list[str] = [bead_id for bead_id in external if bead_id not in held]
+        if unknown:
+            changes.warnings.append(f"{task.key}: blockers {', '.join(unknown)} name no bead; left out")
+        outer: list[str] = [bead_id for bead_id in external if bead_id in held]
+        inner: list[str] = [bead_id for bead_id in outer if bead_id in story_ids]
+        if inner:
+            changes.warnings.append(f"{task.key}: {', '.join(inner)} are Tasks of {story_id}; taken as Story edges")
+            blockers = list(dict.fromkeys([*blockers, *inner]))
+            outer = [bead_id for bead_id in outer if bead_id not in story_ids]
+        add: list[str] = [b for b in [*blockers, *outer] if b not in bead.blockers]
+        if add:
+            changes.added[bead.id] = add
+        changes.removed.extend((bead.id, b) for b in bead.blockers if b in story_ids and b not in blockers)
+        changes.standing += len(blockers) + len(outer) - len(add)
+        changes.outside[bead.id] = list(
+            dict.fromkeys([*(b for b in bead.blockers if b not in story_ids), *outer]),
+        )
+    return changes
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def write_story_task_edges(
+    writer: Writer,
+    epic_id: str,
+    files: StoryFiles,
+    *,
+    root: Path | None,
+    packages_dir: str | None = None,
+) -> StoryEdgeWrite:
+    """Set the edges of a Story's Tasks at once, after every Task bead of the Story is written.
+
+    One read of the Story's Task beads, one `bd dep add --file -` request, one read of every edge and
+    one cycle check, under one hold of the edge lock. Run again, it finds nothing left to change.
+
+    Args:
+        writer: The tracker writer; a dry-run writer records the writes instead.
+        epic_id: The Epic.
+        files: The repository's saved files.
+        root: The project root spec references are recorded relative to.
+        packages_dir: The packages directory a cited cds bundle must sit in, or None.
+
+    Returns:
+        The Story, the counts of its edges, each Task's blockers outside the Story, and warnings.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+        HierarchyError: The Epic has no Story for the repository, or a Task is not written.
+
+    """
+    if not all((
+        isinstance(writer, Writer),
+        isinstance(epic_id, str),
+        isinstance(files, StoryFiles),
+        isinstance(root, Path) or root is None,
+        isinstance(packages_dir, str) or packages_dir is None,
+    )):
+        raise TypeError(_ARGUMENT_ERROR)
+    msg: str
+    take_warnings()
+    tasks: list[Task] = plan_tasks(files, root, packages_dir)
+    story: Bead | None = _keyed(
+        sorted((bead_of(r) for r in children(writer.repo, epic_id, "story")), key=lambda b: b.id),
+    ).get(f"story:{files.slug}")
+    if story is None:
+        msg = f"{epic_id} has no Story story:{files.slug}: its Story is written before its Tasks"
+        raise HierarchyError(msg)
+    beads: list[Bead] = sorted((bead_of(r) for r in children(writer.repo, story.id, "task")), key=lambda b: b.id)
+    matched: dict[str, Bead]
+    matched, _ = _match_tasks(tasks, beads, files.slug, story_builds(files.scope))
+    external: list[str] = sorted({bead_id for task in tasks for bead_id in task.blocked_by_external})
+    changes: _StoryEdges = _story_edge_changes(
+        story.id,
+        tasks,
+        beads,
+        matched,
+        beadgraph.existing(writer.repo, external),
+    )
+    if changes.missing:
+        msg = f"{', '.join(dict.fromkeys(changes.missing))} are not written under {story.id}"
+        raise HierarchyError(msg)
+    writer.write_blocks(changes.added, changes.removed)
+    counts: EdgeCounts = changes.counts()
+    warnings: list[str] = [*take_warnings(), *changes.warnings]
+    return {
+        "ok": True,
+        "story": story.id,
+        "edges": counts,
+        "outsideBlockers": changes.outside,
+        "warnings": warnings,
+        "dryRun": writer.dry_run,
+        "planned": writer.planned,
+        "summary": {**counts, "warnings": len(warnings)},
+    }
+
+
+@dataclass(frozen=True)
+class _SpanStory:
+    """One Story of a span with its saved Tasks, read once for everything that reasons over the span."""
+
+    name: str
+    files: StoryFiles
+    tasks: list[Task]
+
+
+def _read_span(span: SpanStories, progress: Callable[[str], None]) -> list[_SpanStory]:
+    """Read the saved Tasks of every Story of the span.
+
+    Args:
+        span: The Stories of the span, in span order, with their saved files.
+        progress: Told as each Story is read.
+
+    Returns:
+        Each Story, named `S<i>`.
+
+    """
+    stories: list[_SpanStory] = []
+    for index, files in enumerate(span.stories, 1):
+        stories.append(_SpanStory(f"S{index}", files, plan_tasks(files, None)))
+        progress(f"read the Tasks of {files.slug}, Story {index} of {len(span.stories)}")
+    return stories
+
+
+def _span_names(stories: list[_SpanStory]) -> tuple[dict[str, str], list[tuple[str, str]], dict[str, str]]:
+    """Name every Task of the span `S<i>-<local key>`.
+
+    Args:
+        stories: The span's Stories, read.
+
+    Returns:
+        Name -> the Story's slug, the `(from, to)` edges within each Story by name, and
+        name -> the Task's elaboration key.
+
+    """
+    slug_of: dict[str, str] = {}
+    intra: list[tuple[str, str]] = []
+    elab: dict[str, str] = {}
+    for story in stories:
+        for task in story.tasks:
+            name: str = f"{story.name}-{task.key}"
+            slug_of[name] = story.files.slug
+            elab[name] = task.elab_key or ""
+            intra += [(f"{story.name}-{dep}", name) for dep in task.depends_on]
+    return slug_of, intra, elab
+
+
+def _silent(_detail: str) -> None:
+    """Take no notice of progress."""
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1404,22 +1556,9 @@ def span_tasks(span: SpanStories) -> tuple[dict[str, str], list[tuple[str, str]]
         TypeError: An argument violates the declared input contract.
 
     """
-    index: int
-    files: StoryFiles
-    t: Task
     if not (isinstance(span, SpanStories)):
         raise TypeError(_ARGUMENT_ERROR)
-    slug_of: dict[str, str] = {}
-    intra: list[tuple[str, str]] = []
-    elab: dict[str, str] = {}
-    for index, files in enumerate(span.stories):
-        story: str = f"S{index + 1}"
-        for t in plan_tasks(files, None):
-            name: str = f"{story}-{t.key}"
-            slug_of[name] = files.slug
-            elab[name] = t.elab_key or ""
-            intra += [(f"{story}-{d}", name) for d in t.depends_on]
-    return slug_of, intra, elab
+    return _span_names(_read_span(span, _silent))
 
 
 def _accept(
@@ -1501,8 +1640,12 @@ class _ClosureContext:
     """The matrix, which states the relationship between an item and an item it requires."""
 
 
-def _closure_context(span: SpanStories) -> _ClosureContext:
+def _closure_context(span: SpanStories, stories: list[_SpanStory]) -> _ClosureContext:
     """Read placements and saved Task builders for prerequisite closure.
+
+    Args:
+        span: The Stories of the span with their saved files.
+        stories: The span's Stories, read.
 
     Returns:
         The exact builder and placement facts used to derive edges.
@@ -1511,18 +1654,15 @@ def _closure_context(span: SpanStories) -> _ClosureContext:
     ``HierarchyError`` from the span reader.
 
     """
-    index: int
-    files: StoryFiles
-    task: Task
     no_code: set[str] = _no_code(span.scope.span)
     slug_story: dict[str, str] = {}
     builds: dict[str, list[str]] = {}
     task_slug: dict[str, str] = {}
-    for index, files in enumerate(span.stories):
-        slug_story[files.slug] = f"S{index + 1}"
-        for task in plan_tasks(files, None):
-            name: str = f"S{index + 1}-{task.key}"
-            task_slug[name] = files.slug
+    for story in stories:
+        slug_story[story.files.slug] = story.name
+        for task in story.tasks:
+            name: str = f"{story.name}-{task.key}"
+            task_slug[name] = story.files.slug
             builds[name] = task.requirement_ids
     return _ClosureContext(
         story_builds(span.scope),
@@ -1530,7 +1670,7 @@ def _closure_context(span: SpanStories) -> _ClosureContext:
         builds,
         task_slug,
         slug_story,
-        read_matrix(matrix_path(None, os.environ)),
+        shared_matrix(matrix_path(None, os.environ)),
     )
 
 
@@ -1612,6 +1752,22 @@ def closure_task_edges(span: SpanStories) -> ClosureEdges:
         TypeError: An argument violates the declared input contract.
 
     """
+    if not (isinstance(span, SpanStories)):
+        raise TypeError(_ARGUMENT_ERROR)
+    return _closure_edges(span, _read_span(span, _silent))
+
+
+def _closure_edges(span: SpanStories, stories: list[_SpanStory]) -> ClosureEdges:
+    """Derive cross-Story edges from Stories already read.
+
+    Args:
+        span: The Stories of the span with their saved files.
+        stories: The span's Stories, read.
+
+    Returns:
+        Explicit prerequisite edges and missing-builder warnings.
+
+    """
     name: str
     items: list[str]
     item: str
@@ -1619,13 +1775,11 @@ def closure_task_edges(span: SpanStories) -> ClosureEdges:
     found: list[str]
     missing: list[str]
     source: str
-    if not (isinstance(span, SpanStories)):
-        raise TypeError(_ARGUMENT_ERROR)
     requires: dict[str, list[str]] | None = delta_requires(span.scope.elements)
     edges: list[TaskEdge] = []
     warnings: list[str] = []
     if requires is not None:
-        context: _ClosureContext = _closure_context(span)
+        context: _ClosureContext = _closure_context(span, stories)
         seen: set[tuple[str, str]] = set()
         for name, items in context.builds.items():
             for item in items:
@@ -1678,26 +1832,56 @@ def _acyclic(
 
     """
     edge: TaskEdge
+    frm: str
+    to: str
     pairs: set[tuple[str, str]] = set()
-    story_pairs: set[tuple[str, str]] = set()
-    stories: list[str] = sorted(set(slug_of.values()))
+    after: dict[str, set[str]] = {}
+    for frm, to in intra:
+        after.setdefault(frm, set()).add(to)
+    story_after: dict[str, set[str]] = {}
+    cyclic: bool = build_order(sorted(slug_of), intra) is None
     kept: list[TaskEdge] = []
     for edge in accepted:
         pair: tuple[str, str] = (edge["from"], edge["to"])
-        if build_order(sorted(slug_of), [*intra, *sorted(pairs | {pair})]) is None:
+        if cyclic or _leads_to(after, pair[1], pair[0]):
             warnings.append(f"edge {pair[0]} -> {pair[1]} would close a cycle over the Task graph; dropped")
             continue
         story_pair: tuple[str, str] = (slug_of[pair[0]], slug_of[pair[1]])
-        if build_order(stories, sorted(story_pairs | {story_pair})) is None:
+        if _leads_to(story_after, story_pair[1], story_pair[0]):
             warnings.append(
                 f"edge {pair[0]} -> {pair[1]} would make Story {story_pair[1]} and Story {story_pair[0]} "
                 "depend on each other; dropped",
             )
             continue
         pairs.add(pair)
-        story_pairs.add(story_pair)
+        after.setdefault(pair[0], set()).add(pair[1])
+        story_after.setdefault(story_pair[0], set()).add(story_pair[1])
         kept.append(edge)
     return kept, pairs
+
+
+def _leads_to(after: dict[str, set[str]], start: str, goal: str) -> bool:
+    """Whether following edges forward from one node reaches another.
+
+    Args:
+        after: Node -> the nodes directly after it.
+        start: The node to walk from.
+        goal: The node looked for.
+
+    Returns:
+        True when `goal` is `start` or is reached from it.
+
+    """
+    seen: set[str] = {start}
+    pending: list[str] = [start]
+    while pending:
+        node: str = pending.pop()
+        if node == goal:
+            return True
+        fresh: set[str] = after.get(node, set()) - seen
+        seen |= fresh
+        pending.extend(fresh)
+    return False
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1722,6 +1906,22 @@ def plan_task_edges(span: SpanStories) -> EdgePlan:
         TypeError: An argument violates the declared input contract.
 
     """
+    if not (isinstance(span, SpanStories)):
+        raise TypeError(_ARGUMENT_ERROR)
+    return _plan_edges(span, _read_span(span, _silent))
+
+
+def _plan_edges(span: SpanStories, stories: list[_SpanStory]) -> EdgePlan:
+    """Return the saved Task edges between Stories already read, checked.
+
+    Args:
+        span: The Stories of the span with their saved files.
+        stories: The span's Stories, read.
+
+    Returns:
+        What `plan_task_edges` returns.
+
+    """
     slug_of: dict[str, str]
     intra: list[tuple[str, str]]
     _elab: dict[str, str]
@@ -1731,9 +1931,7 @@ def plan_task_edges(span: SpanStories) -> EdgePlan:
     pairs: set[tuple[str, str]]
     frm: str
     to: str
-    if not (isinstance(span, SpanStories)):
-        raise TypeError(_ARGUMENT_ERROR)
-    closure: beadcontracts.ClosureEdges = closure_task_edges(span)
+    closure: beadcontracts.ClosureEdges = _closure_edges(span, stories)
     warnings: list[str] = list(closure["warnings"])
     standing: set[tuple[str, str]] = {(e["from"], e["to"]) for e in closure["edges"]}
     mapped: list[beadcontracts.TaskEdge] = read_task_deps(span.task_deps) if span.task_deps is not None else []
@@ -1741,7 +1939,7 @@ def plan_task_edges(span: SpanStories) -> EdgePlan:
         *closure["edges"],
         *(e for e in mapped if (str(e.get("from") or ""), str(e.get("to") or "")) not in standing),
     ]
-    slug_of, intra, _elab = span_tasks(span)
+    slug_of, intra, _elab = _span_names(stories)
     accepted, rejected, _pairs = _accept(saved, slug_of)
     warnings.extend(f"edge {e['from']} -> {e['to']} rejected: {e['reason']}" for e in rejected)
     accepted, pairs = _acyclic(accepted, slug_of, intra, warnings)
@@ -1763,182 +1961,143 @@ def plan_task_edges(span: SpanStories) -> EdgePlan:
     }
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def write_task_edges(
-    graph: Graph,
-    writer: Writer,
-    epic_id: str,
-    span: SpanStories,
-    *,
-    name: str,
-) -> TaskEdgeWrite:
-    """Write ONE Task's `blocks` edges to Tasks in the Epic's other Stories.
+def _within_story_changes(graph: Graph, epic_id: str, stories: list[_SpanStory]) -> _StoryEdges:
+    """Compare every Story's edges with its saved Tasks, for a Story whose edge step never ran.
 
-    The Task gains each saved blocker it lacks, in one `bd dep add`, and, when it is open,
-    loses each blocker in another of the Epic's Stories that the saved edges no longer name.
+    A journal planned before the per-Story edge step has Task bead steps that write no edges and
+    no such step, so its Stories' edges are set here; for a Story whose step ran, nothing differs.
 
     Args:
         graph: The tracker graph.
-        writer: The tracker writer; a dry-run writer records the writes instead.
         epic_id: The Epic.
-        span: The Stories of the span, in span order, with their saved files.
-        name: The Task, as `S<i>-<local key>`.
+        stories: The span's Stories, read.
 
     Returns:
-        The Task, its saved edges, the edges added, removed and standing, and `warnings`:
-        an edge whose other end is not written is skipped, and a Task that is not written
-        has no edges written.
-
-    Raises:
-        TypeError: An argument violates the declared input contract.
+        The changes over every Story.
 
     """
-    if not all((
-        isinstance(graph, Graph),
-        isinstance(writer, Writer),
-        isinstance(epic_id, str),
-        isinstance(span, SpanStories),
-        isinstance(name, str),
-    )):
-        raise TypeError(_ARGUMENT_ERROR)
-    return _write_planned_task_edges(graph, writer, _EdgeScope(epic_id, span, plan_task_edges(span)), name)
+    merged: _StoryEdges = _StoryEdges()
+    held: set[str] = set(graph.beads)
+    builds: dict[str, StoryBuild] = story_builds(stories[0].files.scope) if stories else {}
+    under: dict[str, list[Bead]] = {}
+    for bead in graph.beads.values():
+        if bead.parent and bead.kind in {"story", "task"}:
+            under.setdefault(bead.parent, []).append(bead)
+    keyed: dict[str, Bead] = _keyed(sorted(under.get(epic_id, []), key=lambda b: b.id))
+    for story in stories:
+        bead_of_story: Bead | None = keyed.get(f"story:{story.files.slug}")
+        if bead_of_story is None:
+            continue
+        beads: list[Bead] = sorted((b for b in under.get(bead_of_story.id, []) if b.kind == "task"), key=lambda b: b.id)
+        matched: dict[str, Bead]
+        matched, _ = _match_tasks(story.tasks, beads, story.files.slug, builds)
+        one: _StoryEdges = _story_edge_changes(bead_of_story.id, story.tasks, beads, matched, held)
+        merged.added |= one.added
+        merged.removed += one.removed
+        merged.standing += one.standing
+        merged.warnings += one.warnings
+    return merged
 
 
 @dataclass(frozen=True)
-class _EdgeScope:
-    """The Epic, its span and the span's Task edge plan, computed once for every Task written."""
+class _EpicTasks:
+    """The bead of each saved Task of the span, and the Story each of the Epic's Task beads is under."""
 
-    epic_id: str
-    span: SpanStories
-    plan: beadcontracts.EdgePlan
+    named: dict[str, Bead]
+    story_of: dict[str, str]
 
 
-def _write_planned_task_edges(graph: Graph, writer: Writer, scope: _EdgeScope, name: str) -> TaskEdgeWrite:
-    """Write ONE Task's `blocks` edges from an edge plan already computed for its span.
+def _epic_tasks(graph: Graph, epic_id: str, stories: list[_SpanStory]) -> _EpicTasks:
+    """Find the beads of the span's Tasks, walking the tracker graph once.
 
     Args:
         graph: The tracker graph.
-        writer: The tracker writer; a dry-run writer records the writes instead.
-        scope: The Epic, the span and the span's edge plan.
-        name: The Task, as `S<i>-<local key>`.
+        epic_id: The Epic.
+        stories: The span's Stories, read.
 
     Returns:
-        The result `write_task_edges` returns.
+        The beads.
 
     """
-    slug_of: dict[str, str]
-    _intra: list[tuple[str, str]]
-    elab: dict[str, str]
-    dropped_id: str
-    epic_id: str = scope.epic_id
-    edge_plan: beadcontracts.EdgePlan = scope.plan
-    slug_of, _intra, elab = span_tasks(scope.span)
-    warnings: list[str] = []
+    story_beads: dict[str, Bead] = _keyed(_children(graph, epic_id, "story"))
+    ids: set[str] = {bead.id for bead in _children(graph, epic_id, "story")}
+    under: dict[str, list[Bead]] = {}
+    for bead in graph.beads.values():
+        if bead.parent in ids and bead.kind == "task":
+            under.setdefault(str(bead.parent), []).append(bead)
+    named: dict[str, Bead] = {}
+    for story in stories:
+        held: Bead | None = story_beads.get(f"story:{story.files.slug}")
+        keyed: dict[str, Bead] = _keyed(sorted(under.get(held.id, []), key=lambda b: b.id)) if held else {}
+        for task in story.tasks:
+            found: Bead | None = keyed.get(task.elab_key or "")
+            if found is not None:
+                named[f"{story.name}-{task.key}"] = found
+    story_of: dict[str, str] = {bead.id: parent for parent, beads in under.items() for bead in beads}
+    return _EpicTasks(named, story_of)
 
-    def bead_named(n: str) -> Bead | None:
-        story: beadgraph.Bead | None = _story_of(graph, epic_id, slug_of.get(n, ""))
-        bead: beadgraph.Bead | None = _keyed(_children(graph, story.id, "task")).get(elab.get(n, "")) if story else None
+
+@dataclass
+class _CrossEdges:
+    """What writing the edges between the Epic's Stories changes, Task by Task."""
+
+    added: dict[str, list[str]] = field(default_factory=dict)
+    removed: list[tuple[str, str]] = field(default_factory=list)
+    tasks: list[beadcontracts.TaskEdgeSummary] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+def _cross_story_changes(plan: EdgePlan, held: _EpicTasks, elab: dict[str, str], epic_id: str) -> _CrossEdges:
+    """Compare the planned edges between Stories with what beads holds.
+
+    A Task the plan names no blocker for is compared too when its open bead carries a blocker in
+    another of the Epic's Stories, so an edge the plan no longer names is removed.
+
+    Args:
+        plan: The checked edge plan.
+        held: The beads of the span's Tasks.
+        elab: Task name -> its elaboration key.
+        epic_id: The Epic.
+
+    Returns:
+        The changes, with each Task's counts and a warning for a Task that is not written.
+
+    """
+    cross: _CrossEdges = _CrossEdges()
+
+    def carrying(name: str) -> bool:
+        bead: Bead = held.named[name]
+        return bead.status == OPEN and any(held.story_of.get(b) not in {None, bead.parent} for b in bead.blockers)
+
+    def bead_named(name: str) -> Bead | None:
+        bead: Bead | None = held.named.get(name)
         if bead is None:
-            warnings.append(f"Task {n} ({elab.get(n)}) is not written under {epic_id}")
+            cross.warnings.append(f"Task {name} ({elab.get(name)}) is not written under {epic_id}")
         return bead
 
-    task: beadgraph.Bead | None = bead_named(name)
-    if task is None:
-        return {
-            "ok": True,
-            "epic": epic_id,
-            "task": {"name": name, "id": None},
-            "edges": [],
-            "warnings": warnings,
-            "dryRun": writer.dry_run,
-            "planned": writer.planned,
-            "summary": {
-                "name": name,
-                "id": None,
-                "added": 0,
-                "removed": 0,
-                "standing": 0,
-            },
-        }
-    wanted: list[str] = [b.id for n in edge_plan["blockers"].get(name, []) if (b := bead_named(n)) is not None]
-    story_of: dict[str, str] = {
-        bead.id: story.id
-        for story in _children(graph, epic_id, "story")
-        for bead in _keyed(_children(graph, story.id, "task")).values()
-    }
-    add: list[str] = [b for b in wanted if b not in task.blockers]
-    drop: list[str] = (
-        []
-        if task.status != OPEN
-        else [b for b in task.blockers if story_of.get(b) not in {None, task.parent} and b not in wanted]
-    )
-    writer.add_blocks(task.id, add)
-    for dropped_id in drop:
-        writer.bd(["dep", "remove", task.id, dropped_id])
-    counts: EdgeCounts = {
-        "added": len(add),
-        "removed": len(drop),
-        "standing": len(wanted) - len(add),
-    }
-    return {
-        "ok": True,
-        "epic": epic_id,
-        "task": {"name": name, "id": task.id},
-        "edges": [e for e in edge_plan["edges"] if e["to"] == name],
-        "warnings": warnings,
-        "dryRun": writer.dry_run,
-        "planned": writer.planned,
-        "summary": {"name": name, "id": task.id, **counts},
-    }
-
-
-def _task_beads(graph: Graph, epic_id: str, span: SpanStories) -> dict[str, Bead]:
-    """Return the bead of every saved Task of the span that beads holds, by its name.
-
-    Args:
-        graph: The tracker graph.
-        epic_id: The Epic.
-        span: The Stories of the span, in span order, with their saved files.
-
-    Returns:
-        `S<i>-<local key>` -> the Task's bead.
-
-    """
-    slug_of: dict[str, str]
-    _intra: list[tuple[str, str]]
-    elab: dict[str, str]
-    name: str
-    slug: str
-    slug_of, _intra, elab = span_tasks(span)
-    out: dict[str, Bead] = {}
-    for name, slug in slug_of.items():
-        story: beadgraph.Bead | None = _story_of(graph, epic_id, slug)
-        bead: beadgraph.Bead | None = _keyed(_children(graph, story.id, "task")).get(elab[name]) if story else None
-        if bead is not None:
-            out[name] = bead
-    return out
-
-
-def _carrying(graph: Graph, epic_id: str, span: SpanStories) -> list[str]:
-    """Return the saved Tasks whose open bead carries a blocker in another of the Epic's Stories.
-
-    Args:
-        graph: The tracker graph.
-        epic_id: The Epic.
-        span: The Stories of the span, in span order, with their saved files.
-
-    Returns:
-        The Tasks, as `S<i>-<local key>`.
-
-    """
-    story_of: dict[str, str] = {
-        bead.id: story.id for story in _children(graph, epic_id, "story") for bead in _children(graph, story.id, "task")
-    }
-    return [
-        name
-        for name, bead in _task_beads(graph, epic_id, span).items()
-        if bead.status == OPEN and any(story_of.get(b) not in {None, bead.parent} for b in bead.blockers)
-    ]
+    for name in dict.fromkeys([*plan["blockers"], *filter(carrying, held.named)]):
+        task: Bead | None = bead_named(name)
+        if task is None:
+            cross.tasks.append({"name": name, "id": None, "added": 0, "removed": 0, "standing": 0})
+            continue
+        wanted: list[str] = [b.id for n in plan["blockers"].get(name, []) if (b := bead_named(n)) is not None]
+        add: list[str] = [b for b in wanted if b not in task.blockers]
+        drop: list[str] = (
+            []
+            if task.status != OPEN
+            else [b for b in task.blockers if held.story_of.get(b) not in {None, task.parent} and b not in wanted]
+        )
+        if add:
+            cross.added[task.id] = add
+        cross.removed += [(task.id, dropped) for dropped in drop]
+        cross.tasks.append({
+            "name": name,
+            "id": task.id,
+            "added": len(add),
+            "removed": len(drop),
+            "standing": len(wanted) - len(add),
+        })
+    return cross
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1948,21 +2107,21 @@ def write_all_task_edges(
     epic_id: str,
     span: SpanStories,
     *,
-    also: list[str],
+    progress: Callable[[str], None] = _silent,
 ) -> AllEdgeWrite:
-    """Write the saved edges to other Stories of every Task that has them, one Task at a time.
+    """Write the saved edges between the Epic's Stories, and any edge within a Story beads lacks.
 
-    A Task the saved edges name no blocker for is written too when its bead carries a
-    blocker in another of the Epic's Stories, so an edge the saved edges no longer name
-    is removed.
+    The span is read once, the plan checked once, and every change goes in one
+    `Writer.write_blocks` call. A Task the saved edges name no blocker for is written too when its
+    bead carries a blocker in another of the Epic's Stories, so an edge the saved edges no longer
+    name is removed.
 
     Args:
         graph: The tracker graph.
         writer: The tracker writer; a dry-run writer records the writes instead.
         epic_id: The Epic.
         span: The Stories of the span, in span order, with their saved files.
-        also: Tasks, as `S<i>-<local key>`, whose edges to other Stories are
-            written even when the saved edges name no blocker for them.
+        progress: Told as each stage ends.
 
     Returns:
         Each Task written with its counts, and a summary carrying the blockers by
@@ -1977,32 +2136,30 @@ def write_all_task_edges(
         isinstance(writer, Writer),
         isinstance(epic_id, str),
         isinstance(span, SpanStories),
-        isinstance(also, list),
     )):
         raise TypeError(_ARGUMENT_ERROR)
-    plan: beadcontracts.EdgePlan = plan_task_edges(span)
-    scope: _EdgeScope = _EdgeScope(epic_id, span, plan)
-    names: list[str] = list(
-        dict.fromkeys(
-            [*plan["blockers"], *also, *_carrying(graph, epic_id, span)],
-        ),
-    )
-    written: list[beadcontracts.TaskEdgeWrite] = [
-        _write_planned_task_edges(graph, writer, scope, name) for name in names
-    ]
-    tasks: list[beadcontracts.TaskEdgeSummary] = [w["summary"] for w in written]
-    warnings: list[str] = list(
-        dict.fromkeys([*plan["warnings"], *(m for w in written for m in w["warnings"])]),
-    )
+    stories: list[_SpanStory] = _read_span(span, progress)
+    plan: beadcontracts.EdgePlan = _plan_edges(span, stories)
+    progress(f"checked {plan['summary']['edges']} edges between Stories")
+    held: _EpicTasks = _epic_tasks(graph, epic_id, stories)
+    within: _StoryEdges = _within_story_changes(graph, epic_id, stories)
+    cross: _CrossEdges = _cross_story_changes(plan, held, _span_names(stories)[2], epic_id)
+    added: dict[str, list[str]] = {bead_id: list(blockers) for bead_id, blockers in within.added.items()}
+    for bead_id, blockers in cross.added.items():
+        added.setdefault(bead_id, []).extend(blockers)
+    removed: list[tuple[str, str]] = [*within.removed, *cross.removed]
+    writer.write_blocks(added, removed)
+    progress(f"wrote the edges of {len(added)} Tasks")
+    warnings: list[str] = list(dict.fromkeys([*plan["warnings"], *cross.warnings, *within.warnings]))
     totals: EdgeCounts = {
-        "added": sum(t["added"] for t in tasks),
-        "removed": sum(t["removed"] for t in tasks),
-        "standing": sum(t["standing"] for t in tasks),
+        "added": sum(t["added"] for t in cross.tasks),
+        "removed": sum(t["removed"] for t in cross.tasks),
+        "standing": sum(t["standing"] for t in cross.tasks),
     }
     return {
         "ok": True,
         "epic": epic_id,
-        "tasks": tasks,
+        "tasks": cross.tasks,
         "warnings": warnings,
         "dryRun": writer.dry_run,
         "planned": writer.planned,
@@ -2010,8 +2167,9 @@ def write_all_task_edges(
             "edges": plan["summary"]["edges"],
             "rejected": plan["summary"]["rejected"],
             "blockers": plan["blockers"],
-            "written": names,
+            "written": [task["name"] for task in cross.tasks],
             "warnings": len(warnings),
+            "withinStory": within.counts(),
             **totals,
         },
     }

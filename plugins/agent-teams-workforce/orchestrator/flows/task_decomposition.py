@@ -63,6 +63,7 @@ from orchestrator.flows.elaboration_files import (
     SPEC_PACK,
     STORY,
     STORY_DOCUMENT,
+    STORY_TASK_EDGES,
     TASK,
     TASK_CONTEXT,
     TASK_CONTEXT_FILE,
@@ -531,7 +532,7 @@ def _correction_steps(run: StepRun, name: str) -> StepGroup:
 
 
 def _write_steps(run: StepRun, name: str, planned: TaskPlan) -> StepGroup:
-    """Plan one step per Task bead write, then the retiring step and the written record.
+    """Plan one step per Task bead write, the retiring step, the Story's edges and the written record.
 
     Returns:
         The steps in build order, after the plan step.
@@ -557,13 +558,20 @@ def _write_steps(run: StepRun, name: str, planned: TaskPlan) -> StepGroup:
         "script": TASK_RETIRE,
         "inputs": [*handed, *written],
     }
+    edges: StepPlan = {
+        "ref": "edges",
+        "description": f"Set the edges between the Tasks of {name}",
+        "purpose": "A Task that needs another Task of its Story built first is blocked by it",
+        "script": STORY_TASK_EDGES,
+        "inputs": [*handed, *written, "retire"],
+    }
     record: StepPlan = {
         "description": f"Record the Tasks written for {name}",
         "purpose": "The run can report the Story's Tasks",
         "script": TASK_RECORD,
-        "inputs": [*handed, *written, "retire"],
+        "inputs": [*handed, *written, "retire", "edges"],
     }
-    return StepGroup((*steps, NewStep(retire, {}), NewStep(record, {})))
+    return StepGroup((*steps, NewStep(retire, {}), NewStep(edges, {}), NewStep(record, {})))
 
 
 def _gap_detail(planned: TaskPlan, name: str) -> str:
@@ -666,7 +674,7 @@ def write_task(run: StepRun) -> Completion:
     current contract first (:func:`refuse_stale_tasks`).
 
     Returns:
-        The Task as the dispatch reports it, the counts of its edges, and the write's warnings.
+        The Task as the dispatch reports it, and the write's warnings.
 
     """
     held: Repository = repository(run.inputs)
@@ -704,7 +712,6 @@ def write_task(run: StepRun) -> Completion:
     return Completion(
         artifacts=(
             value_artifact(TASK, task),
-            value_artifact(TASK_EDGE_COUNTS, written["edges"]),
             value_artifact(TASK_WARNINGS, written["warnings"]),
         ),
     )
@@ -744,6 +751,43 @@ def retire(run: StepRun) -> Completion:
     return Completion(artifacts=(value_artifact(RETIRED, retired), value_artifact(TASK_WARNINGS, retired["warnings"])))
 
 
+@script_step(STORY_TASK_EDGES)
+def story_task_edges(run: StepRun) -> Completion:
+    """Set the edges of the Story's Tasks at once, every Task bead of the Story being written.
+
+    Returns:
+        The counts of the edges, and the write's warnings.
+
+    """
+    held: Repository = repository(run.inputs)
+    enter_phase(run.context, run.agents.emit, TASK_DECOMPOSITION_PHASE, STORY_TASK_EDGES, held.path)
+    refuse_stale_tasks(run)
+    files: hierarchy.StoryFiles = story_files(run.inputs)
+    control: Path = control_repository()
+
+    def attempt() -> dict[str, JsonValue]:
+        writer: beadgraph.Writer = run.tools.portfolio(STORY_TASK_EDGES, beadgraph.Writer, control)
+        return json_object(
+            run.tools.portfolio(
+                STORY_TASK_EDGES,
+                beadwrite.write_story_task_edges,
+                writer,
+                run.bead,
+                files,
+                root=project_root(),
+                packages_dir=_packages(run),
+            ),
+        )
+
+    written: dict[str, JsonValue] = run.tools.operation(STORY_TASK_EDGES, attempt)
+    return Completion(
+        artifacts=(
+            value_artifact(TASK_EDGE_COUNTS, written["edges"]),
+            value_artifact(TASK_WARNINGS, written["warnings"]),
+        ),
+    )
+
+
 @script_step(TASK_RECORD)
 def record(run: StepRun) -> Completion:
     """Record what was written for one repository's Tasks, from the steps that wrote them.
@@ -762,6 +806,7 @@ def record(run: StepRun) -> Completion:
         *strings(planned["warnings"]),
         *(warning for held_warnings in run.inputs.values(TASK_WARNINGS) for warning in strings(held_warnings)),
     ]
+    warnings = list(dict.fromkeys(warnings))
     edges: dict[str, JsonValue] = {
         name: sum(check_type(count[name], int) for count in counts) for name in ("added", "removed", "standing")
     }

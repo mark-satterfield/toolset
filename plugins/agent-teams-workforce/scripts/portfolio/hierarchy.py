@@ -84,7 +84,7 @@ from bead_metadata import (
 # isort: split
 from infra_vocabulary import INFRA_TYPES
 from matrix_contract import KIND_INFRASTRUCTURE, KIND_STACK, Entry, EntryId
-from matrixstore import Matrix, as_entry_id, kind_of, matrix_path, read_matrix
+from matrixstore import Matrix, as_entry_id, kind_of, matrix_path, shared_matrix
 from matrixtraverse import capabilities
 
 #: The surfaces a Task may declare; anything else is dropped.
@@ -1208,7 +1208,7 @@ def read_tasks(files: StoryFiles, root: Path | None, options: ReadTaskOptions) -
         if any(UI_SURFACE in (_surfaces(t.get(ARG_SURFACES)) or []) for t in unique)
         else {},
         elements,
-        read_matrix(matrix_path(None, os.environ)) if elements else None,
+        shared_matrix(matrix_path(None, os.environ)) if elements else None,
         event_lines(every_build),
     )
     by_key: dict[str, dict[str, contracts.JsonValue]] = {check_type(t["key"], str): t for t in unique}

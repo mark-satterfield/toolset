@@ -21,15 +21,12 @@ recorded on it as `KEY_ELABORATION_STATE_OWNER`. The token is the caller's, or a
 
 At the FINISH, after the Tasks are written:
 
-* the WSJF arithmetic runs over the whole tracker and writes only this Epic and the Tasks
-  beneath it: the Epic's size becomes the sum of its Tasks' sizes with its estimate kept, the
-  Epic is rescored, and its Tasks are rescored with value inherited from it and RR-OE counted
-  over every Task edge, across Stories;
-* `prd-to-spec` scores the Tasks in its score step and then marks the Epic elaborated with
-  `mark_elaborated`, which writes only the lifecycle below and scores nothing again;
-* with `done`, the Epic's `KEY_ELABORATION_STATE` is set to `ELABORATION_DONE` with the cause
-  `CAUSE_DECOMPOSED` and its owner token is cleared. The Epic stays open; it closes
-  only when its work is released.
+* `score_epic_tasks`, `prd-to-spec`'s score step, scores the Tasks beneath the Epic with value
+  inherited from it and RR-OE counted over every Task edge, across Stories; the Epic's own score
+  is the owner's `wsjf-scoring` run's;
+* `mark_elaborated` sets the Epic's `KEY_ELABORATION_STATE` to `ELABORATION_DONE` with the cause
+  `CAUSE_DECOMPOSED` and clears its owner token, scoring nothing again. The Epic stays open; it
+  closes only when its work is released.
 
 A run that started an Epic and ends without setting its elaboration to `ELABORATION_DONE`
 RELEASES it: its owner token is cleared and the Epic stays `ELABORATION_IN_PROGRESS`, so the
@@ -39,10 +36,9 @@ next run takes it up without a reclaim.
 from __future__ import annotations
 
 import uuid
-from typing import Unpack
+from collections.abc import Callable
 
 import beadgraph
-import scoringcontracts  # ruff: ignore[typing-only-third-party-import] - typeguard @typechecked resolves this at runtime.
 from bead_metadata import (
     CAUSE_DECOMPOSED,
     CAUSE_STARTED,
@@ -60,12 +56,17 @@ from bead_metadata import (
 )
 from beadgraph import Bead, Graph, Writer, now_iso
 from contracts import JsonValue
-from elaborationcontracts import EpicValue, Finished, FinishOptions, Refusal, Refused, Released, Started
-from scoring import score
-from typeguard import CollectionCheckStrategy, check_type, typechecked
+from elaborationcontracts import EpicValue, Refusal, Refused, Released, Started
+from scoring import score_tasks
+from scoringcontracts import TaskScores
+from typeguard import CollectionCheckStrategy, typechecked
 
 #: The Epic's elaboration lifecycle and its companions.
 _ARGUMENT_ERROR: str = "Arguments violate the elaboration input contract"
+
+
+def _silent(_detail: str) -> None:
+    """Take no notice of progress."""
 
 
 class LifecycleError(RuntimeError):
@@ -224,94 +225,36 @@ def start(
     }
 
 
-def _task_ids_under(graph: Graph, epic: Bead) -> set[str]:
-    """Every Task beneath an Epic, at any depth.
-
-    Args:
-        graph: The tracker graph.
-        epic: The Epic.
-
-    Returns:
-        The Task ids.
-
-    """
-    return {b.id for b in graph.descendants(epic.id) if b.kind == "task"}
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def finish(
+def score_epic_tasks(
     graph: Graph,
     writer: Writer,
     epic_id: str,
-    **options: Unpack[FinishOptions],
-) -> Finished:
-    """Score this Epic and its Tasks, and mark it done.
+    *,
+    owner: str | None,
+    progress: Callable[[str], None] = _silent,
+) -> TaskScores:
+    """Score the Tasks of this Epic; the Epic itself is not scored here.
 
     Args:
-        graph: The tracker graph, read with descriptions.
+        graph: The tracker graph.
         writer: The tracker writer; a dry-run writer records the writes instead.
         epic_id: The Epic.
-        **options: Owner token, done transition, and optional score scope.
+        owner: The run's owner token.
+        progress: Told as each stage ends.
 
     Returns:
-        The scoring result and the lifecycle write.
+        The scoring result.
 
     Raises:
         TypeError: An argument violates the declared input contract.
-        ValueError: The finish scope is unknown.
 
     """
-    owner: str | None
-    done: bool
     if not (isinstance(graph, Graph)) or not (isinstance(writer, Writer)) or not (isinstance(epic_id, str)):
         raise TypeError(_ARGUMENT_ERROR)
-    check_type(options, FinishOptions, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    owner, done = options["owner"], options["done"]
-    scope: str = options.get("scope", "epic-and-tasks")
-    epic: beadgraph.Bead = graph.beads[epic_id]
+    epic: Bead = graph.beads[epic_id]
     _check_owner(epic, owner)
-    under: set[str] = _task_ids_under(graph, epic)
-    if scope not in {"epic-and-tasks", "epic-tasks"}:
-        message: str = f"unknown finish scope: {scope}"
-        raise ValueError(message)
-    task_only: bool = scope == "epic-tasks"
-    finishing: bool = done
-    scored: scoringcontracts.ScoreResult = score(
-        graph,
-        writer,
-        scope=under if task_only else {epic.id} | under,
-        rollup={epic.id} if finishing and not task_only else frozenset(),
-    )
-    if task_only:
-        scored["unscored"] = [row for row in scored["unscored"] if row["id"] in under]
-        scored["summary"]["unscored"] = len(scored["unscored"])
-        finishing = finishing and bool(under) and not scored["unscored"]
-    lifecycle: dict[str, str] | None = _write_done(writer, epic.id) if finishing else None
-    return {
-        "ok": True,
-        "epic": epic.id,
-        "score": {
-            "epics": scored["epics"],
-            "tasks": scored["tasks"],
-            "unscored": scored["unscored"],
-            "incomplete": scored["incomplete"],
-            "sizeFaults": scored["sizeFaults"],
-            "outsideRange": scored["outsideRange"],
-            "cycles": scored["cycles"],
-        },
-        "lifecycle": lifecycle,
-        "dryRun": writer.dry_run,
-        "planned": writer.planned,
-        "summary": {
-            "ok": True,
-            "epic": epic.id,
-            "epicsWritten": scored["summary"]["epicsWritten"],
-            "tasksScored": scored["summary"]["tasksScored"],
-            "tasksWritten": scored["summary"]["tasksWritten"],
-            "unscored": scored["summary"]["unscored"],
-            "done": lifecycle is not None,
-        },
-    }
+    return score_tasks(graph, writer, {b.id for b in graph.descendants(epic.id) if b.kind == "task"}, progress)
 
 
 def _check_owner(epic: Bead, owner: str | None) -> None:

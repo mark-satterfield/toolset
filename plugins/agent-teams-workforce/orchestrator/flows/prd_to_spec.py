@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifac
 import elaboration
 import elaborationcontracts
 from driver_surface_types import ARCH_PATH_ENV, CONTROL_REPO_ENV, PRD_DIR_ENV
-from elaborationcontracts import Finished, Refused, Released, Started
+from elaborationcontracts import Refused, Released, Started
 from matrix_contract import LOCK_DIRECTORY, MatrixError
 from matrixstore import Matrix, matrix_path, update_matrix
 from matrixsync import EpicBead, program_output, read_epics, sync_documents, sync_epics, vault_root
@@ -132,7 +132,6 @@ class _Lifecycle(TypedDict):
     claimAttempted: bool
     start: NotRequired[Started | Refused]
     release: NotRequired[Released | JsonObject]
-    finish: NotRequired[Finished]
 
 
 fills(ARCHITECTURE, OPEN_RUN)

@@ -177,10 +177,9 @@ class WrittenTask(TypedDict):
     action: str
     title: str
     dependsOn: list[str]
-    outsideBlockers: list[str]
 
 
-class TaskWriteSummary(EdgeCounts):
+class TaskWriteSummary(TypedDict):
     """Describe the task write summary wire record."""
 
     key: str
@@ -195,11 +194,29 @@ class TaskWrite(TypedDict):
     ok: bool
     story: str
     task: WrittenTask
-    edges: EdgeCounts
     warnings: list[str]
     dryRun: bool
     planned: list[PlannedWrite]
     summary: TaskWriteSummary
+
+
+class StoryEdgeSummary(EdgeCounts):
+    """Describe the story edge summary wire record."""
+
+    warnings: int
+
+
+class StoryEdgeWrite(TypedDict):
+    """Describe the wire record of setting the edges of a Story's Tasks."""
+
+    ok: bool
+    story: str
+    edges: EdgeCounts
+    outsideBlockers: dict[str, list[str]]
+    warnings: list[str]
+    dryRun: bool
+    planned: list[PlannedWrite]
+    summary: StoryEdgeSummary
 
 
 class ReplacedTask(TypedDict):
@@ -322,19 +339,6 @@ class TaskEdgeSummary(TaskEdgeIdentity, EdgeCounts):
     """Describe the task edge summary wire record."""
 
 
-class TaskEdgeWrite(TypedDict):
-    """Describe the task edge write wire record."""
-
-    ok: bool
-    epic: str
-    task: TaskEdgeIdentity
-    edges: list[TaskEdge]
-    warnings: list[str]
-    dryRun: bool
-    planned: list[PlannedWrite]
-    summary: TaskEdgeSummary
-
-
 class AllEdgeSummary(EdgeCounts):
     """Describe the all edge summary wire record."""
 
@@ -343,6 +347,7 @@ class AllEdgeSummary(EdgeCounts):
     blockers: dict[str, list[str]]
     written: list[str]
     warnings: int
+    withinStory: EdgeCounts
 
 
 class AllEdgeWrite(TypedDict):
@@ -383,5 +388,4 @@ class TaskWriteOptions(TypedDict):
 
     key: str
     root: Path | None
-    external: NotRequired[list[str] | None]
     packages_dir: NotRequired[str | None]

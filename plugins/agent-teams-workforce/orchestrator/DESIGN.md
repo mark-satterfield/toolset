@@ -143,7 +143,7 @@ its code:
   `cdsbundles.list_bundles`, `spec_authoring.normalize_ui`, `specui.spec_ui_append`,
   `spec_review.settle`, `spec_authoring.story_document`,
   `beadwrite.write_story`, `task_decomposition.context`, `beadwrite.plan_story_tasks`,
-  `beadwrite.write_task`, `beadwrite.retire_superseded_tasks`, `task_decomposition.record`,
+  `beadwrite.write_task`, `beadwrite.retire_superseded_tasks`, `beadwrite.write_story_task_edges`, `task_decomposition.record`,
   `beadwrite.closure_task_edges`, `task_edges.listing`, `beadwrite.write_all_task_edges`,
   `elaboration.score`, `elaboration.done_rule`, `storyedges.story_edges`, `elaboration.finish`. A
   handler returns a `Completion` or raises `StepError(stage, cause, evidence)` (section 6).
@@ -249,7 +249,7 @@ Subprocess, argv list, no shell, with a timeout, for executables: `bd` (through
   handback.
 - Every subprocess the tools layer starts has a timeout.
 
-The scoring step and the marking step call `elaboration.finish`, and the Story edge step calls
+The scoring step calls `elaboration.score_epic_tasks`, the marking step `elaboration.mark_elaborated`, and the Story edge step calls
 `storyedges.story_edges` (section 11.6).
 
 ### 2.3 Briefs carry facts only
@@ -1184,12 +1184,15 @@ elaboration is done.
 
 ### 11.6 Task decomposition and finish
 
-- **The Task scope of the scoring steps.** `elaboration.finish` takes a scope: with
-  `scope="epic-tasks"` it calls `scoring.score` with the write scope limited to the Tasks under the
-  Epic and no Epic roll-up, and writes no Epic WSJF key. Step `elaboration.score` calls it without
-  marking the Epic, step `elaboration.done_rule` reads the Tasks it left unscored, step
-  `storyedges.story_edges` writes the Story edges, and step `elaboration.finish` calls it again to
-  mark the Epic.
+- **The Task scope of the scoring steps.** Step `elaboration.score` calls
+  `elaboration.score_epic_tasks`, which calls `scoring.score_tasks` for the Tasks under the Epic:
+  RR-OE counts over every open Task's edges, walked only from those Tasks, and no Epic is computed
+  or written. Step `elaboration.done_rule` reads the Tasks it left unscored, step
+  `storyedges.story_edges` writes the Story edges, and step `elaboration.finish` marks the Epic with
+  `elaboration.mark_elaborated`.
+- **Long script steps report progress.** The edge write, the Story edges and the scoring emit a
+  `phase` event as each real stage ends, so the driver's idle limit tells a hung run from a working
+  one; no timer emits regardless of progress.
 - **The task-deps schema check is the mapper session's output check.** The session's output is
   validated against the schema narrowed to the span's Task names, so the exact errors reach the one
   corrective retry; `write_all_task_edges` validates the keys again before it writes.

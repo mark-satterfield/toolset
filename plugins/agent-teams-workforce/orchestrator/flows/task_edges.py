@@ -24,7 +24,7 @@ import beadgraph
 import beadwrite
 import strictschema
 from task_deps_contract import TaskDepsError, empty_task_deps, parse_task_deps
-from typeguard import CollectionCheckStrategy, check_type
+from typeguard import check_type
 
 from orchestrator.core.agents import strict_json
 from orchestrator.core.driver_contracts import dispatch_arguments
@@ -156,13 +156,7 @@ def task_deps_check(span: hierarchy.SpanStories) -> OutputValidator:
 
     """
     contract: Path = SCHEMAS / TASK_DEPS_SCHEMA
-    keys: frozenset[str] = frozenset(
-        check_type(
-            beadwrite.span_tasks(span),
-            tuple[dict[str, str], list[tuple[str, str]], dict[str, str]],
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        )[0],
-    )
+    keys: frozenset[str] = frozenset(beadwrite.span_tasks(span)[0])
 
     def check(path: Path) -> dict[str, JsonValue]:
         document: dict[str, JsonValue] = strict_json(path)
@@ -220,7 +214,10 @@ def mapper(run: StepRun) -> AgentLaunch:
 
 @script_step(EDGE_WRITE)
 def write(run: StepRun) -> Completion:
-    """Write every Task's edges to Tasks of the Epic's other Stories.
+    """Write every Task's edges to Tasks of the Epic's other Stories, and any edge within a Story beads lacks.
+
+    The second covers a journal planned before the per-Story edge step existed, whose Task bead
+    steps may have written no edges; for every other journal nothing differs.
 
     Returns:
         The written record's file and the edges as the dispatch reports them.
@@ -236,11 +233,23 @@ def write(run: StepRun) -> Completion:
         raise run.tools.failure(EDGE_WRITE, OTHER_CAUSE, {"taskDeps": str(mapped), "error": str(exc)}) from None
     repo: Path = Path(check_type(run.context.args[dispatch_arguments().KEY_BEADS_REPO_PATH], str))
 
+    def progress(detail: str) -> None:
+        enter_phase(run.context, run.agents.emit, TASK_EDGES_PHASE, f"{EDGE_WRITE}: {detail}")
+
     def attempt() -> dict[str, JsonValue]:
         graph: beadgraph.Graph = run.tools.portfolio(EDGE_WRITE, beadgraph.load, repo)
+        progress(f"read {len(graph.beads)} beads")
         writer: beadgraph.Writer = run.tools.portfolio(EDGE_WRITE, beadgraph.Writer, repo)
         return json_object(
-            run.tools.portfolio(EDGE_WRITE, beadwrite.write_all_task_edges, graph, writer, run.bead, span, also=[]),
+            run.tools.portfolio(
+                EDGE_WRITE,
+                beadwrite.write_all_task_edges,
+                graph,
+                writer,
+                run.bead,
+                span,
+                progress=progress,
+            ),
         )
 
     written: dict[str, JsonValue] = run.tools.operation(EDGE_WRITE, attempt)

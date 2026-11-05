@@ -21,15 +21,17 @@ A score has two kinds of input.
   a Task's inherited UBV, TC and confidence, and every WSJF. Recomputing all of it is what
   carries a change through upstream and downstream dependencies without anyone tracing it.
 
-Epics and Tasks are scored in the same call, from the same read of the tracker, so an Epic
-is never scored without its Tasks. The bands, the scales and the roll-up belong to the
-rubric's `wsjf.py`, which this module calls. Only values that changed are written.
+`score`, the owner's scoring run, scores Epics and Tasks in the same call, from the same read of
+the tracker, so an Epic is never scored without its Tasks. `score_tasks`, elaboration's score
+step, scores only the Tasks it names and writes no Epic; RR-OE still counts over every Task edge.
+The bands, the scales and the roll-up belong to the rubric's `wsjf.py`, which this module calls.
+Only values that changed are written.
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Final, TypedDict
 
 import beadgraph
@@ -66,6 +68,7 @@ from scoringcontracts import (
     Recorded,
     ReferenceJob,
     ScoreResult,
+    TaskScores,
 )
 from typeguard import CollectionCheckStrategy, typechecked
 from wsjf_types import Item, Unscored  # ruff: ignore[typing-only-third-party-import] - typeguard @typechecked resolves this at runtime.
@@ -191,11 +194,7 @@ def _tasks_of(graph: Graph, epic: Bead) -> list[Bead]:
     return [b for b in graph.descendants(epic.id) if b.kind == "task"]
 
 
-def _sized_from_tasks(
-    graph: Graph,
-    epic: Bead,
-    rollup: frozenset[str] | set[str] = frozenset(),
-) -> bool:
+def _sized_from_tasks(graph: Graph, epic: Bead) -> bool:
     """Whether an Epic's job size is the sum of its Tasks' sizes.
 
     Only an Epic whose elaboration is done rolls up. Until then its Tasks are being
@@ -205,14 +204,12 @@ def _sized_from_tasks(
     Args:
         graph: The tracker graph.
         epic: The Epic.
-        rollup: Epics to treat as done in this run: `elaboration-finish` scores the Epic
-            before it writes `KEY_ELABORATION_STATE` = `ELABORATION_DONE`.
 
     Returns:
         True when the Epic has Tasks and its elaboration is done.
 
     """
-    done: bool = epic.metadata.get(KEY_ELABORATION_STATE) == ELABORATION_DONE or epic.id in rollup
+    done: bool = epic.metadata.get(KEY_ELABORATION_STATE) == ELABORATION_DONE
     return done and bool(_tasks_of(graph, epic))
 
 
@@ -820,11 +817,7 @@ def _task_size(task: Bead) -> int | None:
     return _size(task.metadata.get(KEY_WSJF_SIZE))
 
 
-def _epic_items(
-    graph: Graph,
-    epics: list[Bead],
-    rollup: frozenset[str] | set[str] = frozenset(),
-) -> tuple[list[Item], list[Unscored]]:
+def _epic_items(graph: Graph, epics: list[Bead]) -> tuple[list[Item], list[Unscored]]:
     """Return the rubric input for every open Epic, and what is missing from it.
 
     Only an Epic whose elaboration is done hands the rubric its Tasks' sizes to sum; every
@@ -833,7 +826,6 @@ def _epic_items(
     Args:
         graph: The tracker graph.
         epics: The open Epics.
-        rollup: Epics to treat as done in this run.
 
     Returns:
         The items, and the incomplete records.
@@ -843,7 +835,7 @@ def _epic_items(
     items: list[Item] = []
     incomplete: list[Unscored] = []
     for epic in epics:
-        rolls_up: bool = _sized_from_tasks(graph, epic, rollup)
+        rolls_up: bool = _sized_from_tasks(graph, epic)
         tasks: list[beadgraph.Bead] = _tasks_of(graph, epic) if rolls_up else []
         item: Item = {
             "id": epic.id,
@@ -914,29 +906,21 @@ def _task_items(graph: Graph, tasks: list[Bead]) -> list[Item]:
     return items
 
 
-def _apply(
-    graph: Graph,
-    result: RubricResult,
-    writer: Writer,
-    scope: set[str] | None,
-) -> list[Applied]:
-    """Write every scored item in scope whose values changed.
+def _apply(graph: Graph, result: RubricResult, writer: Writer) -> list[Applied]:
+    """Write every scored item whose values changed.
 
     Args:
         graph: The tracker graph.
         result: The rubric's `score` output.
         writer: The tracker writer; a dry-run writer records the writes instead.
-        scope: The ids that may be written, or None for every scored item.
 
     Returns:
-        One record per scored item in scope, marked with whether it is written.
+        One record per scored item, marked with whether it is written.
 
     """
     scored: wsjf_types.ScoreRow
     rows: list[Applied] = []
     for scored in result["scores"]:
-        if scope is not None and scored["id"] not in scope:
-            continue
         bead: beadgraph.Bead = graph.beads[scored["id"]]
         computed: dict[str, str] = {
             key: value for key, value in scored["metadata"].items() if key not in SIZE_JUDGED_KEYS
@@ -957,27 +941,67 @@ def _apply(
     return rows
 
 
+def _silent(_detail: str) -> None:
+    """Take no notice of progress."""
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def score(
+def score_tasks(
     graph: Graph,
     writer: Writer,
-    scope: set[str] | None = None,
-    rollup: frozenset[str] | set[str] = frozenset(),
-) -> ScoreResult:
-    """Recompute every open Epic's and every open Task's WSJF, and write what changed.
+    wanted: set[str],
+    progress: Callable[[str], None] = _silent,
+) -> TaskScores:
+    """Score the open Tasks named, and write what changed; no Epic is computed or written.
 
-    The edge lists handed to the rubric are the whole graph at each level, so a level
-    with no edges scores every item as reaching nothing. The computation always covers the
-    whole tracker, because RR-OE is reachability over the whole graph; `scope` limits only
-    what is written and reported.
+    RR-OE is reachability over every open Task's edges, so the edges are indexed once and walked
+    only from the Tasks named.
 
     Args:
         graph: The tracker graph.
         writer: The tracker writer; a dry-run writer records the writes instead.
-        scope: The ids that may be written, or None for every open Epic and Task.
-        rollup: Epics whose size rolls up from their Tasks although their
-            `KEY_ELABORATION_STATE` is not yet `ELABORATION_DONE`: the Epic `elaboration-finish` is about
-            to mark done.
+        wanted: The Tasks to score.
+        progress: Told as each stage ends.
+
+    Returns:
+        The Tasks' scores, the ones that could not be scored and why, and their size faults.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
+    """
+    if not (isinstance(graph, Graph)) or not (isinstance(writer, Writer)) or not (isinstance(wanted, set)):
+        raise TypeError(_ARGUMENT_ERROR)
+    tasks: list[Bead] = _open(graph, "task")
+    successors: dict[str, set[str]] = rubric.build_successors(_edges(tasks), {task.id for task in tasks})
+    items: list[Item] = _task_items(graph, [task for task in tasks if task.id in wanted])
+    for item in items:
+        item["reaches"] = rubric.reachable_count(str(item["id"]), successors)
+    progress(f"counted what {len(items)} of {len(tasks)} open Tasks reach")
+    outcome: RubricResult = rubric.score({"items": items}, "task")
+    rows: list[Applied] = _apply(graph, outcome, writer)
+    progress(f"wrote the scores that changed of {len(rows)} Tasks")
+    return {
+        "tasks": rows,
+        "unscored": [
+            LevelUnscored(level="task", id=entry["id"], reason=entry["reason"]) for entry in outcome["unscored"]
+        ],
+        "sizeFaults": outcome["sizeFaults"],
+        "dryRun": writer.dry_run,
+        "planned": writer.planned,
+    }
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def score(graph: Graph, writer: Writer) -> ScoreResult:
+    """Recompute every open Epic's and every open Task's WSJF, and write what changed.
+
+    The edge lists handed to the rubric are the whole graph at each level, so a level
+    with no edges scores every item as reaching nothing.
+
+    Args:
+        graph: The tracker graph.
+        writer: The tracker writer; a dry-run writer records the writes instead.
 
     Returns:
         The Epic and Task scores, everything that could not be scored and why, size
@@ -992,34 +1016,23 @@ def score(
     incomplete: list[Unscored]
     level: str
     outcome: RubricResult
-    if (
-        not (isinstance(graph, Graph))
-        or not (isinstance(writer, Writer))
-        or not (isinstance(scope, set) or scope is None)
-    ):
+    if not (isinstance(graph, Graph)) or not (isinstance(writer, Writer)):
         raise TypeError(_ARGUMENT_ERROR)
     epics: list[beadgraph.Bead] = _open(graph, "epic")
     tasks: list[beadgraph.Bead] = _open(graph, "task")
-    epic_items, incomplete = _epic_items(graph, epics, rollup)
+    epic_items, incomplete = _epic_items(graph, epics)
     epic_result: RubricResult = rubric.score({"edges": _edges(epics), "items": epic_items}, "epic")
     task_result: RubricResult = rubric.score(
         {"edges": _edges(tasks), "items": _task_items(graph, tasks)},
         "task",
     )
-    epic_rows: list[scoringcontracts.Applied] = _apply(graph, epic_result, writer, scope)
-    task_rows: list[scoringcontracts.Applied] = _apply(graph, task_result, writer, scope)
-
-    def wanted(entry: Unscored) -> bool:
-        return scope is None or entry["id"] in scope
-
+    epic_rows: list[scoringcontracts.Applied] = _apply(graph, epic_result, writer)
+    task_rows: list[scoringcontracts.Applied] = _apply(graph, task_result, writer)
     unscored: list[LevelUnscored] = []
     for level, outcome in (("epic", epic_result), ("task", task_result)):
         unscored.extend(
-            LevelUnscored(level=level, id=entry["id"], reason=entry["reason"])
-            for entry in outcome["unscored"]
-            if wanted(entry)
+            LevelUnscored(level=level, id=entry["id"], reason=entry["reason"]) for entry in outcome["unscored"]
         )
-    incomplete = [i for i in incomplete if wanted(i)]
     return {
         "epics": epic_rows,
         "tasks": task_rows,

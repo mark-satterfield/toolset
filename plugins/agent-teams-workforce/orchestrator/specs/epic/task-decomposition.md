@@ -15,12 +15,13 @@ document and the Story; the span step hands over the span and the elements.
 |---|---|---|---|---|---|
 | 1 | Gather what the Tasks are decomposed from | script `task_decomposition.context` | `story`, `span`, `elements`; the bead tracker | `tasks-<slug>.context.json` | value `repository`, file `task context`; plans steps 2 and 3 |
 | 2 | Decompose the Story into Tasks | agent `task-decomposer` | `spec`, `data model`, `criteria`, `story document`, `span`, `elements`, `ui sources` when there are any, `repository context`, `task context` | `tasks-<slug>.json`, checked by `task_decomposition.task_grouping_check` | file `tasks` |
-| 3 | Plan the Task beads | script `beadwrite.plan_story_tasks` | `tasks`, `story document`, the spec documents, `span`, `elements` | `tasks-<slug>.gaps.json` (`task-gaps.schema.json`) when the plan has a gap | a plan with a gap: file `task gaps`, value `gaps before the correction`, and steps 4 and 5 planned; otherwise value `task plan` and steps 6 to 8 planned |
+| 3 | Plan the Task beads | script `beadwrite.plan_story_tasks` | `tasks`, `story document`, the spec documents, `span`, `elements` | `tasks-<slug>.gaps.json` (`task-gaps.schema.json`) when the plan has a gap | a plan with a gap: file `task gaps`, value `gaps before the correction`, and steps 4 and 5 planned; otherwise value `task plan` and steps 6 to 9 planned |
 | 4 | Correct what the repository builds that no Task cites, and the unsized Tasks | agent `task-decomposer`, continuing the session of step 2 | the inputs of step 2, `tasks`, `task gaps` | `tasks-<slug>.correction.json`, checked by `tasks-correction.schema.json` and for titles that repeat a saved Task's or each other | file `task correction` |
-| 5 | Plan the Task beads with the correction | script `beadwrite.plan_story_tasks` | as step 3, and `task correction` | the correction merged into `tasks-<slug>.json` | value `task plan`, and steps 6 to 8 planned; a plan that still has a gap fails the step |
-| 6 | Write one Task bead | script `beadwrite.write_task`, one step per Task, in build order | `tasks`, `story document`, the spec documents, `span`, `elements` | the Task bead; the Task's journal | value `task`, value `task edge counts`, value `task warnings` |
+| 5 | Plan the Task beads with the correction | script `beadwrite.plan_story_tasks` | as step 3, and `task correction` | the correction merged into `tasks-<slug>.json` | value `task plan`, and steps 6 to 9 planned; a plan that still has a gap fails the step |
+| 6 | Write one Task bead | script `beadwrite.write_task`, one step per Task, in build order | `tasks`, `story document`, the spec documents, `span`, `elements` | the Task bead with no edges; the Task's journal | value `task`, value `task warnings` |
 | 7 | Retire the Task beads the plan no longer names | script `beadwrite.retire_superseded_tasks` | as step 6; the bead tracker | bead edges and deletions | value `tasks retired`, value `task warnings` |
-| 8 | Record the Tasks written | script `task_decomposition.record` | `story`, `task plan`, every `task`, `task edge counts` and `task warnings` | `tasks-<slug>.written.json` | file `tasks written`, value `tasks result` |
+| 8 | Set the edges between the Tasks of the Story, at once | script `beadwrite.write_story_task_edges` | as step 6; the bead tracker | one `bd dep add --file -` request, and `bd dep remove` for each edge dropped | value `task edge counts`, value `task warnings` |
+| 9 | Record the Tasks written | script `task_decomposition.record` | `story`, `task plan`, every `task`, `task edge counts` and `task warnings` | `tasks-<slug>.written.json` | file `tasks written`, value `tasks result` |
 
 What the Story builds is the `items` of the repository context (`spec-<slug>.context.json`,
 `spec-context.schema.json`): the elements the Epic's architecture adds or changes in this
@@ -79,9 +80,18 @@ next Task, and the journal says which Tasks are written.
 A write finds the Task under the Story by its elaboration key, and failing that by the items it
 cites and by its title. A Task that exists is updated where it differs, or left as it is once
 building has started; a second Task is never created, so the step is safe to run again after an
-invalidation. A Task's edges onto the Tasks of the same Story it depends on are written with it,
-which is why the steps run in build order. A blocker outside the Story (`blockedByExternal`) is
-written only when the tracker holds that bead; one it does not hold is left out with a warning.
+invalidation. It writes no edge.
+
+Once every Task bead of the Story is written, one step sets the Story's edges at once: the Task's
+edges onto the Tasks of the same Story it depends on, and a blocker outside the Story
+(`blockedByExternal`), written only when the tracker holds that bead; one it does not hold is left
+out with a warning. An edge between Tasks of the Story that the saved Tasks no longer name is
+removed, and a Task whose build has started is left as it is. It compares with what beads holds, so
+it is safe to run again. One read of the edges, one cycle check and one request happen under one
+hold of the edge lock.
+
+A journal planned before this step existed has no such step, so `beadwrite.write_all_task_edges`
+also writes any edge within a Story that beads lacks; for every other journal it finds nothing.
 A Task whose `type` is in the infrastructure vocabulary (`infra-vocabulary.schema.json`), or that
 builds a piece of infrastructure, carries the label `infrastructure`, so its build adds the Infra
 Intent phase.

@@ -15,7 +15,6 @@
     record               write judged values with their fingerprints
     score                recompute every WSJF and write what changed
     elaboration-start    mark one Epic `in_progress` when it may be elaborated
-    elaboration-finish   score an Epic and its Tasks; `--done` sets it done
     elaboration-release  clear a run's owner token from an Epic
     arch-approve         set `lifecycle_state: effective` on the architecture files an
                          integration changed or created that its conformance review covered;
@@ -59,7 +58,6 @@
                          decomposed again (an input upstream of them changed)
     write-task           write ONE Task of a Story and its edges to the Story's Tasks
     plan-task-edges      the saved Task edges between an Epic's Stories, checked; no `bd` call
-    write-task-edges     write ONE Task's edges to Tasks in the Epic's other Stories
     write-all-task-edges write every Task's edges to Tasks in the Epic's other Stories
     closure-edges        the Task edges between Stories that the delta's `requires` relations
                          make (saved delta-items.json, recon-<slug>.json, tasks-<slug>.json),
@@ -70,7 +68,7 @@
     story-edges          derive and write the Story -> Story `blocks` edges from Epic order within
                          a repository and from Task edges between Stories in any repository;
                          a Story whose order is contradictory gets no edge written
-                         `elaboration-finish` and a Task-level `apply-edges` run it after they write
+                         a Task-level `apply-edges` runs it after it writes
 
 Every command prints one JSON object. With `--out FILE` the full object is written to FILE
 and stdout carries only its `summary`. With `--relay FILE` the full object is written to FILE
@@ -111,7 +109,6 @@ from archstate import (
 from archstate import states as arch_states
 from assesscontext import assess_context, prd_paths, task_context
 from bead_metadata import (
-    ELABORATION_DONE,
     KEY_ELAB_KEY,
     KEY_ELABORATION_STATE,
     KEY_SEQ_ASSESSED_AT,
@@ -127,7 +124,6 @@ from beadwrite import (
     write_all_task_edges,
     write_story,
     write_task,
-    write_task_edges,
 )
 from cdsbundles import list_bundles, select_build
 from contracts import JsonObject, JsonValue, json_object
@@ -142,7 +138,7 @@ from edgeset import (
     validate,
     withdraw_edge,
 )
-from elaboration import LifecycleError, finish, release, start
+from elaboration import LifecycleError, release, start
 from hierarchy import HierarchyError, SpanFiles, SpanStories, StoryFiles, repo_slugs
 from jsonschema import ValidationError
 from matrixstore import Matrix, matrix_path, read_matrix, update_matrix
@@ -772,23 +768,6 @@ def _configure_command_13(sub: _Subcommands, common: argparse.ArgumentParser) ->
     _dry_run_flag(est)
 
 
-def _configure_command_14(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
-    """Register one command family and its arguments."""
-    efi: argparse.ArgumentParser = sub.add_parser(
-        "elaboration-finish",
-        help="score the Epic and its Tasks; `--done` marks it done",
-        parents=[common],
-    )
-    efi.add_argument("--epic", required=True, help="the Epic whose Tasks were written")
-    efi.add_argument("--owner", default=None, help="the owner token the start returned")
-    efi.add_argument(
-        "--done",
-        action="store_true",
-        help=f"set the Epic's `{KEY_ELABORATION_STATE}` to `{ELABORATION_DONE}`",
-    )
-    _dry_run_flag(efi)
-
-
 def _configure_command_15(sub: _Subcommands, common: argparse.ArgumentParser) -> None:
     """Register one command family and its arguments."""
     wst: argparse.ArgumentParser = sub.add_parser(
@@ -850,12 +829,6 @@ def _configure_command_16(sub: _Subcommands, common: argparse.ArgumentParser) ->
         required=True,
         help="the Task's key, as plan-tasks lists it",
     )
-    wta.add_argument(
-        "--blocked-by-external",
-        default="",
-        help="Tasks of other Epics this Task is blocked by, comma-separated, beside the "
-        "ones its saved blockedByExternal names",
-    )
 
     rpt: argparse.ArgumentParser = sub.add_parser(
         "replace-tasks",
@@ -911,25 +884,12 @@ def _configure_command_22(sub: _Subcommands, common: argparse.ArgumentParser) ->
         parents=[common],
     )
 
-    wte: argparse.ArgumentParser = sub.add_parser(
-        "write-task-edges",
-        help="write ONE Task's saved task-deps.json edges to Tasks in other Stories",
-        parents=[common],
-    )
-    wte.add_argument("--epic", required=True, help="the Epic")
-    wte.add_argument("--task", required=True, help="the Task, as S<i>-<local key>")
-
     wae: argparse.ArgumentParser = sub.add_parser(
         "write-all-task-edges",
         help="write every Task's saved task-deps.json edges to Tasks in other Stories",
         parents=[common],
     )
     wae.add_argument("--epic", required=True, help="the Epic")
-    wae.add_argument(
-        "--also",
-        default="",
-        help="Tasks, as S<i>-<local key>, comma-separated, written even with no saved blocker",
-    )
 
     cle: argparse.ArgumentParser = sub.add_parser(
         "closure-edges",
@@ -939,7 +899,7 @@ def _configure_command_22(sub: _Subcommands, common: argparse.ArgumentParser) ->
         parents=[common],
     )
 
-    for edge_parser in (pte, wte, wae, cle):
+    for edge_parser in (pte, wae, cle):
         edge_parser.add_argument(
             "--dir",
             required=True,
@@ -951,7 +911,6 @@ def _configure_command_22(sub: _Subcommands, common: argparse.ArgumentParser) ->
             required=True,
             help="the span, comma-separated, in its ruled order",
         )
-    _dry_run_flag(wte)
     _dry_run_flag(wae)
 
 
@@ -1202,7 +1161,6 @@ _COMMAND_CONFIGURATORS: tuple[Callable[[_Subcommands, argparse.ArgumentParser], 
     _configure_command_11,
     _configure_command_12,
     _configure_command_13,
-    _configure_command_14,
     _configure_command_15,
     _configure_command_16,
     _configure_command_22,
@@ -1324,16 +1282,13 @@ class _CommandOptions:
     tasks_dir: Path | None
     owner: str | None
     reclaim: bool
-    done: bool
     slug: str | None
     repo: str | None
     project_root: Path | None
     packages_dir: str | None
     correction: Path | None
     key: str | None
-    blocked_by_external: str | None
     repos: str | None
-    also: str | None
     arch_files: str | None
     reviewed_from: Path | None
     reviewed_files: str | None
@@ -1508,11 +1463,6 @@ def _command_options(namespace: argparse.Namespace) -> _CommandOptions:
             bool,
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         ),
-        done=check_type(
-            getattr(namespace, "done", False),
-            bool,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
         slug=check_type(
             getattr(namespace, "slug", None),
             str | None,
@@ -1543,18 +1493,8 @@ def _command_options(namespace: argparse.Namespace) -> _CommandOptions:
             str | None,
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         ),
-        blocked_by_external=check_type(
-            getattr(namespace, "blocked_by_external", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
         repos=check_type(
             getattr(namespace, "repos", None),
-            str | None,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        ),
-        also=check_type(
-            getattr(namespace, "also", None),
             str | None,
             collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
         ),
@@ -1939,7 +1879,6 @@ def _dispatch_write_task(args: _CommandOptions, head: JsonObject, writer: Writer
             _story_files(_required_path(args.dir), _required_text(args.slug), _required_text(args.repo)),
             key=_required_text(args.key),
             root=args.project_root,
-            external=split_ids(_required_text(args.blocked_by_external)),
             packages_dir=args.packages_dir,
         ),
     })
@@ -1972,33 +1911,6 @@ def _dispatch_write_story(context: _GraphCommand) -> JsonObject:
     })
 
 
-def _dispatch_write_task_edges(context: _GraphCommand) -> JsonObject:
-    """Execute the write-task-edges command selected by the CLI.
-
-    Returns:
-        The selected command result.
-
-    """
-    args: _CommandOptions
-    head: JsonObject
-    writer: Writer
-    graph: Graph
-    args = context.args
-    head = context.head
-    writer = context.writer
-    graph = context.graph
-    return json_object({
-        **head,
-        **write_task_edges(
-            graph,
-            writer,
-            _required_text(args.epic),
-            _span_stories(_required_path(args.dir), split_ids(_required_text(args.repos))),
-            name=_required_text(args.task),
-        ),
-    })
-
-
 def _dispatch_write_all_task_edges(context: _GraphCommand) -> JsonObject:
     """Execute the write-all-task-edges command selected by the CLI.
 
@@ -2021,7 +1933,6 @@ def _dispatch_write_all_task_edges(context: _GraphCommand) -> JsonObject:
             writer,
             _required_text(args.epic),
             _span_stories(_required_path(args.dir), split_ids(_required_text(args.repos))),
-            also=split_ids(args.also) if args.also else [],
         ),
     })
 
@@ -2325,32 +2236,6 @@ def _dispatch_elaboration_start(context: _GraphCommand) -> JsonObject:
     })
 
 
-def _dispatch_elaboration_finish(context: _GraphCommand) -> JsonObject:
-    """Execute the elaboration-finish command selected by the CLI.
-
-    Returns:
-        The selected command result.
-
-    """
-    args: _CommandOptions
-    head: JsonObject
-    writer: Writer
-    graph: Graph
-    args = context.args
-    head = context.head
-    writer = context.writer
-    graph = context.graph
-    finished: JsonObject = json_object(
-        finish(graph, writer, _required_text(args.epic), owner=args.owner, done=args.done),
-    )
-    if not writer.dry_run:
-        finished["storyEdges"] = _story_edges_after(args.directory)
-        finished_summary: JsonObject = json_object(finished.get("summary") or {})
-        finished_summary["storyEdges"] = _story_edges_summary(json_object(finished["storyEdges"]))
-        finished["summary"] = finished_summary
-    return json_object({**head, **finished})
-
-
 def _dispatch_elaboration_release(context: _GraphCommand) -> JsonObject:
     """Execute the elaboration-release command selected by the CLI.
 
@@ -2392,7 +2277,6 @@ _WRITE_COMMANDS: dict[str, Callable[[_CommandOptions, JsonObject, Writer], JsonO
 
 _GRAPH_COMMANDS: dict[str, Callable[[_GraphCommand], JsonObject]] = {
     "write-story": _dispatch_write_story,
-    "write-task-edges": _dispatch_write_task_edges,
     "write-all-task-edges": _dispatch_write_all_task_edges,
     "story-edges": _dispatch_story_edges,
     "assess-plan": _dispatch_assess_plan,
@@ -2405,7 +2289,6 @@ _GRAPH_COMMANDS: dict[str, Callable[[_GraphCommand], JsonObject]] = {
     "withdraw-edge": _dispatch_withdraw_edge,
     "record": _dispatch_record,
     "elaboration-start": _dispatch_elaboration_start,
-    "elaboration-finish": _dispatch_elaboration_finish,
     "elaboration-release": _dispatch_elaboration_release,
 }
 
@@ -2439,7 +2322,6 @@ def run(args: _CommandOptions) -> JsonObject:
             "assess-plan",
             "assess-context",
             "score-plan",
-            "elaboration-finish",
         }
         or args.with_description
     )

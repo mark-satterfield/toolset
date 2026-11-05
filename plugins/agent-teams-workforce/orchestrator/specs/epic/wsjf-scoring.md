@@ -5,9 +5,9 @@ Failure handling: bounded transient retries and quota pauses remain. An ordinary
 **Status: not part of the Epic pipeline rewrite.** This flow judges and scores Epics. Epic WSJF
 scoring belongs to the future readiness process, which is not yet built (CONTEXT 7.17; the owner's
 answer 6 of 2026-10-09); elaboration assumes it is done and no Epic flow runs this one. The only
-part of it the Epic pipeline uses is the Task WSJF arithmetic (`scoring.score`, rubric
-`wsjf.py`), which the `prd-to-spec` steps `elaboration.score` and `elaboration.finish` run with the
-write scope limited to the Epic's Tasks, from the sizes the Task bead writes record. Whether this owner-run command is kept until the readiness
+part of it the Epic pipeline uses is the Task WSJF arithmetic (`scoring.score_tasks`, rubric
+`wsjf.py`), which the `prd-to-spec` step `elaboration.score` runs for the Epic's Tasks, from the
+sizes the Task bead writes record. Whether this owner-run command is kept until the readiness
 process exists is the owner's concern, outside this rewrite. The rest of this file is the record of its
 contract, for that decision and for the readiness process.
 
@@ -15,7 +15,7 @@ Source: `<plugin>/workflows/wsjf-scoring.js` (`meta.description`), the plugin co
 `<plugin>/commands/wsjf-scoring.md`, the agent `<plugin>/agents/wsjf-scorer.md` and its skills
 (`skills/wsjf`, `skills/beads-contract`), `<plugin>/workflows/README.md` (Portfolio section), and, for contracts
 only, `<plugin>/scripts/portfolio/depscore.py` (`score-plan`, `judge-input`, `record`, `score`),
-`scoring.py`, `assesscontext.py` (`prd_paths`), `beadgraph.py` and `elaboration.py` (`finish`). Environment variables
+`scoring.py`, `assesscontext.py` (`prd_paths`), `beadgraph.py` and `elaboration.py` (`score_epic_tasks`). Environment variables
 are named only in `<plugin>/skills/pipeline-contracts/schemas/driver-surface.schema.json`
 (`$defs.DriverEnvironment`; read `<plugin>/skills/pipeline-contracts/SKILL.md`); this spec writes
 `$<CONSTANT>` for the value of the variable that schema constant names. `<driver>` is
@@ -31,13 +31,13 @@ This spec restates none of their names or values.
 
 ## Who calls it (the S01f question)
 
-- **The Epic pipeline does not call this flow.** `prd-to-spec` scores only in its steps
-  `elaboration.score` and `elaboration.finish`, which run the **arithmetic** step of this flow
-  (`scoring.score`) with the write scope limited to the Epic's Tasks and write no value on the
-  Epic (CONTEXT 7.17). They never judge: the Epic's value must already be judged (by this flow),
+- **The Epic pipeline does not call this flow.** `prd-to-spec` scores only in its step
+  `elaboration.score`, which runs the Task part of the **arithmetic** of this flow
+  (`scoring.score_tasks`) for the Epic's Tasks and computes and writes no value on the
+  Epic (CONTEXT 7.17). It never judges: the Epic's value must already be judged (by this flow),
   and its Tasks arrive sized and fingerprinted by the step `beadwrite.write_task` (see
   `<orch>/specs/epic/task-decomposition.md`, whose correction leaves no Task unsized). So the
-  arithmetic is one shared Python function that both this flow and those steps call.
+  arithmetic is the rubric's, which both this flow and that step call.
 - **The driver does not call this flow.** Commit `64b4adbb` (2026-10-02) deleted `triggers.py`; the
   supervisor no longer assesses or re-scores on its own. What is left in `<driver>`: the ledger
   event types `trigger_plan` and `trigger_dispatch` (`ledger.EVENT_TYPES`, no producer),
