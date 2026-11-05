@@ -24,13 +24,6 @@ const fableFallback = fableInput.fableFallback === true
 let fableChildOrdinal = 0
 // The last call the model allowance refused in this script: { agentType, label, message }, or null.
 let fableRefusal = null
-// The plugin's agents that have no user-level copy (no mcpServers in their front matter), filled
-// from agents/*.md by shared-blocks.mjs. Claude Code registers a plugin agent only under the
-// plugin prefix, so such an agent is dispatched as agent-teams-workforce:<name>; an agent with a
-// user-level copy keeps its plain name, which names that copy and the MCP servers it carries. A
-// workflow names every agent by its plain front-matter name and atwAgentType resolves it here.
-const PLUGIN_ONLY_AGENTS = new Set(/* PLUGIN_ONLY_AGENTS */ [])
-const atwAgentType = (name) => (PLUGIN_ONLY_AGENTS.has(name) ? `agent-teams-workforce:${name}` : name)
 // The Workflow runtime compiles agent({schema}) with Ajv's default (draft-07) class in strict mode:
 // it has no draft 2020-12 meta-schema, so `$schema` naming 2020-12 is refused, an unknown keyword
 // such as an `x-` annotation is refused, and `prefixItems` is unknown. runtimeSchema returns the
@@ -67,8 +60,7 @@ async function fableAgent(prompt, options) {
   options = runtimeOptions
   const agentType = (options && options.agentType) || null
   const isFable = fableTypes.has(String(agentType || '').replace(/^agent-teams-workforce:/, ''))
-  const typed = agentType ? { ...options, agentType: atwAgentType(agentType) } : options
-  const resolved = schema ? { ...typed, schema: runtimeSchema(schema) } : typed
+  const resolved = schema ? { ...options, schema: runtimeSchema(schema) } : options
   const call = isFable && fableFallback ? { ...resolved, model: 'opus' } : resolved
   try {
     return await agent(`OUTPUT_MODE: ${outputMode}\n\n${prompt}`, call)

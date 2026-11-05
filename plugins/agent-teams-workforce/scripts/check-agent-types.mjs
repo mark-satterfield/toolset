@@ -37,11 +37,10 @@
 // identical exemption: a name outside this plugin's prefix is REPORTED, never failed.
 //
 // PLAIN NAMES. A workflow names every agent by its plain front-matter name, and the fable shared
-// block (scripts/shared-blocks/fable.js) resolves it at dispatch: Claude Code registers a plugin
-// agent only as `agent-teams-workforce:<name>`, so an agent with no user-level copy is dispatched
-// under that prefix, and an agent with `mcpServers` keeps its plain name, which names its
-// user-level copy and the MCP servers it carries. A literal agentType under this plugin's prefix
-// FAILS: it would bypass that resolution. A user-level agent may use ${CLAUDE_PLUGIN_ROOT},
+// block (scripts/shared-blocks/fable.js) preserves it at dispatch. Claude Code resolves a
+// user-level copy before a plugin definition and resolves a plugin agent by its bare name
+// when no higher-priority definition exists. A literal agentType under this plugin's prefix
+// FAILS: it would bypass that precedence. A user-level agent may use ${CLAUDE_PLUGIN_ROOT},
 // which the sync hook replaces with the install path in the copy, and FAILS on any other
 // plugin-only variable, which nothing resolves in the copy.
 import { readdirSync, readFileSync, existsSync } from 'node:fs'

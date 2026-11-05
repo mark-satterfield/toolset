@@ -477,25 +477,23 @@ brief (section 2.3):
    matrix role, section 5.2), `x-sessionLimit`, whether `tools` and `disallowedTools` leave the
    agent `Agent` or `Workflow` (no `tools` list leaves it every tool), `mcpServers`, and the names
    in `skills` and `x-onDemandSkills` (section 5.2). It reads no body and no skill text.
-2. It launches the session with `--agent agent-teams-workforce:<agent>`, the agent's front matter
-   `name` under the plugin prefix, for every agent. The session loads only project settings
-   (`--setting-sources project`), so the user-level agent copies in `~/.claude/agents/` are not
-   registered in it, and Claude Code registers a plugin agent only under the plugin prefix.
-   Claude Code loads the plugin definition: its body, tools, disallowed tools, model, effort,
-   turn limit and front matter skills; it ignores `mcpServers` on a plugin agent, so the launcher
-   writes the session's MCP configuration (section 5.2). The launcher writes no agent definition
+2. It launches the session with `--agent <agent>`, the agent's bare front matter `name`.
+   User and project sources load (`--setting-sources user,project`), so Claude Code resolves
+   a user-level copy in `~/.claude/agents/` before the plugin definition. A bare name also
+   resolves a plugin-provided agent when no higher-priority definition exists. Claude Code
+   loads the selected definition's body, tools, disallowed tools, model, effort, turn limit
+   and front matter skills. The launcher writes strict MCP configuration (section 5.2).
+   The launcher writes no agent definition
    and no skill text, and adds no tool or skill.
    `--model` is the definition's model, or `opus` in its place on a Fable fallback (section 5.5).
 3. An agent loads a skill on demand with the Skill tool, with that skill's scripts and relative
    paths intact. An agent that cannot start agents is listed only the skills its front matter
    `skills` and `x-onDemandSkills` name; an agent that can is listed every skill of the plugin.
    No code reads a skill's text and feeds it to an agent.
-4. An agent the launched agent starts with the Agent tool is named the same way,
-   `agent-teams-workforce:<name>` (the only name registered in the session), and runs with its own
-   front matter. A workflow script names an agent by its plain name and its fable shared block adds
-   the prefix where Claude Code needs it; `scripts/check-agent-types.mjs` fails a prefixed agentType
-   literal in a workflow script. The step journal records the plain agent name a step is planned
-   with.
+4. An agent the launched agent starts with the Agent tool is named by its bare name and runs
+   with its own front matter under Claude Code's definition precedence. Workflow dispatch
+   preserves the same bare name; `scripts/check-agent-types.mjs` fails a prefixed agentType
+   literal in a workflow script. The step journal records the plain agent name a step is planned with.
 5. The brief is written on stdin.
 
 No schema text, rule text, agent text, skill text or file content is placed in the brief.
@@ -509,9 +507,9 @@ parse, is a session setup failure (classification `setup`) before any session st
 ```
 claude -p --output-format stream-json --verbose
   --session-id <uuid>            (or --resume <uuid> to continue a session)
-  --agent agent-teams-workforce:<agent>
+  --agent <agent>
   --model <model>
-  --setting-sources project
+  --setting-sources user,project
   --settings <session dir>/settings.json
   --mcp-config <session dir>/mcp.json
   --strict-mcp-config
@@ -525,7 +523,7 @@ For example, the launch of `aws-solutions-architect`:
 
 ```
 claude -p --output-format stream-json --verbose --session-id <uuid>
-  --agent agent-teams-workforce:aws-solutions-architect --model opus --setting-sources project
+  --agent aws-solutions-architect --model opus --setting-sources user,project
   --settings <session dir>/settings.json --mcp-config <session dir>/mcp.json --strict-mcp-config
   --plugin-dir <session dir>/.plugin --plugin-dir <session dir>/.plugin-aws-core
   --permission-mode bypassPermissions
@@ -538,15 +536,16 @@ claude -p --output-format stream-json --verbose --session-id <uuid>
   directory inside `<control>`, Claude Code auto-discovers the control repository's
   `AGENTS.md`/`CLAUDE.md` and the ones above it; an Epic agent needs none of them, because its
   brief names every path it reads and its definition and skills hold its rules.
-- **Settings.** `--setting-sources project` with a working directory that holds no project
-  settings loads no settings file; user settings (`<config>/settings.json`) are not loaded.
+- **Settings.** `--setting-sources user,project` loads user settings and user agents, skills,
+  commands and rules, plus any project sources discovered from the session directory and added
+  directories. Bare agent names give user copies precedence over plugin definitions.
   `--settings <session dir>/settings.json` holds (`agent_context.session_settings`):
   every `PreToolUse` hook of `<config>/settings.json` whose command names one of
   `no-verify-blocker.sh`, `pipeline-run-blocker.sh`, `bd-init-blocker.sh`,
   `aws-profile-required.sh` (a constant list, matched by script file name, so the hook commands
   themselves are read from the owner's file); every `PostToolUse` hook group of
   `<control>/.claude/settings.json` (`<control>` is `ATW_CONTROL_REPO`), so an edit is checked by
-  the edit hook the control repository declares for its own sessions and by no other copy;
+  the edit hook the control repository declares for its own sessions;
   `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, so every start
   blocks; `bashOutputMaxChars` at Claude Code's largest value, so a command's output reaches
   the session whole; and `disableBundledSkills`, so none of the skills bundled with Claude Code is
@@ -585,8 +584,7 @@ claude -p --output-format stream-json --verbose --session-id <uuid>
   so nothing is added to or taken from that list. Which tools an agent gets is the owner's
   decision, made in its definition file.
 - **What loads besides.** `<config>` holds `rules`, `skills` and `agents` entries and may hold a
-  user `CLAUDE.md`. They are user-level memory and content, not settings files, and
-  `--setting-sources` does not exclude them; a different `CLAUDE_CONFIG_DIR` for agent sessions
+  user `CLAUDE.md`. The selected user source loads that content; a different `CLAUDE_CONFIG_DIR` for agent sessions
   would also move the transcripts and the login the driver relies on. The descriptions of the
   skills the session's plugin folder lists load with `--plugin-dir`. The `system`/`init` event at the top of an agent
   session's transcript lists what loaded (tools, skills, MCP servers, plugins).
@@ -805,8 +803,11 @@ a `GraphError` carries one of the three causes above.
   author's correction and revision of a spec document, and the decomposer's one correction of a
   plan with a gap.
 - **A session that cannot be resumed.** When a session that was asked to resume ends with a failure
-  status and no turn, the journal runner gives the step a new session id and starts it once in a
-  new session (`SessionNotResumedError`).
+  status and no result, or a zero-turn `error_during_execution` result whose sole error is
+  `No conversation found with session ID: <requested session id>`, with no usage wall, timeout or
+  cancellation, the journal runner handles `SessionNotResumedError`. It accepts a finished,
+  validated output recorded before this attempt; otherwise it gives the same step a new session
+  id and starts it once in a new session. Other error results keep their normal failure handling.
 - **Never**: rerunning a step with nothing changed. `other` fails the step with its stage, its
   cause and the evidence paths, in the journal and in the handback.
 

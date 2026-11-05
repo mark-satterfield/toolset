@@ -5,7 +5,12 @@
   "additionalProperties": false,
   "required": ["agents", "rationale"],
   "properties": {
-    "agents": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "agents": {
+      "description": "Bare roster agent names without a plugin prefix. An empty list selects no specialists.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"}
+    },
     "rationale": {"type": "string", "minLength": 1}
   }
 }

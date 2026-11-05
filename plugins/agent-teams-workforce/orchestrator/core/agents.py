@@ -311,9 +311,9 @@ SESSION_DIRECTORY_PREFIX: Final = "atw-session-"
 class SessionNotResumedError(StepError):
     """A session that was asked to resume ended without running a turn.
 
-    The process ended with a failure status and no result event, no usage wall and no timeout, so
-    the conversation it was to continue was not taken up. The caller may start the step in a
-    new session.
+    The process ended with a failure status and either no result event or an explicit missing
+    conversation result, without a usage wall, timeout or cancellation. The caller may start
+    the step in a new session.
     """
 
 
@@ -357,16 +357,32 @@ def _terminated_outside(facts: SessionFacts) -> bool:
     )
 
 
-def _never_ran(facts: SessionFacts) -> bool:
-    """Tell whether a session process ended without running a turn.
+def _missing_conversation(result: dict[str, JsonValue], session_id: str) -> bool:
+    """Recognize the CLI's zero-turn failure for the requested missing conversation.
 
     Returns:
-        True when it exited with a failure status and left no result event, no usage wall, no
-        timeout and no cancellation.
+        True only for the explicit missing-conversation error naming this session.
 
     """
     return (
-        facts["result"] is None
+        result.get("is_error") is True
+        and result.get("subtype") == "error_during_execution"
+        and result.get("num_turns") == 0
+        and result.get("errors") == [f"No conversation found with session ID: {session_id}"]
+    )
+
+
+def _never_ran(facts: SessionFacts, session_id: str) -> bool:
+    """Tell whether a session process ended without running a turn.
+
+    Returns:
+        True when it exited with a failure status and either no result event or an explicit
+        missing-conversation result, without a usage wall, timeout or cancellation.
+
+    """
+    result: dict[str, JsonValue] | None = facts["result"]
+    return (
+        (result is None or _missing_conversation(result, session_id))
         and facts["rate"] is None
         and not facts["timeout"]
         and facts["exit"] != 0
@@ -801,7 +817,7 @@ class AgentRunner:
                 row["model"] = FABLE_REPLACEMENT[FABLE]
                 record_session(self.context, row)
                 continue
-            if asked_to_resume and attempt == 1 and _never_ran(facts):
+            if asked_to_resume and attempt == 1 and _never_ran(facts, session_id):
                 raise SessionNotResumedError(step.stage, OTHER_CAUSE, (str(stream),))
             self._check_session(step, facts, stream)
             try:

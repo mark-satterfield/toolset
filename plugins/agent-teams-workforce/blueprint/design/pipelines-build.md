@@ -41,7 +41,12 @@ directory. A Task cannot commit on the default branch or detached HEAD.
 `build_sessions.py` plans actual reasoning agents as journal children. Their shared schemas,
 facts file and current journal are passed by path. The journal runner owns session IDs,
 resumption, output validation and acceptance. A missing dynamically selected specialist is an
-item failure; a missing fixed contract is a pipeline defect.
+item failure; a missing fixed contract is a pipeline defect. New specialist selections name
+bare roster roles without a plugin prefix. Before roster lookup and journal planning, the
+shared reasoning boundary canonicalizes saved names with the journal's existing name helper.
+The journal, registry, definition lookup and session launcher use the bare name. User and
+project sources load so Claude Code applies its definition precedence. This applies to documentation writers, test writers and implementers, including
+names retained in accepted artifacts.
 
 A same-agent `Finish` continues the original agent step's semantic contract: its description,
 parameters, input artifacts and saved evidence. The continuation retains its own journal ID,

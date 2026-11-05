@@ -1,8 +1,7 @@
 """The launcher: a session run as a predefined agent, its settings, and fact-only briefs.
 
-A session is launched as the predefined agent under the plugin's name,
-``agent-teams-workforce:<name>``: it loads only project settings, so the user-level agent copies
-are not registered, and Claude Code registers a plugin agent only under that prefix. Claude Code
+A session is launched by the predefined agent's bare name, loading user and project sources so
+Claude Code resolves the user-level copy before the plugin definition. Claude Code
 loads the agent's definition, preloads the skills its front matter lists, and applies its tools
 and effort; it ignores the ``mcpServers`` of a plugin agent, so the launcher passes the session's
 MCP configuration, and no other MCP server loads. A session that cannot start another agent gets
@@ -369,9 +368,9 @@ def global_config_file(config: Path) -> Path:
 def session_servers(plugin: Path, config: Path, agent: AgentDefinition) -> dict[str, JsonValue]:
     """Build the MCP configuration of one session from the user-scope server definitions.
 
-    A session loads only project settings, so the user-scope servers do not load by themselves.
-    The session gets its agent's own ``mcpServers``, or, when its agent can start agents, every
-    server the plugin's agents declare (:func:`declared_servers`). Each is taken from the global
+    Strict MCP configuration limits the session to its agent's own ``mcpServers``, or, when
+    its agent can start agents, every server the plugin's agents declare (:func:`declared_servers`).
+    Each is taken from the global
     configuration file; a name it does not define is left out, as an interactive session would
     leave it out.
 
@@ -519,7 +518,7 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
     """Write private session settings and construct Claude CLI arguments.
 
     Returns:
-        Explicit arguments selecting the agent by its name under the plugin prefix, the model,
+        Explicit arguments selecting the agent by its bare name, the model,
         the settings, the MCP servers (and no other), the session's plugin folder and the folder
         of each other plugin whose skills the session's agents name (:func:`foreign_plugins`).
 
@@ -539,11 +538,11 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
     write_json(directory / "mcp.json", session_servers(plugin, config, launched))
     command: list[str] = [
         "--agent",
-        f"{AGENT_PREFIX}{step.agent}",
+        step.agent,
         "--model",
         launch_model(launched, launch),
         "--setting-sources",
-        "project",
+        "user,project",
         "--settings",
         str(directory / "settings.json"),
         "--mcp-config",

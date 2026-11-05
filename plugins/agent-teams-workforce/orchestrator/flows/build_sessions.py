@@ -117,7 +117,7 @@ def reasoned(
 
     Args:
         run: The parent script step.
-        agent: A roster agent selected for this subject.
+        agent: A roster agent selected for this subject, bare or qualified by this plugin.
         output: Shared output schema and its journal artifact name.
         request: The bounded action, with instructions supplied by the agent's skills.
         followups: Script steps that consume the result, within this parent.
@@ -132,6 +132,7 @@ def reasoned(
     """
     plugin: Path = run.agents.plugin
     schema: Path = output.schema
+    agent = step_journal.agent_name(agent)
     if not (plugin / "agents" / f"{agent}.md").is_file():
         raise StepError(
             run.step.get("script", "build:selection"),

@@ -19,6 +19,11 @@ consistent, but, for some reason, Claude Code seems to want to streamline the pr
 just more complex that Claude Code wants it to be." and "Unfortunately, there is no
 quick-and-easy way to do this."
 
+The journal continues a step's recorded session. When the CLI explicitly reports that requested
+conversation missing before any turn, the runner accepts its previously finished, validated
+output or starts the same step once with a new session id. The exact failure classification and
+recovery are in `orchestrator/DESIGN.md`, section 6.3.
+
 ## Legend
 
 | Notation | Meaning |
