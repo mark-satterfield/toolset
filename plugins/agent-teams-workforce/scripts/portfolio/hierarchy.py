@@ -460,6 +460,7 @@ class Task:
     cds_bundles: list[str] = field(default_factory=list)
     cds_artifacts: list[dict[str, str]] = field(default_factory=list)
     matrix_elements: list[str] = field(default_factory=list)
+    build_prerequisites: JsonObject = field(default_factory=dict)
     events: list[str] = field(default_factory=list)
     """Each event the Task cites, as :func:`event_text` renders it."""
     infrastructure: bool = False
@@ -469,6 +470,7 @@ class Task:
     def __post_init__(self) -> None:
         """Validate every constructor field, including all collection entries."""
         check_type(self.matrix_elements, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.build_prerequisites, JsonObject, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.events, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.key, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.repo_path, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1228,6 +1230,7 @@ class _TaskDocument:
     surfaces: tuple[str, ...] | None
     reuses: str | None
     blocked_by_external: tuple[str, ...]
+    build_prerequisites: JsonObject
     kind: str
 
     def __post_init__(self) -> None:
@@ -1282,6 +1285,7 @@ def _task_document(value: JsonObject) -> _TaskDocument:
         surfaces=tuple(surfaces) if surfaces is not None else None,
         reuses=check_type(reuses, str).strip() or None if reuses is not None else None,
         blocked_by_external=_task_strings(value.get("blockedByExternal")),
+        build_prerequisites=check_type(value.get("buildPrerequisites") or {}, dict[str, JsonValue]),
         kind=check_type(value.get("type") or "", str).strip().casefold(),
     )
 
@@ -1317,6 +1321,7 @@ def _read_task(key: str, t: _TaskDocument, sources: _TaskSources) -> Task:
         spec_sections=list(t.spec_sections),
         requirement_ids=list(t.requirement_ids),
         matrix_elements=stated_ids(sources.matrix, built) if sources.matrix is not None else built,
+        build_prerequisites=t.build_prerequisites,
         events=list(dict.fromkeys(sources.events[item] for item in t.requirement_ids if item in sources.events)),
         decision_ids=list(t.decision_ids) or list(sources.options.story_decision_ids),
         surfaces=surfaces,
@@ -1326,7 +1331,13 @@ def _read_task(key: str, t: _TaskDocument, sources: _TaskSources) -> Task:
         verified="true",
         reuses=t.reuses,
         blocked_by_external=list(
-            dict.fromkeys(list(t.blocked_by_external)),
+            dict.fromkeys([
+                *t.blocked_by_external,
+                *(
+                    check_type(row["task"], str)
+                    for row in check_type(t.build_prerequisites.get("producers", []), list[dict[str, JsonValue]])
+                ),
+            ]),
         ),
         cds_bundle_path=bundles[0] if len(bundles) == 1 else None,
         cds_build_specs=build_specs,

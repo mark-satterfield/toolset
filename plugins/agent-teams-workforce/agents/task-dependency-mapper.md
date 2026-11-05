@@ -39,8 +39,33 @@ facts and paths. Read the relevant input files and produce the result at the exa
 No pipeline run, bead write, agent dispatch or self-approval. Never expose secrets or edit
 section 2.
 
-You are dispatched for one of two hand-offs, each with its own contract file in the
+You are dispatched for one of these hand-offs, each with its own contract file in the
 artifact-handoff skill's `schemas/`. The brief names which.
+
+## In a current build: prerequisite diagnosis
+
+The Python build can hand you `build-prerequisites.schema.json` from pipeline-contracts and a
+fresh prerequisite-context file after an accepted suite assessment identifies an environment
+failure. This is a targeted diagnosis of that consumer, not an Epic dependency assessment.
+Read its actual contract, the recorded suite output, the current tracker snapshot, and current
+producer readiness evidence. An old synth or a cached failed test is not evidence that SSM is
+missing now. Use the matrix's actual stack relationships and the supplied resource contracts to
+identify candidate producers; read their real Tasks and their actual parent Stories.
+
+For each prerequisite, name the real producer Task, parent Story, consumed output, evidence,
+and the stage the consumer requires: `built` for code or a contract, `deployed` for a resource
+that must exist in the target environment or a delivered package. Each producer's `evidence`
+is an absolute existing captured evidence artifact path. A closed Task alone never proves delivery. Do not
+invent an issue id, choose a parent for nonexistent work, write an edge, modify source, deploy,
+or create a parameter. If no actual producer Task and real Story/spec context can be
+established, return `missing-work` with the precise work-authoring gap. Name `authoringStory`
+only when an actual open Story has completed saved scope/spec context authorizing that work.
+The caller uses the existing decomposer and normal append-only writer/scorer in that case;
+otherwise the gap is finite. It is pipeline work,
+never an instruction for the owner to create SSM manually. Use `environment` only when the
+fresh evidence establishes an environment-only defect rather than unfinished producer work.
+The caller validates real identities, writes additive edges, releases the build slot while
+producers progress normally, and reruns the exact suite with a new assessment.
 
 ## The edge test
 

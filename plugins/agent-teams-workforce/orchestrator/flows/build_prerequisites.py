@@ -1,0 +1,570 @@
+"""Diagnose real producer work and release a consumer while its prerequisites progress."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from graphlib import CycleError, TopologicalSorter
+from pathlib import Path
+
+from orchestrator.core import portfolio_bootstrap  # ruff: ignore[unused-import] - Install shared contract paths.
+
+# isort: split
+import beadgraph
+import beads_contract
+from bead_metadata import KEY_REPO_PATH
+from matrixstore import Matrix, as_entry_id
+from step_journal_contract import BeadId
+from story_deploy_args import VERIFIED_STATUSES
+from typeguard import check_type
+
+from orchestrator.core import step_journal
+from orchestrator.core.driver_contracts import dispatch_arguments
+from orchestrator.core.handback_contract import OTHER_CAUSE, WaitingProducer
+from orchestrator.core.io import JsonValue, write_json
+from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, value_artifact
+from orchestrator.core.models import StepError
+from orchestrator.flows import build_prerequisite_work
+from orchestrator.flows.build_sessions import OutputContract, reasoned
+from orchestrator.flows.build_state import (
+    CONTRACTS,
+    artifact_document,
+    artifact_file,
+    build_rounds,
+    new_step,
+    workspace_of,
+)
+from orchestrator.flows.build_workspace import git_operation
+
+
+def deployment_verified(path: Path) -> bool:
+    """Read complete, successful deployment evidence without querying or changing AWS.
+
+    Args:
+        path: The producer Story's canonical step journal.
+
+    Returns:
+        Whether the completed journal records closure and successfully verified stacks.
+
+    """
+    if not path.is_file():
+        return False
+    steps = list(step_journal.steps_in_order(step_journal.read_journal(path)))
+    if not steps or any(step["status"] != "done" for step in steps):
+        return False
+    facts: dict[str, JsonValue] = {
+        artifact["name"]: artifact["value"]
+        for step in steps
+        for artifact in step["artifacts"]
+        if artifact["kind"] == "value"
+    }
+    stacks: JsonValue = facts.get("stacks")
+    if facts.get("closed") is not True:
+        return False
+    verified: bool = (
+        isinstance(stacks, list)
+        and bool(stacks)
+        and all(isinstance(stack, dict) and stack.get("status") in VERIFIED_STATUSES for stack in stacks)
+    )
+    mechanism: JsonValue = facts.get("mechanism")
+    head: JsonValue = facts.get("publishedHead")
+    published: bool = isinstance(head, str) and bool(head.strip())
+    if isinstance(mechanism, dict) and mechanism.get("publishes") is True:
+        return published and (verified if mechanism.get("deploys") is True else True)
+    return verified
+
+
+def prerequisites_for_record(record: object) -> list[dict[str, JsonValue]]:
+    """Read structured stages through the canonical metadata projection.
+
+    Args:
+        record: A current real Task record.
+
+    Returns:
+        Valid producer rows, or none for older Tasks without stage metadata.
+
+    """
+    row: dict[str, JsonValue] = check_type(record, dict[str, JsonValue])
+    declared = beads_contract.read_contract(row).get("buildPrerequisites")
+    if not declared:
+        return []
+    producers: list[dict[str, JsonValue]] = check_type(declared.get("producers", []), list[dict[str, JsonValue]])
+    _producer_rows(producers)
+    return producers
+
+
+def _producer_rows(producers: list[dict[str, JsonValue]]) -> None:
+    """Validate producer stage fields and durable evidence references.
+
+    Raises:
+        ValueError: A producer lacks a valid absolute existing evidence artifact.
+
+    """
+    check_type(producers, list[WaitingProducer])
+    for producer in producers:
+        evidence: Path = Path(check_type(producer["evidence"], str))
+        if not evidence.is_absolute() or not evidence.is_file():
+            message: str = f"Producer {producer['task']} has no absolute existing evidence artifact: {evidence}"
+            raise ValueError(message)
+
+
+def validate_wait_graph(records: object, waits: object, scheduling: object = None) -> None:
+    """Reject Task/Story completion cycles from a current snapshot and pending waits.
+
+    Args:
+        records: Current normalized tracker records.
+        waits: Canonically validated pending waits, including the proposed wait.
+        scheduling: Optional actual host Task-to-blocking-Story scheduling edges.
+
+    Raises:
+        ValueError: Actual Task blockers and required Story deployment stages form a cycle.
+
+    """
+    rows: list[dict[str, JsonValue]] = check_type(records, list[dict[str, JsonValue]])
+    pending_waits: list[dict[str, JsonValue]] = check_type(waits, list[dict[str, JsonValue]])
+    beads: dict[str, beadgraph.Bead] = {str(row["id"]): beadgraph.bead_of(row) for row in rows}
+    graph: beadgraph.Graph = beadgraph.Graph(beads, "prerequisite-snapshot", rows)
+    edges: dict[str, set[str]] = {}
+    for task in graph.of_kind("task"):
+        if task.closed:
+            continue
+        edges[task.id] = {blocker for blocker in task.blockers if blocker in beads and not beads[blocker].closed}
+        if task.parent is not None:
+            edges.setdefault(task.parent, set()).add(task.id)
+    for wait in pending_waits:
+        _add_wait_edges(graph, edges, wait)
+    for task_id, story_id in check_type(scheduling or {}, dict[str, str]).items():
+        if (
+            task_id not in beads
+            or story_id not in beads
+            or beads[task_id].kind != "task"
+            or beads[story_id].kind != "story"
+        ):
+            message: str = f"Invalid actual scheduling relationship: {task_id} -> {story_id}"
+            raise ValueError(message)
+        edges.setdefault(task_id, set()).add(story_id)
+    try:
+        TopologicalSorter(edges).prepare()
+    except CycleError as error:
+        message = f"Unschedulable prerequisite Task/Story completion cycle: {error.args[1]}"
+        raise ValueError(message) from error
+
+
+def _add_wait_edges(graph: beadgraph.Graph, edges: dict[str, set[str]], wait: dict[str, JsonValue]) -> None:
+    """Validate one pending real consumer before adding its delivery-stage edges.
+
+    Raises:
+        StepError: A closed producer cannot complete missing historical delivery evidence.
+
+    """
+    consumer: str = check_type(wait["task"], str)
+    if consumer in graph.beads and graph.beads[consumer].closed:
+        return
+    producers: list[dict[str, JsonValue]] = check_type(wait["producers"], list[dict[str, JsonValue]])
+    _producer_rows(producers)
+    _validate_producers(graph, consumer, producers)
+    for producer in producers:
+        story: beadgraph.Bead = graph.beads[check_type(producer["story"], str)]
+        if producer["requiredStage"] == "deployed" and story.closed:
+            stage: str = "build:prerequisites-diagnosed"
+            message: str = (
+                f"Closed producer Story {story.id} has no verified delivery evidence; "
+                "history cannot be redeployed as pending work"
+            )
+            raise StepError(stage, OTHER_CAUSE, (message,))
+        _same_repository_wait(graph, graph.beads[consumer], story, producer)
+    edges.setdefault(consumer, set()).update(
+        check_type(producer["story"] if producer["requiredStage"] == "deployed" else producer["task"], str)
+        for producer in producers
+    )
+
+
+def _active_waits(graph: beadgraph.Graph, directory: Path) -> list[JsonValue]:
+    """Read pending journal waits, excluding completed producer stages and historical waits.
+
+    Returns:
+        The currently unresolved structured waits from real open consumer Tasks.
+
+    """
+    waits: list[JsonValue] = []
+    for task in graph.of_kind("task"):
+        path: Path = _journal(directory, task.id)
+        if task.closed or not path.is_file():
+            continue
+        journal = step_journal.read_journal(path)
+        next_step = step_journal.next_step(journal)
+        if next_step is None or next_step.get("script") != "build:prerequisites-ready":
+            continue
+        saved: list[JsonValue] = [
+            artifact["value"]
+            for step in step_journal.steps_in_order(journal)
+            if step["status"] == "done"
+            for artifact in step["artifacts"]
+            if artifact["kind"] == "value" and artifact["name"] == "prerequisiteWait"
+        ]
+        if saved:
+            wait: dict[str, JsonValue] = check_type(saved[-1], dict[str, JsonValue])
+            waits.append(_unresolved_wait(graph, directory, wait))
+    return [wait for wait in waits if isinstance(wait, dict) and wait["producers"]]
+
+
+def _unresolved_wait(graph: beadgraph.Graph, directory: Path, wait: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    """Retain only producer stages that current facts have not established.
+
+    Returns:
+        A copy of the accepted wait with currently unresolved producer rows.
+
+    """
+    producers: list[dict[str, JsonValue]] = check_type(wait["producers"], list[dict[str, JsonValue]])
+    _validate_producers(graph, check_type(wait["task"], str), producers)
+    return {
+        **wait,
+        "producers": [
+            producer
+            for producer in producers
+            if (
+                not graph.beads[check_type(producer["task"], str)].closed
+                or (
+                    producer["requiredStage"] == "deployed"
+                    and not deployment_verified(_journal(directory, check_type(producer["story"], str)))
+                )
+            )
+        ],
+    }
+
+
+def producer_candidates(
+    graph: beadgraph.Graph,
+    matrix: Matrix,
+    stacks: set[str],
+    journals: Path,
+    exclude: str,
+) -> list[JsonValue]:
+    """Keep real Tasks, including closed Tasks whose producer Story has not deployed.
+
+    Args:
+        graph: A current tracker snapshot.
+        matrix: Current matrix relationships.
+        stacks: The supplied own and upstream stack ids.
+        journals: Canonical journal directory.
+        exclude: The consumer Task to leave out, or an empty string.
+
+    Returns:
+        Matching Tasks with their actual parent Story and recorded deployment state.
+
+    """
+    candidates: list[JsonValue] = []
+    for record in graph.records:
+        bead: beadgraph.Bead = beadgraph.bead_of(record)
+        if bead.kind != "task" or bead.id == exclude:
+            continue
+        elements: list[str] = list(beads_contract.read_contract(record).get("matrix_elements", []))
+        if not any(_in_stacks(matrix, element, stacks) for element in elements):
+            continue
+        story: beadgraph.Bead | None = next((held for held in graph.ancestors(bead.id) if held.kind == "story"), None)
+        candidates.append({
+            "task": bead.id,
+            "title": bead.title,
+            "status": bead.status,
+            "elements": list(elements),
+            "story": None if story is None else story.id,
+            "storyStatus": None if story is None else story.status,
+            "deploymentVerified": story is not None and deployment_verified(_journal(journals, story.id)),
+        })
+    return candidates
+
+
+def _in_stacks(matrix: Matrix, element: str, stacks: set[str]) -> bool:
+    """Tell whether a stated entry is in one of the supplied stacks.
+
+    Returns:
+        Whether this entry or its containing stack was supplied.
+
+    """
+    entry = matrix.find(as_entry_id(element))
+    return entry is not None and (element in stacks or matrix.home(entry.id, side=None) in stacks)
+
+
+def _journal(directory: Path, bead: str) -> Path:
+    """Use the canonical journal naming contract for a producer.
+
+    Returns:
+        The producer's canonical journal path.
+
+    """
+    return step_journal.journal_path(directory, BeadId(bead))
+
+
+def _control(run: StepRun) -> Path:
+    """Read the dispatch's actual central tracker repository.
+
+    Returns:
+        The configured control repository path.
+
+    """
+    return Path(check_type(run.context.args[dispatch_arguments().KEY_BEADS_REPO_PATH], str))
+
+
+def diagnose(run: StepRun, again: str) -> Completion:
+    """Append one evidence-based diagnosis for a distinct observed failure and tree.
+
+    Args:
+        run: Current environment judgment consumer.
+        again: The suite-review consumer to resume after fresh verification.
+
+    Returns:
+        A genuine mapper session with fresh tracker and repository facts.
+
+    Raises:
+        StepError: This failure was already diagnosed or the correction allowance is spent.
+
+    """
+    tree: dict[str, JsonValue] = git_operation(
+        run.tools,
+        run.step["script"],
+        ["hash-files", "--tree", str(workspace_of(run).tree)],
+    )
+    review: dict[str, JsonValue] = artifact_document(run, "suiteReview")
+    graph: beadgraph.Graph = run.tools.portfolio(
+        run.step["script"],
+        beadgraph.load,
+        _control(run),
+        with_description=True,
+    )
+    state: list[JsonValue] = [
+        {"id": bead.id, "status": bead.status, "parent": bead.parent, "blockers": list(bead.blockers)}
+        for bead in graph.of_kind("task", "story")
+    ]
+    fingerprint: str = hashlib.sha256(
+        json.dumps([review, tree["treeDigest"], state], sort_keys=True).encode(),
+    ).hexdigest()
+    accepted = [
+        artifact["value"]
+        for step in step_journal.steps_in_order(run.journal())
+        if step["status"] == "done"
+        for artifact in step["artifacts"]
+        if artifact["kind"] == "value" and artifact["name"] == "prerequisiteFingerprint"
+    ]
+    if fingerprint in accepted or len(accepted) >= build_rounds():
+        raise StepError(run.step["script"], OTHER_CAUSE, ("Prerequisite recovery exhausted its evidence-based bound",))
+    path: Path = run.context.work / "build" / str(run.step["id"]) / "prerequisite-context.json"
+    write_json(path, {"consumer": str(run.bead), "records": graph.records, "tree": tree, "review": review})
+    planned: Completion = reasoned(
+        run,
+        "task-dependency-mapper",
+        OutputContract(CONTRACTS / "build-prerequisites.schema.json", "prerequisiteDiagnosis"),
+        f"Diagnose this current Task's failure read-only from fresh context {path}. Verify actual producer Task ids, "
+        "their parent Stories, the consumed outputs and whether build or recorded deployment is required. "
+        "Check current readiness rather than inferring missing SSM from an old synth or cached test. "
+        "Never create parameters, invent issues, change edges or modify any source. "
+        "Each producer evidence value must be an absolute existing captured evidence artifact path. "
+        "Use missing-work when no actual producer Task can be established; name authoringStory only if an actual open "
+        "Story with completed saved scope/spec authorizes the missing work; distinguish an environment-only defect.",
+        followups=(
+            new_step(
+                "build:prerequisites-diagnosed",
+                "Apply the verified producer prerequisites",
+                {
+                    "again": again,
+                    "fingerprint": fingerprint,
+                },
+            ),
+        ),
+    )
+    return Completion(
+        artifacts=planned.artifacts,
+        add=planned.add,
+    )
+
+
+def diagnosed(run: StepRun) -> Completion:
+    """Add only validated real prerequisite edges for the active consumer.
+
+    Returns:
+        A slot-releasing readiness gate, or a scoped environment observation.
+
+    """
+    diagnosis: dict[str, JsonValue] = artifact_document(run, "prerequisiteDiagnosis")
+    again: str = check_type(run.params()["again"], str)
+    if diagnosis["route"] == "environment":
+        return Completion(
+            artifacts=(value_artifact("prerequisiteFingerprint", check_type(run.params()["fingerprint"], str)),),
+            add=(
+                StepGroup((
+                    new_step("build:environment-observe", "Observe the current environment", {"again": again}),
+                )),
+            ),
+        )
+    if diagnosis["route"] == "missing-work":
+        return build_prerequisite_work.prepare(run, diagnosis)
+    graph: beadgraph.Graph = run.tools.portfolio(run.step["script"], beadgraph.load, _control(run))
+    producers: list[dict[str, JsonValue]] = check_type(diagnosis["producers"], list[dict[str, JsonValue]])
+    _validate_producers(graph, str(run.bead), producers)
+    writer: beadgraph.Writer = beadgraph.Writer(_control(run))
+    standing: tuple[str, ...] = graph.beads[str(run.bead)].blockers
+    blockers: list[str] = sorted({
+        check_type(producer["task"], str) for producer in producers if producer["task"] not in standing
+    })
+    wait: dict[str, JsonValue] = {
+        "task": str(run.bead),
+        "evidencePath": str(artifact_file(run, "prerequisiteDiagnosis")),
+        "fingerprint": check_type(run.params()["fingerprint"], str),
+        "producers": list(producers),
+    }
+    unresolved: dict[str, JsonValue] = _unresolved_wait(graph, run.journal_path.parent, wait)
+    waits: list[JsonValue] = _active_waits(graph, run.journal_path.parent)
+    if unresolved["producers"]:
+        waits.append(unresolved)
+    validate_wait_graph(graph.records, waits)
+    run.tools.portfolio(run.step["script"], writer.write_blocks, {str(run.bead): blockers})
+    return Completion(
+        artifacts=(
+            value_artifact("prerequisiteWait", wait),
+            value_artifact("prerequisiteFingerprint", wait["fingerprint"]),
+        ),
+        add=(
+            StepGroup((new_step("build:prerequisites-ready", "Wait for the actual producer work", {"again": again}),)),
+        ),
+    )
+
+
+def _validate_producers(graph: beadgraph.Graph, consumer: str, producers: list[dict[str, JsonValue]]) -> None:
+    """Refuse invented, self-referential or wrongly parented prerequisite Tasks.
+
+    Raises:
+        StepError: An identity, parent or requested stage contradicts the actual graph.
+
+    """
+    stage: str = "build:prerequisites-diagnosed"
+    _producer_rows(producers)
+    held: beadgraph.Bead | None = graph.beads.get(consumer)
+    if held is None or held.kind != "task" or held.closed or not producers:
+        raise StepError(stage, OTHER_CAUSE, ("No active consumer and real producers",))
+    for producer in producers:
+        task: beadgraph.Bead | None = graph.beads.get(check_type(producer["task"], str))
+        story: beadgraph.Bead | None = graph.beads.get(check_type(producer["story"], str))
+        identities: bool = task is not None and task.kind == "task" and task.id != consumer
+        parent: bool = story is not None and story.kind == "story" and task is not None and task.parent == story.id
+        if not identities or not parent:
+            raise StepError(
+                stage,
+                OTHER_CAUSE,
+                ("Producer Task/Story evidence disagrees with the tracker",),
+            )
+        if producer["requiredStage"] == "deployed" and story is not None and held.parent == story.id:
+            raise StepError(
+                stage,
+                OTHER_CAUSE,
+                ("A consumer cannot wait for deployment of its own unfinished Story",),
+            )
+
+
+def _same_repository_wait(
+    graph: beadgraph.Graph,
+    consumer: beadgraph.Bead,
+    story: beadgraph.Bead,
+    producer: dict[str, JsonValue],
+) -> None:
+    """Refuse an unresolved producer wait the current repository serialization cannot schedule.
+
+    Raises:
+        StepError: The consumer and an unfinished producer are in the same repository.
+
+    """
+    own: beadgraph.Bead | None = graph.beads.get(consumer.parent or "")
+    left: str = "" if own is None else own.metadata.get(KEY_REPO_PATH, "")
+    right: str = story.metadata.get(KEY_REPO_PATH, "")
+    if not left or not right or not Path(left).is_absolute() or not Path(right).is_absolute():
+        stage: str = "build:prerequisites-diagnosed"
+        message: str = f"Consumer {consumer.id} or producer Story {story.id} lacks actual repository ownership"
+        raise StepError(stage, OTHER_CAUSE, (message,))
+    if left and right and Path(left).resolve() == Path(right).resolve():
+        task: beadgraph.Bead = graph.beads[check_type(producer["task"], str)]
+        if not task.closed or producer["requiredStage"] == "deployed":
+            stage = "build:prerequisites-diagnosed"
+            raise StepError(
+                stage,
+                OTHER_CAUSE,
+                (
+                    (
+                        f"Unschedulable same-repository prerequisite: {consumer.id} in {left} "
+                        f"waits for {task.id}/{story.id} in {right}"
+                    ),
+                ),
+            )
+
+
+def pending(wait: dict[str, JsonValue], directory: Path, control: Path) -> bool:
+    """Check prerequisite progression without starting a session or retaining a slot.
+
+    Args:
+        wait: Accepted structured prerequisite wait.
+        directory: Canonical journal directory.
+        control: Central tracker repository.
+
+    Returns:
+        Whether any real producer still lacks the stage the consumer requires.
+
+    """
+    graph: beadgraph.Graph = beadgraph.load(control)
+    producers: list[dict[str, JsonValue]] = check_type(wait["producers"], list[dict[str, JsonValue]])
+    _validate_producers(graph, check_type(wait["task"], str), producers)
+    return any(
+        not graph.beads[check_type(producer["task"], str)].closed
+        or (
+            producer["requiredStage"] == "deployed"
+            and not deployment_verified(_journal(directory, check_type(producer["story"], str)))
+        )
+        for producer in producers
+    )
+
+
+def observe(run: StepRun, again: str) -> Completion:
+    """Assign a fresh, read-only readiness observation before resuming the original suite.
+
+    Returns:
+        A bounded observation session and its result consumer.
+
+    """
+    return reasoned(
+        run,
+        "test-environment-provisioner",
+        OutputContract(CONTRACTS / "build-readiness.schema.json", "prerequisiteReadiness"),
+        "Observe the current readiness of the explicitly named consumed outputs and suite environment. "
+        "Read-only prerequisite-readiness mode: record fresh resource states and commands in evidence; "
+        "do not deploy, provision, reset, create SSM parameters, modify files or execute the suite. "
+        "A closed Task or old synth is not readiness evidence.",
+        followups=(
+            new_step(
+                "build:prerequisites-observed",
+                "Resume the suite from fresh readiness evidence",
+                {"again": again},
+            ),
+        ),
+    )
+
+
+def observed(run: StepRun) -> Completion:
+    """Resume factual verification only after independently recorded current readiness.
+
+    Returns:
+        The original suite's fresh execution and assessment step.
+
+    Raises:
+        StepError: Fresh evidence shows the environment remains unready.
+
+    """
+    readiness: dict[str, JsonValue] = artifact_document(run, "prerequisiteReadiness")
+    if readiness["ready"] is not True:
+        raise StepError(run.step["script"], OTHER_CAUSE, (check_type(readiness["evidence"], str),))
+    return Completion(
+        add=(
+            StepGroup((
+                new_step(
+                    "build:prerequisites-suite",
+                    "Run and reassess the original suite",
+                    {"again": check_type(run.params()["again"], str)},
+                ),
+            )),
+        ),
+    )

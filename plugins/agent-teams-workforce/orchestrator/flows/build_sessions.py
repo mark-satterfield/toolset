@@ -35,14 +35,14 @@ FACTS_NAME: Final = "build facts"
 
 
 def latest(run: StepRun, name: str) -> JsonValue:
-    """Read an accepted earlier artifact using the shared journal, including legacy build steps.
+    """Read an accepted earlier artifact, including facts on a running structural ancestor.
 
     Args:
         run: The current step.
         name: Exact artifact name.
 
     Returns:
-        Its value or filesystem path; None when no earlier done step recorded it.
+        Its value or filesystem path; None when no accepted earlier step recorded it.
 
     Raises:
         TypeError: The run or name is invalid.
@@ -53,22 +53,44 @@ def latest(run: StepRun, name: str) -> JsonValue:
         raise TypeError(message)
     held: JsonValue = None
     step: Step
-    for step in step_journal.steps_in_order(run.journal()):
-        if step["id"] == run.step["id"]:
-            break
+    for step in accepted_steps(run):
         held = _accepted(step, name, held)
     return held
 
 
+def accepted_steps(run: StepRun) -> list[Step]:
+    """Expose recorded facts from completed steps and running structural ancestors only.
+
+    Args:
+        run: The current build step.
+
+    Returns:
+        Earlier steps whose own completion has already recorded accepted artifacts. A running
+        ancestor may still wait for its children; running siblings and future steps are excluded.
+
+    """
+    journal = run.journal()
+    ancestors: set[str] = set()
+    parent: Step | None = step_journal.parent_step(journal, run.step["id"])
+    while parent is not None:
+        ancestors.add(parent["id"])
+        parent = step_journal.parent_step(journal, parent["id"])
+    accepted: list[Step] = []
+    for step in step_journal.steps_in_order(journal):
+        if step["id"] == run.step["id"]:
+            break
+        if step["status"] == "done" or (step["status"] == "running" and step["id"] in ancestors):
+            accepted.append(step)
+    return accepted
+
+
 def _accepted(step: Step, name: str, previous: JsonValue) -> JsonValue:
-    """Take the last matching artifact of a completed step.
+    """Take the last matching artifact from an earlier accepted step.
 
     Returns:
         The matching value, otherwise the previous value.
 
     """
-    if step["status"] != "done":
-        return previous
     matches: list[Artifact] = [artifact for artifact in step["artifacts"] if artifact["name"] == name]
     if not matches:
         return previous

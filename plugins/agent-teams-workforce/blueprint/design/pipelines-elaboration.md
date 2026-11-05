@@ -668,3 +668,8 @@ Decisions in this diagram, each for one reason:
 - Build dependencies come from the matrix's links, so no scan is needed (plan item 1.13), and are
   recorded as beads dependency edges, because beads carries build order and the matrix holds no
   Task.
+- Task context includes dependency links from the entries being built and their containing
+  stacks. The decomposer discovers real external producer Tasks in those upstream stacks as
+  well as same-stack overlapping work, records justified prerequisites in `blockedByExternal`,
+  and leaves resource creation to the producer's normal build and deployment. A closed producer
+  Task alone does not establish that a required resource is deployed.

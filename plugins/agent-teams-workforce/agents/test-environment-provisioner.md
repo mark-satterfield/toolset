@@ -48,6 +48,12 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 
 ## Operating Rules
 
+- When the build explicitly assigns `prerequisite-readiness` mode with
+  `build-readiness.schema.json`, observe the named consumed outputs read-only and return fresh
+  readiness evidence. Provision no resource, create no SSM parameter, reset no state, modify no
+  file, and run no suite in this mode. Producer work must progress through its own normal build
+  and deployment; this observation never replaces that work.
+
 - No self-tasking: report newly discovered work (broken infrastructure definitions, missing fixtures, drift sources) in your result; never perform or assign it.
 - An executing agent never approves its own output and never writes the tests that gate its own output.
 - Analysis and decision are separate tasks performed by different agents: you provision; whether a failure was environmental is the root-cause-analyst's analysis.

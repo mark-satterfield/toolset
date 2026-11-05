@@ -16,7 +16,7 @@ type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValu
 type JsonObject = dict[str, JsonValue]
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "3c6ed2162982f4e0b2abccd6191cf16c725af1e3c1214aaeb94d92523e2b6d92"
+SCHEMA_SHA256: Final[str] = "a3bcec4a3cea78a2fb1ef918b23ef450cc3d8e11c279d379b31266a5c72060c0"
 
 #: The literal a producer writes for an undecided -or-unknown contract value; read as None.
 UNKNOWN: Final[str] = "unknown"
@@ -139,6 +139,10 @@ KEY_REQUIREMENT_IDS: Final[str] = "requirement_ids"
 #: JSON array of the matrix ids the Task states: its stack, the entries it builds and the shared capabilities it
 #: uses. The build passes them to `atw-matrix uses --ids` and `atw-matrix check-reuse --ids`.
 KEY_MATRIX_ELEMENTS: Final[str] = "matrix_elements"
+#: JSON object with producers: actual Task ids, parent Story ids, requiredStage built or deployed, consumed
+#: output and absolute evidence artifact paths. The build selector validates actual producer stages before
+#: dispatch. Missing on older Tasks means unknown, not ready evidence.
+KEY_BUILD_PREREQUISITES: Final[str] = "build_prerequisites"
 #: JSON array of architecture view paths (relative to the arc42 folder, #<heading> for part of a view) the item
 #: was designed against.
 KEY_DECISION_IDS: Final[str] = "decision_ids"
@@ -258,6 +262,7 @@ ARG_ACCEPTANCE_CRITERIA: Final[str] = "acceptanceCriteria"
 ARG_DEFINITION_OF_DONE: Final[str] = "definitionOfDone"
 ARG_REQUIREMENT_IDS: Final[str] = "requirementIds"
 ARG_MATRIX_ELEMENTS: Final[str] = "matrix_elements"
+ARG_BUILD_PREREQUISITES: Final[str] = "buildPrerequisites"
 ARG_DECISION_IDS: Final[str] = "decisionIds"
 ARG_SURFACES: Final[str] = "surfaces"
 ARG_TEST_STRATEGY: Final[str] = "testStrategy"
@@ -277,6 +282,7 @@ CONTRACT_SCHEMA: Final[tuple[tuple[str, str, ContractKind], ...]] = (
     (KEY_DEFINITION_OF_DONE, ARG_DEFINITION_OF_DONE, KIND_LIST),
     (KEY_REQUIREMENT_IDS, ARG_REQUIREMENT_IDS, KIND_LIST),
     (KEY_MATRIX_ELEMENTS, ARG_MATRIX_ELEMENTS, KIND_LIST),
+    (KEY_BUILD_PREREQUISITES, ARG_BUILD_PREREQUISITES, KIND_OBJECT_OR_UNKNOWN),
     (KEY_DECISION_IDS, ARG_DECISION_IDS, KIND_LIST),
     (KEY_SURFACES, ARG_SURFACES, KIND_LIST_OR_UNKNOWN),
     (KEY_TEST_STRATEGY, ARG_TEST_STRATEGY, KIND_OBJECT_OR_UNKNOWN),
@@ -287,6 +293,7 @@ CONTRACT_SCHEMA: Final[tuple[tuple[str, str, ContractKind], ...]] = (
 )
 #: Contract keys the readiness fingerprint covers only on a bead that carries them.
 CONTRACT_HASHED_WHEN_PRESENT: Final[frozenset[str]] = frozenset({
+    KEY_BUILD_PREREQUISITES,
     KEY_CDS_DESIGN_SOURCE,
     KEY_CDS_ARTIFACT,
     KEY_CDS_BUNDLE_PATH,
@@ -420,6 +427,7 @@ CONTRACT_KEYS: Final[tuple[str, ...]] = (
     KEY_DEFINITION_OF_DONE,
     KEY_REQUIREMENT_IDS,
     KEY_MATRIX_ELEMENTS,
+    KEY_BUILD_PREREQUISITES,
     KEY_DECISION_IDS,
     KEY_SURFACES,
     KEY_TEST_STRATEGY,
@@ -545,6 +553,7 @@ class BeadMetadata(TypedDict, total=False):
     definition_of_done: str
     requirement_ids: str
     matrix_elements: str
+    build_prerequisites: str
     decision_ids: str
     surfaces: str
     test_strategy: str
@@ -626,6 +635,7 @@ class BuildContract(TypedDict, total=False):
     definitionOfDone: list[str]
     requirementIds: list[str]
     matrix_elements: list[str]
+    buildPrerequisites: JsonObject | None
     decisionIds: list[str]
     surfaces: list[str] | None
     testStrategy: JsonObject | None

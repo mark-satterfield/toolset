@@ -43,6 +43,7 @@ handback_rules: handbackcontract.HandbackContract = handbackcontract.HandbackCon
     wire=handback_contract.wire,
     validate=handback_contract.validate,
     validate_event=handback_contract.validate_event,
+    validate_waiting_prerequisites=handback_contract.validate_waiting_prerequisites,
     diagnostic=handback_contract.diagnostic,
     failure=handback_contract.failure,
     interrupted_failure=handback_contract.interrupted_failure,

@@ -562,6 +562,12 @@
       },
       "description": "JSON array of the matrix ids the Task states: its stack, the entries it builds and the shared capabilities it uses. The build passes them to `atw-matrix uses --ids` and `atw-matrix check-reuse --ids`."
     },
+    "build_prerequisites": {
+      "$ref": "#/$defs/JsonObjectText",
+      "x-groups": ["CONTRACT_KEYS"],
+      "x-contract": {"argument": "buildPrerequisites", "kind": "object-or-unknown", "hashedWhenPresent": true},
+      "description": "JSON object with producers: actual Task ids, parent Story ids, requiredStage built or deployed, consumed output and absolute evidence artifact paths. The build selector validates actual producer stages before dispatch. Missing on older Tasks means unknown, not ready evidence."
+    },
     "decision_ids": {
       "$ref": "#/$defs/JsonList",
       "x-groups": [

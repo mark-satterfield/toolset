@@ -389,3 +389,4 @@ class TaskWriteOptions(TypedDict):
     key: str
     root: Path | None
     packages_dir: NotRequired[str | None]
+    append_only: NotRequired[bool]

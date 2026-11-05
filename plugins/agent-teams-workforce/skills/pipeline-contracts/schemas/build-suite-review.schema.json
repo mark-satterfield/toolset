@@ -5,8 +5,10 @@
   "additionalProperties": false,
   "required": ["route", "coverage", "evidence"],
   "properties": {
-    "route": {"enum": ["test-repair", "implementation", "environment"]},
+    "route": {"enum": ["pass", "test-repair", "implementation", "environment"]},
     "coverage": {"type": "string", "minLength": 1},
-    "evidence": {"type": "string", "minLength": 1}
-  }
+    "evidence": {"type": "string", "minLength": 1},
+    "suiteEvidence": {"type": "string", "minLength": 1}
+  },
+  "allOf": [{"if": {"properties": {"route": {"const": "pass"}}}, "then": {"required": ["suiteEvidence"]}}]
 }

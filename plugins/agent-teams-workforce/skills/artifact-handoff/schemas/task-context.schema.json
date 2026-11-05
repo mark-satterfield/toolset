@@ -11,7 +11,7 @@
     "repoPath": {"description": "The repository's absolute path.", "type": "string", "minLength": 1},
     "slug": {"description": "The repository's slug.", "type": "string", "minLength": 1},
     "stacks": {
-      "description": "Each stack the Story builds in, with the matrix ids of the entries it builds there. For each stack, `atw-matrix work --id <stack> --not-epic <epic>` prints the open Tasks of other Epics that touch it, the only source of an overlap with another Epic. The shared capabilities a Task must use are derived from the items it cites, not stated by the decomposer.",
+      "description": "Each stack the Story builds in, with the matrix ids of the entries it builds there. For these stacks and the upstream stacks in dependsOn, `atw-matrix work --id <stack> --not-epic <epic>` names real candidate Tasks of other Epics. Same-stack work can overlap; an upstream candidate is a prerequisite only when the Task consumes its output. The shared capabilities a Task must use are derived from the items it cites, not stated by the decomposer.",
       "type": "array",
       "items": {"$ref": "spec-context.schema.json#/$defs/StackEntries"}
     },
@@ -32,9 +32,22 @@
       }
     },
     "dependsOn": {
-      "description": "What the Tasks depend on outside what the Story builds: context, never work.",
+      "description": "What the Tasks depend on outside what the Story builds, including dependencies of the stacks holding that work: context, never work assigned to this Story. The decomposer uses named upstream stacks to discover real external producer Tasks.",
       "type": "array",
       "items": {"$ref": "spec-context.schema.json#/$defs/DependsOn"}
+    },
+    "producerCandidates": {
+      "description": "Current real Tasks in the supplied own and upstream stacks, including closed Tasks and their parent Story status and recorded deployment verification. Candidates are evidence, never automatic blockers. Closed alone does not establish deployed readiness.",
+      "type": "array",
+      "items": {"type": "object", "additionalProperties": false,
+        "required": ["task", "title", "status", "elements", "story", "storyStatus", "deploymentVerified"],
+        "properties": {
+          "task": {"type": "string"}, "title": {"type": "string"}, "status": {"type": "string"},
+          "elements": {"type": "array", "items": {"type": "string"}},
+          "story": {"type": ["string", "null"]}, "storyStatus": {"type": ["string", "null"]},
+          "deploymentVerified": {"type": "boolean"}
+        }
+      }
     }
   }
 }

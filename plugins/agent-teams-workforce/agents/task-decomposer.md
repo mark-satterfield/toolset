@@ -64,9 +64,21 @@ never work; an element with `side: repository` is a hint read from code, not an 
 fact: it may tell a Task where existing code sits, never what to build. An existing started or
 closed Task in `existingTasks` is reused, not rewritten (`bd show <id>` prints its description);
 another Epic's Task that plans the same work is recorded as an external blocker and never
-replaces this Epic's Task. For each stack in `stacks`, run `atw-matrix work --id <stack id>
---not-epic <epic id>` once: the open Tasks of other Epics that touch the stack, which are the
-only source of an overlap with another Epic, recorded in `blockedByExternal`. A Task cites each
+replaces this Epic's Task. For each stack in `stacks` and each upstream stack named in
+`dependsOn`, run `atw-matrix work --id <stack id> --not-epic <epic id>` once. Read the actual
+candidate Tasks: same-stack work can overlap this Story; upstream work is a prerequisite only
+when this Task consumes what that candidate provides. Record those real Task ids in
+`blockedByExternal`, with the consumed output and evidence in the Task's description.
+Also record `buildPrerequisites.producers`: real Task and parent Story ids, `requiredStage`
+(`built` or `deployed`), the consumed output, and an absolute existing evidence artifact path.
+`deployed` includes completed producer Story package publication. These structured prerequisites
+reach the scheduler before the consumer suite executes; prose alone is insufficient. A
+dependency is not new work for this Story. Never invent an issue id or infer that a producer is
+deployed because its Task is closed; a required deployed resource needs its producer Story's
+deployment evidence. The supplied `producerCandidates` includes closed Tasks and their parent
+Stories' recorded deployment state, so an unfinished producer deployment remains visible even
+when its Task no longer appears in the open-work query. A missing producer or missing relationship is an explicit finding for the
+calling pipeline, never permission to create the resource as test setup. A Task cites each
 thing it builds by its item id in `requirementIds`, exactly as the repository context names it.
 An item whose `state` is `built` carries the verified flag, built and tested as the matrix
 records it: it is not work, no Task has to cite it, and no Task is written for it alone.
@@ -74,6 +86,10 @@ Python derives the Task's matrix ids from what it cites (its stack, the entries 
 shared capabilities that work must use) and writes them into the Task's text and its
 `matrix_elements` key, so state no matrix id yourself. Nothing is written in the matrix for a
 Task.
+When the build supplies validated saved authoring context for a real open producer Story,
+retain every original Task and score exactly and append only missing work its scope/spec already
+authorizes. Create no bead and change no spec. The normal writer appends new durable keys,
+preserves started and closed Tasks, and scores only new Tasks before identities are reassessed.
 Write the result at the brief's output path. Its shape is artifact-handoff's `tasks.schema.json`:
 write exactly the shape that schema defines, and no other fields. Each field means what the `tasks` section of artifact-handoff's
 Epic contracts says it means: the local key series (T1...), the surface set and what an empty

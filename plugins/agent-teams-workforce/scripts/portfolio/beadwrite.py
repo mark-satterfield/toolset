@@ -95,6 +95,7 @@ from bead_metadata import (
     CDS_DESIGN_SOURCE_CDS,
     CDS_DESIGN_SOURCE_NONE,
     KEY_ACCEPTANCE_CRITERIA,
+    KEY_BUILD_PREREQUISITES,
     KEY_CDS_ARTIFACT,
     KEY_CDS_BUILD_SPECS,
     KEY_CDS_BUNDLE_PATH,
@@ -343,6 +344,7 @@ def task_metadata(task: Task) -> dict[str, str]:
     m[KEY_DEFINITION_OF_DONE] = _json(task.definition_of_done)
     m[KEY_REQUIREMENT_IDS] = _json(task.requirement_ids)
     m[KEY_MATRIX_ELEMENTS] = _json(task.matrix_elements)
+    m[KEY_BUILD_PREREQUISITES] = _json(task.build_prerequisites)
     m[KEY_SURFACES] = _json(task.surfaces) if task.surfaces is not None else UNKNOWN
     m[KEY_TEST_STRATEGY] = _json(task.test_strategy) if task.test_strategy else UNKNOWN
     if task.cds_design_source:
@@ -1264,7 +1266,11 @@ class _TaskWriter:
         self.items = story_builds(self.files.scope)
         self.matched, _ = _match_tasks(self.tasks, self.beads, self.slug, self.items)
         self.warnings: list[str] = take_warnings()
-        self.bead = self.matched.get(self.task.key)
+        self.bead = (
+            self.keyed.get(self.task.elab_key or "")
+            if self.options.get("append_only")
+            else self.matched.get(self.task.key)
+        )
         self.text = task_text(self.task, self.root)
         self.meta = task_metadata(self.task)
         if self.task.sizes:
@@ -1297,7 +1303,12 @@ class _TaskWriter:
         }
 
     def _persist(self) -> None:
-        """Create, retain, or refresh the prepared Task."""
+        """Create, retain, or refresh the prepared Task.
+
+        Raises:
+            HierarchyError: An append-only retry conflicts with an existing durable Task key.
+
+        """
         if self.bead is None:
             args: list[str] = _create_args(
                 "task",
@@ -1311,6 +1322,15 @@ class _TaskWriter:
             if self.task.infrastructure:
                 args += ["--labels", INFRASTRUCTURE_LABEL]
             self.task_id, self.action = (self.writer.create(args, self.task.elab_key or self.key), "created")
+        elif self.options.get("append_only"):
+            if (
+                self.bead.title != self.task.title
+                or self.bead.description != self.text
+                or any(self.bead.metadata.get(key) != value for key, value in self.meta.items())
+            ):
+                message: str = f"Append-only producer Task key conflicts with existing Task {self.bead.id}"
+                raise HierarchyError(message)
+            self.task_id, self.action = (self.bead.id, "unchanged")
         elif task_started(self.bead):
             self.task_id, self.action = (self.bead.id, "unchanged-started")
         else:

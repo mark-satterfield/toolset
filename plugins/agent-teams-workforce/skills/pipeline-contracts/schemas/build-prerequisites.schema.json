@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Current Task prerequisite diagnosis",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["route", "evidence", "producers"],
+  "properties": {
+    "route": {"enum": ["prerequisites", "environment", "missing-work"]},
+    "evidence": {"type": "string", "minLength": 1},
+    "authoringStory": {"type": ["string", "null"], "description": "Only an actual existing open Story whose completed saved scope/spec authorizes missing producer work; null when none can be established."},
+    "producers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["task", "story", "requiredStage", "output", "evidence"],
+        "properties": {
+          "task": {"type": "string", "minLength": 1},
+          "story": {"type": "string", "minLength": 1},
+          "requiredStage": {"enum": ["built", "deployed"]},
+          "output": {"type": "string", "minLength": 1},
+          "evidence": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  },
+  "allOf": [{"if": {"properties": {"route": {"const": "prerequisites"}}}, "then": {"properties": {"producers": {"minItems": 1}}}}]
+}

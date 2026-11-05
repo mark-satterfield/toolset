@@ -9,15 +9,16 @@ from pathlib import Path
 from driver_surface_types import REGRESSION_TIMEOUT_DEFAULT, REGRESSION_TIMEOUT_ENV
 
 # step_journal installs the canonical generated contract's import path.
-from step_journal_contract import BEAD_TYPE_TASK, BeadId, Step
+from step_journal_contract import BEAD_TYPE_TASK, BeadId, Journal, Step
 from typeguard import check_type
 
 from orchestrator.core import pipeline_steps, step_journal
 from orchestrator.core.agents import AgentRunner
+from orchestrator.core.driver_contracts import dispatch_arguments
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_registry import Registry
-from orchestrator.core.journal_run import JournalRunner
+from orchestrator.core.journal_run import JournalRunner, require_handled
 from orchestrator.core.journal_steps import (
     Completion,
     NewStep,
@@ -29,8 +30,9 @@ from orchestrator.core.journal_steps import (
 from orchestrator.core.models import RunContext, StepError
 from orchestrator.core.tool_locks import seconds
 from orchestrator.core.tools import Tools
+from orchestrator.flows import build_prerequisite_work, build_prerequisites
 from orchestrator.flows.build_reviews import attach_reviews
-from orchestrator.flows.build_sessions import OutputContract, attach, latest, reasoned
+from orchestrator.flows.build_sessions import OutputContract, accepted_steps, attach, latest, reasoned
 from orchestrator.flows.build_state import (
     CONTRACTS,
     PLUGIN,
@@ -321,11 +323,15 @@ def _suite_reviewed(run: StepRun) -> Completion:
     """
     review: dict[str, JsonValue] = _document(run, "suiteReview")
     route: str = check_type(review["route"], str)
+    if route == "pass":
+        return _passed_review(run, review)
     if route == "implementation":
         if latest(run, "implementationSelection") is not None or latest(run, "implementers") is not None:
             return Completion(add=(StepGroup((_new("build:plan-code", "Correct the validated product failure"),)),))
         return Completion()
-    if route == "environment" or _count(run, "build:suite-reviewed") >= build_rounds() - 1:
+    if route == "environment":
+        return build_prerequisites.diagnose(run, "build:suite-reviewed")
+    if _count(run, "build:suite-reviewed") >= build_rounds() - 1:
         msg = "build:suite-reviewed"
         raise StepError(msg, OTHER_CAUSE, (check_type(review["evidence"], str),))
     return Completion(add=(StepGroup((_new("build:plan-tests", "Repair the suite's test defects"),)),))
@@ -345,6 +351,22 @@ def _select_implementers(run: StepRun) -> Completion:
         "Review this Task's code and tests against architecture, requirements, quality and best practices",
         followups=(_new("build:code-reviewed", "Decide what code work the suite and code review require"),),
     )
+
+
+def _passed_review(run: StepRun, review: dict[str, JsonValue]) -> Completion:
+    """Accept a pass judgment only for the latest completed factual suite.
+
+    Returns:
+        An empty completion once exact current execution establishes the pass.
+
+    Raises:
+        StepError: The judgment does not name the current successfully executed suite.
+
+    """
+    suite: dict[str, JsonValue] = _latest_suite(run)
+    if suite.get("exitCode") != 0 or review.get("suiteEvidence") != suite.get("evidence"):
+        raise StepError(run.step["script"], OTHER_CAUSE, ("Pass judgment does not match current suite execution",))
+    return Completion()
 
 
 def _code_reviewed(run: StepRun) -> Completion:
@@ -378,22 +400,18 @@ def _latest_suite(run: StepRun) -> dict[str, JsonValue]:
     """
     suite: dict[str, JsonValue] = {}
     step: Step
-    for step in step_journal.steps_in_order(run.journal()):
-        if step["id"] == run.step["id"]:
-            break
+    for step in accepted_steps(run):
         suite = _suite_from_step(step, suite)
     return suite
 
 
 def _suite_from_step(step: Step, previous: dict[str, JsonValue]) -> dict[str, JsonValue]:
-    """Read a completed step's latest suite evidence.
+    """Read an accepted earlier step's latest suite evidence.
 
     Returns:
         New evidence when present, otherwise the previous result.
 
     """
-    if step["status"] != "done":
-        return previous
     matches = [
         artifact
         for artifact in step["artifacts"]
@@ -409,9 +427,6 @@ def _plan_code(run: StepRun) -> Completion:
     Returns:
         Code-work steps in the selected order.
 
-    Raises:
-        StepError: The operation cannot proceed with the supplied evidence.
-
     """
     selection: JsonValue = latest(run, "implementationSelection")
     agents: list[str] = (
@@ -420,14 +435,55 @@ def _plan_code(run: StepRun) -> Completion:
         else check_type(latest(run, "implementers"), list[str])
     )
     if not agents:
-        msg = "build:plan-code"
-        raise StepError(msg, OTHER_CAUSE, ("The unresolved work has no selected implementer",))
+        return _empty_selection(run, selection)
     additions: tuple[NewStep, ...] = tuple(
         _new("build:implement", f"Build and improve the Task with {agent}", {"implementer": agent}) for agent in agents
     )
     return Completion(
         artifacts=(value_artifact("implementers", list(agents)),),
         add=(StepGroup((*additions, _new("build:green-check", "Run the whole suite after implementation"))),),
+    )
+
+
+def _empty_selection(run: StepRun, selection: JsonValue) -> Completion:
+    """Reassess an empty selection once when the recorded repository state changed.
+
+    Returns:
+        Fresh verification work for an observable change.
+
+    Raises:
+        StepError: No change justifies reassessment, or its correction allowance is spent.
+
+    """
+    fingerprint: dict[str, JsonValue] = _test_fingerprint(run)
+    prior: JsonValue = latest(run, "testPrint")
+    changed: bool = isinstance(prior, dict) and prior.get("treeDigest") != fingerprint["treeDigest"]
+    recovered: bool = latest(run, "implementationRecovery") == fingerprint["treeDigest"]
+    if changed and not recovered and _count(run, "build:implementation-recheck") < build_rounds():
+        return Completion(add=(StepGroup((_new("build:implementation-recheck", "Reassess the changed repository"),)),))
+    evidence: tuple[str, ...] = ("The unresolved work has no selected implementer",)
+    if selection is not None:
+        evidence += (check_type(_document(run, "implementationSelection")["rationale"], str),)
+    stage: str = "build:plan-code"
+    raise StepError(stage, OTHER_CAUSE, evidence)
+
+
+def _implementation_recheck(run: StepRun) -> Completion:
+    """Append current suite evidence and independent review after a repository change.
+
+    Returns:
+        Accepted state facts and a fresh review followed by normal specialist selection.
+
+    """
+    fingerprint: dict[str, JsonValue] = _test_fingerprint(run)
+    suite: dict[str, JsonValue] = _suite(run, "implementation-recheck")
+    return Completion(
+        artifacts=(
+            value_artifact("implementationRecovery", fingerprint["treeDigest"]),
+            value_artifact("testPrint", fingerprint),
+            value_artifact("greenRun", suite),
+        ),
+        add=(StepGroup((_new("build:select-implementers", "Review the changed repository independently"),)),),
     )
 
 
@@ -470,9 +526,6 @@ def _green_check(run: StepRun) -> Completion:
     artifacts = (value_artifact("greenRun", suite), value_artifact("testPrint", fingerprint))
     if suite["exitCode"] == 0:
         return Completion(artifacts=artifacts)
-    if _count(run, "build:green-check") >= build_rounds() - 1:
-        msg = "build:green-check"
-        raise StepError(msg, OTHER_CAUSE, (str(suite["evidence"]),))
     judgment: Completion = reasoned(
         run,
         "acceptance-criteria-coverage-assessor",
@@ -490,16 +543,93 @@ def _green_reviewed(run: StepRun) -> Completion:
         The next bounded correction, chosen from the explicit suite judgment.
 
     Raises:
-        StepError: The environment cannot support meaningful verification.
+        StepError: Product or test corrections exhaust their configured allowance.
 
     """
     review: dict[str, JsonValue] = _document(run, "suiteReview")
     route: str = check_type(review["route"], str)
+    if route == "pass":
+        return _passed_review(run, review)
     if route == "environment":
-        msg = "build:green-reviewed"
-        raise StepError(msg, OTHER_CAUSE, (check_type(review["evidence"], str),))
+        return build_prerequisites.diagnose(run, "build:green-reviewed")
+    if _count(run, "build:green-check") >= build_rounds() - 1:
+        stage: str = "build:green-reviewed"
+        raise StepError(stage, OTHER_CAUSE, (check_type(review["evidence"], str),))
     key: str = "build:plan-tests" if route == "test-repair" else "build:plan-code"
     return Completion(add=(StepGroup((_new(key, "Correct the judged suite failure"),)),))
+
+
+def _prerequisites_ready(run: StepRun) -> Completion:
+    """Observe current readiness after producer work reaches its recorded required stage.
+
+    Returns:
+        A fresh read-only observation, followed by the original suite and its assessment.
+
+    """
+    return build_prerequisites.observe(run, check_type(run.params()["again"], str))
+
+
+def _prerequisites_rediagnose(run: StepRun) -> Completion:
+    """Reassess actual new producer identities within the persistent correction allowance.
+
+    Returns:
+        One diagnosis of the observably changed Task graph.
+
+    """
+    return build_prerequisites.diagnose(run, check_type(run.params()["again"], str))
+
+
+def _prerequisites_suite(run: StepRun) -> Completion:
+    """Rerun the exact recorded suite and append an independent assessment.
+
+    Returns:
+        Fresh suite facts and a new assessor session in the original red or green phase.
+
+    Raises:
+        StepError: Tests changed during a green-phase prerequisite wait without author review.
+
+    """
+    again: str = check_type(run.params()["again"], str)
+    fingerprint: dict[str, JsonValue] = _test_fingerprint(run)
+    previous: JsonValue = latest(run, "testPrint")
+    if again == "build:green-reviewed" and isinstance(previous, dict) and previous.get("files") != fingerprint["files"]:
+        stage: str = "green-modified-tests"
+        raise StepError(stage, OTHER_CAUSE, ("Tests changed during prerequisite work; their author must rule",))
+    suite: dict[str, JsonValue] = _suite(run, "prerequisites")
+    return Completion(
+        artifacts=(
+            value_artifact("greenRun" if again == "build:green-reviewed" else "redRun", suite),
+            value_artifact("testPrint", fingerprint),
+        ),
+        add=(
+            StepGroup((
+                _new(
+                    "build:prerequisites-assess",
+                    "Assess the fresh suite independently",
+                    {"again": again},
+                ),
+            )),
+        ),
+    )
+
+
+def _prerequisites_assess(run: StepRun) -> Completion:
+    """Assess a completed factual suite step before resuming the original phase.
+
+    Returns:
+        A fresh assessor session and the original red or green judgment consumer.
+
+    """
+    again: str = check_type(run.params()["again"], str)
+    return reasoned(
+        run,
+        "acceptance-criteria-coverage-assessor",
+        OutputContract(CONTRACTS / "build-suite-review.schema.json", "suiteReview"),
+        "Assess this freshly rerun whole suite and current readiness evidence; choose pass when sound tests pass, "
+        "naming the exact suite JSON evidence path as suiteEvidence; otherwise distinguish test defects, product work "
+        "and environment failures. Never reuse the old judgment.",
+        followups=(_new(again, "Act on the fresh suite assessment"),),
+    )
 
 
 def _snapshot(run: StepRun) -> Completion:
@@ -688,6 +818,16 @@ def _registry() -> Registry:
         "build:select-implementers": _select_implementers,
         "build:code-reviewed": _code_reviewed,
         "build:plan-code": _plan_code,
+        "build:implementation-recheck": _implementation_recheck,
+        "build:prerequisites-diagnosed": build_prerequisites.diagnosed,
+        "build:prerequisites-ready": _prerequisites_ready,
+        "build:environment-observe": _prerequisites_ready,
+        "build:prerequisite-author": build_prerequisite_work.author,
+        "build:prerequisite-authored": build_prerequisite_work.authored,
+        "build:prerequisites-rediagnose": _prerequisites_rediagnose,
+        "build:prerequisites-observed": build_prerequisites.observed,
+        "build:prerequisites-suite": _prerequisites_suite,
+        "build:prerequisites-assess": _prerequisites_assess,
         "build:implement": _implement,
         "build:green-check": _green_check,
         "build:green-reviewed": _green_reviewed,
@@ -730,7 +870,26 @@ def run(context: RunContext) -> dict[str, JsonValue]:
     context.args["buildDispatchStarted"] = step_journal.timestamp()
     pipeline_steps.open_journal(path.parent, bead, BEAD_TYPE_TASK)
     runner: JournalRunner = JournalRunner(path, agents, tools, _registry())
-    runner.run()
+    require_handled(step_journal.read_journal(path), runner.registry)
+    while True:
+        journal = step_journal.read_journal(path)
+        next_step: Step | None = step_journal.next_step(journal)
+        if next_step is not None and next_step.get("script") == "build:prerequisites-ready":
+            wait: dict[str, JsonValue] = _prerequisite_wait(journal)
+            control: Path = Path(check_type(context.args[dispatch_arguments().KEY_BEADS_REPO_PATH], str))
+            if tools.portfolio("build:prerequisites-ready", build_prerequisites.pending, wait, path.parent, control):
+                return {
+                    "ok": False,
+                    "stage": "waiting-for-prerequisites",
+                    "beadId": context.bead,
+                    "headline": f"{context.bead} waits for its verified producer work",
+                    "detailPath": str(path),
+                    "sessions": json_object({"sessions": context.sessions})["sessions"],
+                    "lifecycleDone": False,
+                    "waitingForPrerequisites": wait,
+                }
+        if not runner.run_next():
+            break
     journal = step_journal.read_journal(path)
     artifacts: dict[str, JsonValue] = {
         artifact["name"]: artifact["value"] if artifact["kind"] == "value" else artifact["path"]
@@ -743,8 +902,27 @@ def run(context: RunContext) -> dict[str, JsonValue]:
         "stage": "committed",
         "beadId": context.bead,
         "headline": f"{context.bead} built with its whole suite passing",
+        "detailPath": str(path),
+        "sessions": json_object({"sessions": context.sessions})["sessions"],
         "worktree": artifacts.get("worktree"),
         "branch": artifacts.get("branch"),
         "commit": artifacts.get("commit"),
         "suite": artifacts.get("finalRun"),
     }
+
+
+def _prerequisite_wait(journal: Journal) -> dict[str, JsonValue]:
+    """Read the latest accepted wait while leaving all previous journal evidence intact.
+
+    Returns:
+        The structured wait written by the validated additive edge step.
+
+    """
+    waits: list[JsonValue] = [
+        artifact["value"]
+        for step in step_journal.steps_in_order(journal)
+        if step["status"] == "done"
+        for artifact in step["artifacts"]
+        if artifact["name"] == "prerequisiteWait" and artifact["kind"] == "value"
+    ]
+    return json_object(waits[-1])

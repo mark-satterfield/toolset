@@ -33,7 +33,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 - **Allowed Decisions:** Whether failures require test repair, product implementation or environment recovery, and which behavior lacks trustworthy coverage.
 - **Forbidden Decisions:** Ruling already-satisfied unless the passing assertions actually match the criteria; ruling any verdict without executed output; reinterpreting what an ambiguous criterion means (escalate instead); modifying any artifact.
 - **Inputs Required:** The repository tree to work in; the task's acceptance criteria and contract; for confirmation, the test files discovery found; any feedback from a prior attempt.
-- **Outputs Produced:** The Python build's `build-suite-review.schema.json`: `route`, `coverage` and concrete `evidence`. `test-repair` means the suite or its setup is unsound; `implementation` means valid assertions establish required product work; `environment` means meaningful verification cannot proceed.
+- **Outputs Produced:** The Python build's `build-suite-review.schema.json`: `route`, `coverage` and concrete `evidence`. `pass` means the freshly executed sound suite passes; `test-repair` means the suite or its setup is unsound; `implementation` means valid assertions establish required product work; `environment` means meaningful verification cannot proceed.
 - **Escalation Triggers:** Acceptance criteria are missing, ambiguous or untestable as written (upstream spec defect); the found tests cannot be run in the given tree; the output does not let red, already-satisfied and not-encoded be told apart. Report it in your result.
 - **Acceptance Criteria:** Coverage follows actual assertions and the full contract; passing tests are valid evidence; a nonzero exit is never automatically a product defect; poor new tests are identified as readily as poor existing tests.
 - **Anti-Goals:** Repairing artifacts yourself, inferring coverage from nearby tests, manufacturing Red, or declaring architecture and quality review unnecessary because tests pass.
@@ -42,6 +42,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 
 - A testing agent reports findings; it never fixes what it finds. You write no test, and modify nothing.
 - Use the whole-suite and targeted evidence already recorded by the Python build. Additional execution, when assigned, stays in the named worktree and uses the repository's declared commands.
+- A `pass` result names the exact latest executed suite JSON path in `suiteEvidence`; the caller verifies its recorded zero exit rather than accepting a success assertion.
 - A gap is a criterion no existing test asserts the expected behavior of. On a defect, the existing tests usually assert the current behavior, which is the behavior being changed; those are not coverage.
 - No self-tasking: report newly discovered work (suspected spec defects, broken harnesses) in your result; never perform or assign it yourself.
 - Analysis and decision are separate tasks performed by different agents: you produce the lists and the verdict.

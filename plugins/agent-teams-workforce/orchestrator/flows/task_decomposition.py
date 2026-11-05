@@ -51,6 +51,7 @@ from orchestrator.core.journal_steps import (
 )
 from orchestrator.core.models import OutputValidator, StaleInputError, StepError
 from orchestrator.flows.architecture_files import ARTIFACT_TRD
+from orchestrator.flows.build_prerequisites import producer_candidates
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_ELEMENTS,
     ARTIFACT_SPAN,
@@ -178,6 +179,19 @@ def _write_context(run: StepRun, held: Repository, existing: list[JsonValue]) ->
     matrix: Matrix = run.tools.portfolio(TASK_CONTEXT, read_matrix, matrix_path(None, os.environ))
     stacks: dict[EntryId, list[EntryId]] = run.tools.portfolio(TASK_CONTEXT, item_stacks, matrix, built)
     depended: BuildContext = run.tools.portfolio(TASK_CONTEXT, build_context, matrix, built, items_by_story(every))
+    upstream: set[str] = {
+        check_type(dependency["stack"], str)
+        for dependency in depended["dependsOn"]
+        if isinstance(dependency.get("stack"), str)
+    }
+    graph: beadgraph.Graph = run.tools.portfolio(TASK_CONTEXT, beadgraph.load, control_repository())
+    candidates: list[JsonValue] = producer_candidates(
+        graph,
+        matrix,
+        set(stacks) | upstream,
+        run.journal_path.parent,
+        "",
+    )
     return write_contract(
         run.context.work / f"tasks-{held.slug}.context.json",
         {
@@ -187,6 +201,7 @@ def _write_context(run: StepRun, held: Repository, existing: list[JsonValue]) ->
             "stacks": [{"stack": stack, "entries": list(entries)} for stack, entries in stacks.items()],
             "existingTasks": existing,
             "dependsOn": [json_object(dependency) for dependency in depended["dependsOn"]],
+            "producerCandidates": candidates,
         },
         TASK_CONTEXT_SCHEMA,
     )

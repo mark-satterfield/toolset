@@ -85,7 +85,10 @@ flowchart TD
 Correction work is bounded within a dispatch. Implementation and suite-quality correction have
 three rounds, and regression scope/mapping review permits two correction rounds. A later
 dispatch does not inherit the earlier dispatch's consumed allowance. An unresolved correction
-records its evidence and stops; no quality gate is bypassed.
+records its evidence and stops; no quality gate is bypassed. An empty implementation selection
+for unresolved work stops with the accepted selector's rationale, preserving the named blocker
+and required authority in the failure evidence. Passing tests alone do not override an
+unapproved review or unresolved improvements.
 
 ## Tests and existing behavior
 
@@ -98,6 +101,50 @@ review, update and refactor existing tests as well as add new tests. Tests are c
 written tests can be poor. A failing suite therefore receives a quality judgment before its
 failure is treated as missing product behavior. The accepted route distinguishes test repair,
 product implementation and environment failure.
+
+An environment judgment appends one targeted `task-dependency-mapper` diagnosis using current
+tracker, repository and readiness evidence. The result names real producer Tasks, their actual
+parent Stories and whether their output must be built or deployed. The build validates those
+identities and adds only missing consumer blockers through the normal cycle-checked writer;
+normal elaboration protections for already started Tasks remain intact. A missing producer or
+missing real authoring context is a finite pipeline work-authoring gap, never an owner SSM task
+or permission to create shared resources as test fixtures.
+
+`build:prerequisites-ready` remains planned while producer stages are pending. Its dispatch
+returns the typed `waitingForPrerequisites` handback without a failure and releases its slot.
+Delivered readiness requires a complete producer Story journal with closure and nonempty
+successful stack verification evidence, or a publish-only mechanism with its actual published
+commit recorded; Story status alone is insufficient. After progression,
+a read-only `test-environment-provisioner` observation precedes the exact original suite and a
+fresh independent assessment in the original phase. A readiness miss stops with its actual
+evidence rather than redispatching the same observation. Distinct failure/tree fingerprints
+and the existing build correction allowance bound diagnosis; accepted history is retained.
+
+An empty implementer selection is reassessed only after its recorded test/tree fingerprint
+changes. One appended whole-suite run and independent code review then use the normal selector.
+The same tree digest is not reassessed twice, and the build correction allowance bounds changed
+trees. This refreshes a decision made before a repository repair without resetting completed
+journal steps.
+
+Structured `buildPrerequisites.producers` from decomposition is stored as the canonical
+`build_prerequisites` metadata object and gates selection before the first consumer suite.
+Older Tasks without that field are not retroactively assigned guessed dependencies; the bounded
+current-Task diagnosis repairs their actual prerequisites when discovered. Effective Task,
+producer Story completion and actual host repository-holder dependencies are checked together
+for cycles; unschedulable waits are explicit workflow gaps rather than indefinite holds.
+
+When missing producer work has an actual open Story and completed saved authoring context,
+the normal task decomposer appends only work that scope/spec already authorizes. Existing Task
+and score objects remain exact, normal append-only durable-key writes make uncertain retries
+idempotent, and only new Task ids receive normal Task scoring. No architecture or Epic assessment
+runs. The changed tracker facts receive a bounded new diagnosis before consumer edges are added.
+Absent that real authoring context, the pipeline records the precise finite work-authoring gap.
+
+Build artifact readers expose recorded facts from completed steps and running structural
+ancestors only. An ancestor's own deterministic completion already accepted those artifacts,
+even while its children keep it running. Running siblings, future steps and raw unvalidated
+session outputs remain excluded; invalidation clears the source artifacts through the normal
+journal operations.
 
 Passing required behavior is valid evidence. The build manufactures no Red, performs no
 sabotage and requires no test-the-test demonstration. Passing tests still leave architecture

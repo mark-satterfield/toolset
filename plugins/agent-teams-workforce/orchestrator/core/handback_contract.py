@@ -247,6 +247,25 @@ class ToolingRecommendation(TypedDict):
     reason: str
 
 
+class WaitingProducer(TypedDict):
+    """A real producer Task and the stage its consumer needs."""
+
+    task: str
+    story: str
+    requiredStage: Literal["built", "deployed"]
+    output: str
+    evidence: str
+
+
+class WaitingForPrerequisites(TypedDict):
+    """Accepted prerequisite work that releases a build slot without failing the item."""
+
+    task: str
+    evidencePath: str
+    fingerprint: str
+    producers: list[WaitingProducer]
+
+
 class HandbackDocument(TypedDict):
     """The version one orchestrator-to-driver result."""
 
@@ -264,6 +283,7 @@ class HandbackDocument(TypedDict):
     requiredHumanActions: NotRequired[list[str]]
     toolingRecommendations: NotRequired[list[ToolingRecommendation]]
     refusal: NotRequired[Refusal]
+    waitingForPrerequisites: NotRequired[WaitingForPrerequisites]
 
 
 class PhaseEvent(TypedDict):
@@ -661,6 +681,24 @@ def _check_document_rules(value: Mapping[str, object]) -> None:
             message = f"handback.artifacts.phases: key {key!r} is not {TRD_PHASE!r} or {SPEC_PHASE_PREFIX}<slug>"
             raise HandbackValidationError(message, value)
     failure: object = value.get("failure")
+    waiting: object = value.get("waitingForPrerequisites")
+    if waiting is not None:
+        checked: Mapping[str, object] = validate_waiting_prerequisites(waiting)
+        flags: tuple[bool, ...] = (
+            value.get("ok") is False,
+            value.get("stage") == "waiting-for-prerequisites",
+            value.get("lifecycleDone") is False,
+            failure is None,
+            not value.get("requiredHumanActions"),
+            value.get("refusal") is None,
+            checked.get("task") == value.get("beadId"),
+        )
+        if not all(flags):
+            message = "handback: prerequisite waiting is unfinished work, without a failure"
+            raise HandbackValidationError(message, value)
+    elif value.get("stage") == "waiting-for-prerequisites":
+        message = "handback: prerequisite wait stage requires its structured wait"
+        raise HandbackValidationError(message, value)
     if failure is not None:
         _is_failure(failure, "handback.failure", value)
     stage: object = value.get("stage")
@@ -695,6 +733,34 @@ def validate(payload: object) -> HandbackDocument:
     if not _is_document(payload):
         _reject("handback", "document", payload, payload)
     return payload
+
+
+def validate_waiting_prerequisites(value: object) -> Mapping[str, object]:
+    """Validate the shared prerequisite wait at plugin and driver boundaries.
+
+    Args:
+        value: The structured wait carried by a handback.
+
+    Returns:
+        The same validated mapping.
+
+    """
+    _conforms(value, WaitingForPrerequisites, "waitingForPrerequisites", value)
+    if not isinstance(value, dict):
+        _reject("waitingForPrerequisites", "object", value, value)
+    producers: object = value.get("producers")
+    if not isinstance(producers, list) or not producers:
+        _reject("waitingForPrerequisites.producers", "nonempty producer list", producers, value)
+    for key in ("task", "evidencePath", "fingerprint"):
+        text: object = value.get(key)
+        if not isinstance(text, str) or not text.strip():
+            _reject(f"waitingForPrerequisites.{key}", "nonempty string", text, value)
+    for producer in producers:
+        if isinstance(producer, dict) and any(
+            not producer[key].strip() for key in ("task", "story", "output", "evidence")
+        ):
+            _reject("waitingForPrerequisites.producers", "nonempty producer identifiers and evidence", producer, value)
+    return value
 
 
 def _is_json(value: object, path: str) -> TypeIs[JsonValue]:

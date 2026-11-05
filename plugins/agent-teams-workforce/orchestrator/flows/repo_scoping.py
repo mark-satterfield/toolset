@@ -936,20 +936,22 @@ def build_context(
 
     Returns:
         ``dependsOn``: each dependency relationship of :data:`BUILD_DEPENDENCY_KINDS`, on either
-        side, that starts at an entry this Story builds and ends at one it does not build, with
+        side, that starts at an entry this Story builds or a stack holding that work and ends
+        outside those entries and stacks, with
         the side that states it, the far end's stack and repository, and the other Story that
         builds the far end.
 
     """
     own: set[EntryId] = set(item_ids(built))
+    sources: set[EntryId] = own | set(item_stacks(matrix, built))
     built_by: dict[EntryId, str] = {
         entry_id: story for story, items in all_items.items() for entry_id in item_ids(items) if entry_id not in own
     }
     dependencies: list[DependsOn] = [
         _depends_on(matrix, relationship, built_by)
-        for entry_id in sorted(own)
+        for entry_id in sorted(sources)
         for relationship in matrix.outgoing(entry_id, BUILD_DEPENDENCY_KINDS)
-        if relationship.end not in own
+        if relationship.end not in sources
     ]
     return {"dependsOn": dependencies}
 

@@ -70,10 +70,16 @@
             ]
           },
           "blockedByExternal": {
+            "description": "Real Task bead ids in other Epics whose outputs this Task consumes or whose work it overlaps; the description names the consumed output and evidence. A closed Task is not proof that its output is deployed.",
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "buildPrerequisites": {
+            "description": "Structured real external producer stages required before this Task can execute its suite. Evidence is an absolute existing artifact path. Include closed producer Tasks whose Story still needs deployment; do not infer deployment from Task closure.",
+            "type": "object", "additionalProperties": false, "required": ["producers"],
+            "properties": {"producers": {"$ref": "../../pipeline-contracts/schemas/build-prerequisites.schema.json#/properties/producers"}}
           },
           "surfaces": {
             "type": [
