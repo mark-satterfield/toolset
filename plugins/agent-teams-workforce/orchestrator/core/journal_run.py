@@ -49,7 +49,6 @@ import sys
 import threading
 import time
 from collections.abc import Sequence
-from dataclasses import replace
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
@@ -401,16 +400,35 @@ def _previous_failure(step: Step, output: Path) -> list[tuple[str, Path]]:
     return [(PREVIOUS_FAILURE_LABEL, path)]
 
 
+def _agent_chain(journal: Journal, step: Step) -> list[Step]:
+    """Follow only explicit same-agent Finish continuations to their semantic origin.
+
+    Returns:
+        The execution step followed by its Finish ancestors and original agent step.
+
+    """
+    chain: list[Step] = [step]
+    parent: Step | None = step_journal.parent_step(journal, step["id"])
+    while parent is not None and is_finish_of(parent, chain[-1]):
+        chain.append(parent)
+        parent = step_journal.parent_step(journal, parent["id"])
+    return chain
+
+
 def _held_session(journal: Journal, step: Step, launch: AgentLaunch) -> str | None:
     """Find the agent session a step continues.
 
     Returns:
-        The session the step itself holds from an earlier, unfinished run; else the session of
-        the step the launch names; else the session of the step directly above it when the same
-        agent performs both (its "Finish"); else None.
+        Its own session; for Finish continuations, the nearest ancestor session; then the
+        launch's explicit resume target or the same-agent parent's session, otherwise None.
 
     """
     held: str | None = step.get("session")
+    if held is None:
+        held = next(
+            (ancestor["session"] for ancestor in _agent_chain(journal, step)[1:] if "session" in ancestor),
+            None,
+        )
     if held is None and launch.resume_from is not None:
         held = step_journal.step_session(journal, launch.resume_from)
     if held is None:
@@ -801,8 +819,8 @@ class JournalRunner:
     def _accept_finish(self, step_id: StepId, finish_id: StepId) -> None:
         """Accept the "Finish" an agent closed in its own session, and record it on the agent's step.
 
-        The launch is the one the runner builds for the "Finish" itself: its output is checked as
-        a session's output is, its accept is called with the "Finish" as the accepted step, and
+        The launch and acceptance retain the original agent step's semantic context. Its output
+        is checked as a session's output is, and
         what the accept returns is recorded on the agent's step, which is running: its artifacts,
         the steps it plans under the step, and the step's done mark unless it plans any.
 
@@ -812,8 +830,8 @@ class JournalRunner:
         journal: Journal = step_journal.read_journal(self.path)
         finish: Step = step_journal.find_step(journal, finish_id)
         inputs: StepInputs = _inputs(journal, finish)
-        run: StepRun = self._step_run(finish, inputs, tuple(finish["artifacts"]))
-        launch: AgentLaunch = check_type(self.registry.agent(finish)(run), AgentLaunch)
+        run: StepRun = self._agent_run(finish, inputs, tuple(finish["artifacts"]))
+        launch: AgentLaunch = check_type(self.registry.agent(run.step)(run), AgentLaunch)
         validate_output(
             AgentStep(
                 stage=stage_of(finish),
@@ -1079,6 +1097,31 @@ class JournalRunner:
             saved=StepInputs(step["id"], step["description"], stage_of(step), (saved,)),
         )
 
+    def _agent_run(self, step: Step, inputs: StepInputs, saved: tuple[Artifact, ...]) -> StepRun:
+        """Retain an agent's semantic contract while a Finish executes its continuation.
+
+        Returns:
+            The original agent identity, parameters and inputs, augmented by continuation
+            evidence. Ordinary agent steps retain their own context.
+
+        """
+        journal: Journal = step_journal.read_journal(self.path)
+        chain: list[Step] = _agent_chain(journal, step)
+        if len(chain) == 1:
+            return self._step_run(step, inputs, saved)
+        origin: Step = chain[-1]
+        inherited: StepInputs = _inputs(journal, origin)
+        merged: StepInputs = StepInputs(
+            origin["id"],
+            origin["description"],
+            stage_of(origin),
+            (*inherited.sources, *inputs.sources),
+        )
+        previous: tuple[Artifact, ...] = tuple(
+            artifact for ancestor in reversed(chain[1:]) for artifact in ancestor["artifacts"]
+        )
+        return self._step_run(origin, merged, (*previous, *saved))
+
     def _start(self, step_id: StepId, session: str | None = None, keep: tuple[Artifact, ...] = ()) -> Step:
         """Mark a step running in the journal, holding ``keep``, as one change.
 
@@ -1127,15 +1170,16 @@ class JournalRunner:
         "Finish" holds. A step the session marked done, or left other child steps under, is not
         completed here.
         """
-        builder: AgentBuilder = self.registry.agent(step)
         inputs: StepInputs = _inputs(journal, step)
         saved: tuple[Artifact, ...] = tuple(step["artifacts"])
-        launch: AgentLaunch = check_type(builder(self._step_run(step, inputs, saved)), AgentLaunch)
+        semantic: StepRun = self._agent_run(step, inputs, saved)
+        builder: AgentBuilder = self.registry.agent(semantic.step)
+        launch: AgentLaunch = check_type(builder(semantic), AgentLaunch)
         held: str | None = _held_session(journal, step, launch)
         if held is not None and not self.agents.resumable(held):
             held = None
         if held is None and _finished_output(step, launch):
-            reused: StepRun = self._step_run(self._start(step["id"], None, launch.keep), inputs, saved)
+            reused: StepRun = self._agent_run(self._start(step["id"], None, launch.keep), inputs, saved)
             self._complete(step["id"], launch.accept(reused, launch.output))
             return
         session: str = held or str(uuid4())
@@ -1144,7 +1188,7 @@ class JournalRunner:
             *launch.files,
             *_previous_failure(step, launch.output),
         ]
-        run: StepRun = self._step_run(self._start(step["id"], session, launch.keep), inputs, saved)
+        self._start(step["id"], session, launch.keep)
         labelled: list[tuple[str, Path]] = list(dict.fromkeys([*handed, (JOURNAL_LABEL, self.path)]))
         request: AgentStep = AgentStep(
             stage=stage_of(step),
@@ -1161,7 +1205,7 @@ class JournalRunner:
         output: Path = self._session(request, labelled, session, launch, resume=held is not None, before=step)
         after: Step = step_journal.find_step(step_journal.read_journal(self.path), step["id"])
         if after["status"] != STATUS_DONE and not after["steps"]:
-            self._complete(step["id"], launch.accept(replace(run, step=after), output))
+            self._complete(step["id"], launch.accept(self._agent_run(after, inputs, saved), output))
             return
         finish: Step | None = _done_finish(after)
         settled: bool = all(child["status"] == STATUS_DONE for child in after["steps"])

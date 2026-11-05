@@ -22,18 +22,18 @@
       ],
       "inner": {},
       "kinds": {
-        "build:baseline-resolved": {"description": "Run the resolved suite declaration", "purpose": "Record the factual baseline after configuration judgment", "runBy": "task-to-deploy", "reads": ["suiteDeclaration", "worktree"], "records": [], "adds": []},
-        "build:final-review": {"description": "Review the final code and tests", "purpose": "Independently assess the resulting changes before commit", "runBy": "task-to-deploy", "reads": [], "records": [], "adds": []},
-        "build:final-review-checked": {"description": "Require final code review approval", "purpose": "Correct findings and independently re-review", "runBy": "task-to-deploy", "reads": ["finalCodeReview"], "records": [], "adds": []},
-        "build:final-suite-checked": {"description": "Run the final suite after review", "purpose": "Verify resulting behavior before commit", "runBy": "task-to-deploy", "reads": ["finalCodeReview"], "records": [], "adds": []},
-        "build:plan-tests": {"description": "Plan the selected test specialists", "purpose": "Review and improve tests within the existing suite", "runBy": "task-to-deploy", "reads": ["testSelection"], "records": [], "adds": []},
+        "build:baseline-resolved": {"description": "Run the resolved suite declaration", "purpose": "Record the factual baseline after configuration judgment", "runBy": "task-to-deploy", "reads": ["suiteDeclaration", "worktree"], "records": [{"name": "suiteCommand", "kind": "value", "holds": "The whole-suite command string"}, {"name": "baseline", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"}, {"name": "testSelection", "kind": "file", "holds": "The accepted test specialist selection"}], "adds": [{"kinds": ["build:plan-tests"], "when": "after the test specialist selection is accepted"}]},
+        "build:final-review": {"description": "Review the final code and tests", "purpose": "Independently assess the resulting changes before commit", "runBy": "task-to-deploy", "reads": [], "records": [{"name": "finalCodeReview", "kind": "file", "holds": "The accepted finalCodeReview evidence"}], "adds": [{"kinds": ["build:final-review-checked"], "when": "after the corrected final diff is independently reviewed"}]},
+        "build:final-review-checked": {"description": "Require final code review approval", "purpose": "Correct findings and independently re-review", "runBy": "task-to-deploy", "reads": ["finalCodeReview"], "records": [], "adds": [{"kinds": ["build:select-implementers", "build:final-review"], "when": "findings require bounded correction and independent re-review; a clean review adds nothing"}]},
+        "build:final-suite-checked": {"description": "Run the final suite after review", "purpose": "Verify resulting behavior before commit", "runBy": "task-to-deploy", "reads": ["finalCodeReview"], "records": [{"name": "finalRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"}], "adds": []},
+        "build:plan-tests": {"description": "Plan the selected test specialists", "purpose": "Review and improve tests within the existing suite", "runBy": "task-to-deploy", "reads": ["testSelection"], "records": [{"name": "testSelection", "kind": "file", "holds": "The accepted test specialist selection"}], "adds": [{"kinds": ["build:plan-tests"], "when": "a missing selection first requires specialist selection"}, {"kinds": ["build:red-write", "build:red-check"], "when": "one writer per selected agent, followed by the suite check"}]},
         "build:tests-authored": {"description": "Record accepted test-author file versions", "purpose": "Distinguish legitimate suite updates from implementation changes to tests", "runBy": "task-to-deploy", "reads": ["testFiles"], "records": [{"name": "testPrint", "kind": "value", "holds": "Exact file hashes and worktree digest"}], "adds": []},
-        "build:suite-reviewed": {"description": "Route the suite quality judgment", "purpose": "Distinguish test repair, product implementation and environment failure", "runBy": "task-to-deploy", "reads": ["suiteReview"], "records": [], "adds": []},
-        "build:code-reviewed": {"description": "Apply the independent code review", "purpose": "Consider architecture, quality and best practices even when tests pass", "runBy": "task-to-deploy", "reads": ["codeReview"], "records": [], "adds": []},
-        "build:plan-code": {"description": "Plan the selected implementers", "purpose": "Develop missing behavior and warranted improvements", "runBy": "task-to-deploy", "reads": ["implementationSelection", "implementers"], "records": [], "adds": []},
-        "build:green-reviewed": {"description": "Route the post-implementation suite judgment", "purpose": "Correct the artifact responsible for the failure", "runBy": "task-to-deploy", "reads": ["suiteReview"], "records": [], "adds": []},
-        "build:audit-reviewed": {"description": "Resolve the independent audit findings", "purpose": "Correct blocking and warranted improvement findings in scope", "runBy": "task-to-deploy", "reads": [], "records": [], "adds": []},
-        "build:docs-specialist": {"description": "Update stale documentation", "purpose": "Keep the changed contracts documented by the selected specialist", "runBy": "task-to-deploy", "reads": [], "records": [], "adds": []},
+        "build:suite-reviewed": {"description": "Route the suite quality judgment", "purpose": "Distinguish test repair, product implementation and environment failure", "runBy": "task-to-deploy", "reads": ["suiteReview"], "records": [], "adds": [{"kinds": ["build:plan-tests"], "when": "the judgment identifies test repair"}, {"kinds": ["build:plan-code"], "when": "the judgment identifies product implementation and implementers have already been selected"}]},
+        "build:code-reviewed": {"description": "Apply the independent code review", "purpose": "Consider architecture, quality and best practices even when tests pass", "runBy": "task-to-deploy", "reads": ["codeReview"], "records": [{"name": "greenRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"}, {"name": "implementationSelection", "kind": "file", "holds": "The accepted implementationSelection evidence"}], "adds": [{"kinds": ["build:plan-code"], "when": "the suite fails or review findings require work, after specialist selection; an approved passing result records Green without code work"}]},
+        "build:plan-code": {"description": "Plan the selected implementers", "purpose": "Develop missing behavior and warranted improvements", "runBy": "task-to-deploy", "reads": ["implementationSelection", "implementers"], "records": [{"name": "implementers", "kind": "value", "holds": "The accepted implementers evidence"}], "adds": [{"kinds": ["build:implement", "build:green-check"], "when": "one step per selected implementer, followed by the whole-suite check"}]},
+        "build:green-reviewed": {"description": "Route the post-implementation suite judgment", "purpose": "Correct the artifact responsible for the failure", "runBy": "task-to-deploy", "reads": ["suiteReview"], "records": [], "adds": [{"kinds": ["build:plan-tests"], "when": "the judgment identifies test repair"}, {"kinds": ["build:plan-code"], "when": "the judgment identifies product implementation; environment failures stop"}]},
+        "build:audit-reviewed": {"description": "Resolve the independent audit findings", "purpose": "Correct blocking and warranted improvement findings in scope", "runBy": "task-to-deploy", "reads": [], "records": [], "adds": [{"kinds": ["build:select-implementers", "build:reuse-audit"], "when": "findings require correction and again names build:reuse-audit; a clean review adds nothing"}, {"kinds": ["build:select-implementers", "build:cds-audit"], "when": "findings require correction and again names build:cds-audit; a clean review adds nothing"}], "params": ["review", "again"]},
+        "build:docs-specialist": {"description": "Update stale documentation with {agent}", "purpose": "Keep the changed contracts documented by the selected specialist", "runBy": "task-to-deploy", "params": ["agent"], "reads": ["worktree", "documentationSelection"], "records": [{"name": "documentationWork", "kind": "file", "holds": "The accepted documentation work report under build-implementation.schema.json"}], "adds": []},
         "build:workspace": {
           "description": "Establish the Story's worktree and branch",
           "purpose": "Every step that reads or changes the Task's code works in one tree on the Story's branch",
@@ -45,7 +45,7 @@
             {"name": "defaultBranch", "kind": "value", "holds": "the repository's default branch, a string or null"}
           ],
           "adds": [
-            {"kinds": ["build:design-source"], "when": "the Task's surfaces include web-ui and its design source is bundle or cds"},
+            {"kinds": ["build:design-source"], "when": "the Task records cdsDesignSource as bundle or cds"},
             {"kinds": ["build:infra-intent"], "when": "the Task's type or a label is in the infrastructure vocabulary"}
           ]
         },
@@ -65,7 +65,12 @@
           "runBy": "task-to-deploy",
           "reads": ["worktree"],
           "records": [
-            {"name": "provisioning", "kind": "value", "holds": "{ provisioningIntent, affectedStacks }"}
+            {"name": "provisioning", "kind": "file", "holds": "The accepted report under build-infrastructure.schema.json"},
+            {"name": "resources", "kind": "value", "holds": "The accepted resources field of build-infrastructure.schema.json"},
+            {"name": "stacks", "kind": "value", "holds": "The accepted stacks field of build-infrastructure.schema.json"},
+            {"name": "crossStackRefs", "kind": "value", "holds": "The accepted crossStackRefs field of build-infrastructure.schema.json"},
+            {"name": "affectedStacks", "kind": "value", "holds": "The accepted affectedStacks field of build-infrastructure.schema.json"},
+            {"name": "rationale", "kind": "value", "holds": "The accepted rationale field of build-infrastructure.schema.json"}
           ],
           "adds": []
         },
@@ -88,10 +93,7 @@
           "records": [
             {"name": "regressionPlanReview", "kind": "file", "holds": "the regression-coverage-reviewer's review of the scope"}
           ],
-          "adds": [
-            {"kinds": ["build:regression-reassess", "build:regression-review"], "when": "the review names a blocking finding, so it does not approve the scope: the regression-impact-assessor is given the review, and the corrected scope is reviewed again with that review"}
-          ],
-          "limit": "It adds no correction after two corrections of the scope in this run; build:regression-validate then fails with regression-plan"
+          "adds": []
         },
         "build:regression-reassess": {
           "description": "Correct the regression scope from its review",
@@ -109,10 +111,11 @@
           "runBy": "task-to-deploy",
           "reads": ["worktree", "regressionPlan", "regressionPlanReview"],
           "records": [
-            {"name": "regressionScope", "kind": "value", "holds": "{ requiredKinds }: the test layers the scope requires"}
+            {"name": "regressionScope", "kind": "file", "holds": "The accepted regressionScope evidence"},
+            {"name": "regressionCorrection", "kind": "file", "holds": "Failed validation evidence when a bounded correction is scheduled"}
           ],
           "adds": [
-            {"kinds": ["build:regression-reassess", "build:regression-review", "build:regression-validate"], "when": "the validation fails because the scope's review, written by an earlier run of the workflow, did not approve it: the regression-impact-assessor corrects the scope from that review, the corrected scope is reviewed, and it is validated again; the step records nothing"}
+            {"kinds": ["build:regression-reassess", "build:regression-review", "build:regression-validate"], "when": "the check fails below the configured correction allowance; the failure evidence is recorded and the corrected assessment or mapping is independently reviewed and checked again"}
           ]
         },
         "build:baseline": {
@@ -121,24 +124,32 @@
           "runBy": "task-to-deploy",
           "reads": ["worktree", "regressionScope", "regressionPlan"],
           "records": [
-            {"name": "suiteCommand", "kind": "value", "holds": "the command that runs the whole suite, a string"},
-            {"name": "baseline", "kind": "value", "holds": "{ exitCode, summary, failing, tail, relayFile }: the suite run before any change"}
+            {"name": "suiteCommand", "kind": "value", "holds": "The whole-suite command string"},
+            {"name": "baseline", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"},
+            {"name": "testSelection", "kind": "file", "holds": "The accepted test specialist selection"},
+            {"name": "suiteDeclaration", "kind": "file", "holds": "The accepted command declaration when configuration judgment is needed"}
           ],
           "adds": [
-            {"kinds": ["build:red-write", "build:red-check"], "when": "always: one build:red-write per test agent the contract's surfaces call for, then the run that judges them"}
+            {"kinds": ["build:baseline-resolved"], "when": "the suite declaration requires configuration judgment"},
+            {"kinds": ["build:plan-tests"], "when": "after the test specialist selection is accepted"}
           ]
         },
         "build:red-write": {
           "description": "Review and improve suite tests with {testAgent}",
           "purpose": "Required behavior has trustworthy suite coverage, whether it is already implemented or needs code",
           "runBy": "task-to-deploy",
-          "params": ["testAgent", "testAgents", "feedback"],
+          "params": ["testAgent"],
           "reads": ["worktree", "suiteCommand", "regressionPlan", "testFiles", "design", "provisioning"],
           "records": [
-            {"name": "testFiles", "kind": "value", "holds": "the test files the agent created or changed, a list of paths"},
-            {"name": "coverage", "kind": "value", "holds": "The writer's behavioral coverage evidence in existing-suite context"}
+            {"name": "testWork", "kind": "file", "holds": "The accepted report under build-tests.schema.json"},
+            {"name": "testFiles", "kind": "value", "holds": "The accepted testFiles field of build-tests.schema.json"},
+            {"name": "coverage", "kind": "value", "holds": "The accepted coverage field of build-tests.schema.json"},
+            {"name": "evidence", "kind": "value", "holds": "The accepted evidence field of build-tests.schema.json"},
+            {"name": "decisions", "kind": "value", "holds": "The accepted decisions field of build-tests.schema.json"}
           ],
-          "adds": []
+          "adds": [
+            {"kinds": ["build:tests-authored"], "when": "after the test author output is accepted"}
+          ]
         },
         "build:red-check": {
           "description": "Run the suite and judge test quality and required behavior",
@@ -146,37 +157,39 @@
           "runBy": "task-to-deploy",
           "reads": ["worktree", "suiteCommand", "baseline", "testFiles", "redRun"],
           "records": [
-            {"name": "redRun", "kind": "value", "holds": "{ exitCode, summary, failing, tail, relayFile, reasons }: actual suite result with test-quality and failure-classification evidence"},
-            {"name": "testPrint", "kind": "value", "holds": "{ files, treeDigest }: the git blob hash of each test file and the digest of the work tree"}
+            {"name": "redRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"},
+            {"name": "testPrint", "kind": "value", "holds": "The accepted testPrint evidence"},
+            {"name": "suiteReview", "kind": "file", "holds": "The accepted suiteReview evidence"}
           ],
           "adds": [
-            {"kinds": ["build:red-write", "build:red-check"], "when": "Suite quality review identifies test or setup defects requiring correction; a passing suite never requires a manufactured failure"}
+            {"kinds": ["build:suite-reviewed"], "when": "a failing suite receives an accepted quality judgment; its consumer applies the correction bound"}
           ],
           "limit": "At most three suite-quality correction rounds in one dispatch; no failure is manufactured"
         },
         "build:select-implementers": {
-          "description": "Select the implementers whose specialties cover the Task",
+          "description": "Review architecture, correctness and code quality",
           "purpose": "The code is written by the fewest agents whose specialties cover the change, in build order",
           "runBy": "task-to-deploy",
           "reads": ["worktree", "suiteCommand", "baseline", "redRun", "testFiles", "design", "provisioning"],
           "records": [
-            {"name": "implementers", "kind": "value", "holds": "the implementer agent names, in the order they work"},
-            {"name": "sharedCapabilities", "kind": "value", "holds": "the shared capabilities the Task must use, read with atw-matrix uses --ids for the matrix ids the Task states: a list of { id, name, provides: [{ id, behaviour, consumersMust, interface }], providedBy: [{ name, kind, repository }] }"}
+            {"name": "codeReview", "kind": "file", "holds": "The accepted codeReview evidence"}
           ],
           "adds": [
-            {"kinds": ["build:implement", "build:green-check"], "when": "always: one build:implement per selected implementer, then the run that judges them"}
+            {"kinds": ["build:code-reviewed"], "when": "after the independent code review is accepted"}
           ]
         },
         "build:implement": {
           "description": "Write the code with {implementer}",
           "purpose": "Required behavior, missing prerequisites and warranted quality improvements are implemented",
           "runBy": "task-to-deploy",
-          "params": ["implementer", "implementers", "brief"],
-          "reads": ["worktree", "suiteCommand", "baseline", "redRun", "greenRun", "cdsAudit", "reuseAudit", "sharedCapabilities", "testFiles", "testDecisions", "design", "provisioning"],
+          "params": ["implementer"],
+          "reads": ["worktree", "suiteCommand", "baseline", "redRun", "greenRun", "cdsReview", "reuseReview", "testFiles", "codeReview", "implementationSelection", "design", "provisioning"],
           "records": [
-            {"name": "changedFiles", "kind": "value", "holds": "the files the implementer changed, a list of paths"},
-            {"name": "testIssues", "kind": "value", "holds": "the tests the implementer names as standing between the code and the contract, a list of { testId, kind, reason, contractRef }"},
-            {"name": "upstreamMissing", "kind": "value", "holds": "legacy prerequisite evidence, a list of { what, evidence }; develop required prerequisites in their owning repositories within the authorized scope"}
+            {"name": "codeWork", "kind": "file", "holds": "The accepted report under build-implementation.schema.json"},
+            {"name": "changedFiles", "kind": "value", "holds": "The accepted changedFiles field of build-implementation.schema.json"},
+            {"name": "evidence", "kind": "value", "holds": "The accepted evidence field of build-implementation.schema.json"},
+            {"name": "testIssues", "kind": "value", "holds": "The accepted testIssues field of build-implementation.schema.json"},
+            {"name": "prerequisites", "kind": "value", "holds": "The accepted prerequisites field of build-implementation.schema.json"}
           ],
           "adds": []
         },
@@ -184,14 +197,14 @@
           "description": "Run the suite and judge whether it is green",
           "purpose": "The Task is built only when the repository's whole suite exits 0 and the implementers left the tests as they were written",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "suiteCommand", "testFiles", "testPrint", "implementers", "testIssues", "upstreamMissing", "greenRun"],
+          "reads": ["worktree", "suiteCommand", "testFiles", "testPrint", "greenRun"],
           "records": [
-            {"name": "greenRun", "kind": "value", "holds": "{ exitCode, summary, failing, tail, relayFile }: the suite run"},
-            {"name": "testPrint", "kind": "value", "holds": "{ files, treeDigest }: the git blob hash of each test file and the digest of the work tree"}
+            {"name": "greenRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"},
+            {"name": "testPrint", "kind": "value", "holds": "The accepted testPrint evidence"},
+            {"name": "suiteReview", "kind": "file", "holds": "The accepted suiteReview evidence"}
           ],
           "adds": [
-            {"kinds": ["build:test-ruling", "build:green-check"], "when": "the suite is not green and an implementer named tests that stand between the code and the contract"},
-            {"kinds": ["build:implement", "build:green-check"], "when": "the suite is not green and no named test awaits a ruling: each implementer is given the suite result"}
+            {"kinds": ["build:green-reviewed"], "when": "a failing suite below its correction bound receives an accepted quality judgment"}
           ],
           "limit": "At most three implementation suite checks in one dispatch; failures are judged before code or tests are changed"
         },
@@ -199,26 +212,31 @@
           "description": "Rule on the tests the implementers named, with tdd-unit-test-generator",
           "purpose": "A test that contradicts the contract is changed by the agent that owns the tests, never by an implementer",
           "runBy": "task-to-deploy",
-          "params": ["issues"],
+          "params": [],
           "reads": ["worktree", "suiteCommand", "greenRun", "testFiles", "regressionPlan"],
           "records": [
-            {"name": "testDecisions", "kind": "value", "holds": "one ruling per named test, a list of { testId, action, reason }"},
-            {"name": "testFiles", "kind": "value", "holds": "the test files the agent changed, a list of paths"}
+            {"name": "testWork", "kind": "file", "holds": "The accepted report under build-tests.schema.json"},
+            {"name": "testFiles", "kind": "value", "holds": "The accepted testFiles field of build-tests.schema.json"},
+            {"name": "coverage", "kind": "value", "holds": "The accepted coverage field of build-tests.schema.json"},
+            {"name": "evidence", "kind": "value", "holds": "The accepted evidence field of build-tests.schema.json"},
+            {"name": "decisions", "kind": "value", "holds": "The accepted decisions field of build-tests.schema.json"}
           ],
-          "adds": []
+          "adds": [
+            {"kinds": ["build:tests-authored"], "when": "after the test author output is accepted"}
+          ]
         },
         "build:reuse-audit": {
           "description": "Check the changed files against the shared capabilities the Task must use",
           "purpose": "A behaviour a shared library, layer, chassis or service provides is used from it and written nowhere in this repository",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "implementers", "reuseAudit"],
+          "reads": ["worktree", "implementers", "reuseReview"],
           "records": [
-            {"name": "reuseAudit", "kind": "value", "holds": "{ clean, violations, judgment, unchecked }: whether the audit found no violation; each violation as text, those atw-matrix check-reuse found and each definition the shared-capability-reviewer ruled a duplicate; each definition the reviewer ruled on with its ruling and reason; and the relied-on behaviours that have no use signal"}
+            {"name": "reuseReview", "kind": "file", "holds": "The accepted reuseReview evidence"}
           ],
           "adds": [
-            {"kinds": ["build:implement", "build:green-check", "build:reuse-audit"], "when": "the first audit of this run finds violations: each implementer is given them, the suite is judged, and the audit runs again"}
+            {"kinds": ["build:audit-reviewed"], "when": "after reuseReview is accepted, passing review=reuseReview and again=build:reuse-audit"}
           ],
-          "limit": "It fails with reuse-violation when violations remain at the audit that follows this run's correction, and with reuse-audit when atw-matrix check-reuse does not rule or the shared-capability-reviewer leaves a definition unruled"
+          "limit": "The audit consumer bounds implementation corrections and re-review by the configured build correction allowance"
         },
         "build:refactor-snapshot": {
           "description": "Record the work tree as it is before the refactor",
@@ -236,8 +254,11 @@
           "runBy": "task-to-deploy",
           "reads": ["worktree", "suiteCommand", "changedFiles", "refactorSnapshot"],
           "records": [
-            {"name": "refactorChangedFiles", "kind": "value", "holds": "the files the refactor changed, read from git against the snapshot"},
-            {"name": "refactorReverted", "kind": "value", "holds": "whether the refactor gave up and the tree was put back at the snapshot, a boolean"}
+            {"name": "refactorWork", "kind": "file", "holds": "The accepted report under build-implementation.schema.json"},
+            {"name": "changedFiles", "kind": "value", "holds": "The accepted changedFiles field of build-implementation.schema.json"},
+            {"name": "evidence", "kind": "value", "holds": "The accepted evidence field of build-implementation.schema.json"},
+            {"name": "testIssues", "kind": "value", "holds": "The accepted testIssues field of build-implementation.schema.json"},
+            {"name": "prerequisites", "kind": "value", "holds": "The accepted prerequisites field of build-implementation.schema.json"}
           ],
           "adds": []
         },
@@ -245,13 +266,13 @@
           "description": "Run the suite after the refactor",
           "purpose": "A refactor that turns the suite red is undone",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "suiteCommand", "refactorSnapshot", "refactorRestored", "design"],
+          "reads": ["worktree", "suiteCommand", "refactorSnapshot", "design"],
           "records": [
-            {"name": "refactorRun", "kind": "value", "holds": "{ exitCode, summary, failing, tail, relayFile }: the suite run"}
+            {"name": "refactorRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"}
           ],
           "adds": [
-            {"kinds": ["build:refactor-restore", "build:refactor-check"], "when": "the suite is red after the refactor and the tree has not been restored"},
-            {"kinds": ["build:cds-audit"], "when": "the suite is green and the Task's web UI has design source bundle or cds"}
+            {"kinds": ["build:refactor-restore"], "when": "the suite fails; restoration itself verifies Green"},
+            {"kinds": ["build:cds-audit"], "when": "the recorded design source is bundle or cds, after any required restoration"}
           ],
           "limit": "It fails when the suite is still red after the tree was restored to the snapshot"
         },
@@ -261,7 +282,8 @@
           "runBy": "task-to-deploy",
           "reads": ["worktree", "refactorSnapshot"],
           "records": [
-            {"name": "refactorRestored", "kind": "value", "holds": "{ restored, evidence }"}
+            {"name": "refactorRestore", "kind": "value", "holds": "The accepted refactorRestore evidence"},
+            {"name": "greenRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"}
           ],
           "adds": []
         },
@@ -269,39 +291,36 @@
           "description": "Audit the changed web UI against its design source",
           "purpose": "The UI styles nothing outside the design system the Task was built from",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "design", "implementers", "cdsAudit"],
+          "reads": ["worktree", "implementers", "cdsReview", "design"],
           "records": [
-            {"name": "cdsAudit", "kind": "value", "holds": "{ verdict, findings, scriptVersion, violations, gaps }: the audit verdict, the count of violations and gaps, and each as text"}
+            {"name": "cdsReview", "kind": "file", "holds": "The accepted cdsReview evidence"}
           ],
           "adds": [
-            {"kinds": ["build:implement", "build:green-check", "build:cds-audit"], "when": "the first audit of this run finds violations: each implementer is given them, the suite is judged, and the audit runs again"}
+            {"kinds": ["build:audit-reviewed"], "when": "after cdsReview is accepted, passing review=cdsReview and again=build:cds-audit"}
           ],
-          "limit": "It fails with cds-audit when violations remain at the audit that follows this run's correction, and with blocked-upstream when the design system lacks something the UI needs"
+          "limit": "The audit consumer bounds implementation corrections and re-review by the configured build correction allowance"
         },
         "build:docs-audit": {
           "description": "Audit which documents the change leaves stale",
           "purpose": "Documentation is brought up to date in the same commit as the code",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "changedFiles", "refactorChangedFiles"],
+          "reads": ["worktree", "changedFiles"],
           "records": [
-            {"name": "staleDocs", "kind": "value", "holds": "the stale documents, a list of paths"},
-            {"name": "docAssignments", "kind": "value", "holds": "the stale documents by the documentation agent that owns their kind, a list of { agent, docs }"}
+            {"name": "documentationSelection", "kind": "file", "holds": "the documentation lead's accepted specialist selection for the changed contracts"}
           ],
           "adds": [
-            {"kinds": ["build:docs-write"], "when": "documents are stale: one build:docs-write per documentation agent assigned"}
+            {"kinds": ["build:docs-write"], "when": "the documentation selection is accepted"}
           ]
         },
         "build:docs-write": {
-          "description": "Update the stale documents with {docAgent}; the documentation-accuracy-reviewer checks them",
-          "purpose": "The audit named documents the change leaves stale",
+          "description": "Plan the selected documentation specialists",
+          "purpose": "Only selected specialists update documentation made stale by this Task",
           "runBy": "task-to-deploy",
-          "params": ["docAgent", "docs"],
-          "reads": ["worktree", "changedFiles"],
-          "records": [
-            {"name": "updatedDocs", "kind": "value", "holds": "the documents the agent updated, a list of paths"}
-          ],
-          "adds": [],
-          "together": true
+          "reads": ["documentationSelection"],
+          "records": [],
+          "adds": [
+            {"kinds": ["build:docs-specialist"], "when": "one following specialist step per selected agent; no writers for an empty selection"}
+          ]
         },
         "build:final-suite": {
           "description": "Run the suite a final time",
@@ -309,9 +328,12 @@
           "runBy": "task-to-deploy",
           "reads": ["worktree", "suiteCommand"],
           "records": [
-            {"name": "finalRun", "kind": "value", "holds": "{ exitCode, summary, failing, tail, relayFile }: the suite run"}
+            {"name": "finalCodeReview", "kind": "file", "holds": "The accepted finalCodeReview evidence"},
+            {"name": "finalRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"}
           ],
-          "adds": []
+          "adds": [
+            {"kinds": ["build:final-review-checked", "build:final-suite-checked"], "when": "when no final independent review exists, after the accepted review; otherwise run and require the suite directly"}
+          ]
         },
         "build:regression-map": {
           "description": "Map each requirement in scope to the tests and commands that prove it",
@@ -331,10 +353,7 @@
           "records": [
             {"name": "regressionMappedReview", "kind": "file", "holds": "the regression-coverage-reviewer's review of the mapping"}
           ],
-          "adds": [
-            {"kinds": ["build:regression-remap", "build:regression-map-review"], "when": "the review names a blocking finding, so it does not approve the mapping: the regression-impact-assessor is given the review, and the corrected mapping is reviewed again with that review"}
-          ],
-          "limit": "It adds no correction after two corrections of the mapping in this run; build:regression-verify then fails with regression-coverage"
+          "adds": []
         },
         "build:regression-remap": {
           "description": "Correct the regression mapping from its review",
@@ -350,12 +369,13 @@
           "description": "Run the mapped regression runs, each after its setup, and record their evidence",
           "purpose": "The commit carries fresh per-test evidence for every requirement the change can affect",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "regressionPlan", "regressionMapped", "regressionMappedReview"],
+          "reads": ["worktree", "regressionPlan", "regressionScope", "regressionMapped", "regressionMappedReview"],
           "records": [
-            {"name": "regressionEvidence", "kind": "file", "holds": "the verification result and the evidence of each mapped run"}
+            {"name": "regressionEvidence", "kind": "file", "holds": "The accepted regressionEvidence evidence"},
+            {"name": "regressionCorrection", "kind": "file", "holds": "Failed validation evidence when a bounded correction is scheduled"}
           ],
           "adds": [
-            {"kinds": ["build:regression-remap", "build:regression-map-review", "build:regression-verify"], "when": "the verification fails because the mapping's review, written by an earlier run of the workflow, did not approve it: the regression-impact-assessor corrects the mapping from that review, the corrected mapping is reviewed, and it is verified again; the step records nothing"}
+            {"kinds": ["build:regression-remap", "build:regression-map-review", "build:regression-verify"], "when": "the check fails below the configured correction allowance; the failure evidence is recorded and the corrected assessment or mapping is independently reviewed and checked again"}
           ]
         },
         "build:commit": {

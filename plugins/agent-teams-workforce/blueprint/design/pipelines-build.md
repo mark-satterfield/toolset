@@ -8,6 +8,11 @@ subprocesses, artifacts, correction bounds and journal transitions. Headless age
 reasoning, code, test and documentation work. No model session relays a command or parses its
 exit status.
 
+Documentation selection records `documentationSelection`. Its parameterless dispatcher plans
+one following `build:docs-specialist` step per selected agent, passing its `agent` parameter.
+An empty selection completes without writers. Each writer records `documentationWork` before
+the final independent review of the resulting diff.
+
 ## Execution and resumption
 
 `orchestrator/flows/task_to_deploy.py` is the `task-to-deploy` composite. The driver dispatches it
@@ -37,6 +42,11 @@ directory. A Task cannot commit on the default branch or detached HEAD.
 facts file and current journal are passed by path. The journal runner owns session IDs,
 resumption, output validation and acceptance. A missing dynamically selected specialist is an
 item failure; a missing fixed contract is a pipeline defect.
+
+A same-agent `Finish` continues the original agent step's semantic contract: its description,
+parameters, input artifacts and saved evidence. The continuation retains its own journal ID,
+session and completion status. Explicit nested Finish steps resolve to the same semantic origin;
+ordinary helper steps keep their own contracts.
 
 ## One Task
 

@@ -96,7 +96,7 @@
           "items": {"$ref": "#/definitions/text"}
         },
         "records": {
-          "description": "The artifacts a step of the kind records when it is done.",
+          "description": "The named artifacts a step of the kind records. A Python reasoned agent's accepted report file also records each validated top-level report field as a value artifact. Its parent records the build facts file, and planned parameters use the journal's for <step id> value artifact. These shared records are implicit for every such agent rather than repeated in each kind.",
           "type": "array",
           "items": {"$ref": "#/definitions/recorded"}
         },
