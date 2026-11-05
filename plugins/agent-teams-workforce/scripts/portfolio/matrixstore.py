@@ -1426,10 +1426,11 @@ _shared_read: list[_SharedRead] = []
 def shared_matrix(path: Path) -> Matrix:
     """Return the matrix of a file for reading only, read again only when the file has changed.
 
-    Validating the file on every read costs seconds, and a step can need it once per Story or per
-    Task. Every caller shares the one object, so a caller that changes the matrix uses
-    :func:`read_matrix`. A write replaces the file in one move, so its size and modification time
-    say whether the object is current.
+    Validating the whole file against its schema takes seconds, and a step can need it once per Story
+    or per Task; every write through the matrix command has already checked what it wrote, so this read
+    skips that check and keeps the entry and kind checks. Every caller shares the one object, so a
+    caller that changes the matrix uses :func:`read_matrix`. A write replaces the file in one move, so
+    its size and modification time say whether the object is current.
 
     Args:
         path: The matrix file.
@@ -1438,7 +1439,7 @@ def shared_matrix(path: Path) -> Matrix:
         The matrix, not to be changed.
 
     Raises:
-        MatrixError: The file is missing, or :func:`read_matrix` refuses it.
+        MatrixError: The file is missing, unreadable, not JSON, or of an unregistered kind.
 
     """
     try:
@@ -1449,7 +1450,7 @@ def shared_matrix(path: Path) -> Matrix:
     stamp: tuple[int, int] = (status.st_mtime_ns, status.st_size)
     if _shared_read and _shared_read[0].path == path and _shared_read[0].stamp == stamp:
         return _shared_read[0].matrix
-    matrix: Matrix = read_matrix(path)
+    matrix: Matrix = Matrix(parse_document(_decode(path), str(path), shape_checked=False))
     _shared_read[:] = [_SharedRead(path, stamp, matrix)]
     return matrix
 

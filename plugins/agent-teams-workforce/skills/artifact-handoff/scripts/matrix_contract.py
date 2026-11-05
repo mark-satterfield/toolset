@@ -1041,7 +1041,7 @@ def parse_relationship(value: object, where: str = "relationship") -> Relationsh
     return _typed_relationship(_raise_unless_shaped(value, "Relationship", where), where)
 
 
-def parse_document(value: object, where: str = "matrix") -> MatrixDocument:
+def parse_document(value: object, where: str = "matrix", *, shape_checked: bool = True) -> MatrixDocument:
     """Read a matrix file from decoded JSON.
 
     The file has the generic shape and every entry and relationship is of a kind the registry
@@ -1052,6 +1052,8 @@ def parse_document(value: object, where: str = "matrix") -> MatrixDocument:
     Args:
         value: The decoded file.
         where: What to call the file in an error.
+        shape_checked: False skips the whole-file schema check, which takes seconds on a large file,
+            for a reader that only reads a file every write has already checked.
 
     Returns:
         The file, typed.
@@ -1060,7 +1062,11 @@ def parse_document(value: object, where: str = "matrix") -> MatrixDocument:
         MatrixError: An entry is filed under an id that is not its own.
 
     """
-    raw: dict[str, JsonValue] = _raise_unless_shaped(value, None, where)
+    raw: dict[str, JsonValue] = (
+        _raise_unless_shaped(value, None, where)
+        if shape_checked
+        else _object(value if isinstance(value, dict) else None, where)
+    )
     entries: list[Entry] = []
     key: str
     item: JsonValue
