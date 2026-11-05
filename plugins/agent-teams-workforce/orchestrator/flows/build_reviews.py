@@ -52,7 +52,8 @@ def _regression(run: StepRun, mode: str, plan: Path, extra: list[str]) -> tuple[
 
     """
     tree: Path = _workspace(run).tree
-    output: Path = run.context.work / "build" / str(run.step["id"]) / f"regression-{mode}.json"
+    folder: Path = run.context.work / "build" / str(run.step["id"])
+    output: Path = folder / f"{run.step['id']}-regression-{mode}.json"
     result = run.tools.command(
         [
             sys.executable,
@@ -105,12 +106,18 @@ def _scope_initial(run: StepRun) -> Completion:
         StepError: The operation cannot proceed with the supplied evidence.
 
     """
+    bead: dict[str, JsonValue] = json_object(run.context.args["bead"])
+    carried: list[str] = list(check_type(bead.get("specPaths", []), list[str]))
+    carried.extend(check_type(bead[key], str) for key in ("specPath", "prdPath") if bead.get(key))
     sources: list[str] = list(
         dict.fromkeys(
-            artifact["path"]
-            for step in step_journal.steps_in_order(run.journal())
-            for artifact in step["artifacts"]
-            if artifact["kind"] == "file" and artifact["name"] in {"spec", "criteria", "TRD", "data model"}
+            [source.split("#", 1)[0] for source in carried]
+            + [
+                artifact["path"]
+                for step in step_journal.steps_in_order(run.journal())
+                for artifact in step["artifacts"]
+                if artifact["kind"] == "file" and artifact["name"] in {"spec", "criteria", "TRD", "data model"}
+            ],
         ),
     )
     plan: Path = run.context.work / "build" / str(run.step["id"]) / "pending-plan.json"
@@ -192,6 +199,7 @@ def _validate(run: StepRun, final: bool) -> Completion:
     extra: list[str] = ["--review", str(review)]
     if final:
         extra.extend(["--approved-plan", str(_file(run, "regressionPlan"))])
+        extra.extend(["--bindings", str(_file(run, "regressionScope").parent / "source-bindings.json")])
     output, document = _regression(run, "verify" if final else "validate", plan, extra)
     if document.get("ok") is True:
         return Completion(artifacts=(file_artifact("regressionEvidence" if final else "regressionScope", output),))
@@ -282,7 +290,7 @@ def _design(run: StepRun) -> Completion:
             value_artifact(
                 "design",
                 {
-                    "designSource": bead.get("designSource", "none"),
+                    "designSource": bead.get("cdsDesignSource", "none"),
                     "bundle": bead.get("cdsBundlePath"),
                     "buildSpecs": bead.get("cdsBuildSpecs", []),
                 },

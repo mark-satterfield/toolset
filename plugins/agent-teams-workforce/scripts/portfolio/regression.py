@@ -43,6 +43,7 @@ class CliArgs:
     output: str
     tree: str | None
     repos: list[str]
+    bindings: str | None = None
 
 
 def _str(obj: JsonObject, key: str) -> str:
@@ -693,6 +694,7 @@ def _parse_args() -> CliArgs:
     parser.add_argument("--review")
     parser.add_argument("--source", action="append", default=[])
     parser.add_argument("--approved-plan")
+    parser.add_argument("--bindings", help="Source seal written by scope validation, preserved across journal steps")
     parser.add_argument("--output", required=True)
     parser.add_argument("--tree")
     parser.add_argument("--repo", action="append", default=[])
@@ -726,6 +728,7 @@ def _parse_args() -> CliArgs:
             output=output,
             tree=_optional_arg(args.tree, "tree"),
             repos=repos,
+            bindings=_optional_arg(args.bindings, "bindings"),
         )
     message = f"unsupported mode: {mode}"
     raise TypeError(message)
@@ -824,7 +827,7 @@ def main() -> None:
         errors.append("Independent source/coverage/supersession review is not approved")
     if args.approved_plan and scope(plan) != scope(read(args.approved_plan)):
         errors.append("Final mapping changed the approved impact scope")
-    bindings: Path = Path(args.output).parent / "source-bindings.json"
+    bindings: Path = Path(args.bindings) if args.bindings else Path(args.output).parent / "source-bindings.json"
     source_bytes: dict[str, str] = source_hashes(_strs(plan, "sourceFiles"))
     bound: JsonObject = {**source_bytes}
     if args.mode == "verify" and (not bindings.is_file() or read(bindings) != bound):

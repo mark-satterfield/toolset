@@ -68,7 +68,6 @@ class DispatchArguments:
     """
 
     FLOW_PRD_TO_SPEC: str
-    ORCHESTRATED_FLOWS: frozenset[str]
     OPT_BEAD: str
     OPT_ARGS: str
     OPT_HANDBACK: str
@@ -98,7 +97,7 @@ class DispatchArguments:
     DS_MOCKS_DIR: str
     DS_SHELLS_DIR: str
     OWNER_TOKEN: re.Pattern[str]
-    parse_arguments: Callable[[object], Mapping[str, object]]
+    parse_arguments: Callable[[object, str], Mapping[str, object]]
     command: Callable[[str, Path, str, str, Path], list[str]]
 
 
@@ -257,7 +256,6 @@ def dispatch_arguments() -> DispatchArguments:
     module: ModuleType = driver_module("dispatchargs")
     return DispatchArguments(
         FLOW_PRD_TO_SPEC=_text(module, "FLOW_PRD_TO_SPEC"),
-        ORCHESTRATED_FLOWS=_names(module, "ORCHESTRATED_FLOWS"),
         OPT_BEAD=_text(module, "OPT_BEAD"),
         OPT_ARGS=_text(module, "OPT_ARGS"),
         OPT_HANDBACK=_text(module, "OPT_HANDBACK"),
@@ -289,7 +287,7 @@ def dispatch_arguments() -> DispatchArguments:
         OWNER_TOKEN=check_type(_attribute(module, "OWNER_TOKEN"), re.Pattern[str]),
         parse_arguments=check_type(
             _attribute(module, "parse_arguments"),
-            Callable[[object], Mapping[str, object]],
+            Callable[[object, str], Mapping[str, object]],
         ),
         command=check_type(
             _attribute(module, "command"),

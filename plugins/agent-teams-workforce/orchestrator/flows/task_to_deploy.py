@@ -79,7 +79,7 @@ def _workspace_step(run: StepRun) -> Completion:
 
     """
     bead: dict[str, JsonValue] = _object(run, "bead")
-    story: dict[str, JsonValue] = _object(run, "story")
+    story: dict[str, JsonValue] = json_object(bead["story"])
     workspace: Workspace = provision(run.tools, Path(check_type(bead["repoPath"], str)), check_type(story["id"], str))
     vocabulary: dict[str, JsonValue] = json_object(run.context.args["infraVocabulary"])
     labels: list[str] = check_type(bead.get("labels", []), list[str])
@@ -87,7 +87,7 @@ def _workspace_step(run: StepRun) -> Completion:
     infrastructure_labels: list[str] = check_type(vocabulary["labels"], list[str])
     infrastructure: bool = bead.get("type") in types or bool(set(labels) & set(infrastructure_labels))
     additions: list[NewStep] = []
-    if bead.get("designSource") in {"bundle", "cds"}:
+    if bead.get("cdsDesignSource") in {"bundle", "cds"}:
         additions.append(_new("build:design-source", "Carry the Task's recorded UI design source"))
     if infrastructure:
         additions.append(_new("build:infra-intent", "Author concrete infrastructure intent"))

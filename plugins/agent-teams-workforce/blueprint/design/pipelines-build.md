@@ -16,6 +16,19 @@ script keys. The shared journal reader/writer and `JournalRunner` preserve each 
 accepted artifacts and failure. Existing `build:*` keys remain valid across the Python cutover.
 An interrupted build begins at its first unfinished step; accepted work is not discarded.
 
+The driver validates transport arguments for the selected flow, then the shared
+`task-build-args.schema.json` validates the build leaf. Its Task brief keeps the Story under
+`bead.story` and the design choice under `bead.cdsDesignSource`, matching the actual producer.
+Story deploy leaves use their own exact argument definitions. Host execution identity is
+separate from leaf fields; obsolete relay and PR-command settings are not sent to Python builds.
+The producer-contract checker includes the real dispatch builder/parser and checks the projected
+Task fields against the canonical bead metadata.
+
+Regression preparation includes the Task's supplied Spec and PRD paths as well as journal
+source artifacts. Final verification names the source seal beside the accepted
+`regressionScope` artifact with `--bindings`, so another step or resumed dispatch reads the
+same approval evidence. Each verification keeps its own execution-output directory.
+
 `build_workspace.py` calls the existing git utilities directly to create or reuse the Story's
 worktree and independently confirm its repository and branch. Every command pins its working
 directory. A Task cannot commit on the default branch or detached HEAD.

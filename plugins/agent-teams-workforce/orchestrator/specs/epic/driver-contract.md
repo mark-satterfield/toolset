@@ -39,11 +39,12 @@ one place of each:
 ## 1. Purpose
 
 The elaboration lane selects one Epic per slot and dispatches the `prd-to-spec` composite for it.
-`prd-to-spec` is an orchestrated flow (`dispatchargs.ORCHESTRATED_FLOWS`; `headless` routes every
+`prd-to-spec` is an orchestrated flow (`dispatchargs.orchestrated_flows()`; `headless` routes every
 composite in the composites contract's `ORCHESTRATED` set to `orchestrated.run`): the dispatch is a
 child process running the installed plugin's `orchestrator/run.py`, which starts the bounded agent
-sessions itself and writes a handback file. No host Claude Code session, Workflow tool call or
-sentinel line is involved; those belong to the build and deploy lanes. The driver reads the run's
+sessions itself and writes a handback file. The same transport selects exact flow-specific
+arguments for Task builds and the three Story deploy leaves. No host Claude Code session,
+Workflow tool call or sentinel line is involved. The driver reads the run's
 events from the child's output, then turns the handback into an `Outcome`, writes ledger
 events, holds or backs off the Epic, files finished documents in the vault, and records the run's
 token cost. The Epic pipeline's own behaviour is specified in `<orch>/specs/epic/prd-to-spec.md`

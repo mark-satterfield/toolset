@@ -107,7 +107,7 @@ def _context(contract: DispatchArguments, bead: str, flow_name: str, path: Path)
     if not isinstance(contract, DispatchArguments):
         raise TypeError(_not_contract(contract))
     raw: object = json.loads(path.read_text(encoding="utf-8"))
-    args: dict[str, JsonValue] = json_object(dict(contract.parse_arguments(raw)))
+    args: dict[str, JsonValue] = json_object(dict(contract.parse_arguments(raw, flow_name)))
     work: Path = work_directory(env_path(CONTROL_REPO_ENV), bead)
     run_id: str = check_type(args[contract.KEY_EXECUTION_ID], str)
     return RunContext(bead, flow_name, args, work, run_id)

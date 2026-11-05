@@ -8,14 +8,16 @@ from pathlib import Path
 from typing import Final, Literal, NotRequired, TypedDict
 
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parents[1] / "schemas" / "story-deploy-args.schema.json"
-SCHEMA_SHA256: Final = "c05d6a1760770eb8a839dac91d5670f4043c9b4e719e257193699a89c0c9d4cd"
+SCHEMA_SHA256: Final = "22e77e9d3e5b93b597bc1ba5fedf1082ef891830a37bba1ca17b32462b26ebb9"
 
-type Composite = Literal["story-deploy", "built-version", "story-deploy-fix", "deploy-mechanism"]
+type Composite = Literal["task-to-deploy", "story-deploy", "built-version", "story-deploy-fix", "deploy-mechanism"]
+COMPOSITE_TASK_TO_DEPLOY: Final[Composite] = "task-to-deploy"
 COMPOSITE_STORY_DEPLOY: Final[Composite] = "story-deploy"
 COMPOSITE_BUILT_VERSION: Final[Composite] = "built-version"
 COMPOSITE_STORY_DEPLOY_FIX: Final[Composite] = "story-deploy-fix"
 COMPOSITE_DEPLOY_MECHANISM: Final[Composite] = "deploy-mechanism"
 _COMPOSITES_ORDER: Final[tuple[Composite, ...]] = (
+    "task-to-deploy",
     "story-deploy",
     "built-version",
     "story-deploy-fix",
@@ -50,8 +52,6 @@ KEY_ARCH_PATH: Final = "archPath"
 KEY_DEPSCORE: Final = "depscore"
 KEY_DEFAULT_BRANCH: Final = "defaultBranch"
 KEY_FAILURE: Final = "failure"
-KEY_PLUGIN_ROOT: Final = "pluginRoot"
-KEY_RELAY: Final = "relay"
 ARG_KEYS: Final[tuple[str, ...]] = (
     "story",
     "repoPath",
@@ -66,8 +66,6 @@ ARG_KEYS: Final[tuple[str, ...]] = (
     "depscore",
     "defaultBranch",
     "failure",
-    "pluginRoot",
-    "relay",
 )
 
 STORY_REF_KEYS: Final[tuple[str, ...]] = ("id", "title")
@@ -114,7 +112,7 @@ BUILT_VERSION_ARGS_KEYS: Final[tuple[str, ...]] = (
 )
 _BUILT_VERSION_ARGS_REQUIRED_ORDER: Final[tuple[str, ...]] = ("journal", "story", "repoPath", "archPath", "depscore")
 BUILT_VERSION_ARGS_REQUIRED: Final[frozenset[str]] = frozenset(_BUILT_VERSION_ARGS_REQUIRED_ORDER)
-BUILT_VERSION_ARGS_CLOSED: Final = False
+BUILT_VERSION_ARGS_CLOSED: Final = True
 STORY_DEPLOY_FIX_ARGS_KEYS: Final[tuple[str, ...]] = (
     "beadId",
     "journal",
@@ -123,17 +121,8 @@ STORY_DEPLOY_FIX_ARGS_KEYS: Final[tuple[str, ...]] = (
     "branch",
     "defaultBranch",
     "failure",
-    "pluginRoot",
-    "relay",
 )
-_STORY_DEPLOY_FIX_ARGS_REQUIRED_ORDER: Final[tuple[str, ...]] = (
-    "journal",
-    "story",
-    "repoPath",
-    "failure",
-    "pluginRoot",
-    "relay",
-)
+_STORY_DEPLOY_FIX_ARGS_REQUIRED_ORDER: Final[tuple[str, ...]] = ("journal", "story", "repoPath", "failure")
 STORY_DEPLOY_FIX_ARGS_REQUIRED: Final[frozenset[str]] = frozenset(_STORY_DEPLOY_FIX_ARGS_REQUIRED_ORDER)
 STORY_DEPLOY_FIX_ARGS_CLOSED: Final = True
 DEPLOY_MECHANISM_ARGS_KEYS: Final[tuple[str, ...]] = ("beadId", "story", "repoPath")
@@ -227,8 +216,6 @@ class StoryDeployFixArgs(TypedDict):
     branch: NotRequired[str]
     defaultBranch: NotRequired[str]
     failure: DeployFailure
-    pluginRoot: str
-    relay: RelayRef
 
 
 class DeployMechanismArgs(TypedDict):

@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Task build leaf arguments",
+  "description": "The Task build payload supplied by the driver; execution identity belongs to the outer transport. Projected bead contract keys match bead-metadata.schema.json x-contract fields.",
+  "$defs": {
+    "TaskToDeployArgs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bead",
+        "journal",
+        "infraVocabulary"
+      ],
+      "properties": {
+        "bead": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "repoPath",
+            "story"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "title": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "repoPath": {
+              "type": "string",
+              "pattern": "^/"
+            },
+            "prdPath": {
+              "type": "string",
+              "minLength": 1
+            },
+            "epic": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "key",
+                "title"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "key": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "title": {
+                  "type": "string"
+                }
+              }
+            },
+            "story": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "title": {
+                  "type": "string"
+                }
+              }
+            },
+            "type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "acceptanceCriteriaSource": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "beadId",
+                "field"
+              ],
+              "properties": {
+                "beadId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "field": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "specPath": {
+              "type": "string"
+            },
+            "specPaths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "specSections": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "acceptanceCriteria": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "definitionOfDone": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "requirementIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "matrix_elements": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "decisionIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "surfaces": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "testStrategy": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "cdsDesignSource": {
+              "type": "string"
+            },
+            "cdsArtifact": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "cdsBundlePath": {
+              "type": "string"
+            },
+            "cdsBuildSpecs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "journal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "run"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^/"
+            },
+            "run": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "infraVocabulary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "types",
+            "labels"
+          ],
+          "properties": {
+            "types": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "designSystem": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "packagesDir": {
+              "type": "string"
+            },
+            "mocksDir": {
+              "type": "string"
+            },
+            "shellsDir": {
+              "type": "string"
+            }
+          }
+        },
+        "suiteCommand": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
