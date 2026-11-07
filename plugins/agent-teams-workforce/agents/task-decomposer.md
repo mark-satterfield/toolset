@@ -70,13 +70,13 @@ candidate Tasks: same-stack work can overlap this Story; upstream work is a prer
 when this Task consumes what that candidate provides. Record those real Task ids in
 `blockedByExternal`, with the consumed output and evidence in the Task's description.
 Also record `buildPrerequisites.producers`: real Task and parent Story ids, `requiredStage`
-(`built` or `deployed`), the consumed output, and an absolute existing evidence artifact path.
-`deployed` includes completed producer Story package publication. These structured prerequisites
+(`built`, `published` or `deployed`), the consumed output, and an absolute existing evidence artifact path.
+Use `published` for a package available in CodeArtifact and `deployed` for an actual layer or resource deployed in the target environment. A package receipt never satisfies a layer deployment. These structured prerequisites
 reach the scheduler before the consumer suite executes; prose alone is insufficient. A
 dependency is not new work for this Story. Never invent an issue id or infer that a producer is
 deployed because its Task is closed; a required deployed resource needs its producer Story's
 deployment evidence. The supplied `producerCandidates` includes closed Tasks and their parent
-Stories' recorded deployment state, so an unfinished producer deployment remains visible even
+Stories' separate publication and deployment evidence, so an unfinished producer deployment remains visible even
 when its Task no longer appears in the open-work query. A missing producer or missing relationship is an explicit finding for the
 calling pipeline, never permission to create the resource as test setup. A Task cites each
 thing it builds by its item id in `requirementIds`, exactly as the repository context names it.

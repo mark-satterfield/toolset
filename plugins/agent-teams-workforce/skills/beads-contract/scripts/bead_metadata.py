@@ -16,7 +16,7 @@ type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValu
 type JsonObject = dict[str, JsonValue]
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "a3bcec4a3cea78a2fb1ef918b23ef450cc3d8e11c279d379b31266a5c72060c0"
+SCHEMA_SHA256: Final[str] = "902b8254bc5a1c82765e43f4f276396bb17d64fc693842b1240bf9d0de9af000"
 
 #: The literal a producer writes for an undecided -or-unknown contract value; read as None.
 UNKNOWN: Final[str] = "unknown"
@@ -139,9 +139,9 @@ KEY_REQUIREMENT_IDS: Final[str] = "requirement_ids"
 #: JSON array of the matrix ids the Task states: its stack, the entries it builds and the shared capabilities it
 #: uses. The build passes them to `atw-matrix uses --ids` and `atw-matrix check-reuse --ids`.
 KEY_MATRIX_ELEMENTS: Final[str] = "matrix_elements"
-#: JSON object with producers: actual Task ids, parent Story ids, requiredStage built or deployed, consumed
-#: output and absolute evidence artifact paths. The build selector validates actual producer stages before
-#: dispatch. Missing on older Tasks means unknown, not ready evidence.
+#: JSON object with producers: actual Task ids, parent Story ids, requiredStage built, published or deployed,
+#: consumed output and absolute evidence artifact paths. The build selector validates actual producer stages
+#: before dispatch. Missing on older Tasks means unknown, not ready evidence.
 KEY_BUILD_PREREQUISITES: Final[str] = "build_prerequisites"
 #: JSON array of architecture view paths (relative to the arc42 folder, #<heading> for part of a view) the item
 #: was designed against.

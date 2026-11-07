@@ -3,7 +3,7 @@
 Parent: [The pipelines: overview](pipelines.md)
 
 The build takes a Task under a Story and produces code and tests committed in the Story's
-worktree, with its complete repository suite passing. The Python orchestrator owns ordering,
+worktree, with its complete repository suite passing. SkillSpoke Tier-1 Stories branch from develop; workspace provisioning refreshes origin/HEAD and rejects another integration base before creating a worktree. The Python orchestrator owns ordering,
 subprocesses, artifacts, correction bounds and journal transitions. Headless agent sessions do
 reasoning, code, test and documentation work. No model session relays a command or parses its
 exit status.
@@ -104,7 +104,7 @@ product implementation and environment failure.
 
 An environment judgment appends one targeted `task-dependency-mapper` diagnosis using current
 tracker, repository and readiness evidence. The result names real producer Tasks, their actual
-parent Stories and whether their output must be built or deployed. The build validates those
+parent Stories and whether their output must be built, published or deployed. The build validates those
 identities and adds only missing consumer blockers through the normal cycle-checked writer;
 normal elaboration protections for already started Tasks remain intact. A missing producer or
 missing real authoring context is a finite pipeline work-authoring gap, never an owner SSM task
@@ -112,9 +112,14 @@ or permission to create shared resources as test fixtures.
 
 `build:prerequisites-ready` remains planned while producer stages are pending. Its dispatch
 returns the typed `waitingForPrerequisites` handback without a failure and releases its slot.
-Delivered readiness requires a complete producer Story journal with closure and nonempty
-successful stack verification evidence, or a publish-only mechanism with its actual published
-commit recorded; Story status alone is insufficient. After progression,
+Delivered readiness requires a complete producer Story journal with closure. `published`
+requires a `packagePublication` receipt observing the committed version available in CodeArtifact,
+matched by `checkedCommit` to the completed publication step. `deployed` requires nonempty
+successful stack verification evidence. A package receipt never proves layer deployment, and
+a successful version-skip without package availability never proves publication. Story status
+alone is insufficient. Existing `deployed` declarations retain their literal resource-delivery
+meaning; active package dependencies need evidence-based reassessment to `published`, never
+a blanket reinterpretation or rewriting of completed journals. After progression,
 a read-only `test-environment-provisioner` observation precedes the exact original suite and a
 fresh independent assessment in the original phase. A readiness miss stops with its actual
 evidence rather than redispatching the same observation. Distinct failure/tree fingerprints

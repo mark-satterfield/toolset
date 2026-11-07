@@ -53,8 +53,9 @@ missing now. Use the matrix's actual stack relationships and the supplied resour
 identify candidate producers; read their real Tasks and their actual parent Stories.
 
 For each prerequisite, name the real producer Task, parent Story, consumed output, evidence,
-and the stage the consumer requires: `built` for code or a contract, `deployed` for a resource
-that must exist in the target environment or a delivered package. Each producer's `evidence`
+and the stage the consumer requires: `built` for code or a contract, `published` for a package
+available in CodeArtifact, and `deployed` for an actual layer or resource that must exist
+in the target environment. Package publication never proves layer deployment. Each producer's `evidence`
 is an absolute existing captured evidence artifact path. A closed Task alone never proves delivery. Do not
 invent an issue id, choose a parent for nonexistent work, write an edge, modify source, deploy,
 or create a parameter. If no actual producer Task and real Story/spec context can be

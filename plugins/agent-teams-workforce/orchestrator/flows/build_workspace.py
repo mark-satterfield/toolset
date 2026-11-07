@@ -83,6 +83,17 @@ def provision(tools: Tools, repository: Path, story_id: str) -> Workspace:
         message = "workspace provision requires an absolute repository and parent Story id"
         msg = "build:workspace"
         raise StepError(msg, OTHER_CAUSE, (message,))
+    tools.git(repository, ["fetch", "origin"], stage="build:workspace")
+    tools.git(repository, ["remote", "set-head", "origin", "--auto"], stage="build:workspace")
+    integration = tools.git(
+        repository,
+        ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+        stage="build:workspace",
+    )
+    if integration.stdout.strip() != "origin/develop":
+        message = "Story work requires the migrated develop integration branch"
+        stage: str = "build:workspace"
+        raise StepError(stage, OTHER_CAUSE, (message,))
     name: str = PATH_COMPONENT.sub("-", f"{story_id}-{repository.name}")
     branch: str = f"{WORKTREE_PREFIX}/{story_id}"
     planned: dict[str, JsonValue] = git_operation(

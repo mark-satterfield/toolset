@@ -37,14 +37,15 @@
       "items": {"$ref": "spec-context.schema.json#/$defs/DependsOn"}
     },
     "producerCandidates": {
-      "description": "Current real Tasks in the supplied own and upstream stacks, including closed Tasks and their parent Story status and recorded deployment verification. Candidates are evidence, never automatic blockers. Closed alone does not establish deployed readiness.",
+      "description": "Current real Tasks in the supplied own and upstream stacks, including closed Tasks and their parent Story status and recorded publication and deployment verification. Candidates are evidence, never automatic blockers. Closed alone does not establish deployed readiness.",
       "type": "array",
       "items": {"type": "object", "additionalProperties": false,
-        "required": ["task", "title", "status", "elements", "story", "storyStatus", "deploymentVerified"],
+        "required": ["task", "title", "status", "elements", "story", "storyStatus", "publicationVerified", "deploymentVerified"],
         "properties": {
           "task": {"type": "string"}, "title": {"type": "string"}, "status": {"type": "string"},
           "elements": {"type": "array", "items": {"type": "string"}},
           "story": {"type": ["string", "null"]}, "storyStatus": {"type": ["string", "null"]},
+          "publicationVerified": {"type": "boolean"},
           "deploymentVerified": {"type": "boolean"}
         }
       }

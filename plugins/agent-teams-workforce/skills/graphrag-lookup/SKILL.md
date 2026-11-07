@@ -98,7 +98,7 @@ your result.
 ## Before committing
 
 - Run GitNexus `detect_changes` before every commit (`scope: "staged"` for what you staged,
-  `"all"` for the whole working tree, `"compare"` with `base_ref: "main"` for a branch). In a
+  `"all"` for the whole working tree, `"compare"` with `base_ref` set to the actual PR base for a branch). In a
   linked worktree, pass the worktree's absolute path as `worktree`. Check that the changed
   symbols and affected flows are the ones the task meant to change; a result with
   `partial: true` is not a clean check, so run it again.
@@ -106,7 +106,7 @@ your result.
 ## Reviewing and testing code
 
 - Reviewers read a change through GitNexus: `detect_changes` with `scope: "compare"` and
-  `base_ref: "main"` for what the branch changed, then `impact` and `context` on the changed
+  `base_ref` set to the actual PR base for what the branch changed, then `impact` and `context` on the changed
   symbols for what they reach.
 - Test writers and testers use `query`, `context` and `impact` to find the flows and callers a
   test must cover, `api_impact` and `shape_check` for API contracts, and `explain` for the taint

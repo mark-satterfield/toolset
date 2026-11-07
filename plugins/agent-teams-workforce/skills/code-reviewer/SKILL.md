@@ -26,15 +26,20 @@ Automated code review tools for analyzing pull requests, detecting code quality 
 
 Analyzes git diff between branches to assess review complexity and identify risks.
 
+Pass the actual PR base explicitly: `origin/develop` for SkillSpoke Tier-1 work,
+or the verified `origin/HEAD` for a repository default. Never rely on the helper's legacy
+implicit main default. For reports, precompute PR analysis with that base and pass
+`--pr-analysis`; the report generator otherwise invokes the implicit-base helper.
+
 ```bash
-# Analyze current branch against main
-python scripts/pr_analyzer.py /path/to/repo
+# Analyze against the repository integration base
+python scripts/pr_analyzer.py /path/to/repo --base origin/HEAD
 
 # Compare specific branches
-python scripts/pr_analyzer.py . --base main --head feature-branch
+python scripts/pr_analyzer.py . --base origin/HEAD --head feature-branch
 
 # JSON output for integration
-python scripts/pr_analyzer.py /path/to/repo --json
+python scripts/pr_analyzer.py /path/to/repo --base origin/HEAD --json
 ```
 
 **What it detects:**
@@ -98,10 +103,10 @@ Combines PR analysis and code quality findings into structured review reports.
 
 ```bash
 # Generate report for current repo
-python scripts/review_report_generator.py /path/to/repo
+python scripts/review_report_generator.py /path/to/repo --pr-analysis pr_results.json
 
 # Markdown output
-python scripts/review_report_generator.py . --format markdown --output review.md
+python scripts/review_report_generator.py . --pr-analysis pr_results.json --format markdown --output review.md
 
 # Use pre-computed analyses
 python scripts/review_report_generator.py . \

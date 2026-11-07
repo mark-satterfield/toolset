@@ -8,7 +8,7 @@ There are three pipelines. Each works one kind of bead and hands its result to t
 |---|---|---|---|
 | Elaboration | Epic | A ready Epic and its PRD | The architecture and design the PRD needs, the TRD, a Spec and a Story for each repository the Epic's work reaches, and the Tasks under each Story, scored and ordered |
 | Build | Task | A Task with its build contract, on its Story's branch | The Task's code and tests committed to the Story's branch, with the repository's whole test suite passing |
-| Deploy | Story | A Story whose Tasks are all built | The Story's repository published and deployed to the development environment and verified, the record of what was built, and one merged pull request |
+| Deploy | Story | A Story whose Tasks are all built | One checked PR merged into develop; eligible package publication from that exact merge; deployment only on its separately authorized path; matrix verification records built and tested architecture, not deployed AWS state |
 
 Every unit of work the pipelines do is an Epic, a Story or a Task, and reaches a pipeline
 as one of those.

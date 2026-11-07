@@ -252,7 +252,7 @@ class WaitingProducer(TypedDict):
 
     task: str
     story: str
-    requiredStage: Literal["built", "deployed"]
+    requiredStage: Literal["built", "published", "deployed"]
     output: str
     evidence: str
 

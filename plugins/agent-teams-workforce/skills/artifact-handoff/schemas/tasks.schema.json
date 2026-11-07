@@ -77,7 +77,7 @@
             }
           },
           "buildPrerequisites": {
-            "description": "Structured real external producer stages required before this Task can execute its suite. Evidence is an absolute existing artifact path. Include closed producer Tasks whose Story still needs deployment; do not infer deployment from Task closure.",
+            "description": "Structured real external producer stages required before this Task can execute its suite. Evidence is an absolute existing artifact path. Include closed producer Tasks whose Story still needs publication or deployment; do not infer either from Task closure.",
             "type": "object", "additionalProperties": false, "required": ["producers"],
             "properties": {"producers": {"$ref": "../../pipeline-contracts/schemas/build-prerequisites.schema.json#/properties/producers"}}
           },

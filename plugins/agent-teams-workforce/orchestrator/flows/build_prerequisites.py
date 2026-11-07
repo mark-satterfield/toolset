@@ -6,6 +6,7 @@ import hashlib
 import json
 from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
+from typing import Literal
 
 from orchestrator.core import portfolio_bootstrap  # ruff: ignore[unused-import] - Install shared contract paths.
 
@@ -37,41 +38,105 @@ from orchestrator.flows.build_state import (
 from orchestrator.flows.build_workspace import git_operation
 
 
-def deployment_verified(path: Path) -> bool:
-    """Read complete, successful deployment evidence without querying or changing AWS.
+def _completed_facts(path: Path) -> dict[str, JsonValue]:
+    """Read facts only from a completed and closed producer Story journal.
 
     Args:
-        path: The producer Story's canonical step journal.
+        path: Canonical producer journal.
 
     Returns:
-        Whether the completed journal records closure and successfully verified stacks.
+        Recorded facts, or an empty mapping while completion is unproven.
 
     """
     if not path.is_file():
-        return False
+        return {}
     steps = list(step_journal.steps_in_order(step_journal.read_journal(path)))
     if not steps or any(step["status"] != "done" for step in steps):
-        return False
+        return {}
     facts: dict[str, JsonValue] = {
         artifact["name"]: artifact["value"]
         for step in steps
         for artifact in step["artifacts"]
         if artifact["kind"] == "value"
     }
-    stacks: JsonValue = facts.get("stacks")
-    if facts.get("closed") is not True:
-        return False
-    verified: bool = (
+    return facts if facts.get("closed") is True else {}
+
+
+def deployment_verified(path: Path) -> bool:
+    """Require actual verified stacks, independently of package publication.
+
+    Args:
+        path: Canonical producer journal.
+
+    Returns:
+        Whether completed delivery records nonempty successfully verified stacks.
+
+    """
+    stacks: JsonValue = _completed_facts(path).get("stacks")
+    return (
         isinstance(stacks, list)
         and bool(stacks)
         and all(isinstance(stack, dict) and stack.get("status") in VERIFIED_STATUSES for stack in stacks)
     )
-    mechanism: JsonValue = facts.get("mechanism")
-    head: JsonValue = facts.get("publishedHead")
-    published: bool = isinstance(head, str) and bool(head.strip())
-    if isinstance(mechanism, dict) and mechanism.get("publishes") is True:
-        return published and (verified if mechanism.get("deploys") is True else True)
-    return verified
+
+
+def publication_verified(path: Path) -> bool:
+    """Require an explicit observation that the committed package version is available.
+
+    Args:
+        path: Canonical producer journal.
+
+    Returns:
+        Whether the completed Story recorded a matching CodeArtifact availability receipt.
+
+    """
+    facts: dict[str, JsonValue] = _completed_facts(path)
+    receipt: JsonValue = facts.get("packagePublication")
+    if not isinstance(receipt, dict) or receipt.get("available") is not True:
+        return False
+    fields: tuple[str, ...] = ("checkedCommit", "package", "version", "domain", "domainOwner", "repository")
+    if not all(isinstance(receipt.get(key), str) and bool(receipt.get(key)) for key in fields):
+        return False
+    return receipt.get("checkedCommit") == facts.get("publishedHead")
+
+
+def delivery_verified(path: Path, stage: Literal["built", "published", "deployed"]) -> bool:
+    """Select the exact producer evidence required by a consumer.
+
+    Args:
+        path: Canonical producer journal.
+        stage: Declared dependency stage; built is checked by the Task reader.
+
+    Returns:
+        Whether the requested delivery stage has evidence.
+
+    Raises:
+        ValueError: If the stage is outside the shared contract.
+
+    """
+    if stage == "built":
+        return True
+    if stage == "published":
+        return publication_verified(path)
+    if stage == "deployed":
+        return deployment_verified(path)
+    message: str = f"Unknown prerequisite stage: {stage}"
+    raise ValueError(message)
+
+
+def _delivered(producer: dict[str, JsonValue], directory: Path) -> bool:
+    """Select delivery evidence for one validated producer row.
+
+    Args:
+        producer: Declared producer.
+        directory: Canonical journals directory.
+
+    Returns:
+        Whether its delivery stage is evidenced.
+
+    """
+    stage = check_type(producer["requiredStage"], Literal["built", "published", "deployed"])
+    return delivery_verified(_journal(directory, check_type(producer["story"], str)), stage)
 
 
 def prerequisites_for_record(record: object) -> list[dict[str, JsonValue]]:
@@ -165,16 +230,16 @@ def _add_wait_edges(graph: beadgraph.Graph, edges: dict[str, set[str]], wait: di
     _validate_producers(graph, consumer, producers)
     for producer in producers:
         story: beadgraph.Bead = graph.beads[check_type(producer["story"], str)]
-        if producer["requiredStage"] == "deployed" and story.closed:
+        if producer["requiredStage"] != "built" and story.closed:
             stage: str = "build:prerequisites-diagnosed"
             message: str = (
                 f"Closed producer Story {story.id} has no verified delivery evidence; "
-                "history cannot be redeployed as pending work"
+                "history cannot be republished or redeployed as pending work"
             )
             raise StepError(stage, OTHER_CAUSE, (message,))
         _same_repository_wait(graph, graph.beads[consumer], story, producer)
     edges.setdefault(consumer, set()).update(
-        check_type(producer["story"] if producer["requiredStage"] == "deployed" else producer["task"], str)
+        check_type(producer["story"] if producer["requiredStage"] != "built" else producer["task"], str)
         for producer in producers
     )
 
@@ -224,10 +289,7 @@ def _unresolved_wait(graph: beadgraph.Graph, directory: Path, wait: dict[str, Js
             for producer in producers
             if (
                 not graph.beads[check_type(producer["task"], str)].closed
-                or (
-                    producer["requiredStage"] == "deployed"
-                    and not deployment_verified(_journal(directory, check_type(producer["story"], str)))
-                )
+                or (producer["requiredStage"] != "built" and not _delivered(producer, directory))
             )
         ],
     }
@@ -240,7 +302,7 @@ def producer_candidates(
     journals: Path,
     exclude: str,
 ) -> list[JsonValue]:
-    """Keep real Tasks, including closed Tasks whose producer Story has not deployed.
+    """Keep real Tasks, including closed Tasks whose producer Story has not delivered its output.
 
     Args:
         graph: A current tracker snapshot.
@@ -250,7 +312,7 @@ def producer_candidates(
         exclude: The consumer Task to leave out, or an empty string.
 
     Returns:
-        Matching Tasks with their actual parent Story and recorded deployment state.
+        Matching Tasks with their actual parent Story and distinct delivery evidence.
 
     """
     candidates: list[JsonValue] = []
@@ -269,6 +331,7 @@ def producer_candidates(
             "elements": list(elements),
             "story": None if story is None else story.id,
             "storyStatus": None if story is None else story.status,
+            "publicationVerified": story is not None and publication_verified(_journal(journals, story.id)),
             "deploymentVerified": story is not None and deployment_verified(_journal(journals, story.id)),
         })
     return candidates
@@ -451,11 +514,11 @@ def _validate_producers(graph: beadgraph.Graph, consumer: str, producers: list[d
                 OTHER_CAUSE,
                 ("Producer Task/Story evidence disagrees with the tracker",),
             )
-        if producer["requiredStage"] == "deployed" and story is not None and held.parent == story.id:
+        if producer["requiredStage"] != "built" and story is not None and held.parent == story.id:
             raise StepError(
                 stage,
                 OTHER_CAUSE,
-                ("A consumer cannot wait for deployment of its own unfinished Story",),
+                ("A consumer cannot wait for delivery of its own unfinished Story",),
             )
 
 
@@ -480,7 +543,7 @@ def _same_repository_wait(
         raise StepError(stage, OTHER_CAUSE, (message,))
     if left and right and Path(left).resolve() == Path(right).resolve():
         task: beadgraph.Bead = graph.beads[check_type(producer["task"], str)]
-        if not task.closed or producer["requiredStage"] == "deployed":
+        if not task.closed or producer["requiredStage"] != "built":
             stage = "build:prerequisites-diagnosed"
             raise StepError(
                 stage,
@@ -511,10 +574,7 @@ def pending(wait: dict[str, JsonValue], directory: Path, control: Path) -> bool:
     _validate_producers(graph, check_type(wait["task"], str), producers)
     return any(
         not graph.beads[check_type(producer["task"], str)].closed
-        or (
-            producer["requiredStage"] == "deployed"
-            and not deployment_verified(_journal(directory, check_type(producer["story"], str)))
-        )
+        or (producer["requiredStage"] != "built" and not _delivered(producer, directory))
         for producer in producers
     )
 

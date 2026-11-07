@@ -566,7 +566,7 @@
       "$ref": "#/$defs/JsonObjectText",
       "x-groups": ["CONTRACT_KEYS"],
       "x-contract": {"argument": "buildPrerequisites", "kind": "object-or-unknown", "hashedWhenPresent": true},
-      "description": "JSON object with producers: actual Task ids, parent Story ids, requiredStage built or deployed, consumed output and absolute evidence artifact paths. The build selector validates actual producer stages before dispatch. Missing on older Tasks means unknown, not ready evidence."
+      "description": "JSON object with producers: actual Task ids, parent Story ids, requiredStage built, published or deployed, consumed output and absolute evidence artifact paths. The build selector validates actual producer stages before dispatch. Missing on older Tasks means unknown, not ready evidence."
     },
     "decision_ids": {
       "$ref": "#/$defs/JsonList",

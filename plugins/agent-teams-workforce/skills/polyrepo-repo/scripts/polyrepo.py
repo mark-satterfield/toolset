@@ -4146,6 +4146,205 @@ def _create_resume(cfg: Config, name: str, tdir: Path, dest: Path) -> CreateResu
     return "push-existing" if on_github else "push"
 
 
+@dataclasses.dataclass(frozen=True)
+class ProductBranchPolicy:
+    """Configured final branch roles and organization rules for newly created product repositories."""
+
+    integration_branch: str
+    release_branch: str
+    include_rulesets: tuple[str, ...]
+    exclude_rulesets: tuple[str, ...]
+
+
+PRODUCT_BRANCH_MARKER = "product-branch-initialization.json"
+
+
+def _creation_branch_policy(cfg: Config, tier: str | None) -> ProductBranchPolicy | None:
+    """Validate a product creation policy, leaving tooling and unconfigured projects unchanged.
+
+    Returns:
+        The product policy, or None when it does not apply.
+
+    Raises:
+        PolyrepoError: When configured branch names or rule selections are invalid.
+
+    """
+    if tier != "product" or not cfg.raw.get("product_branch_policy"):
+        return None
+    raw = _map(cfg.raw["product_branch_policy"], "product_branch_policy")
+    integration, release = str(raw.get("integration_branch", "")), str(raw.get("release_branch", ""))
+    for branch in (integration, release):
+        if not branch or run(["git", "check-ref-format", "--branch", branch]).returncode != 0:
+            message = f"invalid product branch: {branch!r}"
+            raise PolyrepoError(message)
+    if integration == release or release != cfg.default_branch:
+        message = "product integration must differ from the configured default/release branch"
+        raise PolyrepoError(message)
+    include = tuple(_strs(raw.get("include_rulesets"), "include_rulesets"))
+    exclude = tuple(_strs(raw.get("exclude_rulesets"), "exclude_rulesets"))
+    if set(include) & set(exclude):
+        message = "a product ruleset cannot be both included and excluded"
+        raise PolyrepoError(message)
+    return ProductBranchPolicy(integration, release, include, exclude)
+
+
+def _enroll_product_rule(cfg: Config, name: str, rule_id: object, selection: str) -> None:
+    """Add one repository to an existing organization rule's explicit name selection.
+
+    GitHub errors and malformed selectors propagate without changing unrelated rules.
+
+    """
+    endpoint = f"orgs/{cfg.owner}/rulesets/{rule_id}"
+    body = _map(_gh_json(endpoint), "organization ruleset")
+    conditions = _map(body.get("conditions"), "ruleset conditions")
+    names = _map(conditions.get("repository_name"), "repository_name selector")
+    selected = _strs(names.get(selection), f"repository_name.{selection}")
+    if name in selected:
+        return
+    names[selection] = [*selected, name]
+    conditions["repository_name"] = names
+    payload: dict[str, object] = {
+        key: body[key] for key in ("name", "target", "enforcement", "rules", "bypass_actors") if key in body
+    }
+    payload["conditions"] = conditions
+    with tempfile.TemporaryDirectory(prefix="product-ruleset-") as directory:
+        path = Path(directory) / "rule.json"
+        path.write_text(json.dumps(payload))
+        _gh_json("-X", "PUT", endpoint, "--input", str(path))
+
+
+def _enroll_product_rules(cfg: Config, name: str, policy: ProductBranchPolicy) -> None:
+    """Enroll new products in configured rules without changing unrelated repositories.
+
+    Raises:
+        PolyrepoError: When a configured organization rule is missing.
+
+    """
+    listed = _seq(_gh_json(f"orgs/{cfg.owner}/rulesets?per_page=100"), "organization rulesets")
+    rules = {str(item.get("name")): item.get("id") for row in listed if (item := _map(row, "ruleset"))}
+    wanted = (*policy.include_rulesets, *policy.exclude_rulesets)
+    if missing := set(wanted) - rules.keys():
+        message = f"missing product organization rulesets: {', '.join(sorted(missing))}"
+        raise PolyrepoError(message)
+    for selection, names in (("include", policy.include_rulesets), ("exclude", policy.exclude_rulesets)):
+        for rule_name in names:
+            _enroll_product_rule(cfg, name, rules[rule_name], selection)
+
+
+def _remote_product_tip(dest: Path, branch: str) -> str | None:
+    """Read a remote branch without treating transport errors as an absent branch.
+
+    Returns:
+        Its commit, or None when the ref does not exist.
+
+    """
+    result = git(dest, "ls-remote", "origin", f"refs/heads/{branch}")
+    must(result)
+    return result.stdout.split()[0] if result.stdout.strip() else None
+
+
+def _rename_product_branch(cfg: Config, name: str, dest: Path, policy: ProductBranchPolicy) -> None:
+    """Wait for GitHub's rename to propagate before recreating the release branch.
+
+    Raises:
+        PolyrepoError: When the old branch remains advertised after the bounded wait.
+
+    """
+    _gh_json(
+        "-X",
+        "POST",
+        f"repos/{cfg.owner}/{name}/branches/{policy.release_branch}/rename",
+        "-f",
+        f"new_name={policy.integration_branch}",
+    )
+    for _ in range(20):
+        if _remote_product_tip(dest, policy.release_branch) is None:
+            return
+        time.sleep(1)
+    message = f"{name}: branch rename has not propagated; resume initialization after it finishes"
+    raise PolyrepoError(message)
+
+
+def _finalize_product_branches(
+    cfg: Config,
+    name: str,
+    dest: Path,
+    policy: ProductBranchPolicy,
+    baseline: str,
+) -> None:
+    """Preserve the completed scaffold as integration and release baselines without deployment.
+
+    Raises:
+        PolyrepoError: When the branch rename has not propagated or branch tips differ.
+
+    """
+    _enroll_product_rules(cfg, name, policy)
+    integration, release = policy.integration_branch, policy.release_branch
+    if _remote_product_tip(dest, integration) is None:
+        if _remote_product_tip(dest, release) != baseline:
+            message = f"{name}: release tip differs from the recorded scaffold baseline"
+            raise PolyrepoError(message)
+        _rename_product_branch(cfg, name, dest, policy)
+    if git_out(dest, "rev-parse", "--verify", "-q", f"refs/heads/{integration}") is None:
+        must(git(dest, "branch", "-m", release, integration))
+    must(git(dest, "fetch", "origin"))
+    if any(git_out(dest, "rev-parse", ref) != baseline for ref in (integration, f"origin/{integration}")):
+        message = f"{name}: integration tip changed during initialization"
+        raise PolyrepoError(message)
+    _gh_json("-X", "PATCH", f"repos/{cfg.owner}/{name}", "-f", f"default_branch={integration}")
+    must(git(dest, "branch", "-u", f"origin/{integration}", integration))
+    must(git(dest, "remote", "set-head", "origin", "-a"))
+    existing = git_out(dest, "rev-parse", "--verify", "-q", f"refs/heads/{release}")
+    if existing is None:
+        must(git(dest, "branch", release, integration))
+    elif existing != baseline:
+        message = f"{name}: local release branch advanced; stopped without overwrite"
+        raise PolyrepoError(message)
+    if _remote_product_tip(dest, release) not in {None, baseline}:
+        message = f"{name}: remote release branch advanced; stopped without overwrite"
+        raise PolyrepoError(message)
+    must(git(dest, "push", "-u", "origin", f"{release}:{release}"))
+
+
+def _finish_product_creation(
+    args: argparse.Namespace,
+    cfg: Config,
+    dest: Path,
+    res: dict[str, object],
+    policy: ProductBranchPolicy,
+) -> int:
+    """Resume recorded creation work without recreating or replacing repository contents.
+
+    Returns:
+        The record-setup status; branch failures retain the local initialization marker.
+
+    Raises:
+        PolyrepoError: When the marker does not match this creation or lacks its baseline.
+
+    """
+    marker = dest / ".git" / PRODUCT_BRANCH_MARKER
+    state = _map(json.loads(marker.read_text()), "product initialization")
+    expected = json.loads(json.dumps(dataclasses.asdict(policy)))
+    if state.get("name") != args.name or state.get("policy") != expected:
+        message = "product initialization marker does not match the requested repository policy"
+        raise PolyrepoError(message)
+    baseline = state.get("baseline")
+    if baseline is None:
+        code = _create_records(args, cfg, dest, res)
+        if code:
+            return code
+        baseline = git_out(dest, "rev-parse", policy.release_branch)
+        state["baseline"] = baseline
+        marker.write_text(json.dumps(state))
+    if not isinstance(baseline, str) or not baseline:
+        message = "product initialization marker has no valid baseline"
+        raise PolyrepoError(message)
+    _finalize_product_branches(cfg, args.name, dest, policy, baseline)
+    marker.unlink()
+    res.update(integration_branch=policy.integration_branch, release_branch=policy.release_branch)
+    return 0
+
+
 def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     """Create a repo from a template, on disk and on GitHub, with its manifest entry and its stack.
 
@@ -4155,6 +4354,17 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
 
     """
     name, b = args.name, cfg.default_branch
+    product_policy = _creation_branch_policy(cfg, args.tier or default_tier(cfg, name))
+    if product_policy is not None:
+        local, _ = discover(cfg)
+        if name in local and (local[name].path / ".git" / PRODUCT_BRANCH_MARKER).is_file():
+            resumed: dict[str, object] = {"repo": name, "resumes": "product-branches"}
+            if args.dry_run:
+                emit(args, resumed, lambda: f"{name}: resume product branch initialization")
+                return 0
+            code = _finish_product_creation(args, cfg, local[name].path, resumed, product_policy)
+            emit(args, resumed, lambda: f"{name}: product branch initialization resumed")
+            return code
     args.template = args.template or _template_of_name(cfg, name)
     tdir, dest, resume = _create_checks(args, cfg)
     data = _template_data(cfg, name, tdir)
@@ -4190,6 +4400,16 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
                 "commit hook rewrote staged files, stage its fixes and commit once more"
             ),
             f"create the private GitHub repo {cfg.owner}/{name} and push {b}",
+            *(
+                [
+                    (
+                        f"after scaffold and records, initialize {product_policy.integration_branch} as default and "
+                        f"{product_policy.release_branch} at the same baseline, enrolling configured organization rules"
+                    ),
+                ]
+                if product_policy is not None
+                else []
+            ),
             "give a product repo the GitHub rulesets whose required checks its workflows report (rulesets.files)",
             f"add the manifest entry (lifecycle {args.lifecycle}, tier {args.tier or default_tier(cfg, name)})",
             "record the repo's stack in the matrix when its name ends in a stack type (purpose not stated)",
@@ -4223,7 +4443,13 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
             ),
         )
         return 1
-    code = _create_records(args, cfg, dest, res)
+    if product_policy is None:
+        code = _create_records(args, cfg, dest, res)
+    else:
+        (dest / ".git" / PRODUCT_BRANCH_MARKER).write_text(
+            json.dumps({"name": name, "policy": dataclasses.asdict(product_policy)}),
+        )
+        code = _finish_product_creation(args, cfg, dest, res, product_policy)
     emit(
         args,
         res,

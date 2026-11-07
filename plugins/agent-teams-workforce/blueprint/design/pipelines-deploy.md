@@ -4,7 +4,7 @@ Parent: [The pipelines: overview](pipelines.md)
 
 The deploy pipeline runs once per Story. It takes a Story whose Tasks are all built, with their
 code and tests on the Story's branch in the Story's worktree, and produces the Story's repository
-published (each custom Python library to CodeArtifact) and deployed to AWS dev with CDK, the
+integrated into develop, conditionally published to CodeArtifact after merge, or explicitly deployed to AWS dev with CDK, the
 deployment working, and one pull request that GitHub merges once the shepherd has its checks
 passing and its threads resolved. When the Story's test passes (its CI checks and the test that its
 CDK deployment works), what the Story built and tested is set verified in the matrix, before and
@@ -42,7 +42,7 @@ the only way to prove tht the architecture is likely to work."
 | matrix | The one record of how Epics, documents, resources, stacks, SSM parameters and repositories relate ([requirements/matrix.md](../requirements/matrix.md)). It holds no Story and no Task |
 | arc42 (vault) | The arc42 architecture and design documents in the `skillspoke-docs` vault |
 | vault | The `skillspoke-docs` vault outside arc42, for example the record of what was built (`tech/architecture/built/`) |
-| git / GitHub | The Story's repository: its worktree, the Story's branch, the pull request and `main` |
+| git / GitHub | The Story's repository: its worktree, the Story's branch, the pull request and `develop` |
 | AWS dev | The one development AWS account: CodeArtifact and the CloudFormation stacks CDK deploys |
 | "(no agent yet)" | A role the owner's design has that no agent file implements today |
 
@@ -78,13 +78,11 @@ merge, and never merge yourself."
 flowchart TD
     start(["keeper.py runs supervisor.py, whose deploy lane takes a Story whose Tasks are all built"]) --> look["deploy-mechanism: read the repository's stack command declarations from the matrix"]
     look --> what{"What does the repository publish and deploy?"}
-    what -->|"a custom Python library"| pub["A script runs the repository's publish command in the Story's worktree, on the Story's branch, before the deploy - section 2"]
+    what -->|"publishes a package"| merge2
     what -->|"CDK stacks only"| dep
     what -->|"neither"| none["Record nothing to deploy"]
-    pub --> pubOk{"Published?"}
-    pubOk -->|"yes, and the repository has stacks"| dep["A script runs cdk deploy to AWS dev, stacks in the matrix's dependency order - section 3"]
-    pubOk -->|"yes, no stacks"| merge2(("merge"))
-    pubOk -->|"no"| fix
+    dep["Authorized CDK deployment - section 3"]
+    merge2(("integration"))
     dep --> works{"Every stack complete and the smoke tests passing?"}
     works -->|"yes"| merge2
     works -->|"no"| fix["story-deploy-fix: deploy-failure-fixer - section 4"]
@@ -101,12 +99,15 @@ flowchart TD
     ver --> gh["GitHub auto-merge merges the pull request, a separate step after the test"]
     ok -->|"no: the shepherd cannot fix what is left"| blocked2(["Pull request and Story stay open, cause reported to the owner"])
     gh --> clean["The shepherd removes the Story's worktree, local branch and GitHub branch immediately after the merge"]
-    clean --> doneS(["Merged and the deploy verified working: the deploy lane closes the Story bead"])
+    clean --> package{"Publishes a package?"}
+    package -->|"yes"| pub["Publish exact merged develop commit - section 2"]
+    pub --> doneS(["Integration completed: close the Story"])
+    package -->|"no"| doneS
 ```
 
 Notes on the diagram:
 
-- The fix loop returns to the publish and deploy decision and exits when the deployment works,
+- The deployment fix loop returns to the deploy decision and exits when the deployment works,
   when three fix-and-redeploy attempts are spent, or when the fix would change the design.
 - Scripts run the publish command and `cdk deploy`, and an agent works only on a failure, because
   running a named command needs no reasoning.
@@ -137,84 +138,37 @@ Notes on the diagram:
 
 ## 2. Publish a custom Python library
 
-**Subject:** the publish of the package a Story's repository holds.
-**Scope:** from the Story's built branch, in the Story's worktree, to the package the repository's
-publish command uploads to CodeArtifact.
-**Purpose:** what the publish reads, who runs it, when it runs and what it writes.
-**Boundary:** the CDK deploy is section 3; a failed publish goes to section 4. The version the
-package gets is the repository's publish command's own; the pipeline sets and changes no version
-(for SkillSpoke, the "Library versions" section of each repository's `AGENTS.md`). Nothing is
-published after the pull request opens or because anything merged to `main`.
-**Sources:** the owner, on the naming library: "a python library, which should have been
-published to CodeArtifacts."; [requirements/matrix.md](../requirements/matrix.md) R34 ("The matrix
-records every custom Python library as a package published to CodeArtifact") and its lookup Q21
-("What does this stack publish and deploy, and which commands test, publish and deploy it?"),
-which agree with the owner's matrix as the index that saves every step a scan ("so that agents do
-not need the scan a perform complicated searches over and over just to figure out answer to
-simple questions"); checks of upstream steps, the owner: "I don't want every subsequent step in a
-process constantly checking that upstream steps were done right" with the exception "like if B is
-going to be a universal or shared component". For who starts the deploy and what the publish does, the code: `ops/sdlc-automation/keeper.py`,
-`supervisor.py`, `selection.py` and `storydeploy.py` (`mechanism_of`, `_workspace_step`,
-`_library_tests_fail`, `_publish_step`, `_run_again`), and the `deploy-mechanism` workflow.
+The owner's pipeline publishes only after the Story's checked PR merges into develop.
+The matrix supplies the repository's declared publish command. GitHub supplies the PR base,
+state and exact merge commit; a detached publication worktree isolates that commit from
+later develop changes and from cleanup of the Story worktree. The library suite runs against
+that merged source before publication.
+
+The driver passes `SKILLSPOKE_PUBLISH_COMMIT` and an absolute `SKILLSPOKE_PUBLICATION_RECEIPT`
+path to the existing command. The validated `packagePublication` receipt records `checkedCommit`,
+package/version, CodeArtifact domain/owner/repository and exact-version availability. A successful
+version skip is not proof that the requested package version exists. The publisher verifies
+that exact commit and its develop provenance, applies the source-controlled version and
+conditional publication policy, and rejects collisions. The driver records the merged commit
+only after the command succeeds. A failure preserves its worktree and stops; it never asks an
+agent to edit merged source or silently chooses another package version. Retry completes the
+same immutable publication or requires a correcting PR.
+
+Publisher Stories skip CDK synthesis, deployment and smoke checks in this integration path,
+including repositories that also contain a layer. Publication schedules no deployment. Matrix verification records built/tested architecture, not deployed AWS state.
+Layer/CDK work requires its separately authorized deployment. Existing queued publication
+before merge, or queued deployment on a publishing Story, stops with an actionable journal
+reconciliation message; no historical completed step is rewritten.
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    participant K as keeper.py - supervisor.py deploy lane
-    participant DW as Deploy of the Story
-    participant ST as deploy_mechanism.py
-    participant RUN as Publish script
-    box Stores
-        participant BD as beads
-        participant MX as matrix
-        participant G as git / GitHub - the Story's worktree
-        participant AWS as AWS dev - CodeArtifact
-    end
-
-    K->>BD: the Story and its Tasks
-    BD-->>K: every Task built
-    K->>DW: start the deploy of the Story
-    DW->>ST: what does this repository publish and deploy?
-    ST-->>DW: publishes, the publish command the repository declares, deploys
-    DW->>G: the Story's worktree, on the Story's branch
-    DW->>MX: is the repository's stack a shared library, and its test command?
-    MX-->>DW: executionUse, commands.test
-    opt the package is a shared library - the one check of the build's work that stays
-        DW->>G: run its test suite on the Story's branch
-        alt passing
-            G-->>DW: passing
-        else failing or no test command declared
-            G-->>DW: failed
-            Note over DW: the deploy stops and nothing is published
-        end
-    end
-    DW->>RUN: the repository's publish command, in the Story's worktree
-    RUN->>AWS: publish the package built from the branch head
-    alt published
-        AWS-->>RUN: uploaded
-        RUN-->>DW: exit 0
-        DW->>DW: record the published commit, then cdk synth when the repository deploys - section 3
-    else publish failed
-        AWS-->>RUN: error
-        RUN-->>DW: failed, with the output
-        DW->>DW: story-deploy-fix - section 4, then the publish runs again
-    end
+flowchart LR
+    branch[Story branch] --> checks[PR checks pass]
+    checks --> merge[PR merged into develop]
+    merge --> source[Detached exact merge commit]
+    source --> suite[Library suite]
+    suite --> publish[Conditional package publication]
+    publish --> close[Record build verification and close Story]
 ```
-
-Notes on the diagram:
-
-- The Python `deploy-mechanism` flow reads the matrix's stack command declarations for the repository:
-  a publish command means it publishes, and a deploy command means it deploys with CDK. A script
-  runs that command and reports its exit status and output; running a command needs no reasoning.
-- The publish runs from the Story's worktree on the Story's branch, after the workspace step and
-  before `cdk synth`, the deploy, the verification, the built record and the pull request. It runs
-  again only after a fix of a failed publish, synth, deploy or verification (section 4), because the
-  fix changed the branch. Nothing is published after the pull request opens, and nothing is
-  published because a merge to `main` happened.
-- The pipeline passes the publish command no version and sets, computes or bumps none: the
-  version is whatever the repository's own publish command publishes.
-- A repository the steward rules publishes a package but names no publish command for is deployed
-  without a publish when it deploys with CDK, and stops otherwise.
 
 ## 3. Deploy to AWS dev with CDK
 
@@ -294,7 +248,7 @@ Notes on the diagram:
 
 ## 4. The fix of a failed deploy (story-deploy-fix)
 
-**Subject:** the fix of a Story's failed publish, synth, deploy or deployment check.
+**Subject:** the fix of a Story's failed synth, deploy or deployment check.
 **Scope:** from the failure's output to a fix committed on the Story's branch, or to the fix
 stopping.
 **Purpose:** what the fix is given, who makes it, what it may change, where it commits, and where
@@ -315,7 +269,7 @@ report." and "`git commit --no-verify` / `git push --no-verify` / `git commit -n
 
 ```mermaid
 flowchart TD
-    in(["A failed publish, synth, deploy or deployment check, with its output"]) --> who["Start deploy-failure-fixer"]
+    in(["A failed synth, deploy or deployment check, with its output"]) --> who["Start deploy-failure-fixer"]
     who --> ctx["The fixer reads the output, the Task and spec, and the full architecture of the component through the spec's links in arc42 (vault)"]
     ctx --> cause{"What does the failure need?"}
     cause -->|"a change within the design the task and spec give"| change["Change the code or CDK in the Story's worktree"]
@@ -445,7 +399,7 @@ sequenceDiagram
 
     DW->>G: push the Story's branch
     DW->>PRC: open the pull request
-    PRC->>GH: one pull request, the Story's branch into main, auto-merge on
+    PRC->>GH: one pull request, the Story's branch into develop, auto-merge on
     GH-->>PRC: the pull request URL
     PRC->>SH: hand the pull request to the shepherd
     PRC-->>DW: the pull request URL
@@ -458,7 +412,7 @@ sequenceDiagram
         SH->>GH: replies, threads resolved
     end
     alt checks passing and threads resolved
-        GH->>GH: auto-merge merges into main
+        GH->>GH: auto-merge merges into develop
         GH-->>DW: merged
     else the shepherd cannot fix what is left
         SH-->>DW: what is left, with its cause
@@ -468,13 +422,13 @@ sequenceDiagram
 
 Notes on the diagram:
 
-- A change the shepherd pushes re-runs the repository's checks. It does not re-run the publish or
-  the deploy: the deploy published and deployed before the pull request opened, and waits only for
+- A change the shepherd pushes re-runs the repository's checks. Package publication waits for
+  the exact develop merge; an authorized pre-PR deployment is not repeated by the merge. The PR waits for
   GitHub to report the pull request merged.
 - The loop exits when the checks pass and the threads are resolved, and GitHub merges; or when
   the shepherd cannot fix what is left, when the pull request and the Story stay open and the cause
   is reported to the owner, because merge is automatic and never forced.
-- Nothing is published after the merge.
+- Eligible package publication follows the develop merge; main and tag events publish nothing.
 - No agent merges and the owner is never asked to merge.
 
 ## 7. Verification: the matrix's verified marks
@@ -562,17 +516,17 @@ stateDiagram-v2
 
     [*] --> building
     building --> built : the last Task built and tested
-    built --> publishing : the deploy lane starts the deploy [the repository publishes a package]
+    built --> record : the repository publishes a package
     built --> deploying : the deploy lane starts the deploy [stacks only]
     built --> record : the deploy lane starts the deploy [neither] / nothing to deploy recorded
-    publishing --> deploying : published [the repository has stacks]
-    publishing --> record : published [no stacks]
-    publishing --> fixing : publish failed
+    publishing --> closed : published [layer deployment is separate work]
+    publishing --> closed : published [no stacks]
+    publishing --> stuck : publish failed
     deploying --> checking : every stack complete
     deploying --> fixing : a stack failed
     checking --> record : the smoke tests pass
     checking --> fixing : a smoke test fails
-    fixing --> publishing : fix committed [the repository publishes a package]
+    publishing --> stuck : immutable publication failed
     fixing --> deploying : fix committed or deploy-time value supplied [stacks only]
     fixing --> released : three attempts spent, or no commit possible
     fixing --> design : the fix would change the design
@@ -581,7 +535,8 @@ stateDiagram-v2
     shepherding --> verifiedS : checks pass / what the Story built and tested set verified
     verifiedS --> merged : threads resolve / GitHub auto-merge
     shepherding --> stuck : the shepherd cannot fix what is left
-    merged --> closed : the deploy lane closes the Story bead
+    merged --> publishing : the repository publishes a package
+    merged --> closed : no package publication
     closed --> [*]
 ```
 
@@ -665,7 +620,7 @@ knows to deploy a story."; `ops/sdlc-automation/keeper.py`, `supervisor.py`, `se
 | Runs the publish command and `cdk deploy` | A script | Running a named command needs no reasoning |
 | Writes the smoke tests | `smoke-test-author`, before the deploy | Its subject: smoke tests of a change's critical paths, parameterized by environment variables so they run against the deployment |
 | Decides that the deployment works | A script: every stack complete and the smoke tests passing | Deploy success alone does not show the code runs |
-| Fixes a failed deploy | `deploy-failure-fixer` | Its subject: diagnosing a failed publish, synth, deploy or verification and fixing it in the worktree, with the synth assertion tests |
+| Fixes a failed deploy | `deploy-failure-fixer` | Its subject: diagnosing a failed synth, deploy or verification and fixing it in the worktree, with the synth assertion tests |
 | Records what was built where it differs | For example `built-architecture-comparer` | Its subject: "Compare the code one Story built with the approved architecture for its elements and record each difference" |
 | Corrects arc42 and the matrix from the built record, and takes a design-changing finding | `architecture-maintainer`, in the architecture stage | The arc42 writer; architecture has one approver |
 | Approves that correction | The architecture agent responsible for approving the architecture | An `effective` document is an approved one |

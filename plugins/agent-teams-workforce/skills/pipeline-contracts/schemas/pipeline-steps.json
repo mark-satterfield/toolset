@@ -432,7 +432,6 @@
             {"name": "branch", "kind": "value", "holds": "the Story's branch, a string"}
           ],
           "adds": [
-            {"kinds": ["deploy:publish"], "when": "the repository publishes a package"},
             {"kinds": ["deploy:synth"], "when": "the repository deploys with CDK and publishes no package"}
           ]
         },
@@ -440,16 +439,14 @@
           "description": "Publish the repository's package",
           "purpose": "The repository publishes a package other repositories install",
           "runBy": "driver",
-          "reads": ["mechanism", "worktree"],
+          "reads": ["mechanism", "pullRequest", "pullRequestState"],
           "records": [
-            {"name": "publishedHead", "kind": "value", "holds": "the commit the package was published from, a string"},
+            {"name": "publishedHead", "kind": "value", "holds": "the merged commit whose publication eligibility completed, including a version skip"},
+            {"name": "packagePublication", "kind": "value", "holds": "{ checkedCommit, package, version, domain, domainOwner, repository, available }: exact source-version availability checked against CodeArtifact"},
             {"name": "deployFailure", "kind": "value", "holds": "{ step, output, stacks }, recorded only when the publish failed"}
           ],
-          "adds": [
-            {"kinds": ["deploy:synth"], "when": "the publish succeeded and the repository deploys with CDK"},
-            {"kinds": ["deploy:fix", "deploy:publish"], "when": "the publish failed"}
-          ],
-          "limit": "It fails when three fixes of this Story's deploy have already run"
+          "adds": [],
+          "limit": "Publish the exact merged develop commit; failure preserves the immutable source and stops for correction through a new PR"
         },
         "deploy:synth": {
           "description": "Synthesize the CDK app",
@@ -462,7 +459,7 @@
           ],
           "adds": [
             {"kinds": ["deploy:ssm-check"], "when": "the synth succeeded"},
-            {"kinds": ["deploy:fix", "deploy:publish", "deploy:synth"], "when": "the synth failed: after the fix the package is published again when the repository publishes one, then the app is synthesized again"}
+            {"kinds": ["deploy:fix", "deploy:synth"], "when": "the synth failed: after the fix the non-publishing app is synthesized again"}
           ],
           "limit": "It fails when three fixes of this Story's deploy have already run"
         },
@@ -501,7 +498,7 @@
             {"name": "deployFailure", "kind": "value", "holds": "{ step, output, stacks }, recorded only when the deploy or its verification failed"}
           ],
           "adds": [
-            {"kinds": ["deploy:fix", "deploy:publish", "deploy:synth"], "when": "the deploy or its verification failed: after the fix the package is published again when the repository publishes one, then the app is synthesized again"}
+            {"kinds": ["deploy:fix", "deploy:synth"], "when": "the deploy or its verification failed: after the fix the non-publishing app is synthesized again"}
           ],
           "limit": "It fails when three fixes of this Story's deploy have already run"
         },
@@ -683,7 +680,9 @@
           "records": [
             {"name": "pullRequestState", "kind": "value", "holds": "the state GitHub reports for the pull request, the string MERGED"}
           ],
-          "adds": [],
+          "adds": [
+            {"kinds": ["deploy:publish"], "when": "the repository publishes a package and its PR merged into develop"}
+          ],
           "waits": "the pull request is open and not merged"
         },
         "deploy:close": {
