@@ -298,9 +298,11 @@ dependency group may appear. Exclude with the backend's own setting (for hatchli
 
 ## Step 6. Do not edit around the lock
 
-Never edit a lock file by hand and never change a published library's version or a pin to get ahead
-of what the package index holds; follow the project's instructions on library versions. After
-changing `pyproject.toml`, run `uv lock` and commit the lock with the change.
+Never edit a lock file by hand or move a consumer's dependency pin or lock ahead of an available
+package. In the provider repository, follow the project's library-version instructions: reconcile
+the published baseline, account for all allocated version numbers, preserve an eligible pending
+candidate and owner-selected major/minor components, and increment the source patch only when
+required. After changing `pyproject.toml`, run `uv lock` and commit the lock with the change.
 
 In the project of a function or a layer, set `[tool.uv] required-environments` to Linux on the
 architectures it is built for (for example `"sys_platform == 'linux' and platform_machine == 'aarch64'"`),
