@@ -44,13 +44,13 @@ The decomposer's Tasks file is checked by `task_decomposition.task_grouping_chec
 then `tasks.schema.json`, then `task_decomposition.duplicate_title_problems` ("Task <key> repeats
 the title of Task <key>": no two Tasks of a Story share a title), then
 `hierarchy.task_grouping_problems`, which raises `ValueError` with
-every problem (a content failure, so the session gets its one correction): when the Story builds
-two or more things, each Task that cites exactly one thing: "Task <key> covers one thing: group
-the things this Story builds into coherent Tasks".
+every problem (a content failure, so the session gets its one correction): each Task that cites
+exactly one thing whose item `requires` or is `requiredBy` another unverified item of the Story:
+"Task <key> covers one thing coupled to other work of this Story: group <item> with <items>".
 
-A Task is a coherent unit of build work, sized on the wsjf skill's scale: one Task covers several
-of the things the Story builds, every thing the Story builds is cited by some Task, and it is
-never one Task per thing.
+A Task is a coherent unit of build work, sized on the wsjf skill's scale: things the Story
+builds that are coupled are built together in one Task, a thing that stands alone may be its own
+Task, and every thing the Story builds is cited by some Task.
 
 A thing the Story builds whose entry carries the verified flag (the span marks its item `state`
 `built`) is not work (`hierarchy.work_items`): no Task has to cite it.

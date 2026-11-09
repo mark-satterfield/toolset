@@ -538,9 +538,9 @@
       "rules": [
         {
           "id": "tasks-group",
-          "enforced": "covers one thing: group the things this Story builds into coherent Tasks",
+          "enforced": "covers one thing coupled to other work of this Story",
           "home": "agents/task-decomposer.md",
-          "stated": "refuses a Task that covers one thing when the Story builds two or more"
+          "stated": "refuses a Task that covers one thing coupled to other work of this Story"
         },
         {
           "id": "task-titles-unique",

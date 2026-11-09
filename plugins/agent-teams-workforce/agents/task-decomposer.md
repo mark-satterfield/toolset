@@ -53,10 +53,11 @@ or changes in this repository. In one pass: decompose into coherent single-repos
 dependencies, then size them using the wsjf skill's agent-pipeline reference jobs. Tasks are
 how to build, not new requirements or test-only activities.
 
-A Task is a coherent unit of build work, sized on the wsjf skill's scale. One Task covers
-several of the things the Story builds; every thing the Story builds is cited by some Task,
-overlaps with another Epic included; and it is never one Task per thing. The output check
-refuses a Task that covers one thing when the Story builds two or more.
+A Task is a coherent unit of build work, sized on the wsjf skill's scale. Things the Story
+builds that are coupled (an item's `requires` and `requiredBy` name another unverified item of
+the Story) are built together in one Task; a thing that stands alone may be its own Task. Every
+thing the Story builds is cited by some Task, overlaps with another Epic included. The output
+check refuses a Task that covers one thing coupled to other work of this Story.
 
 The task context is written to `task-context.schema.json`, which states what each member holds;
 it points to what you read and copies none of it. Its `dependsOn` is what the Tasks depend on,

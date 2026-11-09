@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import heapq
 import json
 import os
 import re
@@ -577,16 +578,16 @@ def build_order(keys: list[str], edges: list[tuple[str, str]]) -> list[str] | No
     for frm, to in edges:
         indegree[to] += 1
         out[frm].append(to)
-    ready: list[str] = [k for k in keys if indegree[k] == 0]
+    ready: list[tuple[int, str]] = [(rank[k], k) for k in keys if indegree[k] == 0]
+    heapq.heapify(ready)
     order: list[str] = []
     while ready:
-        ready.sort(key=rank.__getitem__)
-        key: str = ready.pop(0)
+        key: str = heapq.heappop(ready)[1]
         order.append(key)
         for nxt in out[key]:
             indegree[nxt] -= 1
             if indegree[nxt] == 0:
-                ready.append(nxt)
+                heapq.heappush(ready, (rank[nxt], nxt))
     return order if len(order) == len(keys) else None
 
 
@@ -740,13 +741,15 @@ def _unique_edges(
         return copies.get(k, [k])
 
     edges: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
     for e in raw_edges if isinstance(raw_edges, list) else []:
         if not isinstance(e, dict):
             continue
         for frm in expand(e.get("from")):
             for to in expand(e.get("to")):
                 pair: tuple[str, str] = (frm, to)
-                if frm in known and to in known and frm != to and pair not in edges:
+                if frm in known and to in known and frm != to and pair not in seen:
+                    seen.add(pair)
                     edges.append(pair)
     return edges
 
@@ -1370,27 +1373,60 @@ def _cited(task: JsonObject, items: Mapping[str, EntryId]) -> list[str]:
     return [cited for cited in stated if isinstance(cited, str) and cited in items] if isinstance(stated, list) else []
 
 
+def _coupled_work(items: Sequence[JsonValue]) -> dict[str, set[str]]:
+    """Map each thing a Story builds to the other unverified things it is built together with.
+
+    Two things are coupled when the architecture side makes one need the other built first
+    (``requires`` and ``requiredBy`` of the repository context's items). A thing the span marks
+    verified (``state`` :data:`STATE_VERIFIED`) is not work, so no coupling to it counts.
+
+    Returns:
+        Item id -> the ids of the unverified items of the same Story it requires or is required by.
+
+    """
+    shaped: list[JsonObject] = [json_object(item) for item in items]
+    work: set[str] = {str(item["id"]) for item in shaped if item.get("state") != STATE_VERIFIED}
+    return {
+        str(item["id"]): {
+            linked
+            for linked in (*str_list(item.get("requires")), *str_list(item.get("requiredBy")))
+            if linked in work and linked != str(item["id"])
+        }
+        for item in shaped
+    }
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def task_grouping_problems(items: Sequence[JsonValue], tasks: Sequence[JsonValue]) -> list[str]:
     """Check that a Story's Tasks group what it builds into coherent units of build work.
 
+    A Task that covers one thing is a coherent unit when that thing stands alone: nothing else the
+    Story builds needs it built first, and it needs nothing else the Story builds. A Task that
+    covers one thing coupled to other work of the Story splits that work apart, so it is refused.
+
     Args:
-        items: The items of what the Story builds, each with its ``id`` and ``matrixId``.
+        items: The items of what the Story builds, each with its ``id`` and ``matrixId``, and the
+            ``requires`` and ``requiredBy`` that couple it to the Story's other items.
         tasks: The Tasks of the decomposer's Tasks file.
 
     Returns:
-        One sentence per Task that covers one thing when the Story builds two or more. Empty
-        when the Tasks group what the Story builds.
+        One sentence per Task that covers one thing coupled to other unverified work of the Story.
+        Empty when the Tasks group what the Story builds.
 
     """
     by_id: dict[str, EntryId] = {
         str(json_object(item)["id"]): EntryId(str(json_object(item).get("matrixId", ""))) for item in items
     }
+    coupled: dict[str, set[str]] = _coupled_work(items)
     shaped: list[JsonObject] = [json_object(task) for task in tasks]
+    singles: list[tuple[str, str]] = [
+        (_task_label(task), cited[0]) for task in shaped if len(cited := _cited(task, by_id)) == 1
+    ]
+    partners: dict[str, str] = {item: ", ".join(sorted(linked)) for item, linked in coupled.items() if linked}
     return [
-        f"Task {_task_label(task)} covers one thing: group the things this Story builds into coherent Tasks"
-        for task in shaped
-        if len(by_id) > 1 and len(_cited(task, by_id)) == 1
+        f"Task {label} covers one thing coupled to other work of this Story: group {item} with {partners[item]}"
+        for label, item in singles
+        if item in partners
     ]
 
 
@@ -1567,9 +1603,8 @@ def derive_prerequisites(files: StoryFiles, tasks: list[Task]) -> list[Task]:
     _WARNINGS.extend(f"{files.tasks_file.name}: {p}" for p in problems)
     by_key: dict[str, Task] = {t.key: t for t in tasks}
     nodes: list[str] = [t.key for t in tasks]
-    derived: list[tuple[str, str]] = [
-        (d, t.key) for t in tasks for d in t.depends_on if (d, t.key) not in set(saved_edges)
-    ]
+    saved: set[tuple[str, str]] = set(saved_edges)
+    derived: list[tuple[str, str]] = [(d, t.key) for t in tasks for d in t.depends_on if (d, t.key) not in saved]
     _taken, left = _acyclic(nodes, saved_edges, derived)
     for frm, to in left:
         by_key[to].depends_on.remove(frm)
