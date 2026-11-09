@@ -216,7 +216,7 @@ def _compare(run: StepRun) -> Completion:
     requests: list[tuple[str, list[str]]] = [
         (check_type(stack["id"], str), [check_type(row["id"], str) for row in (entries or [stack])]) for stack in stacks
     ]
-    scopes: list[StoryScope] = run.tools.portfolio("built:scope", _story_scopes, requests)
+    scopes: list[StoryScope] = run.tools.portfolio_read("built:scope", _story_scopes, requests)
     request = (
         f"Compare deployed Story {run.context.bead} in {run.context.args['repoPath']} with effective "
         f"architecture {_root(run)}/arc42. Record differences only in {_root(run)}/built; "
