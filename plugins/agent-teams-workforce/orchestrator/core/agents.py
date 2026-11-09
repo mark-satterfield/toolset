@@ -195,6 +195,37 @@ def _contract_files(schema: Path) -> list[Path]:
     return found
 
 
+type SchemaStamp = tuple[tuple[str, int], ...]
+"""The modification time of the plugin's ``skills/`` folder and of each of its ``schemas/`` folders."""
+
+_SCHEMA_INDEXES: Final[dict[Path, tuple[SchemaStamp, dict[str, list[Path]]]]] = {}
+"""Each plugin's contract schema files by file name, with the folder stamp they were listed under."""
+
+
+def _schema_index(root: Path) -> dict[str, list[Path]]:
+    """List the plugin's contract schema files (``skills/*/schemas/*.schema.json``) by file name.
+
+    The listing is kept while no ``schemas/`` folder and the ``skills/`` folder itself have
+    gained, lost or renamed an entry (their modification times are unchanged); the files' content
+    is always read by the caller, never kept.
+
+    Returns:
+        Each schema file name with the files of that name, sorted.
+
+    """
+    skills: Path = root / "skills"
+    folders: list[Path] = sorted(skills.glob("*/schemas"))
+    stamp: SchemaStamp = tuple((str(folder), folder.stat().st_mtime_ns) for folder in [skills, *folders])
+    held: tuple[SchemaStamp, dict[str, list[Path]]] | None = _SCHEMA_INDEXES.get(root)
+    if held is not None and held[0] == stamp:
+        return held[1]
+    index: dict[str, list[Path]] = {}
+    for path in sorted(path for folder in folders for path in folder.glob("*.schema.json")):
+        index.setdefault(path.name, []).append(path)
+    _SCHEMA_INDEXES[root] = (stamp, index)
+    return index
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def agent_fingerprint(plugin: Path, agent: str, contracts: Sequence[Path] = ()) -> str:
     """Fingerprint what a session of an agent was made under: its definition and its contracts.
@@ -220,7 +251,8 @@ def agent_fingerprint(plugin: Path, agent: str, contracts: Sequence[Path] = ()) 
     files: list[Path] = [definition]
     text: str = definition.read_text(encoding="utf-8") if definition.is_file() else ""
     named: set[str] = set(_SCHEMA_NAME.findall(text))
-    schemas: list[Path] = sorted(path for path in root.glob("skills/*/schemas/*.schema.json") if path.name in named)
+    index: dict[str, list[Path]] = _schema_index(root)
+    schemas: list[Path] = sorted(path for name in named for path in index.get(name, []))
     for contract in [*schemas, *contracts]:
         files.extend(path for path in _contract_files(root / contract) if path not in files)
     digest = hashlib.sha256()

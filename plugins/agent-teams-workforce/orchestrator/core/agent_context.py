@@ -14,10 +14,12 @@ skill text.
 from __future__ import annotations
 
 import functools
+import hashlib
 import json
 import os
 import shlex
 import shutil
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -69,12 +71,13 @@ SKILL_FILE: Final = "SKILL.md"
 SKILLS_FOLDER: Final = "skills"
 LISTED_FOLDERS: Final = frozenset({"commands", "workflows"})
 """The plugin folders whose files Claude Code lists to the model beside the skills, by file stem."""
-SESSION_PLUGIN: Final = ".plugin"
+PREPARED_PLUGINS: Final = "atw-prepared-plugins"
+"""The folder of the temporary directory holding the shared prepared plugin folders, one per digest."""
 INSTALLED_PLUGINS: Final = Path("plugins") / "installed_plugins.json"
 """Where Claude Code records each installed plugin, inside its configuration directory."""
 MANIFEST_FOLDER: Final = ".claude-plugin"
 SKILL_SEPARATOR: Final = ":"
-"""The folder in a session's directory that holds the plugin as that session sees it."""
+"""What separates the plugin from the skill in a ``<plugin>:<skill>`` name."""
 DISABLE_BUNDLED_SKILLS_KEY: Final = "disableBundledSkills"
 CONFIG_DIR_ENV: Final = "CLAUDE_CONFIG_DIR"
 GLOBAL_CONFIG_NAME: Final = ".claude.json"
@@ -383,39 +386,114 @@ def session_servers(plugin: Path, config: Path, agent: AgentDefinition) -> dict[
     return {MCP_SERVERS_KEY: {name: defined[name] for name in names if name in defined}}
 
 
-def _link(target: Path, link: Path) -> None:
-    """Make ``link`` a symbolic link to ``target``."""
-    link.symlink_to(target, target_is_directory=target.is_dir())
+type PlanEntry = tuple[str, str | None]
+"""One entry of a prepared plugin folder: its path inside the folder, and the file it links to, or None for a folder."""
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def _skill_folder(source: Path, folder: Path, skills: frozenset[str]) -> None:
-    """Build a session's skill folder: a named skill whole, any other without its ``SKILL.md``.
+def _skill_plan(source: Path, folder: str, skills: frozenset[str]) -> list[PlanEntry]:
+    """Plan a session's skill folder: a named skill whole, any other without its ``SKILL.md``.
 
     A skill folder with no ``SKILL.md`` is not listed, while its scripts, schemas and references
     stay at their paths for the commands and skills that use them.
+
+    Returns:
+        The folder and its entries, in the order they are made.
+
     """
-    folder.mkdir()
+    plan: list[PlanEntry] = [(folder, None)]
     entry: Path
     for entry in sorted(source.iterdir()):
         if entry.name in skills or not entry.is_dir():
-            _link(entry, folder / entry.name)
+            plan.append((f"{folder}/{entry.name}", str(entry)))
             continue
-        (folder / entry.name).mkdir()
-        part: Path
-        for part in sorted(entry.iterdir()):
-            if part.name != SKILL_FILE:
-                _link(part, folder / entry.name / part.name)
+        plan.append((f"{folder}/{entry.name}", None))
+        plan.extend(
+            (f"{folder}/{entry.name}/{part.name}", str(part))
+            for part in sorted(entry.iterdir())
+            if part.name != SKILL_FILE
+        )
+    return plan
+
+
+def _complete(folder: Path, plan: list[PlanEntry]) -> bool:
+    """Tell whether every entry of a plan is in a prepared folder as the plan makes it.
+
+    Returns:
+        True when each planned folder is a folder and each planned link links to its file.
+
+    """
+    for relative, target in plan:
+        path: Path = folder / relative
+        if (target is None and not path.is_dir()) or (
+            target is not None and (not path.is_symlink() or str(path.readlink()) != target)
+        ):
+            return False
+    return True
+
+
+def _make(staging: Path, plan: list[PlanEntry]) -> None:
+    """Make the folders and links of a plan inside an empty staging folder."""
+    for relative, target in plan:
+        path: Path = staging / relative
+        if target is None:
+            path.mkdir()
+            continue
+        path.symlink_to(target, target_is_directory=Path(target).is_dir())
+
+
+def _prepared(plan: list[PlanEntry], verified: set[str]) -> Path:
+    """Give the shared folder a plan makes, making it once.
+
+    The folder is named by the digest of the plan, which holds every folder and link it has, so
+    a different plugin listing or skill selection is a different folder and the same ones are
+    the same folder for every session. It is made in a staging folder and moved into place in
+    one rename, so no session sees it half made, and it is never changed after: a session
+    shares only this read-only listing, never its own directory. A folder found incomplete (for
+    example after the temporary directory was cleaned) is replaced. ``verified`` holds the
+    digests this process has already checked.
+
+    Returns:
+        ``<temporary directory>/atw-prepared-plugins/<digest>``.
+
+    Raises:
+        OSError: The folder could not be made and no complete copy of it exists.
+
+    """
+    digest: str = hashlib.sha256(json.dumps(plan, separators=(",", ":")).encode("utf-8")).hexdigest()
+    root: Path = Path(tempfile.gettempdir()) / PREPARED_PLUGINS
+    folder: Path = root / digest
+    if digest in verified or _complete(folder, plan):
+        verified.add(digest)
+        return folder
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if folder.exists() and not _complete(folder, plan):
+        stale: Path = Path(tempfile.mkdtemp(prefix=f".{digest}-stale-", dir=root))
+        folder.rename(stale / digest)
+        shutil.rmtree(stale)
+    staging: Path = Path(tempfile.mkdtemp(prefix=f".{digest}-", dir=root))
+    try:
+        _make(staging, plan[1:])
+        staging.rename(folder)
+    except OSError:
+        shutil.rmtree(staging)
+        if not _complete(folder, plan):
+            raise
+    verified.add(digest)
+    return folder
+
+
+_VERIFIED: Final[set[str]] = set()
+"""The digests of the prepared folders this process has checked or made."""
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def session_plugin(plugin: Path, directory: Path, agent: AgentDefinition) -> Path:
-    """Name the plugin folder a session loads, building it when the session lists only some skills.
+def session_plugin(plugin: Path, agent: AgentDefinition) -> Path:
+    """Name the plugin folder a session loads, preparing it when the session lists only some skills.
 
     A session whose agent can start agents loads the whole plugin, since the agents it starts run
-    with their skills in it. Any other session loads ``<directory>/.plugin``, rebuilt for each
-    launch: every entry of the plugin as a link, except that it lists only the skills, commands
-    and workflows the agent's definition names (:func:`_skill_folder`; a command or workflow is
+    with their skills in it. Any other session loads a shared prepared folder (:func:`_prepared`):
+    every entry of the plugin as a link, except that it lists only the skills, commands
+    and workflows the agent's definition names (:func:`_skill_plan`; a command or workflow is
     named by its file stem).
 
     Returns:
@@ -425,23 +503,21 @@ def session_plugin(plugin: Path, directory: Path, agent: AgentDefinition) -> Pat
     if agent.starts_agents:
         return plugin
     source: Path = plugin.resolve()
-    built: Path = directory / SESSION_PLUGIN
-    if built.exists():
-        shutil.rmtree(built)
-    built.mkdir(mode=0o700)
+    plan: list[PlanEntry] = [(".", None)]
     entry: Path
     for entry in sorted(source.iterdir()):
         if entry.name == SKILLS_FOLDER:
-            _skill_folder(entry, built / entry.name, agent.skills)
+            plan.extend(_skill_plan(entry, entry.name, agent.skills))
         elif entry.name in LISTED_FOLDERS:
-            (built / entry.name).mkdir()
-            listed: Path
-            for listed in sorted(entry.iterdir()):
-                if listed.stem in agent.skills:
-                    _link(listed, built / entry.name / listed.name)
+            plan.append((entry.name, None))
+            plan.extend(
+                (f"{entry.name}/{listed.name}", str(listed))
+                for listed in sorted(entry.iterdir())
+                if listed.stem in agent.skills
+            )
         else:
-            _link(entry, built / entry.name)
-    return built
+            plan.append((entry.name, str(entry)))
+    return _prepared(plan, _VERIFIED)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -476,26 +552,48 @@ def installed_plugin(config: Path, name: str) -> Path:
     return Path(str(chosen["installPath"]))
 
 
+_FOREIGN_SKILLS: Final[dict[tuple[Path, str], frozenset[str]]] = {}
+"""The other plugins' skills every agent of a plugin names, by the plugin and the digest of its agent definitions."""
+
+
+def _all_foreign_skills(plugin: Path) -> frozenset[str]:
+    """Name the other plugins' skills every agent of the plugin names.
+
+    The answer is kept for the content of the agent definitions, so it is read again only when
+    a definition was added, removed or changed.
+
+    Returns:
+        The ``<plugin>:<skill>`` names.
+
+    """
+    definitions: list[Path] = sorted((plugin / "agents").glob("*.md"))
+    content = hashlib.sha256()
+    for path in definitions:
+        content.update(path.name.encode("utf-8") + b"\0" + path.read_bytes() + b"\0")
+    key: tuple[Path, str] = (plugin.resolve(), content.hexdigest())
+    found: frozenset[str] | None = _FOREIGN_SKILLS.get(key)
+    if found is None:
+        found = frozenset().union(*(load_agent(plugin, path.stem).foreign_skills for path in definitions))
+        _FOREIGN_SKILLS[key] = found
+    return found
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def foreign_plugins(plugin: Path, config: Path, directory: Path, agent: AgentDefinition) -> list[Path]:
-    """Build a plugin folder for each other plugin whose skills a session's agent names.
+def foreign_plugins(plugin: Path, config: Path, agent: AgentDefinition) -> list[Path]:
+    """Prepare a plugin folder for each other plugin whose skills a session's agent names.
 
     The skills are the agent's ``foreign_skills``, or, when the agent can start agents, those of
-    every agent of the plugin, since the agents it starts run in its session. Each folder,
-    ``<directory>/.plugin-<name>``, is rebuilt at each launch from the installed plugin
-    (:func:`installed_plugin`): its manifest and its ``skills/`` listing only the named skills
-    (:func:`_skill_folder`). Nothing else of the plugin (agents, hooks, commands, MCP servers)
-    loads.
+    every agent of the plugin (:func:`_all_foreign_skills`), since the agents it starts run in
+    its session. Each folder is a shared prepared folder (:func:`_prepared`) of the installed
+    plugin (:func:`installed_plugin`): its manifest and its ``skills/`` listing only the named
+    skills (:func:`_skill_plan`). Nothing else of the plugin (agents, hooks, commands, MCP
+    servers) loads.
 
     Returns:
         The folders to pass with ``--plugin-dir``, sorted by plugin name.
 
     """
-    named: frozenset[str] = (
-        frozenset().union(*(load_agent(plugin, path.stem).foreign_skills for path in (plugin / "agents").glob("*.md")))
-        if agent.starts_agents
-        else agent.foreign_skills
-    )
+    named: frozenset[str] = _all_foreign_skills(plugin) if agent.starts_agents else agent.foreign_skills
     wanted: dict[str, set[str]] = {}
     for skill in named:
         owner, _, short = skill.partition(SKILL_SEPARATOR)
@@ -503,13 +601,12 @@ def foreign_plugins(plugin: Path, config: Path, directory: Path, agent: AgentDef
     built: list[Path] = []
     for name, skills in sorted(wanted.items()):
         source: Path = installed_plugin(config, name).resolve()
-        folder: Path = directory / f"{SESSION_PLUGIN}-{name}"
-        if folder.exists():
-            shutil.rmtree(folder)
-        folder.mkdir(mode=0o700)
-        _link(source / MANIFEST_FOLDER, folder / MANIFEST_FOLDER)
-        _skill_folder(source / SKILLS_FOLDER, folder / SKILLS_FOLDER, frozenset(skills))
-        built.append(folder)
+        plan: list[PlanEntry] = [
+            (".", None),
+            (MANIFEST_FOLDER, str(source / MANIFEST_FOLDER)),
+            *_skill_plan(source / SKILLS_FOLDER, SKILLS_FOLDER, frozenset(skills)),
+        ]
+        built.append(_prepared(plan, _VERIFIED))
     return built
 
 
@@ -549,12 +646,8 @@ def prepare(plugin: Path, config: Path, directory: Path, step: AgentStep, launch
         str(directory / "mcp.json"),
         "--strict-mcp-config",
         "--plugin-dir",
-        str(session_plugin(plugin, directory, launched)),
-        *(
-            arg
-            for folder in foreign_plugins(plugin, config, directory, launched)
-            for arg in ("--plugin-dir", str(folder))
-        ),
+        str(session_plugin(plugin, launched)),
+        *(arg for folder in foreign_plugins(plugin, config, launched) for arg in ("--plugin-dir", str(folder))),
         "--permission-mode",
         "bypassPermissions",
     ]

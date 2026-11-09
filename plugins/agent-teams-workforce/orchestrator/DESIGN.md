@@ -513,8 +513,8 @@ claude -p --output-format stream-json --verbose
   --settings <session dir>/settings.json
   --mcp-config <session dir>/mcp.json
   --strict-mcp-config
-  --plugin-dir <plugin, or <session dir>/.plugin>
-  --plugin-dir <session dir>/.plugin-<name>   (once per other plugin whose skills the agents name)
+  --plugin-dir <plugin, or <prepared>/<digest>>
+  --plugin-dir <prepared>/<digest>   (once per other plugin whose skills the agents name)
   --permission-mode bypassPermissions
   --add-dir <each directory the launch names>
 ```
@@ -525,7 +525,7 @@ For example, the launch of `aws-solutions-architect`:
 claude -p --output-format stream-json --verbose --session-id <uuid>
   --agent aws-solutions-architect --model opus --setting-sources user,project
   --settings <session dir>/settings.json --mcp-config <session dir>/mcp.json --strict-mcp-config
-  --plugin-dir <session dir>/.plugin --plugin-dir <session dir>/.plugin-aws-core
+  --plugin-dir <prepared>/<digest> --plugin-dir <prepared>/<digest of the aws-core folder>
   --permission-mode bypassPermissions
 ```
 
@@ -553,7 +553,8 @@ claude -p --output-format stream-json --verbose --session-id <uuid>
 - **Plugins and skills.** The first `--plugin-dir` loads `agent-teams-workforce`
   (`agent_context.session_plugin`). A session whose agent can start agents (its tools include
   `Agent` or `Workflow`) loads `<plugin>`, since the agents it starts run with their skills in it.
-  Any other session loads `<session dir>/.plugin`, rebuilt at each launch: a link to every entry
+  Any other session loads a prepared folder `<prepared>/<digest>` (`<prepared>` is
+  `<temporary directory>/atw-prepared-plugins`, `agent_context._prepared`): a link to every entry
   of `<plugin>`, except that `skills/` lists only the skills the agent's front matter `skills` and
   `x-onDemandSkills` name, and `commands/` and `workflows/` hold only the files whose stem they
   name. Every other skill folder is there without its `SKILL.md`, so it is not listed while its
@@ -562,13 +563,20 @@ claude -p --output-format stream-json --verbose --session-id <uuid>
   not apply to plugin skills. The agent's front matter skills load with the agent (section 5.1);
   an `x-onDemandSkills` skill the agent loads itself with the Skill tool.
   A skill of another plugin that the agent's front matter names (`<plugin>:<skill>`, for example
-  `aws-core:aws-serverless`) loads from one more `--plugin-dir <session dir>/.plugin-<plugin>`
-  (`agent_context.foreign_plugins`), rebuilt at each launch: a link to the installed plugin's
+  `aws-core:aws-serverless`) loads from one more prepared folder,
+  `--plugin-dir <prepared>/<digest>` (`agent_context.foreign_plugins`): a link to the installed plugin's
   `.claude-plugin` manifest and its `skills/` listing only the named skills, so nothing else of
   that plugin (agents, hooks, commands, MCP servers) loads. A session whose agent can start agents
   gets the skills every agent of the plugin names. The installed plugin is the one
   `<config>/plugins/installed_plugins.json` records for the control repository, else the
   user-scope install; a named plugin installed for neither fails the launch.
+  A prepared folder is named by the digest of every folder and link it holds, which follow from
+  the plugin's actual listing and the skills selected, so the same listing and selection share
+  one folder across sessions, attempts and corrective resumes, and any change to either is a new
+  folder. It is made in a staging folder and moved into place in one rename, never changed
+  after, and remade when found incomplete. Only this read-only listing is shared; settings, MCP
+  configuration and the working directory stay per session. Reason: preparing the same folder
+  again for every launch and resume is repeated filesystem work with the same result.
 - **MCP servers.** `--mcp-config <session dir>/mcp.json` (`agent_context.session_servers`) with
   `--strict-mcp-config`, so no other MCP configuration loads: the servers the agent names in its
   front matter `mcpServers`, or, when the agent can start agents, every server some agent of the
