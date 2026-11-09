@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from matrix_contract import EntryId
 
 MATRIX_QUERIES: Final = "matrixQueries"
-"""The value artifact counting the matrix queries the scope read made: subprocess commands, in-process reads, stacks."""
+"""The value artifact counting the stack scopes that the step's one in-process matrix read served."""
 
 
 def _args(run: StepRun) -> dict[str, JsonValue]:
@@ -230,7 +230,7 @@ def _compare(run: StepRun) -> Completion:
         request,
         followups=(_next("built:accept-comparison"),),
     )
-    queries: dict[str, JsonValue] = {"commands": 1, "matrixReads": 1, "stacks": len(stacks)}
+    queries: dict[str, JsonValue] = {"stackScopes": len(scopes)}
     return Completion(artifacts=(*planned.artifacts, value_artifact(MATRIX_QUERIES, queries)), add=planned.add)
 
 
