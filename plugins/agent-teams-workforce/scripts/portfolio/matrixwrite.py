@@ -1226,20 +1226,23 @@ class DesignWrite[T]:
     """How long the change itself took under the lock: applying the file and ``record``."""
 
 
-def _file_failure(change_file: Path | None, error: MatrixError) -> ApplyResult:
-    """Report a matrix update that failed as a whole.
+def _conforming(matrix: Matrix, change_file: Path, role: Role) -> ApplyResult:
+    """Apply a change file as :func:`apply_changes` does, and refuse a matrix it leaves not conforming.
 
     Returns:
-        A result with one failure of the file as a whole, nothing applied.
+        What :func:`apply_changes` returns; when every operation applied but the matrix they leave
+        does not conform, one failure of the file as a whole that lists each problem.
 
     """
-    return {
-        "file": "" if change_file is None else str(change_file),
-        "operations": 0,
-        "applied": False,
-        "failures": [_failure(None, None, str(error))],
-        "results": [],
-    }
+    applied: ApplyResult = apply_changes(matrix, change_file, role)
+    if applied["failures"]:
+        return applied
+    problems: list[str] = matrix.problems()
+    if not problems:
+        return applied
+    listed: str = "\n".join(problems)
+    error: str = f"the matrix the change file leaves does not conform: {len(problems)} problem(s)\n{listed}"
+    return {**applied, "applied": False, "failures": [_failure(None, None, error)]}
 
 
 def apply_design_change[T](
@@ -1255,8 +1258,11 @@ def apply_design_change[T](
     Under the matrix's lock the design is held as that read has it (:func:`design_state`), the
     change file is applied as :func:`apply_changes` applies it, and ``record`` is handed the
     changed matrix and that held design, so the delta it takes (:func:`changed_since`) is this
-    update's own and no other writer's. The matrix is written once. When any operation fails,
-    ``record`` raises, or the changed matrix does not conform, nothing is written.
+    update's own and no other writer's. The matrix is written once. When any operation fails, or
+    the matrix the change file leaves does not conform, the change file is refused and nothing is
+    written. Every other failure (the lock's wait running out, ``record`` raising, the matrix
+    ``record`` leaves not conforming) is no failure of the change file: it raises, and nothing is
+    written.
 
     Args:
         path: The matrix file.
@@ -1267,7 +1273,8 @@ def apply_design_change[T](
 
     Returns:
         The change file's result, what ``record`` returned with the matrix as written, and how long
-        the update took; with every failure and nothing recorded when nothing was written.
+        the update took; with every failure of the change file and nothing recorded when it was
+        refused.
 
     """
     no_file: ApplyResult = {"file": "", "operations": 0, "applied": True, "failures": [], "results": []}
@@ -1276,7 +1283,7 @@ def apply_design_change[T](
     def change(matrix: Matrix) -> tuple[ApplyResult, T, Matrix]:
         began: float = time.monotonic()
         before: DesignState = design_state(matrix)
-        applied: ApplyResult = no_file if change_file is None else apply_changes(matrix, change_file, role)
+        applied: ApplyResult = no_file if change_file is None else _conforming(matrix, change_file, role)
         if applied["failures"]:
             raise _ChangeRefusedError(applied)
         recorded: T = record(matrix, before)
@@ -1289,8 +1296,6 @@ def apply_design_change[T](
     except _ChangeRefusedError as error:
         refused: ApplyResult = {**error.refused, "applied": False, "results": []}
         return DesignWrite(refused, None, None, time.monotonic() - started, sum(timing))
-    except MatrixError as error:
-        return DesignWrite(_file_failure(change_file, error), None, None, time.monotonic() - started, sum(timing))
     return DesignWrite(applied, recorded, written, time.monotonic() - started, sum(timing))
 
 

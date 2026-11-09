@@ -498,7 +498,9 @@ def _record_result(bead: str, result: ArchitectureResult, changes: Path) -> Reco
     Returns:
         :func:`_compared` on the matrix as this update wrote it, with the entries whose approved
         mark came off and the update's timing; or only the problems, one per operation of the
-        change file that failed.
+        change file that failed, or one for the file as a whole when the matrix it leaves does
+        not conform. A failure that is not the change file's (the matrix's lock stays held for the
+        whole wait, or recording the result fails) propagates, and nothing is written.
 
     """
 

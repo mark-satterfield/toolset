@@ -122,8 +122,11 @@ the result states of the Epic's features (`servedBy`, `realizedBy`, `supportedBy
 from each heading that already describes a feature), and takes the approved mark off what the
 result names under `addedOrChangedElements` and what this update's own writes changed
 (`matrixwrite.changed_since`, against the design the update read under its lock); either all of
-it is written or none of it. It fails only when the matrix written does not hold it, compared on
-the matrix as that update wrote it. It records the file `architecture result` and the values
+it is written or none of it. Only a failure of the change file (an operation it refuses, or a
+matrix the file leaves that does not conform) goes back to the architect as a correction; a lock
+wait that runs out or a failure to record the result fails the step, and nothing is written.
+Otherwise it fails only when the matrix written does not hold it, compared on the matrix as that
+update wrote it. It records the file `architecture result` and the values
 `conclusion`, `requirements with no feature`, `specialist recommendations` and `matrix
 transaction` (the update's duration in seconds with the lock wait, the time of the change under
 the lock, and how many operations it applied and approved marks it took off).
