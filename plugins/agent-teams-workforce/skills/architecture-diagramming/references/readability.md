@@ -82,13 +82,10 @@ at as below.
    bash <plugin>/skills/architecture-diagramming/scripts/render-check.sh <out-dir> <view.md> [more.md ...]
    ```
 
-   The script runs the Mermaid CLI (`npx -y @mermaid-js/mermaid-cli`) on each file, writes
-   `<out-dir>/<file>-<n>.png` for the n-th Mermaid block, prints every PNG path, and exits
-   non-zero when a block fails to render. For a single `.mmd` file the direct command is:
-
-   ```text
-   npx -y @mermaid-js/mermaid-cli -i x.mmd -o x.png -s 2 -b white
-   ```
+   The script runs the Mermaid CLI version it pins on each file (all `.mmd` files in one run),
+   writes `<out-dir>/<file>-<n>.png` for the n-th Mermaid block, prints every PNG path, and
+   exits non-zero when a block fails to render, naming each file that failed. For a single
+   `.mmd` file the direct command is the script with that one file.
 
 2. **Look.** Open every PNG with the Read tool and inspect it against the rule above: boxes,
    labels and lines, one by one. A render error is a syntax failure; a clean exit says nothing
