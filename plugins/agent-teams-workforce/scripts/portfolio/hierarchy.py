@@ -226,6 +226,24 @@ def take_warnings() -> list[str]:
     return out
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def note_warnings(warnings: Sequence[str]) -> None:
+    """Hold normalizations again, so the next `take_warnings` returns them.
+
+    A caller that reuses Tasks it read earlier hands back what that read normalized.
+
+    Args:
+        warnings: One line per normalization, in order.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
+    """
+    if isinstance(warnings, str):
+        raise TypeError(_ARGUMENT_ERROR)
+    _WARNINGS.extend(warnings)
+
+
 def _acyclic(
     nodes: list[str],
     fixed: list[tuple[str, str]],
@@ -406,6 +424,97 @@ def _content_sha(path: Path) -> str:
     except OSError as exc:
         msg: str = f"{path.name} could not be read: {exc}"
         raise HierarchyError(msg) from exc
+
+
+def _names_supplied_bundle(sources: Path) -> bool:
+    """Report whether a UI sources file takes any ui item from a supplied cds bundle.
+
+    Returns:
+        True when an entry of its ``uiItems`` has the ``bundle`` design source, or when the file
+        cannot be read, so a caller never keys on what it could not read.
+
+    """
+    try:
+        held: object = json.loads(sources.read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return True
+    entries: object = held.get(KEY_UI_ITEMS) if isinstance(held, dict) else None
+    listed: list[object] = entries if isinstance(entries, list) else []
+    return any(isinstance(entry, dict) and entry.get(KEY_DESIGN_SOURCE) == DESIGN_SOURCE_BUNDLE for entry in listed)
+
+
+def _file_part(path: Path) -> bytes:
+    """Render one input file as part of a digest.
+
+    Returns:
+        Its path and bytes; its path and a missing marker when it cannot be read.
+
+    """
+    try:
+        body: bytes = path.read_bytes()
+    except OSError:
+        body = b"\0missing"
+    return f"{path}\0{len(body)}\0".encode() + body
+
+
+def _matrix_part() -> bytes:
+    """Render the matrix file the Tasks read their matrix ids from as part of a digest.
+
+    Returns:
+        Its path and its stat identity (inode, size, modification time); a missing marker when it
+        does not exist. The matrix is replaced whole on every write, so this identity changes
+        whenever its content does.
+
+    """
+    path: Path = matrix_path(None, os.environ)
+    try:
+        state: os.stat_result = path.stat()
+    except OSError:
+        return f"{path}\0missing".encode()
+    return f"{path}\0{state.st_ino}\0{state.st_size}\0{state.st_mtime_ns}\0{state.st_ctime_ns}".encode()
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def plan_inputs_digest(files: StoryFiles, root: Path | None, packages_dir: str | None) -> str | None:
+    """Fingerprint everything reading a Story's planned Tasks depends on.
+
+    The Story document, the spec documents, the Tasks file, the UI sources file, the span's two
+    files, the matrix file, the repository and the arguments. Equal digests mean reading the
+    Tasks again gives the same Tasks and the same normalizations.
+
+    Args:
+        files: The repository's saved files.
+        root: The project root spec references are recorded relative to, or None.
+        packages_dir: The packages directory a cited cds bundle must sit in, or None.
+
+    Returns:
+        The SHA-256 digest; None when the UI sources file takes an item from a supplied cds
+        bundle, whose bundle directories and packages directory are read and not fingerprinted.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
+    """
+    if (
+        not isinstance(files, StoryFiles)
+        or not (isinstance(root, Path) or root is None)
+        or not (isinstance(packages_dir, str) or packages_dir is None)
+    ):
+        raise TypeError(_ARGUMENT_ERROR)
+    if files.ui_sources is not None and _names_supplied_bundle(files.ui_sources):
+        return None
+    paths: list[Path] = [
+        files.story,
+        *files.specs,
+        *(path for path in (files.tasks, files.ui_sources) if path is not None),
+        files.scope.span,
+        files.scope.elements,
+    ]
+    digest = hashlib.sha256(f"{files.slug}\0{files.repo}\0{root}\0{packages_dir}\0".encode())
+    digest.update(_matrix_part())
+    for path in paths:
+        digest.update(_file_part(path))
+    return digest.hexdigest()
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

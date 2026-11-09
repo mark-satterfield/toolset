@@ -10,9 +10,12 @@ writer, and a rerun repairs it, because every write is keyed.
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
+import threading
+from collections import Counter, OrderedDict
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from operator import itemgetter
@@ -73,6 +76,8 @@ from hierarchy import (
     derive_prerequisites,
     elab_slug,
     item_briefs,
+    note_warnings,
+    plan_inputs_digest,
     read_story,
     read_task_deps,
     read_tasks,
@@ -556,11 +561,84 @@ def _assign_keys(tasks: list[Task], slug: str, work: list[str] | None) -> None:
         t.elab_key = key
 
 
+@dataclass(frozen=True)
+class _PreparedPlan:
+    """A Story's planned Tasks and what they were read against, prepared once per input digest."""
+
+    tasks: tuple[Task, ...]
+    warnings: tuple[str, ...]
+    """What reading the Tasks normalized, handed back to `take_warnings` on every reuse."""
+    items: dict[str, StoryBuild]
+    """Every detailed delta item of the Epic (`story_builds` of the span)."""
+
+
+#: How many prepared plans one process keeps: one per Story being written, the oldest dropped first.
+_PREPARED_LIMIT: Final = 8
+_PREPARED: OrderedDict[str, _PreparedPlan] = OrderedDict()
+_PREPARED_LOCK: Final = threading.Lock()
+
+
+def _read_plan(files: StoryFiles, root: Path | None, packages_dir: str | None) -> list[Task]:
+    """Read a Story's saved Tasks, each with its durable key, in build order.
+
+    Returns:
+        The Tasks; what reading them normalized is held for `take_warnings`.
+
+    """
+    saved: hierarchy.Story = read_story(files, root)
+    tasks: list[hierarchy.Task] = read_tasks(
+        files,
+        root,
+        ReadTaskOptions(files.slug, files.repo, saved.decision_ids, packages_dir),
+    )
+    check_detailed_work(files, tasks)
+    tasks = derive_prerequisites(files, tasks)
+    check_cds_contract(files.slug, tasks)
+    _assign_keys(tasks, files.slug, work_items(files))
+    return tasks
+
+
+def _prepared(files: StoryFiles, root: Path | None, packages_dir: str | None) -> _PreparedPlan:
+    """Return a Story's prepared plan, reading its files only when their content changed.
+
+    The plan is keyed by the digest of every input it reads (`hierarchy.plan_inputs_digest`), so
+    a correction merged into the Tasks file, an edited span or a new matrix prepares a new plan.
+    Nothing read from the tracker is held: each write rereads its Story's beads.
+
+    Returns:
+        The prepared plan; its warnings are held for `take_warnings` as a fresh read holds them.
+
+    """
+    digest: str | None = plan_inputs_digest(files, root, packages_dir)
+    with _PREPARED_LOCK:
+        held: _PreparedPlan | None = None if digest is None else _PREPARED.get(digest)
+        if held is not None:
+            _PREPARED.move_to_end(digest or "")
+    if held is not None:
+        note_warnings(held.warnings)
+        return held
+    pending: list[str] = take_warnings()
+    try:
+        tasks: list[Task] = _read_plan(files, root, packages_dir)
+    finally:
+        produced: list[str] = take_warnings()
+        note_warnings([*pending, *produced])
+    prepared: _PreparedPlan = _PreparedPlan(tuple(tasks), tuple(produced), story_builds(files.scope))
+    if digest is not None:
+        with _PREPARED_LOCK:
+            _PREPARED[digest] = prepared
+            while len(_PREPARED) > _PREPARED_LIMIT:
+                _PREPARED.popitem(last=False)
+    return prepared
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def plan_tasks(files: StoryFiles, root: Path | None, packages_dir: str | None = None) -> list[Task]:
     """Return a Story's saved Tasks, each with its durable key, in build order.
 
     Reads the Story document, the Tasks file and the span's two files; runs no `bd` command.
+    Inputs whose content has not changed since the last read in this process are not read
+    again: the Tasks are copies of the prepared plan, so a caller may change them.
 
     Args:
         files: The repository's saved files.
@@ -580,17 +658,7 @@ def plan_tasks(files: StoryFiles, root: Path | None, packages_dir: str | None = 
         or not (isinstance(packages_dir, str) or packages_dir is None)
     ):
         raise TypeError(_ARGUMENT_ERROR)
-    saved: hierarchy.Story = read_story(files, root)
-    tasks: list[hierarchy.Task] = read_tasks(
-        files,
-        root,
-        ReadTaskOptions(files.slug, files.repo, saved.decision_ids, packages_dir),
-    )
-    check_detailed_work(files, tasks)
-    tasks = derive_prerequisites(files, tasks)
-    check_cds_contract(files.slug, tasks)
-    _assign_keys(tasks, files.slug, work_items(files))
-    return tasks
+    return copy.deepcopy(list(_prepared(files, root, packages_dir).tasks))
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -985,20 +1053,25 @@ def _candidate_pairs(
 ) -> list[tuple[int, int, str, Task, Bead]]:
     """Rank unmatched Tasks by shared cited architecture items.
 
+    Each bead's cited items are read once and indexed by item, so a Task meets only the beads
+    that cite one of its items.
+
     Returns:
         Pairs ordered later by overlap, task order, and bead identifier.
 
     """
-    n: int
-    t: Task
-    b: Bead
+    cited_by: dict[str, set[str]] = {}
+    beads: dict[str, Bead] = {}
+    for bead in free:
+        beads[bead.id] = bead
+        for item in _cited_ids(bead.metadata.get(KEY_REQUIREMENT_IDS)):
+            cited_by.setdefault(item, set()).add(bead.id)
     pairs: list[tuple[int, int, str, Task, Bead]] = []
-    for n, t in enumerate(rest):
-        mine: set[str] = {i for i in t.requirement_ids if i in items}
-        for b in free:
-            common: set[str] = mine & set(_cited_ids(b.metadata.get(KEY_REQUIREMENT_IDS)))
-            if common:
-                pairs.append((-len(common), n, b.id, t, b))
+    for order, task in enumerate(rest):
+        overlap: Counter[str] = Counter(
+            bead_id for item in {i for i in task.requirement_ids if i in items} for bead_id in cited_by.get(item, ())
+        )
+        pairs.extend((-count, order, bead_id, task, beads[bead_id]) for bead_id, count in overlap.items())
     return pairs
 
 
@@ -1244,7 +1317,8 @@ class _TaskWriter:
         msg: str
         self._prepare_options()
         take_warnings()
-        self.tasks = plan_tasks(self.files, self.root, self.packages_dir)
+        prepared: _PreparedPlan = _prepared(self.files, self.root, self.packages_dir)
+        self.tasks = copy.deepcopy(list(prepared.tasks))
         self.by_key = {t.key: t for t in self.tasks}
         task: hierarchy.Task | None = self.by_key.get(self.key)
         if task is None:
@@ -1263,7 +1337,7 @@ class _TaskWriter:
         self.priority = {str(r["id"]): r.get("priority") for r in self.records}
         self.beads = sorted((bead_of(r) for r in self.records), key=lambda b: b.id)
         self.keyed = _keyed(self.beads)
-        self.items = story_builds(self.files.scope)
+        self.items = prepared.items
         self.matched, _ = _match_tasks(self.tasks, self.beads, self.slug, self.items)
         self.warnings: list[str] = take_warnings()
         self.bead = (
@@ -2210,7 +2284,8 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
     A Task bead elaboration wrote under the Story (its elaboration key is a ``task:`` key of the
     Story) that no saved Task matches and that no one has started is superseded; a Task bead
     elaboration did not write is never touched. Each `blocks` edge from a Task of another Story onto it is first added
-    onto every written Task that cites an item it cited; then the superseded beads are deleted.
+    onto every written Task that cites an item it cited, every such edge in one cycle-checked
+    `Writer.write_blocks` request; only once that succeeds are the superseded beads deleted.
     Run again, it adds no edge twice and finds nothing left to delete.
 
     Args:
@@ -2232,7 +2307,6 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
     """
     dependent: Bead
     blocker: str
-    target: str
     if not all((
         isinstance(graph, Graph),
         isinstance(writer, Writer),
@@ -2262,6 +2336,7 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
     }
     repointed: list[RepointedEdge] = []
     warnings: list[str] = []
+    additions: dict[str, dict[str, None]] = {}
     for dependent in sorted(graph.beads.values(), key=lambda bead: bead.id):
         if dependent.kind != "task" or dependent.parent == story.id:
             continue
@@ -2269,10 +2344,13 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
             targets: list[str] = [bead for bead, items in builds.items() if items & cited[blocker]]
             if not targets:
                 warnings.append(f"no written Task replaces {blocker}, which blocked {dependent.id}")
-            for target in targets:
-                if target not in dependent.blockers:
-                    writer.add_blocks(dependent.id, [target])
-                repointed.append({"dependent": dependent.id, "deleted": blocker, "replacement": target})
+            additions.setdefault(dependent.id, {}).update(
+                dict.fromkeys(target for target in targets if target not in dependent.blockers),
+            )
+            repointed.extend(
+                {"dependent": dependent.id, "deleted": blocker, "replacement": target} for target in targets
+            )
+    writer.write_blocks({bead_id: list(added) for bead_id, added in additions.items()})
     deleted: list[ReplacedTask] = [
         {
             "id": bead.id,
