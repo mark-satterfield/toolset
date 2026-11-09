@@ -238,12 +238,16 @@ Subprocess, argv list, no shell, with a timeout, for executables: `bd` (through
   it loads from the control repository are the ones `core/driver_contracts.py` names.
 
 **What an in-process call handles.**
-- A step calls a module function through `Tools.portfolio` (one call) or `Tools.operation` (a whole
-  operation that re-reads its inputs before it writes). An exception that is not a `StepError`
+- A step calls a module function through `Tools.portfolio` (one call that may write),
+  `Tools.portfolio_read` (one read-only call: a tracker or matrix read) or `Tools.operation` (a
+  whole operation that re-reads its inputs before it writes). An exception that is not a `StepError`
   becomes `StepError(<stage>, <cause>, <path of an evidence file holding the traceback>)`; the
   cause is the `GraphError`'s own, and `other` for every other exception (section 6.1).
-- Imported calls run under `contextlib.redirect_stdout(sys.stderr)`, one at a time, so nothing a
-  module prints can enter the event channel (section 4.1).
+- `Tools.portfolio` calls run one at a time under the process's portfolio lock (`_PORTFOLIO_LOCK`);
+  `Tools.portfolio_read` calls take no lock, so a read never waits for another thread's write.
+  Both send stdout to stderr for the call through one counted diversion (`_StdoutDiversion`: the
+  first call to enter diverts it, the last to leave restores it), so nothing a module prints can
+  enter the event channel (section 4.1).
 - `run.py`'s top-level handler catches `BaseException` (section 6.7), so `SystemExit` or
   `KeyboardInterrupt` raised in a worker thread and re-raised by `future.result()` still produces a
   handback.
@@ -579,7 +583,9 @@ claude -p --output-format stream-json --verbose --session-id <uuid>
   the plugin's actual listing and the skills selected, so the same listing and selection share
   one folder across sessions, attempts and corrective resumes, and any change to either is a new
   folder. It is made in a staging folder and moved into place in one rename, never changed
-  after, and remade when found incomplete. Only this read-only listing is shared; settings, MCP
+  after, and remade when found incomplete. Each use marks the folder used, and making a folder
+  first removes every prepared folder unused for seven days or linking to a plugin entry that no
+  longer exists (an old install). Only this read-only listing is shared; settings, MCP
   configuration and the working directory stay per session. Reason: preparing the same folder
   again for every launch and resume is repeated filesystem work with the same result.
 - **MCP servers.** `--mcp-config <session dir>/mcp.json` (`agent_context.session_servers`) with
@@ -896,7 +902,8 @@ repository run together. And the child containers of a container a flow names wi
 `journal_registry.children_together` (Specs and Stories, Tasks: one container per repository) run
 at the same time, at most `ATW_ORCH_SESSIONS` of them (`journal_run.concurrent_containers`): each
 runs its own steps in walk order and closes only its own finished steps, and a stale file is
-replanned once every container of the group has ended. Imported portfolio calls stay serialized
+replanned once every container of the group has ended. Imported portfolio calls that may write
+stay serialized under the portfolio lock, and read-only tracker and matrix reads run without it
 (section 2.2); journal changes are serialized by the journal lock, and blocking-edge writes by
 the edge lock (section 6.2).
 

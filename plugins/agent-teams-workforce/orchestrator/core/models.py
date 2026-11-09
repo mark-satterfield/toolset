@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import functools
+import logging
 import os
 import threading
 import time
@@ -242,6 +243,8 @@ def session_slots() -> threading.BoundedSemaphore:
 type WaitKind = Literal["portfolio-lock", "job-queue", "session-slot"]
 """What a dispatch waited for: the portfolio mutation lock, a worker of a bounded job queue, a session slot."""
 
+_LOG: Final = logging.getLogger(__name__)
+
 WAIT_METRICS_FOLDER: Final = "wait-metrics"
 """The folder of a work directory holding one wait-metrics file per orchestrator process."""
 WAIT_FLUSH_SECONDS: Final = 5.0
@@ -316,8 +319,19 @@ class WaitMeter:
             self._write()
 
     def _write(self) -> None:
-        """Write the totals file; the caller holds the lock."""
+        """Write the totals file; the caller holds the lock.
+
+        A failed write is logged as a warning and never raised: the metrics never change the
+        outcome of the wait they measure.
+        """
         self._flushed = time.monotonic()
+        try:
+            self._write_totals()
+        except OSError as error:
+            _LOG.warning("wait metrics not written to %s: %s", self._path, error)
+
+    def _write_totals(self) -> None:
+        """Write the totals file; the caller holds the lock."""
         write_json(
             self._path,
             {

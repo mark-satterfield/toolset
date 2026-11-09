@@ -13,6 +13,7 @@ skill text.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import hashlib
 import json
@@ -20,6 +21,7 @@ import os
 import shlex
 import shutil
 import tempfile
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -73,6 +75,8 @@ LISTED_FOLDERS: Final = frozenset({"commands", "workflows"})
 """The plugin folders whose files Claude Code lists to the model beside the skills, by file stem."""
 PREPARED_PLUGINS: Final = "atw-prepared-plugins"
 """The folder of the temporary directory holding the shared prepared plugin folders, one per digest."""
+PREPARED_MAX_AGE_SECONDS: Final = 7 * 24 * 60 * 60
+"""How long a prepared plugin folder no session has used is kept before it is removed."""
 INSTALLED_PLUGINS: Final = Path("plugins") / "installed_plugins.json"
 """Where Claude Code records each installed plugin, inside its configuration directory."""
 MANIFEST_FOLDER: Final = ".claude-plugin"
@@ -441,6 +445,60 @@ def _make(staging: Path, plan: list[PlanEntry]) -> None:
         path.symlink_to(target, target_is_directory=Path(target).is_dir())
 
 
+def _touched(folder: Path) -> bool:
+    """Mark a prepared folder as used now, so :func:`_sweep` keeps it.
+
+    Returns:
+        False when the folder no longer exists.
+
+    """
+    try:
+        os.utime(folder)
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def _discard(root: Path, folder: Path) -> None:
+    """Move a folder out of the way in one rename and remove it.
+
+    Another process may have moved or removed the folder already; that is the same outcome.
+    """
+    stale: Path = Path(tempfile.mkdtemp(prefix=".stale-", dir=root))
+    with contextlib.suppress(FileNotFoundError):
+        folder.rename(stale / folder.name)
+    shutil.rmtree(stale)
+
+
+def _dangling(folder: Path) -> bool:
+    """Tell whether a prepared folder links to a plugin entry that no longer exists.
+
+    Returns:
+        True when one of its top-level links has lost its target (for example an old install).
+
+    """
+    return any(entry.is_symlink() and not entry.exists() for entry in folder.iterdir())
+
+
+def _sweep(root: Path, keep: str) -> None:
+    """Remove the prepared folders no session used for :data:`PREPARED_MAX_AGE_SECONDS`, or that dangle.
+
+    It runs only when a folder is about to be made, so a reused folder costs nothing. A staging
+    or stale folder left by a stopped process is removed by the same age rule. A folder another
+    process removes first is skipped.
+    """
+    oldest: float = time.time() - PREPARED_MAX_AGE_SECONDS
+    entry: Path
+    for entry in root.iterdir():
+        if entry.name == keep:
+            continue
+        try:
+            if entry.stat().st_mtime < oldest or (not entry.name.startswith(".") and _dangling(entry)):
+                _discard(root, entry)
+        except FileNotFoundError:
+            continue
+
+
 def _prepared(plan: list[PlanEntry], verified: set[str]) -> Path:
     """Give the shared folder a plan makes, making it once.
 
@@ -449,8 +507,10 @@ def _prepared(plan: list[PlanEntry], verified: set[str]) -> Path:
     the same folder for every session. It is made in a staging folder and moved into place in
     one rename, so no session sees it half made, and it is never changed after: a session
     shares only this read-only listing, never its own directory. A folder found incomplete (for
-    example after the temporary directory was cleaned) is replaced. ``verified`` holds the
-    digests this process has already checked.
+    example after the temporary directory was cleaned) is replaced. Each use marks the folder
+    used (:func:`_touched`), and making a folder first removes the ones unused or dangling
+    (:func:`_sweep`). ``verified`` holds the digests this process has already checked; one whose
+    folder has since been removed is checked and made again.
 
     Returns:
         ``<temporary directory>/atw-prepared-plugins/<digest>``.
@@ -462,14 +522,14 @@ def _prepared(plan: list[PlanEntry], verified: set[str]) -> Path:
     digest: str = hashlib.sha256(json.dumps(plan, separators=(",", ":")).encode("utf-8")).hexdigest()
     root: Path = Path(tempfile.gettempdir()) / PREPARED_PLUGINS
     folder: Path = root / digest
-    if digest in verified or _complete(folder, plan):
+    if (digest in verified or _complete(folder, plan)) and _touched(folder):
         verified.add(digest)
         return folder
+    verified.discard(digest)
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _sweep(root, digest)
     if folder.exists() and not _complete(folder, plan):
-        stale: Path = Path(tempfile.mkdtemp(prefix=f".{digest}-stale-", dir=root))
-        folder.rename(stale / digest)
-        shutil.rmtree(stale)
+        _discard(root, folder)
     staging: Path = Path(tempfile.mkdtemp(prefix=f".{digest}-", dir=root))
     try:
         _make(staging, plan[1:])
