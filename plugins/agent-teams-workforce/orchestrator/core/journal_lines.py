@@ -28,6 +28,7 @@ from .journal_steps import AFTER_THIS, UNDER_THIS, Completion, NewStep, StepGrou
 # isort: split
 # step_journal puts the pipeline-contracts scripts directory on sys.path; the contract import follows it.
 from step_journal_contract import (
+    CHANGE_CHUNK,
     CHANGE_OP_ADD,
     CHANGE_OP_DONE,
     CHANGE_OP_FAIL,
@@ -50,6 +51,12 @@ if TYPE_CHECKING:
 
 PART_FIELDS: Final = 3
 """A part line holds the change number, ``<i>/<k>`` and the text, separated by single spaces."""
+MAX_CHANGE_PARTS: Final = 4096
+"""The most parts one change may have: with ``CHANGE_CHUNK`` characters each, a change of 16 MB."""
+MAX_PENDING_CHANGES: Final = 64
+"""The most changes whose parts may be held incomplete at once."""
+MAX_PENDING_CHARACTERS: Final = 32 * 1024 * 1024
+"""The most characters of part text a reader holds for incomplete changes at once."""
 
 
 class JournalChangeError(StepJournalError):
@@ -98,6 +105,7 @@ class ChangeReader:
     applied: int = 0
     refs: dict[str, StepId] = field(default_factory=dict)
     _parts: dict[int, _Parts] = field(default_factory=dict)
+    _pending_characters: int = 0
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def feed(self, message: str) -> Applied | None:
@@ -139,7 +147,14 @@ class ChangeReader:
             raise JournalChangeError(problem)
         applied: Applied = self._apply(change)
         self.applied = change["n"]
+        self._forget_applied()
         return applied
+
+    def _forget_applied(self) -> None:
+        """Drop the held parts of every change already applied, since none of them can complete one."""
+        done: list[int] = [number for number in self._parts if number <= self.applied]
+        for number in done:
+            self._pending_characters -= sum(len(text) for text in self._parts.pop(number).texts.values())
 
     def _body(self, message: str) -> str | None:
         """Find the JSON text of the change a log line carries or completes.
@@ -148,7 +163,8 @@ class ChangeReader:
             The text, or None when the line carries no change or its change is not complete.
 
         Raises:
-            JournalChangeError: A part line is not ``<n> <i>/<k> <text>``.
+            JournalChangeError: A part line is not ``<n> <i>/<k> <text>``, a part arrives twice
+                with different text, or a part fails :meth:`_check_part`.
 
         """
         whole: int = message.find(CHANGE_PREFIX)
@@ -165,14 +181,50 @@ class ChangeReader:
         number: int = int(fields[0])
         index: int = int(position[0])
         total: int = int(position[1])
+        text: str = fields[2]
         if number <= self.applied:
             return None
+        self._check_part(number, index, total, text)
         held: _Parts = self._parts.setdefault(number, _Parts(total))
-        held.texts[index] = fields[2]
+        known: str | None = held.texts.get(index)
+        if known is not None:
+            if known != text:
+                problem = f"part {index}/{total} of journal change {number} of run {self.run} arrived twice, different"
+                raise JournalChangeError(problem)
+            return None
+        held.texts[index] = text
+        self._pending_characters += len(text)
         if len(held.texts) < held.total:
             return None
         del self._parts[number]
+        self._pending_characters -= sum(len(part) for part in held.texts.values())
         return "".join(held.texts[key] for key in sorted(held.texts))
+
+    def _check_part(self, number: int, index: int, total: int, text: str) -> None:
+        """Refuse a part that cannot belong to a change or would exceed the reader's bounds.
+
+        Raises:
+            JournalChangeError: The part's index is outside ``1..total``, its total differs from
+                its change's earlier parts or exceeds :data:`MAX_CHANGE_PARTS`, its text exceeds
+                ``CHANGE_CHUNK``, or holding it would exceed :data:`MAX_PENDING_CHANGES` or
+                :data:`MAX_PENDING_CHARACTERS`.
+
+        """
+        label: str = f"part {index}/{total} of journal change {number} of run {self.run}"
+        held: _Parts | None = self._parts.get(number)
+        problem: str | None = None
+        if not 1 <= index <= total <= MAX_CHANGE_PARTS:
+            problem = f"{label} is not a part index between 1 and a total of at most {MAX_CHANGE_PARTS}"
+        elif held is not None and held.total != total:
+            problem = f"{label} states {total} parts where the change's earlier parts state {held.total}"
+        elif len(text) > CHANGE_CHUNK:
+            problem = f"{label} holds {len(text)} characters, more than the chunk of {CHANGE_CHUNK}"
+        elif held is None and len(self._parts) >= MAX_PENDING_CHANGES:
+            problem = f"{label} would be the {MAX_PENDING_CHANGES + 1}th incomplete change held at once"
+        elif self._pending_characters + len(text) > MAX_PENDING_CHARACTERS:
+            problem = f"{label} would hold more than {MAX_PENDING_CHARACTERS} characters of incomplete changes"
+        if problem is not None:
+            raise JournalChangeError(problem)
 
     def _resolve(self, named: str) -> StepId:
         """Find the step a change names.
