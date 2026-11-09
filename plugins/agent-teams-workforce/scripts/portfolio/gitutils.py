@@ -28,7 +28,8 @@ Commands:
     hash-files --tree T [FILE ...]
         The git blob hash of each FILE in T (`missing` when it is not a file), and
         `treeDigest`: the SHA-256 of HEAD, the status and the content of every changed or
-        untracked file, which changes exactly when the work tree changes.
+        untracked file, which changes exactly when the work tree changes. Every file is hashed
+        by one `git hash-object` call per batch of paths, with each path's own filters.
     snapshot --tree T
         `git add -A` then `git write-tree`: the tree id the work tree can be restored to.
     changed --tree T --since ID
@@ -67,24 +68,37 @@ Commands:
         origin --prune` first. The primary working tree, main, the default branch and the
         primary tree's branch are never touched. Reports, per branch, why it landed or was
         kept and what was removed.
+
+Every git and gh command runs with a time limit: ATW_GIT_TIMEOUT seconds (default 120), cut to
+what is left of `--deadline-seconds` when it is given before the command name. A command that
+runs out of time is stopped with every process it started and fails the run with the end of
+what it printed; what it changed is then unknown, so it is never repeated automatically, and a
+later run rereads the state before it acts again. `cleanup-merged-pr --wait` counts the time
+its reads take, not only its pauses, and stops waiting when the deadline leaves no more time.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
+import contextvars
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
+import signal
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Runs the resolved git executable with a separate argv and no shell.
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, NotRequired, TypedDict
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Generator, Iterable, Sequence
+    from types import FrameType
 
 DOC_SUFFIXES: Final[tuple[str, ...]] = (".md", ".mdx", ".rst", ".adoc")
 WORKTREES_DIRNAME: Final[str] = ".worktrees"
@@ -94,10 +108,23 @@ PR_ENDED: Final[frozenset[str]] = frozenset({"MERGED", "CLOSED"})
 RECENT_SECONDS: Final[int] = 3600
 LS_REMOTE_NO_MATCH: Final[int] = 2
 GITHUB_URL: Final[re.Pattern[str]] = re.compile(r"github\.com[:/](?P<owner>[^/]+)/(?P<name>[^/]+?)(?:\.git)?/?$")
+GIT_TIMEOUT_ENV: Final[str] = "ATW_GIT_TIMEOUT"
+GIT_TIMEOUT_DEFAULT_SECONDS: Final[float] = 120.0
+STOP_GRACE_SECONDS: Final[float] = 5.0
+DIAGNOSTIC_CHARS: Final[int] = 2000
+HASH_BATCH_PATHS: Final[int] = 512
+ACTIVE_DEADLINE: Final[contextvars.ContextVar[float | None]] = contextvars.ContextVar(
+    "gitutils_active_deadline",
+    default=None,
+)
 
 
 class GitError(Exception):
     """A git command this script needs failed."""
+
+
+class GitTimeoutError(GitError):
+    """A git or gh command did not finish in time; what it changed is unknown."""
 
 
 class TreeFacts(TypedDict):
@@ -265,8 +292,220 @@ def failure_message(tree: str, argv: Sequence[str], done: subprocess.CompletedPr
     return f"git {' '.join(argv)} in {tree} exited {done.returncode}: {detail}"
 
 
+@contextlib.contextmanager
+def deadline_scope(seconds: float) -> Generator[None]:
+    """Bound every git and gh command started inside the block by a monotonic deadline.
+
+    A deadline already in force is kept when it is earlier, so a caller's budget is never extended.
+
+    Args:
+        seconds: How long from now the commands may run in total.
+
+    Yields:
+        Nothing; the deadline holds until the block ends.
+
+    Raises:
+        ValueError: When seconds is not positive and finite.
+
+    """
+    if not 0 < seconds < math.inf:
+        message: str = f"a deadline must be positive and finite seconds, got {seconds}"
+        raise ValueError(message)
+    expires: float = time.monotonic() + seconds
+    current: float | None = ACTIVE_DEADLINE.get()
+    token: contextvars.Token[float | None] = ACTIVE_DEADLINE.set(expires if current is None else min(current, expires))
+    try:
+        yield
+    finally:
+        ACTIVE_DEADLINE.reset(token)
+
+
+def remaining_seconds() -> float | None:
+    """Return the seconds left of the deadline in force, or None when there is none.
+
+    Returns:
+        The seconds left (zero or less once it has passed), or None.
+
+    """
+    expires: float | None = ACTIVE_DEADLINE.get()
+    return None if expires is None else expires - time.monotonic()
+
+
+def configured_timeout() -> float:
+    """Return the per-command time limit ATW_GIT_TIMEOUT sets.
+
+    Returns:
+        The limit in seconds.
+
+    Raises:
+        GitError: When the variable is not a positive, finite number.
+
+    """
+    raw: str = os.environ.get(GIT_TIMEOUT_ENV, str(GIT_TIMEOUT_DEFAULT_SECONDS))
+    try:
+        limit: float = float(raw)
+    except ValueError as exc:
+        message: str = f"{GIT_TIMEOUT_ENV} must be a number of seconds, got {raw!r}"
+        raise GitError(message) from exc
+    if not 0 < limit < math.inf:
+        message = f"{GIT_TIMEOUT_ENV} must be positive and finite, got {raw!r}"
+        raise GitError(message)
+    return limit
+
+
+def command_timeout(shown: str) -> float:
+    """Return the time limit for one command: the configured limit, cut to the deadline in force.
+
+    Args:
+        shown: The command as reported.
+
+    Returns:
+        The limit in seconds.
+
+    Raises:
+        GitTimeoutError: When the deadline passed before the command started; it is not run.
+
+    """
+    limit: float = configured_timeout()
+    left: float | None = remaining_seconds()
+    if left is None:
+        return limit
+    if left <= 0:
+        message: str = f"the deadline passed before {shown} started; it was not run"
+        raise GitTimeoutError(message)
+    return min(limit, left)
+
+
+def signal_shared_group() -> None:
+    """Send SIGTERM to this process's own group, which a caller gave it, without stopping this process.
+
+    The caller that made the group keeps its own authority to kill all of it.
+    """
+    previous: Callable[[int, FrameType | None], object] | int | None = signal.signal(
+        signal.SIGTERM,
+        signal.SIG_IGN,
+    )
+    try:
+        os.killpg(os.getpgrp(), signal.SIGTERM)
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
+def terminate_children(process: subprocess.Popen[str], *, own_group: bool) -> None:
+    """Ask a child and everything it started to stop.
+
+    Args:
+        process: The child.
+        own_group: Whether the child leads a process group of its own.
+
+    """
+    if own_group:
+        os.killpg(process.pid, signal.SIGTERM)
+        return
+    if threading.current_thread() is threading.main_thread():
+        signal_shared_group()
+        return
+    process.terminate()
+
+
+def stop_process(process: subprocess.Popen[str], *, own_group: bool) -> None:
+    """Stop a child that is still running, with the processes it started, then reap it.
+
+    SIGTERM first; SIGKILL after STOP_GRACE_SECONDS. A child that already exited is left alone.
+
+    Args:
+        process: The child.
+        own_group: Whether the child leads a process group of its own.
+
+    """
+    if process.poll() is not None:
+        return
+    with contextlib.suppress(ProcessLookupError):
+        terminate_children(process, own_group=own_group)
+    try:
+        process.wait(timeout=STOP_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(ProcessLookupError):
+            if own_group:
+                os.killpg(process.pid, signal.SIGKILL)
+            process.kill()
+        process.wait()
+
+
+def separate_group() -> bool:
+    """Whether a child gets a process group of its own.
+
+    When a caller started this process as the leader of its own group, children stay in that group,
+    so the caller's group kill also stops them. Otherwise each child gets its own group, so this process
+    can stop everything the child started.
+
+    Returns:
+        True when the child gets its own group.
+
+    """
+    return os.getpgrp() != os.getpid()
+
+
+def timeout_message(shown: str, limit: float, printed: str) -> str:
+    """Describe a command that ran out of time, with the end of what it printed.
+
+    Args:
+        shown: The command as reported.
+        limit: The time limit it had.
+        printed: What it printed before it was stopped.
+
+    Returns:
+        The message.
+
+    """
+    tail: str = printed.strip()[-DIAGNOSTIC_CHARS:]
+    return (
+        f"{shown} did not finish within {limit:.0f}s and was stopped with the processes it started; what it"
+        f" changed is unknown, so it is not repeated: reread the state before acting again. Last output: {tail}"
+    )
+
+
+def run_bounded(argv: list[str], cwd: str | None, shown: str) -> subprocess.CompletedProcess[str]:
+    """Run one command with the time limit command_timeout gives, stopping it and its children on timeout.
+
+    An interruption (for example KeyboardInterrupt) stops the command the same way before it propagates.
+
+    Args:
+        argv: The resolved executable and its arguments.
+        cwd: The directory it runs in, or None for this process's.
+        shown: The command as reported.
+
+    Returns:
+        The completed process, text mode, whatever its exit status.
+
+    Raises:
+        GitTimeoutError: When the command ran out of time.
+
+    """
+    limit: float = command_timeout(shown)
+    own_group: bool = separate_group()
+    process: subprocess.Popen[str] = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] - Resolved executable and separate argv; shell disabled.
+        argv,
+        cwd=cwd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        process_group=0 if own_group else None,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=limit)
+    except subprocess.TimeoutExpired as exc:
+        stop_process(process, own_group=own_group)
+        partial_out, partial_err = process.communicate()
+        raise GitTimeoutError(timeout_message(shown, limit, partial_err or partial_out)) from exc
+    finally:
+        stop_process(process, own_group=own_group)
+    return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+
+
 def git(tree: str, *argv: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    """Run one git command in a tree.
+    """Run one git command in a tree, within the time limit command_timeout gives.
 
     Args:
         tree: The directory git runs in (`git -C`).
@@ -277,19 +516,16 @@ def git(tree: str, *argv: str, check: bool = True) -> subprocess.CompletedProces
         The completed process, text mode.
 
     Raises:
-        GitError: When git is not on PATH, or when check is set and git exits non-zero.
+        GitError: When git is not on PATH, when check is set and git exits non-zero, or when git ran out of
+            time (GitTimeoutError, whatever check is: a timeout is never an answer).
 
     """
     executable: str | None = shutil.which("git")
     if executable is None:
         missing: str = "the git executable is not on PATH"
         raise GitError(missing)
-    done: subprocess.CompletedProcess[str] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Resolved git executable and separate argv; shell disabled.
-        [executable, "-C", tree, *argv],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    shown: str = f"git {' '.join(argv)} in {tree}"
+    done: subprocess.CompletedProcess[str] = run_bounded([executable, "-C", tree, *argv], None, shown)
     if check and done.returncode != 0:
         raise GitError(failure_message(tree, argv, done))
     return done
@@ -704,20 +940,46 @@ def cmd_provision(args: argparse.Namespace) -> ProvisionResult:
     }
 
 
-def blob_hash(tree: str, rel: str) -> str:
-    """Return the git blob hash of one file, or `missing`.
+def hash_batch(tree: str, paths: Sequence[str]) -> dict[str, str]:
+    """Return the git blob hash of each file in one `git hash-object` call, each with its path's filters.
 
     Args:
         tree: The tree.
-        rel: The path, relative to the tree.
+        paths: Existing files, relative to the tree.
 
     Returns:
-        The hash, or "missing".
+        The hash of each path.
+
+    Raises:
+        GitError: When git fails or prints a different number of hashes than paths.
 
     """
-    if not (Path(tree) / rel).is_file():
-        return "missing"
-    return git(tree, "hash-object", "--", rel).stdout.strip()
+    printed: list[str] = git(tree, "hash-object", "--", *paths).stdout.split()
+    if len(printed) != len(paths):
+        message: str = f"git hash-object in {tree} printed {len(printed)} hashes for {len(paths)} paths"
+        raise GitError(message)
+    return dict(zip(paths, printed, strict=True))
+
+
+def blob_hashes(tree: str, paths: Iterable[str]) -> dict[str, str]:
+    """Return the git blob hash of each path, or `missing` when it is not a file, hashing each path once.
+
+    Args:
+        tree: The tree.
+        paths: Paths relative to the tree; repeats are hashed once.
+
+    Returns:
+        The hash, or "missing", of each distinct path.
+
+    """
+    distinct: list[str] = sorted(set(paths))
+    present: list[str] = [rel for rel in distinct if (Path(tree) / rel).is_file()]
+    batches: list[list[str]] = [
+        present[start : start + HASH_BATCH_PATHS] for start in range(0, len(present), HASH_BATCH_PATHS)
+    ]
+    hashes: dict[str, str] = dict.fromkeys(distinct, "missing")
+    hashes.update(pair for batch in batches for pair in hash_batch(tree, batch).items())
+    return hashes
 
 
 def cmd_hash_files(args: argparse.Namespace) -> HashFilesResult:
@@ -732,7 +994,6 @@ def cmd_hash_files(args: argparse.Namespace) -> HashFilesResult:
     """
     tree: str = args.tree
     names: list[str] = args.files
-    files: dict[str, str] = {f: blob_hash(tree, f) for f in names}
     raw: str = git(tree, "status", "--porcelain=v1", "-z", "--untracked-files=all").stdout
     entries: list[str] = [e for e in raw.split("\0") if e]
     changed: set[str] = set()
@@ -743,10 +1004,12 @@ def cmd_hash_files(args: argparse.Namespace) -> HashFilesResult:
             continue
         changed.add(e[3:])
         origin_next = e[:1] in {"R", "C"}
+    hashes: dict[str, str] = blob_hashes(tree, [*names, *changed])
+    files: dict[str, str] = {f: hashes[f] for f in names}
     state: DigestState = {
         "head": out(tree, "rev-parse", "HEAD"),
         "status": entries,
-        "content": {p: blob_hash(tree, p) for p in sorted(changed)},
+        "content": {p: hashes[p] for p in sorted(changed)},
     }
     digest: str = hashlib.sha256(
         json.dumps(state, sort_keys=True).encode("utf-8"),
@@ -867,7 +1130,7 @@ def gh_head_pr(repo: str, branch: str) -> PullRequest | None:
         The number and state of the most recent such pull request, or None when there is none.
 
     Raises:
-        GitError: When gh is not on PATH, origin names no GitHub repository, or gh fails.
+        GitError: When gh is not on PATH, origin names no GitHub repository, gh fails or runs out of time.
 
     """
     executable: str | None = shutil.which("gh")
@@ -878,13 +1141,7 @@ def gh_head_pr(repo: str, branch: str) -> PullRequest | None:
     shown: str = f"gh pr list --head {branch} --state all --repo {slug}"
     argv: list[str] = [executable, "pr", "list", "--head", branch, "--state", "all", "--repo", slug]
     argv += ["--json", "number,state,headRefOid", "--limit", "100"]
-    done: subprocess.CompletedProcess[str] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Resolved gh executable and separate argv; shell disabled.
-        argv,
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=repo,
-    )
+    done: subprocess.CompletedProcess[str] = run_bounded(argv, repo, shown)
     if done.returncode != 0:
         msg: str = f"{shown} exited {done.returncode}: {(done.stderr or done.stdout).strip()}"
         raise GitError(msg)
@@ -925,12 +1182,27 @@ def github_slug(repo: str) -> str:
     return f"{match.group('owner')}/{match.group('name')}"
 
 
+def wait_limit(wait: int) -> float:
+    """Return how long a pull request may be waited for: the wait asked for, cut to the deadline in force.
+
+    Args:
+        wait: The seconds asked for.
+
+    Returns:
+        The seconds that may be waited, never negative.
+
+    """
+    left: float | None = remaining_seconds()
+    return float(wait) if left is None else max(0.0, min(float(wait), left))
+
+
 def await_pr_end(repo: str, branch: str, wait: int) -> tuple[PullRequest | None, int]:
     """Read the branch's pull request until it is MERGED or CLOSED, or the wait runs out.
 
     The first poll comes after POLL_FIRST_SECONDS and each later interval doubles up to POLL_MAX_SECONDS;
-    the last poll lands on the end of the wait. A read that fails while wait remains is retried at the next
-    poll; the last read must succeed.
+    the last poll lands on the end of the wait. The wait is measured on the monotonic clock, so the time
+    each read takes counts against it, and it never runs past the deadline in force. A read that fails while
+    wait remains is retried at the next poll (a read changes nothing); the last read must succeed.
 
     Args:
         repo: The main repository.
@@ -938,26 +1210,25 @@ def await_pr_end(repo: str, branch: str, wait: int) -> tuple[PullRequest | None,
         wait: How many seconds an OPEN pull request is waited for (0 reads once).
 
     Returns:
-        The last pull request read (None when the branch has none) and the seconds waited.
+        The last pull request read (None when the branch has none) and the whole seconds waited.
 
     Raises:
         GitError: When the last read fails.
 
     """
-    waited: int = 0
+    started: float = time.monotonic()
+    limit: float = wait_limit(wait)
     interval: int = POLL_FIRST_SECONDS
     while True:
         try:
             current: PullRequest | None = gh_head_pr(repo, branch)
         except GitError:
-            if waited >= wait:
+            if time.monotonic() - started >= limit:
                 raise
         else:
-            if current is None or current["state"] in PR_ENDED or waited >= wait:
-                return current, waited
-        pause: int = min(interval, wait - waited)
-        time.sleep(pause)
-        waited += pause
+            if current is None or current["state"] in PR_ENDED or time.monotonic() - started >= limit:
+                return current, int(time.monotonic() - started)
+        time.sleep(max(0.0, min(float(interval), limit - (time.monotonic() - started))))
         interval = min(interval * 2, POLL_MAX_SECONDS)
 
 
@@ -1368,6 +1639,12 @@ def build_parser() -> argparse.ArgumentParser:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument(
+        "--deadline-seconds",
+        type=float,
+        default=None,
+        help="the most seconds every git and gh command of this run may take together",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
     facts: argparse.ArgumentParser = sub.add_parser("facts", help="the raw git facts of a tree")
     facts.add_argument("--path", required=True)
@@ -1427,9 +1704,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     args: argparse.Namespace = build_parser().parse_args(argv)
     command: str = args.command
+    deadline: float | None = args.deadline_seconds
     try:
-        result: CommandResult = COMMANDS[command](args)
-    except (GitError, OSError) as exc:
+        scope: contextlib.AbstractContextManager[None] = (
+            contextlib.nullcontext() if deadline is None else deadline_scope(deadline)
+        )
+        with scope:
+            result: CommandResult = COMMANDS[command](args)
+    except (GitError, OSError, ValueError) as exc:
         failure: ErrorResult = {"error": str(exc), "command": command}
         sys.stdout.write(json.dumps(failure) + "\n")
         return 2
