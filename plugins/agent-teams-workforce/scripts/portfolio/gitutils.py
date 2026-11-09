@@ -411,7 +411,9 @@ def terminate_children(process: subprocess.Popen[str], *, own_group: bool) -> No
 def stop_process(process: subprocess.Popen[str], *, own_group: bool) -> None:
     """Stop a child that is still running, with the processes it started, then reap it.
 
-    SIGTERM first; SIGKILL after STOP_GRACE_SECONDS. A child that already exited is left alone.
+    SIGTERM first; SIGKILL after STOP_GRACE_SECONDS. When the child leads its own group, whatever is left
+    of that group is then killed too, so nothing it started keeps running or holds its pipes. A child that
+    already exited is left alone.
 
     Args:
         process: The child.
@@ -426,10 +428,11 @@ def stop_process(process: subprocess.Popen[str], *, own_group: bool) -> None:
         process.wait(timeout=STOP_GRACE_SECONDS)
     except subprocess.TimeoutExpired:
         with contextlib.suppress(ProcessLookupError):
-            if own_group:
-                os.killpg(process.pid, signal.SIGKILL)
             process.kill()
         process.wait()
+    if own_group:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
 
 
 def separate_group() -> bool:
@@ -465,6 +468,29 @@ def timeout_message(shown: str, limit: float, printed: str) -> str:
     )
 
 
+def drain_stopped(process: subprocess.Popen[str]) -> str:
+    """Collect what a stopped child printed, waiting at most STOP_GRACE_SECONDS, and close its pipes.
+
+    A process the child started can outlive it and keep a pipe open; the wait is bounded so that process
+    cannot hold this one, and whatever it would still print is dropped.
+
+    Args:
+        process: The child, already reaped.
+
+    Returns:
+        Its standard error, or its standard output when that is empty; empty when the drain ran out of time.
+
+    """
+    try:
+        partial_out, partial_err = process.communicate(timeout=STOP_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        for pipe in (process.stdout, process.stderr):
+            if pipe is not None:
+                pipe.close()
+        return ""
+    return partial_err or partial_out
+
+
 def run_bounded(argv: list[str], cwd: str | None, shown: str) -> subprocess.CompletedProcess[str]:
     """Run one command with the time limit command_timeout gives, stopping it and its children on timeout.
 
@@ -497,8 +523,7 @@ def run_bounded(argv: list[str], cwd: str | None, shown: str) -> subprocess.Comp
         stdout, stderr = process.communicate(timeout=limit)
     except subprocess.TimeoutExpired as exc:
         stop_process(process, own_group=own_group)
-        partial_out, partial_err = process.communicate()
-        raise GitTimeoutError(timeout_message(shown, limit, partial_err or partial_out)) from exc
+        raise GitTimeoutError(timeout_message(shown, limit, drain_stopped(process))) from exc
     finally:
         stop_process(process, own_group=own_group)
     return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
@@ -1185,6 +1210,9 @@ def github_slug(repo: str) -> str:
 def wait_limit(wait: int) -> float:
     """Return how long a pull request may be waited for: the wait asked for, cut to the deadline in force.
 
+    Under a deadline, one full per-command limit (configured_timeout) is held back from the wait, so the
+    last read still has its own time to answer instead of starting with the deadline already spent.
+
     Args:
         wait: The seconds asked for.
 
@@ -1193,7 +1221,9 @@ def wait_limit(wait: int) -> float:
 
     """
     left: float | None = remaining_seconds()
-    return float(wait) if left is None else max(0.0, min(float(wait), left))
+    if left is None:
+        return float(wait)
+    return max(0.0, min(float(wait), left - configured_timeout()))
 
 
 def await_pr_end(repo: str, branch: str, wait: int) -> tuple[PullRequest | None, int]:

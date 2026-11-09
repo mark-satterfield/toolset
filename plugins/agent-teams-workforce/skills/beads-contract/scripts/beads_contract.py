@@ -155,6 +155,9 @@ BD_TIMEOUT_DEFAULT_SECONDS = 180.0
 #: How long a stopped `bd` call gets after SIGTERM before SIGKILL, in seconds.
 STOP_GRACE_SECONDS = 5.0
 
+#: How many characters of what a stopped `bd` call printed are kept for its error message.
+DIAGNOSTIC_CHARS = 2000
+
 #: Why a read that ran out of time is run again.
 READ_TIMEOUT_REASON = "the beads server did not answer in time; a read is safe to run again"
 
@@ -869,6 +872,9 @@ def bd_timeout() -> float:
 def _stop(process: subprocess.Popen[str], *, own_group: bool) -> None:
     """Stop a `bd` call that is still running, with what it started when it leads its own group, and reap it.
 
+    SIGTERM first; SIGKILL after STOP_GRACE_SECONDS. When `bd` leads its own group, whatever is left of
+    that group is then killed too, so nothing it started keeps running or holds its pipes.
+
     Args:
         process: The `bd` process.
         own_group: Whether it leads a process group of its own.
@@ -884,13 +890,48 @@ def _stop(process: subprocess.Popen[str], *, own_group: bool) -> None:
         process.wait(timeout=STOP_GRACE_SECONDS)
     except subprocess.TimeoutExpired:
         with contextlib.suppress(ProcessLookupError):
-            if own_group:
-                os.killpg(process.pid, signal.SIGKILL)
             process.kill()
         process.wait()
+    if own_group:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
 
 
-def run_bd_once(command: list[str], stdin: str | None, limit: float) -> subprocess.CompletedProcess[str] | None:
+class BdTimeoutError(Exception):
+    """A `bd` call ran out of time and was stopped; `printed` is the end of what it printed."""
+
+    def __init__(self, printed: str) -> None:
+        """Keep the end of what the stopped call printed.
+
+        Args:
+            printed: What it printed before it was stopped.
+
+        """
+        super().__init__(printed)
+        self.printed: str = printed.strip()[-DIAGNOSTIC_CHARS:]
+
+
+def _drain_stopped(process: subprocess.Popen[str]) -> str:
+    """Collect what a stopped `bd` call printed, waiting at most STOP_GRACE_SECONDS, and close its pipes.
+
+    Args:
+        process: The `bd` process, already reaped.
+
+    Returns:
+        Its standard error, or its standard output when that is empty; empty when the drain ran out of time.
+
+    """
+    try:
+        stdout, stderr = process.communicate(timeout=STOP_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        for pipe in (process.stdin, process.stdout, process.stderr):
+            if pipe is not None:
+                pipe.close()
+        return ""
+    return stderr or stdout
+
+
+def run_bd_once(command: list[str], stdin: str | None, limit: float) -> subprocess.CompletedProcess[str]:
     """Run one `bd` call for at most `limit` seconds.
 
     When a caller started this process as the leader of its own group, `bd` stays in that group so the
@@ -903,10 +944,11 @@ def run_bd_once(command: list[str], stdin: str | None, limit: float) -> subproce
         limit: The most seconds it may run.
 
     Returns:
-        The completed call, or None when it ran out of time and was stopped.
+        The completed call.
 
     Raises:
         BeadsError: `bd` could not be started.
+        BdTimeoutError: It ran out of time and was stopped; the error carries the end of what it printed.
 
     """
     own_group: bool = os.getpgrp() != os.getpid()
@@ -924,8 +966,9 @@ def run_bd_once(command: list[str], stdin: str | None, limit: float) -> subproce
         raise BeadsError(msg) from exc
     try:
         stdout, stderr = process.communicate(input=stdin, timeout=limit)
-    except subprocess.TimeoutExpired:
-        return None
+    except subprocess.TimeoutExpired as exc:
+        _stop(process, own_group=own_group)
+        raise BdTimeoutError(_drain_stopped(process)) from exc
     finally:
         _stop(process, own_group=own_group)
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
@@ -1197,16 +1240,20 @@ class Reader:
         """
         shown: str = " ".join(command)
         limit: float = self._limit(shown)
-        return run_bd_once(command, stdin, limit) or self._timed_out(args, shown, limit)
+        try:
+            return run_bd_once(command, stdin, limit)
+        except BdTimeoutError as stopped:
+            return self._timed_out(args, shown, limit, stopped.printed)
 
     @staticmethod
-    def _timed_out(args: list[str], shown: str, limit: float) -> subprocess.CompletedProcess[str]:
+    def _timed_out(args: list[str], shown: str, limit: float, printed: str) -> subprocess.CompletedProcess[str]:
         """Turn a read that ran out of time into a retryable failure; refuse to go on after a write that did.
 
         Args:
             args: Arguments after `bd`.
             shown: The command as reported.
             limit: The time limit it had.
+            printed: The end of what the stopped call printed.
 
         Returns:
             For a read, a failed result whose stderr names the retryable timeout.
@@ -1218,10 +1265,15 @@ class Reader:
         if not is_read(args):
             msg: str = (
                 f"`{shown}` did not finish within {limit:.0f}s and was stopped; it may have applied, so it is"
-                " not repeated: read the bead again before retrying the write"
+                f" not repeated: read the bead again before retrying the write. Last output: {printed}"
             )
             raise BeadsError(msg, OTHER_CAUSE)
-        return subprocess.CompletedProcess([], 1, "", f"i/o timeout: bd did not answer within {limit:.0f}s")
+        return subprocess.CompletedProcess(
+            [],
+            1,
+            "",
+            f"i/o timeout: bd did not answer within {limit:.0f}s. Last output: {printed}",
+        )
 
     def _read(self, args: list[str], repo: str | None = None) -> JsonValue:
         """Run one read-only `bd` command live and parse its JSON.
