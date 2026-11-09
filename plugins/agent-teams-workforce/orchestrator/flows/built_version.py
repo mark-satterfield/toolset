@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+from typing import TYPE_CHECKING, Final
 
+from orchestrator.core import portfolio_bootstrap  # ruff: ignore[unused-import] - Install shared contract paths.
+
+# isort: split
+from matrixquery import StoryScope, story_scope
+from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix
 from step_journal_contract import StepId
 from typeguard import check_type
 
@@ -27,6 +34,12 @@ from orchestrator.flows.deploy_support import (
     handback,
     recorded,
 )
+
+if TYPE_CHECKING:
+    from matrix_contract import EntryId
+
+MATRIX_QUERIES: Final = "matrixQueries"
+"""The value artifact counting the matrix queries the scope read made: subprocess commands, in-process reads, stacks."""
 
 
 def _args(run: StepRun) -> dict[str, JsonValue]:
@@ -164,6 +177,23 @@ def _start(run: StepRun) -> Completion:
     return Completion(artifacts=(value_artifact("constraintsBefore", before), file_artifact("treeStart", tree)))
 
 
+def _story_scopes(requests: list[tuple[str, list[str]]]) -> list[StoryScope]:
+    """Read every stack's story scope from one read of the matrix.
+
+    Args:
+        requests: Each stack id with the ids the Story built in it, in the order ``built`` listed the stacks.
+
+    Returns:
+        One scope per stack, as ``atw-matrix story-scope`` prints it, in the same order.
+
+    """
+    matrix: Matrix = read_matrix(matrix_path(None, os.environ))
+    built: list[tuple[EntryId, list[EntryId]]] = [
+        (as_entry_id(stack), [as_entry_id(stated) for stated in ids]) for stack, ids in requests
+    ]
+    return [story_scope(matrix, stack, ids) for stack, ids in built]
+
+
 def _compare(run: StepRun) -> Completion:
     """Read the Story's recorded build scope and launch its architecture comparison.
 
@@ -183,34 +213,25 @@ def _compare(run: StepRun) -> Completion:
     if not stacks:
         msg = "compare"
         raise StepError(msg, OTHER_CAUSE, ("Story names built entries but no architecture stack",))
-    scopes = [
-        command(
-            run.tools,
-            "built:scope",
-            [
-                matrix,
-                "story-scope",
-                "--stack",
-                check_type(stack["id"], str),
-                "--ids",
-                *[check_type(row["id"], str) for row in (entries or [stack])],
-            ],
-        )
-        for stack in stacks
+    requests: list[tuple[str, list[str]]] = [
+        (check_type(stack["id"], str), [check_type(row["id"], str) for row in (entries or [stack])]) for stack in stacks
     ]
+    scopes: list[StoryScope] = run.tools.portfolio("built:scope", _story_scopes, requests)
     request = (
         f"Compare deployed Story {run.context.bead} in {run.context.args['repoPath']} with effective "
         f"architecture {_root(run)}/arc42. Record differences only in {_root(run)}/built; "
         "do not edit effective architecture or section 2. Use the exact scope and headings below.\n"
         + json.dumps({"stacks": stacks, "entries": entries, "scopes": scopes}, ensure_ascii=False)
     )
-    return reasoned(
+    planned: Completion = reasoned(
         run,
         "built-architecture-comparer",
         OutputContract(SCHEMAS / "built-comparison.schema.json", "comparison"),
         request,
         followups=(_next("built:accept-comparison"),),
     )
+    queries: dict[str, JsonValue] = {"commands": 1, "matrixReads": 1, "stacks": len(stacks)}
+    return Completion(artifacts=(*planned.artifacts, value_artifact(MATRIX_QUERIES, queries)), add=planned.add)
 
 
 def _accept_comparison(run: StepRun) -> Completion:

@@ -302,12 +302,15 @@ def _in_progress_holds(graph: Graph, repos: dict[str, str]) -> set[tuple[str, st
         The (later, earlier) pairs.
 
     """
+    waiting: dict[str, list[str]] = {}
+    other: str
+    for other in (story for story in repos if graph.beads[story].status != "in_progress"):
+        waiting.setdefault(repos[other], []).append(other)
     return {
-        (other, story)
+        (waiter, story)
         for story, repo in repos.items()
         if graph.beads[story].status == "in_progress"
-        for other, other_repo in repos.items()
-        if other != story and other_repo == repo and graph.beads[other].status != "in_progress"
+        for waiter in waiting.get(repo, [])
     }
 
 

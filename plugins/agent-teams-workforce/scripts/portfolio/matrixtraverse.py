@@ -14,7 +14,8 @@ came from.
   the links that put it there; :func:`requirement_reach`: the same walk from one requirement;
   :func:`architecture_review_scope`: the architecture-side part of that, which
   the architect reviews and the approved mark covers once it is approved; :func:`reach_rows`: each
-  entry of that scope with whether it is approved, how it is reached and the Epics that share it.
+  entry of that scope with whether it is approved, how it is reached and the Epics that share it;
+  :func:`reach_sharing`: each entry with every Epic whose reach holds it, built once per unchanged matrix.
 - :func:`constraints_for`: some entries to the constraints that bind them.
 - :func:`capabilities`: some entries to the shared capabilities the work that builds them must use.
 - :func:`impact`: an entry to everything a change to it reaches.
@@ -945,8 +946,60 @@ def architecture_review_scope(matrix: Matrix, epic: EntryId) -> ArchitectureRevi
     )
 
 
+def _requirement_members(matrix: Matrix, requirement: EntryId) -> frozenset[EntryId]:
+    """Name everything one requirement reaches by the rule of reach, the requirement itself included.
+
+    Returns:
+        The requirement, the features that serve it and every other entry :func:`requirement_reach` names.
+
+    """
+    serving, found = requirement_reach(matrix, requirement)
+    return frozenset({requirement, *serving, *found})
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def reach_rows(matrix: Matrix, epic: EntryId) -> list[ReachRow]:
+def reach_sharing(matrix: Matrix) -> dict[EntryId, frozenset[EntryId]]:
+    """Map each entry to the Epics whose reach by the rule of reach holds it, walking every Epic once.
+
+    An Epic holds what :func:`rule_reach` reaches from it: its requirements, the features that
+    serve them, and the entries, stacks and one-hop dependency far ends beyond them. That is what
+    its requirements reach together (:func:`requirement_reach`), so each requirement is walked
+    once however many Epics state it. Build the map once for a matrix that no one changes while it
+    is used, and hand it to :func:`reach_rows` for every Epic read from that matrix; a matrix that
+    has been changed needs a new map.
+
+    Args:
+        matrix: The matrix, unchanged while the map is used.
+
+    Returns:
+        Entry id -> the Epics whose reach holds it.
+
+    """
+    walked: dict[EntryId, frozenset[EntryId]] = {}
+    pairs: set[tuple[EntryId, EntryId]] = set()
+    epic: Entry
+    for epic in matrix.entries((KIND_EPIC,)):
+        requirements: list[EntryId] = [stated.end for stated in matrix.outgoing(epic.id, (REL_HAS_REQUIREMENT,))]
+        walked.update({
+            requirement: _requirement_members(matrix, requirement)
+            for requirement in requirements
+            if requirement not in walked
+        })
+        pairs.update((entry_id, epic.id) for requirement in requirements for entry_id in walked[requirement])
+    sharing: dict[EntryId, set[EntryId]] = {}
+    entry_id: EntryId
+    epic_id: EntryId
+    for entry_id, epic_id in pairs:
+        sharing.setdefault(entry_id, set()).add(epic_id)
+    return {held: frozenset(epics) for held, epics in sharing.items()}
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def reach_rows(
+    matrix: Matrix,
+    epic: EntryId,
+    sharing: Mapping[EntryId, frozenset[EntryId]] | None = None,
+) -> list[ReachRow]:
     """List each entry reached for architecture review with its mark, reach and sharing.
 
     An Epic the matrix does not hold raises ``MatrixError``.
@@ -954,6 +1007,8 @@ def reach_rows(matrix: Matrix, epic: EntryId) -> list[ReachRow]:
     Args:
         matrix: The matrix.
         epic: The Epic's entry id.
+        sharing: :func:`reach_sharing` of this same, unchanged matrix, to reuse across the Epics
+            of one batch; None builds it here.
 
     Returns:
         One row per entry of :func:`architecture_review_scope`, in id order: its kind, whether it carries the
@@ -962,27 +1017,19 @@ def reach_rows(matrix: Matrix, epic: EntryId) -> list[ReachRow]:
 
     """
     scope: ArchitectureReviewScope = architecture_review_scope(matrix, epic)
-    sharing: dict[EntryId, list[str]] = {entry_id: [] for entry_id in scope.entries}
-    other: Entry
-    for other in matrix.entries((KIND_EPIC,)):
-        if other.id == epic:
-            continue
-        found: RuleReach = rule_reach(matrix, other.id)
-        reached: set[EntryId] = {*found.requirements, *found.features, *found.ids()}
-        entry_id: EntryId
-        for entry_id in scope.entries:
-            if entry_id in reached:
-                sharing[entry_id].append(other.id.removeprefix(f"{KIND_EPIC}:"))
+    shared: Mapping[EntryId, frozenset[EntryId]] = reach_sharing(matrix) if sharing is None else sharing
     rows: list[ReachRow] = []
+    entry_id: EntryId
     for entry_id in scope.entries:
         entry: Entry = matrix.entry(entry_id)
+        others: frozenset[EntryId] = shared.get(entry_id, frozenset()) - {epic}
         rows.append(
             ReachRow(
                 id=entry_id,
                 kind=entry.kind,
                 approved=entry.approved,
                 via=scope.via[entry_id],
-                shared_with=tuple(sorted(sharing[entry_id])),
+                shared_with=tuple(sorted(other.removeprefix(f"{KIND_EPIC}:") for other in others)),
             ),
         )
     return rows

@@ -62,6 +62,90 @@ def _completed_facts(path: Path) -> dict[str, JsonValue]:
     return facts if facts.get("closed") is True else {}
 
 
+class StorySnapshot:
+    """Completed producer Story facts, each journal read at most once within one query.
+
+    A snapshot belongs to one diagnosis, readiness check or candidate listing and is dropped
+    with it, so a later query always rereads the journals and sees new publication or
+    deployment receipts.
+    """
+
+    def __init__(self, directory: Path) -> None:
+        """Bind the canonical journal directory.
+
+        Args:
+            directory: Canonical journals directory.
+
+        """
+        self._directory: Path = directory
+        self._facts: dict[str, dict[str, JsonValue]] = {}
+
+    def facts(self, story: str) -> dict[str, JsonValue]:
+        """Read one Story's completed facts, reusing an earlier read in this query.
+
+        Args:
+            story: The producer Story's bead id.
+
+        Returns:
+            Its completed and closed facts, or an empty mapping while completion is unproven.
+
+        """
+        if story not in self._facts:
+            self._facts[story] = _completed_facts(_journal(self._directory, story))
+        return self._facts[story]
+
+
+def _deployment_in(facts: dict[str, JsonValue]) -> bool:
+    """Require actual verified stacks in completed Story facts.
+
+    Returns:
+        Whether the facts record nonempty successfully verified stacks.
+
+    """
+    stacks: JsonValue = facts.get("stacks")
+    return (
+        isinstance(stacks, list)
+        and bool(stacks)
+        and all(isinstance(stack, dict) and stack.get("status") in VERIFIED_STATUSES for stack in stacks)
+    )
+
+
+def _publication_in(facts: dict[str, JsonValue]) -> bool:
+    """Require a package availability receipt for the exact published commit.
+
+    Returns:
+        Whether the facts hold a complete CodeArtifact availability receipt for ``publishedHead``.
+
+    """
+    receipt: JsonValue = facts.get("packagePublication")
+    if not isinstance(receipt, dict) or receipt.get("available") is not True:
+        return False
+    fields: tuple[str, ...] = ("checkedCommit", "package", "version", "domain", "domainOwner", "repository")
+    if not all(isinstance(receipt.get(key), str) and bool(receipt.get(key)) for key in fields):
+        return False
+    return receipt.get("checkedCommit") == facts.get("publishedHead")
+
+
+def _delivered_in(facts: dict[str, JsonValue], stage: Literal["built", "published", "deployed"]) -> bool:
+    """Select the exact delivery evidence a stage requires from completed Story facts.
+
+    Returns:
+        Whether the requested delivery stage has evidence; built is checked by the Task reader.
+
+    Raises:
+        ValueError: If the stage is outside the shared contract.
+
+    """
+    if stage == "built":
+        return True
+    if stage == "published":
+        return _publication_in(facts)
+    if stage == "deployed":
+        return _deployment_in(facts)
+    message: str = f"Unknown prerequisite stage: {stage}"
+    raise ValueError(message)
+
+
 def deployment_verified(path: Path) -> bool:
     """Require actual verified stacks, independently of package publication.
 
@@ -72,12 +156,7 @@ def deployment_verified(path: Path) -> bool:
         Whether completed delivery records nonempty successfully verified stacks.
 
     """
-    stacks: JsonValue = _completed_facts(path).get("stacks")
-    return (
-        isinstance(stacks, list)
-        and bool(stacks)
-        and all(isinstance(stack, dict) and stack.get("status") in VERIFIED_STATUSES for stack in stacks)
-    )
+    return _deployment_in(_completed_facts(path))
 
 
 def publication_verified(path: Path) -> bool:
@@ -90,14 +169,7 @@ def publication_verified(path: Path) -> bool:
         Whether the completed Story recorded a matching CodeArtifact availability receipt.
 
     """
-    facts: dict[str, JsonValue] = _completed_facts(path)
-    receipt: JsonValue = facts.get("packagePublication")
-    if not isinstance(receipt, dict) or receipt.get("available") is not True:
-        return False
-    fields: tuple[str, ...] = ("checkedCommit", "package", "version", "domain", "domainOwner", "repository")
-    if not all(isinstance(receipt.get(key), str) and bool(receipt.get(key)) for key in fields):
-        return False
-    return receipt.get("checkedCommit") == facts.get("publishedHead")
+    return _publication_in(_completed_facts(path))
 
 
 def delivery_verified(path: Path, stage: Literal["built", "published", "deployed"]) -> bool:
@@ -110,33 +182,27 @@ def delivery_verified(path: Path, stage: Literal["built", "published", "deployed
     Returns:
         Whether the requested delivery stage has evidence.
 
-    Raises:
-        ValueError: If the stage is outside the shared contract.
-
     """
     if stage == "built":
         return True
-    if stage == "published":
-        return publication_verified(path)
-    if stage == "deployed":
-        return deployment_verified(path)
-    message: str = f"Unknown prerequisite stage: {stage}"
-    raise ValueError(message)
+    return _delivered_in(_completed_facts(path), stage)
 
 
-def _delivered(producer: dict[str, JsonValue], directory: Path) -> bool:
+def _delivered(producer: dict[str, JsonValue], snapshot: StorySnapshot) -> bool:
     """Select delivery evidence for one validated producer row.
 
     Args:
         producer: Declared producer.
-        directory: Canonical journals directory.
+        snapshot: This query's Story facts.
 
     Returns:
         Whether its delivery stage is evidenced.
 
     """
     stage = check_type(producer["requiredStage"], Literal["built", "published", "deployed"])
-    return delivery_verified(_journal(directory, check_type(producer["story"], str)), stage)
+    if stage == "built":
+        return True
+    return _delivered_in(snapshot.facts(check_type(producer["story"], str)), stage)
 
 
 def prerequisites_for_record(record: object) -> list[dict[str, JsonValue]]:
@@ -244,8 +310,13 @@ def _add_wait_edges(graph: beadgraph.Graph, edges: dict[str, set[str]], wait: di
     )
 
 
-def _active_waits(graph: beadgraph.Graph, directory: Path) -> list[JsonValue]:
+def _active_waits(graph: beadgraph.Graph, directory: Path, snapshot: StorySnapshot) -> list[JsonValue]:
     """Read pending journal waits, excluding completed producer stages and historical waits.
+
+    Args:
+        graph: A current tracker snapshot.
+        directory: Canonical journals directory.
+        snapshot: This diagnosis's producer Story facts.
 
     Returns:
         The currently unresolved structured waits from real open consumer Tasks.
@@ -269,11 +340,15 @@ def _active_waits(graph: beadgraph.Graph, directory: Path) -> list[JsonValue]:
         ]
         if saved:
             wait: dict[str, JsonValue] = check_type(saved[-1], dict[str, JsonValue])
-            waits.append(_unresolved_wait(graph, directory, wait))
+            waits.append(_unresolved_wait(graph, snapshot, wait))
     return [wait for wait in waits if isinstance(wait, dict) and wait["producers"]]
 
 
-def _unresolved_wait(graph: beadgraph.Graph, directory: Path, wait: dict[str, JsonValue]) -> dict[str, JsonValue]:
+def _unresolved_wait(
+    graph: beadgraph.Graph,
+    snapshot: StorySnapshot,
+    wait: dict[str, JsonValue],
+) -> dict[str, JsonValue]:
     """Retain only producer stages that current facts have not established.
 
     Returns:
@@ -289,7 +364,7 @@ def _unresolved_wait(graph: beadgraph.Graph, directory: Path, wait: dict[str, Js
             for producer in producers
             if (
                 not graph.beads[check_type(producer["task"], str)].closed
-                or (producer["requiredStage"] != "built" and not _delivered(producer, directory))
+                or (producer["requiredStage"] != "built" and not _delivered(producer, snapshot))
             )
         ],
     }
@@ -316,6 +391,7 @@ def producer_candidates(
 
     """
     candidates: list[JsonValue] = []
+    snapshot: StorySnapshot = StorySnapshot(journals)
     for record in graph.records:
         bead: beadgraph.Bead = beadgraph.bead_of(record)
         if bead.kind != "task" or bead.id == exclude:
@@ -324,6 +400,7 @@ def producer_candidates(
         if not any(_in_stacks(matrix, element, stacks) for element in elements):
             continue
         story: beadgraph.Bead | None = next((held for held in graph.ancestors(bead.id) if held.kind == "story"), None)
+        facts: dict[str, JsonValue] = {} if story is None else snapshot.facts(story.id)
         candidates.append({
             "task": bead.id,
             "title": bead.title,
@@ -331,8 +408,8 @@ def producer_candidates(
             "elements": list(elements),
             "story": None if story is None else story.id,
             "storyStatus": None if story is None else story.status,
-            "publicationVerified": story is not None and publication_verified(_journal(journals, story.id)),
-            "deploymentVerified": story is not None and deployment_verified(_journal(journals, story.id)),
+            "publicationVerified": story is not None and _publication_in(facts),
+            "deploymentVerified": story is not None and _deployment_in(facts),
         })
     return candidates
 
@@ -474,8 +551,9 @@ def diagnosed(run: StepRun) -> Completion:
         "fingerprint": check_type(run.params()["fingerprint"], str),
         "producers": list(producers),
     }
-    unresolved: dict[str, JsonValue] = _unresolved_wait(graph, run.journal_path.parent, wait)
-    waits: list[JsonValue] = _active_waits(graph, run.journal_path.parent)
+    snapshot: StorySnapshot = StorySnapshot(run.journal_path.parent)
+    unresolved: dict[str, JsonValue] = _unresolved_wait(graph, snapshot, wait)
+    waits: list[JsonValue] = _active_waits(graph, run.journal_path.parent, snapshot)
     if unresolved["producers"]:
         waits.append(unresolved)
     validate_wait_graph(graph.records, waits)
@@ -572,9 +650,10 @@ def pending(wait: dict[str, JsonValue], directory: Path, control: Path) -> bool:
     graph: beadgraph.Graph = beadgraph.load(control)
     producers: list[dict[str, JsonValue]] = check_type(wait["producers"], list[dict[str, JsonValue]])
     _validate_producers(graph, check_type(wait["task"], str), producers)
+    snapshot: StorySnapshot = StorySnapshot(directory)
     return any(
         not graph.beads[check_type(producer["task"], str)].closed
-        or (producer["requiredStage"] != "built" and not _delivered(producer, directory))
+        or (producer["requiredStage"] != "built" and not _delivered(producer, snapshot))
         for producer in producers
     )
 
