@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/task-context.schema.json",
   "title": "Task context",
-  "description": "One repository's task context file (<work>/tasks-<slug>.context.json), handed to its task decomposer as `task context` beside the repository's spec context (`repository context`, spec-context.schema.json), whose `items` are what the Story builds. The step `task_decomposition.context` (orchestrator/flows/task_decomposition.py) writes it and validates it against this file. It holds facts and pointers only; the commands named below print what the matrix and the bead tracker hold.",
+  "description": "One repository's task context file (<work>/tasks-<slug>.context.json), handed to its task decomposer as `task context` beside the repository's spec context (`repository context`, spec-context.schema.json), whose `items` are what the Story builds. The step `task_decomposition.context` (orchestrator/flows/task_decomposition.py) writes it and validates it against this file. It holds facts and pointers, and `openWork`, the open Tasks of other Epics read once from the bead tracker and the matrix when the file is written; the other commands named below print what the matrix and the bead tracker hold.",
   "type": "object",
   "additionalProperties": false,
   "required": ["epic", "repoPath", "slug", "stacks", "existingTasks", "dependsOn"],
@@ -11,7 +11,7 @@
     "repoPath": {"description": "The repository's absolute path.", "type": "string", "minLength": 1},
     "slug": {"description": "The repository's slug.", "type": "string", "minLength": 1},
     "stacks": {
-      "description": "Each stack the Story builds in, with the matrix ids of the entries it builds there. For these stacks and the upstream stacks in dependsOn, `atw-matrix work --id <stack> --not-epic <epic>` names real candidate Tasks of other Epics. Same-stack work can overlap; an upstream candidate is a prerequisite only when the Task consumes its output. The shared capabilities a Task must use are derived from the items it cites, not stated by the decomposer.",
+      "description": "Each stack the Story builds in, with the matrix ids of the entries it builds there. For these stacks and the upstream stacks in dependsOn, `openWork` names real candidate Tasks of other Epics. Same-stack work can overlap; an upstream candidate is a prerequisite only when the Task consumes its output. The shared capabilities a Task must use are derived from the items it cites, not stated by the decomposer.",
       "type": "array",
       "items": {"$ref": "spec-context.schema.json#/$defs/StackEntries"}
     },
@@ -35,6 +35,49 @@
       "description": "What the Tasks depend on outside what the Story builds, including dependencies of the stacks holding that work: context, never work assigned to this Story. The decomposer uses named upstream stacks to discover real external producer Tasks.",
       "type": "array",
       "items": {"$ref": "spec-context.schema.json#/$defs/DependsOn"}
+    },
+    "openWork": {
+      "description": "The open Tasks of other Epics that name each stack the Story builds in or each upstream stack in dependsOn, or an entry it holds, as `atw-matrix work --ids <stack ids> --not-epic <epic>` prints them: `ids` the stacks asked about, `reads` one read per stack (its `id`, the `entries` matched and the open `tasks`, each with its Story and Epic), `failures` each stack that could not be read and why. Absent when the Story builds in no stack and depends on none.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "ids", "reads", "failures"],
+      "properties": {
+        "command": {"const": "work"},
+        "ids": {"type": "array", "items": {"type": "string"}},
+        "notEpic": {"type": "string"},
+        "reads": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["command", "id", "entries", "tasks"],
+            "properties": {
+              "command": {"const": "work"},
+              "id": {"type": "string"},
+              "entries": {"type": "array", "items": {"type": "string"}},
+              "notEpic": {"type": "string"},
+              "tasks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["task", "title", "status", "story", "epic", "names"],
+                  "properties": {
+                    "task": {"type": "string"}, "title": {"type": "string"}, "status": {"type": "string"},
+                    "story": {"type": ["string", "null"]}, "epic": {"type": ["string", "null"]},
+                    "names": {"type": "array", "items": {"type": "string"}}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "failures": {
+          "type": "array",
+          "items": {"type": "object", "additionalProperties": false, "required": ["id", "error"],
+            "properties": {"id": {"type": "string"}, "error": {"type": "string"}}}
+        }
+      }
     },
     "producerCandidates": {
       "description": "Current real Tasks in the supplied own and upstream stacks, including closed Tasks and their parent Story status and recorded publication and deployment verification. Candidates are evidence, never automatic blockers. Closed alone does not establish deployed readiness.",

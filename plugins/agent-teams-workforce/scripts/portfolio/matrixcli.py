@@ -82,7 +82,18 @@ from matrixstore import (
     update_matrix,
 )
 from matrixsync import DocumentsSynced, EpicBead, EpicsSynced, read_epics, sync_documents, sync_epics, vault_root
-from matrixtasks import COMMAND_AFFECTED, COMMAND_BUILT, COMMAND_WORK, TaskBead, affected, built, read_tasks, work
+from matrixtasks import (
+    COMMAND_AFFECTED,
+    COMMAND_BUILT,
+    COMMAND_WORK,
+    TaskBead,
+    WorkBatch,
+    affected,
+    built,
+    read_tasks,
+    work,
+    work_batch,
+)
 from matrixwrite import (
     ApplyResult,
     ApproveResult,
@@ -734,15 +745,22 @@ def _run_built(call: Call) -> Outcome:
 
 
 def _run_work(call: Call) -> Outcome:
-    """Run ``work``.
+    """Run ``work``, for one entry (``--id``) or for several from one read (``--ids``).
 
     Returns:
-        The open Tasks that name the entry or, for a stack, an entry the stack holds.
+        For ``--id``, the open Tasks that name the entry or, for a stack, an entry the stack
+        holds. For ``--ids``, one such read per id answered and one failure per id that was not,
+        with the refused status when any id failed.
 
     """
+    stated: list[str] = call.texts("ids")
+    entry_id: EntryId | None = None if stated else call.entry("id")
     matrix: Matrix = read_matrix(call.matrix())
     tasks: list[TaskBead] = read_tasks(call.folder("control", CONTROL_VARIABLES))
-    return Outcome(work(matrix, tasks, call.entry("id"), call.text("not_epic")))
+    if entry_id is not None:
+        return Outcome(work(matrix, tasks, entry_id, call.text("not_epic")))
+    batch: WorkBatch = work_batch(matrix, tasks, stated, call.text("not_epic"))
+    return Outcome(batch, EXIT_REFUSED if batch["failures"] else EXIT_OK)
 
 
 def _run_affected(call: Call) -> Outcome:
@@ -1075,7 +1093,9 @@ def _build_parsers(
         parents=[where, control],
         help="the open Tasks that name an entry",
     )
-    working.add_argument("--id", required=True, help="the entry's id")
+    asked: argparse._MutuallyExclusiveGroup = working.add_mutually_exclusive_group(required=True)
+    asked.add_argument("--id", help="the entry's id")
+    asked.add_argument("--ids", nargs="+", help="several entries' ids, answered from one read of beads and the matrix")
     working.add_argument("--not-epic", help="leave out the Tasks of this Epic")
     touched: argparse.ArgumentParser = commands.add_parser(
         COMMAND_AFFECTED,

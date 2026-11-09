@@ -96,6 +96,7 @@ with direction and meaning, are in [references/model.md](references/model.md).
 | The shared items (two or more Epics need them), each with its Epics, the requirements through which each needs it, and what decides who goes first | `atw-matrix shared-items [--epic <beads id>]` |
 | The ordered shared items no record decides, in batches for judging | `atw-matrix shared-items --batches <folder> [--batch-size 25]` |
 | Open Tasks that name an entry / that a change affects / what a Story built | `atw-matrix work --id <id>` / `affected --id <id>` / `built --story <id>` |
+| Open Tasks that name each of several entries, from one read of beads and the matrix | `atw-matrix work --ids <id> ... [--not-epic <beads id>]`: one read per id under `reads`, each id that is not an entry's under `failures` (the others are still answered; any failure exits 1) |
 | Counts; repository-side entries with no architecture counterpart | `atw-matrix summary [--unlinked]` |
 | Does the file meet its contract? | `atw-matrix check` |
 

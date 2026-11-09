@@ -9,7 +9,8 @@ stores nothing. It answers three questions, each one ``atw-matrix`` command:
 - :func:`epic_work`: the Epic above a Story, with every Story and Task of that Epic and whether
   each is closed; ``verify`` reads the Story's Tasks from it.
 - :func:`work` (``work --id``): the open Tasks that name an entry or, for a stack, an entry the
-  stack holds.
+  stack holds; :func:`work_batch` (``work --ids``) answers it for several entries from one read
+  of the tracker and the matrix.
 - :func:`affected` (``affected --id``): the open Tasks a change to an entry affects.
 """
 
@@ -42,7 +43,7 @@ from matrix_contract import (
     MatrixError,
     Side,
 )
-from matrixstore import Matrix, MatrixRefusedError
+from matrixstore import Matrix, MatrixRefusedError, as_entry_id
 
 if TYPE_CHECKING:
     from bead_metadata import BuildContract
@@ -154,6 +155,26 @@ class TasksRead(TypedDict):
     tasks: list[TaskRow]
 
 
+class WorkFailure(TypedDict):
+    """One entry of a batch read that could not be answered, and why."""
+
+    id: str
+    error: str
+
+
+class WorkBatch(TypedDict):
+    """The open Tasks of several entries: also what ``work --ids`` prints."""
+
+    command: str
+    ids: list[str]
+    """The ids asked about, each once, in the order given."""
+    notEpic: NotRequired[str]
+    reads: list[TasksRead]
+    """One read per id that could be answered, as ``work --id`` prints it, in the order given."""
+    failures: list[WorkFailure]
+    """One per id that could not be answered; the other ids are answered all the same."""
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def read_tasks(control: Path | None = None) -> list[TaskBead]:
     """Read every Task from beads, with its Story, its Epic and the ids it carries.
@@ -170,7 +191,7 @@ def read_tasks(control: Path | None = None) -> list[TaskBead]:
         metadata is not readable, raises ``MatrixError``.
 
     """
-    return _tasks_of(_load(control))
+    return tasks_of(_load(control))
 
 
 def _load(control: Path | None) -> beadgraph.Graph:
@@ -190,17 +211,26 @@ def _load(control: Path | None) -> beadgraph.Graph:
         raise MatrixError(message) from error
 
 
-def _tasks_of(graph: beadgraph.Graph) -> list[TaskBead]:
+def tasks_of(graph: beadgraph.Graph) -> list[TaskBead]:
     """Reduce every Task of a beads graph to what the questions need.
+
+    A caller that already read the tracker hands its graph here instead of reading it again.
+
+    Args:
+        graph: The beads graph (``beadgraph.load``).
 
     Returns:
         The Tasks, closed ones included, in id order.
 
     Raises:
+        TypeError: The graph is not a beads graph.
         MatrixError: A Task's metadata is not readable.
 
     """
     message: str
+    if not isinstance(graph, beadgraph.Graph):
+        message = "tasks_of needs a beads graph"
+        raise TypeError(message)
     tasks: list[TaskBead] = []
     record: JsonObject
     for record in graph.records:
@@ -257,7 +287,7 @@ def epic_work(story: str, control: Path | None = None) -> EpicWork:
     return EpicWork(
         epic=epic.id,
         stories={bead.id: bead.closed for bead in graph.beads.values() if bead.kind == STORY_TYPE},
-        tasks=tuple(_tasks_of(graph)),
+        tasks=tuple(tasks_of(graph)),
     )
 
 
@@ -394,6 +424,52 @@ def work(matrix: Matrix, tasks: Sequence[TaskBead], entry_id: EntryId, not_epic:
     if left_out is not None:
         read["notEpic"] = left_out
     return read
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def work_batch(
+    matrix: Matrix,
+    tasks: Sequence[TaskBead],
+    ids: Sequence[str],
+    not_epic: str | None = None,
+) -> WorkBatch:
+    """List the open Tasks of several entries, each as :func:`work` lists them, from one read.
+
+    The tracker and the matrix are read once by the caller; each id is answered on its own, so an
+    id that is not an entry's is reported under ``failures`` and the others are answered.
+
+    Args:
+        matrix: The matrix.
+        tasks: The Task beads (:func:`read_tasks`).
+        ids: The entries asked about; a repeated id is answered once.
+        not_epic: The beads id of an Epic whose own Tasks are left out of every read; None
+            leaves none out.
+
+    Returns:
+        The ids asked about, one read per id answered and one failure per id that was not.
+
+    Raises:
+        MatrixRefusedError: No id is given, or ``not_epic`` is given and is empty.
+
+    """
+    message: str
+    wanted: list[str] = list(dict.fromkeys(stated.strip() for stated in ids if stated.strip()))
+    if not wanted:
+        message = "work needs at least one entry id"
+        raise MatrixRefusedError(message)
+    if not_epic is not None and not not_epic.strip():
+        message = "work was given an empty Epic id to leave out"
+        raise MatrixRefusedError(message)
+    left_out: str | None = None if not_epic is None else not_epic.strip()
+    batch: WorkBatch = {"command": COMMAND_WORK, "ids": wanted, "reads": [], "failures": []}
+    for stated in wanted:
+        try:
+            batch["reads"].append(work(matrix, tasks, as_entry_id(stated), left_out))
+        except MatrixError as error:
+            batch["failures"].append({"id": stated, "error": str(error)})
+    if left_out is not None:
+        batch["notEpic"] = left_out
+    return batch
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

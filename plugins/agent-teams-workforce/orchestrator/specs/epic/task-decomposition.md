@@ -30,8 +30,9 @@ repository (`repo-scoping.md`).
 The task context (`task-context.schema.json`, which says what each member holds) names the Tasks
 that already exist under the Story and that are started, or that elaboration did not write, so
 the decomposer reuses them. It names the stacks the Story builds in with the entries it builds
-there; the decomposer itself asks the matrix for the open Tasks of other Epics in those stacks
-(`atw-matrix work`), so a Task that needs one of them is blocked by it instead of duplicating it.
+there, and `openWork`: the open Tasks of other Epics in those stacks and the upstream stacks,
+read once by the context step (`matrixtasks.work_batch`, what `atw-matrix work --ids` prints), so
+a Task that needs one of them is blocked by it instead of duplicating it.
 A Task cites what it builds by item id; `hierarchy.stated_ids` derives its matrix ids (its stack,
 the entries and the shared capabilities that work must use) from those items, and the decomposer
 states none. Its `dependsOn`

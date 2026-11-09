@@ -17,9 +17,12 @@ session is handed what the check found.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
+import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -31,6 +34,7 @@ import hierarchy
 import strictschema
 from bead_metadata import ARG_REQUIREMENT_IDS, KEY_ELAB_KEY, KEY_REQUIREMENT_IDS
 from matrixstore import Matrix, matrix_path, read_matrix
+from matrixtasks import TaskBead, WorkBatch, tasks_of, work_batch
 from typeguard import CollectionCheckStrategy, check_type
 
 from orchestrator.core import step_journal
@@ -104,6 +108,8 @@ from orchestrator.flows.spec_authoring import design_system, items_by_story
 from step_journal_contract import BEAD_TYPE_TASK, KIND_VALUE, BeadId
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from beadcontracts import TaskPlan
     from matrix_contract import EntryId
     from step_journal_contract import Artifact, Step, StepId, StepPlan
@@ -125,6 +131,11 @@ TASK_GAPS_SCHEMA: Final = "task-gaps.schema.json"
 UNCITED_STAGE: Final = "uncited-items"
 CORRECTIONS: Final = 2
 """How many corrections of a plan's gaps run before a gap that remains fails the repository's Tasks."""
+ACCEPTED_LIMIT: Final = 64
+"""How many accepted checks of a Tasks file or a correction one process remembers, the oldest dropped first."""
+_ACCEPTED: OrderedDict[str, None] = OrderedDict()
+"""The content digests of the Tasks files and corrections the current checks accepted in this process."""
+_ACCEPTED_LOCK: Final = threading.Lock()
 
 
 def _packages(run: StepRun) -> str | None:
@@ -162,11 +173,13 @@ def task_facts(bead: beadgraph.Bead) -> dict[str, JsonValue]:
 def _write_context(run: StepRun, held: Repository, existing: list[JsonValue]) -> Path:
     """Write the task context file of one repository's Story (``task-context.schema.json``).
 
-    The file holds pointers, never a copy of what the matrix or the bead tracker holds: the
-    Tasks that exist, by id and without their descriptions; each stack the Story builds in with
-    the entries it builds there, for the decomposer's own ``atw-matrix work`` and ``atw-matrix
-    uses``; and ``dependsOn`` (``repo_scoping.build_context``): what the Tasks depend on, never
-    work.
+    The file holds the Tasks that exist, by id and without their descriptions; each stack the
+    Story builds in with the entries it builds there, for the decomposer's own ``atw-matrix
+    uses``; ``dependsOn`` (``repo_scoping.build_context``): what the Tasks depend on, never
+    work; and ``openWork``: the open Tasks of other Epics in those stacks and the upstream stacks,
+    as ``atw-matrix work --ids <stacks> --not-epic <epic>`` prints them, answered from the one
+    read of the tracker and the matrix this step makes, so the decomposer runs no command per
+    stack.
 
     Returns:
         The file.
@@ -192,6 +205,11 @@ def _write_context(run: StepRun, held: Repository, existing: list[JsonValue]) ->
         run.journal_path.parent,
         "",
     )
+    asked: list[str] = list(dict.fromkeys([*stacks, *sorted(upstream)]))
+    open_work: WorkBatch | None = None
+    if asked:
+        held_tasks: list[TaskBead] = run.tools.portfolio(TASK_CONTEXT, tasks_of, graph)
+        open_work = run.tools.portfolio(TASK_CONTEXT, work_batch, matrix, held_tasks, asked, str(run.bead))
     return write_contract(
         run.context.work / f"tasks-{held.slug}.context.json",
         {
@@ -202,6 +220,7 @@ def _write_context(run: StepRun, held: Repository, existing: list[JsonValue]) ->
             "existingTasks": existing,
             "dependsOn": [json_object(dependency) for dependency in depended["dependsOn"]],
             "producerCandidates": candidates,
+            **({} if open_work is None else {"openWork": json_object(open_work)}),
         },
         TASK_CONTEXT_SCHEMA,
     )
@@ -212,10 +231,10 @@ def context(run: StepRun) -> Completion:
     """Gather what one repository's Tasks are decomposed from, and plan the decomposition.
 
     The Tasks that exist under the Story and that are started, or that elaboration did not
-    write, are handed to the decomposer so it reuses them. The decomposer asks the matrix for the
-    rest itself: for each stack the Story builds in, the open Tasks of other Epics that name the
-    stack or an entry it holds (``atw-matrix work --id <stack> --not-epic <epic>``), and the
-    shared capabilities the entries the Tasks build must use (``atw-matrix uses --ids``). What
+    write, are handed to the decomposer so it reuses them, with the open Tasks of other Epics that
+    name each stack the Story builds in, or an upstream stack, or an entry it holds (``openWork``,
+    one read for every stack). The decomposer asks the matrix for the shared capabilities the
+    entries the Tasks build must use (``atw-matrix uses --ids``). What
     the Story builds is the ``items`` of the repository context. The decomposer writes those
     matrix ids into each Task. Nothing is recorded in the matrix.
 
@@ -413,7 +432,9 @@ def refuse_stale_tasks(run: StepRun) -> None:
     """Check the Tasks file and the corrections a step reads against their current contracts.
 
     A Tasks file and a correction passed their check when their writer's step was accepted, so a
-    file the check refuses now was written to an earlier contract.
+    file the check refuses now was written to an earlier contract. A check that accepted the
+    same bytes, against the same schema and repository context, earlier in this process is not
+    run again: the plan step and every Task bead write of one decomposition read the same files.
 
     Raises:
         StaleInputError: The first file in writing order the check refuses, naming its writer
@@ -423,14 +444,22 @@ def refuse_stale_tasks(run: StepRun) -> None:
 
     """
     corrections: list[Path] = run.inputs.files(TASK_CORRECTION)
-    correction_check: OutputValidator = _correction_check(run)
-    checks: list[tuple[str, Path, OutputValidator]] = [
-        (TASKS_FILE, run.inputs.file(TASKS_FILE), _tasks_check(run, merged=bool(corrections))),
-        *((TASK_CORRECTION, correction, correction_check) for correction in corrections),
+    merged: bool = bool(corrections)
+    schemas: Path = run.tools.plugin / SCHEMAS
+    tasks_inputs: tuple[Path, ...] = (schemas / TASKS_SCHEMA, *(() if merged else (run.inputs.file(CONTEXT),)))
+    checks: list[tuple[str, Path, Callable[[], OutputValidator], tuple[Path, ...]]] = [
+        (TASKS_FILE, run.inputs.file(TASKS_FILE), lambda: _tasks_check(run, merged=merged), tasks_inputs),
+        *(
+            (TASK_CORRECTION, correction, lambda: _correction_check(run), (schemas / TASKS_CORRECTION_SCHEMA,))
+            for correction in corrections
+        ),
     ]
-    for name, path, check in checks:
+    for name, path, build, against in checks:
+        accepted: str = _check_digest(f"{name}\0{merged}", (path, *against))
+        if _was_accepted(accepted):
+            continue
         try:
-            check(path)
+            build()(path)
         except CONTENT_FAILURES as refused:
             writer: StepId = _writer(run, name, path)
             container: Step | None = step_journal.parent_step(run.journal(), writer)
@@ -440,6 +469,48 @@ def refuse_stale_tasks(run: StepRun) -> None:
                 (f"{path}: {refused}",),
                 within=None if container is None else container["id"],
             ) from None
+        _accept(accepted)
+
+
+def _check_digest(check: str, paths: tuple[Path, ...]) -> str:
+    """Fingerprint one check of a file: which check, and the bytes of the file and of what it is checked against.
+
+    Returns:
+        The SHA-256 digest; a file that cannot be read contributes a missing marker, so its
+        check runs and reports it.
+
+    """
+    digest = hashlib.sha256(check.encode())
+    for path in paths:
+        try:
+            body: bytes = path.read_bytes()
+        except OSError:
+            body = b"\0missing"
+        digest.update(f"\0{path}\0{len(body)}\0".encode())
+        digest.update(body)
+    return digest.hexdigest()
+
+
+def _was_accepted(digest: str) -> bool:
+    """Report whether the current check already accepted this exact content in this process.
+
+    Returns:
+        True when the digest is remembered.
+
+    """
+    with _ACCEPTED_LOCK:
+        if digest not in _ACCEPTED:
+            return False
+        _ACCEPTED.move_to_end(digest)
+        return True
+
+
+def _accept(digest: str) -> None:
+    """Remember content the current check accepted, keeping at most ``ACCEPTED_LIMIT`` digests."""
+    with _ACCEPTED_LOCK:
+        _ACCEPTED[digest] = None
+        while len(_ACCEPTED) > ACCEPTED_LIMIT:
+            _ACCEPTED.popitem(last=False)
 
 
 def _stale_problems(run: StepRun, output: Path, check: OutputValidator) -> list[tuple[str, Path]]:

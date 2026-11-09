@@ -60,14 +60,17 @@ thing the Story builds is cited by some Task, overlaps with another Epic include
 check refuses a Task that covers one thing coupled to other work of this Story.
 
 The task context is written to `task-context.schema.json`, which states what each member holds;
-it points to what you read and copies none of it. Its `dependsOn` is what the Tasks depend on,
+it points to what you read, and its `openWork` holds the open Tasks of other Epics in your
+stacks, read once when the file was written. Its `dependsOn` is what the Tasks depend on,
 never work; an element with `side: repository` is a hint read from code, not an architecture
 fact: it may tell a Task where existing code sits, never what to build. An existing started or
 closed Task in `existingTasks` is reused, not rewritten (`bd show <id>` prints its description);
 another Epic's Task that plans the same work is recorded as an external blocker and never
-replaces this Epic's Task. For each stack in `stacks` and each upstream stack named in
-`dependsOn`, run `atw-matrix work --id <stack id> --not-epic <epic id>` once. Read the actual
-candidate Tasks: same-stack work can overlap this Story; upstream work is a prerequisite only
+replaces this Epic's Task. `openWork` answers, for each stack in `stacks` and each upstream
+stack named in `dependsOn`, what `atw-matrix work --id <stack id> --not-epic <epic id>` prints:
+read it instead of running the command. Only for a stack under `openWork.failures`, or when the
+task context holds no `openWork`, run `atw-matrix work --ids <stack id> ... --not-epic <epic id>`
+once for all of those stacks together. Read the actual candidate Tasks: same-stack work can overlap this Story; upstream work is a prerequisite only
 when this Task consumes what that candidate provides. Record those real Task ids in
 `blockedByExternal`, with the consumed output and evidence in the Task's description.
 Also record `buildPrerequisites.producers`: real Task and parent Story ids, `requiredStage`
