@@ -378,6 +378,8 @@ def promote(files: list[str], *, arch_root: str | None, reviewed: list[str]) -> 
 def _digest(paths: list[Path], base: Path) -> tuple[dict[str, str], str]:
     """Hash each file and the whole set.
 
+    Each file is read in chunks (``hashlib.file_digest``), so no file is held in memory whole.
+
     Args:
         paths: The files, in a stable order.
         base: The directory the reported names are relative to.
@@ -391,7 +393,8 @@ def _digest(paths: list[Path], base: Path) -> tuple[dict[str, str], str]:
     whole: _hashlib.HASH = hashlib.sha256()
     for path in paths:
         rel: str = path.relative_to(base).as_posix()
-        sha: str = hashlib.sha256(path.read_bytes()).hexdigest()
+        with path.open("rb") as handle:
+            sha: str = hashlib.file_digest(handle, "sha256").hexdigest()
         each[rel] = sha
         whole.update(f"{rel}\0{sha}\n".encode())
     return each, whole.hexdigest()
