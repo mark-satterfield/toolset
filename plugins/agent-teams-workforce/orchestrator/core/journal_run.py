@@ -62,7 +62,7 @@ from orchestrator.flows.elaboration_support import emit_event, parallel
 from . import step_journal
 from .agents import CONTENT_FAILURES, AgentRunner, SessionNotResumedError, validate_output
 from .handback import failure_for, stop_stage
-from .handback_contract import ITEM_CLASS, OTHER_CAUSE, Failure, Session, StepTokens, step_event, warning_note
+from .handback_contract import ITEM_CLASS, OTHER_CAUSE, Failure, Session, StepIO, StepTokens, step_event, warning_note
 from .io import write_json
 from .journal_changes import apply_completion
 from .journal_registry import REGISTRY, Registry
@@ -78,6 +78,7 @@ from .journal_steps import (
     is_finish_of,
     stage_of,
 )
+from .journal_views import JournalIndex, index_journal
 from .models import (
     AgentStep,
     MalformedRequestError,
@@ -88,6 +89,7 @@ from .models import (
     session_cap,
 )
 from .step_budgets import Budget, step_budget
+from .step_journal import JournalIO, journal_io
 from .step_tokens import Measured, StepSession, Window, config_dir, measure
 from .tools import Tools
 
@@ -205,12 +207,11 @@ def _inputs(journal: Journal, step: Step) -> StepInputs:
         every step below it in walk order.
 
     """
-    sources: list[tuple[Artifact, ...]] = []
-    named: StepId
-    for named in step.get("inputs", []):
-        source: Step = step_journal.find_step(journal, named)
-        sources.append(tuple(held for below in step_journal.steps_in_order_from(source) for held in below["artifacts"]))
-    return StepInputs(step["id"], step["description"], stage_of(step), tuple(sources))
+    index: JournalIndex = index_journal(journal)
+    sources: tuple[tuple[Artifact, ...], ...] = tuple(
+        tuple(held for below in index.subtree(named) for held in below["artifacts"]) for named in step.get("inputs", [])
+    )
+    return StepInputs(step["id"], step["description"], stage_of(step), sources)
 
 
 def _open_leaf(step: Step) -> Step | None:
@@ -652,6 +653,9 @@ class JournalRunner:
         self._correcting: threading.Lock = threading.Lock()
         self._corrected_sessions: dict[StepId, list[str]] = {}
         """The writers' sessions continued to correct a request, by the step that found it, until it is reported."""
+        self._handing: threading.Lock = threading.Lock()
+        self._handed: dict[StepId, tuple[int, int]] = {}
+        """The number and total size of the files each step's session was handed, until it is reported."""
 
     @property
     def context(self) -> RunContext:
@@ -850,14 +854,15 @@ class JournalRunner:
 
         The report follows whether the step ends or raises; what it raised continues to the caller.
         """
+        before: JournalIO = journal_io()
         journal: Journal = step_journal.read_journal(self.path)
-        step: Step = step_journal.find_step(journal, step_id)
+        step: Step = index_journal(journal).step(step_id)
         began: float = time.monotonic()
         started: float = time.time()
         try:
             self._attempt(journal, step)
         finally:
-            self._report(step, time.monotonic() - began, Window(started, time.time()))
+            self._report(step, time.monotonic() - began, Window(started, time.time()), before)
 
     def _step_sessions(self, step: Step) -> list[StepSession]:
         """Name the sessions a step ran or continued in this run.
@@ -874,11 +879,11 @@ class JournalRunner:
         rows: dict[str, Session] = {row["sessionId"]: row for row in self.context.sessions}
         return [StepSession(name, Path(rows[name]["cwd"]), rows[name]["agent"]) for name in named if name in rows]
 
-    def _tokens(self, held: Step, window: Window) -> StepTokens | None:
+    def _tokens(self, held: Step, window: Window) -> Measured | None:
         """Measure the tokens of a step's sessions and their helpers, with a warning for each problem.
 
         Returns:
-            The step's tokens, or None when it ran no session or its transcripts cannot be read.
+            The step's measurement, or None when it ran no session or its transcripts cannot be read.
 
         """
         sessions: list[StepSession] = self._step_sessions(held)
@@ -895,22 +900,47 @@ class JournalRunner:
         problem: str
         for problem in measured.problems:
             emit_event(self.agents.emit, warning_note(stage_of(held), f"step {held['id']}: {problem}"))
-        return measured.tokens
+        return measured
 
-    def _report(self, step: Step, seconds: float, window: Window) -> None:
+    def _io(self, step_id: StepId, before: JournalIO, measured: Measured | None) -> StepIO:
+        """Count what a step read and wrote while it ran.
+
+        Returns:
+            The step's journal I/O on this thread, the files its session was handed and what
+            measuring its tokens read.
+
+        """
+        journal: JournalIO = journal_io().since(before)
+        with self._handing:
+            files, size = self._handed.pop(step_id, (0, 0))
+        return {
+            "journalReads": journal.reads,
+            "journalValidations": journal.validated,
+            "journalBytesRead": journal.bytes_read,
+            "journalWrites": journal.writes,
+            "journalBytesWritten": journal.bytes_written,
+            "handedFiles": files,
+            "handedBytes": size,
+            "transcriptBytesRead": measured.bytes_read if measured is not None else 0,
+            "readCalls": measured.read_calls if measured is not None else 0,
+            "usageUnknown": measured.unknown_usage if measured is not None else 0,
+        }
+
+    def _report(self, step: Step, seconds: float, window: Window, before: JournalIO) -> None:
         """Emit a step's wall time and tokens against its budgets, and a warning for each budget it ran over.
 
         The budgets are the ones the budget table gives the step (``step_budgets.step_budget``);
         the tokens are what its sessions and their helpers used within ``window``
-        (``step_tokens.measure``). A step over a budget is reported, never failed.
+        (``step_tokens.measure``), and its I/O is counted from ``before`` (:meth:`_io`). A step
+        over a budget is reported, never failed.
         """
-        journal: Journal = step_journal.read_journal(self.path)
-        held: Step = step_journal.find_step(journal, step["id"])
-        outermost: Step = held
-        while (above := step_journal.parent_step(journal, outermost["id"])) is not None:
-            outermost = above
+        index: JournalIndex = index_journal(step_journal.read_journal(self.path))
+        held: Step = index.step(step["id"])
+        outermost: Step = index.outermost(step["id"])
         budget: Budget = step_budget(held)
-        tokens: StepTokens | None = self._tokens(held, window)
+        measured: Measured | None = self._tokens(held, window)
+        tokens: StepTokens | None = measured.tokens if measured is not None else None
+        io: StepIO = self._io(held["id"], before, measured)
         emit_event(
             self.agents.emit,
             step_event(
@@ -923,6 +953,7 @@ class JournalRunner:
                 budget=budget.seconds,
                 tokens=tokens,
                 token_budget=budget.tokens,
+                io=io,
             ),
         )
         overruns: list[str] = []
@@ -1190,6 +1221,7 @@ class JournalRunner:
         ]
         self._start(step["id"], session, launch.keep)
         labelled: list[tuple[str, Path]] = list(dict.fromkeys([*handed, (JOURNAL_LABEL, self.path)]))
+        self._count_handed(step["id"], labelled)
         request: AgentStep = AgentStep(
             stage=stage_of(step),
             agent=step.get("agent", ""),
@@ -1203,7 +1235,7 @@ class JournalRunner:
             journal_step=step["id"],
         )
         output: Path = self._session(request, labelled, session, launch, resume=held is not None, before=step)
-        after: Step = step_journal.find_step(step_journal.read_journal(self.path), step["id"])
+        after: Step = index_journal(step_journal.read_journal(self.path)).step(step["id"])
         if after["status"] != STATUS_DONE and not after["steps"]:
             self._complete(step["id"], launch.accept(self._agent_run(after, inputs, saved), output))
             return
@@ -1211,6 +1243,12 @@ class JournalRunner:
         settled: bool = all(child["status"] == STATUS_DONE for child in after["steps"])
         if after["status"] == STATUS_RUNNING and settled and finish is not None:
             self._accept_finish(step["id"], finish["id"])
+
+    def _count_handed(self, step_id: StepId, labelled: Sequence[tuple[str, Path]]) -> None:
+        """Record how many files a step's session is handed and their total size, for its report."""
+        size: int = sum(_size(path) for _, path in labelled)
+        with self._handing:
+            self._handed[step_id] = (len(labelled), size)
 
     def _session(  # ruff: ignore[too-many-arguments] - The session, its launch and the step before it restarted.
         self,
@@ -1250,6 +1288,22 @@ class JournalRunner:
                 lambda journal: step_journal.set_session(journal, step_id, fresh),
             )
             return self.agents.run_session(request, labelled, session=fresh, fresh_output=launch.fresh_output)
+
+
+def _size(path: Path) -> int:
+    """Measure a handed file for a step's report.
+
+    A directory (a work tree, for example) is handed for the session to search, not read whole,
+    so it counts 0, as does a file removed since it was handed.
+
+    Returns:
+        The file's size in bytes, or 0.
+
+    """
+    try:
+        return path.stat().st_size if path.is_file() else 0
+    except FileNotFoundError:
+        return 0
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

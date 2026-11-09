@@ -18,10 +18,11 @@ from driver_surface_types import (
 from step_journal_contract import PIPELINE_BUILD
 from typeguard import check_type
 
-from orchestrator.core import pipeline_steps, step_journal
+from orchestrator.core import pipeline_steps
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_steps import NewStep, StepRun
-from orchestrator.flows.build_sessions import latest
+from orchestrator.core.journal_views import AcceptedView, index_journal
+from orchestrator.flows.build_sessions import latest, view_of
 from orchestrator.flows.build_workspace import Workspace
 
 PLUGIN: Final = Path(__file__).resolve().parents[2]
@@ -124,10 +125,11 @@ def workspace_of(run: StepRun) -> Workspace:
         Its worktree, actual branch and repository default branch.
 
     """
+    view: AcceptedView = view_of(run)
     return Workspace(
-        artifact_file(run, "worktree"),
-        check_type(latest(run, "branch"), str),
-        check_type(latest(run, "defaultBranch"), str),
+        Path(check_type(view.held("worktree"), str)),
+        check_type(view.held("branch"), str),
+        check_type(view.held("defaultBranch"), str),
     )
 
 
@@ -141,5 +143,5 @@ def count_in_dispatch(run: StepRun, key: str) -> int:
     started: str = check_type(run.context.args["buildDispatchStarted"], str)
     return sum(
         step.get("script") == key and step["status"] == "done" and step.get("started", "") >= started
-        for step in step_journal.steps_in_order(run.journal())
+        for step in index_journal(run.journal()).order
     )

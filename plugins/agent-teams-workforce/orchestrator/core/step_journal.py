@@ -23,11 +23,13 @@ The step journal is not the supervisor's run log (``ledger.jsonl``).
 
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 import re
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from collections.abc import Callable, Generator, Iterator, Sequence
@@ -35,7 +37,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final, TypedDict
+from typing import Final, TypedDict, TypeIs
 
 from typeguard import CollectionCheckStrategy, typechecked
 
@@ -215,6 +217,119 @@ class Outcome:
 
     result: CommandResult
     status: int = EXIT_OK
+
+
+@dataclass(frozen=True, slots=True)
+class JournalIO:
+    """The journal file I/O one thread has done since it started.
+
+    ``validated`` counts the reads that ran the full schema and consistency check; a read of the
+    exact bytes a check already accepted in this process (:func:`read_snapshot`) skips it.
+    """
+
+    reads: int = 0
+    bytes_read: int = 0
+    validated: int = 0
+    writes: int = 0
+    bytes_written: int = 0
+
+    def since(self, earlier: JournalIO) -> JournalIO:
+        """Subtract an earlier reading of the same thread's counters.
+
+        Returns:
+            The I/O done between the two readings.
+
+        """
+        return JournalIO(
+            self.reads - earlier.reads,
+            self.bytes_read - earlier.bytes_read,
+            self.validated - earlier.validated,
+            self.writes - earlier.writes,
+            self.bytes_written - earlier.bytes_written,
+        )
+
+
+class _ThreadIO(threading.local):
+    """Per-thread journal I/O counters, so a step running beside others counts only its own."""
+
+    def __init__(self) -> None:
+        self.counted: JournalIO = JournalIO()
+
+
+class _Revisions:
+    """The content digests of journal revisions this process has validated, one per file.
+
+    A digest is recorded after a read passed the full check and after a write, whose journal was
+    checked before it was put in place. Only the latest revision of each file is kept.
+    """
+
+    def __init__(self) -> None:
+        self._lock: threading.Lock = threading.Lock()
+        self._validated: dict[Path, str] = {}
+        self.io: _ThreadIO = _ThreadIO()
+
+    def accepted(self, path: Path, revision: str) -> bool:
+        """Tell whether these exact bytes of the file passed the check before.
+
+        Returns:
+            True when ``revision`` is the recorded digest of ``path``.
+
+        """
+        with self._lock:
+            return self._validated.get(path) == revision
+
+    def record(self, path: Path, revision: str) -> None:
+        """Remember the digest of a checked revision of a file."""
+        with self._lock:
+            self._validated[path] = revision
+
+    def count(self, change: JournalIO) -> None:
+        """Add I/O to the current thread's counters."""
+        held: JournalIO = self.io.counted
+        self.io.counted = JournalIO(
+            held.reads + change.reads,
+            held.bytes_read + change.bytes_read,
+            held.validated + change.validated,
+            held.writes + change.writes,
+            held.bytes_written + change.bytes_written,
+        )
+
+
+_REVISIONS: Final = _Revisions()
+"""The process's record of validated journal revisions and its per-thread I/O counters."""
+
+
+@dataclass(frozen=True, slots=True)
+class JournalSnapshot:
+    """One revision of a journal file as read: its path, the digest of its bytes and the journal.
+
+    The journal is a fresh decoding owned by the reader; ``revision`` names the exact bytes it was
+    decoded from, so a view derived from it can be keyed by revision.
+    """
+
+    path: Path
+    revision: str
+    journal: Journal
+
+
+def journal_io() -> JournalIO:
+    """Read the current thread's journal I/O counters.
+
+    Returns:
+        Reads, bytes read, fully checked reads, writes and bytes written so far.
+
+    """
+    return _REVISIONS.io.counted
+
+
+def revision_of(content: bytes) -> str:
+    """Name a revision of a journal by the digest of its bytes.
+
+    Returns:
+        The hexadecimal BLAKE2b digest.
+
+    """
+    return hashlib.blake2b(content, digest_size=20).hexdigest()
 
 
 class StepRefusedError(StepJournalError):
@@ -1258,13 +1373,77 @@ def _read_text(path: Path) -> str:
         raise StepJournalError(message) from error
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def read_journal(path: Path) -> Journal:
-    """Read and validate a journal file.
+def _read_bytes(path: Path) -> bytes:
+    """Read a journal file's bytes.
+
+    Returns:
+        The file's content.
+
+    Raises:
+        StepJournalError: The file is missing or unreadable.
+
+    """
+    try:
+        return path.read_bytes()
+    except OSError as error:
+        message: str = f"cannot read the step journal {path}: {error}"
+        raise StepJournalError(message) from error
+
+
+def _checked_before(decoded: object, path: Path, revision: str) -> TypeIs[Journal]:
+    """Tell whether a decoding comes from bytes this process already checked in full.
+
+    The check is deterministic for the same bytes, so the same revision needs it once.
+
+    Returns:
+        True when ``revision`` is the checked revision of ``path`` and ``decoded`` is an object.
+
+    """
+    return isinstance(decoded, dict) and _REVISIONS.accepted(path, revision)
+
+
+def read_snapshot(path: Path) -> JournalSnapshot:
+    """Read and validate a journal file, with the digest of the revision read.
 
     A read takes no lock: a write replaces the file in one move, so a reader sees the journal
-    before the change or after it. A file that does not satisfy the schema or the three rules
-    the schema cannot state raises ``StepJournalError``.
+    before the change or after it. Every read decodes a fresh journal from the file; bytes that
+    passed the schema and the three rules the schema cannot state earlier in this process are not
+    checked again. A file that does not satisfy them raises ``StepJournalError``.
+
+    Args:
+        path: The journal file.
+
+    Returns:
+        The revision's digest and the validated journal, each step's agent named as
+        :func:`agent_name` names it.
+
+    Raises:
+        TypeError: ``path`` is not a path.
+        StepJournalError: The file is missing, unreadable or not JSON.
+
+    """
+    message: str
+    if not isinstance(path, Path):
+        message = f"a step journal is read from a Path, not {type(path).__name__}"
+        raise TypeError(message)
+    content: bytes = _read_bytes(path)
+    revision: str = revision_of(content)
+    try:
+        decoded: object = json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        message = f"the step journal {path} is not JSON: {error}"
+        raise StepJournalError(message) from error
+    if _checked_before(decoded, path, revision):
+        _REVISIONS.count(JournalIO(reads=1, bytes_read=len(content)))
+        return JournalSnapshot(path, revision, _plain_agents(decoded))
+    journal: Journal = checked_journal(validate_journal(decoded, str(path)), str(path))
+    _REVISIONS.record(path, revision)
+    _REVISIONS.count(JournalIO(reads=1, bytes_read=len(content), validated=1))
+    return JournalSnapshot(path, revision, _plain_agents(journal))
+
+
+def read_journal(path: Path) -> Journal:
+    """Read and validate a journal file (:func:`read_snapshot`).
 
     Args:
         path: The journal file.
@@ -1272,17 +1451,8 @@ def read_journal(path: Path) -> Journal:
     Returns:
         The validated journal, each step's agent named as :func:`agent_name` names it.
 
-    Raises:
-        StepJournalError: The file is missing, unreadable or not JSON.
-
     """
-    text: str = _read_text(path)
-    try:
-        decoded: object = json.loads(text)
-    except json.JSONDecodeError as error:
-        message: str = f"the step journal {path} is not JSON: {error}"
-        raise StepJournalError(message) from error
-    return _plain_agents(checked_journal(validate_journal(decoded, str(path)), str(path)))
+    return read_snapshot(path).journal
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1320,7 +1490,7 @@ def _write_journal(path: Path, journal: Journal) -> None:
 
     """
     checked_journal(journal, f"the step journal to write to {path}")
-    text: str = json.dumps(journal, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    content: bytes = (json.dumps(journal, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
     message: str
     descriptor: int
     temporary: str
@@ -1331,8 +1501,8 @@ def _write_journal(path: Path, journal: Journal) -> None:
         raise StepJournalError(message) from error
     scratch: Path = Path(temporary)
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(text)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
         scratch.replace(path)
@@ -1340,6 +1510,8 @@ def _write_journal(path: Path, journal: Journal) -> None:
         scratch.unlink(missing_ok=True)
         message = f"cannot write the step journal {path}: {error}"
         raise StepJournalError(message) from error
+    _REVISIONS.record(path, revision_of(content))
+    _REVISIONS.count(JournalIO(writes=1, bytes_written=len(content)))
 
 
 @contextmanager

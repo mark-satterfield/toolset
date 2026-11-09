@@ -374,12 +374,35 @@ class StepTokens(TypedDict):
     parts: list[TokenPart]
 
 
+class StepIO(TypedDict):
+    """What a step read and wrote while it ran, as bounded counts with no content.
+
+    The journal counts are the step journal file reads (and how many of them ran the full check),
+    writes and their bytes; ``handedFiles`` and ``handedBytes`` are the files a session was handed
+    in its brief and their size; ``transcriptBytesRead`` is the transcript bytes read to measure its
+    tokens; ``readCalls`` is the file reads its sessions requested; ``usageUnknown`` is the requests
+    whose usage lacked a component.
+    """
+
+    journalReads: int
+    journalValidations: int
+    journalBytesRead: int
+    journalWrites: int
+    journalBytesWritten: int
+    handedFiles: int
+    handedBytes: int
+    transcriptBytesRead: int
+    readCalls: int
+    usageUnknown: int
+
+
 class StepEvent(TypedDict):
     """A step of the journal ended a run: its wall time and tokens against its budgets (null when it has none).
 
     ``container`` is the description of the outermost step that holds it, or its own description
     when it is an outermost step; ``key`` is its script key or its agent; ``status`` is its status
-    in the journal after the run. ``tokens`` is null for a step that ran no session.
+    in the journal after the run. ``tokens`` is null for a step that ran no session. ``io`` is
+    what the step read and wrote (:class:`StepIO`).
     """
 
     event: Literal["step"]
@@ -392,6 +415,7 @@ class StepEvent(TypedDict):
     budget: int | None
     tokens: StepTokens | None
     tokenBudget: int | None
+    io: NotRequired[StepIO]
 
 
 type NoteEvent = WarningNote
@@ -1168,8 +1192,9 @@ def step_event(  # ruff: ignore[too-many-arguments] - The fields of one step eve
     budget: int | None,
     tokens: StepTokens | None,
     token_budget: int | None,
+    io: StepIO | None = None,
 ) -> StepEvent:
-    """Build a validated ``step`` event.
+    """Build a validated ``step`` event; ``io`` is omitted when None.
 
     Returns:
         The event. A violation raises ``HandbackValidationError``.
@@ -1187,6 +1212,8 @@ def step_event(  # ruff: ignore[too-many-arguments] - The fields of one step eve
         "tokens": tokens,
         "tokenBudget": token_budget,
     }
+    if io is not None:
+        event["io"] = io
     validate_event(event)
     return event
 

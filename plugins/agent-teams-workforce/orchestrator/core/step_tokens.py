@@ -5,13 +5,21 @@ it started (``agent_process.subagent_transcripts``). Each assistant line carries
 API request it came from; one request can write several lines, so each request is counted once,
 with the largest value each line reports. Only requests made while the step ran count: a session
 continued in a later step, or in a later dispatch, is counted in each only for its own turns.
+
+A transcript only grows while its session runs, so each one is read incrementally: a cursor per
+file keeps the byte offset of the last complete line read and the requests read so far, and a
+later measurement reads only the bytes appended since. A file replaced (another device or inode),
+shortened, or whose first bytes changed is read again from its start. A line still being written
+(no line end yet) is read for the measurement but not kept. A request whose usage lacks one of the
+components is counted with that component as 0 and reported as unknown usage, never hidden.
 """
 
 from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+import threading
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -35,6 +43,12 @@ COMPONENTS: Final[dict[str, str]] = {
 META_SUFFIX: Final = ".meta.json"
 """The suffix of the file beside a helper's transcript that names its agent type."""
 
+HEAD_BYTES: Final = 256
+"""How many leading bytes of a transcript identify it between incremental reads."""
+
+READ_TOOL: Final = "Read"
+"""The tool whose calls count as artifact reads."""
+
 
 @dataclass(frozen=True)
 class StepSession:
@@ -55,10 +69,50 @@ class Window:
 
 @dataclass(frozen=True)
 class Measured:
-    """What the transcripts of a step's sessions hold for the step, and what could not be read."""
+    """What the transcripts of a step's sessions hold for the step, and what could not be read.
+
+    ``bytes_read`` is how many transcript bytes this measurement read, ``read_calls`` the file
+    reads the sessions requested within the window, and ``unknown_usage`` the requests whose usage
+    lacked a component.
+    """
 
     tokens: StepTokens
     problems: tuple[str, ...]
+    bytes_read: int = 0
+    read_calls: int = 0
+    unknown_usage: int = 0
+
+
+@dataclass(frozen=True)
+class _Request:
+    """One transcript line of an assistant turn with usage."""
+
+    key: str
+    made: float
+    usage: dict[str, int]
+    unknown: bool
+    reads: frozenset[str]
+
+
+@dataclass
+class _Cursor:
+    """How far a transcript was read, and the request lines read from it."""
+
+    device: int
+    inode: int
+    head: bytes
+    offset: int = 0
+    broken: int = 0
+    requests: list[_Request] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class _Scan:
+    """What one transcript holds now: its kept lines plus a line still being written."""
+
+    requests: tuple[_Request, ...]
+    broken: int
+    bytes_read: int
 
 
 def config_dir() -> Path:
@@ -116,12 +170,30 @@ def _transcripts(config: Path, ran: StepSession) -> list[tuple[Path, str, bool]]
     return found
 
 
-def _request(line: str, window: Window) -> tuple[str, dict[str, int]] | None:
-    """Read the request id and usage of one transcript line made within the window.
+def _read_ids(message: dict[str, object]) -> frozenset[str]:
+    """Collect the ids of the file reads an assistant turn requested.
 
     Returns:
-        The id and the usage components, or None for a line that is no assistant turn with
-        usage, or was made outside the window.
+        The tool-use id of each ``Read`` call in the message content.
+
+    """
+    content: object = message.get("content")
+    blocks: list[object] = content if isinstance(content, list) else []
+    return frozenset(
+        str(block.get("id"))
+        for block in blocks
+        if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == READ_TOOL
+    )
+
+
+def _request(line: str) -> _Request | None:
+    """Read the request id, time and usage of one transcript line.
+
+    A line that is not JSON, or whose time or a usage component cannot be read, raises
+    ``ValueError``.
+
+    Returns:
+        The request line, or None for a line that is no assistant turn with usage.
 
     """
     if '"usage"' not in line:
@@ -132,32 +204,119 @@ def _request(line: str, window: Window) -> tuple[str, dict[str, int]] | None:
     message: object = event.get("message")
     usage: object = message.get("usage") if isinstance(message, dict) else None
     made: float = datetime.fromisoformat(str(event.get("timestamp"))).timestamp()
-    if not isinstance(message, dict) or not isinstance(usage, dict) or not window.start <= made <= window.end:
+    if not isinstance(message, dict) or not isinstance(usage, dict):
         return None
     key: str = str(message.get("id") or event.get("requestId") or event.get("uuid"))
-    return key, {name: int(usage.get(field) or 0) for name, field in COMPONENTS.items()}
+    unknown: bool = any(usage.get(source) is None for source in COMPONENTS.values())
+    components: dict[str, int] = {name: int(usage.get(source) or 0) for name, source in COMPONENTS.items()}
+    return _Request(key, made, components, unknown, _read_ids(message))
 
 
-def _usage(path: Path, window: Window) -> tuple[TokenUsage, int]:
-    """Sum the usage of one transcript's requests made within the window, each request once.
+def _parse(text: str) -> tuple[list[_Request], int]:
+    """Read the request lines of transcript text.
 
     Returns:
-        The usage, and the number of lines that are not JSON (a line cut off when its session was
-        stopped), which are not counted.
+        The request lines, and the number of lines that are not JSON (a line cut off when its
+        session was stopped), which are not counted.
 
     """
-    best: dict[str, dict[str, int]] = {}
+    found: list[_Request] = []
     broken: int = 0
     line: str
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in text.splitlines():
         try:
-            found: tuple[str, dict[str, int]] | None = _request(line, window)
+            held: _Request | None = _request(line)
         except ValueError:
             broken += 1
             continue
-        if found is not None:
-            slot: dict[str, int] = best.setdefault(found[0], dict.fromkeys(COMPONENTS, 0))
-            slot.update({name: max(slot[name], value) for name, value in found[1].items()})
+        if held is not None:
+            found.append(held)
+    return found, broken
+
+
+class _Cursors:
+    """The incremental read position of every transcript this process measured."""
+
+    def __init__(self) -> None:
+        self._lock: threading.Lock = threading.Lock()
+        self._cursors: dict[Path, _Cursor] = {}
+
+    def scan(self, path: Path) -> _Scan:
+        """Read the bytes a transcript gained since its last scan.
+
+        A transcript that cannot be read raises ``OSError``.
+
+        Returns:
+            Every request line the file holds, the lines that are not JSON, and the bytes read.
+
+        """
+        with self._lock:
+            with path.open("rb") as handle:
+                status: os.stat_result = os.fstat(handle.fileno())
+                head: bytes = handle.read(HEAD_BYTES)
+                cursor: _Cursor | None = self._cursors.get(path)
+                if cursor is None or not _continues(cursor, status, head):
+                    cursor = _Cursor(status.st_dev, status.st_ino, head)
+                    self._cursors[path] = cursor
+                handle.seek(cursor.offset)
+                appended: bytes = handle.read()
+            complete: int = appended.rfind(b"\n") + 1
+            kept, broken = _parse(appended[:complete].decode("utf-8", errors="replace"))
+            pending, pending_broken = _parse(appended[complete:].decode("utf-8", errors="replace"))
+            cursor.requests.extend(kept)
+            cursor.broken += broken
+            cursor.offset += complete
+            return _Scan((*cursor.requests, *pending), cursor.broken + pending_broken, len(head) + len(appended))
+
+
+def _continues(cursor: _Cursor, status: os.stat_result, head: bytes) -> bool:
+    """Tell whether a transcript is the same file, grown, since its cursor was taken.
+
+    Returns:
+        True when the device and inode match, the file is not shorter than the cursor's offset,
+        and its leading bytes still begin with the ones the cursor saw.
+
+    """
+    return (
+        (cursor.device, cursor.inode) == (status.st_dev, status.st_ino)
+        and status.st_size >= cursor.offset
+        and head[: len(cursor.head)] == cursor.head
+    )
+
+
+_CURSORS: Final = _Cursors()
+"""The process's transcript cursors; disposable, a miss reads the file from its start."""
+
+
+@dataclass(frozen=True)
+class _Usage:
+    """One transcript's usage within a window, with what its reading found."""
+
+    usage: TokenUsage
+    broken: int
+    bytes_read: int
+    read_calls: int
+    unknown: int
+
+
+def _usage(path: Path, window: Window) -> _Usage:
+    """Sum the usage of one transcript's requests made within the window, each request once.
+
+    Returns:
+        The usage, the lines that are not JSON (not counted), the bytes read, the file reads
+        requested and the requests with unknown usage.
+
+    """
+    scan: _Scan = _CURSORS.scan(path)
+    best: dict[str, dict[str, int]] = {}
+    unknown: set[str] = set()
+    reads: set[str] = set()
+    held: _Request
+    for held in (request for request in scan.requests if window.start <= request.made <= window.end):
+        slot: dict[str, int] = best.setdefault(held.key, dict.fromkeys(COMPONENTS, 0))
+        slot.update({name: max(slot[name], value) for name, value in held.usage.items()})
+        unknown.update({held.key} if held.unknown else set())
+        reads.update(held.reads)
     sums: dict[str, int] = {name: sum(slot[name] for slot in best.values()) for name in COMPONENTS}
     usage: TokenUsage = {
         "input": sums["input"],
@@ -167,7 +326,7 @@ def _usage(path: Path, window: Window) -> tuple[TokenUsage, int]:
         "total": sum(sums.values()),
         "turns": len(best),
     }
-    return usage, broken
+    return _Usage(usage, scan.broken, scan.bytes_read, len(reads), len(unknown))
 
 
 def _total(parts: list[TokenPart]) -> TokenUsage:
@@ -204,6 +363,7 @@ def measure(sessions: list[StepSession], window: Window, config: Path) -> Measur
     """
     parts: list[TokenPart] = []
     problems: list[str] = []
+    totals: list[_Usage] = []
     ran: StepSession
     for ran in sessions:
         files: list[tuple[Path, str, bool]] = _transcripts(config, ran)
@@ -213,11 +373,18 @@ def measure(sessions: list[StepSession], window: Window, config: Path) -> Measur
         agent: str
         helper: bool
         for path, agent, helper in files:
-            usage: TokenUsage
-            broken: int
-            usage, broken = _usage(path, window)
-            if broken:
-                problems.append(f"{path} has {broken} line(s) that are not JSON, not counted")
-            if usage["turns"]:
-                parts.append({**usage, "session": ran.session, "agent": agent, "helper": helper})
-    return Measured({"usage": _total(parts), "parts": parts}, tuple(problems))
+            read: _Usage = _usage(path, window)
+            totals.append(read)
+            if read.broken:
+                problems.append(f"{path} has {read.broken} line(s) that are not JSON, not counted")
+            if read.unknown:
+                problems.append(f"{path} has {read.unknown} request(s) whose usage lacks a component, counted as 0")
+            if read.usage["turns"]:
+                parts.append({**read.usage, "session": ran.session, "agent": agent, "helper": helper})
+    return Measured(
+        {"usage": _total(parts), "parts": parts},
+        tuple(problems),
+        bytes_read=sum(read.bytes_read for read in totals),
+        read_calls=sum(read.read_calls for read in totals),
+        unknown_usage=sum(read.unknown for read in totals),
+    )
