@@ -26,14 +26,17 @@ Epic's elaboration reached (``matrixtraverse.architecture_review_scope``). :func
 attributes only, so neither can state a mark. The mark comes off an entry only when an Epic's
 architecture changes that entry: the step that accepts the architect's result runs
 :func:`withdraw_approval` on what the result names as added or changed and on what
-:func:`changed_by_design` finds its writes changed. No other write takes it off, and neither does
-a change to a document heading, whichever entries that heading describes.
+:func:`changed_since` finds its own writes changed, in the one locked update
+(:func:`apply_design_change`) that applies its change file and records its result. No other
+write takes it off, and neither does a change to a document heading, whichever entries that
+heading describes.
 """
 
 import json
 import sys
-from collections.abc import Collection, Mapping, Sequence
-from dataclasses import replace
+import time
+from collections.abc import Callable, Collection, Mapping, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, TypedDict
 
@@ -783,6 +786,33 @@ def approve(matrix: Matrix, scope: ArchitectureReviewScope, role: Role) -> Appro
     }
 
 
+@dataclass(frozen=True)
+class DesignState:
+    """The design of a matrix as one read of it held it, kept to compare a later state with.
+
+    Entries and relationships are frozen, so holding them by id keeps that state while the matrix
+    they came from is changed in place.
+    """
+
+    entries: Mapping[EntryId, Entry]
+    """Every entry, by id."""
+    relationships: Mapping[RelationshipId, Relationship]
+    """Every architecture-side relationship that states design (:func:`_design_relationships`), by identity."""
+
+
+def design_state(matrix: Matrix) -> DesignState:
+    """Hold the design of a matrix as it is now.
+
+    Returns:
+        Its entries and its design relationships, unchanged by later edits of ``matrix``.
+
+    """
+    return DesignState(
+        entries={entry.id: entry for entry in matrix.entries()},
+        relationships=_design_relationships(matrix),
+    )
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def changed_by_design(before: Matrix, after: Matrix) -> set[EntryId]:
     """Name the entries whose own architecture differs between two reads of the matrix.
@@ -792,15 +822,29 @@ def changed_by_design(before: Matrix, after: Matrix) -> set[EntryId]:
         after: The matrix after them.
 
     Returns:
+        What :func:`changed_since` returns for the design ``before`` holds.
+
+    """
+    return changed_since(design_state(before), after)
+
+
+def changed_since(before: DesignState, after: Matrix) -> set[EntryId]:
+    """Name the entries whose own architecture differs between a held design and a matrix.
+
+    Args:
+        before: The design as an earlier read held it (:func:`design_state`).
+        after: The matrix now.
+
+    Returns:
         Each entry held in both that differs in more than its flags and the attributes outside
         approval, and the start of each architecture-side relationship added, changed or removed,
         except the relationships that only say where the architecture is written.
 
     """
     entries: set[EntryId] = {
-        entry.id for entry in after.entries() if (held := before.find(entry.id)) and not same_design(held, entry)
+        entry.id for entry in after.entries() if (held := before.entries.get(entry.id)) and not same_design(held, entry)
     }
-    was: dict[RelationshipId, Relationship] = _design_relationships(before)
+    was: Mapping[RelationshipId, Relationship] = before.relationships
     now: dict[RelationshipId, Relationship] = _design_relationships(after)
     starts: set[EntryId] = {
         identity.start
@@ -1164,6 +1208,90 @@ def apply_change_file(
             "failures": [_failure(None, None, str(error))],
             "results": [],
         }
+
+
+@dataclass(frozen=True)
+class DesignWrite[T]:
+    """What :func:`apply_design_change` did, in its one locked update of the matrix."""
+
+    applied: ApplyResult
+    """The change file's result: every failure when it was refused, and then nothing was written."""
+    recorded: T | None
+    """What ``record`` returned; None when nothing was written."""
+    matrix: Matrix | None
+    """The matrix as the update left it, which is what was written; None when nothing was written."""
+    seconds: float
+    """How long the whole update took, waiting for the matrix's lock included."""
+    change_seconds: float
+    """How long the change itself took under the lock: applying the file and ``record``."""
+
+
+def _file_failure(change_file: Path | None, error: MatrixError) -> ApplyResult:
+    """Report a matrix update that failed as a whole.
+
+    Returns:
+        A result with one failure of the file as a whole, nothing applied.
+
+    """
+    return {
+        "file": "" if change_file is None else str(change_file),
+        "operations": 0,
+        "applied": False,
+        "failures": [_failure(None, None, str(error))],
+        "results": [],
+    }
+
+
+def apply_design_change[T](
+    path: Path,
+    change_file: Path | None,
+    role: Role,
+    record: Callable[[Matrix, DesignState], T],
+    *,
+    wait: float = DEFAULT_LOCK_WAIT,
+) -> DesignWrite[T]:
+    """Apply a change file and record what follows from it, in one locked update of the matrix.
+
+    Under the matrix's lock the design is held as that read has it (:func:`design_state`), the
+    change file is applied as :func:`apply_changes` applies it, and ``record`` is handed the
+    changed matrix and that held design, so the delta it takes (:func:`changed_since`) is this
+    update's own and no other writer's. The matrix is written once. When any operation fails,
+    ``record`` raises, or the changed matrix does not conform, nothing is written.
+
+    Args:
+        path: The matrix file.
+        change_file: The change file; None when there is none, and only ``record`` changes the matrix.
+        role: Who wrote the change file: the role each operation is checked for.
+        record: What the caller records after the change file, in the same update.
+        wait: Seconds to wait for the matrix's lock.
+
+    Returns:
+        The change file's result, what ``record`` returned with the matrix as written, and how long
+        the update took; with every failure and nothing recorded when nothing was written.
+
+    """
+    no_file: ApplyResult = {"file": "", "operations": 0, "applied": True, "failures": [], "results": []}
+    timing: list[float] = []
+
+    def change(matrix: Matrix) -> tuple[ApplyResult, T, Matrix]:
+        began: float = time.monotonic()
+        before: DesignState = design_state(matrix)
+        applied: ApplyResult = no_file if change_file is None else apply_changes(matrix, change_file, role)
+        if applied["failures"]:
+            raise _ChangeRefusedError(applied)
+        recorded: T = record(matrix, before)
+        timing.append(time.monotonic() - began)
+        return applied, recorded, matrix
+
+    started: float = time.monotonic()
+    try:
+        applied, recorded, written = update_matrix(path, change, wait=wait)
+    except _ChangeRefusedError as error:
+        refused: ApplyResult = {**error.refused, "applied": False, "results": []}
+        return DesignWrite(refused, None, None, time.monotonic() - started, sum(timing))
+    except MatrixError as error:
+        return DesignWrite(_file_failure(change_file, error), None, None, time.monotonic() - started, sum(timing))
+    return DesignWrite(applied, recorded, written, time.monotonic() - started, sum(timing))
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, TypeIs
 
@@ -77,7 +77,7 @@ from matrixsync import (
     vault_root,
 )
 from matrixtraverse import epic_id
-from matrixwrite import apply_change_file, apply_changes, changed_by_design, link, put, withdraw_approval
+from matrixwrite import apply_changes, apply_design_change, changed_since, link, put, withdraw_approval
 from specialist_catalog import agent_names
 
 from orchestrator.core import step_journal
@@ -193,7 +193,7 @@ if TYPE_CHECKING:
     from matrixquery import EpicView
     from matrixstore import Matrix
     from matrixsync import DocumentsSynced
-    from matrixwrite import ApplyResult
+    from matrixwrite import ApplyResult, DesignState, DesignWrite
     from step_journal_contract import Step, StepId, StepPlan
 
     from orchestrator.core.io import JsonValue
@@ -206,6 +206,11 @@ ARCHITECT_REF: Final = "architect"
 NO_SOURCE: Final = "obligations with no source"
 NO_FEATURE: Final = "requirements with no feature"
 CONSTRAINTS: Final = "constraints recorded"
+MATRIX_TRANSACTION: Final = "matrix transaction"
+"""The value an accepted result records of its one matrix update: its duration in seconds, waiting for
+the lock included, the time of the change under the lock, and how many operations it applied and
+approved marks it took off."""
+SECONDS_PRECISION: Final = 3
 ATTR_HEADING: Final = "heading"
 ATTR_VIA: Final = "via"
 ATTR_STATEMENT: Final = "statement"
@@ -259,6 +264,10 @@ class Recorded:
     """The Epic's requirements no feature serves, as the matrix shows them afterwards."""
     listed: tuple[EntryId, ...] = ()
     """The requirements the result file lists as having no feature."""
+    withdrawn: tuple[EntryId, ...] = ()
+    """The entries whose approved mark the write took off."""
+    transaction: dict[str, JsonValue] = field(default_factory=dict)
+    """How long the one locked update took and what it wrote, by count (:data:`MATRIX_TRANSACTION`)."""
 
 
 def _architect_plan(architect: str, inputs: list[str]) -> StepPlan:
@@ -474,41 +483,53 @@ def _record_design(matrix: Matrix, bead: str, result: ArchitectureResult) -> Rec
 
 
 def _record_result(bead: str, result: ArchitectureResult, changes: Path) -> Recorded:
-    """Apply the architect's change file, record its result in the matrix, and compare with ``epic``.
+    """Apply the architect's change file and record its result in one locked update, and compare with ``epic``.
 
-    The change file (``matrix-changes.json``) is applied first, whole or not at all, in one locked
-    update (``matrixwrite.apply_change_file``), so the result's links are recorded on the entries
-    it puts. A change file that fails is reported operation by operation, and the result is not
-    recorded. Applying a file again is harmless: each operation leaves the matrix as it found it
-    when it already holds the fact. This is where the Epic's architecture takes the approved mark
-    off what it changes: each entry the result names under ``addedOrChangedElements``, and each
-    entry the change file and the result's links changed (``matrixwrite.changed_by_design``).
+    The change file (``matrix-changes.json``) is applied whole or not at all, and the result's
+    links are recorded on the entries it puts, in the same locked update of the matrix
+    (``matrixwrite.apply_design_change``): either both are written or neither is. A change file
+    that fails is reported operation by operation, and nothing is written. Applying a file again is
+    harmless: each operation leaves the matrix as it found it when it already holds the fact. This
+    is where the Epic's architecture takes the approved mark off what it changes: each entry the
+    result names under ``addedOrChangedElements``, and each entry this update's own writes changed
+    (``matrixwrite.changed_since``, against the design the update read under its lock), so a change
+    another writer made is never taken as this result's.
 
     Returns:
-        :func:`_compared` on the matrix as the write left it; or only the problems, one per
-        operation of the change file that failed.
+        :func:`_compared` on the matrix as this update wrote it, with the entries whose approved
+        mark came off and the update's timing; or only the problems, one per operation of the
+        change file that failed.
 
     """
-    before: Matrix = read_matrix(matrix_file())
-    if changes.is_file():
-        applied: ApplyResult = apply_change_file(matrix_file(), changes, ROLE_SOLUTIONS_ARCHITECT)
-        if applied["failures"]:
-            return Recorded(
-                problems=tuple(
-                    f"{changes} operation {'(file)' if failure['index'] is None else failure['index']} "
-                    f"({failure['op'] or 'no op'}): {failure['error']}"
-                    for failure in applied["failures"]
-                ),
-            )
 
-    def change(matrix: Matrix) -> Recorded:
+    def record(matrix: Matrix, before: DesignState) -> Recorded:
         design: Recorded = _record_design(matrix, bead, result)
         named: list[EntryId] = story_build_entries(result[FIELD_ADDED_OR_CHANGED])
-        withdraw_approval(matrix, {*named, *changed_by_design(before, matrix)})
-        return design
+        withdrawn: list[EntryId] = withdraw_approval(matrix, {*named, *changed_since(before, matrix)})
+        return replace(design, withdrawn=tuple(withdrawn))
 
-    recorded: Recorded = update_matrix(matrix_file(), change)
-    return _compared(read_matrix(matrix_file()), bead, recorded)
+    written: DesignWrite[Recorded] = apply_design_change(
+        matrix_file(),
+        changes if changes.is_file() else None,
+        ROLE_SOLUTIONS_ARCHITECT,
+        record,
+    )
+    if written.recorded is None or written.matrix is None:
+        return Recorded(
+            problems=tuple(
+                f"{changes} operation {'(file)' if failure['index'] is None else failure['index']} "
+                f"({failure['op'] or 'no op'}): {failure['error']}"
+                for failure in written.applied["failures"]
+            ),
+        )
+    compared: Recorded = _compared(written.matrix, bead, written.recorded)
+    transaction: dict[str, JsonValue] = {
+        "seconds": round(written.seconds, SECONDS_PRECISION),
+        "changeSeconds": round(written.change_seconds, SECONDS_PRECISION),
+        "operations": written.applied["operations"],
+        "withdrawn": len(written.recorded.withdrawn),
+    }
+    return replace(compared, withdrawn=written.recorded.withdrawn, transaction=transaction)
 
 
 def _change_problems(matrix: Matrix, changes: Path) -> list[str]:
@@ -1007,6 +1028,7 @@ def architect(run: StepRun) -> AgentLaunch:
                 file_artifact(LABEL_RESULT, output),
                 value_artifact(ARTIFACT_CONCLUSION, result["conclusion"]),
                 value_artifact(NO_FEATURE, unserved),
+                value_artifact(MATRIX_TRANSACTION, recorded.transaction),
                 value_artifact(
                     ARTIFACT_SPECIALIST_RECOMMENDATIONS,
                     [_recommendation(entry) for entry in result["specialistRecommendations"]],
