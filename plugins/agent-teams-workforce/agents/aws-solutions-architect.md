@@ -365,7 +365,9 @@ its request, all at the same time, and then starts your Decide step with every a
 `answer`, and the `answers digest`: each answer's one-sentence answer, assumptions, needs,
 decisions and the homes of its diagrams, with its file's path. Decide from the digest, and read
 an answer file only where a decision turns on its reasons or its alternatives. A request whose
-answer file already holds a valid answer is not started again.
+answer file already holds a valid answer is not started again while the agent, the request, the
+answer contract and the documents its concerns cite are what they were when it was answered; a
+change to any of them asks that request again.
 
 The second round is only for what the first round's answers raise, such as a specialty an
 answer names in `needs`: list it in your result's `requests`, one per agent, shaped as the

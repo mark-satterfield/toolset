@@ -4,8 +4,11 @@ The architect never starts an agent. Each of its steps is a fresh session that w
 the step that accepts that file plans what follows it, among its siblings:
 
 - a round of requests (the Analyze step's ``questions.json``, or a result's ``requests``): one
-  step per request whose answer is not yet a valid answer, each started as the agent the request
-  names, then a fresh Decide step of the architect, handed every answer;
+  step per request whose answer cannot be reused (:func:`reuse_refusal`), each started as the agent
+  the request names, then a fresh Decide step of the architect, handed every answer. An answer is
+  reused only when it is valid and was asked of the same agent, with the same request, under the
+  same answer contract and with the same contents of the documents the request concerns
+  (:func:`answer_basis`); a change to any of them asks again only the requests it affects;
 - a result with no open request: at most three ``architecture-maintainer`` steps, one per group of
   arc42 sections (:data:`SECTION_GROUPS`) whose write request was not already written, each
   write request built here from the result's ``facts``, ``restatements``, ``settlements`` and
@@ -14,7 +17,8 @@ the step that accepts that file plans what follows it, among its siblings:
   group never replaces the files of an earlier one.
 
 A Decide step is handed a digest of its answers (:func:`write_digest`), so it reads a few KB
-instead of every answer file.
+instead of every answer file. The digest names each answer's writer from one walk of one read of
+the journal (:func:`_answer_writers`).
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ from typing import TYPE_CHECKING, Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 from architecture_work_contract import (
+    ARCHITECTURE_RESULT_SCHEMA_PATH,
     validate_answers_digest,
     validate_specialist_answer,
     validate_write_request,
@@ -51,7 +56,7 @@ from orchestrator.flows.architecture_files import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from architecture_work_contract import (
         AgentRequest,
@@ -79,6 +84,18 @@ MAX_ROUNDS: Final = 2
 """How many rounds of requests one chain of architect steps may put to the specialists."""
 REQUEST_SUFFIX: Final = ".request.json"
 """What the request file of a request adds to its answer file's stem."""
+BASIS_SUFFIX: Final = ".basis.json"
+"""What the basis file of a request adds to its answer file's stem: what the answer was asked under
+(:func:`answer_basis`)."""
+PARAM_ASKED_BECAUSE: Final = "askedBecause"
+"""The parameter that hands a specialist step why its answer could not be reused (:func:`reuse_refusal`)."""
+REFUSED_NO_ANSWER: Final = "answer"
+"""Why an answer is not reused when its file is missing or is not a valid answer."""
+REFUSED_REQUEST: Final = "request"
+"""Why an answer is not reused when it was asked with another request, or nothing records what it was asked."""
+ANSWER_DEFINITION: Final = "SpecialistAnswer"
+"""The definition in the architecture result schema that every answer satisfies."""
+_DEFINITION_REF: Final[re.Pattern[str]] = re.compile(r'"#/\$defs/(?P<name>[^"]+)"')
 WRITE_PREFIX: Final = "write-"
 DIGEST_PREFIX: Final = "digest-"
 ID_LENGTH: Final = 8
@@ -130,14 +147,38 @@ def read_answer(value: object, where: str = "SpecialistAnswer") -> SpecialistAns
     return validate_specialist_answer(value, where)
 
 
-def answered(request: SpecialistRequest) -> bool:
-    """Tell whether a request's answer file already holds a valid answer.
+def _sibling(answer: Path, suffix: str) -> Path:
+    """Name a file kept beside an answer file.
 
     Returns:
-        True when the file at the request's answer path is a valid specialist answer (:func:`read_answer`).
+        The path with the answer file's stem and ``suffix``.
 
     """
-    path: Path = Path(request["answerPath"])
+    return answer.with_name(answer.stem + suffix)
+
+
+def _held_json(path: Path) -> object:
+    """Read a file the script wrote beside an answer, when it can be read.
+
+    Returns:
+        The decoded file; None when it is missing or is not strict JSON.
+
+    """
+    if not path.is_file():
+        return None
+    try:
+        return strict_json(path)
+    except OSError, ValueError:
+        return None
+
+
+def _valid_answer(path: Path) -> bool:
+    """Tell whether a file holds a valid specialist answer.
+
+    Returns:
+        True when the file is a valid specialist answer (:func:`read_answer`).
+
+    """
     if not path.is_file():
         return False
     try:
@@ -145,6 +186,175 @@ def answered(request: SpecialistRequest) -> bool:
     except OSError, ValueError:
         return False
     return True
+
+
+def _digest(content: bytes) -> str:
+    """Fingerprint some bytes.
+
+    Returns:
+        The SHA-256 of the bytes, in hex.
+
+    """
+    return hashlib.sha256(content).hexdigest()
+
+
+def _json_digest(value: object) -> str:
+    """Fingerprint a JSON value by its content, whatever the order of its keys.
+
+    Returns:
+        The SHA-256 of its canonical text.
+
+    """
+    return _digest(json.dumps(value, sort_keys=True, ensure_ascii=False).encode())
+
+
+def _file_digest(path: Path) -> str | None:
+    """Fingerprint a file's bytes, read in chunks.
+
+    Returns:
+        The SHA-256 of the file; None when there is no file at the path.
+
+    """
+    if not path.is_file():
+        return None
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
+
+
+def _definitions(schema: Path) -> dict[str, object]:
+    """Read the definitions of a JSON schema.
+
+    Returns:
+        Each definition under ``$defs``, by name.
+
+    Raises:
+        TypeError: The schema holds no ``$defs`` object.
+
+    """
+    loaded: object = json.loads(schema.read_text(encoding="utf-8"))
+    held: object = loaded.get("$defs") if isinstance(loaded, dict) else None
+    if not isinstance(held, dict):
+        message: str = f"{schema} holds no $defs object"
+        raise TypeError(message)
+    return {str(name): definition for name, definition in held.items()}
+
+
+def _contract_closure(definitions: Mapping[str, object], root: str) -> dict[str, object]:
+    """Collect a definition with every definition it refers to, directly or through another.
+
+    Returns:
+        Each such definition, by name.
+
+    """
+    closure: dict[str, object] = {}
+    pending: list[str] = [root]
+    while pending:
+        name: str = pending.pop()
+        if name in closure or name not in definitions:
+            continue
+        closure[name] = definitions[name]
+        pending.extend(found["name"] for found in _DEFINITION_REF.finditer(json.dumps(definitions[name])))
+    return closure
+
+
+def answer_contract() -> str:
+    """Fingerprint the contract every specialist answer satisfies.
+
+    Returns:
+        The SHA-256 of the SpecialistAnswer definition with every definition it refers to, so a
+        change to any other definition of the schema leaves it as it was.
+
+    """
+    return _json_digest(_contract_closure(_definitions(ARCHITECTURE_RESULT_SCHEMA_PATH), ANSWER_DEFINITION))
+
+
+def _source_file(arch: Path, source: str) -> Path | None:
+    """Name the file a concern's source is, when it is one.
+
+    Returns:
+        The document under the architecture root a citation names (:func:`cited_document`), else
+        the absolute path the source states; None for a source that names no file path, which the
+        request's own fingerprint covers.
+
+    """
+    document: str | None = cited_document(arch, source)
+    if document is not None:
+        return arch / document_path(document)
+    stated: Path = Path(source.strip())
+    return stated if stated.is_absolute() else None
+
+
+def _source_digests(arch: Path, concerns: Iterable[SourceHeading]) -> dict[str, JsonValue]:
+    """Fingerprint the files a request's concerns are in.
+
+    Returns:
+        Each file's path, in path order, with the SHA-256 of its bytes; None for a file that does
+        not exist, so its later creation changes the fingerprint too.
+
+    """
+    files: set[Path] = {found for concern in concerns if (found := _source_file(arch, concern["source"])) is not None}
+    return {str(path): _file_digest(path) for path in sorted(files)}
+
+
+def answer_basis(arch: Path, agent: str, request: SpecialistRequest) -> dict[str, JsonValue]:
+    """State what an answer is asked under, the evidence its reuse is checked against.
+
+    Args:
+        arch: The architecture root, which a concern's document is named under.
+        agent: The agent asked.
+        request: The request.
+
+    Returns:
+        The agent, the fingerprint of the whole request (its question, bounds, concerns, trusted
+        code and answer path), of the answer contract (:func:`answer_contract`) and of each file
+        the request's concerns are in (:func:`_source_digests`).
+
+    """
+    return {
+        "agent": agent,
+        REFUSED_REQUEST: _json_digest(request),
+        "contract": answer_contract(),
+        "sources": _source_digests(arch, request["concerns"]),
+    }
+
+
+def reuse_refusal(entry: AgentRequest, arch: Path) -> str | None:
+    """Tell why a request's existing answer cannot stand for a new session, if it cannot.
+
+    An answer is reused only when its file is a valid answer and the basis file beside it
+    (:data:`BASIS_SUFFIX`), written when its request was planned, states the basis the request has
+    now (:func:`answer_basis`). An answer written before basis files existed has none: it is reused
+    only when the request file beside it holds exactly this request.
+
+    Args:
+        entry: The request, with the agent it names.
+        arch: The architecture root.
+
+    Returns:
+        None when the answer can be reused; otherwise :data:`REFUSED_NO_ANSWER`, or the first
+        member of the basis that differs (``agent``, ``request``, ``contract`` or ``sources``).
+
+    """
+    request: SpecialistRequest = entry["request"]
+    answer: Path = Path(request["answerPath"])
+    if not _valid_answer(answer):
+        return REFUSED_NO_ANSWER
+    held: object = _held_json(_sibling(answer, BASIS_SUFFIX))
+    if held is None:
+        return None if _held_json(_sibling(answer, REQUEST_SUFFIX)) == request else REFUSED_REQUEST
+    now: dict[str, JsonValue] = answer_basis(arch, step_journal.agent_name(entry["agent"]), request)
+    stated: dict[object, object] = held if isinstance(held, dict) else {}
+    return next((member for member, value in now.items() if stated.get(member) != value), None)
+
+
+def answered(entry: AgentRequest, arch: Path) -> bool:
+    """Tell whether a request's existing answer can be reused.
+
+    Returns:
+        True when :func:`reuse_refusal` finds no reason to ask again.
+
+    """
+    return reuse_refusal(entry, arch) is None
 
 
 def round_of(run: StepRun) -> int:
@@ -185,19 +395,31 @@ def handed_answers(run: StepRun) -> list[Path]:
         (:data:`PARAM_ANSWERED`), each once.
 
     """
-    agents: dict[str, str] = _answer_agents(run)
-    held: list[Path] = [path for path in run.inputs.files(LABEL_ANSWER) if agents.get(str(path)) not in SCRIPT_STARTED]
+    return _handed(run, _answer_writers(step_journal.steps_in_order(run.journal())))
+
+
+def _handed(run: StepRun, writers: Mapping[str, Step]) -> list[Path]:
+    """Name every specialist answer an architect step is handed, from the writers of one journal read.
+
+    Returns:
+        What :func:`handed_answers` returns.
+
+    """
+    held: list[Path] = [
+        path for path in run.inputs.files(LABEL_ANSWER) if _writer_agent(writers, path) not in SCRIPT_STARTED
+    ]
     return list(dict.fromkeys([*held, *map(Path, _answered_before(run))]))
 
 
-def round_steps(run: StepRun, requests: Sequence[AgentRequest], number: int) -> StepGroup:
+def round_steps(run: StepRun, requests: Sequence[AgentRequest], number: int, arch: Path) -> StepGroup:
     """Plan one round of requests after an architect step, then the Decide step that uses the answers.
 
-    Each request whose answer is not yet a valid answer is written beside its answer path and gets
-    one step, performed by the agent the request names and handed the request file as the
-    parameter ``request``. The Decide step's inputs are those steps and the completing step's own
+    Each request whose answer cannot be reused (:func:`reuse_refusal`) is written beside its
+    answer path, with its basis (:func:`answer_basis`), and gets one step, performed by the agent
+    the request names and handed the request file as the parameter ``request`` and why it is
+    asked as the parameter ``askedBecause``. The Decide step's inputs are those steps and the completing step's own
     inputs, so it is handed every answer of the chain, the findings and rulings the completing
-    step was handed, and the round's number. A request whose answer is already valid gets no step:
+    step was handed, and the round's number. A request whose answer can be reused gets no step:
     its answer file goes to the Decide step as the parameter ``answered``, with those the
     completing step was handed the same way.
 
@@ -205,6 +427,7 @@ def round_steps(run: StepRun, requests: Sequence[AgentRequest], number: int) -> 
         run: The architect step whose output holds the requests.
         requests: The requests, one per agent.
         number: The round these requests make.
+        arch: The architecture root, which a concern's document is named under.
 
     Returns:
         The group, placed after the completing step.
@@ -217,12 +440,14 @@ def round_steps(run: StepRun, requests: Sequence[AgentRequest], number: int) -> 
     entry: AgentRequest
     for index, entry in enumerate(requests):
         agent: str = step_journal.agent_name(entry["agent"])
-        if answered(entry["request"]):
+        refusal: str | None = reuse_refusal(entry, arch)
+        if refusal is None:
             kept[entry["request"]["answerPath"]] = agent
             continue
         answer: Path = Path(entry["request"]["answerPath"])
-        asked: Path = answer.with_name(answer.stem + REQUEST_SUFFIX)
+        asked: Path = _sibling(answer, REQUEST_SUFFIX)
         write_json(asked, json_object(entry["request"]))
+        write_json(_sibling(answer, BASIS_SUFFIX), answer_basis(arch, agent, entry["request"]))
         ref: str = f"round-{number}-{index}"
         refs.append(ref)
         steps.append(
@@ -233,7 +458,7 @@ def round_steps(run: StepRun, requests: Sequence[AgentRequest], number: int) -> 
                     "purpose": "The solutions architect named this agent for this work",
                     "agent": agent,
                 },
-                params={PARAM_REQUEST: str(asked)},
+                params={PARAM_REQUEST: str(asked), PARAM_ASKED_BECAUSE: refusal},
             ),
         )
     carried: list[str] = [held for held in run.step.get("inputs", []) if held != run.step["id"]]
@@ -249,44 +474,34 @@ def round_steps(run: StepRun, requests: Sequence[AgentRequest], number: int) -> 
     return StepGroup((*steps, NewStep(decide, params=params)))
 
 
-def _answer_writer(run: StepRun, path: Path) -> Step | None:
-    """Find the agent step that wrote an answer file.
+def _answer_writers(steps: Iterable[Step]) -> dict[str, Step]:
+    """Index the agent step that wrote each answer file, from one walk of one journal read.
+
+    Args:
+        steps: The journal's steps in walk order (``step_journal.steps_in_order``).
 
     Returns:
-        The last agent step in walk order that holds the file as its answer; None when no step
-        of the journal holds it.
+        Each answer file's path, with the last agent step in walk order that holds it as its answer.
 
     """
-    writer: Step | None = None
-    step: Step
-    for step in step_journal.steps_in_order(run.journal()):
-        if "agent" not in step:
-            continue
-        if any(
-            held["name"] == LABEL_ANSWER and held["kind"] != "value" and held["path"] == str(path)
-            for held in step["artifacts"]
-        ):
-            writer = step
-    return writer
+    return {
+        held["path"]: step
+        for step in steps
+        if step.get("agent") is not None
+        for held in step["artifacts"]
+        if held["name"] == LABEL_ANSWER and held["kind"] != "value"
+    }
 
 
-def _answer_agents(run: StepRun) -> dict[str, str]:
-    """Name the agent that wrote each answer file the journal records.
+def _writer_agent(writers: Mapping[str, Step], path: Path) -> str | None:
+    """Name the agent of the step that wrote an answer file.
 
     Returns:
-        Each answer file's path, with the agent of the step that holds it.
+        The agent; None when no agent step of the journal holds the file.
 
     """
-    agents: dict[str, str] = {}
-    step: Step
-    for step in step_journal.steps_in_order(run.journal()):
-        agent: str | None = step.get("agent")
-        if agent is None:
-            continue
-        for held in step["artifacts"]:
-            if held["name"] == LABEL_ANSWER and held["kind"] != "value":
-                agents[held["path"]] = agent
-    return agents
+    writer: Step | None = writers.get(str(path))
+    return None if writer is None else writer.get("agent")
 
 
 def _digested(agent: str, path: Path, answer: SpecialistAnswer) -> DigestedAnswer:
@@ -329,23 +544,26 @@ def write_digest(run: StepRun, helpers: Path) -> Path | None:
         StaleInputError: At least one answer was written to an earlier contract.
 
     """
-    answers: list[Path] = handed_answers(run)
+    ordered: list[Step] = step_journal.steps_in_order(run.journal())
+    writers: dict[str, Step] = _answer_writers(ordered)
+    answers: list[Path] = _handed(run, writers)
     if not answers:
         return None
-    agents: dict[str, str] = {**_answered_before(run), **_answer_agents(run)}
+    before: dict[str, str] = _answered_before(run)
     digested: list[DigestedAnswer] = []
     stale: list[StaleInputError] = []
     path: Path
     for path in answers:
         try:
-            answer: SpecialistAnswer = checked_output(run, path, read_answer, _answer_writer(run, path))
+            answer: SpecialistAnswer = checked_output(run, path, read_answer, writers.get(str(path)))
         except StaleInputError as found:
             stale.append(found)
             continue
-        digested.append(_digested(agents.get(str(path), "unknown"), path, answer))
+        agent: str = _writer_agent(writers, path) or before.get(str(path), "unknown")
+        digested.append(_digested(agent, path, answer))
     if stale:
-        order: list[str] = [step["id"] for step in step_journal.steps_in_order(run.journal())]
-        first: StaleInputError = min(stale, key=lambda found: order.index(found.writer))
+        position: dict[str, int] = {step["id"]: index for index, step in enumerate(ordered)}
+        first: StaleInputError = min(stale, key=lambda found: position[found.writer])
         raise StaleInputError(first.stage, first.writer, tuple(text for found in stale for text in found.evidence))
     digest: AnswersDigest = {"answers": digested}
     validate_answers_digest(digest)

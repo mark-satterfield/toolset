@@ -81,7 +81,7 @@ folder of the architecture or of the PRDs.
 
 | Step | Planned by | Output | What its acceptance plans after it |
 |---|---|---|---|
-| Analyze ("Analyze the PRD against the architecture and put the questions and draft reviews to the specialists") | the open-run step | the state file, then `<arch-work>/questions.json` (`specialist-round.schema.json`): one request per specialist | one step per request whose answer is not yet a valid answer, then a Decide step (round 1), handed every answer of the round: those the steps write, and as its parameter `answered` each that was already valid |
+| Analyze ("Analyze the PRD against the architecture and put the questions and draft reviews to the specialists") | the open-run step | the state file, then `<arch-work>/questions.json` (`specialist-round.schema.json`): one request per specialist | one step per request whose answer cannot be reused (`architecture_rounds.reuse_refusal`), then a Decide step (round 1), handed every answer of the round: those the steps write, and as its parameter `answered` each that was reused |
 | Decide ("Decide the architecture with the specialists' answers") | the step whose output asked a round | the architecture result at the context's `resultPath`, updated in place | a further round and a Decide (round 2) when the result's `requests` holds an unanswered request; otherwise the document writes |
 | A correction ("Correct what the mechanical check found"), or a step the lead adds | the check, or the lead | the architecture result, updated in place | as for Decide |
 
@@ -116,17 +116,29 @@ entry whose agent or subject names UI or front-end design, which belongs to the 
 When the result asks no further round, it also checks the review log
 (`architecture_check.review_log_findings`, the same check the check step makes). Each problem is
 one sentence of the error the check raises, and goes back to the same session as its one
-correction. The step that accepts the result then makes the write: it applies the change file in
-one locked update, records in the matrix what the result states of the Epic's features
-(`servedBy`, `realizedBy`, `supportedBy`, and `covers` from each heading that already describes a
-feature), and fails only when the matrix written does not hold it. It records the file
-`architecture result` and the values `conclusion`, `requirements with no feature` and `specialist
-recommendations`.
+correction. The step that accepts the result then makes the write, in one locked update of the
+matrix (`matrixwrite.apply_design_change`): it applies the change file, records in the matrix what
+the result states of the Epic's features (`servedBy`, `realizedBy`, `supportedBy`, and `covers`
+from each heading that already describes a feature), and takes the approved mark off what the
+result names under `addedOrChangedElements` and what this update's own writes changed
+(`matrixwrite.changed_since`, against the design the update read under its lock); either all of
+it is written or none of it. It fails only when the matrix written does not hold it, compared on
+the matrix as that update wrote it. It records the file `architecture result` and the values
+`conclusion`, `requirements with no feature`, `specialist recommendations` and `matrix
+transaction` (the update's duration in seconds with the lock wait, the time of the change under
+the lock, and how many operations it applied and approved marks it took off).
 
-A round: the accepting step writes each request beside its answer path
-(`<answer stem>.request.json`) and plans one step per request whose answer file is not yet a valid
-answer, performed by the agent the request names and handed the request file as the parameter
-`request`; then a Decide step whose inputs are those steps and the accepting step's own inputs, so
+A round: the accepting step plans one step per request whose answer cannot be reused
+(`architecture_rounds.reuse_refusal`), performed by the agent the request names and handed the
+request file as the parameter `request` and why it is asked as the parameter `askedBecause`
+(`answer`, `agent`, `request`, `contract` or `sources`), and writes that request beside its answer
+path (`<answer stem>.request.json`) with its basis (`<answer stem>.basis.json`,
+`architecture_rounds.answer_basis`): the agent asked and the SHA-256 of the whole request, of the
+SpecialistAnswer definition with every definition it refers to, and of each file the request's
+concerns are in. An answer is reused only when it is valid and its basis is the request's basis
+now, so a changed question, bounds, concerns, trusted code, agent, answer contract or concerned
+document asks again only the request it affects; an answer written before basis files existed is
+reused only when its request file holds exactly the request. Then a Decide step whose inputs are those steps and the accepting step's own inputs, so
 it is handed every answer of the chain and any findings and rulings, with the parameter `round`.
 An architect step is handed as `answer` only the answers of the specialists' steps among its
 inputs (`architecture_rounds.handed_answers`); the files of `trd-author` and

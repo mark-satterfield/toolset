@@ -934,10 +934,10 @@ def _analyze(run: StepRun, context: ArchitectureContext, prd: Path) -> AgentLaun
     """Build the session of the architect's Analyze step.
 
     The output is the first round of requests, one per specialist; the state file is written
-    first. The accepted round plans after the step one step per request whose answer is not yet
-    a valid answer, then the Decide step (``architecture_rounds.round_steps``). The step is
-    handed the owner's cds bundles (:func:`_owner_bundles`), so the architect knows which
-    screens already have mocks.
+    first. The accepted round plans after the step one step per request whose answer cannot be
+    reused (``architecture_rounds.reuse_refusal``), then the Decide step
+    (``architecture_rounds.round_steps``). The step is handed the owner's cds bundles
+    (:func:`_owner_bundles`), so the architect knows which screens already have mocks.
 
     Returns:
         The launch.
@@ -947,7 +947,7 @@ def _analyze(run: StepRun, context: ArchitectureContext, prd: Path) -> AgentLaun
     def accept(accepted: StepRun, output: Path) -> Completion:
         stated: SpecialistRound = checked_file(accepted, output, validate_specialist_round)
         return Completion(
-            add=(round_steps(accepted, stated["requests"], 1),),
+            add=(round_steps(accepted, stated["requests"], 1, Path(context["architectureRoot"])),),
             artifacts=(file_artifact(LABEL_ROUND, output), file_artifact(LABEL_STATE, Path(context["statePath"]))),
         )
 
@@ -996,7 +996,7 @@ def architect(run: StepRun) -> AgentLaunch:
 
     def accept(accepted: StepRun, output: Path) -> Completion:
         result: ArchitectureResult = checked_file(accepted, output, validate_architecture_result)
-        open_requests: list[AgentRequest] = [entry for entry in result["requests"] if not answered(entry["request"])]
+        open_requests: list[AgentRequest] = [entry for entry in result["requests"] if not answered(entry, arch)]
         if open_requests and number >= MAX_ROUNDS:
             raise ArchitectureStepError(
                 accepted,
@@ -1018,7 +1018,7 @@ def architect(run: StepRun) -> AgentLaunch:
             )
         unserved: list[JsonValue] = [*recorded.no_feature]
         follows: tuple[StepGroup, ...] = (
-            (round_steps(accepted, open_requests, number + 1),)
+            (round_steps(accepted, open_requests, number + 1, arch),)
             if open_requests
             else write_steps(arch, Path(context["helpersFolder"]), result)
         )

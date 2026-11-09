@@ -217,7 +217,10 @@ the requirements in hand. The scope identifies work; it does not make approval a
 property. `matrixwrite.approve` records the architect's vetted items after reviews pass,
 excluding Epics and requirements, while preserving verified marks. Repository-side hints
 are not approved. `withdraw_approval` withdraws approval only from architecture the
-architect actually changes; adding an Epic or reusing an item withdraws nothing.
+architect actually changes; adding an Epic or reusing an item withdraws nothing. What the
+architect changed is taken in the same locked update that applies its change file and records its
+result (`matrixwrite.apply_design_change`), against the design that update read
+(`changed_since`), so another writer's change is never withdrawn as the architect's.
 
 `approval --ids <entry id> ...` reads marks on named features and architecture items.
 `summary` counts marks by kind. Neither approval nor verification participates in Epic
