@@ -208,8 +208,8 @@ def _write_context(run: StepRun, held: Repository, existing: list[JsonValue]) ->
     asked: list[str] = list(dict.fromkeys([*stacks, *sorted(upstream)]))
     open_work: WorkBatch | None = None
     if asked:
-        held_tasks: list[TaskBead] = run.tools.portfolio(TASK_CONTEXT, tasks_of, graph)
-        open_work = run.tools.portfolio(TASK_CONTEXT, work_batch, matrix, held_tasks, asked, str(run.bead))
+        held_tasks: list[TaskBead] = run.tools.portfolio_read(TASK_CONTEXT, tasks_of, graph)
+        open_work = run.tools.portfolio_read(TASK_CONTEXT, work_batch, matrix, held_tasks, asked, str(run.bead))
     return write_contract(
         run.context.work / f"tasks-{held.slug}.context.json",
         {
