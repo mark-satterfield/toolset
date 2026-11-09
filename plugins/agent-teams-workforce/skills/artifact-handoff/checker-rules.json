@@ -538,9 +538,9 @@
       "rules": [
         {
           "id": "tasks-group",
-          "enforced": "covers one thing coupled to other work of this Story",
+          "enforced": "each need another of them built first, so no build order exists",
           "home": "agents/task-decomposer.md",
-          "stated": "refuses a Task that covers one thing coupled to other work of this Story"
+          "stated": "refuses Tasks that each need another of them built first"
         },
         {
           "id": "task-titles-unique",

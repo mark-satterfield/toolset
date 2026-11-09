@@ -343,7 +343,10 @@ def task_grouping_check(context_file: Path, schema_file: Path) -> OutputValidato
         items: list[JsonValue] = check_type(json_object(strict_json(context_file))["items"], list[JsonValue])
         tasks: list[JsonValue] = _listed_tasks(document)
         problems.extend(duplicate_title_problems(tasks))
-        problems.extend(hierarchy.task_grouping_problems(items, tasks))
+        declared: JsonValue = document.get("edges")
+        problems.extend(
+            hierarchy.task_grouping_problems(items, tasks, declared if isinstance(declared, list) else []),
+        )
         if problems:
             raise ValueError("; ".join(problems))
         return document
@@ -433,8 +436,9 @@ def refuse_stale_tasks(run: StepRun) -> None:
 
     A Tasks file and a correction passed their check when their writer's step was accepted, so a
     file the check refuses now was written to an earlier contract. A check that accepted the
-    same bytes, against the same schema and repository context, earlier in this process is not
-    run again: the plan step and every Task bead write of one decomposition read the same files.
+    same bytes, against the same schemas (with every schema file they reference) and repository
+    context, earlier in this process is not run again: the plan step and every Task bead write of
+    one decomposition read the same files.
 
     Raises:
         StaleInputError: The first file in writing order the check refuses, naming its writer
@@ -446,11 +450,15 @@ def refuse_stale_tasks(run: StepRun) -> None:
     corrections: list[Path] = run.inputs.files(TASK_CORRECTION)
     merged: bool = bool(corrections)
     schemas: Path = run.tools.plugin / SCHEMAS
-    tasks_inputs: tuple[Path, ...] = (schemas / TASKS_SCHEMA, *(() if merged else (run.inputs.file(CONTEXT),)))
+    tasks_inputs: tuple[Path, ...] = (
+        *_schema_closure(schemas / TASKS_SCHEMA),
+        *(() if merged else (run.inputs.file(CONTEXT),)),
+    )
+    correction_inputs: tuple[Path, ...] = _schema_closure(schemas / TASKS_CORRECTION_SCHEMA)
     checks: list[tuple[str, Path, Callable[[], OutputValidator], tuple[Path, ...]]] = [
         (TASKS_FILE, run.inputs.file(TASKS_FILE), lambda: _tasks_check(run, merged=merged), tasks_inputs),
         *(
-            (TASK_CORRECTION, correction, lambda: _correction_check(run), (schemas / TASKS_CORRECTION_SCHEMA,))
+            (TASK_CORRECTION, correction, lambda: _correction_check(run), correction_inputs)
             for correction in corrections
         ),
     ]
@@ -470,6 +478,47 @@ def refuse_stale_tasks(run: StepRun) -> None:
                 within=None if container is None else container["id"],
             ) from None
         _accept(accepted)
+
+
+def _external_references(node: JsonValue) -> list[str]:
+    """List the ``$ref`` strings of a schema node that name another file.
+
+    Returns:
+        The file part of each reference that has one, in document order.
+
+    """
+    if isinstance(node, list):
+        return [found for element in node for found in _external_references(element)]
+    if not isinstance(node, dict):
+        return []
+    reference: JsonValue = node.get("$ref")
+    own: list[str] = (
+        [reference.split("#", 1)[0]] if isinstance(reference, str) and not reference.startswith("#") else []
+    )
+    return [*own, *(found for key, item in node.items() if key != "$ref" for found in _external_references(item))]
+
+
+def _schema_closure(schema: Path) -> tuple[Path, ...]:
+    """List a schema file and every schema file it reaches through a ``$ref`` to another file.
+
+    Returns:
+        ``schema`` first, then each referenced file once, resolved against the file that names it;
+        a file that cannot be read as JSON is listed without following it, so its check runs.
+
+    """
+    found: dict[Path, None] = {schema.resolve(): None}
+    pending: list[Path] = [schema.resolve()]
+    while pending:
+        current: Path = pending.pop()
+        try:
+            document: JsonValue = json.loads(current.read_text(encoding="utf-8"))
+        except OSError, ValueError:
+            continue
+        named: list[Path] = [(current.parent / part).resolve() for part in _external_references(document)]
+        fresh: list[Path] = [path for path in dict.fromkeys(named) if path not in found]
+        found.update(dict.fromkeys(fresh))
+        pending.extend(fresh)
+    return tuple(found)
 
 
 def _check_digest(check: str, paths: tuple[Path, ...]) -> str:

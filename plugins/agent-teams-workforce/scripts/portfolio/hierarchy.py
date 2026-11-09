@@ -1482,61 +1482,144 @@ def _cited(task: JsonObject, items: Mapping[str, EntryId]) -> list[str]:
     return [cited for cited in stated if isinstance(cited, str) and cited in items] if isinstance(stated, list) else []
 
 
-def _coupled_work(items: Sequence[JsonValue]) -> dict[str, set[str]]:
-    """Map each thing a Story builds to the other unverified things it is built together with.
+def _build_dependencies(items: Sequence[JsonValue]) -> list[tuple[str, str]]:
+    """List which unverified thing of a Story must be built before which.
 
-    Two things are coupled when the architecture side makes one need the other built first
-    (``requires`` and ``requiredBy`` of the repository context's items). A thing the span marks
-    verified (``state`` :data:`STATE_VERIFIED`) is not work, so no coupling to it counts.
+    The architecture side makes one thing need another built first (``requires`` and
+    ``requiredBy`` of the repository context's items). A thing the span marks verified
+    (``state`` :data:`STATE_VERIFIED`) is not work, so no dependency on it counts.
 
     Returns:
-        Item id -> the ids of the unverified items of the same Story it requires or is required by.
+        (prerequisite item id, dependent item id) pairs between unverified items, without repeats.
 
     """
     shaped: list[JsonObject] = [json_object(item) for item in items]
     work: set[str] = {str(item["id"]) for item in shaped if item.get("state") != STATE_VERIFIED}
-    return {
-        str(item["id"]): {
-            linked
-            for linked in (*str_list(item.get("requires")), *str_list(item.get("requiredBy")))
-            if linked in work and linked != str(item["id"])
-        }
+    pairs: list[tuple[str, str]] = [
+        pair
         for item in shaped
-    }
+        for pair in (
+            *((needed, str(item["id"])) for needed in str_list(item.get("requires"))),
+            *((str(item["id"]), needing) for needing in str_list(item.get("requiredBy"))),
+        )
+    ]
+    return list(
+        dict.fromkeys((first, then) for first, then in pairs if first in work and then in work and first != then),
+    )
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def task_grouping_problems(items: Sequence[JsonValue], tasks: Sequence[JsonValue]) -> list[str]:
+def _declared_edges(edges: Sequence[JsonValue]) -> list[tuple[str, str]]:
+    """Read the Task edges a Tasks file declares.
+
+    Returns:
+        (prerequisite key, dependent key) for each edge that names both as strings.
+
+    """
+    shaped: list[JsonObject] = [json_object(edge) for edge in edges if isinstance(edge, dict)]
+    return [
+        (str(edge["from"]), str(edge["to"]))
+        for edge in shaped
+        if isinstance(edge.get("from"), str) and isinstance(edge.get("to"), str)
+    ]
+
+
+def _reachable(start: str, links: Mapping[str, set[str]]) -> set[str]:
+    """Collect every Task a Task's work leads to through the Task order.
+
+    Returns:
+        The labels reachable from ``start`` by one or more links; ``start`` itself only on a cycle.
+
+    """
+    found: set[str] = set()
+    pending: list[str] = list(links.get(start, ()))
+    while pending:
+        label: str = pending.pop()
+        if label in found:
+            continue
+        found.add(label)
+        pending.extend(links.get(label, ()))
+    return found
+
+
+def _ordering_cycles(labels: Sequence[str], links: Mapping[str, set[str]]) -> list[list[str]]:
+    """Find the groups of Tasks that each need another of the group built first.
+
+    Returns:
+        Each group of two or more Tasks on one ordering cycle, in Tasks-file order, first seen first.
+
+    """
+    reach: dict[str, set[str]] = {label: _reachable(label, links) for label in labels}
+    groups: dict[tuple[str, ...], None] = dict.fromkeys(
+        tuple(other for other in labels if other in reach[label] and label in reach[other])
+        for label in labels
+        if label in reach[label]
+    )
+    return [list(group) for group in groups if len(group) > 1]
+
+
+def task_grouping_problems(
+    items: Sequence[JsonValue],
+    tasks: Sequence[JsonValue],
+    edges: Sequence[JsonValue] = (),
+) -> list[str]:
     """Check that a Story's Tasks group what it builds into coherent units of build work.
 
-    A Task that covers one thing is a coherent unit when that thing stands alone: nothing else the
-    Story builds needs it built first, and it needs nothing else the Story builds. A Task that
-    covers one thing coupled to other work of the Story splits that work apart, so it is refused.
+    Coupled things of a Story (one ``requires`` the other, or is ``requiredBy`` it) may be built
+    in different Tasks when the Task order carries the coupling: the Task that builds the
+    prerequisite comes first. The grouping is incoherent when the couplings and the declared edges
+    make Tasks need each other built first, because no build order exists between them; those
+    Tasks' coupled things belong in one Task. How many things a Task cites is not judged.
 
     Args:
         items: The items of what the Story builds, each with its ``id`` and ``matrixId``, and the
             ``requires`` and ``requiredBy`` that couple it to the Story's other items.
         tasks: The Tasks of the decomposer's Tasks file.
+        edges: The Tasks file's ``edges``, prerequisite ``from`` to dependent ``to`` by Task key.
 
     Returns:
-        One sentence per Task that covers one thing coupled to other unverified work of the Story.
-        Empty when the Tasks group what the Story builds.
+        One sentence per group of Tasks that need each other built first, naming the coupled
+        things to build together. Empty when the Tasks group what the Story builds.
 
     """
     by_id: dict[str, EntryId] = {
         str(json_object(item)["id"]): EntryId(str(json_object(item).get("matrixId", ""))) for item in items
     }
-    coupled: dict[str, set[str]] = _coupled_work(items)
     shaped: list[JsonObject] = [json_object(task) for task in tasks]
-    singles: list[tuple[str, str]] = [
-        (_task_label(task), cited[0]) for task in shaped if len(cited := _cited(task, by_id)) == 1
+    labels: list[str] = list(dict.fromkeys(_task_label(task) for task in shaped))
+    builders: dict[str, list[str]] = {}
+    for cited, label in [(cited, _task_label(task)) for task in shaped for cited in _cited(task, by_id)]:
+        builders.setdefault(cited, []).append(label)
+    crossing: list[tuple[str, str, str, str]] = [
+        (first, then, before, after)
+        for first, then in _build_dependencies(items)
+        for before in builders.get(first, [])
+        for after in builders.get(then, [])
+        if before != after
     ]
-    partners: dict[str, str] = {item: ", ".join(sorted(linked)) for item, linked in coupled.items() if linked}
+    links: dict[str, set[str]] = {}
+    for before, after in [*((before, after) for _f, _t, before, after in crossing), *_declared_edges(edges)]:
+        links.setdefault(before, set()).add(after)
     return [
-        f"Task {label} covers one thing coupled to other work of this Story: group {item} with {partners[item]}"
-        for label, item in singles
-        if item in partners
+        f"Tasks {', '.join(group)} each need another of them built first, so no build order exists: "
+        f"build {', '.join(_coupled_in(group, crossing))} together in one Task"
+        for group in _ordering_cycles(labels, links)
     ]
+
+
+def _coupled_in(group: Sequence[str], crossing: Sequence[tuple[str, str, str, str]]) -> list[str]:
+    """Name the coupled things split across the Tasks of one ordering cycle.
+
+    Returns:
+        The item ids of the couplings that run between two Tasks of ``group``, sorted.
+
+    """
+    members: set[str] = set(group)
+    return sorted({
+        item
+        for first, then, before, after in crossing
+        if before in members and after in members
+        for item in (first, then)
+    })
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
