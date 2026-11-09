@@ -1831,17 +1831,22 @@ class State:
         return rec
 
 
-def gather(cfg: Config, fetch: bool, use_cache: bool) -> State:
+def gather(cfg: Config, fetch: bool, use_cache: bool, only: str | None = None) -> State:
     """Gather disk, GitHub and manifest state, fetching in parallel with the GitHub listing.
+
+    Discovery always walks the whole root, so every clone's path and every duplicate is known.
+    With `only`, live git facts (and any fetch) are collected for the clones of that name alone,
+    compared without case; every other clone keeps only its name, path and space.
 
     Returns:
         The State.
 
     """
     local, dups = discover(cfg)
+    wanted = local if only is None else {n: r for n, r in local.items() if n.casefold() == only.casefold()}
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
         gh_future = ex.submit(GitHub, cfg, use_cache)
-        collect_all_local(local, cfg, fetch, use_cache)
+        collect_all_local(wanted, cfg, fetch, use_cache)
         gh = gh_future.result()
     return State(cfg, local, dups, gh, Manifest(cfg.manifest, gh))
 
@@ -3335,14 +3340,15 @@ def cmd_inventory(args: argparse.Namespace, cfg: Config) -> int:
     """Report the full record of every repo on disk, with the matrix's stacks for each.
 
     --all adds every other repo the manifest records. --name keeps only the repo with that
-    name, compared without case; `repos` is empty when no repo has it. Deprecated and archived
-    repos are left out unless --include-inactive is given or --name names one.
+    name, compared without case; `repos` is empty when no repo has it, and git facts are
+    collected (and a fetch run) for that repo alone. Deprecated and archived repos are left out
+    unless --include-inactive is given or --name names one.
 
     Returns:
         0.
 
     """
-    st = gather(cfg, fetch=not args.no_fetch, use_cache=not args.no_cache)
+    st = gather(cfg, fetch=not args.no_fetch, use_cache=not args.no_cache, only=args.name or None)
     names = st.tracked_names() if args.all else sorted(st.local, key=str.lower)
     if args.name:
         names = [n for n in names if n.casefold() == args.name.casefold()]
