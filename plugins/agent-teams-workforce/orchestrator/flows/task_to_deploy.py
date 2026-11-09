@@ -207,6 +207,7 @@ def _baseline_command(run: StepRun, command: str) -> Completion:
 
     """
     evidence: Path = run.context.work / "build" / str(run.step["id"]) / "baseline.json"
+    key: dict[str, JsonValue] = build_policy.evidence_key(run, command)
     baseline: dict[str, JsonValue] = run_suite(
         run.tools,
         _workspace(run).tree,
@@ -216,7 +217,7 @@ def _baseline_command(run: StepRun, command: str) -> Completion:
     ).document()
     recorded: tuple[ValueArtifact, ...] = (
         value_artifact("suiteCommand", command),
-        value_artifact("baseline", {**baseline, "evidenceKey": build_policy.evidence_key(run, command)}),
+        value_artifact("baseline", {**baseline, "evidenceKey": key}),
     )
     decision: build_policy.Decision = build_policy.decide(run, "tests")
     if decision.action == "omit":
@@ -240,11 +241,10 @@ def _select_tests(run: StepRun, action: str, followup: NewStep) -> Completion:
         run,
         TEST_LEAD,
         OutputContract(CONTRACTS / "build-selection.schema.json", TEST_SELECTION),
-        f"{action}. Route only to the verification methods the accepted executionPolicy names, following the "
-        "Task's recorded testStrategy and any accepted testStrategy decision; an infrastructure change takes "
-        "CDK assertion and synthesis checks, not invented application unit tests; an empty selection is valid "
-        "when existing tests already cover the required behavior. Name strategyConflicts only for a concern "
-        "accepted strategy evidence leaves unresolved",
+        f"{action}. {build_policy.instruction(run)} Follow the Task's recorded testStrategy and any accepted "
+        "testStrategy decision; an infrastructure change takes CDK assertion and synthesis checks, not invented "
+        "application unit tests; an empty selection is valid when existing tests already cover the required "
+        "behavior. Name strategyConflicts only for a concern accepted strategy evidence leaves unresolved",
         followups=(followup,),
     )
 
@@ -318,7 +318,8 @@ def _tests(run: StepRun) -> Completion:
         run,
         agent,
         OutputContract(CONTRACTS / "build-tests.schema.json", "testWork"),
-        "Review and improve this suite's happy, negative, edge and boundary coverage against the full contract",
+        "Review and improve this suite's happy, negative, edge and boundary coverage against the full contract. "
+        + build_policy.instruction(run),
         followups=(_new("build:tests-authored", "Record the test author's accepted suite file versions"),),
     )
 
@@ -845,14 +846,20 @@ def _final_review_covers(run: StepRun) -> bool:
     """Tell whether an accepted, approved final review covers the current tree.
 
     The presence of a final review alone is not enough: it covers the tree its enforcing check
-    recorded, and only while that tree is unchanged.
+    recorded, and only while that tree is unchanged. A journal planned before the execution policy
+    existed has no build:execution-policy step and its enforcing check recorded no tree; there the
+    accepted final review covers the tree as it did when that journal was planned, so a resumed
+    journal does not replay a completed review.
 
     Returns:
-        True when the latest final review was approved for exactly the current content tree.
+        True when the latest final review was approved for exactly the current content tree, or a
+        final review exists in a journal planned before the execution policy.
 
     """
     view: AcceptedView = view_of(run)
     review: AcceptedArtifact | None = view.artifact("finalCodeReview")
+    if review is not None and not any(step.get("script") == "build:execution-policy" for step in view.steps()):
+        return True
     tree: AcceptedArtifact | None = view.artifact(FINAL_REVIEW_TREE)
     if review is None or tree is None or not _after(view, tree, review):
         return False
@@ -875,9 +882,10 @@ def _final_suite(run: StepRun) -> Completion:
             REVIEWER,
             OutputContract(CONTRACTS / "build-review.schema.json", "finalCodeReview"),
             "Review the resulting code and test diff for correctness, architecture and quality before final "
-            "verification, and judge whether the evidence the accepted executionPolicy selected meets the "
-            "acceptance criteria; a needed verification it omitted is a blocking finding. Accepted suite results "
-            "whose evidenceKey names the current tree may be cited instead of being rerun",
+            "verification, and judge whether the verification evidence meets the acceptance criteria. "
+            f"{build_policy.instruction(run)} A needed verification that was not carried out is a blocking "
+            "finding. Accepted suite results whose evidenceKey names the current tree may be cited instead of "
+            "being rerun",
             followups=(
                 _new("build:final-review-checked", "Require the final code and test review to pass"),
                 _new("build:final-suite-checked", "Run the final suite after independent code review"),

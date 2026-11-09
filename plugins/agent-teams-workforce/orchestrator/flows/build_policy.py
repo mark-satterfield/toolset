@@ -207,7 +207,34 @@ def problems_of(document: dict[str, JsonValue]) -> list[str]:
         for entry in stages
         if entry["stage"] in REQUIRED_STAGES and entry["decision"] != "run"
     )
+    if any(entry["stage"] == "tests" and entry["decision"] == "omit" for entry in stages):
+        found.extend(_unestablished(document))
     return found
+
+
+def _unestablished(document: dict[str, JsonValue]) -> list[str]:
+    """List the verification methods no existing evidence carries out, for a policy that omits tests.
+
+    Omitting the tests stage means no test is selected or written, so every verification method
+    must already be carried out by an ``existingEvidence`` entry the method names.
+
+    Returns:
+        A problem for each verification method that names no existing evidence.
+
+    """
+    paths: set[str] = {
+        check_type(json_object(entry)["path"], str)
+        for entry in check_type(document["existingEvidence"], list[JsonValue])
+    }
+    methods: list[dict[str, JsonValue]] = [
+        json_object(entry) for entry in check_type(document["verification"], list[JsonValue])
+    ]
+    return [
+        f"stage tests is omitted but verification {method['method']} names no existingEvidence path that carries "
+        "it out; run tests so the method is written"
+        for method in methods
+        if method.get("existing") not in paths
+    ]
 
 
 def checked(run: StepRun) -> Completion:
@@ -269,6 +296,29 @@ def accepted_policy(run: StepRun) -> tuple[dict[str, JsonValue] | None, str, str
             None,
         )
     return artifact_document(run, POLICY), "", policy.step
+
+
+def instruction(run: StepRun) -> str:
+    """Tell a role which execution policy governs its work, so it follows the same policy as the build.
+
+    Args:
+        run: The current step.
+
+    Returns:
+        The instruction to follow the accepted policy that step wrote, or, when none applies, the
+        reason and the instruction to cover every verification the requirements need.
+
+    """
+    policy, why, step = accepted_policy(run)
+    if policy is None:
+        return (
+            f"No execution policy governs this Task now ({why}); disregard any executionPolicy in your facts and "
+            "cover every verification the Task's requirements and changed surfaces need."
+        )
+    return (
+        f"Follow the accepted executionPolicy that step {step} wrote: work to the verification methods it names "
+        "and judge evidence against them."
+    )
 
 
 def decide(run: StepRun, stage: str) -> Decision:

@@ -59,8 +59,10 @@ pipeline-contracts' `build-execution-policy.schema.json`, whose descriptions def
 Work from the accepted regression scope, the Task's requirements and acceptance criteria, its
 recorded surfaces and test strategy, the repository's own instructions and the existing evidence;
 do not reconstruct what those accepted artifacts already state. Choose stages and verification
-methods from the actual changed surfaces, never from the lane the Task is in. Correct problems the
-brief names as Correction mode describes.
+methods from the actual changed surfaces, never from the lane the Task is in. Omit the tests stage
+only when existing evidence already carries out every verification method, and name that evidence
+in each method; infrastructure work keeps tests so CDK assertions and synthesis checks get written.
+Correct problems the brief names as Correction mode describes.
 
 ## Correction mode
 
