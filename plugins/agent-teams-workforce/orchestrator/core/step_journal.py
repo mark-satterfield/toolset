@@ -15,8 +15,10 @@ This module adds the behaviour, and the three rules a JSON Schema cannot state
 This module is the only reader and writer of a step journal file: every change is one
 read-modify-write under an exclusive lock (:func:`update_journal`), written to a temporary file
 in the journal's directory and moved into place, and every document read or written is
-validated. Nobody edits the JSON by hand; an agent session or a workflow runs the command
-(:func:`main`, one sub-command per operation, one JSON object on stdout).
+validated: a read of the exact bytes (by content digest) this process already validated or wrote
+reuses that check and still decodes a fresh journal (:func:`read_snapshot`). Nobody edits the
+JSON by hand; an agent session or a workflow runs the command (:func:`main`, one sub-command per
+operation, one JSON object on stdout).
 
 The step journal is not the supervisor's run log (``ledger.jsonl``).
 """

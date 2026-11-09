@@ -7,7 +7,9 @@ user-invocable: false
 # How an implementer works a Task
 
 The Python build selects you for one Task's required implementation or quality improvements.
-Tests may already pass. Read the facts and accepted journal artifacts; how to work is here,
+Tests may already pass. Read the facts file's `accepted` pointers (requirements, workspace, latest
+accepted artifacts, your previous result, the delta and the unresolved findings, as `tdd-guide`
+describes them); how to work is here,
 in `tdd-guide` and in your specialty definition.
 
 ## What the brief holds

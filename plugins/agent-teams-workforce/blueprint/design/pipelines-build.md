@@ -39,7 +39,12 @@ worktree and independently confirm its repository and branch. Every command pins
 directory. A Task cannot commit on the default branch or detached HEAD.
 
 `build_sessions.py` plans actual reasoning agents as journal children. Their shared schemas,
-facts file and current journal are passed by path. The journal runner owns session IDs,
+facts file and current journal are passed by path. The facts file carries the role's accepted
+evidence, resolved once from the journal: pointers to the requirements and acceptance criteria,
+the workspace, the latest accepted artifact of every other name with its producing step and role
+(large values written beside the facts file), the role's previous result, the artifacts accepted
+since the role last ran, and the unresolved review findings and test defects. The journal stays
+available for full primary evidence. The journal runner owns session IDs,
 resumption, output validation and acceptance. A missing dynamically selected specialist is an
 item failure; a missing fixed contract is a pipeline defect. New specialist selections name
 bare roster roles without a plugin prefix. Before roster lookup and journal planning, the
@@ -146,7 +151,8 @@ runs. The changed tracker facts receive a bounded new diagnosis before consumer 
 Absent that real authoring context, the pipeline records the precise finite work-authoring gap.
 
 Build artifact readers expose recorded facts from completed steps and running structural
-ancestors only. An ancestor's own deterministic completion already accepted those artifacts,
+ancestors only, through one accepted view per journal revision and step
+(`core/journal_views.py`); a new revision builds a new view. An ancestor's own deterministic completion already accepted those artifacts,
 even while its children keep it running. Running siblings, future steps and raw unvalidated
 session outputs remain excluded; invalidation clears the source artifacts through the normal
 journal operations.

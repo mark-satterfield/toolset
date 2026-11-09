@@ -372,7 +372,12 @@ API request counted once and only when made between the step's start and end, so
 continued in a later step or dispatch is counted in each only for its own turns. They are the
 step's usage (input, cache writes, cache reads, output, their total and the number of requests)
 and one part per transcript (the session, its agent, whether it is a helper); a step that ran no
-session has none. The driver sums the events of a run's `.out` file per Epic, agent and step
+session has none. Each transcript is read incrementally from where the last measurement stopped;
+a replaced or shortened file is read again from its start, and a request whose usage lacks a
+component is reported as unknown usage. The event's `io` (`handback_contract.StepIO`) counts,
+with no content, what the step read and wrote: step journal reads, full checks, writes and their
+bytes, the files its session was handed and their size, the transcript bytes read, the file reads
+its sessions requested and the requests with unknown usage. The driver sums the events of a run's `.out` file per Epic, agent and step
 (`<driver>/stepcost.py`). The budgets are data, in one table,
 `orchestrator/step-budgets.json` (read by `core/step_budgets.py`): a script step's time budget by
 its script key, an agent step's time and token budgets by its agent, and one pair for any other
