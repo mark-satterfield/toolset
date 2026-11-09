@@ -21,6 +21,12 @@ DIGEST_LENGTH: Final[int] = 64
 HEX_DIGITS: Final[str] = "0123456789abcdef"
 CAPTURE_TIMEOUT_SECONDS: Final[int] = 600
 REGISTRY_WAIT_SECONDS: Final[int] = 10
+STDERR_TAIL_BYTES: Final[int] = 64 * 1024
+"""The most bytes of the command's stderr the saved capture holds: its end; the whole stays in the log file."""
+STDOUT_SPOOL_SUFFIX: Final[str] = ".stdout"
+"""The file the command's stdout streams to; removed once the saved capture holds it."""
+STDERR_LOG_SUFFIX: Final[str] = ".stderr"
+"""The file the command's whole stderr streams to and stays in, as diagnostics."""
 
 type Operation = Literal["capture", "manifest", "chunk"]
 type ResultState = Literal["unknown", "not-started", "completed"]
@@ -356,8 +362,27 @@ def parse_options(argv: list[str] | None) -> Options:
     )
 
 
+def _tail(path: Path, limit: int) -> str:
+    """Read at most the last ``limit`` bytes of a file as text.
+
+    Returns:
+        The end of the file, decoded as UTF-8 with undecodable bytes replaced.
+
+    """
+    with path.open("rb") as handle:
+        size: int = handle.seek(0, os.SEEK_END)
+        handle.seek(max(0, size - limit))
+        return handle.read().decode("utf-8", errors="replace")
+
+
 def capture_once(options: Options, command: list[str], path: Path) -> None:
     """Run the command once and save its output, unless a capture or claim already exists.
+
+    The command's stdout and stderr stream to files beside the capture, so memory holds at most
+    the bounded stdout. The saved capture holds the stdout and the end of stderr
+    (:data:`STDERR_TAIL_BYTES`); the whole stderr stays in its log file. Stdout over the bound
+    stays in its spool file as evidence and fails the capture, and the claim stays, so the
+    command is never run again.
 
     Raises:
         ValueError: An earlier claim exists with no result, or the output exceeds the bound.
@@ -374,16 +399,20 @@ def capture_once(options: Options, command: list[str], path: Path) -> None:
         message: str = "capture outcome unknown; original command will not repeat"
         raise ValueError(message) from exc
     os.close(descriptor)
-    done: subprocess.CompletedProcess[bytes] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Digest-bound registered argv; shell disabled.
-        command,
-        capture_output=True,
-        timeout=CAPTURE_TIMEOUT_SECONDS,
-        check=False,
-    )
-    stdout: str = done.stdout.decode("ascii")
-    if len(stdout) > MAX_BYTES:
-        message = "capture exceeds bounded transport size"
+    spool: Path = path.with_suffix(STDOUT_SPOOL_SUFFIX)
+    errors: Path = path.with_suffix(STDERR_LOG_SUFFIX)
+    with spool.open("wb") as stdout_file, errors.open("wb") as stderr_file:
+        done: subprocess.CompletedProcess[bytes] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Digest-bound registered argv; shell disabled.
+            command,
+            stdout=stdout_file,
+            stderr=stderr_file,
+            timeout=CAPTURE_TIMEOUT_SECONDS,
+            check=False,
+        )
+    if spool.stat().st_size > MAX_BYTES:
+        message = f"capture exceeds bounded transport size; its output is kept at {spool}"
         raise ValueError(message)
+    stdout: str = spool.read_bytes().decode("ascii")
     saved: SavedCapture = {
         "request": options.request,
         "commandSha256": options.command_sha256,
@@ -391,11 +420,12 @@ def capture_once(options: Options, command: list[str], path: Path) -> None:
         "bytes": len(stdout),
         "exitCode": done.returncode,
         "stdout": stdout,
-        "stderr": done.stderr.decode("utf-8", errors="replace"),
+        "stderr": _tail(errors, STDERR_TAIL_BYTES),
     }
     temporary: Path = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(saved, ensure_ascii=True), encoding="ascii")
     temporary.replace(path)
+    spool.unlink()
 
 
 def build_report(options: Options, saved: LoadedCapture) -> dict[str, ReportValue]:
