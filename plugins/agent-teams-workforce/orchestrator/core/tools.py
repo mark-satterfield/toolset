@@ -14,10 +14,11 @@ import threading
 import time
 import traceback
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
-from typing import ParamSpec, TypeVar
+from typing import Final, ParamSpec, TextIO, TypeVar
 
 from . import portfolio_bootstrap  # ruff: ignore[unused-import] - Imported for its sys.path setup.
 
@@ -39,7 +40,7 @@ from .handback_contract import (
     OTHER_CAUSE,
     TOOL_TIMEOUT_CAUSE,
 )
-from .models import RetryExhaustedError, StepError
+from .models import RetryExhaustedError, StepError, wait_meter
 from .tool_locks import seconds
 
 RETRY_CAUSES: frozenset[str] = frozenset({CONTENTION_CAUSE, BD_TIMEOUT_CAUSE, TOOL_TIMEOUT_CAUSE, NETWORK_CAUSE})
@@ -51,7 +52,48 @@ base does not class it as a code defect, and their traceback is kept in the evid
 """
 _LOG = logging.getLogger(__name__)
 _MAX_ATTEMPTS = 3
-_IMPORT_LOCK = threading.RLock()
+_PORTFOLIO_LOCK = threading.RLock()
+"""Serializes the portfolio operations that may change shared state (tracker, matrix, vault, journals)."""
+
+
+class _StdoutDiversion:
+    """Sends ``sys.stdout`` to ``sys.stderr`` while any thread runs a portfolio operation.
+
+    ``sys.stdout`` is process-global, so the diversion is counted: the first operation to enter
+    diverts it and the last to leave restores it. The count's lock is held only to enter and
+    leave, never for an operation, so a diverted read does not wait for another thread's write.
+    """
+
+    def __init__(self) -> None:
+        """Start undiverted."""
+        self._lock: threading.Lock = threading.Lock()
+        self._depth: int = 0
+        self._saved: TextIO | None = None
+
+    @contextlib.contextmanager
+    def diverted(self) -> Generator[None]:
+        """Divert stdout to stderr for the body.
+
+        Yields:
+            Nothing; diagnostics the body prints go to stderr.
+
+        """
+        with self._lock:
+            if self._depth == 0:
+                self._saved = sys.stdout
+                sys.stdout = sys.stderr
+            self._depth += 1
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._depth -= 1
+                if self._depth == 0 and self._saved is not None:
+                    sys.stdout = self._saved
+                    self._saved = None
+
+
+_STDOUT: Final = _StdoutDiversion()
 
 
 P = ParamSpec("P")
@@ -466,29 +508,79 @@ class Tools:
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> R:
-        """Call a statically selected portfolio operation with its actual signature.
+        """Call a statically selected portfolio operation with its actual signature, serialized.
+
+        The operation runs under the process's portfolio lock, because it may change shared
+        state; a call that only reads goes through :meth:`portfolio_read`. The time spent waiting
+        for the lock is recorded in the work directory's wait metrics (the directory that holds
+        this boundary's evidence directory).
 
         Returns:
             The actual producer result with its statically declared return type preserved.
 
         Raises:
-            StepError: The portfolio operation failed.
-            TypeCheckError: A runtime contract failed.
             TypeError: The dispatch arguments have invalid types.
 
         """
         if not isinstance(stage, str) or not callable(operation):
             message: str = "Portfolio dispatch requires a string stage and a callable operation"
             raise TypeError(message)
-        try:
-            # redirect_stdout is process-global. Serializing imported calls avoids one
-            # worker restoring stdout while another is still printing diagnostics.
-            with _IMPORT_LOCK, contextlib.redirect_stdout(sys.stderr):
+
+        def serialized() -> R:
+            asked: float = time.monotonic()
+            with _PORTFOLIO_LOCK:
+                wait_meter(self.evidence.parent).waited("portfolio-lock", time.monotonic() - asked)
                 return operation(*args, **kwargs)
+
+        return self._call(stage, repr(operation), serialized)
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def portfolio_read(
+        self,
+        stage: str,
+        operation: Callable[P, R],
+        /,
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> R:
+        """Call a read-only portfolio operation and return its value, without the portfolio lock.
+
+        For an operation that only reads (a tracker or matrix file read, or a computation over
+        values it is handed) and changes no shared state; anything that may write goes through
+        :meth:`portfolio`. Failures are classified as :meth:`portfolio` classifies them.
+
+        Returns:
+            The operation's result.
+
+        Raises:
+            TypeError: The dispatch arguments have invalid types.
+
+        """
+        if not isinstance(stage, str) or not callable(operation):
+            message: str = "Portfolio read requires a string stage and a callable operation"
+            raise TypeError(message)
+        return self._call(stage, repr(operation), partial(operation, *args, **kwargs))
+
+    def _call[T](self, stage: str, operation: str, call: Callable[[], T]) -> T:
+        """Run a portfolio call with its diagnostics on stderr and its failure classified.
+
+        ``operation`` describes the operation in the failure's evidence.
+
+        Returns:
+            The call's result.
+
+        Raises:
+            StepError: The operation failed; content failures carry no code-defect cause.
+            TypeCheckError: A runtime contract failed.
+
+        """
+        try:
+            with _STDOUT.diverted():
+                return call()
         except StepError, TypeCheckError:
             raise
         except Exception as exc:
-            failure: StepError = self._raised(stage, exc, {"operation": repr(operation)})
+            failure: StepError = self._raised(stage, exc, {"operation": operation})
             if _content_error(exc):
                 raise failure from None
             raise failure from exc

@@ -73,7 +73,7 @@ from .handback_contract import (
 )
 from .io import JsonValue, json_object, safe_key, write_json
 from .manifest import record_session
-from .models import AgentStep, PipelineDefectError, RunContext, SessionFacts, StepError
+from .models import AgentStep, PipelineDefectError, RunContext, SessionFacts, StepError, wait_meter
 from .tools import Tools
 
 # isort: split
@@ -689,7 +689,7 @@ class AgentRunner:
             self._version()
         except (OSError, ValueError, StepError) as exc:
             raise SessionSetupError(str(exc)) from exc
-        with self.context.session_slots:
+        with wait_meter(self.context.work).session_slot(self.context.session_slots):
             directory: Path = Path(tempfile.gettempdir()) / f"{SESSION_DIRECTORY_PREFIX}{session_id}"
             try:
                 directory.mkdir(mode=0o700, parents=True, exist_ok=True)

@@ -237,7 +237,7 @@ def write(run: StepRun) -> Completion:
         enter_phase(run.context, run.agents.emit, TASK_EDGES_PHASE, f"{EDGE_WRITE}: {detail}")
 
     def attempt() -> dict[str, JsonValue]:
-        graph: beadgraph.Graph = run.tools.portfolio(EDGE_WRITE, beadgraph.load, repo)
+        graph: beadgraph.Graph = run.tools.portfolio_read(EDGE_WRITE, beadgraph.load, repo)
         progress(f"read {len(graph.beads)} beads")
         writer: beadgraph.Writer = run.tools.portfolio(EDGE_WRITE, beadgraph.Writer, repo)
         return json_object(

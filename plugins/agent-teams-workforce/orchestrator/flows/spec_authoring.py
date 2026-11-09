@@ -395,7 +395,7 @@ def document_check(run: StepRun, name: str) -> OutputValidator:
     """
     if name == CRITERIA:
         return criteria_document
-    matrix: Matrix = run.tools.portfolio(name, read_matrix, matrix_path(None, os.environ))
+    matrix: Matrix = run.tools.portfolio_read(name, read_matrix, matrix_path(None, os.environ))
     arch: Path = architecture_root(run)
     return lambda path: document(path, matrix, SPEC_FRONT_MATTER, arch)
 
@@ -906,7 +906,7 @@ def context(run: StepRun) -> Completion:
     items: list[JsonValue] = [item for item in every_build.values() if json_object(item)["slug"] == held.slug]
     if not items:
         raise StepError(SPEC_CONTEXT, OTHER_CAUSE, (f"the span places no item in {held.path}",))
-    matrix: Matrix = run.tools.portfolio(SPEC_CONTEXT, read_matrix, matrix_path(None, os.environ))
+    matrix: Matrix = run.tools.portfolio_read(SPEC_CONTEXT, read_matrix, matrix_path(None, os.environ))
     stacks: dict[EntryId, list[EntryId]] = run.tools.portfolio(SPEC_CONTEXT, item_stacks, matrix, items)
     scopes: list[StoryScope] = [
         run.tools.portfolio(SPEC_CONTEXT, story_scope, matrix, stack, built) for stack, built in stacks.items()
@@ -1198,7 +1198,7 @@ def story_document(run: StepRun) -> Completion:
     """
     held: Repository = repository(run.inputs)
     dispatch: DispatchArguments = dispatch_arguments()
-    matrix: Matrix = run.tools.portfolio(STORY_DOCUMENT_STEP, read_matrix, matrix_path(None, os.environ))
+    matrix: Matrix = run.tools.portfolio_read(STORY_DOCUMENT_STEP, read_matrix, matrix_path(None, os.environ))
     arch: Path = architecture_root(run)
     documents: list[Path] = [run.inputs.file(name) for name in (SPEC, DATA_MODEL, CRITERIA)]
     held_context: dict[str, JsonValue] = json_object(strict_json(run.inputs.file(CONTEXT)))
@@ -1284,7 +1284,7 @@ def story_bead(run: StepRun) -> Completion:
     control: Path = control_repository()
 
     def attempt() -> dict[str, JsonValue]:
-        records: list[dict[str, JsonValue]] = run.tools.portfolio(
+        records: list[dict[str, JsonValue]] = run.tools.portfolio_read(
             STORY_WRITE,
             beadgraph.children,
             control,
@@ -1297,7 +1297,7 @@ def story_bead(run: StepRun) -> Completion:
             None,
         )
         if matching is not None:
-            records.extend(run.tools.portfolio(STORY_WRITE, beadgraph.children, control, matching.id, "task"))
+            records.extend(run.tools.portfolio_read(STORY_WRITE, beadgraph.children, control, matching.id, "task"))
         graph: beadgraph.Graph = beadgraph.Graph(
             beads={str(record["id"]): beadgraph.bead_of(record) for record in records},
             source="bd list --parent",

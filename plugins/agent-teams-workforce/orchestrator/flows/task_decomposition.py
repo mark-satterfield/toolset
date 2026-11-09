@@ -176,7 +176,7 @@ def _write_context(run: StepRun, held: Repository, existing: list[JsonValue]) ->
         run.tools.portfolio(TASK_CONTEXT, hierarchy.story_builds, span_files(run.inputs)),
     )
     built: list[JsonValue] = [item for item in every.values() if json_object(item)["slug"] == held.slug]
-    matrix: Matrix = run.tools.portfolio(TASK_CONTEXT, read_matrix, matrix_path(None, os.environ))
+    matrix: Matrix = run.tools.portfolio_read(TASK_CONTEXT, read_matrix, matrix_path(None, os.environ))
     stacks: dict[EntryId, list[EntryId]] = run.tools.portfolio(TASK_CONTEXT, item_stacks, matrix, built)
     depended: BuildContext = run.tools.portfolio(TASK_CONTEXT, build_context, matrix, built, items_by_story(every))
     upstream: set[str] = {
@@ -184,7 +184,7 @@ def _write_context(run: StepRun, held: Repository, existing: list[JsonValue]) ->
         for dependency in depended["dependsOn"]
         if isinstance(dependency.get("stack"), str)
     }
-    graph: beadgraph.Graph = run.tools.portfolio(TASK_CONTEXT, beadgraph.load, control_repository())
+    graph: beadgraph.Graph = run.tools.portfolio_read(TASK_CONTEXT, beadgraph.load, control_repository())
     candidates: list[JsonValue] = producer_candidates(
         graph,
         matrix,
@@ -230,7 +230,7 @@ def context(run: StepRun) -> Completion:
     control: Path = control_repository()
 
     def read() -> list[dict[str, JsonValue]]:
-        return run.tools.portfolio(TASK_CONTEXT, beadgraph.children, control, story, "task")
+        return run.tools.portfolio_read(TASK_CONTEXT, beadgraph.children, control, story, "task")
 
     records: list[dict[str, JsonValue]] = run.tools.operation(TASK_CONTEXT, read)
     existing: list[JsonValue] = [
@@ -745,7 +745,7 @@ def retire(run: StepRun) -> Completion:
     control: Path = control_repository()
 
     def attempt() -> dict[str, JsonValue]:
-        graph: beadgraph.Graph = run.tools.portfolio(TASK_RETIRE, beadgraph.load, control)
+        graph: beadgraph.Graph = run.tools.portfolio_read(TASK_RETIRE, beadgraph.load, control)
         writer: beadgraph.Writer = run.tools.portfolio(TASK_RETIRE, beadgraph.Writer, control)
         return json_object(
             run.tools.portfolio(

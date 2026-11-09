@@ -148,7 +148,7 @@ def story_edges(run: StepRun) -> Completion:
         enter_phase(run.context, run.agents.emit, FINISH_PHASE, f"{STORY_EDGES}: {detail}")
 
     def write() -> storyedges.StoryEdges:
-        graph: beadgraph.Graph = run.tools.portfolio(FINISH_PHASE, beadgraph.load, repo)
+        graph: beadgraph.Graph = run.tools.portfolio_read(FINISH_PHASE, beadgraph.load, repo)
         progress(f"read {len(graph.beads)} beads")
         writer: beadgraph.Writer = run.tools.portfolio(FINISH_PHASE, beadgraph.Writer, repo)
         return run.tools.portfolio(

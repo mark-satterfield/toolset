@@ -36,7 +36,7 @@ def prepare(run: StepRun, diagnosis: dict[str, JsonValue]) -> Completion:
         StepError: No actual open Story with complete accepted authoring artifacts exists.
 
     """
-    graph: beadgraph.Graph = run.tools.portfolio(run.step["script"], beadgraph.load, control_repository())
+    graph: beadgraph.Graph = run.tools.portfolio_read(run.step["script"], beadgraph.load, control_repository())
     story: beadgraph.Bead | None = graph.beads.get(check_type(diagnosis.get("authoringStory") or "", str))
     if story is None or story.kind != "story" or story.closed:
         raise StepError(
@@ -276,7 +276,7 @@ def authored(run: StepRun) -> Completion:
                 append_only=True,
             )
             identities[task.key] = check_type(written["task"]["id"], str)
-    graph: beadgraph.Graph = run.tools.portfolio(run.step["script"], beadgraph.load, control_repository())
+    graph: beadgraph.Graph = run.tools.portfolio_read(run.step["script"], beadgraph.load, control_repository())
     by_key: dict[str, str] = {
         task.key: bead.id
         for task in planned
@@ -289,7 +289,7 @@ def authored(run: StepRun) -> Completion:
         if task.key in identities
     }
     run.tools.portfolio(run.step["script"], writer.write_blocks, additions)
-    refreshed: beadgraph.Graph = run.tools.portfolio(run.step["script"], beadgraph.load, control_repository())
+    refreshed: beadgraph.Graph = run.tools.portfolio_read(run.step["script"], beadgraph.load, control_repository())
     scored = run.tools.portfolio(run.step["script"], scoring.score_tasks, refreshed, writer, set(identities.values()))
     if scored["unscored"] or scored["sizeFaults"]:
         raise StepError(

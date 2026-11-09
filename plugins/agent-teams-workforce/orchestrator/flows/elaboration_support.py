@@ -5,9 +5,11 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import time
 import traceback
 from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor, wait
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from operator import itemgetter
 from pathlib import Path
 from typing import Concatenate, ParamSpec, TypeVar
 
@@ -42,7 +44,7 @@ from orchestrator.core.handback_contract import (
 )
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.manifest import manifest_path, record_run
-from orchestrator.core.models import RunContext
+from orchestrator.core.models import RunContext, WaitMeter, session_cap, wait_meter
 from orchestrator.core.tools import Tools
 
 _ARGUMENT_ERROR: str = "Arguments violate the elaboration_support input contract"
@@ -142,7 +144,14 @@ def failed(stage: str, exc: Exception, repository: str = "", *, agent_started: b
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def parallel[T](context: RunContext, jobs: list[Callable[[], T]]) -> list[T]:
-    """Join phase results and terminate live groups only on interruption.
+    """Run independent jobs from a bounded ready queue and join their results.
+
+    At most ``ATW_ORCH_SESSIONS`` jobs (:func:`session_cap`) run at once; the others wait in the
+    queue, not in a thread of their own, and the job's agent sessions still take the dispatch's
+    session slots. Results are collected as each job ends; every job runs to its end whatever a
+    sibling did, and the dominant failure is raised after all have ended. Live groups are
+    terminated only on interruption. The time each job waited in the queue is recorded in the
+    work directory's wait metrics (:func:`wait_meter`).
 
     Returns:
         Job results in the original submission order.
@@ -157,8 +166,10 @@ def parallel[T](context: RunContext, jobs: list[Callable[[], T]]) -> list[T]:
     cleanup: Callable[[], None]
     if not (isinstance(context, RunContext)) or not (isinstance(jobs, list)):
         raise TypeError(_ARGUMENT_ERROR)
+    meter: WaitMeter = wait_meter(context.work)
 
-    def invoke(job: Callable[[], T]) -> T:
+    def invoke(job: Callable[[], T], queued: float) -> T:
+        meter.waited("job-queue", time.monotonic() - queued)
         try:
             return job()
         except Exception as exc:
@@ -172,9 +183,9 @@ def parallel[T](context: RunContext, jobs: list[Callable[[], T]]) -> list[T]:
                         exc.add_note(f"Stop marker also failed: {marker_error}")
             raise
 
-    pool: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=max(1, len(jobs)))
+    pool: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=max(1, min(len(jobs), session_cap())))
     try:
-        futures: list[Future[T]] = [pool.submit(invoke, job) for job in jobs]
+        futures: list[Future[T]] = [pool.submit(invoke, job, time.monotonic()) for job in jobs]
         return _parallel_results(context, futures)
     except InterruptedError, KeyboardInterrupt, SystemExit:
         for cleanup in reversed(context.cleanup):
@@ -185,14 +196,22 @@ def parallel[T](context: RunContext, jobs: list[Callable[[], T]]) -> list[T]:
 
 
 def _parallel_results[T](context: RunContext, futures: list[Future[T]]) -> list[T]:
-    error: BaseException | None
-    wait(futures)
-    errors: list[BaseException] = []
+    """Collect each job's outcome as it ends, then raise the dominant failure or return the results.
+
+    Failures are compared in submission order, so of equally dominant failures the earliest job's wins.
+
+    Returns:
+        The results in submission order.
+
+    """
+    position: dict[Future[T], int] = {future: index for index, future in enumerate(futures)}
+    failed: list[tuple[int, BaseException]] = []
     future: Future[T]
-    for future in futures:
-        error = future.exception()
+    for future in as_completed(futures):
+        error: BaseException | None = future.exception()
         if error is not None:
-            errors.append(error)
+            failed.append((position[future], error))
+    errors: list[BaseException] = [error for _, error in sorted(failed, key=itemgetter(0))]
     if errors:
         dominant: BaseException = max(
             errors,
@@ -238,7 +257,7 @@ def lifecycle(  # ruff: ignore[non-pep695-generic-function] - Typeguard requires
 
     def attempt() -> R:
         repo: Path = Path(check_type(context.args[dispatch.KEY_BEADS_REPO_PATH], str))
-        graph: beadgraph.Graph = tools.portfolio(stage, beadgraph.load, repo)
+        graph: beadgraph.Graph = tools.portfolio_read(stage, beadgraph.load, repo)
         writer: beadgraph.Writer = tools.portfolio(stage, beadgraph.Writer, repo)
         return tools.portfolio(stage, operation, graph, writer, context.bead, *args, **kwargs)
 

@@ -388,7 +388,7 @@ def diagnose(run: StepRun, again: str) -> Completion:
         ["hash-files", "--tree", str(workspace_of(run).tree)],
     )
     review: dict[str, JsonValue] = artifact_document(run, "suiteReview")
-    graph: beadgraph.Graph = run.tools.portfolio(
+    graph: beadgraph.Graph = run.tools.portfolio_read(
         run.step["script"],
         beadgraph.load,
         _control(run),
@@ -460,7 +460,7 @@ def diagnosed(run: StepRun) -> Completion:
         )
     if diagnosis["route"] == "missing-work":
         return build_prerequisite_work.prepare(run, diagnosis)
-    graph: beadgraph.Graph = run.tools.portfolio(run.step["script"], beadgraph.load, _control(run))
+    graph: beadgraph.Graph = run.tools.portfolio_read(run.step["script"], beadgraph.load, _control(run))
     producers: list[dict[str, JsonValue]] = check_type(diagnosis["producers"], list[dict[str, JsonValue]])
     _validate_producers(graph, str(run.bead), producers)
     writer: beadgraph.Writer = beadgraph.Writer(_control(run))

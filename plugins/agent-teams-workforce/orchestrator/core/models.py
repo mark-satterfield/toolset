@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+import atexit
+import functools
 import os
 import threading
-from collections.abc import Callable
+import time
+import uuid
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NotRequired, TypedDict
+from typing import Final, Literal, NotRequired, TypedDict
 
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from . import portfolio_bootstrap  # ruff: ignore[unused-import] - Imported for its sys.path setup.
 from .handback_contract import OTHER_CAUSE, Session
-from .io import JsonValue
+from .io import JsonValue, write_json
 
 # isort: split
 from step_journal_contract import STEP_ID_PATTERN, StepId
@@ -232,6 +237,118 @@ def session_slots() -> threading.BoundedSemaphore:
 
     """
     return threading.BoundedSemaphore(session_cap())
+
+
+type WaitKind = Literal["portfolio-lock", "job-queue", "session-slot"]
+"""What a dispatch waited for: the portfolio mutation lock, a worker of a bounded job queue, a session slot."""
+
+WAIT_METRICS_FOLDER: Final = "wait-metrics"
+"""The folder of a work directory holding one wait-metrics file per orchestrator process."""
+WAIT_FLUSH_SECONDS: Final = 5.0
+"""The least time between two writes of a wait-metrics file; the process's exit writes the last totals."""
+
+
+@dataclass(slots=True)
+class _WaitTotals:
+    """The running totals of one kind of wait."""
+
+    count: int = 0
+    total_seconds: float = 0.0
+    longest_seconds: float = 0.0
+
+
+class WaitMeter:
+    """Bounded wait totals of one orchestrator process for one work directory.
+
+    The file ``<work>/wait-metrics/<pid>-<uuid>.json`` holds counts and seconds per wait kind,
+    the dispatch's session cap and the most sessions it held at once, so the session slots of
+    concurrently active dispatches can be added up. It holds identifiers and numbers only.
+    """
+
+    def __init__(self, work: Path) -> None:
+        """Name the process's metrics file and start empty totals."""
+        self._path: Path = work / WAIT_METRICS_FOLDER / f"{os.getpid()}-{uuid.uuid4().hex}.json"
+        self._lock: threading.Lock = threading.Lock()
+        self._waits: dict[WaitKind, _WaitTotals] = {}
+        self._held: int = 0
+        self._peak_held: int = 0
+        self._started: float = time.time()
+        self._flushed: float = 0.0
+
+    def waited(self, kind: WaitKind, seconds: float) -> None:
+        """Add one wait of ``kind`` that lasted ``seconds``."""
+        with self._lock:
+            totals: _WaitTotals = self._waits.setdefault(kind, _WaitTotals())
+            totals.count += 1
+            totals.total_seconds += seconds
+            totals.longest_seconds = max(totals.longest_seconds, seconds)
+            self._flush_due()
+
+    @contextmanager
+    def session_slot(self, slots: threading.BoundedSemaphore) -> Generator[None]:
+        """Hold one session slot, recording how long it took to get and how many are held.
+
+        Yields:
+            Nothing; the slot is held for the body.
+
+        """
+        asked: float = time.monotonic()
+        with slots:
+            self.waited("session-slot", time.monotonic() - asked)
+            with self._lock:
+                self._held += 1
+                self._peak_held = max(self._peak_held, self._held)
+            try:
+                yield
+            finally:
+                with self._lock:
+                    self._held -= 1
+                    self._flush_due()
+
+    def _flush_due(self) -> None:
+        """Write the totals when the last write is older than :data:`WAIT_FLUSH_SECONDS`; the caller holds the lock."""
+        if time.monotonic() - self._flushed >= WAIT_FLUSH_SECONDS:
+            self._write()
+
+    def flush(self) -> None:
+        """Write the totals now."""
+        with self._lock:
+            self._write()
+
+    def _write(self) -> None:
+        """Write the totals file; the caller holds the lock."""
+        self._flushed = time.monotonic()
+        write_json(
+            self._path,
+            {
+                "pid": os.getpid(),
+                "startedAt": self._started,
+                "updatedAt": time.time(),
+                "sessionCap": session_cap(),
+                "peakSessionsHeld": self._peak_held,
+                "waits": {
+                    kind: {
+                        "count": totals.count,
+                        "totalSeconds": round(totals.total_seconds, 6),
+                        "longestSeconds": round(totals.longest_seconds, 6),
+                    }
+                    for kind, totals in self._waits.items()
+                },
+            },
+        )
+
+
+@functools.cache
+def wait_meter(work: Path) -> WaitMeter:
+    """Give the one wait meter of this process for a work directory; the process's exit writes its last totals.
+
+    Returns:
+        The meter.
+
+    """
+    meter: WaitMeter = WaitMeter(work.resolve())
+    atexit.register(meter.flush)
+    return meter
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
