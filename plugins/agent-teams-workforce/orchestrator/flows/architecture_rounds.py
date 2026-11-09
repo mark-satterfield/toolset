@@ -323,8 +323,10 @@ def reuse_refusal(entry: AgentRequest, arch: Path) -> str | None:
 
     An answer is reused only when its file is a valid answer and the basis file beside it
     (:data:`BASIS_SUFFIX`), written when its request was planned, states the basis the request has
-    now (:func:`answer_basis`). An answer written before basis files existed has none: it is reused
-    only when the request file beside it holds exactly this request.
+    now (:func:`answer_basis`). Planning a request removes the answer at its path before it writes
+    the basis (:func:`round_steps`), so an answer beside a basis was written under that basis. An
+    answer written before basis files existed has none: it is reused only when the request file
+    beside it holds exactly this request.
 
     Args:
         entry: The request, with the agent it names.
@@ -414,8 +416,10 @@ def _handed(run: StepRun, writers: Mapping[str, Step]) -> list[Path]:
 def round_steps(run: StepRun, requests: Sequence[AgentRequest], number: int, arch: Path) -> StepGroup:
     """Plan one round of requests after an architect step, then the Decide step that uses the answers.
 
-    Each request whose answer cannot be reused (:func:`reuse_refusal`) is written beside its
-    answer path, with its basis (:func:`answer_basis`), and gets one step, performed by the agent
+    Each request whose answer cannot be reused (:func:`reuse_refusal`) has the answer at its
+    answer path removed, so the basis written next never stands beside an answer asked under
+    another one, is written beside that path, with its basis (:func:`answer_basis`), and gets one
+    step, performed by the agent
     the request names and handed the request file as the parameter ``request`` and why it is
     asked as the parameter ``askedBecause``. The Decide step's inputs are those steps and the completing step's own
     inputs, so it is handed every answer of the chain, the findings and rulings the completing
@@ -445,6 +449,7 @@ def round_steps(run: StepRun, requests: Sequence[AgentRequest], number: int, arc
             kept[entry["request"]["answerPath"]] = agent
             continue
         answer: Path = Path(entry["request"]["answerPath"])
+        answer.unlink(missing_ok=True)
         asked: Path = _sibling(answer, REQUEST_SUFFIX)
         write_json(asked, json_object(entry["request"]))
         write_json(_sibling(answer, BASIS_SUFFIX), answer_basis(arch, agent, entry["request"]))

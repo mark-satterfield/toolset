@@ -131,7 +131,8 @@ the lock, and how many operations it applied and approved marks it took off).
 A round: the accepting step plans one step per request whose answer cannot be reused
 (`architecture_rounds.reuse_refusal`), performed by the agent the request names and handed the
 request file as the parameter `request` and why it is asked as the parameter `askedBecause`
-(`answer`, `agent`, `request`, `contract` or `sources`), and writes that request beside its answer
+(`answer`, `agent`, `request`, `contract` or `sources`), removes the answer at its answer path,
+so a basis never stands beside an answer asked under another, and writes that request beside its answer
 path (`<answer stem>.request.json`) with its basis (`<answer stem>.basis.json`,
 `architecture_rounds.answer_basis`): the agent asked and the SHA-256 of the whole request, of the
 SpecialistAnswer definition with every definition it refers to, and of each file the request's
