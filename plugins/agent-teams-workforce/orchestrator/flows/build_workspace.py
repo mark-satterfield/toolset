@@ -19,6 +19,8 @@ from orchestrator.core.tools import Tools
 GITUTILS: Final = Path(__file__).resolve().parents[2] / "scripts" / "portfolio" / "gitutils.py"
 WORKTREE_PREFIX: Final = "story"
 PATH_COMPONENT: Final = re.compile(r"[^A-Za-z0-9._-]+")
+GIT_OPERATION_SECONDS: Final = 120.0
+GIT_OPERATION_MARGIN_SECONDS: Final = 20.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +34,10 @@ class Workspace:
 
 def git_operation(tools: Tools, stage: str, arguments: list[str]) -> dict[str, JsonValue]:
     """Call the existing git utilities directly and validate their object result.
+
+    The utilities run under a deadline GIT_OPERATION_MARGIN_SECONDS short of the command's own time
+    limit, so a git command that runs out of time ends the run with an error that is not retried
+    (it may have changed something) instead of the retried command timeout.
 
     Args:
         tools: The dispatch's command boundary.
@@ -52,7 +58,12 @@ def git_operation(tools: Tools, stage: str, arguments: list[str]) -> dict[str, J
     if not arguments or any(not isinstance(argument, str) for argument in arguments):
         message = "git operation requires nonempty string arguments"
         raise TypeError(message)
-    result = tools.command([sys.executable, str(GITUTILS), *arguments], stage=stage)
+    deadline: str = str(GIT_OPERATION_SECONDS - GIT_OPERATION_MARGIN_SECONDS)
+    result = tools.command(
+        [sys.executable, str(GITUTILS), "--deadline-seconds", deadline, *arguments],
+        stage=stage,
+        timeout=GIT_OPERATION_SECONDS,
+    )
     document: dict[str, JsonValue] = json_object(json.loads(result.stdout))
     if document.get("error"):
         message = f"{stage}: {document['error']}"
