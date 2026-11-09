@@ -7,6 +7,7 @@
         "build:regression-assess",
         "build:regression-review",
         "build:regression-validate",
+        "build:execution-policy",
         "build:baseline",
         "build:select-implementers",
         "build:reuse-audit",
@@ -27,22 +28,22 @@
         "build:prerequisite-authored": {"description":"Write and score only newly authored producer Tasks","purpose":"Use normal idempotent durable-key writes and scoped Task scoring","runBy":"task-to-deploy","params":["again"],"reads":["prerequisiteAuthoring","prerequisiteTasks"],"records":[{"name":"prerequisiteWork","kind":"value","holds":"The real new Task ids and scoped scoring result"}],"adds":[{"kinds":["build:prerequisites-rediagnose"],"when":"real producer work was appended and normally scored"}]},
         "build:prerequisites-rediagnose": {"description":"Diagnose newly authored producer work","purpose":"Resolve the changed real Task graph within the persistent correction allowance","runBy":"task-to-deploy","params":["again"],"reads":["prerequisiteWork"],"records":[],"adds":[{"kinds":["build:prerequisites-diagnosed"],"when":"a fresh bounded diagnosis is accepted"}]},
         "build:prerequisites-assess": {"description": "Assess the freshly completed suite", "purpose": "Use accepted current execution evidence before resuming the original phase", "runBy": "task-to-deploy", "params": ["again"], "reads": ["redRun", "greenRun", "prerequisiteReadiness"], "records": [], "adds": [{"kinds": ["build:suite-reviewed", "build:green-reviewed"], "when": "the independent fresh assessment is accepted in the original phase"}]},
-        "build:implementation-recheck": {"description": "Reassess an empty selection after a repository change", "purpose": "Fresh suite facts and independent review replace stale decisions through appended evidence", "runBy": "task-to-deploy", "reads": ["testPrint", "implementationSelection"], "records": [{"name": "implementationRecovery", "kind": "value", "holds": "The repository digest reassessed once"}, {"name": "testPrint", "kind": "value", "holds": "The current file and tree fingerprints"}, {"name": "greenRun", "kind": "value", "holds": "The freshly executed suite"}], "adds": [{"kinds": ["build:select-implementers"], "when": "fresh suite facts are recorded before independent review"}]},
-        "build:prerequisites-diagnosed": {"description": "Validate real producer prerequisites", "purpose": "Add only actual justified Task blockers before waiting", "runBy": "task-to-deploy", "params": ["again", "fingerprint"], "reads": ["prerequisiteDiagnosis"], "records": [{"name": "prerequisiteWait", "kind": "value", "holds": "Accepted real producer ids and required build or deployment stage"}, {"name": "prerequisiteFingerprint", "kind": "value", "holds": "The distinct accepted failure/tree fingerprint"}, {"name":"prerequisiteAuthoring","kind":"value","holds":"Validated real producer Story authoring inputs when missing work is authorized"}], "adds": [{"kinds": ["build:prerequisites-ready"], "when": "real producers are validated and additive edges recorded"}, {"kinds": ["build:environment-observe"], "when": "an environment-only defect schedules observation after its fingerprint is accepted"}, {"kinds":["build:prerequisite-author"],"when":"an actual open producer Story has complete accepted authoring inputs"}]},
+        "build:implementation-recheck": {"description": "Reassess an empty selection after a repository change", "purpose": "Fresh suite facts and independent review replace stale decisions through appended evidence", "runBy": "task-to-deploy", "reads": ["testPrint", "implementationSelection"], "records": [{"name": "implementationRecovery", "kind": "value", "holds": "The repository digest reassessed once"}, {"name": "testPrint", "kind": "value", "holds": "The current file and tree fingerprints"}, {"name": "greenRun", "kind": "value", "holds": "The freshly executed suite"}, {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}], "adds": [{"kinds": ["build:select-implementers"], "when": "fresh suite facts are recorded before independent review"}]},
+        "build:prerequisites-diagnosed": {"description": "Validate real producer prerequisites", "purpose": "Add only actual justified Task blockers before waiting", "runBy": "task-to-deploy", "params": ["again", "fingerprint"], "reads": ["prerequisiteDiagnosis"], "records": [{"name": "prerequisiteWait", "kind": "value", "holds": "Accepted real producer ids and required build or deployment stage"}, {"name": "prerequisiteFingerprint", "kind": "value", "holds": "The distinct accepted failure/tree fingerprint"}, {"name": "prerequisiteAuthoring", "kind": "value", "holds": "Validated real producer Story authoring inputs when missing work is authorized"}], "adds": [{"kinds": ["build:prerequisites-ready"], "when": "real producers are validated and additive edges recorded"}, {"kinds": ["build:environment-observe"], "when": "an environment-only defect schedules observation after its fingerprint is accepted"}, {"kinds": ["build:prerequisite-author"], "when": "an actual open producer Story has complete accepted authoring inputs"}]},
         "build:prerequisites-ready": {"description": "Wait for real producer work", "purpose": "Release the build slot until the required producer stage is recorded", "runBy": "task-to-deploy", "params": ["again"], "reads": ["prerequisiteWait"], "records": [], "adds": [{"kinds": ["build:prerequisites-observed"], "when": "producer stages are complete and fresh readiness observation is accepted"}]},
         "build:prerequisites-observed": {"description": "Consume fresh readiness evidence", "purpose": "Verify environment readiness before rerunning the recorded suite", "runBy": "task-to-deploy", "params": ["again"], "reads": ["prerequisiteReadiness"], "records": [], "adds": [{"kinds": ["build:prerequisites-suite"], "when": "current readiness is demonstrated"}]},
-        "build:prerequisites-suite": {"description": "Rerun and independently assess the original suite", "purpose": "Resume red or green from fresh executed evidence", "runBy": "task-to-deploy", "params": ["again"], "reads": ["suiteCommand", "prerequisiteReadiness"], "records": [{"name": "redRun", "kind": "value", "holds": "Fresh red-phase suite result when applicable"}, {"name": "greenRun", "kind": "value", "holds": "Fresh green-phase suite result when applicable"}, {"name": "testPrint", "kind": "value", "holds": "Current test and tree fingerprints"}], "adds": [{"kinds": ["build:prerequisites-assess"], "when": "fresh suite facts are complete"}]},
+        "build:prerequisites-suite": {"description": "Rerun and independently assess the original suite", "purpose": "Resume red or green from fresh executed evidence", "runBy": "task-to-deploy", "params": ["again"], "reads": ["suiteCommand", "prerequisiteReadiness"], "records": [{"name": "redRun", "kind": "value", "holds": "Fresh red-phase suite result when applicable"}, {"name": "greenRun", "kind": "value", "holds": "Fresh green-phase suite result when applicable"}, {"name": "testPrint", "kind": "value", "holds": "Current test and tree fingerprints"}, {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}], "adds": [{"kinds": ["build:prerequisites-assess"], "when": "fresh suite facts are complete"}]},
         "build:baseline-resolved": {"description": "Run the resolved suite declaration", "purpose": "Record the factual baseline after configuration judgment", "runBy": "task-to-deploy", "reads": ["suiteDeclaration", "worktree"], "records": [{"name": "suiteCommand", "kind": "value", "holds": "The whole-suite command string"}, {"name": "baseline", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"}, {"name": "testSelection", "kind": "file", "holds": "The accepted test specialist selection"}], "adds": [{"kinds": ["build:plan-tests"], "when": "after the test specialist selection is accepted"}]},
         "build:final-review": {"description": "Review the final code and tests", "purpose": "Independently assess the resulting changes before commit", "runBy": "task-to-deploy", "reads": [], "records": [{"name": "finalCodeReview", "kind": "file", "holds": "The accepted finalCodeReview evidence"}], "adds": [{"kinds": ["build:final-review-checked"], "when": "after the corrected final diff is independently reviewed"}]},
-        "build:final-review-checked": {"description": "Require final code review approval", "purpose": "Correct findings and independently re-review", "runBy": "task-to-deploy", "reads": ["finalCodeReview"], "records": [], "adds": [{"kinds": ["build:select-implementers", "build:final-review"], "when": "findings require bounded correction and independent re-review; a clean review adds nothing"}]},
-        "build:final-suite-checked": {"description": "Run the final suite after review", "purpose": "Verify resulting behavior before commit", "runBy": "task-to-deploy", "reads": ["finalCodeReview"], "records": [{"name": "finalRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"}], "adds": []},
-        "build:plan-tests": {"description": "Plan the selected test specialists", "purpose": "Review and improve tests within the existing suite", "runBy": "task-to-deploy", "reads": ["testSelection"], "records": [{"name": "testSelection", "kind": "file", "holds": "The accepted test specialist selection"}], "adds": [{"kinds": ["build:plan-tests"], "when": "a missing selection first requires specialist selection"}, {"kinds": ["build:red-write", "build:red-check"], "when": "one writer per selected agent, followed by the suite check"}]},
+        "build:final-review-checked": {"description": "Require final code review approval", "purpose": "Correct findings and independently re-review", "runBy": "task-to-deploy", "reads": ["finalCodeReview"], "records": [{"name": "finalReviewTree", "kind": "value", "holds": "The git tree id of the work tree's content the approved final review covers"}], "adds": [{"kinds": ["build:correct-findings", "build:final-review"], "when": "findings require bounded correction of those findings and independent re-review; a clean review adds nothing"}]},
+        "build:final-suite-checked": {"description": "Run the final suite after review", "purpose": "Verify resulting behavior before commit", "runBy": "task-to-deploy", "reads": ["finalCodeReview", "finalReviewTree"], "records": [{"name": "finalRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"}, {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}], "adds": []},
+        "build:plan-tests": {"description": "Plan the selected test specialists", "purpose": "Review and improve tests within the existing suite", "runBy": "task-to-deploy", "reads": ["testSelection", "testStrategy", "executionPolicy"], "records": [{"name": "testSelection", "kind": "file", "holds": "The accepted test specialist selection"}, {"name": "testStrategy", "kind": "file", "holds": "The test-strategy-decider's accepted decision on the strategy concerns the selection named as unresolved"}], "adds": [{"kinds": ["build:plan-tests"], "when": "a missing selection, or a strategy decision accepted after the selection, first requires the test design lead's selection; a selection that names strategyConflicts first requires the test strategy decision"}, {"kinds": ["build:red-write", "build:red-check"], "when": "one writer per selected agent, followed by the suite check"}]},
         "build:tests-authored": {"description": "Record accepted test-author file versions", "purpose": "Distinguish legitimate suite updates from implementation changes to tests", "runBy": "task-to-deploy", "reads": ["testFiles"], "records": [{"name": "testPrint", "kind": "value", "holds": "Exact file hashes and worktree digest"}], "adds": []},
         "build:suite-reviewed": {"description": "Route the suite quality judgment", "purpose": "Distinguish test repair, product implementation and environment failure", "runBy": "task-to-deploy", "reads": ["suiteReview"], "records": [], "adds": [{"kinds": ["build:plan-tests"], "when": "the judgment identifies test repair"}, {"kinds": ["build:plan-code"], "when": "the judgment identifies product implementation and implementers have already been selected"}, {"kinds": ["build:prerequisites-diagnosed"], "when": "a bounded current-Task environment diagnosis is accepted"}]},
-        "build:code-reviewed": {"description": "Apply the independent code review", "purpose": "Consider architecture, quality and best practices even when tests pass", "runBy": "task-to-deploy", "reads": ["codeReview"], "records": [{"name": "greenRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"}, {"name": "implementationSelection", "kind": "file", "holds": "The accepted implementationSelection evidence"}], "adds": [{"kinds": ["build:plan-code"], "when": "the suite fails or review findings require work, after specialist selection; an approved passing result records Green without code work"}]},
+        "build:code-reviewed": {"description": "Apply the independent code review", "purpose": "Consider architecture, quality and best practices even when tests pass", "runBy": "task-to-deploy", "reads": ["codeReview"], "records": [{"name": "greenRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"}, {"name": "implementationSelection", "kind": "file", "holds": "The accepted implementationSelection evidence"}, {"name": "codeReviewTree", "kind": "value", "holds": "The git tree id of the work tree's content the accepted code review judged"}], "adds": [{"kinds": ["build:plan-code"], "when": "the suite fails or review findings require work, after specialist selection; an approved passing result records Green without code work"}]},
         "build:plan-code": {"description": "Plan the selected implementers", "purpose": "Develop missing behavior and warranted improvements", "runBy": "task-to-deploy", "reads": ["implementationSelection", "implementers"], "records": [{"name": "implementers", "kind": "value", "holds": "The accepted implementers evidence"}], "adds": [{"kinds": ["build:implement", "build:green-check"], "when": "one step per selected implementer, followed by the whole-suite check"}, {"kinds": ["build:implementation-recheck"], "when": "an empty selection was made before an observable repository change and that digest was not reassessed"}]},
         "build:green-reviewed": {"description": "Route the post-implementation suite judgment", "purpose": "Correct the artifact responsible for the failure", "runBy": "task-to-deploy", "reads": ["suiteReview"], "records": [], "adds": [{"kinds": ["build:plan-tests"], "when": "the judgment identifies test repair"}, {"kinds": ["build:plan-code"], "when": "the judgment identifies product implementation"}, {"kinds": ["build:prerequisites-diagnosed"], "when": "a bounded current-Task environment diagnosis is accepted"}]},
-        "build:audit-reviewed": {"description": "Resolve the independent audit findings", "purpose": "Correct blocking and warranted improvement findings in scope", "runBy": "task-to-deploy", "reads": [], "records": [], "adds": [{"kinds": ["build:select-implementers", "build:reuse-audit"], "when": "findings require correction and again names build:reuse-audit; a clean review adds nothing"}, {"kinds": ["build:select-implementers", "build:cds-audit"], "when": "findings require correction and again names build:cds-audit; a clean review adds nothing"}], "params": ["review", "again"]},
+        "build:audit-reviewed": {"description": "Resolve the independent audit findings", "purpose": "Correct blocking and warranted improvement findings in scope", "runBy": "task-to-deploy", "reads": [], "records": [], "adds": [{"kinds": ["build:correct-findings", "build:reuse-audit"], "when": "findings require correction and again names build:reuse-audit; a clean review adds nothing"}, {"kinds": ["build:correct-findings", "build:cds-audit"], "when": "findings require correction and again names build:cds-audit; a clean review adds nothing"}], "params": ["review", "again"]},
         "build:docs-specialist": {"description": "Update stale documentation with {agent}", "purpose": "Keep the changed contracts documented by the selected specialist", "runBy": "task-to-deploy", "params": ["agent"], "reads": ["worktree", "documentationSelection"], "records": [{"name": "documentationWork", "kind": "file", "holds": "The accepted documentation work report under build-implementation.schema.json"}], "adds": []},
         "build:workspace": {
           "description": "Establish the Story's worktree and branch",
@@ -128,20 +129,60 @@
             {"kinds": ["build:regression-reassess", "build:regression-review", "build:regression-validate"], "when": "the check fails below the configured correction allowance; the failure evidence is recorded and the corrected assessment or mapping is independently reviewed and checked again"}
           ]
         },
+        "build:execution-policy": {
+          "description": "Write the Task's execution policy",
+          "purpose": "Every stage the build runs has a requirement or evidence reason, and every stage it omits an applicability reason",
+          "runBy": "task-to-deploy",
+          "params": ["problems"],
+          "reads": ["worktree", "regressionPlan", "regressionScope", "policyProblems"],
+          "records": [
+            {"name": "executionPolicy", "kind": "file", "holds": "The accepted execution policy (build-execution-policy.schema.json)"}
+          ],
+          "adds": [
+            {"kinds": ["build:execution-policy-checked"], "when": "after the build scope assessor's policy is accepted against its schema"}
+          ]
+        },
+        "build:execution-policy-checked": {
+          "description": "Validate the execution policy",
+          "purpose": "The build follows only a policy that names every stage once and runs every required stage",
+          "runBy": "task-to-deploy",
+          "reads": ["executionPolicy", "regressionPlan", "regressionScope"],
+          "records": [
+            {"name": "policyIdentity", "kind": "value", "holds": "The digest of the accepted regression scope and requirements the policy was written for"},
+            {"name": "policyProblems", "kind": "value", "holds": "The problems of a refused policy; every stage runs when the correction allowance is spent"}
+          ],
+          "adds": [
+            {"kinds": ["build:execution-policy"], "when": "the policy has problems below the correction allowance"}
+          ]
+        },
+        "build:correct-findings": {
+          "description": "Select implementers for a review's unresolved findings",
+          "purpose": "A correction targets the changed artifacts and unresolved findings, not a fresh whole-Task review",
+          "runBy": "task-to-deploy",
+          "params": ["review"],
+          "reads": ["worktree", "implementers"],
+          "records": [
+            {"name": "implementationSelection", "kind": "file", "holds": "The implementation lead's accepted selection for the findings"}
+          ],
+          "adds": [
+            {"kinds": ["build:plan-code"], "when": "after the selection is accepted"}
+          ]
+        },
         "build:baseline": {
           "description": "Run the setup the approved regression plan declares for the tree, then resolve the repository's suite command and run the suite before any change",
           "purpose": "The command the build is judged by is the one the repository declares, it runs on a tree prepared as the reviewed plan states, and the tests failing before the Task are known",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "regressionScope", "regressionPlan"],
+          "reads": ["worktree", "regressionScope", "regressionPlan", "executionPolicy"],
           "records": [
             {"name": "suiteCommand", "kind": "value", "holds": "The whole-suite command string"},
-            {"name": "baseline", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"},
+            {"name": "baseline", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence, with its evidenceKey"},
             {"name": "testSelection", "kind": "file", "holds": "The accepted test specialist selection"},
-            {"name": "suiteDeclaration", "kind": "file", "holds": "The accepted command declaration when configuration judgment is needed"}
+            {"name": "suiteDeclaration", "kind": "file", "holds": "The accepted command declaration when configuration judgment is needed"},
+            {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
           ],
           "adds": [
             {"kinds": ["build:baseline-resolved"], "when": "the suite declaration requires configuration judgment"},
-            {"kinds": ["build:plan-tests"], "when": "after the test specialist selection is accepted"}
+            {"kinds": ["build:plan-tests"], "when": "after the test design lead's specialist selection is accepted, unless the accepted execution policy omits test work"}
           ]
         },
         "build:red-write": {
@@ -169,7 +210,8 @@
           "records": [
             {"name": "redRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"},
             {"name": "testPrint", "kind": "value", "holds": "The accepted testPrint evidence"},
-            {"name": "suiteReview", "kind": "file", "holds": "The accepted suiteReview evidence"}
+            {"name": "suiteReview", "kind": "file", "holds": "The accepted suiteReview evidence"},
+            {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
           ],
           "adds": [
             {"kinds": ["build:suite-reviewed"], "when": "a failing suite receives an accepted quality judgment; its consumer applies the correction bound"}
@@ -211,7 +253,8 @@
           "records": [
             {"name": "greenRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"},
             {"name": "testPrint", "kind": "value", "holds": "The accepted testPrint evidence"},
-            {"name": "suiteReview", "kind": "file", "holds": "The accepted suiteReview evidence"}
+            {"name": "suiteReview", "kind": "file", "holds": "The accepted suiteReview evidence"},
+            {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
           ],
           "adds": [
             {"kinds": ["build:green-reviewed"], "when": "a failing suite below its correction bound receives an accepted quality judgment"}
@@ -239,12 +282,13 @@
           "description": "Check the changed files against the shared capabilities the Task must use",
           "purpose": "A behaviour a shared library, layer, chassis or service provides is used from it and written nowhere in this repository",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "implementers", "reuseReview"],
+          "reads": ["worktree", "implementers", "reuseReview", "executionPolicy"],
           "records": [
-            {"name": "reuseReview", "kind": "file", "holds": "The accepted reuseReview evidence"}
+            {"name": "reuseReview", "kind": "file", "holds": "The accepted reuseReview evidence"},
+            {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
           ],
           "adds": [
-            {"kinds": ["build:audit-reviewed"], "when": "after reuseReview is accepted, passing review=reuseReview and again=build:reuse-audit"}
+            {"kinds": ["build:audit-reviewed"], "when": "after reuseReview is accepted, passing review=reuseReview and again=build:reuse-audit, unless the accepted execution policy omits the stage"}
           ],
           "limit": "The audit consumer bounds implementation corrections and re-review by the configured build correction allowance"
         },
@@ -252,9 +296,10 @@
           "description": "Record the work tree as it is before the refactor",
           "purpose": "A refactor that is repeated or undone goes back to the tree the green suite ran on, not to a tree an unfinished refactor changed",
           "runBy": "task-to-deploy",
-          "reads": ["worktree"],
+          "reads": ["worktree", "codeReview", "codeReviewTree", "executionPolicy"],
           "records": [
-            {"name": "refactorSnapshot", "kind": "value", "holds": "the git tree id of the work tree before the refactor, a string"}
+            {"name": "refactorSnapshot", "kind": "value", "holds": "the git tree id of the work tree before the refactor, a string"},
+            {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
           ],
           "adds": []
         },
@@ -262,13 +307,14 @@
           "description": "Refactor the code the implementers changed",
           "purpose": "The change is left clear and free of duplication without changing behavior",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "suiteCommand", "changedFiles", "refactorSnapshot"],
+          "reads": ["worktree", "suiteCommand", "changedFiles", "refactorSnapshot", "codeReview", "codeReviewTree", "executionPolicy"],
           "records": [
             {"name": "refactorWork", "kind": "file", "holds": "The accepted report under build-implementation.schema.json"},
             {"name": "changedFiles", "kind": "value", "holds": "The accepted changedFiles field of build-implementation.schema.json"},
             {"name": "evidence", "kind": "value", "holds": "The accepted evidence field of build-implementation.schema.json"},
             {"name": "testIssues", "kind": "value", "holds": "The accepted testIssues field of build-implementation.schema.json"},
-            {"name": "prerequisites", "kind": "value", "holds": "The accepted prerequisites field of build-implementation.schema.json"}
+            {"name": "prerequisites", "kind": "value", "holds": "The accepted prerequisites field of build-implementation.schema.json"},
+            {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
           ],
           "adds": []
         },
@@ -276,12 +322,13 @@
           "description": "Run the suite after the refactor",
           "purpose": "A refactor that turns the suite red is undone",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "suiteCommand", "refactorSnapshot", "design"],
+          "reads": ["worktree", "suiteCommand", "refactorSnapshot", "design", "refactorWork", "codeReview", "codeReviewTree", "executionPolicy"],
           "records": [
-            {"name": "refactorRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"}
+            {"name": "refactorRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"},
+            {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
           ],
           "adds": [
-            {"kinds": ["build:refactor-restore"], "when": "the suite fails; restoration itself verifies Green"},
+            {"kinds": ["build:refactor-restore"], "when": "the suite fails after a refactoring session; restoration itself verifies Green"},
             {"kinds": ["build:cds-audit"], "when": "the recorded design source is bundle or cds, after any required restoration"}
           ],
           "limit": "It fails when the suite is still red after the tree was restored to the snapshot"
@@ -293,7 +340,8 @@
           "reads": ["worktree", "refactorSnapshot"],
           "records": [
             {"name": "refactorRestore", "kind": "value", "holds": "The accepted refactorRestore evidence"},
-            {"name": "greenRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"}
+            {"name": "greenRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"},
+            {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
           ],
           "adds": []
         },
@@ -314,12 +362,13 @@
           "description": "Audit which documents the change leaves stale",
           "purpose": "Documentation is brought up to date in the same commit as the code",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "changedFiles"],
+          "reads": ["worktree", "changedFiles", "executionPolicy"],
           "records": [
-            {"name": "documentationSelection", "kind": "file", "holds": "the documentation lead's accepted specialist selection for the changed contracts"}
+            {"name": "documentationSelection", "kind": "file", "holds": "the documentation lead's accepted specialist selection for the changed contracts"},
+            {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
           ],
           "adds": [
-            {"kinds": ["build:docs-write"], "when": "the documentation selection is accepted"}
+            {"kinds": ["build:docs-write"], "when": "the documentation selection is accepted, unless the accepted execution policy omits the stage"}
           ]
         },
         "build:docs-write": {
@@ -336,13 +385,14 @@
           "description": "Run the suite a final time",
           "purpose": "Nothing is committed unless the whole suite exits 0 on the tree as it will be committed",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "suiteCommand"],
+          "reads": ["worktree", "suiteCommand", "finalCodeReview", "finalReviewTree", "executionPolicy"],
           "records": [
             {"name": "finalCodeReview", "kind": "file", "holds": "The accepted finalCodeReview evidence"},
-            {"name": "finalRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"}
+            {"name": "finalRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"},
+            {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
           ],
           "adds": [
-            {"kinds": ["build:final-review-checked", "build:final-suite-checked"], "when": "when no final independent review exists, after the accepted review; otherwise run and require the suite directly"}
+            {"kinds": ["build:final-review-checked", "build:final-suite-checked"], "when": "when no accepted final review was approved for the current content tree, after the accepted review; otherwise run the suite, or reuse identical accepted passing evidence, and require it to pass"}
           ]
         },
         "build:regression-map": {
@@ -394,7 +444,8 @@
           "runBy": "task-to-deploy",
           "reads": ["worktree", "branch", "defaultBranch", "suiteCommand", "finalRun"],
           "records": [
-            {"name": "commit", "kind": "value", "holds": "the head of the Story's branch after the commit, a string"}
+            {"name": "commit", "kind": "value", "holds": "the head of the Story's branch after the commit, a string"},
+            {"name": "executionSummary", "kind": "value", "holds": "Model sessions by agent, correction steps by kind and every recorded stage decision of the Task"}
           ],
           "adds": []
         }

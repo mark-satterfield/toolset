@@ -11,6 +11,19 @@
       "uniqueItems": true,
       "items": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"}
     },
-    "rationale": {"type": "string", "minLength": 1}
+    "rationale": {"type": "string", "minLength": 1},
+    "strategyConflicts": {
+      "description": "Test specialist selection only: each test strategy concern on which accepted strategy evidence conflicts and that neither the Task's recorded test strategy nor the accepted execution policy settles, with the paths of the conflicting evidence. Absent or empty when there is none; only a named conflict brings in the test-strategy-decider.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["concern", "evidence"],
+        "properties": {
+          "concern": {"type": "string", "minLength": 1},
+          "evidence": {"type": "array", "minItems": 2, "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    }
   }
 }

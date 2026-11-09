@@ -16,6 +16,7 @@ from orchestrator.core.journal_registry import Registry
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, file_artifact, value_artifact
 from orchestrator.core.models import StepError
 from orchestrator.core.tool_locks import seconds
+from orchestrator.flows import build_policy
 from orchestrator.flows.build_sessions import OutputContract, reasoned
 from orchestrator.flows.build_state import (
     ARTIFACT_CONTRACTS,
@@ -241,10 +242,13 @@ def _reuse(run: StepRun) -> Completion:
     """Review use of shared capabilities instead of duplicating their implementation.
 
     Returns:
-        The shared-capability specialist's independent review.
+        The shared-capability specialist's independent review, or the policy's recorded omission.
 
     """
-    return reasoned(
+    decision: build_policy.Decision = build_policy.decide(run, "reuse-audit")
+    if decision.action == "omit":
+        return Completion(artifacts=(decision.artifact(),))
+    reviewed: Completion = reasoned(
         run,
         "shared-capability-reviewer",
         OutputContract(CONTRACTS / "build-review.schema.json", "reuseReview"),
@@ -257,6 +261,7 @@ def _reuse(run: StepRun) -> Completion:
             ),
         ),
     )
+    return Completion(artifacts=(*reviewed.artifacts, decision.artifact()), add=reviewed.add)
 
 
 def _cds(run: StepRun) -> Completion:
@@ -337,10 +342,28 @@ def _audit_reviewed(run: StepRun) -> Completion:
     return Completion(
         add=(
             StepGroup((
-                _new("build:select-implementers", "Resolve the independent review findings"),
+                _new("build:correct-findings", "Resolve the independent review findings", {"review": name}),
                 _new(again, "Re-review the corrected work against its prior findings"),
             )),
         ),
+    )
+
+
+def _correct(run: StepRun) -> Completion:
+    """Select implementers for one review's unresolved findings, without a fresh whole-Task review.
+
+    Returns:
+        The implementation lead's selection for those findings and its plan.
+
+    """
+    review: str = check_type(run.params()["review"], str)
+    return reasoned(
+        run,
+        "implementation-lead",
+        OutputContract(CONTRACTS / "build-selection.schema.json", "implementationSelection"),
+        f"Select the implementation specialists needed to resolve only the unresolved findings of the {review} "
+        "review and the artifacts they name; accepted unrelated work stays as it is",
+        followups=(_new("build:plan-code", "Plan the selected code specialists and suite check"),),
     )
 
 
@@ -348,16 +371,20 @@ def _docs(run: StepRun) -> Completion:
     """Select documentation specialists only for documents this change makes stale.
 
     Returns:
-        The documentation lead's bounded subject judgment.
+        The documentation lead's bounded subject judgment, or the policy's recorded omission.
 
     """
-    return reasoned(
+    decision: build_policy.Decision = build_policy.decide(run, "docs")
+    if decision.action == "omit":
+        return Completion(artifacts=(decision.artifact(),))
+    selected: Completion = reasoned(
         run,
         "documentation-lead",
         OutputContract(CONTRACTS / "build-selection.schema.json", "documentationSelection"),
         "Select documentation specialists for the actual public and internal contracts changed by this Task",
         followups=(_new("build:docs-write", "Update the documentation this Task made stale"),),
     )
+    return Completion(artifacts=(*selected.artifacts, decision.artifact()), add=selected.add)
 
 
 def _docs_write(run: StepRun) -> Completion:
@@ -419,6 +446,7 @@ def attach_reviews(registry: Registry) -> None:
         "build:design-source": _design,
         "build:infra-intent": _infrastructure,
         "build:audit-reviewed": _audit_reviewed,
+        "build:correct-findings": _correct,
         "build:docs-audit": _docs,
         "build:docs-write": _docs_write,
         "build:docs-specialist": _docs_specialist,

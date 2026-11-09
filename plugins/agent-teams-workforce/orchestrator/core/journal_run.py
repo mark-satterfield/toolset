@@ -62,7 +62,17 @@ from orchestrator.flows.elaboration_support import emit_event, parallel
 from . import step_journal
 from .agents import CONTENT_FAILURES, AgentRunner, SessionNotResumedError, validate_output
 from .handback import failure_for, stop_stage
-from .handback_contract import ITEM_CLASS, OTHER_CAUSE, Failure, Session, StepIO, StepTokens, step_event, warning_note
+from .handback_contract import (
+    ITEM_CLASS,
+    OTHER_CAUSE,
+    Failure,
+    Session,
+    StepDecision,
+    StepIO,
+    StepTokens,
+    step_event,
+    warning_note,
+)
 from .io import write_json
 from .journal_changes import apply_completion
 from .journal_registry import REGISTRY, Registry
@@ -954,6 +964,8 @@ class JournalRunner:
                 tokens=tokens,
                 token_budget=budget.tokens,
                 io=io,
+                reason=held["purpose"],
+                decisions=_decisions(held),
             ),
         )
         overruns: list[str] = []
@@ -1288,6 +1300,36 @@ class JournalRunner:
                 lambda journal: step_journal.set_session(journal, step_id, fresh),
             )
             return self.agents.run_session(request, labelled, session=fresh, fresh_output=launch.fresh_output)
+
+
+DECISION_ARTIFACT: Final = "stageDecision"
+"""The value artifact a build step records for each stage it decided to run, omit or reuse."""
+
+
+def _decisions(step: Step) -> list[StepDecision]:
+    """Read the stage decisions a step recorded.
+
+    Returns:
+        Each well-formed ``stageDecision`` value artifact of the step, in order.
+
+    """
+    found: list[StepDecision] = []
+    artifact: Artifact
+    for artifact in step["artifacts"]:
+        if artifact["kind"] != "value" or artifact["name"] != DECISION_ARTIFACT:
+            continue
+        value: JsonValue = artifact["value"]
+        if not isinstance(value, dict):
+            continue
+        stage, action, reason = value.get("stage"), value.get("action"), value.get("reason")
+        if not (isinstance(stage, str) and isinstance(action, str) and isinstance(reason, str)):
+            continue
+        decision: StepDecision = {"stage": stage, "action": action, "reason": reason}
+        origin: JsonValue = value.get("reusedFrom")
+        if isinstance(origin, str):
+            decision["reusedFrom"] = origin
+        found.append(decision)
+    return found
 
 
 def _size(path: Path) -> int:

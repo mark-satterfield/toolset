@@ -439,9 +439,43 @@
       "agents": [
         "implementation-lead",
         "documentation-lead",
-        "test-strategy-decider"
+        "test-design-lead"
       ],
       "schema": "skills/pipeline-contracts/schemas/build-selection.schema.json",
+      "named": "schema",
+      "pointer": "brief",
+      "code": "orchestrator/flows/build_sessions.py",
+      "anchors": [
+        "params[\"schema\"]",
+        "validate=schema"
+      ],
+      "launches": [
+        "_launch"
+      ]
+    },
+    {
+      "output": "build execution policy",
+      "agents": [
+        "regression-impact-assessor"
+      ],
+      "schema": "skills/pipeline-contracts/schemas/build-execution-policy.schema.json",
+      "named": "schema",
+      "pointer": "brief",
+      "code": "orchestrator/flows/build_sessions.py",
+      "anchors": [
+        "params[\"schema\"]",
+        "validate=schema"
+      ],
+      "launches": [
+        "_launch"
+      ]
+    },
+    {
+      "output": "build test strategy decision",
+      "agents": [
+        "test-strategy-decider"
+      ],
+      "schema": "skills/pipeline-contracts/schemas/build-test-strategy.schema.json",
       "named": "schema",
       "pointer": "brief",
       "code": "orchestrator/flows/build_sessions.py",

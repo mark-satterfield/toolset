@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Final
 
 from driver_surface_types import REGRESSION_TIMEOUT_DEFAULT, REGRESSION_TIMEOUT_ENV
 
 # step_journal installs the canonical generated contract's import path.
-from step_journal_contract import BEAD_TYPE_TASK, BeadId, Journal, Step
+from step_journal_contract import BEAD_TYPE_TASK, BeadId, Journal, Step, ValueArtifact
 from typeguard import check_type
 
 from orchestrator.core import pipeline_steps, step_journal
@@ -30,9 +31,9 @@ from orchestrator.core.journal_steps import (
 from orchestrator.core.models import RunContext, StepError
 from orchestrator.core.tool_locks import seconds
 from orchestrator.core.tools import Tools
-from orchestrator.flows import build_prerequisite_work, build_prerequisites
+from orchestrator.flows import build_policy, build_prerequisite_work, build_prerequisites
 from orchestrator.flows.build_reviews import attach_reviews
-from orchestrator.flows.build_sessions import OutputContract, accepted_steps, attach, latest, reasoned
+from orchestrator.flows.build_sessions import OutputContract, accepted_steps, attach, latest, reasoned, view_of
 from orchestrator.flows.build_state import (
     CONTRACTS,
     PLUGIN,
@@ -60,17 +61,53 @@ from orchestrator.flows.build_state import (
 from orchestrator.flows.build_suite import declared_command, run_suite
 from orchestrator.flows.build_workspace import Workspace, checkpoint, git_operation, provision
 
+if TYPE_CHECKING:
+    from orchestrator.core.journal_views import AcceptedArtifact, AcceptedView
 
-def _suite(run: StepRun, name: str) -> dict[str, JsonValue]:
-    """Run the declared suite directly and retain its full output.
+TEST_SELECTION: Final = "testSelection"
+TEST_STRATEGY: Final = "testStrategy"
+TEST_LEAD: Final = "test-design-lead"
+STRATEGY_DECIDER: Final = "test-strategy-decider"
+REVIEWER: Final = "code-correctness-reviewer"
+CODE_REVIEW_TREE: Final = "codeReviewTree"
+FINAL_REVIEW_TREE: Final = "finalReviewTree"
+
+
+def _suite(run: StepRun, name: str, *, fresh: bool = False) -> dict[str, JsonValue]:
+    """Run the declared suite directly and retain its full output, or reuse identical accepted evidence.
+
+    A passing accepted result stands for this run only when the accepted execution policy marks the
+    suite reusable and its evidence key equals this run's; otherwise the suite runs and its result
+    records the key and why it was not reused.
 
     Returns:
         The suite artifact.
 
     """
     command: str = check_type(latest(run, "suiteCommand"), str)
+    key: dict[str, JsonValue] = build_policy.evidence_key(run, command)
+    reused, why = build_policy.reusable_suite(run, key, fresh=fresh)
+    if reused is not None:
+        return reused
     evidence: Path = run.context.work / "build" / str(run.step["id"]) / f"{name}.json"
-    return run_suite(run.tools, _workspace(run).tree, command, evidence, run.step["script"]).document()
+    document: dict[str, JsonValue] = run_suite(
+        run.tools,
+        _workspace(run).tree,
+        command,
+        evidence,
+        run.step["script"],
+    ).document()
+    return {**document, "evidenceKey": key, "reuseRefused": why}
+
+
+def _suite_artifacts(name: str, suite: dict[str, JsonValue], stage: str) -> tuple[ValueArtifact, ...]:
+    """Record a suite result with whether it ran or reused accepted evidence.
+
+    Returns:
+        The suite artifact and its stage decision.
+
+    """
+    return (value_artifact(name, suite), build_policy.suite_decision(suite, stage))
 
 
 def _workspace_step(run: StepRun) -> Completion:
@@ -177,17 +214,49 @@ def _baseline_command(run: StepRun, command: str) -> Completion:
         evidence,
         "build:baseline",
     ).document()
-    planned: Completion = reasoned(
+    recorded: tuple[ValueArtifact, ...] = (
+        value_artifact("suiteCommand", command),
+        value_artifact("baseline", {**baseline, "evidenceKey": build_policy.evidence_key(run, command)}),
+    )
+    decision: build_policy.Decision = build_policy.decide(run, "tests")
+    if decision.action == "omit":
+        return Completion(artifacts=(*recorded, decision.artifact()))
+    planned: Completion = _select_tests(
         run,
-        "test-strategy-decider",
-        OutputContract(CONTRACTS / "build-selection.schema.json", "testSelection"),
-        "Select test specialists for this Task's existing suite and required behavioral coverage",
-        followups=(_new("build:plan-tests", "Plan the selected test writers in suite context"),),
+        "Select the test specialists this Task's existing suite and required behavioral coverage need",
+        _new("build:plan-tests", "Plan the selected test writers in suite context"),
     )
-    return Completion(
-        artifacts=(*planned.artifacts, value_artifact("suiteCommand", command), value_artifact("baseline", baseline)),
-        add=planned.add,
+    return Completion(artifacts=(*planned.artifacts, *recorded, decision.artifact()), add=planned.add)
+
+
+def _select_tests(run: StepRun, action: str, followup: NewStep) -> Completion:
+    """Have the test design lead route the required behavior to test specialists.
+
+    Returns:
+        The lead's selection session and its consumer.
+
+    """
+    return reasoned(
+        run,
+        TEST_LEAD,
+        OutputContract(CONTRACTS / "build-selection.schema.json", TEST_SELECTION),
+        f"{action}. Route only to the verification methods the accepted executionPolicy names, following the "
+        "Task's recorded testStrategy and any accepted testStrategy decision; an infrastructure change takes "
+        "CDK assertion and synthesis checks, not invented application unit tests; an empty selection is valid "
+        "when existing tests already cover the required behavior. Name strategyConflicts only for a concern "
+        "accepted strategy evidence leaves unresolved",
+        followups=(followup,),
     )
+
+
+def _after(view: AcceptedView, later: AcceptedArtifact, earlier: AcceptedArtifact) -> bool:
+    """Tell whether one accepted artifact was produced after another.
+
+    Returns:
+        True when its producing step comes later in walk order.
+
+    """
+    return view.boundary.index(later.step) > view.boundary.index(earlier.step)
 
 
 def _resolved_baseline(run: StepRun) -> Completion:
@@ -203,19 +272,33 @@ def _resolved_baseline(run: StepRun) -> Completion:
 def _plan_tests(run: StepRun) -> Completion:
     """Schedule the selected test writers, not a code-based fixed roster.
 
+    The test design lead selects; the test strategy decider is brought in only for a strategy
+    concern the selection names as unresolved, and the lead then selects again under its decision.
+
     Returns:
-        Sequential test-writer steps and their suite check.
+        Sequential test-writer steps and their suite check, or the selection work they need first.
 
     """
-    if latest(run, "testSelection") is None:
+    view: AcceptedView = view_of(run)
+    selection: AcceptedArtifact | None = view.artifact(TEST_SELECTION)
+    strategy: AcceptedArtifact | None = view.artifact(TEST_STRATEGY)
+    if selection is None or (strategy is not None and _after(view, strategy, selection)):
+        return _select_tests(
+            run,
+            "Select the test specialists the suite's required corrections need",
+            _new("build:plan-tests", "Plan the selected suite corrections"),
+        )
+    conflicts: JsonValue = _document(run, TEST_SELECTION).get("strategyConflicts")
+    if isinstance(conflicts, list) and conflicts and strategy is None:
         return reasoned(
             run,
-            "test-strategy-decider",
-            OutputContract(CONTRACTS / "build-selection.schema.json", "testSelection"),
-            "Select test specialists for the existing suite's required corrections",
-            followups=(_new("build:plan-tests", "Plan the selected suite corrections"),),
+            STRATEGY_DECIDER,
+            OutputContract(CONTRACTS / "build-test-strategy.schema.json", TEST_STRATEGY),
+            "Decide the test strategy concerns the test specialist selection names in strategyConflicts, from the "
+            "conflicting accepted evidence it cites",
+            followups=(_new("build:plan-tests", "Select the test writers under the decided strategy"),),
         )
-    agents: list[str] = check_type(_document(run, "testSelection")["agents"], list[str])
+    agents: list[str] = check_type(_document(run, TEST_SELECTION)["agents"], list[str])
     children: tuple[NewStep, ...] = tuple(
         _new("build:red-write", f"Review and improve suite tests with {agent}", {"testAgent": agent})
         for agent in agents
@@ -259,8 +342,9 @@ def _red_check(run: StepRun) -> Completion:
     """
     suite: dict[str, JsonValue] = _suite(run, "tests")
     fingerprint: dict[str, JsonValue] = _test_fingerprint(run)
+    recorded: tuple[ValueArtifact, ...] = (*_suite_artifacts("redRun", suite, "red-check"),)
     if suite["exitCode"] == 0:
-        return Completion(artifacts=(value_artifact("redRun", suite), value_artifact("testPrint", fingerprint)))
+        return Completion(artifacts=(*recorded, value_artifact("testPrint", fingerprint)))
     judgment: Completion = reasoned(
         run,
         "acceptance-criteria-coverage-assessor",
@@ -269,7 +353,7 @@ def _red_check(run: StepRun) -> Completion:
         followups=(_new("build:suite-reviewed", "Act on the suite-quality review before implementation"),),
     )
     return Completion(
-        artifacts=(*judgment.artifacts, value_artifact("redRun", suite), value_artifact("testPrint", fingerprint)),
+        artifacts=(*judgment.artifacts, *recorded, value_artifact("testPrint", fingerprint)),
         add=judgment.add,
     )
 
@@ -380,15 +464,17 @@ def _code_reviewed(run: StepRun) -> Completion:
     suite: dict[str, JsonValue] = _latest_suite(run)
     findings: list[JsonValue] = check_type(review["findings"], list[JsonValue])
     improvements: bool = any(json_object(finding)["severity"] != "note" for finding in findings)
+    reviewed: ValueArtifact = value_artifact(CODE_REVIEW_TREE, build_policy.content_tree(run))
     if suite.get("exitCode") == 0 and review["approved"] is True and not improvements:
-        return Completion(artifacts=(value_artifact("greenRun", suite),))
-    return reasoned(
+        return Completion(artifacts=(value_artifact("greenRun", suite), reviewed))
+    selected: Completion = reasoned(
         run,
         "implementation-lead",
         OutputContract(CONTRACTS / "build-selection.schema.json", "implementationSelection"),
         "Select the implementation specialists needed for the suite failures and code review findings",
         followups=(_new("build:plan-code", "Plan the selected code specialists and suite check"),),
     )
+    return Completion(artifacts=(*selected.artifacts, reviewed), add=selected.add)
 
 
 def _latest_suite(run: StepRun) -> dict[str, JsonValue]:
@@ -481,7 +567,7 @@ def _implementation_recheck(run: StepRun) -> Completion:
         artifacts=(
             value_artifact("implementationRecovery", fingerprint["treeDigest"]),
             value_artifact("testPrint", fingerprint),
-            value_artifact("greenRun", suite),
+            *_suite_artifacts("greenRun", suite, "implementation-recheck"),
         ),
         add=(StepGroup((_new("build:select-implementers", "Review the changed repository independently"),)),),
     )
@@ -523,7 +609,7 @@ def _green_check(run: StepRun) -> Completion:
             ("Implementation changed test-author files; tests require their author's ruling",),
         )
     suite: dict[str, JsonValue] = _suite(run, "green")
-    artifacts = (value_artifact("greenRun", suite), value_artifact("testPrint", fingerprint))
+    artifacts = (*_suite_artifacts("greenRun", suite, "green-check"), value_artifact("testPrint", fingerprint))
     if suite["exitCode"] == 0:
         return Completion(artifacts=artifacts)
     judgment: Completion = reasoned(
@@ -595,10 +681,10 @@ def _prerequisites_suite(run: StepRun) -> Completion:
     if again == "build:green-reviewed" and isinstance(previous, dict) and previous.get("files") != fingerprint["files"]:
         stage: str = "green-modified-tests"
         raise StepError(stage, OTHER_CAUSE, ("Tests changed during prerequisite work; their author must rule",))
-    suite: dict[str, JsonValue] = _suite(run, "prerequisites")
+    suite: dict[str, JsonValue] = _suite(run, "prerequisites", fresh=True)
     return Completion(
         artifacts=(
-            value_artifact("greenRun" if again == "build:green-reviewed" else "redRun", suite),
+            *_suite_artifacts("greenRun" if again == "build:green-reviewed" else "redRun", suite, "prerequisites"),
             value_artifact("testPrint", fingerprint),
         ),
         add=(
@@ -632,13 +718,44 @@ def _prerequisites_assess(run: StepRun) -> Completion:
     )
 
 
+def _refactoring(run: StepRun) -> build_policy.Decision:
+    """Decide whether the refactoring opportunity still needs a session.
+
+    The accepted execution policy may omit it with its reason. Otherwise an accepted code review of
+    this exact tree that approved with no improvement finding is the accepted assessment that no
+    worthwhile refactoring exists.
+
+    Returns:
+        The decision.
+
+    """
+    decision: build_policy.Decision = build_policy.decide(run, "refactor")
+    if decision.action == "omit":
+        return decision
+    view: AcceptedView = view_of(run)
+    review: AcceptedArtifact | None = view.artifact("codeReview")
+    tree: AcceptedArtifact | None = view.artifact(CODE_REVIEW_TREE)
+    if review is None or tree is None or not _after(view, tree, review):
+        return decision
+    document: dict[str, JsonValue] = _document(run, "codeReview")
+    findings: list[JsonValue] = check_type(document["findings"], list[JsonValue])
+    clean: bool = document["approved"] is True and all(json_object(item)["severity"] == "note" for item in findings)
+    if not clean or tree.value != build_policy.content_tree(run):
+        return decision
+    reason: str = "the accepted code review of this exact tree approved it with no improvement worth making"
+    return build_policy.Decision("refactor", "reuse", reason, reused_from=review.step)
+
+
 def _snapshot(run: StepRun) -> Completion:
     """Keep a recoverable Green tree before refactoring code or tests.
 
     Returns:
-        The existing git utility's complete snapshot.
+        The existing git utility's complete snapshot, or the decision that no refactoring session runs.
 
     """
+    decision: build_policy.Decision = _refactoring(run)
+    if decision.action != "run":
+        return Completion(artifacts=(decision.artifact(),))
     workspace: Workspace = _workspace(run)
     checkpoint(run.tools, workspace, f"feat(build): checkpoint {run.bead}")
     snapshot: dict[str, JsonValue] = git_operation(
@@ -653,9 +770,13 @@ def _refactor(run: StepRun) -> Completion:
     """Consider worthwhile architecture, code and suite improvements.
 
     Returns:
-        A refactoring session, whose no-change result must explain why no improvement is warranted.
+        A refactoring session, whose no-change result must explain why no improvement is warranted,
+        or the decision that the opportunity is already satisfied.
 
     """
+    decision: build_policy.Decision = _refactoring(run)
+    if decision.action != "run":
+        return Completion(artifacts=(decision.artifact(),))
     return reasoned(
         run,
         "code-refactoring-specialist",
@@ -668,22 +789,28 @@ def _refactor_check(run: StepRun) -> Completion:
     """Keep successful refactoring and restore a regressing refactor to its Green snapshot.
 
     Returns:
-        Suite evidence and a restoration step when needed.
+        Suite evidence, or reused identical evidence when the refactoring changed nothing, and a
+        restoration step when needed; no suite when no refactoring session ran.
 
     """
-    suite: dict[str, JsonValue] = _suite(run, "refactor")
+    recorded: tuple[ValueArtifact, ...]
     additions: tuple[StepGroup, ...] = ()
-    if suite["exitCode"] != 0:
-        additions = (
-            StepGroup((_new("build:refactor-restore", "Restore the Green snapshot after regressing refactor"),)),
-        )
+    if latest(run, "refactorSnapshot") is None or latest(run, "refactorWork") is None:
+        recorded = (_refactoring(run).artifact(),)
+    else:
+        suite: dict[str, JsonValue] = _suite(run, "refactor")
+        recorded = _suite_artifacts("refactorRun", suite, "refactor-check")
+        if suite["exitCode"] != 0:
+            additions = (
+                StepGroup((_new("build:refactor-restore", "Restore the Green snapshot after regressing refactor"),)),
+            )
     design: JsonValue = latest(run, "design")
     if isinstance(design, dict) and design.get("designSource") in {"bundle", "cds"}:
         additions = (
             *additions,
             StepGroup((_new("build:cds-audit", "Audit the changed UI against its design source"),)),
         )
-    return Completion(artifacts=(value_artifact("refactorRun", suite),), add=additions)
+    return Completion(artifacts=recorded, add=additions)
 
 
 def _restore(run: StepRun) -> Completion:
@@ -706,26 +833,51 @@ def _restore(run: StepRun) -> Completion:
     if suite["exitCode"] != 0:
         msg = "build:refactor-restore"
         raise StepError(msg, OTHER_CAUSE, (str(suite["evidence"]),))
-    return Completion(artifacts=(value_artifact("refactorRestore", restored), value_artifact("greenRun", suite)))
+    return Completion(
+        artifacts=(
+            value_artifact("refactorRestore", restored),
+            *_suite_artifacts("greenRun", suite, "refactor-restore"),
+        ),
+    )
+
+
+def _final_review_covers(run: StepRun) -> bool:
+    """Tell whether an accepted, approved final review covers the current tree.
+
+    The presence of a final review alone is not enough: it covers the tree its enforcing check
+    recorded, and only while that tree is unchanged.
+
+    Returns:
+        True when the latest final review was approved for exactly the current content tree.
+
+    """
+    view: AcceptedView = view_of(run)
+    review: AcceptedArtifact | None = view.artifact("finalCodeReview")
+    tree: AcceptedArtifact | None = view.artifact(FINAL_REVIEW_TREE)
+    if review is None or tree is None or not _after(view, tree, review):
+        return False
+    return tree.value == build_policy.content_tree(run)
 
 
 def _final_suite(run: StepRun) -> Completion:
     """Require the complete repository suite to pass before the Task can commit.
 
     Returns:
-        Factual whole-suite evidence.
+        Factual whole-suite evidence, or the independent final review it needs first.
 
     Raises:
         StepError: The final suite does not pass.
 
     """
-    if latest(run, "finalCodeReview") is None:
+    if not _final_review_covers(run):
         return reasoned(
             run,
-            "code-correctness-reviewer",
+            REVIEWER,
             OutputContract(CONTRACTS / "build-review.schema.json", "finalCodeReview"),
-            "Review the resulting code and test diff for correctness, architecture and quality "
-            "before final verification",
+            "Review the resulting code and test diff for correctness, architecture and quality before final "
+            "verification, and judge whether the evidence the accepted executionPolicy selected meets the "
+            "acceptance criteria; a needed verification it omitted is a blocking finding. Accepted suite results "
+            "whose evidenceKey names the current tree may be cited instead of being rerun",
             followups=(
                 _new("build:final-review-checked", "Require the final code and test review to pass"),
                 _new("build:final-suite-checked", "Run the final suite after independent code review"),
@@ -735,7 +887,7 @@ def _final_suite(run: StepRun) -> Completion:
     if suite["exitCode"] != 0:
         msg = "build:final-suite"
         raise StepError(msg, OTHER_CAUSE, (str(suite["evidence"]),))
-    return Completion(artifacts=(value_artifact("finalRun", suite),))
+    return Completion(artifacts=_suite_artifacts("finalRun", suite, "final-suite"))
 
 
 def _final_review(run: StepRun) -> Completion:
@@ -747,9 +899,10 @@ def _final_review(run: StepRun) -> Completion:
     """
     return reasoned(
         run,
-        "code-correctness-reviewer",
+        REVIEWER,
         OutputContract(CONTRACTS / "build-review.schema.json", "finalCodeReview"),
-        "Re-review the final code and tests against the prior review findings and full contract",
+        "Re-review the artifacts changed since your previous final review against its unresolved findings and "
+        "the full contract; accepted unrelated work stays judged",
         followups=(_new("build:final-review-checked", "Require the corrected final code review to pass"),),
     )
 
@@ -768,14 +921,14 @@ def _final_review_checked(run: StepRun) -> Completion:
     findings: list[JsonValue] = check_type(review["findings"], list[JsonValue])
     needed: bool = any(json_object(finding)["severity"] != "note" for finding in findings)
     if review["approved"] is True and not needed:
-        return Completion()
+        return Completion(artifacts=(value_artifact(FINAL_REVIEW_TREE, build_policy.content_tree(run)),))
     if _count(run, "build:final-review-checked") >= build_rounds() - 1:
         msg = "build:final-review"
         raise StepError(msg, OTHER_CAUSE, (str(_file(run, "finalCodeReview")),))
     return Completion(
         add=(
             StepGroup((
-                _new("build:select-implementers", "Resolve final code review findings"),
+                _new("build:correct-findings", "Resolve final code review findings", {"review": "finalCodeReview"}),
                 _new("build:final-review", "Independently review the final corrections"),
             )),
         ),
@@ -792,7 +945,9 @@ def _commit(run: StepRun) -> Completion:
     bead: dict[str, JsonValue] = _object(run, "bead")
     title: str = check_type(bead.get("title") or run.bead, str)
     commit: str = checkpoint(run.tools, _workspace(run), f"feat(build): {run.bead} {title}")
-    return Completion(artifacts=(value_artifact("commit", commit),))
+    return Completion(
+        artifacts=(value_artifact("commit", commit), value_artifact("executionSummary", build_policy.summary(run))),
+    )
 
 
 def _registry() -> Registry:
@@ -807,6 +962,8 @@ def _registry() -> Registry:
     attach(registry, PLUGIN)
     handlers = {
         "build:workspace": _workspace_step,
+        "build:execution-policy": build_policy.author,
+        "build:execution-policy-checked": build_policy.checked,
         "build:baseline": _baseline,
         "build:baseline-resolved": _resolved_baseline,
         "build:plan-tests": _plan_tests,

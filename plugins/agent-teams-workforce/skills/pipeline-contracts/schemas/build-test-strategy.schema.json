@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Build test strategy decision",
+  "description": "The test-strategy-decider's decision on the strategy concerns a build's test specialist selection named as unresolved (strategyConflicts of build-selection.schema.json): one decision per concern, from the conflicting accepted evidence the selection cites, with its rationale and rejected alternatives. The test-design-lead then selects the test writers under these directives.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["strategyDecisions", "writerDirectives", "acceptedRisks"],
+  "properties": {
+    "strategyDecisions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["concern", "decision", "rationale", "rejected", "evidence"],
+        "properties": {
+          "concern": {"type": "string", "minLength": 1},
+          "decision": {"type": "string", "minLength": 1},
+          "rationale": {"type": "string", "minLength": 1},
+          "rejected": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["option", "reason"],
+              "properties": {
+                "option": {"type": "string", "minLength": 1},
+                "reason": {"type": "string", "minLength": 1}
+              }
+            }
+          },
+          "evidence": {"description": "The paths of the accepted analyses the decision rests on.", "type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "writerDirectives": {"description": "The decided strategy stated as constraints for the test writers.", "type": "array", "items": {"type": "string", "minLength": 1}},
+    "acceptedRisks": {"type": "array", "items": {"type": "string", "minLength": 1}}
+  }
+}

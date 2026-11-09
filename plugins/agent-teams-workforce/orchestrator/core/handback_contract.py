@@ -396,13 +396,27 @@ class StepIO(TypedDict):
     usageUnknown: int
 
 
+class StepDecision(TypedDict):
+    """What a build step decided about one stage: ``action`` is ``run``, ``omit`` or ``reuse``.
+
+    ``reason`` is the requirement, evidence or applicability reason; ``reusedFrom`` names the step
+    whose accepted evidence a reuse stands on.
+    """
+
+    stage: str
+    action: str
+    reason: str
+    reusedFrom: NotRequired[str]
+
+
 class StepEvent(TypedDict):
     """A step of the journal ended a run: its wall time and tokens against its budgets (null when it has none).
 
     ``container`` is the description of the outermost step that holds it, or its own description
     when it is an outermost step; ``key`` is its script key or its agent; ``status`` is its status
     in the journal after the run. ``tokens`` is null for a step that ran no session. ``io`` is
-    what the step read and wrote (:class:`StepIO`).
+    what the step read and wrote (:class:`StepIO`). ``reason`` is the step's purpose: why it
+    exists. ``decisions`` are the stage decisions it recorded (:class:`StepDecision`).
     """
 
     event: Literal["step"]
@@ -416,6 +430,8 @@ class StepEvent(TypedDict):
     tokens: StepTokens | None
     tokenBudget: int | None
     io: NotRequired[StepIO]
+    reason: NotRequired[str]
+    decisions: NotRequired[list[StepDecision]]
 
 
 type NoteEvent = WarningNote
@@ -1193,8 +1209,10 @@ def step_event(  # ruff: ignore[too-many-arguments] - The fields of one step eve
     tokens: StepTokens | None,
     token_budget: int | None,
     io: StepIO | None = None,
+    reason: str | None = None,
+    decisions: list[StepDecision] | None = None,
 ) -> StepEvent:
-    """Build a validated ``step`` event; ``io`` is omitted when None.
+    """Build a validated ``step`` event; ``io`` and ``reason`` are omitted when None, ``decisions`` when empty.
 
     Returns:
         The event. A violation raises ``HandbackValidationError``.
@@ -1214,6 +1232,10 @@ def step_event(  # ruff: ignore[too-many-arguments] - The fields of one step eve
     }
     if io is not None:
         event["io"] = io
+    if reason is not None:
+        event["reason"] = reason
+    if decisions:
+        event["decisions"] = decisions
     validate_event(event)
     return event
 

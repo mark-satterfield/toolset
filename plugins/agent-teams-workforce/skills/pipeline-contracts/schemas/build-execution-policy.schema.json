@@ -1,0 +1,165 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Build execution policy",
+  "description": "One Task's accepted execution policy: why each build stage runs or is omitted, the verification its actual changed surfaces need, and when accepted verification evidence may be reused. The regression-impact-assessor writes it in execution policy mode from the accepted regression scope, the Task's requirements and recorded surfaces and test strategy, the repository and the existing evidence, at the build step build:execution-policy. orchestrator/flows/build_policy.py validates it (every stage named once, every required stage run) and records the identity of the scope it was written for; the build follows it while that scope is unchanged and runs every stage when it is absent, refused or out of date. The policy never authorizes an AWS action: an infrastructure verification method is a local check (for example CDK assertions or a synthesis check), never a deployment.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "policyRequirements",
+    "affectedComponents",
+    "repositoryCapabilities",
+    "changedSurfaces",
+    "existingEvidence",
+    "capabilityMaturity",
+    "policyDependencies",
+    "stages",
+    "verification",
+    "suiteFreshness",
+    "invalidation",
+    "reviewer",
+    "completion",
+    "corrections"
+  ],
+  "properties": {
+    "policyRequirements": {
+      "description": "The accepted requirements and acceptance criteria the Task must satisfy, each cited by its id in the criteria document, the spec or the TRD and the document that states it; never restated prose.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "source"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "source": {"description": "The path, with its section, of the document that states it.", "type": "string", "minLength": 1}
+        }
+      }
+    },
+    "affectedComponents": {
+      "description": "The components the Task changes, as the accepted regression scope names them, with their repository-relative files.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "files"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "files": {"type": "array", "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "repositoryCapabilities": {
+      "description": "What the repository actually supports, read from its AGENTS.md, Taskfile, CI workflow and checker configuration: for example a pytest suite, CDK assertion tests, cdk synth, lint and type checks.",
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "changedSurfaces": {
+      "description": "The surfaces the Task actually changes, from its recorded surfaces and its components: for example application behavior, an API or event contract, infrastructure, a library, a UI, generated artifacts, documentation or tests.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "existingEvidence": {
+      "description": "Implementation and verification evidence that already exists for the affected requirements: existing tests, accepted earlier results and delivery receipts, each with its path.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["description", "path"],
+        "properties": {
+          "description": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "capabilityMaturity": {
+      "description": "How mature the affected capability is (for example new, extending an existing capability, or changing a mature one) and what that means for the evidence to establish. Maturity changes what must be established, never whether an unproven requirement can be declared complete.",
+      "type": "string",
+      "minLength": 1
+    },
+    "policyDependencies": {
+      "description": "The prerequisites the Task consumes and the delivery receipts available for them (built, published or deployed), each with its evidence path; empty when it consumes none.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "stage", "evidence"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "stage": {"enum": ["built", "published", "deployed"]},
+          "evidence": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "stages": {
+      "description": "Every build stage exactly once, with the decision to run or omit it and its reason. tests: test specialist selection and test writing; reuse-audit: the shared-capability review; refactor: the refactoring opportunity; docs: the documentation audit; code-review, final-review, final-suite and regression-map always run. An omitted stage names the applicability reason (for example: an infrastructure-only change whose verification is CDK assertions selected under tests, so no application unit tests; a change that touches no documented contract, so no documentation audit). A run stage names the requirement or evidence that needs it.",
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["stage", "decision", "reason"],
+        "properties": {
+          "stage": {"enum": ["tests", "reuse-audit", "refactor", "docs", "code-review", "final-review", "final-suite", "regression-map"]},
+          "decision": {"enum": ["run", "omit"]},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "verification": {
+      "description": "The verification methods the actual changed surfaces need, each with the requirement or evidence it establishes: for example behavior tests and regression checks for application behavior; CDK assertions about resources, IAM, wiring or outputs and a synthesis check for infrastructure; regeneration identity and contract verification for an unchanged generated artifact. Never an invented test quota, and never an AWS action.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["method", "establishes", "reason"],
+        "properties": {
+          "method": {"type": "string", "minLength": 1},
+          "establishes": {"description": "The requirement ids or the evidence the method establishes.", "type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "suiteFreshness": {
+      "description": "Whether a passing whole-suite result may be reused for an identical evidence identity (the Python build computes it from the work tree's content including untracked files, the requirements, the declared command and setup, the runtime and tool configuration, the contract version and the evidence scope). reusable only when the suite depends on nothing else; fresh when it reaches a live environment, a network service, ignored local state or the clock.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "reason"],
+      "properties": {
+        "value": {"enum": ["reusable", "fresh"]},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "invalidation": {
+      "description": "The changes that make this policy or the evidence it selects out of date (for example a changed requirement, a new changed surface, a new dependency); the build itself invalidates the policy when the accepted scope it was written for changes.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "reviewer": {
+      "description": "The independent reviewer that judges whether the selected evidence meets the acceptance criteria, and that responsibility.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent", "responsibility"],
+      "properties": {
+        "agent": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"},
+        "responsibility": {"type": "string", "minLength": 1}
+      }
+    },
+    "completion": {
+      "description": "The conditions under which the Task is complete, each true or false of the finished work.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "corrections": {
+      "description": "The correction transitions this Task allows: test repair, product correction, environment recovery and finding correction, each targeting changed artifacts and unresolved findings only.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"enum": ["test-repair", "product-correction", "environment-recovery", "finding-correction"]}
+    }
+  }
+}

@@ -66,7 +66,8 @@ ordinary helper steps keep their own contracts.
 flowchart TD
     start([Task under its Story]) --> workspace[Create or reuse and verify Story worktree]
     workspace --> scope[Assess and independently review cumulative regression scope]
-    scope --> setup[Apply reviewed setup and record whole-suite baseline]
+    scope --> policy[Write and validate the Task's execution policy]
+    policy --> setup[Apply reviewed setup and record whole-suite baseline]
     setup --> tests[Select specialists; review, update, refactor or add suite tests]
     tests --> suite[Run the whole suite directly]
     suite --> judgment{Trustworthy behavioral evidence?}
@@ -88,6 +89,40 @@ flowchart TD
     final --> commit[Commit through normal hooks on Story branch]
     commit --> done([Task built; driver closes Task])
 ```
+
+## Execution policy and evidence reuse
+
+Once the regression scope is accepted, the regression-impact-assessor writes the Task's execution
+policy, whose contract is `build-execution-policy.schema.json`. It is the build's one planning
+session for the Task, not a reviewer of every stage. The build checks the policy, corrects it
+within the build correction allowance, and records the identity of the regression scope and
+requirements it was written for.
+
+The build follows the policy only while that identity still matches. Without an accepted,
+current policy every stage runs, so an older journal, a refused policy or a changed scope never
+skips a check. The policy may omit test work, the shared-capability review, refactoring and the
+documentation audit with an applicability reason; the code review, the final review, the final
+suite and the regression gate always run. Infrastructure work is verified with CDK assertions
+and synthesis checks rather than invented application unit tests, and no verification method is
+an AWS action.
+
+The test-design-lead selects the test specialists under the policy and the Task's recorded test
+strategy. The test-strategy-decider decides only a strategy concern that selection names as
+unresolved, and the lead then selects again under that decision.
+
+A passing whole-suite result the build executed stands for a later run only when the policy marks
+the suite reusable and the evidence key matches: the work tree's content with its untracked
+files, the requirements, the command, the setup, the runtime and tool configuration, the contract
+version and the evidence scope. A no-change claim never stands in for that key, and the
+post-prerequisite suite always runs fresh. A final review covers only the content tree it
+approved. Refactoring is satisfied without a new session when the policy omits it or when the
+accepted code review of the exact current tree approved it with no improvement finding. A
+correction selects implementers for the unresolved findings of the review that raised them, and
+the re-review judges what changed since against those findings.
+
+Every decision to run, omit or reuse a stage is recorded on its step and carried on that step's
+event, and the commit records the Task's model sessions, correction steps and decisions, so owner
+runs measure what the policy saved.
 
 Correction work is bounded within a dispatch. Implementation and suite-quality correction have
 three rounds, and regression scope/mapping review permits two correction rounds. A later
@@ -162,7 +197,8 @@ journal operations.
 Passing required behavior is valid evidence. The build manufactures no Red, performs no
 sabotage and requires no test-the-test demonstration. Passing tests still leave architecture
 conformance, correctness, quality and best practices to review. Refactoring receives an
-opportunity every time; a justified no-change result is valid when no improvement is warranted.
+opportunity every time; a justified no-change result is valid when no improvement is warranted,
+and an accepted assessment of the current tree satisfies the opportunity.
 Changes stay within the assigned behavior and its prerequisites.
 
 `build_suite.py` uses an already recorded suite command or the repository's explicit Taskfile
