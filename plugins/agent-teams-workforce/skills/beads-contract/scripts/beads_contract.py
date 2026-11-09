@@ -26,17 +26,28 @@ Common flags:
   -C <path>          The central repository, when it is not the `CONTROL_REPO_ENV` one.
   --records <file>   Read records from a JSON array in <file> instead of calling `bd`, or
                      `-` to read that array from stdin.
+  --deadline-seconds S
+                     The most seconds every `bd` call of this run, its retries and pauses
+                     included, may take together.
+
+Each `bd` call runs at most ATW_BD_TIMEOUT seconds (default 180), cut to what is left of the
+deadline. A read that runs out of time is stopped and retried like a lost connection. A write
+that runs out of time is stopped and never repeated: it may have applied, so the error says
+its outcome is unknown and the bead must be read again before the write is retried.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
+import math
 import os
 import pathlib
 import re
 import shutil
+import signal
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Fixed bd executable and argument vector; no shell.
 import sys
 import time
@@ -136,6 +147,16 @@ class Fingerprint(TypedDict):
 #: The pause before each retry of a `bd` command that could not reach the beads server, in
 #: seconds: 6 attempts, 62s of waiting in all, then the error is raised.
 CONNECTION_BACKOFF = (2, 4, 8, 16, 32)
+
+#: The variable naming the most seconds one `bd` call may run, and its default.
+BD_TIMEOUT_ENV = "ATW_BD_TIMEOUT"
+BD_TIMEOUT_DEFAULT_SECONDS = 180.0
+
+#: How long a stopped `bd` call gets after SIGTERM before SIGKILL, in seconds.
+STOP_GRACE_SECONDS = 5.0
+
+#: Why a read that ran out of time is run again.
+READ_TIMEOUT_REASON = "the beads server did not answer in time; a read is safe to run again"
 
 #: What `bd` prints, on stderr or as the `error` of its `--json` object on stdout, when a
 #: maintenance operation (for example `bd bootstrap`) holds the shared server's workspace gate.
@@ -823,10 +844,103 @@ def _load_records(records_file: str) -> JsonValue:
     return decoded
 
 
+def bd_timeout() -> float:
+    """Return the most seconds one `bd` call may run, from BD_TIMEOUT_ENV.
+
+    Returns:
+        The limit in seconds.
+
+    Raises:
+        BeadsError: The variable is not a positive, finite number.
+
+    """
+    raw: str = os.environ.get(BD_TIMEOUT_ENV, str(BD_TIMEOUT_DEFAULT_SECONDS))
+    try:
+        limit: float = float(raw)
+    except ValueError as exc:
+        message: str = f"{BD_TIMEOUT_ENV} must be a number of seconds, got {raw!r}"
+        raise BeadsError(message) from exc
+    if not 0 < limit < math.inf:
+        message = f"{BD_TIMEOUT_ENV} must be positive and finite, got {raw!r}"
+        raise BeadsError(message)
+    return limit
+
+
+def _stop(process: subprocess.Popen[str], *, own_group: bool) -> None:
+    """Stop a `bd` call that is still running, with what it started when it leads its own group, and reap it.
+
+    Args:
+        process: The `bd` process.
+        own_group: Whether it leads a process group of its own.
+
+    """
+    if process.poll() is not None:
+        return
+    with contextlib.suppress(ProcessLookupError):
+        if own_group:
+            os.killpg(process.pid, signal.SIGTERM)
+        process.terminate()
+    try:
+        process.wait(timeout=STOP_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(ProcessLookupError):
+            if own_group:
+                os.killpg(process.pid, signal.SIGKILL)
+            process.kill()
+        process.wait()
+
+
+def run_bd_once(command: list[str], stdin: str | None, limit: float) -> subprocess.CompletedProcess[str] | None:
+    """Run one `bd` call for at most `limit` seconds.
+
+    When a caller started this process as the leader of its own group, `bd` stays in that group so the
+    caller's group kill also stops it; otherwise `bd` gets a group of its own. A call that runs out of
+    time, or is interrupted, is stopped and reaped before this returns or the interruption propagates.
+
+    Args:
+        command: The resolved `bd` executable and its arguments.
+        stdin: Text for its standard input, or None.
+        limit: The most seconds it may run.
+
+    Returns:
+        The completed call, or None when it ran out of time and was stopped.
+
+    Raises:
+        BeadsError: `bd` could not be started.
+
+    """
+    own_group: bool = os.getpgrp() != os.getpid()
+    try:
+        process: subprocess.Popen[str] = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] - Resolved bd executable, typed arguments, no shell.
+            command,
+            stdin=subprocess.PIPE if stdin is not None else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            process_group=0 if own_group else None,
+        )
+    except OSError as exc:
+        msg: str = f"could not run `bd`: {exc}"
+        raise BeadsError(msg) from exc
+    try:
+        stdout, stderr = process.communicate(input=stdin, timeout=limit)
+    except subprocess.TimeoutExpired:
+        return None
+    finally:
+        _stop(process, own_group=own_group)
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
 class Reader:
     """Resolves bead records, from `bd` or from a synthesised file."""
 
-    def __init__(self, repo: str = "", records_file: str = "", records: list[JsonObject] | None = None) -> None:
+    def __init__(
+        self,
+        repo: str = "",
+        records_file: str = "",
+        records: list[JsonObject] | None = None,
+        deadline: float | None = None,
+    ) -> None:
         """Build a reader.
 
         Args:
@@ -834,6 +948,8 @@ class Reader:
             records_file: A JSON array of records to read instead of calling `bd`,
                 or "-" to read that array from stdin.
             records: Records already in memory to read instead of calling `bd`.
+            deadline: The `time.monotonic()` instant by which every `bd` call, retries and pauses
+                included, must end; None bounds each call by BD_TIMEOUT_ENV alone.
 
         Raises:
             TypeError: An argument violates the declared input contract.
@@ -843,10 +959,12 @@ class Reader:
             not isinstance(repo, str)
             or not isinstance(records_file, str)
             or not (records is None or isinstance(records, list))
+            or not (deadline is None or isinstance(deadline, float))
         ):
             argument_error: str = "__init__: arguments do not satisfy the declared input contract"
             raise TypeError(argument_error)
         offline: bool = bool(records_file) or records is not None
+        self.deadline: float | None = deadline
         self.repo: str = central_repo(repo) if not offline else repo
         self.homes: dict[str, str] | None = None
         self.written: dict[str, str] = {}
@@ -960,6 +1078,40 @@ class Reader:
             raise TypeError(argument_error)
         return self._bd(args, repo, stdin)
 
+    def _limit(self, shown: str) -> float:
+        """Return the most seconds the next `bd` call may run: BD_TIMEOUT_ENV, cut to the deadline.
+
+        Args:
+            shown: The command as reported.
+
+        Returns:
+            The limit in seconds.
+
+        Raises:
+            BeadsError: The deadline passed before the call started; it was not run.
+
+        """
+        limit: float = bd_timeout()
+        if self.deadline is None:
+            return limit
+        left: float = self.deadline - time.monotonic()
+        if left <= 0:
+            msg: str = f"the deadline passed before `{shown}` started; it was not run"
+            raise BeadsError(msg, BD_TIMEOUT_CAUSE)
+        return min(limit, left)
+
+    def _pause_fits(self, pause: int) -> bool:
+        """Whether a retry pause still leaves time before the deadline.
+
+        Args:
+            pause: The pause in seconds.
+
+        Returns:
+            True when there is no deadline or the pause ends before it.
+
+        """
+        return self.deadline is None or time.monotonic() + pause < self.deadline
+
     def _bd(
         self,
         args: list[str],
@@ -972,7 +1124,9 @@ class Reader:
         CONNECTION_BACKOFF, as connection_retryable allows, and a command the workspace gate
         refused (MAINTENANCE_GATE) after each pause in MAINTENANCE_BACKOFF; a failure is judged
         on stderr and stdout, where `bd --json` prints its error. Every failed attempt is printed
-        to stderr with the command and its error.
+        to stderr with the command and its error. Each call runs at most `_limit` seconds: a read
+        that runs out of time is retried like a lost connection; a write that runs out of time is
+        never repeated, since it may have applied. No pause runs past the deadline.
 
         Args:
             args: Arguments after `bd`.
@@ -983,8 +1137,9 @@ class Reader:
             The stdout text.
 
         Raises:
-            BeadsError: If `bd` is absent, or exited nonzero with an error that is not
-                retried or on its last attempt.
+            BeadsError: If `bd` is absent, exited nonzero with an error that is not retried or
+                on its last attempt, a write ran out of time (outcome unknown), or the deadline
+                leaves no time for the next attempt.
 
         """
         where: str = self.route(args) if repo is None else repo
@@ -998,17 +1153,7 @@ class Reader:
         attempt: int = 0
         while True:
             attempt += 1
-            try:
-                done: subprocess.CompletedProcess[str] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Resolved bd executable, typed arguments, no shell.
-                    command,
-                    input=stdin,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-            except OSError as exc:
-                msg: str = f"could not run `bd`: {exc}"
-                raise BeadsError(msg) from exc
+            done: subprocess.CompletedProcess[str] = self._attempt(args, command, stdin)
             if done.returncode == 0:
                 if attempt > 1:
                     sys.stderr.write(f"[beads-contract] `{' '.join(command)}` succeeded on attempt {attempt}" + "\n")
@@ -1032,8 +1177,51 @@ class Reader:
                     raise BeadsError(msg, failure_cause(printed))
                 pause = CONNECTION_BACKOFF[disconnected]
                 disconnected += 1
+            if not self._pause_fits(pause):
+                msg += f" (the deadline leaves no time to retry in {pause}s)"
+                raise BeadsError(msg, failure_cause(printed))
             sys.stderr.write(f"[beads-contract] attempt {attempt} failed: {msg}; retrying in {pause}s because {why}\n")
             time.sleep(pause)
+
+    def _attempt(self, args: list[str], command: list[str], stdin: str | None) -> subprocess.CompletedProcess[str]:
+        """Run one attempt of a `bd` call within `_limit`.
+
+        Args:
+            args: Arguments after `bd`.
+            command: The full command.
+            stdin: Text for its standard input, or None.
+
+        Returns:
+            The completed call, or for a read that ran out of time a failed result naming the timeout.
+
+        """
+        shown: str = " ".join(command)
+        limit: float = self._limit(shown)
+        return run_bd_once(command, stdin, limit) or self._timed_out(args, shown, limit)
+
+    @staticmethod
+    def _timed_out(args: list[str], shown: str, limit: float) -> subprocess.CompletedProcess[str]:
+        """Turn a read that ran out of time into a retryable failure; refuse to go on after a write that did.
+
+        Args:
+            args: Arguments after `bd`.
+            shown: The command as reported.
+            limit: The time limit it had.
+
+        Returns:
+            For a read, a failed result whose stderr names the retryable timeout.
+
+        Raises:
+            BeadsError: A write ran out of time: it may have applied, so it is never repeated.
+
+        """
+        if not is_read(args):
+            msg: str = (
+                f"`{shown}` did not finish within {limit:.0f}s and was stopped; it may have applied, so it is"
+                " not repeated: read the bead again before retrying the write"
+            )
+            raise BeadsError(msg, OTHER_CAUSE)
+        return subprocess.CompletedProcess([], 1, "", f"i/o timeout: bd did not answer within {limit:.0f}s")
 
     def _read(self, args: list[str], repo: str | None = None) -> JsonValue:
         """Run one read-only `bd` command live and parse its JSON.
@@ -1715,6 +1903,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="read records from this JSON array instead of calling `bd`; `-` reads the array from stdin",
     )
+    parser.add_argument(
+        "--deadline-seconds",
+        type=float,
+        default=None,
+        help="the most seconds every `bd` call of this run, retries and pauses included, may take together",
+    )
     sub: _CommandParsers = parser.add_subparsers(dest="command", required=True)
 
     fingerprint: argparse.ArgumentParser = sub.add_parser(
@@ -1899,7 +2093,12 @@ def main(argv: list[str] | None = None) -> int:
         return run_passthrough(*split)
     args: argparse.Namespace = build_parser().parse_args(argv)
     try:
-        reader: Reader = Reader(repo=check_type(args.repo, str), records_file=check_type(args.records, str))
+        deadline_seconds: float | None = check_type(args.deadline_seconds, float | None)
+        reader: Reader = Reader(
+            repo=check_type(args.repo, str),
+            records_file=check_type(args.records, str),
+            deadline=None if deadline_seconds is None else time.monotonic() + deadline_seconds,
+        )
         options: CommandOptions = _command_options(args)
         command: str = check_type(args.command, str)
         result: CommandResult = COMMAND_HANDLERS[command](options, reader)

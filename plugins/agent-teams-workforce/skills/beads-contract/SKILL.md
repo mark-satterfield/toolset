@@ -52,6 +52,11 @@ Beads is read live through `bd`, and only through `bd`. `.beads/issues.jsonl` is
 (60 s), and the export can be blocked, so it lags the tracker. A live read that fails is
 retried with backoff.
 
+Each `bd` call runs at most `ATW_BD_TIMEOUT` seconds (default 180), cut to what is left of
+`--deadline-seconds` when it is given; no retry pause runs past that deadline. A read that runs
+out of time is stopped and retried like a lost connection. A write that runs out of time is
+stopped and never repeated, because it may have applied: read the bead again before retrying it.
+
 ## Run it
 
 ```bash
