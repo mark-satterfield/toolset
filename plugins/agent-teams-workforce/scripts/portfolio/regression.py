@@ -14,11 +14,12 @@ from pathlib import Path
 from typing import Final, Literal
 
 from contracts import JsonObject, JsonValue, json_object
-from gitutils import cmd_hash_files
+from gitutils import GitError, cmd_hash_files, deadline_scope, separate_group, stop_process
 from jsonartifact import read_artifact
 
 KINDS: Final[frozenset[str]] = frozenset({"unit", "contract", "integration", "nonfunctional"})
 EXECUTION_BUDGET_SECONDS: Final[int] = 500
+OUTPUT_TAIL_BYTES: Final[int] = 16384
 
 type Mode = Literal["prepare", "check", "validate", "verify", "setup"]
 MODES: Final[dict[str, Mode]] = {
@@ -478,14 +479,45 @@ def _report_path(run: JsonObject, root: Path) -> Path:
     return report
 
 
-def _tree_digest(root: Path) -> str:
-    """Hash the repository tree as tested.
+def _tree_digest(root: Path, state: Execution) -> str:
+    """Hash the repository tree as tested, within what is left of the execution budget.
 
     Returns:
         The tree digest gitutils reports.
 
     """
-    return cmd_hash_files(argparse.Namespace(tree=str(root), files=[]))["treeDigest"]
+    with deadline_scope(state.remaining()):
+        return cmd_hash_files(argparse.Namespace(tree=str(root), files=[]))["treeDigest"]
+
+
+def _output_tail(log: Path) -> tuple[int, str]:
+    """Read the size of a command's output log and its last OUTPUT_TAIL_BYTES.
+
+    Returns:
+        The log's size in bytes and its tail, decoded as UTF-8 with undecodable bytes replaced.
+
+    """
+    size: int = log.stat().st_size
+    with log.open("rb") as handle:
+        handle.seek(max(0, size - OUTPUT_TAIL_BYTES))
+        return size, handle.read().decode("utf-8", errors="replace")
+
+
+def _wait(process: subprocess.Popen[str], limit: int, *, own_group: bool) -> int | None:
+    """Wait for a command, then make sure it and every process it started have stopped.
+
+    An interruption stops the command the same way before it propagates.
+
+    Returns:
+        The exit status, or None when the command ran out of time and was stopped.
+
+    """
+    try:
+        return process.wait(timeout=limit)
+    except subprocess.TimeoutExpired:
+        return None
+    finally:
+        stop_process(process, own_group=own_group)
 
 
 @dataclass(slots=True)
@@ -513,31 +545,62 @@ class Execution:
         return left
 
     def shell(self, command: str, root: Path, record: str, context: JsonObject) -> int:
-        """Run one command with /bin/sh in the repository and archive its output.
+        """Run one command with /bin/sh in the repository, streaming its output to durable logs.
+
+        The complete stdout and stderr go to `<record stem>.stdout.log` and `.stderr.log` beside the
+        record as the command writes them, so memory stays bounded and a timed-out command leaves its
+        partial output. The record names both logs and holds their sizes and last OUTPUT_TAIL_BYTES.
 
         Returns:
             The command's exit status.
 
+        Raises:
+            ValueError: The command ran out of the execution budget; it was stopped and its record and
+                partial output are kept.
+
         """
-        result: subprocess.CompletedProcess[str] = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - The reviewed plan's commands run by design.
-            ["/bin/sh", "-c", command],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            timeout=self.remaining(),
-            check=False,
-        )
+        limit: int = self.remaining()
+        stem: str = Path(record).stem
+        stdout_log: Path = self.folder / f"{stem}.stdout.log"
+        stderr_log: Path = self.folder / f"{stem}.stderr.log"
+        own_group: bool = separate_group()
+        with (
+            stdout_log.open("w", encoding="utf-8") as stdout_file,
+            stderr_log.open("w", encoding="utf-8") as stderr_file,
+        ):
+            process: subprocess.Popen[str] = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] - The reviewed plan's commands run by design.
+                ["/bin/sh", "-c", command],
+                cwd=root,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                text=True,
+                process_group=0 if own_group else None,
+            )
+            exit_code: int | None = _wait(process, limit, own_group=own_group)
+        stdout_bytes, stdout_tail = _output_tail(stdout_log)
+        stderr_bytes, stderr_tail = _output_tail(stderr_log)
         write(
             self.folder / record,
             {
                 **context,
                 "command": command,
-                "exitCode": result.returncode,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
+                "exitCode": exit_code,
+                "timedOut": exit_code is None,
+                "stdoutLog": str(stdout_log),
+                "stderrLog": str(stderr_log),
+                "stdoutBytes": stdout_bytes,
+                "stderrBytes": stderr_bytes,
+                "stdoutTail": stdout_tail,
+                "stderrTail": stderr_tail,
             },
         )
-        return result.returncode
+        if exit_code is None:
+            message: str = (
+                f"`{command}` did not finish within {limit}s of the regression execution budget and was stopped;"
+                f" its partial output is kept in {self.folder / record}"
+            )
+            raise ValueError(message)
+        return exit_code
 
 
 def execute(plan: JsonObject, folder: Path) -> tuple[list[str], list[JsonValue]]:
@@ -632,7 +695,7 @@ def _execute_run(
     record: JsonObject = {"runId": run_id, "format": _str(run, "format"), "setup": setups}
     if errors:
         return errors, record
-    revision: str = _tree_digest(root)
+    revision: str = _tree_digest(root, state)
     output: str = f"run-{index}.json"
     exit_code: int = state.shell(_str(run, "command"), root, output, {"run": run})
     record |= {"output": str(state.folder / output), "testedTreeDigest": revision, "exitCode": exit_code}
@@ -873,7 +936,7 @@ if __name__ == "__main__":
         OSError,
         KeyError,
         ET.ParseError,
-        subprocess.TimeoutExpired,
+        GitError,
     ) as error:
         _emit({"ok": False, "errors": [str(error)]})
         raise SystemExit(1) from error
