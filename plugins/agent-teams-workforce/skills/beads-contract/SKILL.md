@@ -50,12 +50,12 @@ caller names only the bead.
 Beads is read live through `bd`, and only through `bd`. `.beads/issues.jsonl` is never read:
 `bd` auto-exports only after a state-changing command, at most once per `export.interval`
 (60 s), and the export can be blocked, so it lags the tracker. A live read that fails is
-retried with backoff.
+retried with backoff; a read that runs out of time counts as such a failure.
 
-Each `bd` call runs at most `ATW_BD_TIMEOUT` seconds (default 180), cut to what is left of
-`--deadline-seconds` when it is given; no retry pause runs past that deadline. A read that runs
-out of time is stopped and retried like a lost connection. A write that runs out of time is
-stopped and never repeated, because it may have applied: read the bead again before retrying it.
+Each `bd` call is bounded by a time limit, cut to what is left of any deadline the caller gives,
+and no retry pause runs past that deadline; the script's usage text names the setting and the
+flag. A write that runs out of time is stopped and never repeated, because it may have applied:
+read the bead again before retrying it.
 
 ## Run it
 
