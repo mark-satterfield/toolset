@@ -20,11 +20,11 @@ from story_deploy_args import VERIFIED_STATUSES
 from typeguard import check_type
 
 from orchestrator.core import step_journal
-from orchestrator.core.driver_contracts import dispatch_arguments
 from orchestrator.core.handback_contract import OTHER_CAUSE, WaitingProducer
 from orchestrator.core.io import JsonValue, write_json
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, value_artifact
 from orchestrator.core.models import StepError
+from orchestrator.core.tool_locks import control_repo
 from orchestrator.flows import build_prerequisite_work
 from orchestrator.flows.build_sessions import OutputContract, reasoned
 from orchestrator.flows.build_state import (
@@ -435,16 +435,6 @@ def _journal(directory: Path, bead: str) -> Path:
     return step_journal.journal_path(directory, BeadId(bead))
 
 
-def _control(run: StepRun) -> Path:
-    """Read the dispatch's actual central tracker repository.
-
-    Returns:
-        The configured control repository path.
-
-    """
-    return Path(check_type(run.context.args[dispatch_arguments().KEY_BEADS_REPO_PATH], str))
-
-
 def diagnose(run: StepRun, again: str) -> Completion:
     """Append one evidence-based diagnosis for a distinct observed failure and tree.
 
@@ -468,7 +458,7 @@ def diagnose(run: StepRun, again: str) -> Completion:
     graph: beadgraph.Graph = run.tools.portfolio_read(
         run.step["script"],
         beadgraph.load,
-        _control(run),
+        control_repo(),
         with_description=True,
     )
     state: list[JsonValue] = [
@@ -537,10 +527,10 @@ def diagnosed(run: StepRun) -> Completion:
         )
     if diagnosis["route"] == "missing-work":
         return build_prerequisite_work.prepare(run, diagnosis)
-    graph: beadgraph.Graph = run.tools.portfolio_read(run.step["script"], beadgraph.load, _control(run))
+    graph: beadgraph.Graph = run.tools.portfolio_read(run.step["script"], beadgraph.load, control_repo())
     producers: list[dict[str, JsonValue]] = check_type(diagnosis["producers"], list[dict[str, JsonValue]])
     _validate_producers(graph, str(run.bead), producers)
-    writer: beadgraph.Writer = beadgraph.Writer(_control(run))
+    writer: beadgraph.Writer = beadgraph.Writer(control_repo())
     standing: tuple[str, ...] = graph.beads[str(run.bead)].blockers
     blockers: list[str] = sorted({
         check_type(producer["task"], str) for producer in producers if producer["task"] not in standing

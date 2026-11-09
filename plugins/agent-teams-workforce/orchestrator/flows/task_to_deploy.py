@@ -15,7 +15,6 @@ from typeguard import check_type
 
 from orchestrator.core import pipeline_steps, step_journal
 from orchestrator.core.agents import AgentRunner
-from orchestrator.core.driver_contracts import dispatch_arguments
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_registry import Registry
@@ -29,7 +28,7 @@ from orchestrator.core.journal_steps import (
     value_artifact,
 )
 from orchestrator.core.models import RunContext, StepError
-from orchestrator.core.tool_locks import seconds
+from orchestrator.core.tool_locks import control_repo, seconds
 from orchestrator.core.tools import Tools
 from orchestrator.flows import build_policy, build_prerequisite_work, build_prerequisites
 from orchestrator.flows.build_reviews import attach_reviews
@@ -1041,7 +1040,7 @@ def run(context: RunContext) -> dict[str, JsonValue]:
         next_step: Step | None = step_journal.next_step(journal)
         if next_step is not None and next_step.get("script") == "build:prerequisites-ready":
             wait: dict[str, JsonValue] = _prerequisite_wait(journal)
-            control: Path = Path(check_type(context.args[dispatch_arguments().KEY_BEADS_REPO_PATH], str))
+            control: Path = control_repo()
             if tools.portfolio("build:prerequisites-ready", build_prerequisites.pending, wait, path.parent, control):
                 return {
                     "ok": False,
