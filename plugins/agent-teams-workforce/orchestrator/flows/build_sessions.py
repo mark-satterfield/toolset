@@ -29,7 +29,7 @@ from orchestrator.core.journal_views import AcceptedArtifact, AcceptedView, acce
 from orchestrator.core.models import StepError
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from step_journal_contract import Step, StepId, StepPlan
 
@@ -42,8 +42,9 @@ FINDING_NAMES: Final = ("findings", "testIssues")
 """The accepted review and test-defect artifacts a later role resolves."""
 APPROVED_NAME: Final = "approved"
 INLINE_LIMIT: Final = 2048
-"""The largest serialized value, in bytes, written inline in the facts file; larger values are
-written beside it, one file each, so a role reads only the evidence it needs."""
+"""The largest serialized value, in bytes, written inline in the facts file for the role's own
+evidence; larger values are written beside it, one file each, so a role reads only the evidence it
+needs."""
 SAFE_NAME: Final = re.compile(r"[^A-Za-z0-9._-]+")
 
 
@@ -110,11 +111,23 @@ class Role:
     result: str | None = None
 
 
-def _pointer(held: AcceptedArtifact, spill: Path, place: int) -> dict[str, JsonValue]:
+@dataclass(frozen=True)
+class _Spill:
+    """Where a facts file's values are written beside it.
+
+    ``places`` numbers each artifact name in name order, so each value file name is stable.
+    """
+
+    folder: Path
+    places: Mapping[str, int]
+
+
+def _pointer(held: AcceptedArtifact, spill: _Spill, *, inline: bool) -> dict[str, JsonValue]:
     """Describe one accepted artifact for a role, with its producer.
 
-    A file or directory artifact is named by path; a small value is written inline; a larger value
-    is written to its own file beside the facts file.
+    A file or directory artifact is named by path. A value is written inline when ``inline`` is set
+    and it is small; otherwise it is written to its own file beside the facts file, for the role to
+    open on demand.
 
     Returns:
         The pointer.
@@ -129,12 +142,13 @@ def _pointer(held: AcceptedArtifact, spill: Path, place: int) -> dict[str, JsonV
     }
     if held.path is not None:
         return {**pointer, "path": held.path}
-    text: str = json.dumps(held.value, ensure_ascii=False, sort_keys=True)
-    if len(text.encode("utf-8")) <= INLINE_LIMIT:
+    size: int = len(json.dumps(held.value, ensure_ascii=False, sort_keys=True).encode("utf-8"))
+    if inline and size <= INLINE_LIMIT:
         return {**pointer, "value": held.held()}
-    target: Path = spill / f"{place:03d}-{SAFE_NAME.sub('-', held.name)}.json"
+    place: int = spill.places.get(held.name, len(spill.places))
+    target: Path = spill.folder / f"{place:03d}-{SAFE_NAME.sub('-', f'{held.step}-{held.name}')}.json"
     write_json(target, held.held())
-    return {**pointer, "valueFile": str(target), "bytes": len(text.encode("utf-8"))}
+    return {**pointer, "valueFile": str(target), "bytes": size}
 
 
 def _approved_by_same_review(view: AcceptedView, findings: AcceptedArtifact) -> bool:
@@ -169,32 +183,67 @@ def _unresolved(view: AcceptedView) -> list[JsonValue]:
 def _accepted_facts(run: StepRun, view: AcceptedView, role: Role) -> dict[str, JsonValue]:
     """Build the role-specific accepted evidence section of a facts file.
 
+    The requirements, the workspace, the role's previous result, the delta and the unresolved
+    findings are the role's own evidence and carry small values inline. Every other latest accepted
+    artifact is listed by reference only (a path, or a ``valueFile`` written beside the facts file),
+    for the role to open when it needs it.
+
     Returns:
         Pointers to the requirements, the workspace, every other latest accepted artifact, the
         role's own previous result, the artifacts accepted since the role last ran, and the
         unresolved findings; with the journal revision and step they were resolved for.
 
     """
-    spill: Path = run.context.work / "build" / str(run.step["id"]) / "accepted"
-    pointers: dict[str, dict[str, JsonValue]] = {
-        name: _pointer(held, spill, place) for place, (name, held) in enumerate(sorted(view.latest.items()))
-    }
+    latest_artifacts: tuple[AcceptedArtifact, ...] = view.artifacts()
+    by_name: dict[str, AcceptedArtifact] = {held.name: held for held in latest_artifacts}
+    spill: _Spill = _Spill(
+        run.context.work / "build" / str(run.step["id"]) / "accepted",
+        {held.name: place for place, held in enumerate(latest_artifacts)},
+    )
     fixed: set[str] = {*REQUIREMENT_NAMES, *WORKSPACE_NAMES, FACTS_NAME}
     since: StepId | None = view.last_performed_by(role.agent) if role.agent else None
-    delta: list[JsonValue] = [pointers[held.name] for held in view.produced_after(since) if held.name != FACTS_NAME]
-    previous: AcceptedArtifact | None = view.artifact(role.result) if role.result else None
+    delta: list[JsonValue] = [
+        _pointer(held, spill, inline=True) for held in _delta(view, since) if held.name != FACTS_NAME
+    ]
+    previous: AcceptedArtifact | None = _previous_result(view, role, since)
     return {
         "journalRevision": view.revision,
         "viewStep": view.step,
         "acceptedSteps": len(view.boundary),
-        "requirements": [pointers[name] for name in REQUIREMENT_NAMES if name in pointers],
-        "workspace": [pointers[name] for name in WORKSPACE_NAMES if name in pointers],
-        "artifacts": [pointer for name, pointer in pointers.items() if name not in fixed],
-        "previousResult": pointers[previous.name] if previous is not None else None,
+        "requirements": [_pointer(by_name[name], spill, inline=True) for name in REQUIREMENT_NAMES if name in by_name],
+        "workspace": [_pointer(by_name[name], spill, inline=True) for name in WORKSPACE_NAMES if name in by_name],
+        "artifacts": [_pointer(held, spill, inline=False) for held in latest_artifacts if held.name not in fixed],
+        "previousResult": None if previous is None else _pointer(previous, spill, inline=True),
         "deltaSince": since,
         "delta": delta,
         "unresolvedFindings": _unresolved(view),
     }
+
+
+def _delta(view: AcceptedView, since: StepId | None) -> tuple[AcceptedArtifact, ...]:
+    """List the latest artifacts accepted after the role's last accepted step.
+
+    Returns:
+        Those artifacts; none when the role has not run before, since ``artifacts`` then lists
+        everything accepted.
+
+    """
+    return () if since is None else tuple(view.produced_after(since))
+
+
+def _previous_result(view: AcceptedView, role: Role, since: StepId | None) -> AcceptedArtifact | None:
+    """Find the result the role's own agent recorded on its last accepted step.
+
+    Several specialists share a result name across rounds, so the latest artifact of the name may
+    be another agent's; the role's previous result is the one its own last step recorded.
+
+    Returns:
+        That result, or None when the role has no result name or its agent has no accepted step.
+
+    """
+    if role.result is None or since is None:
+        return None
+    return view.artifact_from(since, role.result)
 
 
 def facts(run: StepRun, role: Role | None = None) -> Path:

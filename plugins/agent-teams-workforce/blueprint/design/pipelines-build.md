@@ -41,9 +41,11 @@ directory. A Task cannot commit on the default branch or detached HEAD.
 `build_sessions.py` plans actual reasoning agents as journal children. Their shared schemas,
 facts file and current journal are passed by path. The facts file carries the role's accepted
 evidence, resolved once from the journal: pointers to the requirements and acceptance criteria,
-the workspace, the latest accepted artifact of every other name with its producing step and role
-(large values written beside the facts file), the role's previous result, the artifacts accepted
-since the role last ran, and the unresolved review findings and test defects. The journal stays
+the workspace, the result the role's own agent recorded on its last accepted step, the artifacts
+accepted since that step, and the unresolved review findings and test defects, with small values
+inline and large ones written beside the facts file; and, by reference only (a path or a value file
+beside the facts file), the latest accepted artifact of every other name with its producing step
+and role. The journal stays
 available for full primary evidence. The journal runner owns session IDs,
 resumption, output validation and acceptance. A missing dynamically selected specialist is an
 item failure; a missing fixed contract is a pipeline defect. New specialist selections name

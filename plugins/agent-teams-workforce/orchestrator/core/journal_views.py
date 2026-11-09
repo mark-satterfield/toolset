@@ -22,7 +22,7 @@ from __future__ import annotations
 import copy
 import threading
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Final
 
@@ -197,6 +197,15 @@ class AcceptedArtifact:
     path: str | None
     value: JsonValue
 
+    def copied(self) -> AcceptedArtifact:
+        """Copy the artifact, so a caller that changes its value changes nothing a view holds.
+
+        Returns:
+            An equal artifact whose value is a deep copy.
+
+        """
+        return replace(self, value=copy.deepcopy(self.value))
+
     def held(self) -> JsonValue:
         """Read what the artifact holds, the way an artifact lookup returns it.
 
@@ -212,25 +221,58 @@ class AcceptedView:
     """What one step may treat as accepted in one revision of its journal.
 
     ``boundary`` lists the accepted steps' ids in walk order: the done steps before the viewing
-    step and its running structural ancestors. ``latest`` holds, for every artifact name those
-    steps recorded, the one the last of them recorded (within a step, its last of that name).
+    step and its running structural ancestors. ``_by_name`` holds, for every artifact name those
+    steps recorded, the one the last of them recorded (within a step, its last of that name). A view
+    is shared by every caller of its revision and step, so every method hands out copies.
     """
 
     journal: Path
     revision: str
     step: StepId
     boundary: tuple[StepId, ...]
-    latest: Mapping[str, AcceptedArtifact]
+    _by_name: Mapping[str, AcceptedArtifact]
     _steps: tuple[Step, ...]
 
     def artifact(self, name: str) -> AcceptedArtifact | None:
         """Find the latest accepted artifact of a name.
 
         Returns:
-            The artifact with its producer, or None when no accepted step recorded the name.
+            A copy of the artifact with its producer, or None when no accepted step recorded the
+            name.
 
         """
-        return self.latest.get(name)
+        found: AcceptedArtifact | None = self._by_name.get(name)
+        return None if found is None else found.copied()
+
+    def artifacts(self) -> tuple[AcceptedArtifact, ...]:
+        """List the latest accepted artifact of every name.
+
+        Returns:
+            A copy of each, in name order.
+
+        """
+        return tuple(self._by_name[name].copied() for name in sorted(self._by_name))
+
+    def artifact_from(self, step_id: StepId, name: str) -> AcceptedArtifact | None:
+        """Find the artifact of a name that one accepted step recorded.
+
+        Args:
+            step_id: An accepted step.
+            name: Exact artifact name.
+
+        Returns:
+            A copy of that step's last artifact of the name, or None when the step is not accepted
+            or recorded no artifact of the name.
+
+        """
+        recorded: list[tuple[Step, Artifact]] = [
+            (step, artifact)
+            for step in self._steps
+            if step["id"] == step_id
+            for artifact in step["artifacts"]
+            if artifact["name"] == name
+        ]
+        return _accepted_artifact(*recorded[-1]) if recorded else None
 
     def held(self, name: str) -> JsonValue:
         """Read the latest accepted artifact of a name, as ``build_sessions.latest`` returns it.
@@ -239,7 +281,7 @@ class AcceptedView:
             A copy of its value, or its path; None when no accepted step recorded it.
 
         """
-        found: AcceptedArtifact | None = self.latest.get(name)
+        found: AcceptedArtifact | None = self._by_name.get(name)
         return None if found is None else found.held()
 
     def steps(self) -> list[Step]:
@@ -268,12 +310,12 @@ class AcceptedView:
             step_id: An accepted step; None yields every latest artifact.
 
         Yields:
-            Each latest artifact produced after ``step_id``, in name order.
+            A copy of each latest artifact produced after ``step_id``, in name order.
 
         """
         after: int = -1 if step_id is None or step_id not in self.boundary else self.boundary.index(step_id)
         rank: dict[StepId, int] = {held: place for place, held in enumerate(self.boundary)}
-        yield from (self.latest[name] for name in sorted(self.latest) if rank[self.latest[name].step] > after)
+        yield from (held for held in self.artifacts() if rank[held.step] > after)
 
 
 def _is_accepted(step: Step, ancestors: frozenset[StepId]) -> bool:
@@ -359,7 +401,7 @@ def build_accepted_view(snapshot: step_journal.JournalSnapshot, step_id: StepId)
         revision=snapshot.revision,
         step=step_id,
         boundary=tuple(step["id"] for step in accepted),
-        latest=MappingProxyType(_latest(accepted)),
+        _by_name=MappingProxyType(_latest(accepted)),
         _steps=accepted,
     )
 
