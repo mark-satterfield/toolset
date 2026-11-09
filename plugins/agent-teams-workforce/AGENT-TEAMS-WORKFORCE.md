@@ -50,14 +50,35 @@ assesses cumulative regression obligations, applies reviewed setup and records t
 whole-suite baseline. Test specialists review, update, refactor or add tests in suite context,
 covering happy paths, negative cases, edge cases and boundaries.
 
+Once the regression scope is accepted, `regression-impact-assessor` writes the Task's execution
+policy (`build-execution-policy.schema.json`): a run or omit decision with a reason for each
+build stage, the verification methods the requirements and changed surfaces call for, and
+whether existing suite evidence may be reused. A script checks it, and code review, final
+review, the final suite and regression mapping always run. The build follows an accepted
+policy for the optional stages (tests, reuse audit, refactoring, documentation) only while the
+scope it was written for is unchanged; with no accepted policy, a refused one or a changed
+scope, every stage runs and the reason is recorded. Infrastructure work keeps its tests stage
+so that CDK assertion and synthesis writers are selected. `test-design-lead` selects the test
+writers; `test-strategy-decider` decides only a strategy concern the selection names as
+unresolved. A passing suite result is reused only when the policy allows it and its evidence
+key (content tree, command, setup, requirements, runtime and contract) matches. Each stage
+records its run, omit or reuse decision.
+
+Each role's `facts.json` carries an `accepted` section: pointers to the accepted artifacts that
+state its requirements and workspace, its own previous result, what was accepted since it last
+ran and the unresolved findings, with every other accepted artifact listed by reference. The
+role opens the step journal only for full primary evidence.
+
 Passing required behavior is accepted. No initial failure, sabotage or manufactured Red is
 required. New tests can be poor; a failing suite receives a quality judgment before being
 treated as a product defect. Test/setup defects return to test work, valid product failures
 go to implementation and unavailable environment facts stop meaningful verification.
 
 Architecture conformance, correctness, code quality and best practices receive review even
-when the suite already passes. Refactoring always has an opportunity, with no-change accepted
-when no worthwhile improvement is warranted. The build develops missing prerequisites in
+when the suite already passes. Refactoring has an opportunity unless the accepted execution
+policy omits it or the accepted code review of the exact current tree found nothing above a
+note, with no-change accepted when no worthwhile improvement is warranted. Review findings
+are corrected by implementers selected for those findings only. The build develops missing prerequisites in
 their owning repositories instead of duplicating shared capabilities or merely reporting
 them unbuilt. Unpublished libraries retain their publication boundary.
 
@@ -568,7 +589,7 @@ No workflow starts these agents; they remain for a spec written well before its 
 
 ### Test Design — Execution Team
 
-`tdd-red` starts the writers its contract's surfaces call for (`tdd-unit-test-generator` always). The other agents here are available to a caller that chooses them. 16 agents.
+`task-to-deploy` has `test-design-lead` select the test writers the accepted execution policy and the Task's surfaces call for, and starts `test-strategy-decider` only for a strategy concern that selection names as unresolved. The other agents here are available to a caller that chooses them. 16 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -633,7 +654,7 @@ No workflow starts these agents; they remain for a spec written well before its 
 
 ### Code Quality — Execution Team
 
-`tdd-refactor` starts `code-refactoring-specialist`, which decides which refactorings the changed files need. The other agents here are available to a caller that chooses them. 9 agents.
+`task-to-deploy` starts `code-refactoring-specialist` for the refactoring opportunity the accepted execution policy keeps, and it decides which refactorings the changed files need. The other agents here are available to a caller that chooses them. 9 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -718,7 +739,7 @@ The Story's Python driver publishes, synthesizes, deploys and verifies directly.
 
 ### Cumulative Regression Assurance — Execution Team
 
-`task-to-deploy` starts the assessor to write the regression scope and, after Green, the mapping of tests to requirements; the reviewer reviews each. 2 agents.
+`task-to-deploy` starts the assessor to write the regression scope, then the Task's execution policy, and, after Green, the mapping of tests to requirements; the reviewer reviews the scope and the mapping, and a script checks the policy. 2 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -861,7 +882,7 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `spec-freshness-lead` | Spec Freshness | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes spec freshness checks to validators and aggregates findings into one freshness packet. Use for Spec Freshness phase work requiring delegation, validation routing, and packet assembly. No workflow currently dispatches it. | subagent-contract, agent-orchestration | Read, Glob, Grep, Agent, SendMessage |
 | `spec-currency-validator` | Spec Freshness | Execution Team | Worker | Validator | test | Checks, before implementation begins, that a specification still matches the project: every module, interface, contract, data model, file path and convention it references still exists and still matches, each claim classed current, drifted or unverifiable with evidence. For a caller that holds a spec written some time before its build. | subagent-contract, validation-protocol, graphrag-lookup | Read, Glob, Grep, Bash, Write, Agent |
 | `dependency-change-detector` | Spec Freshness | Execution Team | Worker | Validator | test | Detects dependency version and contract changes since a specification was written, by diffing manifests and lockfiles against the spec-time reference and checking changed contracts, classing each as unchanged, reconciled in the spec, or needing reconciliation. For a caller that holds a spec written some time before its build. | subagent-contract, validation-protocol, dependency-auditor, graphrag-lookup, python-lambda-packaging | Read, Glob, Grep, Bash, Write, Agent |
-| `test-design-lead` | Test Design | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes requirements and design to test writers working in the existing suite, and assembles trustworthy coverage evidence. Use for Test Design work requiring delegation and criterion-to-test routing. | subagent-contract, agent-orchestration, python-lambda-packaging | Read, Glob, Grep, Agent, SendMessage |
+| `test-design-lead` | Test Design | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes requirements and design to test writers working in the existing suite, and assembles trustworthy coverage evidence. Use for Test Design work requiring delegation and criterion-to-test routing. | subagent-contract, agent-orchestration, python-lambda-packaging | Read, Glob, Grep, Write, Agent, SendMessage |
 | `tdd-unit-test-generator` | Test Design | Execution Team | Worker | Executor (test author) | test | Reviews, writes and refactors unit tests, including CDK assertion tests, within the existing suite against the full requirements and design; in update mode, rules on every existing test of any kind an implementer names (update, delete or keep, citing the contract) and applies the ruling. Python and TypeScript, back end, front end and CDK. | subagent-contract, validation-protocol, tdd-guide, cumulative-regression, python-coding, typescript-coding, web-frontend-coding, cdk-coding, software-engineering, graphrag-lookup, python-lambda-packaging | Read, Write, Edit, Glob, Grep, Bash, Agent |
 | `consumer-driven-contract-test-writer` | Test Design | Execution Team | Worker | Executor (test author) | test | Writes and improves consumer-driven contract tests from the spec's API and event contracts. Use for Test Design work requiring contract test authoring, consumer expectation modeling, and provider verification setup. | subagent-contract, validation-protocol, contract-testing, cumulative-regression, python-coding, software-engineering, graphrag-lookup, python-lambda-packaging | Read, Write, Edit, Glob, Grep, Bash, Agent |
 | `security-test-case-designer` | Test Design | Execution Team | Worker | Executor (test author) | test | Designs and improves security test cases from the threat model: abuse cases, negative paths, authorization matrices. Use for Test Design work requiring threat-model-driven test design, abuse case coverage, and authorization matrix verification. | subagent-contract, validation-protocol, senior-security, cumulative-regression, python-coding, software-engineering, graphrag-lookup, python-lambda-packaging | Read, Write, Edit, Glob, Grep, Bash, Agent |
