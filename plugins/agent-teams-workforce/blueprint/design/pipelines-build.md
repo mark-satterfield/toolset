@@ -266,6 +266,8 @@ are named as preserved, undelivered tooling in checkpoint evidence. A mixed conf
 that requires both owning flows stops with an actionable pipeline ownership error: deliver its
 tooling through a separate main worktree and integrate it before the product checkpoint.
 Preserved tooling dirt is not a failed product checkpoint or evidence of tooling delivery.
+Test reports under `.agent-workforce/reports/` are transient run output, never product: a
+checkpoint leaves them uncommitted, as the regression runner archives and deletes its own.
 
 The Task's build sets no matrix approval or verified gate. The Story's deployment follows only
 when its Tasks are built, as described in [deploy](pipelines-deploy.md).

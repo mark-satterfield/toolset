@@ -28,6 +28,8 @@ WORKTREE_PREFIX: Final = "story"
 PATH_COMPONENT: Final = re.compile(r"[^A-Za-z0-9._-]+")
 GIT_OPERATION_SECONDS: Final = 120.0
 GIT_OPERATION_MARGIN_SECONDS: Final = 20.0
+RUN_OUTPUT: Final = Path(".agent-workforce") / "reports"
+"""Transient test reports; the regression runner archives and deletes its own, and none is committed."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -307,13 +309,13 @@ def _product_path(tools: Tools, tree: Path, path: str, ownership: ToolingOwnersh
     """Classify a changed file, refusing to hide product edits inside a mixed file.
 
     Returns:
-        True for product changes; False for preservable tooling-only changes.
+        True for product changes; False for preservable tooling-only changes and transient test reports.
 
     Raises:
         ValueError: Product and tooling changes share a configuration file.
 
     """
-    if _tooling_path(path, ownership):
+    if _tooling_path(path, ownership) or Path(path).is_relative_to(RUN_OUTPUT):
         return False
     if Path(path).name not in {"pyproject.toml", "setup.cfg", "Taskfile.yml", "Taskfile.yaml", "tsconfig.json"}:
         return True
