@@ -5,9 +5,9 @@
   "additionalProperties": false,
   "required": ["route", "coverage", "evidence"],
   "properties": {
-    "route": {"enum": ["pass", "test-repair", "implementation", "environment"]},
+    "route": {"enum": ["pass", "test-repair", "implementation", "upstream", "environment"]},
     "coverage": {"type": "string", "minLength": 1},
-    "evidence": {"type": "string", "minLength": 1},
+    "evidence": {"type": "string", "minLength": 1, "description": "Concrete executed failure evidence. For upstream, identify the missing producer output, its owning component or repository, and whether consumption requires a build, package publication or deployment; do not invent producer Task IDs."},
     "suiteEvidence": {"type": "string", "minLength": 1}
   },
   "allOf": [{"if": {"properties": {"route": {"const": "pass"}}}, "then": {"required": ["suiteEvidence"]}}]

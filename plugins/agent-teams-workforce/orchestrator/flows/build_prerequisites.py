@@ -26,7 +26,7 @@ from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, valu
 from orchestrator.core.models import StepError
 from orchestrator.core.tool_locks import control_repo
 from orchestrator.flows import build_prerequisite_work
-from orchestrator.flows.build_sessions import OutputContract, reasoned
+from orchestrator.flows.build_sessions import OutputContract, latest, reasoned
 from orchestrator.flows.build_state import (
     CONTRACTS,
     artifact_document,
@@ -435,12 +435,25 @@ def _journal(directory: Path, bead: str) -> Path:
     return step_journal.journal_path(directory, BeadId(bead))
 
 
-def diagnose(run: StepRun, again: str) -> Completion:
+def _failure_observation(run: StepRun, again: str) -> dict[str, JsonValue]:
+    """Read the accepted failure belonging to the continuation's actual phase.
+
+    Returns:
+        A setup failure payload or an accepted independent suite judgment.
+
+    """
+    if again == "build:baseline":
+        return check_type(latest(run, "setupFailure"), dict[str, JsonValue])
+    return artifact_document(run, "suiteReview")
+
+
+def diagnose(run: StepRun, again: str, observation: dict[str, JsonValue] | None = None) -> Completion:
     """Append one evidence-based diagnosis for a distinct observed failure and tree.
 
     Args:
         run: Current environment judgment consumer.
-        again: The suite-review consumer to resume after fresh verification.
+        again: The baseline or suite-review consumer to resume after fresh verification.
+        observation: Actual setup failure evidence when no suite review exists yet.
 
     Returns:
         A genuine mapper session with fresh tracker and repository facts.
@@ -454,7 +467,7 @@ def diagnose(run: StepRun, again: str) -> Completion:
         run.step["script"],
         ["hash-files", "--tree", str(workspace_of(run).tree)],
     )
-    review: dict[str, JsonValue] = artifact_document(run, "suiteReview")
+    review: dict[str, JsonValue] = observation if observation is not None else _failure_observation(run, again)
     graph: beadgraph.Graph = run.tools.portfolio_read(
         run.step["script"],
         beadgraph.load,
@@ -484,7 +497,10 @@ def diagnose(run: StepRun, again: str) -> Completion:
         "task-dependency-mapper",
         OutputContract(CONTRACTS / "build-prerequisites.schema.json", "prerequisiteDiagnosis"),
         f"Diagnose this current Task's failure read-only from fresh context {path}. Verify actual producer Task ids, "
-        "their parent Stories, the consumed outputs and whether build or recorded deployment is required. "
+        "their parent Stories, the consumed outputs and whether built code, a Published package or a recorded deployed "
+        "resource is required. "
+        "For regression-setup evidence, read setupPath and each failed command's output JSON, including stderrTail; "
+        "retain the recorded successful setup commands as facts, not proof that the whole setup succeeded. "
         "Check current readiness rather than inferring missing SSM from an old synth or cached test. "
         "Never create parameters, invent issues, change edges or modify any source. "
         "Each producer evidence value must be an absolute existing captured evidence artifact path. "
@@ -671,13 +687,15 @@ def observed(run: StepRun) -> Completion:
     readiness: dict[str, JsonValue] = artifact_document(run, "prerequisiteReadiness")
     if readiness["ready"] is not True:
         raise StepError(run.step["script"], OTHER_CAUSE, (check_type(readiness["evidence"], str),))
+    again: str = check_type(run.params()["again"], str)
+    continuation: str = "build:baseline" if again == "build:baseline" else "build:prerequisites-suite"
     return Completion(
         add=(
             StepGroup((
                 new_step(
-                    "build:prerequisites-suite",
-                    "Run and reassess the original suite",
-                    {"again": check_type(run.params()["again"], str)},
+                    continuation,
+                    "Resume the baseline setup" if again == "build:baseline" else "Run and reassess the original suite",
+                    {"again": again},
                 ),
             )),
         ),

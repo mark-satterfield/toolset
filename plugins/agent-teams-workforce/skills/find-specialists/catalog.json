@@ -3,7 +3,7 @@
   "agents": [
     {
       "name": "acceptance-criteria-coverage-assessor",
-      "description": "Reviews existing and newly authored suite coverage, including happy, negative, edge and boundary cases. Distinguishes poor tests and setup from product defects and environment failures using actual execution evidence. Reports findings without repairing tests or product code.",
+      "description": "Reviews existing and newly authored suite coverage, including happy, negative, edge and boundary cases. Distinguishes poor tests and setup from local product defects, missing upstream outputs and environment failures using actual execution evidence. Reports findings without repairing tests or product code.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",

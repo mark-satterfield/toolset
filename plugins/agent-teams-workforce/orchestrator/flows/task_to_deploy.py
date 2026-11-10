@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -148,7 +149,9 @@ def _baseline(run: StepRun) -> Completion:
     """
     approved: JsonValue = latest(run, "regressionPlan")
     if isinstance(approved, str):
-        _setup_suite(run, Path(approved))
+        setup: Completion | None = _setup_suite(run, Path(approved))
+        if setup is not None:
+            return setup
     supplied: JsonValue = latest(run, "suiteCommand") or run.context.args.get("suiteCommand", "")
     command: str | None = declared_command(_workspace(run).tree, check_type(supplied, str))
     if command is None:
@@ -162,11 +165,11 @@ def _baseline(run: StepRun) -> Completion:
     return _baseline_command(run, command)
 
 
-def _setup_suite(run: StepRun, approved: Path) -> None:
+def _setup_suite(run: StepRun, approved: Path) -> Completion | None:
     """Apply the reviewed regression plan's setup before measuring the baseline.
 
-    Raises:
-        StepError: The reviewed setup cannot prepare the repository.
+    Returns:
+        A prerequisite diagnosis when setup fails, otherwise None.
 
     """
     workspace: Workspace = _workspace(run)
@@ -194,9 +197,18 @@ def _setup_suite(run: StepRun, approved: Path) -> None:
     )
     document: dict[str, JsonValue] = json_object(json.loads(result.stdout))
     if result.exit != 0 or document.get("ok") is not True:
-        errors: list[str] = check_type(document.get("errors", []), list[str])
-        msg = "build:baseline"
-        raise StepError(msg, OTHER_CAUSE, tuple(errors or ["Regression setup failed"]))
+        observation: dict[str, JsonValue] = {
+            "source": "regression-setup",
+            "setupPath": str(output),
+            "approvedPlan": str(approved),
+            "result": document,
+        }
+        planned: Completion = build_prerequisites.diagnose(run, "build:baseline", observation)
+        return Completion(
+            artifacts=(*planned.artifacts, value_artifact("setupFailure", observation)),
+            add=planned.add,
+        )
+    return None
 
 
 def _baseline_command(run: StepRun, command: str) -> Completion:
@@ -363,8 +375,15 @@ def _red_check(run: StepRun) -> Completion:
         run,
         "acceptance-criteria-coverage-assessor",
         OutputContract(CONTRACTS / "build-suite-review.schema.json", "suiteReview"),
-        "Judge suite quality and classify failures as test defects, product defects or environment failures",
-        followups=(_new("build:suite-reviewed", "Act on the suite-quality review before implementation"),),
+        "Judge suite quality and classify failures as test defects, product defects, "
+        "upstream readiness or environment failures",
+        followups=(
+            _new(
+                "build:suite-reviewed",
+                "Act on the suite-quality review before implementation",
+                {"upstreamClassified": True},
+            ),
+        ),
     )
     return Completion(
         artifacts=(*judgment.artifacts, *recorded, value_artifact("testPrint", fingerprint)),
@@ -409,6 +428,57 @@ def _step_test_files(step: Step) -> list[str]:
     ]
 
 
+def _legacy_upstream_review(run: StepRun, review: dict[str, JsonValue], again: str) -> Completion | None:
+    """Reclassify one legacy implementation verdict with accepted missing-producer evidence.
+
+    Returns:
+        A fresh bounded assessor, or None when the judgment already includes upstream routing.
+
+    Raises:
+        StepError: The exact legacy evidence already received a classification request.
+
+    """
+    if run.params().get("upstreamClassified") is True or review["route"] != "implementation":
+        return None
+    missing: list[JsonValue] = []
+    for step in accepted_steps(run):
+        for artifact in step["artifacts"]:
+            if artifact["kind"] != "value" or artifact["name"] != "upstreamMissing":
+                continue
+            rows: list[dict[str, JsonValue]] = check_type(artifact["value"], list[dict[str, JsonValue]])
+            for row in rows:
+                if any(not check_type(row[key], str).strip() for key in ("what", "evidence")):
+                    raise StepError(run.step["script"], OTHER_CAUSE, ("Malformed accepted upstreamMissing evidence",))
+                missing.append(row)
+    if not missing:
+        return None
+    identity: str = hashlib.sha256(json.dumps([review, missing], sort_keys=True).encode()).hexdigest()
+    if any(
+        artifact["kind"] == "value" and artifact["name"] == "legacyUpstreamReview" and artifact["value"] == identity
+        for step in accepted_steps(run)
+        for artifact in step["artifacts"]
+    ):
+        raise StepError(
+            run.step["script"],
+            OTHER_CAUSE,
+            ("The exact legacy upstream evidence was already reclassified",),
+        )
+    planned: Completion = reasoned(
+        run,
+        "acceptance-criteria-coverage-assessor",
+        OutputContract(CONTRACTS / "build-suite-review.schema.json", "suiteReview"),
+        "Reclassify the exact accepted failing suite using current source and the accepted upstreamMissing facts. "
+        "Those historical facts are evidence to check, not proof of current missing readiness. "
+        "Choose upstream only when another repository's output must be built, published or deployed; "
+        "choose implementation for work this Task owns. Preserve the exact suiteEvidence; do not execute tests.",
+        followups=(_new(again, "Act on the current failure ownership", {"upstreamClassified": True}),),
+    )
+    return Completion(
+        artifacts=(*planned.artifacts, value_artifact("legacyUpstreamReview", identity)),
+        add=planned.add,
+    )
+
+
 def _suite_reviewed(run: StepRun) -> Completion:
     """Repair poor tests before interpreting their failure as missing product behavior.
 
@@ -423,11 +493,14 @@ def _suite_reviewed(run: StepRun) -> Completion:
     route: str = check_type(review["route"], str)
     if route == "pass":
         return _passed_review(run, review)
+    legacy: Completion | None = _legacy_upstream_review(run, review, "build:suite-reviewed")
+    if legacy is not None:
+        return legacy
     if route == "implementation":
         if latest(run, "implementationSelection") is not None or latest(run, "implementers") is not None:
             return Completion(add=(StepGroup((_new("build:plan-code", "Correct the validated product failure"),)),))
         return Completion()
-    if route == "environment":
+    if route in {"environment", "upstream"}:
         return build_prerequisites.diagnose(run, "build:suite-reviewed")
     if _count(run, "build:suite-reviewed", "suiteCorrection") >= build_rounds() - 1:
         msg = "build:suite-reviewed"
@@ -713,8 +786,15 @@ def _green_check(run: StepRun) -> Completion:
         run,
         "acceptance-criteria-coverage-assessor",
         OutputContract(CONTRACTS / "build-suite-review.schema.json", "suiteReview"),
-        "Judge whether the failing suite needs test repair, product correction or environment recovery",
-        followups=(_new("build:green-reviewed", "Route the judged suite failure to its owning specialist"),),
+        "Judge whether the failing suite needs test repair, product correction, "
+        "upstream readiness or environment recovery",
+        followups=(
+            _new(
+                "build:green-reviewed",
+                "Route the judged suite failure to its owning specialist",
+                {"upstreamClassified": True},
+            ),
+        ),
     )
     return Completion(artifacts=(*artifacts, *judgment.artifacts), add=judgment.add)
 
@@ -763,7 +843,10 @@ def _green_reviewed(run: StepRun) -> Completion:
     route: str = check_type(review["route"], str)
     if route == "pass":
         return _passed_review(run, review)
-    if route == "environment":
+    legacy: Completion | None = _legacy_upstream_review(run, review, "build:green-reviewed")
+    if legacy is not None:
+        return legacy
+    if route in {"environment", "upstream"}:
         return build_prerequisites.diagnose(run, "build:green-reviewed")
     if _count(run, "build:green-check", "greenRun") >= build_rounds():
         stage: str = "build:green-reviewed"
@@ -840,8 +923,8 @@ def _prerequisites_assess(run: StepRun) -> Completion:
         OutputContract(CONTRACTS / "build-suite-review.schema.json", "suiteReview"),
         "Assess this freshly rerun whole suite and current readiness evidence; choose pass when sound tests pass, "
         "naming the exact suite JSON evidence path as suiteEvidence; otherwise distinguish test defects, product work "
-        "and environment failures. Never reuse the old judgment.",
-        followups=(_new(again, "Act on the fresh suite assessment"),),
+        "upstream readiness and environment failures. Never reuse the old judgment.",
+        followups=(_new(again, "Act on the fresh suite assessment", {"upstreamClassified": True}),),
     )
 
 

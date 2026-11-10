@@ -157,9 +157,12 @@ Test specialists consider happy paths, negative cases, edge cases and boundaries
 review, update and refactor existing tests as well as add new tests. Tests are code, and newly
 written tests can be poor. A failing suite therefore receives a quality judgment before its
 failure is treated as missing product behavior. The accepted route distinguishes test repair,
-product implementation and environment failure.
+product implementation within the Task, missing upstream producer output and environment failure.
+An upstream judgment cites the actual failed execution and missing producer output, names its
+owning component or repository, and distinguishes build, publication and deployment readiness.
+It does not invent producer Task IDs or send the consumer implementers work owned by a producer.
 
-An environment judgment appends one targeted `task-dependency-mapper` diagnosis using current
+An upstream or environment judgment appends one targeted `task-dependency-mapper` diagnosis using current
 tracker, repository and readiness evidence. The result names real producer Tasks, their actual
 parent Stories and whether their output must be built, published or deployed. The build validates those
 identities and adds only missing consumer blockers through the normal cycle-checked writer;
