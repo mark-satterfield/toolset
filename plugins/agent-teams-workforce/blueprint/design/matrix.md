@@ -180,6 +180,12 @@ the callee's specified contract, so a call is context for the caller's Tasks
 `routesTo` are build needs. Every step that turns relationships into Task edges applies this rule
 to the relationships the matrix states, never to a `requires` list a span file already holds.
 
+A build need may end at a stack rather than at an entry it holds: an `imports` ends at a library's
+stack, `through` its package, and a `usesLayer` at a layer homed in a stack. Such a need is on what
+the stack builds and releases (`matrixtraverse.build_home` names the stack of a stack, layer or
+package), so it reaches every element built in that stack, and it is satisfied by the stack's
+release: the Task of the stack's Story that the Story's other Tasks all precede.
+
 A dependency between two stacks is read, never stored: stack A depends on stack B when a
 dependency relationship starts at A or at an entry whose home is A and ends at B or at an
 entry whose home is B. A dependency found at stack level, with the entries not yet known, is

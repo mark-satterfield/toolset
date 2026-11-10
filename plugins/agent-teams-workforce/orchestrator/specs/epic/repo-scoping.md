@@ -53,15 +53,24 @@ directly (`BUILD_DEPENDENCY_KINDS`). Publishing an event, a rule matching an eve
 no build dependency: a caller is built against the callee's specified contract, so a call holds
 only at run time. A rule's `onBus` and `routesTo`, an import, a layer used, a value read and
 shared infrastructure run in do. A repository-side relationship never makes a `requires`, and a
-dependency on something no Story builds is context, not an item. `build_context` follows the
+dependency on something no Story builds is context, not an item. A dependency that ends at a
+stack, or at a layer or package homed in one (`matrixtraverse.build_home`), such as an `imports`
+of a library's stack through its package, reaches the items built in that stack, never those of
+the item's own stack (`_needed_items`). `build_context` follows the
 same kinds and calls for `dependsOn` (`CONTEXT_DEPENDENCY_KINDS`): what a Task calls is context.
 The rule is stated once, as `matrix_contract.NO_BUILD_ORDER_KINDS`, and every step that turns a
 `requires` into a Task edge (`hierarchy.derive_prerequisites`, `hierarchy.task_grouping_problems`,
 `beadwrite.closure_task_edges`) applies it again to the relationships the matrix states between
-the two entries (`hierarchy.build_relations`), so a `requires` a span file wrote before the rule
+the two entries (`hierarchy.build_relations`: to the required entry itself, else to the stack it
+is homed in or a layer or package of that stack), so a `requires` a span file wrote before the rule
 makes no edge. A `requires` is between items, not Tasks: it becomes a Task edge only when one Task
 builds each of the two items; otherwise which Tasks consume and provide it is judged from the
 Tasks' content (the decomposer's edges within a Story, the mapper's `itemNeeds` across Stories).
+A need stated through the required item's stack (`hierarchy.build_via`), such as an import of a
+library, is satisfied by that stack's release, not by one element of it: across Stories its
+providers are the Tasks of the required item's Story that no other Task of that Story depends on
+(`beadwrite._release_builders`; for a library Story, the Task that releases the package), and the
+edge's reason names the relationship `via` the stack.
 
 Everything else the Epic reaches in the matrix is context: the Tasks are handed it as what they
 depend on (`task-decomposition.md`), never as work.

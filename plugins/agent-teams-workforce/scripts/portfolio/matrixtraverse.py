@@ -53,6 +53,7 @@ from matrix_contract import (
     REL_CORRESPONDS_TO,
     REL_COVERS,
     REL_DESCRIBED_BY,
+    REL_DISTRIBUTED_AS,
     REL_DRIVES,
     REL_HAS_REQUIREMENT,
     REL_REALIZED_BY,
@@ -512,6 +513,40 @@ def authority_holder(matrix: Matrix, entry_id: EntryId) -> EntryId | None:
         return matrix.home(entry_id)
     stacks: frozenset[EntryId] = matrix.publisher_stacks(entry_id)
     return next(iter(stacks)) if len(stacks) == 1 else None
+
+
+def build_home(matrix: Matrix, entry_id: EntryId) -> EntryId | None:
+    """Name the stack a build need that ends at an entry is satisfied in, when the entry is a stack's output.
+
+    A build need may end at a library's stack (an ``imports`` through its package), at its layer or
+    at its package rather than at an element the stack holds. Such a need is satisfied by what the
+    stack builds and releases, not by one element of it.
+
+    Args:
+        matrix: The matrix.
+        entry_id: The entry the need ends at.
+
+    Returns:
+        The entry itself when it is a stack; a layer's architecture-side home; the stack that an
+        architecture-side ``distributedAs`` names a package as; None for any other entry, an
+        entry the matrix does not hold, or one the architecture side places in no stack.
+
+    """
+    entry: Entry | None = matrix.find(entry_id)
+    if entry is None:
+        return None
+    if entry.kind == KIND_STACK:
+        return entry_id
+    if entry.kind == KIND_LAYER:
+        return matrix.home(entry_id)
+    if entry.kind != KIND_PACKAGE:
+        return None
+    stacks: list[EntryId] = [
+        relationship.start
+        for relationship in matrix.incoming(entry_id, (REL_DISTRIBUTED_AS,))
+        if relationship.side == AUTHORITY_SIDE
+    ]
+    return stacks[0] if stacks else None
 
 
 def follow(

@@ -105,7 +105,10 @@ several Tasks build the item (its `candidates`) or several build the item it req
 candidate consumes to that candidate, and none for any other pair; the need's items are wholes,
 and one Task's need or provision is not every Task's. The need's relationship already passed the
 matrix's rule, but the edge test still applies: a need whose candidate only calls what a `from`
-Task builds gets no edge. Each edge's `kind` says what the dependent Task needs (the
+Task builds gets no edge. A need whose reason names its relationship `via` a stack (an import of a
+library, say) is on that stack's release, and its `from` is the release Task of the providing
+Story: add an entry to `edges` for each candidate whose own work builds or changes code that imports the
+library. Each edge's `kind` says what the dependent Task needs (the
 output contract's kinds). Consider same-Story and closure edges when checking for a cycle.
 
 A Story is built after another when one of its Tasks depends on one of the other's, so two

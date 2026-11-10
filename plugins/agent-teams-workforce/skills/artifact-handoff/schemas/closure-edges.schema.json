@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/closure-edges.schema.json",
   "title": "Closure edges",
-  "description": "The edges the matrix's dependency relationships between what the Tasks build make between Tasks of different Stories (<work>/closure-edges.json): the step `beadwrite.closure_task_edges` (orchestrator/flows/task_edges.py) writes beadwrite.closure_task_edges' result and validates it against this file. An item's build need (`requires`: every architecture-side dependency relationship but publishing, matching and calling) becomes an edge only when one Task builds the item and one Task builds the item it requires; when several Tasks build either, the need is listed in `itemNeeds` instead of fanned out onto every pair of them. The task-dependency-mapper is handed it as `closure edges`: these edges stand, the mapper places each item need between the providing Tasks and the candidate Tasks that consume the required item, and it adds only edges the file does not hold.",
+  "description": "The edges the matrix's dependency relationships between what the Tasks build make between Tasks of different Stories (<work>/closure-edges.json): the step `beadwrite.closure_task_edges` (orchestrator/flows/task_edges.py) writes beadwrite.closure_task_edges' result and validates it against this file. An item's build need (`requires`: every architecture-side dependency relationship but publishing, matching and calling) becomes an edge only when one Task builds the item and one Task builds the item it requires; when several Tasks build either, the need is listed in `itemNeeds` instead of fanned out onto every pair of them. A need stated through the stack the required item is homed in (an import of a library's stack) is provided by that Story's release: the Tasks of the Story no other Task of it depends on. The task-dependency-mapper is handed it as `closure edges`: these edges stand, the mapper places each item need between the providing Tasks and the candidate Tasks that consume the required item, and it adds only edges the file does not hold.",
   "type": "object",
   "additionalProperties": false,
   "required": ["ok", "edges", "itemNeeds", "warnings", "summary"],
@@ -18,7 +18,7 @@
           "from": {"description": "The prerequisite Task key, S<i>-<local key>.", "type": "string"},
           "to": {"description": "The dependent Task key, S<i>-<local key>.", "type": "string"},
           "kind": {"description": "What the dependent Task needs from the prerequisite (task-deps.schema.json, TaskDepsEdgeKind).", "type": ["string", "null"]},
-          "reason": {"description": "Which item requires which, and through which matrix relationship.", "type": ["string", "null"]}
+          "reason": {"description": "Which item requires which, and through which matrix relationship (followed by `via <stack>` when the relationship ends at the stack the required item is homed in).", "type": ["string", "null"]}
         }
       }
     },

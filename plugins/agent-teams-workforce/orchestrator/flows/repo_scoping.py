@@ -58,6 +58,7 @@ from matrixtraverse import (
     ATTR_APP,
     ATTR_REPOSITORY,
     authority_holder,
+    build_home,
     holder,
     stack_type,
 )
@@ -181,7 +182,8 @@ DependsOn = TypedDict(
 """One dependency of something a Story builds on something it does not build: context, never work.
 
 ``side`` is the side that states the relationship (a repository-side one is a hint read from
-code); ``builtBy`` is the storyKey of another Story of the Epic whose items include ``to``.
+code); ``builtBy`` is the storyKey of another Story of the Epic whose items include ``to``, or,
+when ``to`` is a stack or a layer or package homed in one, that builds in that stack.
 """
 
 
@@ -630,29 +632,6 @@ def story_build_problems(
     return [*unread, *(problem for problem in found if problem is not None)]
 
 
-def _requires(matrix: Matrix, entry_id: EntryId, own: str, ids: Mapping[EntryId, Sequence[str]]) -> list[str]:
-    """List the build items one item needs built first.
-
-    Only the dependency relationships the architecture side states count; a repository-side
-    relationship never makes a ``requires``, and a dependency on something no Story of the Epic
-    builds is context, not an item. Publishing an event, a rule matching an event and a call make
-    no need (:data:`BUILD_DEPENDENCY_KINDS`).
-
-    Returns:
-        The ids of the items that build what its architecture-side dependency relationships
-        reach directly, in the order found and without repeats; never the item itself.
-
-    """
-    reached: list[str] = [
-        needed
-        for relationship in matrix.outgoing(entry_id, BUILD_DEPENDENCY_KINDS)
-        if relationship.side == AUTHORITY_SIDE
-        for needed in ids.get(relationship.end, ())
-        if needed != own
-    ]
-    return list(dict.fromkeys(reached))
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def repository_name(matrix: Matrix, stack: EntryId) -> str:
     """Name the repository that holds a stack.
@@ -723,7 +702,59 @@ class Placed(NamedTuple):
     stack: EntryId
 
 
-def _build_item(matrix: Matrix, placed: Placed, item_id: str, ids: Mapping[EntryId, Sequence[str]]) -> DeltaItem:
+class BuildItems(NamedTuple):
+    """The ids of the items of what the Epic's Stories build, by the entry and by the stack each is built in."""
+
+    by_entry: Mapping[EntryId, Sequence[str]]
+    by_stack: Mapping[EntryId, Sequence[str]]
+
+
+def _needed_items(matrix: Matrix, end: EntryId, placed: Placed, items: BuildItems) -> Sequence[str]:
+    """Name the items that build what one build need of an item ends at.
+
+    A need that ends at an entry a Story builds is that entry's items. A need that ends at a stack,
+    or at a layer or package homed in one (:func:`matrixtraverse.build_home`), such as an
+    ``imports`` of a library's stack through its package, is satisfied by what the Stories build in
+    that stack, so it is the items built there; none when that is the item's own stack.
+
+    Returns:
+        The ids of those items; empty when no Story of the Epic builds what the need ends at.
+
+    """
+    exact: Sequence[str] = items.by_entry.get(end, ())
+    if exact:
+        return exact
+    home: EntryId | None = build_home(matrix, end)
+    if home is None or home == placed.stack:
+        return ()
+    return items.by_stack.get(home, ())
+
+
+def _requires(matrix: Matrix, placed: Placed, own: str, items: BuildItems) -> list[str]:
+    """List the build items one item needs built first.
+
+    Only the dependency relationships the architecture side states count; a repository-side
+    relationship never makes a ``requires``, and a dependency on something no Story of the Epic
+    builds is context, not an item. Publishing an event, a rule matching an event and a call make
+    no need (:data:`BUILD_DEPENDENCY_KINDS`). A need that ends at a stack, or at a layer or package
+    homed in one, reaches the items built in that stack (:func:`_needed_items`).
+
+    Returns:
+        The ids of the items that build what its architecture-side dependency relationships
+        reach directly, in the order found and without repeats; never the item itself.
+
+    """
+    reached: list[str] = [
+        needed
+        for relationship in matrix.outgoing(placed.entry_id, BUILD_DEPENDENCY_KINDS)
+        if relationship.side == AUTHORITY_SIDE
+        for needed in _needed_items(matrix, relationship.end, placed, items)
+        if needed != own
+    ]
+    return list(dict.fromkeys(reached))
+
+
+def _build_item(matrix: Matrix, placed: Placed, item_id: str, items: BuildItems) -> DeltaItem:
     """Render one thing a Story builds in one stack as its item.
 
     Returns:
@@ -740,7 +771,7 @@ def _build_item(matrix: Matrix, placed: Placed, item_id: str, ids: Mapping[Entry
         "views": list(dict.fromkeys(stated.end for stated in matrix.outgoing(placed.entry_id, (REL_DESCRIBED_BY,)))),
         "kind": KIND_IMPLEMENTATION_GAP,
         "repository": repository_name(matrix, placed.stack),
-        "requires": _requires(matrix, placed.entry_id, item_id, ids),
+        "requires": _requires(matrix, placed, item_id, items),
         "requiredBy": [],
         "evidence": [placed.entry_id, EVIDENCE_RESULT],
     }
@@ -748,7 +779,7 @@ def _build_item(matrix: Matrix, placed: Placed, item_id: str, ids: Mapping[Entry
         item["state"] = hierarchy.STATE_VERIFIED
     if matrix.entry(placed.entry_id).kind != KIND_EVENT:
         return item
-    return {**item, **_event_facts(matrix, placed, ids)}
+    return {**item, **_event_facts(matrix, placed, items.by_entry)}
 
 
 class EventFacts(TypedDict):
@@ -799,8 +830,9 @@ def story_builds(
         (:func:`placements`): its id, the entry's name and matrix id, the documents that
         describe it, the stack's repository (:func:`repository_name`), and the items it
         requires and is required by through the architecture-side dependency relationships
-        between them. An event's item also carries ``trigger``, the event's description, and
-        ``publishedBy``, its producers in that stack (:func:`_event_facts`).
+        between them, or from it to the stack the other is built in (:func:`_needed_items`).
+        An event's item also carries ``trigger``, the event's description, and ``publishedBy``,
+        its producers in that stack (:func:`_event_facts`).
 
     Raises:
         StepError: :func:`story_build_problems` reports a problem in either list; the evidence
@@ -820,9 +852,13 @@ def story_builds(
     ]
     item_ids_of: dict[Placed, str] = {built: f"E{index}" for index, built in enumerate(placed, 1)}
     ids: dict[EntryId, list[str]] = {}
+    stacks: dict[EntryId, list[str]] = {}
     for built, item_id in item_ids_of.items():
         ids.setdefault(built.entry_id, []).append(item_id)
-    items: list[DeltaItem] = [_build_item(matrix, built, item_id, ids) for built, item_id in item_ids_of.items()]
+        stacks.setdefault(built.stack, []).append(item_id)
+    items: list[DeltaItem] = [
+        _build_item(matrix, built, item_id, BuildItems(ids, stacks)) for built, item_id in item_ids_of.items()
+    ]
     by_id: dict[str, DeltaItem] = {item["id"]: item for item in items}
     for item in items:
         for needed in item.get("requires", []):
@@ -901,13 +937,15 @@ def _depends_on(matrix: Matrix, relationship: Relationship, built_by: Mapping[En
 
     Returns:
         The relationship's ends, kind and side, the far end's kind, stack and repository, and
-        the other Story of the Epic that builds the far end, if one does.
+        the other Story of the Epic that builds the far end, or builds in the stack the far end is
+        or is homed in, if one does.
 
     """
     stack: EntryId | None
     repository: str | None
     stack, repository = _stack_of(matrix, relationship.end)
     far: Entry | None = matrix.find(relationship.end)
+    far_home: EntryId | None = build_home(matrix, relationship.end)
     return {
         "from": relationship.start,
         "kind": relationship.kind,
@@ -916,7 +954,7 @@ def _depends_on(matrix: Matrix, relationship: Relationship, built_by: Mapping[En
         "side": relationship.side,
         "stack": stack,
         "repository": repository,
-        "builtBy": built_by.get(relationship.end),
+        "builtBy": built_by.get(relationship.end) or (None if far_home is None else built_by.get(far_home)),
     }
 
 
@@ -938,13 +976,22 @@ def build_context(
         side, that starts at an entry this Story builds or a stack holding that work and ends
         outside those entries and stacks, with
         the side that states it, the far end's stack and repository, and the other Story that
-        builds the far end.
+        builds the far end, or that builds in the stack the far end is or is homed in
+        (:func:`matrixtraverse.build_home`).
 
     """
     own: set[EntryId] = set(item_ids(built))
     sources: set[EntryId] = own | set(item_stacks(matrix, built))
     built_by: dict[EntryId, str] = {
-        entry_id: story for story, items in all_items.items() for entry_id in item_ids(items) if entry_id not in own
+        **{
+            stack: story
+            for story, items in all_items.items()
+            for stack in item_stacks(matrix, items)
+            if stack not in sources
+        },
+        **{
+            entry_id: story for story, items in all_items.items() for entry_id in item_ids(items) if entry_id not in own
+        },
     }
     dependencies: list[DependsOn] = [
         _depends_on(matrix, relationship, built_by)

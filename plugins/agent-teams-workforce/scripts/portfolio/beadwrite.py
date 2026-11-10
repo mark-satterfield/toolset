@@ -71,6 +71,7 @@ from hierarchy import (
     Task,
     build_order,
     build_relations,
+    build_via,
     check_cds_contract,
     check_detailed_work,
     delta_requires,
@@ -1719,6 +1720,8 @@ class _ClosureContext:
     slug_story: dict[str, str]
     matrix: Matrix
     """The matrix, which states the relationship between an item and an item it requires."""
+    followed: frozenset[str]
+    """The Tasks another Task of their own Story depends on; every other Task ends its Story's build."""
 
 
 def _closure_context(span: SpanStories, stories: list[_SpanStory]) -> _ClosureContext:
@@ -1745,6 +1748,9 @@ def _closure_context(span: SpanStories, stories: list[_SpanStory]) -> _ClosureCo
             name: str = f"{story.name}-{task.key}"
             task_slug[name] = story.files.slug
             builds[name] = task.requirement_ids
+    followed: frozenset[str] = frozenset(
+        f"{story.name}-{key}" for story in stories for task in story.tasks for key in task.depends_on
+    )
     return _ClosureContext(
         story_builds(span.scope),
         no_code,
@@ -1752,6 +1758,7 @@ def _closure_context(span: SpanStories, stories: list[_SpanStory]) -> _ClosureCo
         task_slug,
         slug_story,
         shared_matrix(matrix_path(None, os.environ)),
+        followed,
     )
 
 
@@ -1766,19 +1773,21 @@ def _edge_kind(item: str, requirement: str, context: _ClosureContext) -> tuple[s
     Returns:
         The Task edge kind the first relationship of :data:`_EDGE_KIND` between the two entries
         maps to (infrastructure when none of them is stated), and the relationship kinds found,
-        joined; empty when the matrix states none. None when every relationship stated between
-        the two never orders a build (:func:`hierarchy.build_relations`), which makes no Task edge.
+        joined, followed by ``via <stack>`` when they end at the stack the required item is homed
+        in rather than at the item (:func:`hierarchy.build_via`); empty when the matrix states none.
+        None when every relationship stated between the two never orders a build
+        (:func:`hierarchy.build_relations`), which makes no Task edge.
 
     """
-    stated: frozenset[str] | None = build_relations(
-        context.matrix,
-        context.detailed[item].get("matrixId", ""),
-        context.detailed[requirement].get("matrixId", ""),
-    )
+    start: str = context.detailed[item].get("matrixId", "")
+    end: str = context.detailed[requirement].get("matrixId", "")
+    stated: frozenset[str] | None = build_relations(context.matrix, start, end)
     if stated is None:
         return None
     kinds: list[str] = [kind for relation, kind in _EDGE_KIND.items() if relation in stated]
-    return (kinds[0] if kinds else KIND_INFRASTRUCTURE), ", ".join(sorted(stated))
+    via: str | None = build_via(context.matrix, start, end)
+    named: str = ", ".join(sorted(stated))
+    return (kinds[0] if kinds else KIND_INFRASTRUCTURE), (named if via is None else f"{named} via {via}")
 
 
 def _required_builders(name: str, item: str, requirement: str, context: _ClosureContext) -> tuple[list[str], list[str]]:
@@ -1866,6 +1875,42 @@ def _item_dependents(context: _ClosureContext) -> dict[str, list[str]]:
     return dependents
 
 
+def _release_builders(item: str, requirement: str, found: list[str], context: _ClosureContext) -> list[str]:
+    """Narrow the Tasks that provide a required item to its Story's release, when the need is on its stack.
+
+    A need stated through the stack the required item is homed in (an ``imports`` of a library's
+    stack through its package, say; :func:`hierarchy.build_via`) is satisfied by what that stack
+    releases, which is the whole of the Story's build: the Tasks of that Story no other Task of it
+    depends on, which follow every other Task of it. A need on the item itself is satisfied by the
+    Tasks that build the item.
+
+    Args:
+        item: The item the dependent Tasks build.
+        requirement: The item it requires.
+        found: The Tasks of the required item's Story that cite it.
+        context: The closure's facts.
+
+    Returns:
+        The release Tasks of the Story of ``found`` when the need is stated through the stack and
+        that Story has any; otherwise ``found``.
+
+    """
+    if (
+        build_via(
+            context.matrix,
+            context.detailed[item].get("matrixId", ""),
+            context.detailed[requirement].get("matrixId", ""),
+        )
+        is None
+    ):
+        return found
+    slug: str = context.task_slug[found[0]]
+    release: list[str] = [
+        name for name, owner in context.task_slug.items() if owner == slug and name not in context.followed
+    ]
+    return release or found
+
+
 def _close_need(
     item: str,
     requirement: str,
@@ -1878,7 +1923,8 @@ def _close_need(
     An item-level need names no Task: when one Task builds the item and one Task builds the item
     it requires, the need is the edge between those two; when several Tasks build either, which of
     them consumes or provides it is a judgment on the Tasks' content, so the need goes to the
-    dependency mapper instead of onto every pair of them.
+    dependency mapper instead of onto every pair of them. A need stated through the stack the
+    required item is homed in is provided by the Story's release (:func:`_release_builders`).
 
     Args:
         item: The item the dependent Tasks build.
@@ -1895,6 +1941,7 @@ def _close_need(
     named: tuple[str, str] | None = _edge_kind(item, requirement, context)
     if named is None or not found:
         return
+    found = _release_builders(item, requirement, found, context)
     kind, relation = named
     reason: str = (
         f"{item} requires {requirement} ({relation or 'no relationship stated'}; the delta's prerequisite closure)"

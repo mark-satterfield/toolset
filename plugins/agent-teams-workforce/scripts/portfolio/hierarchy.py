@@ -95,7 +95,7 @@ from matrix_contract import (
     family_kinds,
 )
 from matrixstore import Matrix, as_entry_id, kind_of, matrix_path, shared_matrix
-from matrixtraverse import capabilities
+from matrixtraverse import authority_holder, build_home, capabilities
 
 #: The surfaces a Task may declare; anything else is dropped.
 _ARGUMENT_ERROR: str = "Arguments violate the hierarchy input contract"
@@ -1746,12 +1746,43 @@ def delta_requires(elements: Path) -> dict[str, list[str]] | None:
     return {str(i.get("id")): str_list(i.get("requires")) for i in items if isinstance(i, dict) and i.get("id")}
 
 
+def _stated_needs(matrix: Matrix, start: str, end: str) -> tuple[frozenset[str], EntryId | None]:
+    """Read the dependency relationships the architecture side states from one item's entry to another's.
+
+    A relationship that ends at the other entry itself is stated directly. When there is none, a
+    relationship that ends at the stack the other entry is homed in, or at a layer or package homed
+    in that stack (:func:`matrixtraverse.build_home`), such as an ``imports`` of a library's stack
+    through its package, is stated through that stack; never when it is the first entry's own stack.
+
+    Returns:
+        The kinds of the relationships found, and the stack they were found through (None when
+        they end at the other entry itself or none is found).
+
+    """
+    start_id: EntryId = as_entry_id(start)
+    end_id: EntryId = as_entry_id(end)
+    stated: list[tuple[str, EntryId]] = [
+        (relationship.kind, relationship.end)
+        for relationship in matrix.outgoing(start_id, family_kinds(FAMILY_DEPENDENCY))
+        if relationship.side == AUTHORITY_SIDE
+    ]
+    direct: frozenset[str] = frozenset(kind for kind, reached in stated if reached == end_id)
+    if direct:
+        return direct, None
+    via: EntryId | None = authority_holder(matrix, end_id)
+    if via is None or via == authority_holder(matrix, start_id):
+        return frozenset(), None
+    homed: frozenset[str] = frozenset(kind for kind, reached in stated if build_home(matrix, reached) == via)
+    return homed, (via if homed else None)
+
+
 def build_relations(matrix: Matrix, start: str, end: str) -> frozenset[str] | None:
     """Name the build needs the architecture side states from one item's entry to another's.
 
     The one rule of what orders a build (``matrix_contract.NO_BUILD_ORDER_KINDS``) is applied to
-    the relationships the matrix states, so a ``requires`` a span file holds from before the rule
-    (a call, say) makes no build need.
+    the relationships the matrix states (:func:`_stated_needs`: to the entry itself, else to the
+    stack it is homed in), so a ``requires`` a span file holds from before the rule (a call, say)
+    makes no build need.
 
     Args:
         matrix: The matrix.
@@ -1766,13 +1797,35 @@ def build_relations(matrix: Matrix, start: str, end: str) -> frozenset[str] | No
     """
     if not start or not end:
         return frozenset()
-    found: set[str] = {
-        relationship.kind
-        for relationship in matrix.outgoing(as_entry_id(start), family_kinds(FAMILY_DEPENDENCY))
-        if relationship.end == end and relationship.side == AUTHORITY_SIDE
-    }
-    stated: frozenset[str] = frozenset(found - NO_BUILD_ORDER_KINDS)
+    found: frozenset[str] = _stated_needs(matrix, start, end)[0]
+    stated: frozenset[str] = found - NO_BUILD_ORDER_KINDS
     return None if found and not stated else stated
+
+
+def build_via(matrix: Matrix, start: str, end: str) -> EntryId | None:
+    """Name the stack through which one item's entry needs another's built, when it is not needed directly.
+
+    A need stated through a stack (an ``imports`` of a library's stack, say) is satisfied by what
+    that stack releases, not by one element of it.
+
+    Args:
+        matrix: The matrix.
+        start: The matrix id of the item that requires the other; empty when the item has none.
+        end: The matrix id of the item it requires; empty when the item has none.
+
+    Returns:
+        The stack the other entry is homed in when every relationship the architecture side states
+        from ``start`` that orders a build ends at that stack or at a layer or package homed in it
+        (:func:`_stated_needs`); None when a relationship ends at ``end`` itself, none is stated,
+        or an id is empty.
+
+    """
+    if not start or not end:
+        return None
+    found: frozenset[str]
+    via: EntryId | None
+    found, via = _stated_needs(matrix, start, end)
+    return via if found - NO_BUILD_ORDER_KINDS else None
 
 
 def _orders_build(matrix: Matrix, item: StoryBuild | JsonObject, needed: StoryBuild | JsonObject) -> bool:
