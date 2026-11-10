@@ -303,7 +303,7 @@ def _add_wait_edges(graph: beadgraph.Graph, edges: dict[str, set[str]], wait: di
                 "history cannot be republished or redeployed as pending work"
             )
             raise StepError(stage, OTHER_CAUSE, (message,))
-        _same_repository_wait(graph, graph.beads[consumer], story, producer)
+        _validate_repository_ownership(graph, graph.beads[consumer], story)
     edges.setdefault(consumer, set()).update(
         check_type(producer["story"] if producer["requiredStage"] != "built" else producer["task"], str)
         for producer in producers
@@ -590,16 +590,15 @@ def _validate_producers(graph: beadgraph.Graph, consumer: str, producers: list[d
             )
 
 
-def _same_repository_wait(
+def _validate_repository_ownership(
     graph: beadgraph.Graph,
     consumer: beadgraph.Bead,
     story: beadgraph.Bead,
-    producer: dict[str, JsonValue],
 ) -> None:
-    """Refuse an unresolved producer wait the current repository serialization cannot schedule.
+    """Require actual repository ownership before evaluating prerequisite cycles.
 
     Raises:
-        StepError: The consumer and an unfinished producer are in the same repository.
+        StepError: The consumer or producer Story lacks absolute repository ownership.
 
     """
     own: beadgraph.Bead | None = graph.beads.get(consumer.parent or "")
@@ -609,20 +608,6 @@ def _same_repository_wait(
         stage: str = "build:prerequisites-diagnosed"
         message: str = f"Consumer {consumer.id} or producer Story {story.id} lacks actual repository ownership"
         raise StepError(stage, OTHER_CAUSE, (message,))
-    if left and right and Path(left).resolve() == Path(right).resolve():
-        task: beadgraph.Bead = graph.beads[check_type(producer["task"], str)]
-        if not task.closed or producer["requiredStage"] != "built":
-            stage = "build:prerequisites-diagnosed"
-            raise StepError(
-                stage,
-                OTHER_CAUSE,
-                (
-                    (
-                        f"Unschedulable same-repository prerequisite: {consumer.id} in {left} "
-                        f"waits for {task.id}/{story.id} in {right}"
-                    ),
-                ),
-            )
 
 
 def pending(wait: dict[str, JsonValue], directory: Path, control: Path) -> bool:

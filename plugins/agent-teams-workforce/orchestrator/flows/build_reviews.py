@@ -40,6 +40,7 @@ from orchestrator.flows.build_state import (
 from orchestrator.flows.build_state import (
     workspace_of as _workspace,
 )
+from orchestrator.flows.elaboration_files import project_root
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -110,9 +111,10 @@ def _scope_initial(run: StepRun) -> Completion:
     bead: dict[str, JsonValue] = json_object(run.context.args["bead"])
     carried: list[str] = list(check_type(bead.get("specPaths", []), list[str]))
     carried.extend(check_type(bead[key], str) for key in ("specPath", "prdPath") if bead.get(key))
+    root: Path = project_root()
     sources: list[str] = list(
         dict.fromkeys(
-            [source.split("#", 1)[0] for source in carried]
+            [str(root / source.split("#", 1)[0]) for source in carried]
             + [
                 artifact["path"]
                 for step in step_journal.steps_in_order(run.journal())
@@ -129,7 +131,8 @@ def _scope_initial(run: StepRun) -> Completion:
         [value for source in sources for value in ("--source", source)],
     )
     if prepared.get("ok") is not True:
-        raise StepError(run.step["script"], OTHER_CAUSE, (str(output),))
+        errors: list[str] = check_type(prepared.get("errors", []), list[str])
+        raise StepError(run.step["script"], OTHER_CAUSE, tuple(errors or ["Regression source preparation failed"]))
     assessed: Completion = _scope(run, False)
     return Completion(artifacts=(*assessed.artifacts, file_artifact("regressionPrevious", output)), add=assessed.add)
 

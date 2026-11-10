@@ -859,13 +859,13 @@ def main() -> None:
     args: CliArgs = _parse_args()
     previous: JsonObject | None = read(args.ledger) if Path(args.ledger).is_file() else None
     if args.mode == "prepare":
-        write(args.output, previous or {"requirements": [], "mappings": [], "runs": []})
         approved: JsonObject | None = read(args.approved_plan) if args.approved_plan else None
         hashes: dict[str, str] = source_hashes(
             sorted(
                 set(args.source + _optional_strs(approved, "sourceFiles") + _optional_strs(previous, "sourceFiles")),
             ),
         )
+        write(args.output, previous or {"requirements": [], "mappings": [], "runs": []})
         _emit(
             {
                 "ok": True,
