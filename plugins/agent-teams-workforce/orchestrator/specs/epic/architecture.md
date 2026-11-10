@@ -75,7 +75,8 @@ follows it, among its siblings, before the index and the check (`architecture_ro
 `trdPath`), `context`, `state` (its state file) and an `example` of each file the step writes
 (`skills/artifact-handoff/examples/`), which it is handed instead of the 45K-character schema; and,
 on a later step, the `answers digest`, each `answer`, the `findings` (check results) and each
-`ruling` that step is handed. No file is written from the matrix for it: it reads the Epic's pack
+`ruling` that step is handed, and on a step the spec stage set back for open design gaps each
+repository's `design gaps` (`design_gaps.handed`). No file is written from the matrix for it: it reads the Epic's pack
 and runs `atw-matrix` reads itself. The session is granted the architecture work folder and no
 folder of the architecture or of the PRDs.
 

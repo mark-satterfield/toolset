@@ -531,6 +531,10 @@ sequenceDiagram
     SW->>A42: reads the approved architecture and design of each component
     SW-)S: spec, with links to the full architecture and design of each component, names and decisions as recorded
     SW-->>WF: spec paths
+    alt a spec records an open design gap: a detail the Story needs that no approved document states
+        WF->>WF: the repository stops before its Story and Tasks; the architect's last result step and every step after it are set back to planned
+        Note over WF: the architect, handed each repository's design gaps, designs what fills them; the documents are written and promoted again and the specs written again from them
+    end
     WF->>TD: spec paths
     TD-)BD: Stories and Tasks, each stating what it builds with the matrix ids, and pointers to the detail
     TD-->>WF: Task ids
@@ -568,6 +572,14 @@ Notes on the diagram:
   Story does not need. After the one review at most three rounds follow, each round's sessions
   running together: one correction, the decider on the disputed findings, one revision to the
   ruling. In a correction or a revision an author works on all its documents in one session.
+- A spec author decides no design, so a detail the Story needs that no approved document states is
+  recorded as a row under the document's `## Design gaps` heading and left open. `spec-reviewer`
+  sends a row the approved documents do settle back to its author; a real gap goes no further than
+  the step after the review (`orchestrator/flows/design_gaps.py`): no Story is written and no Task
+  decomposed from it. That step sets the solutions architect's last result step and every step
+  after it back to planned (the journal's `StaleInputError`), the architect is handed each
+  repository's gaps and designs what fills them, and the documents, the promotion and every spec
+  run again from the settled design. A gap left open again in the same dispatch fails the step.
 - The repositories' containers under Specs and Stories run at the same time, and so do their
   containers under Tasks, at most `ATW_ORCH_SESSIONS` at once (`journal_run.concurrent_containers`),
   because no repository's specs or Tasks wait on another's and run time is a goal of the pipeline.

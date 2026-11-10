@@ -81,6 +81,7 @@ from orchestrator.core.journal_steps import (
 )
 from orchestrator.core.models import StepError
 from orchestrator.flows.architecture_files import ARTIFACT_TRD, read_context
+from orchestrator.flows.design_gaps import hold_open
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_ELEMENTS,
     ARTIFACT_SPAN,
@@ -1189,7 +1190,9 @@ def built_line(item: Mapping[str, JsonValue], names: Mapping[str, str], matrix: 
 def story_document(run: StepRun) -> Completion:
     """Write the Story document of one repository from its reviewed spec documents.
 
-    Each spec document first gets its last section, the links to the architecture and design
+    A document that still records an open design gap stops the repository here, before its Story
+    and Tasks: the gaps go back to the solutions architect (``design_gaps.hold_open``). Otherwise
+    each spec document first gets its last section, the links to the architecture and design
     documents of the component it covers (:func:`link_documents`), once every correction is made.
 
     Returns:
@@ -1197,10 +1200,11 @@ def story_document(run: StepRun) -> Completion:
 
     """
     held: Repository = repository(run.inputs)
+    documents: list[Path] = [run.inputs.file(name) for name in (SPEC, DATA_MODEL, CRITERIA)]
+    hold_open(run, held.slug, held.path, documents)
     dispatch: DispatchArguments = dispatch_arguments()
     matrix: Matrix = run.tools.portfolio_read(STORY_DOCUMENT_STEP, read_matrix, matrix_path(None, os.environ))
     arch: Path = architecture_root(run)
-    documents: list[Path] = [run.inputs.file(name) for name in (SPEC, DATA_MODEL, CRITERIA)]
     held_context: dict[str, JsonValue] = json_object(strict_json(run.inputs.file(CONTEXT)))
     component: list[dict[str, JsonValue]] = objects(held_context[KEY_COMPONENT_DOCUMENTS])
     for written in documents:

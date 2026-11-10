@@ -96,6 +96,7 @@ from orchestrator.core.journal_steps import (
     value_artifact,
 )
 from orchestrator.core.models import MalformedRequestError, StaleInputError
+from orchestrator.flows import design_gaps
 from orchestrator.flows.architecture_check import check_step, review_log_findings
 from orchestrator.flows.architecture_diagrams import syntax_problems
 from orchestrator.flows.architecture_files import (
@@ -347,7 +348,8 @@ def _handed_files(
     Returns:
         The PRD, the TRD, the context file and the state path; then each mechanical check
         result the step is handed, as findings; then the digest of the answers the step is handed
-        (a specialist's), each answer and each ruling; then the example of each file the step writes.
+        (a specialist's), each answer and each ruling; then each repository's open design gaps the
+        spec stage sent back (``design_gaps.handed``); then the example of each file the step writes.
 
     """
     findings: list[Path] = list(run.inputs.files(ARTIFACT_CHECK))
@@ -361,6 +363,7 @@ def _handed_files(
         *(() if digest is None else ((LABEL_DIGEST, digest),)),
         *((LABEL_ANSWER, path) for path in handed_answers(run)),
         *((LABEL_RULING, path) for path in dict.fromkeys(run.inputs.files(LABEL_RULING))),
+        *design_gaps.handed(run.context.work),
         *((LABEL_EXAMPLE, example) for example in examples),
     )
 
@@ -1019,6 +1022,8 @@ def architect(run: StepRun) -> AgentLaunch:
                 *recorded.problems,
             )
         unserved: list[JsonValue] = [*recorded.no_feature]
+        if not open_requests:
+            design_gaps.settle(accepted.context.work, accepted.step["id"])
         follows: tuple[StepGroup, ...] = (
             (round_steps(accepted, open_requests, number + 1, arch),)
             if open_requests

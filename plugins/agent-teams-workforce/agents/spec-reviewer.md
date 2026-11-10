@@ -104,6 +104,15 @@ documents and the TRD state it.
   documents you were given.
 - I7: check it for every item of the context file's `items`, and that the acceptance criteria
   give each of them an id to cite.
+- An open design gap is blocking: no Task can be built from a detail the design does not state
+  (I7). Check every row under a document's `## Design gaps` heading against the approved
+  documents. When an approved document records the detail, write a finding to the document's
+  author under the criterion the row names: state the detail as that document records it, with
+  its path and heading, and remove the row. When no approved document records it, the gap is
+  real and the author cannot settle it, so write no finding for it: the step after the review
+  sends every row still open back to the solutions architect, and nothing reaches decomposition
+  while one remains. A detail the Story needs that a document neither states nor lists as a gap
+  is a finding: record it as a row of `## Design gaps`.
 
 A criterion applies to an item the Story builds that has the thing the criterion names: a
 repository with no route has nothing for I1 to find. A document that says, with its reason, that

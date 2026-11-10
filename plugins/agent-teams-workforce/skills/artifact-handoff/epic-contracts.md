@@ -49,6 +49,7 @@ The PRD and portfolio workflows run their commands and accept agent files throug
 | architecture context: `<arch-work>/context.json` | step `prd_to_spec.open_run` | `aws-solutions-architect` (as `context`); the architecture steps | `architecture-context.schema.json` |
 | architecture state: `<arch-work>/state.json` | `aws-solutions-architect` | `aws-solutions-architect` | `architecture-state.schema.json` |
 | specialist round: `<arch-work>/questions.json` | `aws-solutions-architect`, its Analyze step | the step that accepts it, which starts each specialist and then the Decide step | `specialist-round.schema.json` |
+| design gaps: `<arch-work>/design-gaps/open/<slug>.json` | step `spec_authoring.story_document`, when a spec document holds an open design gap | `aws-solutions-architect` | `repository`, and per document its path and `gaps` (`orchestrator/flows/design_gaps.py`) |
 | answers digest: `<arch-work>/helpers/digest-<step>.json` | the launch of an architect step handed answers | `aws-solutions-architect` | `answers-digest.schema.json` |
 | architecture result: `<arch-work>/result.json` | `aws-solutions-architect` | the check step; the step that accepts it, which writes the write requests; `architecture-team-lead`; the span step | `architecture-result.schema.json` |
 | specialist request | the step that accepts the architect's round or result, from each request it states; `architecture-team-lead` | the design specialist, diagram author or `polyrepo-steward` asked | `specialist-request.schema.json` |

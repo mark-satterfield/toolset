@@ -78,8 +78,13 @@ entry's approved architecture, as its documents state it.
 The architecture and design documents hold every detail the spec states: the arc42 views and
 the detailed design under `detailed/` were decided during architecture. State each detail as
 those documents record it, or link to it by path and heading; decide none. A detail the Story
-needs that no approved document states is a gap in the design: state in the document which
-element's design lacks it, and do not settle it. Your repository context file
+needs that no approved document states is a gap in the design: record it as one row of the table
+under the level-2 heading `## Design gaps` of the document that needs it, with the columns
+`| Id | Element whose design lacks it | Missing detail (review criterion) |`, and do not settle
+it. Record a gap nowhere else, and leave the section out when there is none. An open gap stops
+the repository before its Story and Tasks: the step after the review sends every row back to the
+solutions architect, who designs what fills it, and the spec is then written again against the
+settled design. Your repository context file
 (`spec-context.schema.json`) names what the Story builds: `items`, `stacks`, `buildScope` and
 `dependsOn`, and under `documents` every architecture heading the Story's scopes name. Your
 spec pack (`spec pack`, `spec-pack.schema.json`) holds what you read for it: each entry with

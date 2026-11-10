@@ -36,7 +36,7 @@ session is not planned is written by step 1a instead.
 | 6a | Review the DynamoDB access patterns of the data model (a repository whose stacks hold a DynamoDB store) | agent `dynamodb-schema-access-pattern-reviewer` | `data model`, `TRD`, `repository context` | `spec-<slug>.data-model-review.json` | file `data model review` |
 | 7 | Add the UI design sources to the contracts (frontend) | script `specui.spec_ui_append` | `spec`, `ui sources` | the section `## UI design sources` of `spec-<slug>.md` | file `spec` |
 | 8 | Review the specification documents | agent `spec-reviewer` | `spec`, `data model`, `criteria`, `TRD`, `repository context`, `spec pack` (and, recorded with the review, `data model review`) | `spec-<slug>.review.json` | see "The review" |
-| 9 | Write the Story document | script `spec_authoring.story_document` | `spec`, `data model`, `criteria`, `repository context` | the section `## Architecture and design documents` at the end of each of the three spec documents; `story-<slug>.json` | file `story document`, value `decision ids` |
+| 9 | Write the Story document | script `spec_authoring.story_document`; first `design_gaps.hold_open` | `spec`, `data model`, `criteria`, `repository context` | when a document holds an open design gap: `<arch-work>/design-gaps/open/<slug>.json`, and the solutions architect's last result step and every step after it are set back to planned; otherwise the section `## Architecture and design documents` at the end of each of the three spec documents; `story-<slug>.json` | file `story document`, value `decision ids` |
 | 10 | Write the Story bead | script `beadwrite.write_story` | `story document`, the three spec documents, `span`, `elements` | the Story bead; the Story's journal | value `story`, value `story write`, value `decision ids`; plans the repository's container under Tasks |
 
 Step 1a is planned first, before step 2. Steps 3 and 4 are consecutive agent steps whose inputs
@@ -84,6 +84,20 @@ goes back to its session once, with the errors as an input. Accepting a document
 document and nothing else: its citations stay in its `decisionIds` and reach the Story through
 step 9, and nothing is written to the matrix, whose architecture side only arc42 (through
 `sync-documents`) and the architect's recorded design write.
+
+A detail a Story needs that no approved document states is a design gap. Its author records it
+as one row of the table under the document's `## Design gaps` heading and does not settle it;
+`spec-reviewer` holds every row to the approved documents, sending a row the documents do settle
+to its author and leaving a real gap for the step below. Step 9 reads every row
+(`design_gaps.open_gaps`) before anything else. A row left open stops the repository before its
+Story and Tasks: the step files the repository's gaps at `<arch-work>/design-gaps/open/<slug>.json`
+and raises `StaleInputError` naming the solutions architect's step that last recorded the
+architecture result, so that step and every step after it are set back to planned. The architect's
+next session is handed every repository's file as `design gaps` and designs what fills each gap;
+its accepted result (with no further round) moves the files to
+`<arch-work>/design-gaps/settled/<step>/`; the documents are written and promoted again, and every
+repository's specs are written again against the settled design. A gap still open after that in the
+same dispatch fails the step.
 
 The Story document lists what the Story builds, one line per item: an event as
 `E<n>: <name>, published by <publishers>: <trigger>`, any other item as
