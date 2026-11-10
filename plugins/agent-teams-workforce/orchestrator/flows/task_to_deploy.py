@@ -706,6 +706,15 @@ def _empty_selection(run: StepRun, selection: JsonValue) -> Completion:
     ownership: Completion | None = _review_ownership(run, required)
     if ownership is not None:
         return ownership
+    if selection is not None and _selection_outdated(run):
+        return reasoned(
+            run,
+            "implementation-lead",
+            OutputContract(CONTRACTS / "build-selection.schema.json", "implementationSelection"),
+            "Select the implementation specialists needed for the current suite failures and code review findings; "
+            "the earlier empty selection was made before the latest suite judgment or code review",
+            followups=(_new("build:plan-code", "Plan the selected code specialists and suite check"),),
+        )
     fingerprint: dict[str, JsonValue] = _test_fingerprint(run)
     prior: JsonValue = latest(run, "testPrint")
     changed: bool = isinstance(prior, dict) and prior.get("treeDigest") != fingerprint["treeDigest"]
@@ -721,6 +730,20 @@ def _empty_selection(run: StepRun, selection: JsonValue) -> Completion:
         evidence += (check_type(_document(run, "implementationSelection")["rationale"], str),)
     stage: str = "build:plan-code"
     raise StepError(stage, OTHER_CAUSE, evidence)
+
+
+def _selection_outdated(run: StepRun) -> bool:
+    """Tell whether a suite judgment or code review was accepted after the latest implementation selection.
+
+    Returns:
+        True when the latest selection predates the latest suiteReview or codeReview in walk order.
+
+    """
+    places: dict[str, int] = {
+        artifact["name"]: place for place, step in enumerate(accepted_steps(run)) for artifact in step["artifacts"]
+    }
+    selected: int | None = places.get("implementationSelection")
+    return selected is not None and any(places.get(name, -1) > selected for name in ("suiteReview", "codeReview"))
 
 
 def _implementation_recheck(run: StepRun) -> Completion:

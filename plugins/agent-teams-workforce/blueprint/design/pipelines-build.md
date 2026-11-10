@@ -131,7 +131,9 @@ agent child's accepted result. Restarting does not replenish the allowance. A fr
 same evidence identity and failures after product or test correction stops before another agent round;
 environment recovery and changed requirement, setup or runtime identities remain eligible. An unresolved correction
 records its evidence and stops; no quality gate is bypassed. An empty implementation selection
-for unresolved work stops with the accepted selector's rationale, preserving the named blocker
+accepted before the latest suite judgment or code review is replaced by one fresh selection for
+the current failures and findings. An empty implementation selection made for the current
+judgment and review stops with the accepted selector's rationale, preserving the named blocker
 and required authority in the failure evidence. Passing tests alone do not override an
 unapproved review or unresolved improvements.
 
