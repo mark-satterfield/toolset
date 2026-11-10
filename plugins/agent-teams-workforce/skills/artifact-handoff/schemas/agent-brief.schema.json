@@ -103,7 +103,7 @@
     "task context": "One repository's task context file (task-context.schema.json).",
     "tasks": "One repository's Tasks file (tasks.schema.json).",
     "task gaps": "What the plan of the Tasks found uncited or unsized.",
-    "closure edges": "The edges the matrix's dependency relationships make between Tasks of different Stories (closure-edges.schema.json).",
+    "closure edges": "The edges the matrix's build dependency relationships make between Tasks of different Stories, and the needs of items several Tasks build, for the mapper to place (closure-edges.schema.json).",
     "task dependency listing": "Which Tasks file belongs to which Story (task-dependency-listing.schema.json).",
     "spec review": "The review of one repository's specification documents (spec-review.schema.json).",
     "spec correction": "An author's correction after the spec review (spec-correction.schema.json).",

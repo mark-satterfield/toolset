@@ -91,7 +91,11 @@ The `task_edges` step hands you the `task dependency listing`
 Task key is `<story>-<local key>`), and the `closure edges` (`closure-edges.schema.json`).
 Read each Story's Tasks file and the closure edges, and apply the edge test between Tasks of
 different Stories only: the edges within a Story are already written, and the closure edges
-stand, so do not repeat either. Each edge's `kind` says what the dependent Task needs (the
+stand, so do not repeat either. Each of the file's `itemNeeds` is an item's build need that
+several Tasks of its Story share (its `candidates`): add an edge from the need's `from` Tasks
+only to the candidates whose own work consumes the required item, with the need's `kind`, and
+none to a candidate that does not; the need's item is a whole, and one candidate's need is not
+every candidate's. Each edge's `kind` says what the dependent Task needs (the
 output contract's kinds). Consider same-Story and closure edges when checking for a cycle.
 
 A Story is built after another when one of its Tasks depends on one of the other's, so two

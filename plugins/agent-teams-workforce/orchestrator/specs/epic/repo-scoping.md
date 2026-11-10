@@ -49,10 +49,12 @@ stack, each with the same matrix id. An event's item also carries, as informatio
   item that builds it when one in the same item set does, else as its matrix id.
 
 `requires` is the other items its dependency relationships on the architecture side reach
-directly (`BUILD_DEPENDENCY_KINDS`). Publishing an event and a rule matching an event make no
-build dependency; a rule's `onBus` and `routesTo` do. A repository-side relationship never makes
-a `requires`, and a dependency on something no Story builds is context, not an item. The same
-kinds are what `build_context` follows for `dependsOn`.
+directly (`BUILD_DEPENDENCY_KINDS`). Publishing an event, a rule matching an event and a call make
+no build dependency: a caller is built against the callee's specified contract, so a call holds
+only at run time. A rule's `onBus` and `routesTo`, an import, a layer used, a value read and
+shared infrastructure run in do. A repository-side relationship never makes a `requires`, and a
+dependency on something no Story builds is context, not an item. `build_context` follows the
+same kinds and calls for `dependsOn` (`CONTEXT_DEPENDENCY_KINDS`): what a Task calls is context.
 
 Everything else the Epic reaches in the matrix is context: the Tasks are handed it as what they
 depend on (`task-decomposition.md`), never as work.

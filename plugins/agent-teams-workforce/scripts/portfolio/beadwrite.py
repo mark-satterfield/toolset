@@ -148,14 +148,14 @@ OPEN = "open"
 
 #: The Task edge kind each architecture-side relationship between two built items makes, first match wins.
 _EDGE_KIND: Final[dict[str, str]] = {
-    REL_CALLS: KIND_CONTRACT,
     REL_IMPORTS: KIND_CONTRACT,
     REL_READS: KIND_DATA,
     REL_RUNS_IN: KIND_INFRASTRUCTURE,
 }
 
-#: The relationships that never order a build: a producer and a routing rule each depend only on the bus.
-_NO_BUILD_ORDER: Final[frozenset[str]] = frozenset((REL_PUBLISHES, REL_MATCHES))
+#: The relationships that never order a build: a producer and a routing rule each depend only on the bus,
+#: and a caller is built against the callee's specified contract.
+_NO_BUILD_ORDER: Final[frozenset[str]] = frozenset((REL_PUBLISHES, REL_MATCHES, REL_CALLS))
 
 #: The priority `bd create` gives a bead when none is passed.
 DEFAULT_PRIORITY = 2
@@ -1840,7 +1840,8 @@ def closure_task_edges(span: SpanStories) -> ClosureEdges:
     """Derive cross-Story edges from placements and declared requires relations.
 
     Returns:
-        Explicit prerequisite edges and missing-builder warnings.
+        The prerequisite edges onto the one Task that builds an item, the needs of items several
+        Tasks build (for the dependency mapper), and missing-builder warnings.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -1851,6 +1852,89 @@ def closure_task_edges(span: SpanStories) -> ClosureEdges:
     return _closure_edges(span, _read_span(span, _silent))
 
 
+@dataclass
+class _Closure:
+    """The closure's findings, gathered need by need."""
+
+    edges: list[TaskEdge] = field(default_factory=list)
+    needs: list[beadcontracts.ItemNeed] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    seen: set[tuple[str, str]] = field(default_factory=set)
+
+
+def _item_dependents(context: _ClosureContext) -> dict[str, list[str]]:
+    """Index each item by the Tasks of the Story that builds it which cite it.
+
+    Args:
+        context: The closure's facts.
+
+    Returns:
+        Item id -> the names of those Tasks, in Task order.
+
+    """
+    cited: list[tuple[str, str]] = [
+        (item, name)
+        for name, items in context.builds.items()
+        for item in items
+        if item in context.detailed and context.detailed[item]["slug"] == context.task_slug[name]
+    ]
+    dependents: dict[str, list[str]] = {}
+    for item, name in cited:
+        dependents.setdefault(item, []).append(name)
+    return dependents
+
+
+def _close_need(
+    item: str,
+    requirement: str,
+    dependents: list[str],
+    context: _ClosureContext,
+    closure: _Closure,
+) -> None:
+    """Turn one item's build need into Task edges, or hand it on when several Tasks build the item.
+
+    An item-level need names no Task: when one Task builds the item, that Task is the one that
+    needs the requirement; when several do, which of them consumes it is a judgment on the Tasks'
+    content, so the need goes to the dependency mapper instead of onto every one of them.
+
+    Args:
+        item: The item the dependent Tasks build.
+        requirement: The item it requires.
+        dependents: The Tasks of the item's Story that cite it.
+        context: The closure's facts.
+        closure: Changed in place: the edges, needs and warnings found.
+
+    """
+    found: list[str]
+    missing: list[str]
+    found, missing = _required_builders(dependents[0], item, requirement, context)
+    closure.warnings.extend(missing)
+    named: tuple[str, str] | None = _edge_kind(item, requirement, context)
+    if named is None or not found:
+        return
+    kind, relation = named
+    reason: str = (
+        f"{item} requires {requirement} ({relation or 'no relationship stated'}; the delta's prerequisite closure)"
+    )
+    if len(dependents) > 1:
+        closure.needs.append(
+            {
+                "item": item,
+                "requires": requirement,
+                "kind": kind,
+                "reason": reason,
+                "from": found,
+                "candidates": dependents,
+            },
+        )
+        return
+    fresh: list[tuple[str, str]] = [
+        (source, dependents[0]) for source in found if (source, dependents[0]) not in closure.seen
+    ]
+    closure.seen.update(fresh)
+    closure.edges.extend({"from": source, "to": target, "kind": kind, "reason": reason} for source, target in fresh)
+
+
 def _closure_edges(span: SpanStories, stories: list[_SpanStory]) -> ClosureEdges:
     """Derive cross-Story edges from Stories already read.
 
@@ -1859,48 +1943,27 @@ def _closure_edges(span: SpanStories, stories: list[_SpanStory]) -> ClosureEdges
         stories: The span's Stories, read.
 
     Returns:
-        Explicit prerequisite edges and missing-builder warnings.
+        The prerequisite edges onto the one Task that builds an item, the needs of items several
+        Tasks build (for the dependency mapper), and missing-builder warnings.
 
     """
-    name: str
-    items: list[str]
-    item: str
-    requirement: str
-    found: list[str]
-    missing: list[str]
-    source: str
     requires: dict[str, list[str]] | None = delta_requires(span.scope.elements)
-    edges: list[TaskEdge] = []
-    warnings: list[str] = []
+    closure: _Closure = _Closure()
     if requires is not None:
         context: _ClosureContext = _closure_context(span, stories)
-        seen: set[tuple[str, str]] = set()
-        for name, items in context.builds.items():
-            for item in items:
-                own: StoryBuild | None = context.detailed.get(item)
-                if own is None or own["slug"] != context.task_slug[name]:
-                    continue
-                for requirement in requires.get(item, []):
-                    found, missing = _required_builders(name, item, requirement, context)
-                    warnings.extend(missing)
-                    named: tuple[str, str] | None = _edge_kind(item, requirement, context)
-                    if named is None:
-                        continue
-                    kind, relation = named
-                    for source in [builder for builder in found if (builder, name) not in seen]:
-                        seen.add((source, name))
-                        edges.append({
-                            "from": source,
-                            "to": name,
-                            "kind": kind,
-                            "reason": f"{item} requires {requirement} "
-                            f"({relation or 'no relationship stated'}; the delta's prerequisite closure)",
-                        })
+        needs: list[tuple[str, str, list[str]]] = [
+            (item, requirement, dependents)
+            for item, dependents in _item_dependents(context).items()
+            for requirement in requires.get(item, [])
+        ]
+        for item, requirement, dependents in needs:
+            _close_need(item, requirement, dependents, context, closure)
     return {
         "ok": True,
-        "edges": edges,
-        "warnings": warnings,
-        "summary": {"ok": True, "edges": len(edges), "warnings": warnings},
+        "edges": closure.edges,
+        "itemNeeds": closure.needs,
+        "warnings": closure.warnings,
+        "summary": {"ok": True, "edges": len(closure.edges), "warnings": closure.warnings},
     }
 
 

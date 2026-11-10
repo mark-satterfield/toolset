@@ -299,11 +299,19 @@ class ClosureEdgeSummary(TypedDict):
     warnings: list[str]
 
 
+ItemNeed = TypedDict(
+    "ItemNeed",
+    {"item": str, "requires": str, "kind": str, "reason": str, "from": list[str], "candidates": list[str]},
+)
+"""One build need of an item that several Tasks of its Story build, left to the dependency mapper to place."""
+
+
 class ClosureEdges(TypedDict):
     """Describe the closure edges wire record."""
 
     ok: bool
     edges: list[TaskEdge]
+    itemNeeds: list[ItemNeed]
     warnings: list[str]
     summary: ClosureEdgeSummary
 

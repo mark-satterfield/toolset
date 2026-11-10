@@ -42,6 +42,7 @@ from matrix_contract import (
     KIND_STACK,
     LOCK_DIRECTORY,
     LOCK_SUFFIX,
+    REL_CALLS,
     REL_DESCRIBED_BY,
     REL_MATCHES,
     REL_PUBLISHES,
@@ -153,13 +154,20 @@ FIELD_UNCHANGED_WORK: Final = "unchangedWorkElements"
 """The fields of the architect's result that name what the Epic's Stories build."""
 NO_BUILD_NEED: Final[frozenset[str]] = frozenset({REL_PUBLISHES, REL_MATCHES, "consumes", "routes"})
 """The dependency relationships that make no build need another: an event's producers, its rules and its targets."""
-BUILD_DEPENDENCY_KINDS: Final[frozenset[RelationshipKind]] = frozenset(
+RUNTIME_ONLY: Final[frozenset[str]] = frozenset({REL_CALLS})
+"""The dependency relationships that hold only at run time: a caller is built against the callee's
+specified contract, so a call is context for the caller and never a build need."""
+CONTEXT_DEPENDENCY_KINDS: Final[frozenset[RelationshipKind]] = frozenset(
     kind for kind in family_kinds(FAMILY_DEPENDENCY) if kind not in NO_BUILD_NEED
+)
+"""The dependency relationships a Story's Tasks are handed as what they depend on (``build_context``)."""
+BUILD_DEPENDENCY_KINDS: Final[frozenset[RelationshipKind]] = frozenset(
+    kind for kind in CONTEXT_DEPENDENCY_KINDS if kind not in RUNTIME_ONLY
 )
 """The dependency relationships that make one build need another.
 
-Publishing an event and a rule matching an event make no build dependency; a rule's ``onBus``
-and ``routesTo`` do.
+Publishing an event, a rule matching an event and a call make no build dependency; a rule's
+``onBus`` and ``routesTo``, an import, a layer used, a value read and shared infrastructure run in do.
 """
 NAMING_REPOSITORY: Final = "repository"
 NAMING_STACK: Final = "cdk-stack"
@@ -636,8 +644,8 @@ def _requires(matrix: Matrix, entry_id: EntryId, own: str, ids: Mapping[EntryId,
 
     Only the dependency relationships the architecture side states count; a repository-side
     relationship never makes a ``requires``, and a dependency on something no Story of the Epic
-    builds is context, not an item. Publishing an event and a rule matching an event make no
-    need (:data:`BUILD_DEPENDENCY_KINDS`).
+    builds is context, not an item. Publishing an event, a rule matching an event and a call make
+    no need (:data:`BUILD_DEPENDENCY_KINDS`).
 
     Returns:
         The ids of the items that build what its architecture-side dependency relationships
@@ -935,7 +943,7 @@ def build_context(
         all_items: The items of every Story of the Epic, by the Story's storyKey.
 
     Returns:
-        ``dependsOn``: each dependency relationship of :data:`BUILD_DEPENDENCY_KINDS`, on either
+        ``dependsOn``: each dependency relationship of :data:`CONTEXT_DEPENDENCY_KINDS`, on either
         side, that starts at an entry this Story builds or a stack holding that work and ends
         outside those entries and stacks, with
         the side that states it, the far end's stack and repository, and the other Story that
@@ -950,7 +958,7 @@ def build_context(
     dependencies: list[DependsOn] = [
         _depends_on(matrix, relationship, built_by)
         for entry_id in sorted(sources)
-        for relationship in matrix.outgoing(entry_id, BUILD_DEPENDENCY_KINDS)
+        for relationship in matrix.outgoing(entry_id, CONTEXT_DEPENDENCY_KINDS)
         if relationship.end not in sources
     ]
     return {"dependsOn": dependencies}
