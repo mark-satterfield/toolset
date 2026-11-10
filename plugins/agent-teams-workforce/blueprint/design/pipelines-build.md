@@ -148,6 +148,11 @@ When the current Task cites a new immutable source absent from its accepted regr
 the build appends regression reassessment, independent review and validation, execution policy,
 baseline and fresh code review. Existing source snapshots and journal history remain intact.
 If reassessment still omits those current sources, the build stops with the missing paths.
+The same check runs before an accepted prerequisite diagnosis is applied, a restarted
+`build:prerequisites-diagnosed` included: a diagnosis judges a suite run whose regression scope
+came from the sources cited then, so when the Task now cites a source that scope did not cover,
+the diagnosis is not applied and the evidence is rebuilt from the current sources. A failure that
+remains is judged and diagnosed again from that evidence.
 
 ## Tests and existing behavior
 

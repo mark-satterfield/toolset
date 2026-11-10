@@ -26,6 +26,7 @@ from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, valu
 from orchestrator.core.models import StepError
 from orchestrator.core.tool_locks import control_repo
 from orchestrator.flows import build_prerequisite_work
+from orchestrator.flows.build_reviews import refresh_sources
 from orchestrator.flows.build_sessions import OutputContract, latest, reasoned
 from orchestrator.flows.build_state import (
     CONTRACTS,
@@ -538,14 +539,23 @@ def diagnose(run: StepRun, again: str, observation: dict[str, JsonValue] | None 
 def diagnosed(run: StepRun) -> Completion:
     """Add only validated real prerequisite edges for the active consumer.
 
+    A diagnosis judges a suite run whose regression scope came from the Task's governing sources.
+    When the Task now cites a source that scope did not cover, the diagnosis is stale: it is not
+    applied, and the evidence is rebuilt from the current sources, so a failure that remains is
+    judged and diagnosed again. A restart of this step therefore never re-raises a stale diagnosis.
+
     Returns:
-        A slot-releasing readiness gate, or a scoped environment observation.
+        Fresh evidence for changed governing sources, a slot-releasing readiness gate, or a
+        scoped environment observation.
 
     Raises:
         StepError: The diagnosis names a producer without existing evidence, contradicts the
             tracker, or its wait closes a completion cycle; only this Task fails, as an item.
 
     """
+    refreshed: Completion | None = refresh_sources(run)
+    if refreshed is not None:
+        return refreshed
     diagnosis: dict[str, JsonValue] = artifact_document(run, "prerequisiteDiagnosis")
     again: str = check_type(run.params()["again"], str)
     if diagnosis["route"] == "environment":
