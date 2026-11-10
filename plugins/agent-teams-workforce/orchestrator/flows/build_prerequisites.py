@@ -239,6 +239,15 @@ def _producer_rows(producers: list[dict[str, JsonValue]]) -> None:
             raise ValueError(message)
 
 
+class WaitCycleError(ValueError):
+    """Pending waits and actual Task blockers form a completion cycle no scheduling can satisfy."""
+
+    def __init__(self, cycle: tuple[str, ...]) -> None:
+        """Keep the cycle's bead ids, first id repeated last, as the error's evidence."""
+        super().__init__(f"Unschedulable prerequisite Task/Story completion cycle: {' -> '.join(cycle)}")
+        self.cycle = cycle
+
+
 def validate_wait_graph(records: object, waits: object, scheduling: object = None) -> None:
     """Reject Task/Story completion cycles from a current snapshot and pending waits.
 
@@ -248,7 +257,8 @@ def validate_wait_graph(records: object, waits: object, scheduling: object = Non
         scheduling: Optional actual host Task-to-blocking-Story scheduling edges.
 
     Raises:
-        ValueError: Actual Task blockers and required Story deployment stages form a cycle.
+        WaitCycleError: Actual Task blockers and required Story deployment stages form a cycle.
+        ValueError: A wait names no existing evidence or a scheduling edge is not Task to Story.
 
     """
     rows: list[dict[str, JsonValue]] = check_type(records, list[dict[str, JsonValue]])
@@ -277,8 +287,7 @@ def validate_wait_graph(records: object, waits: object, scheduling: object = Non
     try:
         TopologicalSorter(edges).prepare()
     except CycleError as error:
-        message = f"Unschedulable prerequisite Task/Story completion cycle: {error.args[1]}"
-        raise ValueError(message) from error
+        raise WaitCycleError(tuple(str(node) for node in error.args[1])) from error
 
 
 def _add_wait_edges(graph: beadgraph.Graph, edges: dict[str, set[str]], wait: dict[str, JsonValue]) -> None:
@@ -529,6 +538,10 @@ def diagnosed(run: StepRun) -> Completion:
     Returns:
         A slot-releasing readiness gate, or a scoped environment observation.
 
+    Raises:
+        StepError: The diagnosis names a producer without existing evidence, contradicts the
+            tracker, or its wait closes a completion cycle; only this Task fails, as an item.
+
     """
     diagnosis: dict[str, JsonValue] = artifact_document(run, "prerequisiteDiagnosis")
     again: str = check_type(run.params()["again"], str)
@@ -545,6 +558,11 @@ def diagnosed(run: StepRun) -> Completion:
         return build_prerequisite_work.prepare(run, diagnosis)
     graph: beadgraph.Graph = run.tools.portfolio_read(run.step["script"], beadgraph.load, control_repo())
     producers: list[dict[str, JsonValue]] = check_type(diagnosis["producers"], list[dict[str, JsonValue]])
+    try:
+        _producer_rows(producers)
+    except ValueError as error:
+        # from None: a chained ValueError would classify this item's diagnosis as a pipeline defect.
+        raise StepError(run.step["script"], OTHER_CAUSE, (str(error),)) from None
     _validate_producers(graph, str(run.bead), producers)
     writer: beadgraph.Writer = beadgraph.Writer(control_repo())
     standing: tuple[str, ...] = graph.beads[str(run.bead)].blockers
@@ -562,7 +580,12 @@ def diagnosed(run: StepRun) -> Completion:
     waits: list[JsonValue] = _active_waits(graph, run.journal_path.parent, snapshot)
     if unresolved["producers"]:
         waits.append(unresolved)
-    validate_wait_graph(graph.records, waits)
+    try:
+        validate_wait_graph(graph.records, waits)
+    except WaitCycleError as error:
+        # from None: a chained ValueError would classify this Task's cyclic wait as a pipeline defect.
+        evidence: tuple[str, ...] = (str(error), f"Proposed wait: {wait['evidencePath']}")
+        raise StepError(run.step["script"], OTHER_CAUSE, evidence) from None
     run.tools.portfolio(run.step["script"], writer.write_blocks, {str(run.bead): blockers})
     return Completion(
         artifacts=(

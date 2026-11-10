@@ -199,6 +199,10 @@ Older Tasks without that field are not retroactively assigned guessed dependenci
 current-Task diagnosis repairs their actual prerequisites when discovered. Effective Task,
 producer Story completion and actual host repository-holder dependencies are checked together
 for cycles; unschedulable waits are explicit workflow gaps rather than indefinite holds.
+A cycle that the diagnosed Task's proposed wait closes, and a proposed producer row without an
+absolute existing evidence artifact, fail only that Task as an `item` failure whose evidence
+names the cycle and the diagnosis; they never classify as `pipeline-code-defect`, so other
+lanes keep dispatching.
 
 When missing producer work has an actual open Story and completed saved authoring context,
 the normal task decomposer appends only work that scope/spec already authorizes. Existing Task
