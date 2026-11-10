@@ -158,6 +158,13 @@ RELATIONSHIP_KINDS: Final[tuple[RelationshipKind, ...]] = (
     REL_SPECIFIED_BY,
     REL_DISPUTES,
 )
+RUNTIME_ONLY_KINDS: Final[frozenset[RelationshipKind]] = frozenset({REL_CALLS})
+"""The dependency relationships that hold only at run time: a caller is built against the callee's
+specified contract, so a call is context for the caller and never a build need."""
+NO_BUILD_ORDER_KINDS: Final[frozenset[RelationshipKind]] = frozenset({REL_PUBLISHES, REL_MATCHES, *RUNTIME_ONLY_KINDS})
+"""The dependency relationships that never order a build: a producer and a routing rule each depend
+only on the bus, and a call holds only at run time. Every other dependency relationship (an import,
+a layer used, a value read, shared infrastructure run in, a rule's bus and target) is a build need."""
 FAMILY_DEPENDENCY: Final = "dependency"
 FAMILIES: Final[tuple[str, ...]] = (FAMILY_DEPENDENCY,)
 

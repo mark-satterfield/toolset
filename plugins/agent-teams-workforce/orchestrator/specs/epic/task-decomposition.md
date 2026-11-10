@@ -47,7 +47,9 @@ the title of Task <key>": no two Tasks of a Story share a title), then
 `hierarchy.task_grouping_problems`, which raises `ValueError` with
 every problem (a content failure, so the session gets its one correction): each group of Tasks
 that each need another of them built first, through the couplings between the unverified items
-they cite (an item `requires` or is `requiredBy` another) and the file's `edges`: "Tasks <keys>
+they cite (an item `requires` or is `requiredBy` another by a relationship that orders a build,
+`repo-scoping.md`; a coupling binds Tasks only when one Task cites each of the two items) and the
+file's `edges`: "Tasks <keys>
 each need another of them built first, so no build order exists: build <items> together in one
 Task". How many things a Task cites is not judged.
 
@@ -87,7 +89,10 @@ building has started; a second Task is never created, so the step is safe to run
 invalidation. It writes no edge.
 
 Once every Task bead of the Story is written, one step sets the Story's edges at once: the Task's
-edges onto the Tasks of the same Story it depends on, and a blocker outside the Story
+edges onto the Tasks of the same Story it depends on (the decomposer's `edges`, and those
+`hierarchy.derive_prerequisites` derives: an edge from the one Task that builds a required item
+onto the one Task that builds the item requiring it, when the relationship orders a build,
+`repo-scoping.md`), and a blocker outside the Story
 (`blockedByExternal`), written only when the tracker holds that bead; one it does not hold is left
 out with a warning. An edge between Tasks of the Story that the saved Tasks no longer name is
 removed, and a Task whose build has started is left as it is. It compares with what beads holds, so

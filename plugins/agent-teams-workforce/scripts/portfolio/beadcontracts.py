@@ -303,7 +303,7 @@ ItemNeed = TypedDict(
     "ItemNeed",
     {"item": str, "requires": str, "kind": str, "reason": str, "from": list[str], "candidates": list[str]},
 )
-"""One build need of an item that several Tasks of its Story build, left to the dependency mapper to place."""
+"""One build need of an item where several Tasks build it or the item it requires, left to the mapper."""
 
 
 class ClosureEdges(TypedDict):

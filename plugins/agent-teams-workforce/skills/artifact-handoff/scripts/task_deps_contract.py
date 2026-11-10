@@ -11,7 +11,7 @@ from typing import Final, Literal, TypedDict, TypeIs
 type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
 
 TASK_DEPS_SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parents[1] / "schemas" / "task-deps.schema.json"
-SCHEMA_SHA256: Final[str] = "6a4a9b6fab1e8ef4942a6ff8f6f4a49d9cd8f143c0881d9be91ad3f763aa7c13"
+SCHEMA_SHA256: Final[str] = "8775ad2c6e40cffae529330408d04bb6de1c9c722711cf778ae579e135db2fb8"
 
 type TaskDepsEdgeKind = Literal["data", "contract", "infrastructure", "event-flow"]
 

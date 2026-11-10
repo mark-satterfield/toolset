@@ -70,6 +70,7 @@ from hierarchy import (
     StoryFiles,
     Task,
     build_order,
+    build_relations,
     check_cds_contract,
     check_detailed_work,
     delta_requires,
@@ -118,18 +119,8 @@ from bead_metadata import (
     KEY_TEST_STRATEGY,
     UNKNOWN,
 )
-from matrix_contract import (
-    AUTHORITY_SIDE,
-    FAMILY_DEPENDENCY,
-    REL_CALLS,
-    REL_IMPORTS,
-    REL_MATCHES,
-    REL_PUBLISHES,
-    REL_READS,
-    REL_RUNS_IN,
-    family_kinds,
-)
-from matrixstore import Matrix, as_entry_id, matrix_path, shared_matrix
+from matrix_contract import REL_IMPORTS, REL_READS, REL_RUNS_IN
+from matrixstore import Matrix, matrix_path, shared_matrix
 from placement_contract import KEY_ITEM_ID, PlacementError, PlacementRuling, parse_placement_ruling
 from recon_contract import DESIGN_SOURCES, DesignSource
 from task_deps_contract import KIND_CONTRACT, KIND_DATA, KIND_INFRASTRUCTURE
@@ -152,10 +143,6 @@ _EDGE_KIND: Final[dict[str, str]] = {
     REL_READS: KIND_DATA,
     REL_RUNS_IN: KIND_INFRASTRUCTURE,
 }
-
-#: The relationships that never order a build: a producer and a routing rule each depend only on the bus,
-#: and a caller is built against the callee's specified contract.
-_NO_BUILD_ORDER: Final[frozenset[str]] = frozenset((REL_PUBLISHES, REL_MATCHES, REL_CALLS))
 
 #: The priority `bd create` gives a bead when none is passed.
 DEFAULT_PRIORITY = 2
@@ -1780,20 +1767,15 @@ def _edge_kind(item: str, requirement: str, context: _ClosureContext) -> tuple[s
         The Task edge kind the first relationship of :data:`_EDGE_KIND` between the two entries
         maps to (infrastructure when none of them is stated), and the relationship kinds found,
         joined; empty when the matrix states none. None when every relationship stated between
-        the two is one of :data:`_NO_BUILD_ORDER`, which makes no Task edge.
+        the two never orders a build (:func:`hierarchy.build_relations`), which makes no Task edge.
 
     """
-    start: str = context.detailed[item].get("matrixId", "")
-    end: str = context.detailed[requirement].get("matrixId", "")
-    if not start or not end:
-        return KIND_INFRASTRUCTURE, ""
-    found: set[str] = {
-        relationship.kind
-        for relationship in context.matrix.outgoing(as_entry_id(start), family_kinds(FAMILY_DEPENDENCY))
-        if relationship.end == end and relationship.side == AUTHORITY_SIDE
-    }
-    stated: set[str] = found - _NO_BUILD_ORDER
-    if found and not stated:
+    stated: frozenset[str] | None = build_relations(
+        context.matrix,
+        context.detailed[item].get("matrixId", ""),
+        context.detailed[requirement].get("matrixId", ""),
+    )
+    if stated is None:
         return None
     kinds: list[str] = [kind for relation, kind in _EDGE_KIND.items() if relation in stated]
     return (kinds[0] if kinds else KIND_INFRASTRUCTURE), ", ".join(sorted(stated))
@@ -1891,11 +1873,12 @@ def _close_need(
     context: _ClosureContext,
     closure: _Closure,
 ) -> None:
-    """Turn one item's build need into Task edges, or hand it on when several Tasks build the item.
+    """Turn one item's build need into a Task edge, or hand it on when several Tasks build either item.
 
-    An item-level need names no Task: when one Task builds the item, that Task is the one that
-    needs the requirement; when several do, which of them consumes it is a judgment on the Tasks'
-    content, so the need goes to the dependency mapper instead of onto every one of them.
+    An item-level need names no Task: when one Task builds the item and one Task builds the item
+    it requires, the need is the edge between those two; when several Tasks build either, which of
+    them consumes or provides it is a judgment on the Tasks' content, so the need goes to the
+    dependency mapper instead of onto every pair of them.
 
     Args:
         item: The item the dependent Tasks build.
@@ -1916,7 +1899,7 @@ def _close_need(
     reason: str = (
         f"{item} requires {requirement} ({relation or 'no relationship stated'}; the delta's prerequisite closure)"
     )
-    if len(dependents) > 1:
+    if len(dependents) > 1 or len(found) > 1:
         closure.needs.append(
             {
                 "item": item,

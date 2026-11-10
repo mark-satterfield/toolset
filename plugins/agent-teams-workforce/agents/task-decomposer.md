@@ -59,7 +59,10 @@ the Story) may be built in different Tasks when the Task order carries the coupl
 that builds the prerequisite comes first. Every thing the Story builds is cited by some Task,
 overlaps with another Epic included. The output check refuses Tasks that each need another of
 them built first, through the couplings and your `edges`: build those coupled things together in
-one Task.
+one Task. A coupling or an edge orders a build only when one Task's build consumes
+what another builds (code it imports, a layer, a value it reads, infrastructure it runs in): a
+call holds only at run time, the caller is built against the callee's specified contract, and it
+is never an edge, even where an older repository context still lists it in `requires`.
 
 The task context is written to `task-context.schema.json`, which states what each member holds;
 it points to what you read, and its `openWork` holds the open Tasks of other Epics in your

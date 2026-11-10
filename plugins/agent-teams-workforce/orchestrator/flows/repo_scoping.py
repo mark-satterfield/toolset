@@ -42,10 +42,9 @@ from matrix_contract import (
     KIND_STACK,
     LOCK_DIRECTORY,
     LOCK_SUFFIX,
-    REL_CALLS,
+    NO_BUILD_ORDER_KINDS,
     REL_DESCRIBED_BY,
-    REL_MATCHES,
-    REL_PUBLISHES,
+    RUNTIME_ONLY_KINDS,
     SIDE_REPOSITORY,
     Entry,
     EntryId,
@@ -152,23 +151,15 @@ EVIDENCE_RESULT: Final = "architecture result"
 FIELD_ADDED_OR_CHANGED: Final = "addedOrChangedElements"
 FIELD_UNCHANGED_WORK: Final = "unchangedWorkElements"
 """The fields of the architect's result that name what the Epic's Stories build."""
-NO_BUILD_NEED: Final[frozenset[str]] = frozenset({REL_PUBLISHES, REL_MATCHES, "consumes", "routes"})
-"""The dependency relationships that make no build need another: an event's producers, its rules and its targets."""
-RUNTIME_ONLY: Final[frozenset[str]] = frozenset({REL_CALLS})
-"""The dependency relationships that hold only at run time: a caller is built against the callee's
-specified contract, so a call is context for the caller and never a build need."""
 CONTEXT_DEPENDENCY_KINDS: Final[frozenset[RelationshipKind]] = frozenset(
-    kind for kind in family_kinds(FAMILY_DEPENDENCY) if kind not in NO_BUILD_NEED
+    kind for kind in family_kinds(FAMILY_DEPENDENCY) if kind not in NO_BUILD_ORDER_KINDS - RUNTIME_ONLY_KINDS
 )
-"""The dependency relationships a Story's Tasks are handed as what they depend on (``build_context``)."""
+"""The dependency relationships a Story's Tasks are handed as what they depend on (``build_context``):
+every build need and every call."""
 BUILD_DEPENDENCY_KINDS: Final[frozenset[RelationshipKind]] = frozenset(
-    kind for kind in CONTEXT_DEPENDENCY_KINDS if kind not in RUNTIME_ONLY
+    kind for kind in family_kinds(FAMILY_DEPENDENCY) if kind not in NO_BUILD_ORDER_KINDS
 )
-"""The dependency relationships that make one build need another.
-
-Publishing an event, a rule matching an event and a call make no build dependency; a rule's
-``onBus`` and ``routesTo``, an import, a layer used, a value read and shared infrastructure run in do.
-"""
+"""The dependency relationships that make one build need another (``NO_BUILD_ORDER_KINDS`` states the rule)."""
 NAMING_REPOSITORY: Final = "repository"
 NAMING_STACK: Final = "cdk-stack"
 """The naming command's kinds of a repository name and of the stack name it is converted from."""

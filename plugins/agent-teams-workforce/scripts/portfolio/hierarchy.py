@@ -84,7 +84,16 @@ from bead_metadata import (
 
 # isort: split
 from infra_vocabulary import INFRA_TYPES
-from matrix_contract import KIND_INFRASTRUCTURE, KIND_STACK, Entry, EntryId
+from matrix_contract import (
+    AUTHORITY_SIDE,
+    FAMILY_DEPENDENCY,
+    KIND_INFRASTRUCTURE,
+    KIND_STACK,
+    NO_BUILD_ORDER_KINDS,
+    Entry,
+    EntryId,
+    family_kinds,
+)
 from matrixstore import Matrix, as_entry_id, kind_of, matrix_path, shared_matrix
 from matrixtraverse import capabilities
 
@@ -1486,26 +1495,32 @@ def _build_dependencies(items: Sequence[JsonValue]) -> list[tuple[str, str]]:
     """List which unverified thing of a Story must be built before which.
 
     The architecture side makes one thing need another built first (``requires`` and
-    ``requiredBy`` of the repository context's items). A thing the span marks verified
-    (``state`` :data:`STATE_VERIFIED`) is not work, so no dependency on it counts.
+    ``requiredBy`` of the repository context's items), when the matrix states a relationship
+    between them that orders a build, or none (:func:`build_relations`): a call holds only at run
+    time. A thing the span marks verified (``state`` :data:`STATE_VERIFIED`) is not work, so no
+    dependency on it counts.
 
     Returns:
         (prerequisite item id, dependent item id) pairs between unverified items, without repeats.
 
     """
-    shaped: list[JsonObject] = [json_object(item) for item in items]
-    work: set[str] = {str(item["id"]) for item in shaped if item.get("state") != STATE_VERIFIED}
+    shaped: dict[str, JsonObject] = {str(json_object(item)["id"]): json_object(item) for item in items}
+    work: set[str] = {key for key, item in shaped.items() if item.get("state") != STATE_VERIFIED}
     pairs: list[tuple[str, str]] = [
         pair
-        for item in shaped
+        for key, item in shaped.items()
         for pair in (
-            *((needed, str(item["id"])) for needed in str_list(item.get("requires"))),
-            *((str(item["id"]), needing) for needing in str_list(item.get("requiredBy"))),
+            *((needed, key) for needed in str_list(item.get("requires"))),
+            *((key, needing) for needing in str_list(item.get("requiredBy"))),
         )
     ]
-    return list(
+    coupled: list[tuple[str, str]] = list(
         dict.fromkeys((first, then) for first, then in pairs if first in work and then in work and first != then),
     )
+    if not coupled:
+        return []
+    matrix: Matrix = shared_matrix(matrix_path(None, os.environ))
+    return [(first, then) for first, then in coupled if _orders_build(matrix, shaped[then], shaped[first])]
 
 
 def _declared_edges(edges: Sequence[JsonValue]) -> list[tuple[str, str]]:
@@ -1564,9 +1579,12 @@ def task_grouping_problems(
 ) -> list[str]:
     """Check that a Story's Tasks group what it builds into coherent units of build work.
 
-    Coupled things of a Story (one ``requires`` the other, or is ``requiredBy`` it) may be built
-    in different Tasks when the Task order carries the coupling: the Task that builds the
-    prerequisite comes first. The grouping is incoherent when the couplings and the declared edges
+    Coupled things of a Story (one ``requires`` the other, or is ``requiredBy`` it, by a
+    relationship that orders a build) may be built in different Tasks when the Task order carries
+    the coupling: the Task that builds the prerequisite comes first. A coupling binds Tasks only
+    when one Task builds each of the two things; when several Tasks cite either, which of them
+    consumes or provides it is the decomposer's judgment, carried by its declared edges. The grouping is
+    incoherent when the couplings and the declared edges
     make Tasks need each other built first, because no build order exists between them; those
     Tasks' coupled things belong in one Task. How many things a Task cites is not judged.
 
@@ -1589,12 +1607,11 @@ def task_grouping_problems(
     builders: dict[str, list[str]] = {}
     for cited, label in [(cited, _task_label(task)) for task in shaped for cited in _cited(task, by_id)]:
         builders.setdefault(cited, []).append(label)
+    sole: dict[str, str] = {cited: labels[0] for cited, labels in builders.items() if len(labels) == 1}
     crossing: list[tuple[str, str, str, str]] = [
-        (first, then, before, after)
+        (first, then, sole[first], sole[then])
         for first, then in _build_dependencies(items)
-        for before in builders.get(first, [])
-        for after in builders.get(then, [])
-        if before != after
+        if first in sole and then in sole and sole[first] != sole[then]
     ]
     links: dict[str, set[str]] = {}
     for before, after in [*((before, after) for _f, _t, before, after in crossing), *_declared_edges(edges)]:
@@ -1729,6 +1746,45 @@ def delta_requires(elements: Path) -> dict[str, list[str]] | None:
     return {str(i.get("id")): str_list(i.get("requires")) for i in items if isinstance(i, dict) and i.get("id")}
 
 
+def build_relations(matrix: Matrix, start: str, end: str) -> frozenset[str] | None:
+    """Name the build needs the architecture side states from one item's entry to another's.
+
+    The one rule of what orders a build (``matrix_contract.NO_BUILD_ORDER_KINDS``) is applied to
+    the relationships the matrix states, so a ``requires`` a span file holds from before the rule
+    (a call, say) makes no build need.
+
+    Args:
+        matrix: The matrix.
+        start: The matrix id of the item that requires the other; empty when the item has none.
+        end: The matrix id of the item it requires; empty when the item has none.
+
+    Returns:
+        The dependency relationship kinds stated from ``start`` to ``end`` that order a build;
+        empty when the matrix states none or an id is empty, so the span's ``requires`` stands.
+        None when every relationship stated between the two never orders a build.
+
+    """
+    if not start or not end:
+        return frozenset()
+    found: set[str] = {
+        relationship.kind
+        for relationship in matrix.outgoing(as_entry_id(start), family_kinds(FAMILY_DEPENDENCY))
+        if relationship.end == end and relationship.side == AUTHORITY_SIDE
+    }
+    stated: frozenset[str] = frozenset(found - NO_BUILD_ORDER_KINDS)
+    return None if found and not stated else stated
+
+
+def _orders_build(matrix: Matrix, item: StoryBuild | JsonObject, needed: StoryBuild | JsonObject) -> bool:
+    """Report whether one item's ``requires`` of another is a build need under the rule.
+
+    Returns:
+        False when every relationship the matrix states between their entries never orders a build.
+
+    """
+    return build_relations(matrix, str(item.get("matrixId") or ""), str(needed.get("matrixId") or "")) is not None
+
+
 def _task_builders(tasks: list[Task]) -> dict[str, list[str]]:
     """Index the Tasks that cite each architecture requirement.
 
@@ -1745,11 +1801,61 @@ def _task_builders(tasks: list[Task]) -> dict[str, list[str]]:
     return builders
 
 
+def _story_needs(
+    files: StoryFiles,
+    requires: Mapping[str, list[str]],
+    builders: Mapping[str, list[str]],
+) -> list[tuple[str, str, str]]:
+    """List the build needs within a Story that name the one Task on each end.
+
+    An item's need names no Task: an edge is derived only when one Task of the Story builds the
+    item and at most one builds the item it requires. When several Tasks cite either, which of
+    them consumes or provides the required item is a judgment on the Tasks' content, which the
+    decomposer's own edges carry, so no edge is fanned onto every one of them. A ``requires`` that
+    every relationship the matrix states between the two never orders (a call, say) is no need
+    (:func:`build_relations`).
+
+    Args:
+        files: The Story's saved files.
+        requires: Item id -> the ids it needs built first (:func:`delta_requires`).
+        builders: Item id -> the keys of the Story's Tasks that cite it.
+
+    Returns:
+        (dependent Task key, item, required item) for each need between items this Story builds
+        whose required item one other Task builds or no Task builds.
+
+    """
+    detailed: dict[str, StoryBuild] = story_builds(files.scope)
+    own: dict[str, StoryBuild] = {key: item for key, item in detailed.items() if item["slug"] == files.slug}
+    sole: dict[str, str] = {item: keys[0] for item, keys in builders.items() if item in own and len(keys) == 1}
+    matrix: Matrix = shared_matrix(matrix_path(None, os.environ))
+    return [
+        (key, item, needed)
+        for item, key in sole.items()
+        for needed in requires.get(item, [])
+        if _single_provider(needed, key, own, builders) and _orders_build(matrix, own[item], own[needed])
+    ]
+
+
+def _single_provider(needed: str, key: str, own: Mapping[str, StoryBuild], builders: Mapping[str, list[str]]) -> bool:
+    """Report whether a required item of the Story is built by one other Task, or by none.
+
+    Returns:
+        True when the Story builds ``needed`` and its builders are none or one Task other than ``key``.
+
+    """
+    providers: list[str] = builders.get(needed, [])
+    return needed in own and key not in providers and len(providers) <= 1
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def derive_prerequisites(files: StoryFiles, tasks: list[Task]) -> list[Task]:
     """Derive in-Story prerequisite edges from what the Story builds.
 
-    Missing builders remain coverage findings. Cross-repository prerequisites are
+    An item's build need becomes an edge onto the one Task of the Story that builds the item, from
+    the one Task that builds the required item, and only when the matrix states a relationship that
+    orders a build between them, or none (:func:`_story_needs`). Missing builders remain coverage
+    findings. Cross-repository prerequisites are
     connected by closure_task_edges after every repository's Tasks exist.
     Cyclic derived edges are dropped and reported as normalization warnings.
 
@@ -1760,40 +1866,25 @@ def derive_prerequisites(files: StoryFiles, tasks: list[Task]) -> list[Task]:
         TypeError: An argument violates the declared input contract.
 
     """
-    t: Task
-    x: str
-    y: str
     _taken: list[tuple[str, str]]
     left: list[tuple[str, str]]
     frm: str
     to: str
     if not (isinstance(files, StoryFiles)) or not (isinstance(tasks, list)):
         raise TypeError(_ARGUMENT_ERROR)
-    slug: str = files.slug
     requires: dict[str, list[str]] | None = delta_requires(files.scope.elements)
     if requires is None:
         return tasks
-    detailed: dict[str, beadcontracts.StoryBuild] = story_builds(files.scope)
+    by_key: dict[str, Task] = {t.key: t for t in tasks}
     builders: dict[str, list[str]] = _task_builders(tasks)
     problems: list[str] = []
     saved_edges: list[tuple[str, str]] = [(d, t.key) for t in tasks for d in t.depends_on]
-    for t in tasks:
-        for x in t.requirement_ids:
-            own: beadcontracts.StoryBuild | None = detailed.get(x)
-            if own is None or own["slug"] != slug:
-                continue
-            for y in requires.get(x, []):
-                d: beadcontracts.StoryBuild | None = detailed.get(y)
-                if d is None or y in t.requirement_ids or d["slug"] != slug:
-                    continue
-                found: list[str] = [k for k in builders.get(y, []) if k != t.key]
-                if not found:
-                    problems.append(
-                        f"{t.key} builds {x}, which requires {y}; no Task of this Story builds it",
-                    )
-                t.depends_on.extend(k for k in found if k not in t.depends_on)
+    for key, item, needed in _story_needs(files, requires, builders):
+        found: list[str] = [k for k in builders.get(needed, []) if k != key]
+        if not found:
+            problems.append(f"{key} builds {item}, which requires {needed}; no Task of this Story builds it")
+        by_key[key].depends_on.extend(k for k in found if k not in by_key[key].depends_on)
     _WARNINGS.extend(f"{files.tasks_file.name}: {p}" for p in problems)
-    by_key: dict[str, Task] = {t.key: t for t in tasks}
     nodes: list[str] = [t.key for t in tasks]
     saved: set[tuple[str, str]] = set(saved_edges)
     derived: list[tuple[str, str]] = [(d, t.key) for t in tasks for d in t.depends_on if (d, t.key) not in saved]

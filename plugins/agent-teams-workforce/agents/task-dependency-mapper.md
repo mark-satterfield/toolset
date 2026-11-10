@@ -70,9 +70,17 @@ producers progress normally, and reruns the exact suite with a new assessment.
 
 ## The edge test
 
-An edge from Task A to Task B says B cannot be built until A is built, because B consumes
-something A provides: an API, a table, an IAM grant, a deployed resource. Both ends are Tasks;
-no end is a Story or an Epic.
+An edge from Task A to Task B says B cannot be built until A is built, because B's build
+consumes something A provides: a library or shared code B imports, a layer B attaches, a value B
+reads (an SSM parameter, a table B's stack is granted), shared infrastructure B runs in, an IAM
+grant, a bus or target B's rule is wired to. Both ends are Tasks; no end is a Story or an Epic.
+
+- A runtime call is not an edge. A Task whose code calls an API, a route or an operation another
+  Task builds is built against that interface's specified contract, in the spec, and is tested
+  against a stub of it; the call holds only at run time. The same holds for a front end that
+  posts to a route and for a service that sends through another service's route. This is the
+  matrix's rule: `calls` never orders a build (`matrix_contract.NO_BUILD_ORDER_KINDS`). A
+  `contract` edge means B imports or compiles against code A builds, never that B calls A.
 
 - A producer of an event never depends on a routing rule or its target, and a routing rule or
   its target never depends on a producer: both depend only on the central event API and the
@@ -91,11 +99,13 @@ The `task_edges` step hands you the `task dependency listing`
 Task key is `<story>-<local key>`), and the `closure edges` (`closure-edges.schema.json`).
 Read each Story's Tasks file and the closure edges, and apply the edge test between Tasks of
 different Stories only: the edges within a Story are already written, and the closure edges
-stand, so do not repeat either. Each of the file's `itemNeeds` is an item's build need that
-several Tasks of its Story share (its `candidates`): add an edge from the need's `from` Tasks
-only to the candidates whose own work consumes the required item, with the need's `kind`, and
-none to a candidate that does not; the need's item is a whole, and one candidate's need is not
-every candidate's. Each edge's `kind` says what the dependent Task needs (the
+stand, so do not repeat either. Each of the file's `itemNeeds` is an item's build need where
+several Tasks build the item (its `candidates`) or several build the item it requires (its
+`from`): add an edge, with the need's `kind`, only from a `from` Task that provides what a
+candidate consumes to that candidate, and none for any other pair; the need's items are wholes,
+and one Task's need or provision is not every Task's. The need's relationship already passed the
+matrix's rule, but the edge test still applies: a need whose candidate only calls what a `from`
+Task builds gets no edge. Each edge's `kind` says what the dependent Task needs (the
 output contract's kinds). Consider same-Story and closure edges when checking for a cycle.
 
 A Story is built after another when one of its Tasks depends on one of the other's, so two

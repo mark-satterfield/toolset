@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "agent-teams-workforce/skills/artifact-handoff/schemas/closure-edges.schema.json",
   "title": "Closure edges",
-  "description": "The edges the matrix's dependency relationships between what the Tasks build make between Tasks of different Stories (<work>/closure-edges.json): the step `beadwrite.closure_task_edges` (orchestrator/flows/task_edges.py) writes beadwrite.closure_task_edges' result and validates it against this file. An item's build need (`requires`: every architecture-side dependency relationship but publishing, matching and calling) becomes an edge only when one Task builds the item; when several Tasks of its Story build it, the need is listed in `itemNeeds` instead of fanned out onto all of them. The task-dependency-mapper is handed it as `closure edges`: these edges stand, the mapper places each item need on the candidate Tasks that consume the required item, and it adds only edges the file does not hold.",
+  "description": "The edges the matrix's dependency relationships between what the Tasks build make between Tasks of different Stories (<work>/closure-edges.json): the step `beadwrite.closure_task_edges` (orchestrator/flows/task_edges.py) writes beadwrite.closure_task_edges' result and validates it against this file. An item's build need (`requires`: every architecture-side dependency relationship but publishing, matching and calling) becomes an edge only when one Task builds the item and one Task builds the item it requires; when several Tasks build either, the need is listed in `itemNeeds` instead of fanned out onto every pair of them. The task-dependency-mapper is handed it as `closure edges`: these edges stand, the mapper places each item need between the providing Tasks and the candidate Tasks that consume the required item, and it adds only edges the file does not hold.",
   "type": "object",
   "additionalProperties": false,
   "required": ["ok", "edges", "itemNeeds", "warnings", "summary"],
@@ -23,7 +23,7 @@
       }
     },
     "itemNeeds": {
-      "description": "Each build need of an item that several Tasks of its Story build: which of them consume the required item is the task-dependency-mapper's judgment, from the Tasks' content.",
+      "description": "Each build need of an item where several Tasks build the item or several build the item it requires: which of them consume and which provide the required item is the task-dependency-mapper's judgment, from the Tasks' content.",
       "type": "array",
       "items": {
         "type": "object",
@@ -34,8 +34,8 @@
           "requires": {"description": "The item it needs built first.", "type": "string"},
           "kind": {"description": "What a consuming Task needs (task-deps.schema.json, TaskDepsEdgeKind).", "type": "string"},
           "reason": {"description": "Which item requires which, and through which matrix relationship.", "type": "string"},
-          "from": {"description": "The Tasks of another Story that build the required item, S<i>-<local key>.", "type": "array", "items": {"type": "string"}, "minItems": 1},
-          "candidates": {"description": "The Tasks that build the item, S<i>-<local key>; an edge goes only to those that consume the required item.", "type": "array", "items": {"type": "string"}, "minItems": 2}
+          "from": {"description": "The Tasks of another Story that build the required item, S<i>-<local key>; an edge comes only from those that provide what a candidate consumes.", "type": "array", "items": {"type": "string"}, "minItems": 1},
+          "candidates": {"description": "The Tasks that build the item, S<i>-<local key>; an edge goes only to those that consume the required item.", "type": "array", "items": {"type": "string"}, "minItems": 1}
         }
       }
     },

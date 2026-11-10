@@ -172,6 +172,14 @@ at it under the reverse name.
 `runsIn` have `family: dependency`. A producer publishes through the events API and knows
 nothing of rules or targets; a consumer is reached as the target of a rule.
 
+Not every dependency relationship orders a build (`matrix_contract.NO_BUILD_ORDER_KINDS`, the one
+statement of the rule). `publishes` and `matches` never do: a producer and a rule each depend only
+on the bus. `calls` never does either: it holds only at run time, and the caller is built against
+the callee's specified contract, so a call is context for the caller's Tasks
+(`matrix_contract.RUNTIME_ONLY_KINDS`). `imports`, `usesLayer`, `reads`, `runsIn`, `onBus` and
+`routesTo` are build needs. Every step that turns relationships into Task edges applies this rule
+to the relationships the matrix states, never to a `requires` list a span file already holds.
+
 A dependency between two stacks is read, never stored: stack A depends on stack B when a
 dependency relationship starts at A or at an entry whose home is A and ends at B or at an
 entry whose home is B. A dependency found at stack level, with the entries not yet known, is

@@ -55,6 +55,13 @@ only at run time. A rule's `onBus` and `routesTo`, an import, a layer used, a va
 shared infrastructure run in do. A repository-side relationship never makes a `requires`, and a
 dependency on something no Story builds is context, not an item. `build_context` follows the
 same kinds and calls for `dependsOn` (`CONTEXT_DEPENDENCY_KINDS`): what a Task calls is context.
+The rule is stated once, as `matrix_contract.NO_BUILD_ORDER_KINDS`, and every step that turns a
+`requires` into a Task edge (`hierarchy.derive_prerequisites`, `hierarchy.task_grouping_problems`,
+`beadwrite.closure_task_edges`) applies it again to the relationships the matrix states between
+the two entries (`hierarchy.build_relations`), so a `requires` a span file wrote before the rule
+makes no edge. A `requires` is between items, not Tasks: it becomes a Task edge only when one Task
+builds each of the two items; otherwise which Tasks consume and provide it is judged from the
+Tasks' content (the decomposer's edges within a Story, the mapper's `itemNeeds` across Stories).
 
 Everything else the Epic reaches in the matrix is context: the Tasks are handed it as what they
 depend on (`task-decomposition.md`), never as work.

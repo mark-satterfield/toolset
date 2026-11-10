@@ -33,7 +33,7 @@
           },
           "kind": {
             "title": "TaskDepsEdgeKind",
-            "description": "What the dependent Task needs from the prerequisite.",
+            "description": "What the dependent Task's build needs from the prerequisite: contract (code it imports or compiles against), data (a value or store it reads), infrastructure (infrastructure it runs in or is wired to), event-flow. A runtime call is never an edge: the caller is built against the callee's specified contract.",
             "enum": [
               "data",
               "contract",
