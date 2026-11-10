@@ -82,6 +82,7 @@
     "specialist round": "The solutions architect's first round of requests, one per specialist (specialist-round.schema.json).",
     "answers digest": "The answers a solutions architect step is handed, cut by the script to each answer's sentence, assumptions, needs, decisions and diagram homes, with each answer file's path (answers-digest.schema.json).",
     "example": "A short, valid example of a file the session writes, in place of that file's schema; the script validates the file and returns every problem.",
+    "promoted documents": "The file of what an Epic's promotion set effective: `documents` lists each view by its path under the architecture root (orchestrator/flows/architecture_promotion.py).",
     "design gaps": "One repository's open design gaps: each spec document that records a row under its `## Design gaps` heading, with each row, filed when the spec stage stopped the repository before its Story (orchestrator/flows/design_gaps.py). The solutions architect designs what fills each one.",
     "findings": "A result of the architecture check step that found defects for the solutions architect to correct (check-result.schema.json).",
     "trd": "The Epic's TRD document.",

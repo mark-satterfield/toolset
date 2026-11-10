@@ -385,7 +385,8 @@
         "elaboration-started",
         "decomposed-into-tasks",
         "human-ruling",
-        "awaiting-human-action"
+        "awaiting-human-action",
+        "architecture-changed"
       ],
       "x-python": {
         "literal": "ElaborationCause",
@@ -406,6 +407,10 @@
           [
             "CAUSE_AWAITING_HUMAN",
             "awaiting-human-action"
+          ],
+          [
+            "CAUSE_ARCHITECTURE_CHANGED",
+            "architecture-changed"
           ]
         ],
         "subsets": [

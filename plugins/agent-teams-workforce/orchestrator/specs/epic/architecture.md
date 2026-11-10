@@ -303,7 +303,30 @@ documents and the log in the vault (each that exists or that git tracks). The ma
 It writes `<arch-work>/promoted.json` and records it as the file `promoted documents`,
 with the value `vault commit` when a commit was made. A document other than
 a folder index whose matrix entry does not show it effective fails the step, naming each with the reason; anything else that fails ends
-the step with a structured cause.
+the step with a structured cause. When it set documents effective, it plans the two impact steps
+after itself (`architecture_impact.impact_steps`).
+
+## Impact of the promoted change
+
+`architecture_impact.py`. `architecture-impact-analyst` is handed `promoted documents` and
+`architecture result`, runs `atw-matrix impact` and `atw-matrix affected` for each promoted view,
+and writes one ruling per Epic and open Task they return to `impact-rulings.schema.json` at
+`<arch-work>/impact-<step>.json`, recorded as the file `impact rulings`. The script step
+`reelaborate.restart` then calls the driver's `reelaborate.restart` (`driver_contracts.driver_module`)
+for each Epic other than this one that a ruling names as `epicId` with the verdict
+`elaborated-unbuilt`. The driver checks the ruling again (the Epic is elaborated, no Task of it is
+in progress or closed, no run works on it or its Stories and Tasks), starts the Epic's journal
+again at its Architecture step and each of its Story and Task journals that a build or deploy
+worked on again after its creating step, the same journal change `elabmark.py --start-at` makes,
+and sets `elaboration_state=ready` with the cause `architecture-changed` and no owner. It refuses
+anything else and changes nothing. The step records the value `re-elaborations` (each Epic's
+outcome) and the value `knock-on proposals` (each `already-built` item's proposed Task; none is
+created). A restart that raised fails the step after every Epic was tried, with each outcome in
+its evidence; running the step again restarts nothing twice, since a restarted Epic is no longer
+elaborated. Re-elaboration rewrites the Epic's Stories (in any status but closed) and its
+unstarted Tasks in place, matched by `elab_key` (`beadwrite.write_story`, `write_task`), and a
+child journal whose steps after the first are all planned is created afresh from the rewritten
+bead (`journal_changes.create_child_journal`).
 
 ## After the container
 

@@ -208,6 +208,23 @@
       ]
     },
     {
+      "output": "impact rulings",
+      "agents": [
+        "architecture-impact-analyst"
+      ],
+      "schema": "skills/artifact-handoff/schemas/impact-rulings.schema.json#/$defs/ImpactRulings",
+      "named": "impact-rulings.schema.json",
+      "pointer": "file",
+      "code": "orchestrator/flows/architecture_impact.py",
+      "anchors": [
+        "@agent_step(ANALYST)",
+        "impact-rulings.schema.json"
+      ],
+      "launches": [
+        "analyst"
+      ]
+    },
+    {
       "output": "architecture decider's ruling",
       "agents": [
         "architecture-decider"

@@ -81,7 +81,8 @@ flowchart TD
     ok -->|"no: each problem goes back to the architect as a correction"| detailed
     ok -->|"yes"| trdUpdate["TRD architecture update: one trd-author session adds what the PRD implies and applies the architect's TRD changes - section 4"]
     trdUpdate --> writes["The documents this Epic's maintainers wrote set effective. The architecture of the Epic's reach in the corrected matrix set approved, verified stays false"]
-    writes --> archChange{"Did the Epic need an architecture change?"}
+    writes --> impact["Impact: architecture-impact-analyst rules on every Epic and open Task the promoted views reach. Each other Epic elaborated but unbuilt starts again from its Architecture step; a built item gets a proposed knock-on Task"]
+    impact --> archChange{"Did the Epic need an architecture change?"}
     archChange -->|"yes"| spec["Specs written from what is not yet verified - section 6"]
     archChange -->|"no: for example a wording change on a web page"| specNo["A spec with instructions for the change - section 6"]
     spec --> merge1(("merge"))
@@ -134,6 +135,15 @@ Notes on the diagram:
   and the review log, and records architecture approval on the individual items reviewed.
   Dependencies established ahead of time order shared work independently of approval and
   verification. Neither mark holds an Epic back; missing ordering is corrected in dependencies.
+- After the promotion, `architecture-impact-analyst` rules on every Epic and open Task the
+  promoted views reach (`atw-matrix impact`, `affected`), and the step after it
+  (`orchestrator/flows/architecture_impact.py`) starts each other Epic it rules elaborated but
+  unbuilt again from its Architecture step, through the driver's `reelaborate.restart`: the one
+  case in which the pipeline itself makes a run begin earlier. The driver checks the ruling again
+  against the tracker, starts again the journals of the Epic's Stories and Tasks a build or deploy
+  worked on, and sets the Epic ready with the cause `architecture-changed`; its re-elaboration
+  rewrites its Stories and Tasks in place by `elab_key`. A built item is never reopened: its
+  knock-on Task is recorded as proposed.
 - The solutions architect is the reviewer; no other agent reviews the architecture. The owner:
   "The solutions architect is the reviewer. I do not want to introduce new reviewers in for
   architecture. I already took out reviewers." What the owner requires instead is proof: "what I

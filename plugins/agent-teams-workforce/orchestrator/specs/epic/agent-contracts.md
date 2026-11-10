@@ -95,7 +95,7 @@ epic-dependency-assessor, stakeholder-request-intake-writer, feature-persona-wri
 prd-alignment-verifier, requirement-classifier, ambiguity-detector, completeness-checker,
 requirements-conflict-detector, constraint-extractor, domain-boundary-validator, requirements-clarifier
 and brd-traceability-auditor are started by their own workflows or by a person. No Epic step starts
-advantage-evaluator, constitutional-agent, context-curator, architecture-impact-analyst,
+advantage-evaluator, constitutional-agent, context-curator,
 architecture-fitness-function-author, ubiquitous-language-writer or root-cause-analyst; a caller
 chooses them through the find-specialists catalog. built-architecture-comparer and
 architecture-conformance-reviewer are started by the built-version workflow. No step starts

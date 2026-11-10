@@ -26,6 +26,8 @@ SCRIPTS_DIR: Final[Path] = Path(__file__).resolve().parent
 SCHEMA_PATH: Final[Path] = SCRIPTS_DIR.parent / "schemas" / "bead-metadata.schema.json"
 MODULE_PATH: Final[Path] = SCRIPTS_DIR / "bead_metadata.py"
 
+LINE_LENGTH: Final = 120
+"""The longest line ruff allows in the generated module (ruff.toml line-length)."""
 type SetKind = Literal["tuple", "frozenset"]
 type ReferenceKind = Literal["tuple", "str"]
 
@@ -399,8 +401,14 @@ def _collection(lines: list[str], head: str, items: list[str], opener: str, clos
 def _render_vocabulary(lines: list[str], vocabulary: Vocabulary) -> None:
     lines.append("")
     _doc(lines, vocabulary.doc)
-    literal_values: str = ", ".join(json.dumps(value) for _, value in vocabulary.constants)
-    lines.append(f"type {vocabulary.literal} = Literal[{literal_values}]")
+    values: list[str] = [json.dumps(value) for _, value in vocabulary.constants]
+    single: str = f"type {vocabulary.literal} = Literal[{', '.join(values)}]"
+    if len(single) <= LINE_LENGTH:
+        lines.append(single)
+    else:
+        lines.append(f"type {vocabulary.literal} = Literal[")
+        lines.extend(f"    {value}," for value in values)
+        lines.append("]")
     by_value: dict[str, str] = {}
     for constant, value in vocabulary.constants:
         by_value[value] = constant

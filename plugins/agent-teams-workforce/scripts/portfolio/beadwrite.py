@@ -132,10 +132,10 @@ INFRASTRUCTURE_LABEL: Final = "infrastructure"
 so its build adds the Infra Intent phase."""
 _BUILD_LANE_KEYS: Final[frozenset[str]] = frozenset((*BUILD_LIFECYCLE_KEYS, *CDS_AUDIT_KEYS))
 
-#: The one status a matched Story or Task is rewritten in.
 _ARGUMENT_ERROR: str = "Arguments violate the beadwrite input contract"
 
 
+#: The one status a matched Task is rewritten in; a Story is rewritten in any status but closed.
 OPEN = "open"
 
 #: The Task edge kind each architecture-side relationship between two built items makes, first match wins.
@@ -654,7 +654,9 @@ def write_story(graph: Graph, writer: Writer, epic_id: str, files: StoryFiles, *
     """Write one repository's Story under the Epic from its saved Story document.
 
     The Story is found by its elaboration key `story:<slug>` among the Epic's Stories: one that
-    exists is refreshed where it differs and is open, and is never created a second time.
+    exists is refreshed where it differs and is not closed (a Story is in progress once a build has
+    worked on its branch, and a re-elaboration rewrites it in place), and is never created a second
+    time.
 
     Args:
         graph: The tracker graph, read with descriptions.
@@ -697,7 +699,7 @@ def write_story(graph: Graph, writer: Writer, epic_id: str, files: StoryFiles, *
         action: str = "created"
     else:
         story_id = bead.id
-        wrote: bool = bead.status == OPEN and _refresh(
+        wrote: bool = not bead.closed and _refresh(
             writer,
             bead,
             story.title,

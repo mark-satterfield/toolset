@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Impact rulings",
+  "description": "What an architecture change reaches: architecture-impact-analyst's result after an Epic's architecture is promoted. Consumed by the step after it (orchestrator/flows/architecture_impact.py), which restarts the elaboration of each other Epic ruled elaborated-unbuilt and records every ruling and knock-on proposal.",
+  "$ref": "#/$defs/ImpactRulings",
+  "$defs": {
+    "Verdict": {
+      "description": "unaffected: the change does not reach the item. not-yet-elaborated: an Epic with no Story or Task beneath it. elaborated-unbuilt: Stories and Tasks exist and no Task is in progress or closed; the Epic is elaborated again. already-built: a Task under it is in progress or closed; a knock-on Task is proposed.",
+      "type": "string",
+      "enum": ["unaffected", "not-yet-elaborated", "elaborated-unbuilt", "already-built"]
+    },
+    "KnockOn": {
+      "description": "The repair an already-built item needs, proposed and never created: the built item it follows, the view that changed and what will stop working.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "description", "repoPath"],
+      "properties": {
+        "title": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "repoPath": {
+          "description": "The repository of the stack the repair lands in (atw-matrix node stack:<id>).",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Ruling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["beadId", "beadType", "epicId", "verdict", "rationale", "views", "knockOn"],
+      "properties": {
+        "beadId": {"description": "The Epic or open Task the matrix returned.", "type": "string", "minLength": 1},
+        "beadType": {"type": "string", "enum": ["epic", "task"]},
+        "epicId": {
+          "description": "The Epic the item belongs to: the item itself for an Epic, the Epic `affected` names for a Task. The step after the analyst restarts this Epic when the verdict is elaborated-unbuilt.",
+          "type": "string",
+          "minLength": 1
+        },
+        "verdict": {"$ref": "#/$defs/Verdict"},
+        "rationale": {"description": "One line on why, for every verdict.", "type": "string", "minLength": 1},
+        "views": {
+          "description": "The changed views the ruling rests on, by path under the architecture root.",
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "knockOn": {
+          "description": "The proposal for an already-built item; null for every other verdict.",
+          "oneOf": [{"$ref": "#/$defs/KnockOn"}, {"type": "null"}]
+        }
+      }
+    },
+    "ImpactRulings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["searched", "rulings", "escalations", "summary"],
+      "properties": {
+        "searched": {
+          "description": "Each atw-matrix command run, with the id it was run for and what it returned, in one line each.",
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "rulings": {"type": "array", "items": {"$ref": "#/$defs/Ruling"}},
+        "escalations": {
+          "description": "What could not be looked up or classified: a changed view with no document entry, an unreadable matrix or tracker, an item whose build state cannot be established.",
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "summary": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

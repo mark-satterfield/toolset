@@ -20,12 +20,14 @@ import re
 import shutil
 from typing import TYPE_CHECKING, Final
 
-from step_journal_contract import STATUS_DONE
-
 from orchestrator.core import step_journal
 from orchestrator.core.io import JsonValue, write_json
 from orchestrator.core.models import StaleInputError
 from orchestrator.flows.architecture_files import ARCHITECT, LABEL_RESULT, architecture_folder
+
+# isort: split
+# step_journal puts the pipeline-contracts scripts directory on sys.path; the contract import follows it.
+from step_journal_contract import STATUS_DONE
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

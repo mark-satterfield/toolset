@@ -16,7 +16,7 @@ type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValu
 type JsonObject = dict[str, JsonValue]
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "902b8254bc5a1c82765e43f4f276396bb17d64fc693842b1240bf9d0de9af000"
+SCHEMA_SHA256: Final[str] = "e4bd6d412a8d2ba6ca36f9accf75c8f01aa1cdef6aca74f4d09751d4d7494925"
 
 #: The literal a producer writes for an undecided -or-unknown contract value; read as None.
 UNKNOWN: Final[str] = "unknown"
@@ -105,16 +105,24 @@ ELABORATION_STATES: Final[tuple[ElaborationState, ...]] = (
 )
 ELABORATION_AUTHORING: Final[str] = ""
 
-type ElaborationCause = Literal["elaboration-started", "decomposed-into-tasks", "human-ruling", "awaiting-human-action"]
+type ElaborationCause = Literal[
+    "elaboration-started",
+    "decomposed-into-tasks",
+    "human-ruling",
+    "awaiting-human-action",
+    "architecture-changed",
+]
 CAUSE_STARTED: Final[ElaborationCause] = "elaboration-started"
 CAUSE_DECOMPOSED: Final[ElaborationCause] = "decomposed-into-tasks"
 CAUSE_HUMAN: Final[ElaborationCause] = "human-ruling"
 CAUSE_AWAITING_HUMAN: Final[ElaborationCause] = "awaiting-human-action"
+CAUSE_ARCHITECTURE_CHANGED: Final[ElaborationCause] = "architecture-changed"
 ELABORATION_CAUSES: Final[tuple[ElaborationCause, ...]] = (
     CAUSE_STARTED,
     CAUSE_DECOMPOSED,
     CAUSE_HUMAN,
     CAUSE_AWAITING_HUMAN,
+    CAUSE_ARCHITECTURE_CHANGED,
 )
 DONE_CAUSES: Final[frozenset[ElaborationCause]] = frozenset({
     CAUSE_DECOMPOSED,
