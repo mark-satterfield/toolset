@@ -31,7 +31,7 @@ from orchestrator.core.journal_steps import (
 from orchestrator.core.models import RunContext, StepError
 from orchestrator.core.tool_locks import control_repo, seconds
 from orchestrator.core.tools import Tools
-from orchestrator.flows import build_policy, build_prerequisite_work, build_prerequisites
+from orchestrator.flows import build_carried, build_policy, build_prerequisite_work, build_prerequisites
 from orchestrator.flows.build_reviews import attach_reviews, refresh_sources
 from orchestrator.flows.build_sessions import OutputContract, accepted_steps, attach, latest, reasoned, view_of
 from orchestrator.flows.build_state import (
@@ -45,9 +45,6 @@ from orchestrator.flows.build_state import (
 )
 from orchestrator.flows.build_state import (
     artifact_document as _document,
-)
-from orchestrator.flows.build_state import (
-    artifact_file as _file,
 )
 from orchestrator.flows.build_state import (
     count_in_dispatch as _count,
@@ -71,6 +68,7 @@ STRATEGY_DECIDER: Final = "test-strategy-decider"
 REVIEWER: Final = "code-correctness-reviewer"
 CODE_REVIEW_TREE: Final = "codeReviewTree"
 FINAL_REVIEW_TREE: Final = "finalReviewTree"
+CARRY_REASON: Final = "its correction belongs to the contract or the tooling, or its correction allowance is spent"
 
 
 def _suite(run: StepRun, name: str, *, fresh: bool = False) -> dict[str, JsonValue]:
@@ -572,13 +570,15 @@ def _review_ownership(run: StepRun, findings: list[JsonValue]) -> Completion | N
 
 
 def _code_reviewed(run: StepRun) -> Completion:
-    """Keep working on review findings even when the tests pass.
+    """Keep working on review findings even when the tests pass, and never stop on a finding.
+
+    Implementation and test findings go to their specialists. Contract and tooling findings, and
+    test findings still open when their correction allowance is spent, are carried: recorded on
+    this step and in the handback while the build continues.
 
     Returns:
-        Specialist selection when improvements or failing tests require implementation.
-
-    Raises:
-        StepError: Required tooling or contract corrections have no accepted resolution.
+        Test correction, specialist selection when the suite or implementation findings require
+        code work, or Green with the carried findings recorded.
 
     """
     refreshed: Completion | None = refresh_sources(run)
@@ -586,51 +586,55 @@ def _code_reviewed(run: StepRun) -> Completion:
         return refreshed
     review: dict[str, JsonValue] = _document(run, "codeReview")
     suite: dict[str, JsonValue] = _latest_suite(run)
-    findings: list[JsonValue] = check_type(review["findings"], list[JsonValue])
-    required: list[JsonValue] = [finding for finding in findings if json_object(finding)["severity"] != "note"]
-    improvements: bool = bool(required)
+    required: list[JsonValue] = build_carried.required(check_type(review["findings"], list[JsonValue]))
     ownership: Completion | None = _review_ownership(run, required)
     if ownership is not None:
         return ownership
     reviewed: ValueArtifact = value_artifact(CODE_REVIEW_TREE, build_policy.content_tree(run))
-    if suite.get("exitCode") == 0 and review["approved"] is True and not improvements:
-        return Completion(artifacts=(value_artifact("greenRun", suite), reviewed))
-    owners: set[str] = {check_type(json_object(finding)["owner"], str) for finding in required}
-    if "tests" in owners:
-        if _count(run, "build:code-reviewed", "reviewTestCorrection") >= build_rounds():
-            message: str = "build:review-test-corrections"
-            raise StepError(message, OTHER_CAUSE, ("Required test review corrections exhausted their allowance",))
-        selected_tests: Completion = reasoned(
-            run,
-            TEST_LEAD,
-            OutputContract(CONTRACTS / "build-selection.schema.json", TEST_SELECTION),
-            "Select fresh test specialists for the current codeReview findings owned by tests. "
-            "Preserve all other findings for independent re-review; do not change governing requirements",
-            followups=(
-                _new("build:plan-tests", "Repair the review's test-owned findings", {"required": True}),
-                _new("build:select-implementers", "Re-review the corrected suite and remaining findings"),
-            ),
-        )
-        return Completion(
-            artifacts=(*selected_tests.artifacts, value_artifact("reviewTestCorrection", review)),
-            add=selected_tests.add,
-        )
-    unresolved: list[str] = [
-        f"{json_object(finding)['owner']} correction required: {json_object(finding)['detail']}"
-        for finding in required
-        if json_object(finding)["owner"] in {"tooling", "contract"}
-    ]
-    if unresolved:
-        message = "build:review-authority"
-        raise StepError(message, OTHER_CAUSE, tuple(unresolved))
+    carried: list[JsonValue] = build_carried.owned_elsewhere(required)
+    tests: list[JsonValue] = [finding for finding in required if json_object(finding)["owner"] == "tests"]
+    if tests:
+        if _count(run, "build:code-reviewed", "reviewTestCorrection") < build_rounds():
+            return _review_test_correction(run, review)
+        carried.extend(tests)
+    work: list[JsonValue] = [finding for finding in required if json_object(finding)["owner"] == "implementation"]
+    recorded: tuple[ValueArtifact, ...] = (build_carried.carry("codeReview", carried, CARRY_REASON),) if carried else ()
+    if suite.get("exitCode") == 0 and not work and (review["approved"] is True or carried):
+        return Completion(artifacts=(value_artifact("greenRun", suite), reviewed, *recorded))
     selected: Completion = reasoned(
         run,
         "implementation-lead",
         OutputContract(CONTRACTS / "build-selection.schema.json", "implementationSelection"),
-        "Select the implementation specialists needed for the suite failures and code review findings",
+        "Select the implementation specialists needed for the suite failures and the implementation-owned "
+        "code review findings. Findings owned by the contract or the tooling are carried as recorded residuals "
+        "and are not implementation work",
         followups=(_new("build:plan-code", "Plan the selected code specialists and suite check"),),
     )
-    return Completion(artifacts=(*selected.artifacts, reviewed), add=selected.add)
+    return Completion(artifacts=(*selected.artifacts, reviewed, *recorded), add=selected.add)
+
+
+def _review_test_correction(run: StepRun, review: dict[str, JsonValue]) -> Completion:
+    """Give the code review's test-owned findings to fresh test specialists, then re-review.
+
+    Returns:
+        The test lead's selection, its test work and an independent re-review.
+
+    """
+    selected_tests: Completion = reasoned(
+        run,
+        TEST_LEAD,
+        OutputContract(CONTRACTS / "build-selection.schema.json", TEST_SELECTION),
+        "Select fresh test specialists for the current codeReview findings owned by tests. "
+        "Preserve all other findings for independent re-review; do not change governing requirements",
+        followups=(
+            _new("build:plan-tests", "Repair the review's test-owned findings", {"required": True}),
+            _new("build:select-implementers", "Re-review the corrected suite and remaining findings"),
+        ),
+    )
+    return Completion(
+        artifacts=(*selected_tests.artifacts, value_artifact("reviewTestCorrection", review)),
+        add=selected_tests.add,
+    )
 
 
 def _latest_suite(run: StepRun) -> dict[str, JsonValue]:
@@ -1148,28 +1152,38 @@ def _final_review(run: StepRun) -> Completion:
 
 
 def _final_review_checked(run: StepRun) -> Completion:
-    """Enforce independent final review with bounded correction and re-review.
+    """Correct the final review's findings within the allowance, and never stop on a finding.
+
+    Findings owned by the contract or the tooling are carried at once. Findings still open when
+    the correction allowance is spent are carried too, and the review then covers the current tree.
 
     Returns:
-        Approval or implementation and re-review steps.
-
-    Raises:
-        StepError: The final review is unresolved after its correction allowance.
+        Approval, approval with the carried findings recorded, or implementation and re-review steps.
 
     """
     review: dict[str, JsonValue] = _document(run, "finalCodeReview")
-    findings: list[JsonValue] = check_type(review["findings"], list[JsonValue])
-    needed: bool = any(json_object(finding)["severity"] != "note" for finding in findings)
-    if review["approved"] is True and not needed:
-        return Completion(artifacts=(value_artifact(FINAL_REVIEW_TREE, build_policy.content_tree(run)),))
+    required: list[JsonValue] = build_carried.required(check_type(review["findings"], list[JsonValue]))
+    work: list[JsonValue] = build_carried.owned_here(required)
+    covered: ValueArtifact = value_artifact(FINAL_REVIEW_TREE, build_policy.content_tree(run))
+    if not work and (review["approved"] is True or required):
+        recorded: tuple[ValueArtifact, ...] = (
+            (build_carried.carry("finalCodeReview", required, CARRY_REASON),) if required else ()
+        )
+        return Completion(artifacts=(covered, *recorded))
     if _count(run, "build:final-review-checked", "finalReviewCorrection") >= build_rounds() - 1:
-        msg = "build:final-review"
-        raise StepError(msg, OTHER_CAUSE, (str(_file(run, "finalCodeReview")),))
+        spent: tuple[ValueArtifact, ...] = (
+            (build_carried.carry("finalCodeReview", required, CARRY_REASON),) if required else ()
+        )
+        return Completion(artifacts=(covered, *spent))
     return Completion(
         artifacts=(value_artifact("finalReviewCorrection", review),),
         add=(
             StepGroup((
-                _new("build:correct-findings", "Resolve final code review findings", {"review": "finalCodeReview"}),
+                _new(
+                    "build:correct-findings",
+                    "Resolve the final code review's implementation and test findings",
+                    {"review": "finalCodeReview"},
+                ),
                 _new("build:final-review", "Independently review the final corrections"),
             )),
         ),
@@ -1294,11 +1308,18 @@ def run(context: RunContext) -> dict[str, JsonValue]:
         for artifact in step["artifacts"]
         if step["status"] == "done"
     }
+    carried: list[JsonValue] = build_carried.collected(
+        [step for step in step_journal.steps_in_order(journal) if step["status"] == "done"],
+    )
+    headline: str = f"{context.bead} built with its whole suite passing"
+    if carried:
+        headline += f"; {len(carried)} review finding(s) carried for their owners"
     return {
         "ok": True,
         "stage": "committed",
         "beadId": context.bead,
-        "headline": f"{context.bead} built with its whole suite passing",
+        "headline": headline,
+        "carriedFindings": carried,
         "detailPath": str(path),
         "sessions": json_object({"sessions": context.sessions})["sessions"],
         "worktree": artifacts.get("worktree"),

@@ -16,7 +16,7 @@ from orchestrator.core.journal_registry import Registry
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, file_artifact, value_artifact
 from orchestrator.core.models import StepError
 from orchestrator.core.tool_locks import seconds
-from orchestrator.flows import build_policy
+from orchestrator.flows import build_carried, build_policy
 from orchestrator.flows.build_sessions import OutputContract, latest, reasoned
 from orchestrator.flows.build_state import (
     ARTIFACT_CONTRACTS,
@@ -44,6 +44,8 @@ from orchestrator.flows.elaboration_files import project_root
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from step_journal_contract import ValueArtifact
 
 
 def _regression(run: StepRun, mode: str, plan: Path, extra: list[str]) -> tuple[Path, dict[str, JsonValue]]:
@@ -372,25 +374,27 @@ def _infrastructure(run: StepRun) -> Completion:
 
 
 def _audit_reviewed(run: StepRun) -> Completion:
-    """Require blocking and warranted improvement findings to be addressed in this build.
+    """Correct the review's findings within the allowance, and never stop on a finding.
+
+    Findings owned by the contract or the tooling are carried at once; findings still open when
+    the correction allowance is spent are carried too, and the build continues.
 
     Returns:
-        A clean review, or implementation and repeat-review work.
-
-    Raises:
-        StepError: Repeated corrections do not resolve the review.
+        A clean review, the carried findings recorded, or implementation and repeat-review work.
 
     """
     params = run.params()
     name: str = check_type(params["review"], str)
     review: dict[str, JsonValue] = _document(run, name)
-    findings: list[JsonValue] = check_type(review["findings"], list[JsonValue])
-    needed: bool = any(json_object(finding)["severity"] != "note" for finding in findings)
-    if review["approved"] is True and not needed:
-        return Completion()
+    required: list[JsonValue] = build_carried.required(check_type(review["findings"], list[JsonValue]))
+    work: list[JsonValue] = build_carried.owned_here(required)
+    reason: str = "its correction belongs to the contract or the tooling, or its correction allowance is spent"
+    carried: tuple[ValueArtifact, ...] = (build_carried.carry(name, required, reason),) if required else ()
+    if not work and (review["approved"] is True or required):
+        return Completion(artifacts=carried)
     again: str = check_type(params["again"], str)
     if _count(run, again, name) >= build_rounds():
-        raise StepError(again, OTHER_CAUSE, (str(_file(run, name)),))
+        return Completion(artifacts=carried)
     return Completion(
         add=(
             StepGroup((
@@ -414,7 +418,8 @@ def _correct(run: StepRun) -> Completion:
         "implementation-lead",
         OutputContract(CONTRACTS / "build-selection.schema.json", "implementationSelection"),
         f"Select the implementation specialists needed to resolve only the unresolved findings of the {review} "
-        "review and the artifacts they name; accepted unrelated work stays as it is",
+        "review and the artifacts they name; accepted unrelated work stays as it is. Findings owned by the "
+        "contract or the tooling are carried as recorded residuals and are not implementation work",
         followups=(_new("build:plan-code", "Plan the selected code specialists and suite check"),),
     )
 

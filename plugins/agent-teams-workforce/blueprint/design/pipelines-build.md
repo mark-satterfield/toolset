@@ -129,20 +129,37 @@ and suite-quality correction have three rounds, and regression scope/mapping rev
 correction rounds. Running ancestors count only with their own completed outcome or their immediate
 agent child's accepted result. Restarting does not replenish the allowance. A fresh suite with the
 same evidence identity and failures after product or test correction stops before another agent round;
-environment recovery and changed requirement, setup or runtime identities remain eligible. An unresolved correction
-records its evidence and stops; no quality gate is bypassed. An empty implementation selection
+environment recovery and changed requirement, setup or runtime identities remain eligible. Only an
+error stops a build: a failed command or suite, a crash, an exhausted retry of failing work,
+unschedulable work, or a missing input. A review finding is a judgment that something should
+change, never an error: an unresolved failing suite or scope check records its evidence and stops,
+and a review finding still open when its correction allowance is spent is carried, so no quality
+gate is bypassed and none is turned into a stop. An empty implementation selection
 accepted before the latest suite judgment or code review is replaced by one fresh selection for
 the current failures and findings. An empty implementation selection made for the current
 judgment and review stops with the accepted selector's rationale, preserving the named blocker
 and required authority in the failure evidence. Passing tests alone do not override an
-unapproved review or unresolved improvements.
+unapproved review or unresolved implementation findings.
 
 Code review findings identify the owner of each required correction: implementation, tests,
 tooling or contract. Legacy findings receive one fresh ownership review, never a filename-based
 classification. Test findings receive a fresh test-specialist selection, author fingerprints,
-factual suite execution and independent re-review; all other required findings remain open.
-Tooling and contract findings name their required correction rather than being assigned to product
-implementers. An empty corrective selection cannot count as completed work.
+factual suite execution and independent re-review, within the build correction allowance.
+Implementation findings and suite failures go to the specialists the implementation-lead selects.
+Tooling and contract findings are never assigned to product implementers and never stop the build:
+they are carried. The same holds for the shared-capability and CDS reviews and the final code
+review: their implementation and test findings are corrected within the allowance, and their
+contract and tooling findings, and any finding still open when the allowance is spent, are carried.
+A final review whose remaining findings are carried covers the current tree, so the final suite
+runs next. An empty corrective selection cannot count as completed work.
+
+A carried finding is recorded as the `carriedFindings` value artifact on the step that decided it,
+with its review, owner, severity, detail, location and the reason it was carried. The build
+handback lists every carried finding once in `carriedFindings` (kept in the run's `run.json`) and
+counts them in its headline, and the dashboard's detail pane for the Task shows them above its step
+journal. The build still ends only with its whole suite passing: a carried contract finding that
+leaves an acceptance criterion unmet names that criterion, so the Task's record states the criterion
+as unmet rather than met.
 
 When the current Task cites a new immutable source absent from its accepted regression plan,
 the build appends regression reassessment, independent review and validation, execution policy,

@@ -78,7 +78,13 @@ Architecture conformance, correctness, code quality and best practices receive r
 when the suite already passes. Refactoring has an opportunity unless the accepted execution
 policy omits it or the accepted code review of the exact current tree found nothing above a
 note, with no-change accepted when no worthwhile improvement is warranted. Review findings
-are corrected by implementers selected for those findings only. The build develops missing prerequisites in
+are corrected by implementers selected for those findings only. A review finding is not an
+error and never stops the build: findings owned by the contract or the tooling, and findings
+still open when their correction allowance is spent, are carried as recorded residuals (the
+`carriedFindings` value artifact on the deciding step, and `carriedFindings` and the headline
+of the build handback), shown on the dashboard's detail pane, while the build continues. Only
+an error stops a build: a failed command or suite, a crash, an exhausted retry of failing work,
+unschedulable work or a missing input. The build develops missing prerequisites in
 their owning repositories instead of duplicating shared capabilities or merely reporting
 them unbuilt. Unpublished libraries retain their publication boundary.
 
@@ -240,7 +246,7 @@ Every unit of work belongs to exactly one of five categories:
 
 **Separation of analysis and decision.** Providing analysis is one task; making a decision from that analysis is a separate task; the two are performed by different agents. No agent both analyzes options and decides among them. In the PRD-to-Spec pipeline the architecture step keeps it this way: the design specialists analyze and answer the questions `aws-solutions-architect` asks them, the architect decides and records each choice between options with its reason in the review log, and `architecture-decider` rules only on what the team could not settle. The effective architecture is a current-state description kept by an execute-category agent (`architecture-maintainer`), never a decision artifact; the `architecture-conformance-reviewer` checks each correction from built the `architecture-maintainer` makes.
 
-**Iteration limits.** Correction steps record the findings they answer and stop when the configured allowance is exhausted. Build implementation, suite-quality and final-code review use the build correction setting; regression scope and mapping use their own setting. Built-version permits its configured additional corrections after the initial pass. Their environment names and defaults are defined once in the pipeline-contracts driver-surface schema. A stopped dispatch preserves accepted work, and a later dispatch has its own allowance.
+**Iteration limits.** Correction steps record the findings they answer and end when the configured allowance is exhausted. A build stops at that point only for failing work (a suite that still fails, a scope that still fails its check); review findings still open are carried as recorded residuals and the build continues. Build implementation, suite-quality and final-code review use the build correction setting; regression scope and mapping use their own setting. Built-version permits its configured additional corrections after the initial pass. Their environment names and defaults are defined once in the pipeline-contracts driver-surface schema. A stopped dispatch preserves accepted work, and a later dispatch has its own allowance.
 
 ### Workforce creation rules
 

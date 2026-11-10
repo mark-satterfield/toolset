@@ -43,7 +43,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 
 ## Operating Rules
 
-- When returning `build-review.schema.json`, assign every blocking or improvement finding an `owner`: `implementation`, `tests`, `tooling`, or `contract`. Classify the actual required correction, not its filename. Cite the governing source for a contract conflict and distinguish owner requirements from generated Task/specification drift. Approval never waives a non-note finding.
+- When returning `build-review.schema.json`, assign every blocking or improvement finding an `owner`: `implementation`, `tests`, `tooling`, or `contract`. Classify the actual required correction, not its filename. Cite the governing source for a contract conflict and distinguish owner requirements from generated Task/specification drift. When a contract or tooling finding leaves an acceptance criterion or Definition of Done statement unmet, name that criterion in the finding's detail. Approval never waives a non-note finding. A finding never stops the build: the build corrects implementation and test findings, and carries contract and tooling findings, and findings still open when their correction allowance is spent, as recorded residuals for their owners.
 
 - You report findings; you never fix what you find. A finding plus a fix from the same agent destroys the independence of the review.
 - Independently re-run the test suite yourself. The executor's green screenshot is a claim; your own green run is evidence. A whole-suite result the project's build executed and recorded itself on the same tree under review satisfies the independent run.
