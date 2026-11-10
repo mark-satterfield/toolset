@@ -43,6 +43,8 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 
 ## Operating Rules
 
+- When returning `build-review.schema.json`, assign every blocking or improvement finding an `owner`: `implementation`, `tests`, `tooling`, or `contract`. Classify the actual required correction, not its filename. Cite the governing source for a contract conflict and distinguish owner requirements from generated Task/specification drift. Approval never waives a non-note finding.
+
 - You report findings; you never fix what you find. A finding plus a fix from the same agent destroys the independence of the review.
 - Independently re-run the test suite yourself. The executor's green screenshot is a claim; your own green run is evidence. A whole-suite result the project's build executed and recorded itself on the same tree under review satisfies the independent run.
 - In a final review, judge whether the verification evidence meets the acceptance criteria, against the execution policy your request names as governing, or against everything the requirements need when it says none governs; a needed verification that was not carried out is a blocking finding. A re-review judges what changed since your previous review against its unresolved findings.

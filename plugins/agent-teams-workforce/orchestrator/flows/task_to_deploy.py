@@ -31,7 +31,7 @@ from orchestrator.core.models import RunContext, StepError
 from orchestrator.core.tool_locks import control_repo, seconds
 from orchestrator.core.tools import Tools
 from orchestrator.flows import build_policy, build_prerequisite_work, build_prerequisites
-from orchestrator.flows.build_reviews import attach_reviews
+from orchestrator.flows.build_reviews import attach_reviews, refresh_sources
 from orchestrator.flows.build_sessions import OutputContract, accepted_steps, attach, latest, reasoned, view_of
 from orchestrator.flows.build_state import (
     CONTRACTS,
@@ -278,6 +278,9 @@ def _plan_tests(run: StepRun) -> Completion:
     Returns:
         Sequential test-writer steps and their suite check, or the selection work they need first.
 
+    Raises:
+        StepError: Required corrective test work has no selected owner.
+
     """
     view: AcceptedView = view_of(run)
     selection: AcceptedArtifact | None = view.artifact(TEST_SELECTION)
@@ -286,7 +289,7 @@ def _plan_tests(run: StepRun) -> Completion:
         return _select_tests(
             run,
             "Select the test specialists the suite's required corrections need",
-            _new("build:plan-tests", "Plan the selected suite corrections"),
+            _new("build:plan-tests", "Plan the selected suite corrections", json_object(dict(run.params()))),
         )
     conflicts: JsonValue = _document(run, TEST_SELECTION).get("strategyConflicts")
     if isinstance(conflicts, list) and conflicts and strategy is None:
@@ -296,9 +299,19 @@ def _plan_tests(run: StepRun) -> Completion:
             OutputContract(CONTRACTS / "build-test-strategy.schema.json", TEST_STRATEGY),
             "Decide the test strategy concerns the test specialist selection names in strategyConflicts, from the "
             "conflicting accepted evidence it cites",
-            followups=(_new("build:plan-tests", "Select the test writers under the decided strategy"),),
+            followups=(
+                _new(
+                    "build:plan-tests",
+                    "Select the test writers under the decided strategy",
+                    json_object(dict(run.params())),
+                ),
+            ),
         )
     agents: list[str] = check_type(_document(run, TEST_SELECTION)["agents"], list[str])
+    if not agents and run.params().get("required") is True:
+        message: str = "build:plan-tests"
+        rationale: str = check_type(_document(run, TEST_SELECTION)["rationale"], str)
+        raise StepError(message, OTHER_CAUSE, ("Required test corrections have no selected test specialist", rationale))
     children: tuple[NewStep, ...] = tuple(
         _new("build:red-write", f"Review and improve suite tests with {agent}", {"testAgent": agent})
         for agent in agents
@@ -416,10 +429,13 @@ def _suite_reviewed(run: StepRun) -> Completion:
         return Completion()
     if route == "environment":
         return build_prerequisites.diagnose(run, "build:suite-reviewed")
-    if _count(run, "build:suite-reviewed") >= build_rounds() - 1:
+    if _count(run, "build:suite-reviewed", "suiteCorrection") >= build_rounds() - 1:
         msg = "build:suite-reviewed"
         raise StepError(msg, OTHER_CAUSE, (check_type(review["evidence"], str),))
-    return Completion(add=(StepGroup((_new("build:plan-tests", "Repair the suite's test defects"),)),))
+    return Completion(
+        artifacts=(value_artifact("suiteCorrection", review),),
+        add=(StepGroup((_new("build:plan-tests", "Repair the suite's test defects"),)),),
+    )
 
 
 def _select_implementers(run: StepRun) -> Completion:
@@ -433,7 +449,9 @@ def _select_implementers(run: StepRun) -> Completion:
         run,
         "code-correctness-reviewer",
         OutputContract(CONTRACTS / "build-review.schema.json", "codeReview"),
-        "Review this Task's code and tests against architecture, requirements, quality and best practices",
+        "Review this Task's code and tests against architecture, requirements, quality and best practices. "
+        "Assign every non-note finding an owner: implementation, tests, tooling, or contract. "
+        "Judge current governing evidence, distinguishing derived Task/specification drift from owner decisions",
         followups=(_new("build:code-reviewed", "Decide what code work the suite and code review require"),),
     )
 
@@ -454,20 +472,84 @@ def _passed_review(run: StepRun, review: dict[str, JsonValue]) -> Completion:
     return Completion()
 
 
+def _review_ownership(run: StepRun, findings: list[JsonValue]) -> Completion | None:
+    """Obtain one current ownership judgment for legacy unclassified findings.
+
+    Returns:
+        A fresh independent review when ownership is missing, otherwise None.
+
+    Raises:
+        StepError: A fresh judgment still omitted the required ownership.
+
+    """
+    if all(json_object(finding).get("owner") for finding in findings):
+        return None
+    tree: str = build_policy.content_tree(run)
+    if latest(run, "reviewOwnershipRequested") == tree:
+        message: str = "build:review-ownership"
+        raise StepError(message, OTHER_CAUSE, ("Code review did not identify the owner of each required correction",))
+    return Completion(
+        artifacts=(value_artifact("reviewOwnershipRequested", tree),),
+        add=(
+            StepGroup((
+                _new("build:select-implementers", "Classify unresolved review work against current authority"),
+            )),
+        ),
+    )
+
+
 def _code_reviewed(run: StepRun) -> Completion:
     """Keep working on review findings even when the tests pass.
 
     Returns:
         Specialist selection when improvements or failing tests require implementation.
 
+    Raises:
+        StepError: Required tooling or contract corrections have no accepted resolution.
+
     """
+    refreshed: Completion | None = refresh_sources(run)
+    if refreshed is not None:
+        return refreshed
     review: dict[str, JsonValue] = _document(run, "codeReview")
     suite: dict[str, JsonValue] = _latest_suite(run)
     findings: list[JsonValue] = check_type(review["findings"], list[JsonValue])
-    improvements: bool = any(json_object(finding)["severity"] != "note" for finding in findings)
+    required: list[JsonValue] = [finding for finding in findings if json_object(finding)["severity"] != "note"]
+    improvements: bool = bool(required)
+    ownership: Completion | None = _review_ownership(run, required)
+    if ownership is not None:
+        return ownership
     reviewed: ValueArtifact = value_artifact(CODE_REVIEW_TREE, build_policy.content_tree(run))
     if suite.get("exitCode") == 0 and review["approved"] is True and not improvements:
         return Completion(artifacts=(value_artifact("greenRun", suite), reviewed))
+    owners: set[str] = {check_type(json_object(finding)["owner"], str) for finding in required}
+    if "tests" in owners:
+        if _count(run, "build:code-reviewed", "reviewTestCorrection") >= build_rounds():
+            message: str = "build:review-test-corrections"
+            raise StepError(message, OTHER_CAUSE, ("Required test review corrections exhausted their allowance",))
+        selected_tests: Completion = reasoned(
+            run,
+            TEST_LEAD,
+            OutputContract(CONTRACTS / "build-selection.schema.json", TEST_SELECTION),
+            "Select fresh test specialists for the current codeReview findings owned by tests. "
+            "Preserve all other findings for independent re-review; do not change governing requirements",
+            followups=(
+                _new("build:plan-tests", "Repair the review's test-owned findings", {"required": True}),
+                _new("build:select-implementers", "Re-review the corrected suite and remaining findings"),
+            ),
+        )
+        return Completion(
+            artifacts=(*selected_tests.artifacts, value_artifact("reviewTestCorrection", review)),
+            add=selected_tests.add,
+        )
+    unresolved: list[str] = [
+        f"{json_object(finding)['owner']} correction required: {json_object(finding)['detail']}"
+        for finding in required
+        if json_object(finding)["owner"] in {"tooling", "contract"}
+    ]
+    if unresolved:
+        message = "build:review-authority"
+        raise StepError(message, OTHER_CAUSE, tuple(unresolved))
     selected: Completion = reasoned(
         run,
         "implementation-lead",
@@ -542,11 +624,24 @@ def _empty_selection(run: StepRun, selection: JsonValue) -> Completion:
         StepError: No change justifies reassessment, or its correction allowance is spent.
 
     """
+    refreshed: Completion | None = refresh_sources(run)
+    if refreshed is not None:
+        return refreshed
+    review: dict[str, JsonValue] = _document(run, "codeReview")
+    findings: list[JsonValue] = check_type(review["findings"], list[JsonValue])
+    required: list[JsonValue] = [finding for finding in findings if json_object(finding)["severity"] != "note"]
+    ownership: Completion | None = _review_ownership(run, required)
+    if ownership is not None:
+        return ownership
     fingerprint: dict[str, JsonValue] = _test_fingerprint(run)
     prior: JsonValue = latest(run, "testPrint")
     changed: bool = isinstance(prior, dict) and prior.get("treeDigest") != fingerprint["treeDigest"]
     recovered: bool = latest(run, "implementationRecovery") == fingerprint["treeDigest"]
-    if changed and not recovered and _count(run, "build:implementation-recheck") < build_rounds():
+    if (
+        changed
+        and not recovered
+        and _count(run, "build:implementation-recheck", "implementationRecovery") < build_rounds()
+    ):
         return Completion(add=(StepGroup((_new("build:implementation-recheck", "Reassess the changed repository"),)),))
     evidence: tuple[str, ...] = ("The unresolved work has no selected implementer",)
     if selection is not None:
@@ -613,6 +708,7 @@ def _green_check(run: StepRun) -> Completion:
     artifacts = (*_suite_artifacts("greenRun", suite, "green-check"), value_artifact("testPrint", fingerprint))
     if suite["exitCode"] == 0:
         return Completion(artifacts=artifacts)
+    _require_progress(run, suite)
     judgment: Completion = reasoned(
         run,
         "acceptance-criteria-coverage-assessor",
@@ -621,6 +717,36 @@ def _green_check(run: StepRun) -> Completion:
         followups=(_new("build:green-reviewed", "Route the judged suite failure to its owning specialist"),),
     )
     return Completion(artifacts=(*artifacts, *judgment.artifacts), add=judgment.add)
+
+
+def _require_progress(run: StepRun, suite: dict[str, JsonValue]) -> None:
+    """Stop another correction session when a fresh suite proves no progress.
+
+    Raises:
+        StepError: The same evidence identity and failures survived a correction round.
+
+    """
+    previous: JsonValue = latest(run, "greenRun")
+    judgment: JsonValue = latest(run, "suiteReview")
+    if not isinstance(previous, dict) or not isinstance(judgment, str):
+        return
+    review: dict[str, JsonValue] = _document(run, "suiteReview")
+    if review.get("route") not in {"implementation", "test-repair"}:
+        return
+    key: JsonValue = suite.get("evidenceKey")
+    if not isinstance(key, dict) or not key.get("digest") or key != previous.get("evidenceKey"):
+        return
+    if any(suite.get(field) != previous.get(field) for field in ("command", "exitCode", "failing")):
+        return
+    raise StepError(
+        run.step["script"],
+        OTHER_CAUSE,
+        (
+            "Correction made no progress: the fresh suite has identical failures and evidence identity",
+            str(previous.get("evidence")),
+            str(suite.get("evidence")),
+        ),
+    )
 
 
 def _green_reviewed(run: StepRun) -> Completion:
@@ -639,7 +765,7 @@ def _green_reviewed(run: StepRun) -> Completion:
         return _passed_review(run, review)
     if route == "environment":
         return build_prerequisites.diagnose(run, "build:green-reviewed")
-    if _count(run, "build:green-check") >= build_rounds() - 1:
+    if _count(run, "build:green-check", "greenRun") >= build_rounds():
         stage: str = "build:green-reviewed"
         raise StepError(stage, OTHER_CAUSE, (check_type(review["evidence"], str),))
     key: str = "build:plan-tests" if route == "test-repair" else "build:plan-code"
@@ -930,10 +1056,11 @@ def _final_review_checked(run: StepRun) -> Completion:
     needed: bool = any(json_object(finding)["severity"] != "note" for finding in findings)
     if review["approved"] is True and not needed:
         return Completion(artifacts=(value_artifact(FINAL_REVIEW_TREE, build_policy.content_tree(run)),))
-    if _count(run, "build:final-review-checked") >= build_rounds() - 1:
+    if _count(run, "build:final-review-checked", "finalReviewCorrection") >= build_rounds() - 1:
         msg = "build:final-review"
         raise StepError(msg, OTHER_CAUSE, (str(_file(run, "finalCodeReview")),))
     return Completion(
+        artifacts=(value_artifact("finalReviewCorrection", review),),
         add=(
             StepGroup((
                 _new("build:correct-findings", "Resolve final code review findings", {"review": "finalCodeReview"}),
@@ -1032,7 +1159,6 @@ def run(context: RunContext) -> dict[str, JsonValue]:
     bead: BeadId = BeadId(context.bead)
     agents: AgentRunner = AgentRunner(context)
     tools: Tools = Tools(context.work / "build-evidence")
-    context.args["buildDispatchStarted"] = step_journal.timestamp()
     pipeline_steps.open_journal(path.parent, bead, BEAD_TYPE_TASK)
     runner: JournalRunner = JournalRunner(path, agents, tools, _registry())
     require_handled(step_journal.read_journal(path), runner.registry)

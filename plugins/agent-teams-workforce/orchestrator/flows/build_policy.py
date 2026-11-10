@@ -252,7 +252,7 @@ def checked(run: StepRun) -> Completion:
         return Completion(artifacts=(value_artifact(IDENTITY, scope_identity(run)),))
     listed: list[JsonValue] = [*found]
     refused: tuple[ValueArtifact, ...] = (value_artifact(PROBLEMS, listed),)
-    if count_in_dispatch(run, "build:execution-policy-checked") >= build_rounds() - 1:
+    if count_in_dispatch(run, "build:execution-policy-checked", PROBLEMS) >= build_rounds() - 1:
         return Completion(artifacts=refused)
     correction = new_step(
         "build:execution-policy",

@@ -15,13 +15,13 @@ from driver_surface_types import (
     REGRESSION_CORRECTION_DEFAULT,
     REGRESSION_CORRECTION_ENV,
 )
-from step_journal_contract import PIPELINE_BUILD
+from step_journal_contract import PIPELINE_BUILD, Step, StepId
 from typeguard import check_type
 
 from orchestrator.core import pipeline_steps
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_steps import NewStep, StepRun
-from orchestrator.core.journal_views import AcceptedView, index_journal
+from orchestrator.core.journal_views import AcceptedView, JournalIndex, index_journal
 from orchestrator.flows.build_sessions import latest, view_of
 from orchestrator.flows.build_workspace import Workspace
 
@@ -133,15 +133,47 @@ def workspace_of(run: StepRun) -> Workspace:
     )
 
 
-def count_in_dispatch(run: StepRun, key: str) -> int:
-    """Count completed occurrences within this dispatch's correction allowance.
+def _correction_outcome(step: Step, outcome: str | None) -> bool:
+    """Recognize a completed correction outcome, excluding successful suite and review results.
 
     Returns:
-        Prior occurrences started during this dispatch, not earlier dispatches.
+        Whether the step records the requested correction evidence.
 
     """
-    started: str = check_type(run.context.args["buildDispatchStarted"], str)
+    matching = [artifact for artifact in step["artifacts"] if artifact["name"] == outcome]
+    if not matching:
+        return False
+    artifact = matching[-1]
+    value: JsonValue = check_type(
+        json.loads(Path(artifact["path"]).read_text(encoding="utf-8"))
+        if artifact["kind"] == "file"
+        else artifact.get("value"),
+        JsonValue,
+    )
+    if isinstance(value, dict) and "exitCode" in value:
+        return isinstance(value["exitCode"], int) and value["exitCode"] != 0
+    if isinstance(value, dict) and "approved" in value:
+        findings: list[JsonValue] = check_type(value.get("findings", []), list[JsonValue])
+        return value["approved"] is not True or any(json_object(item).get("severity") != "note" for item in findings)
+    return bool(value)
+
+
+def count_in_dispatch(run: StepRun, key: str, outcome: str | None = None) -> int:
+    """Count accepted correction outcomes across resumes of the Task journal.
+
+    Returns:
+        Steps with the named completed outcome, including an immediate agent child's
+        accepted outcome. Without an outcome name, only finished steps count.
+
+    """
+    accepted: list[Step] = view_of(run).steps()
+    index: JournalIndex = index_journal(run.journal())
+    producers: set[StepId] = {step["id"] for step in accepted if _correction_outcome(step, outcome)}
+    agent_parents: set[StepId | None] = {
+        index.parent[step["id"]] for step in accepted if step.get("agent") and step["id"] in producers
+    }
     return sum(
-        step.get("script") == key and step["status"] == "done" and step.get("started", "") >= started
-        for step in index_journal(run.journal()).order
+        step.get("script") == key
+        and ((outcome is None and step["status"] == "done") or step["id"] in producers or step["id"] in agent_parents)
+        for step in accepted
     )

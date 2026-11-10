@@ -17,7 +17,7 @@ from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, file
 from orchestrator.core.models import StepError
 from orchestrator.core.tool_locks import seconds
 from orchestrator.flows import build_policy
-from orchestrator.flows.build_sessions import OutputContract, reasoned
+from orchestrator.flows.build_sessions import OutputContract, latest, reasoned
 from orchestrator.flows.build_state import (
     ARTIFACT_CONTRACTS,
     CONTRACTS,
@@ -98,6 +98,59 @@ def _scope(run: StepRun, final: bool) -> Completion:
     )
 
 
+def task_sources(run: StepRun) -> list[str]:
+    """Resolve the current Task's source citations to their backing paths.
+
+    Returns:
+        Unique absolute paths, without section citations.
+
+    """
+    bead: dict[str, JsonValue] = json_object(run.context.args["bead"])
+    carried: list[str] = list(check_type(bead.get("specPaths", []), list[str]))
+    carried.extend(check_type(bead[key], str) for key in ("specPath", "prdPath") if bead.get(key))
+    root: Path = project_root()
+    return list(dict.fromkeys(str(root / source.split("#", 1)[0]) for source in carried))
+
+
+def refresh_sources(run: StepRun) -> Completion | None:
+    """Reassess downstream evidence when the Task names new governing sources.
+
+    Returns:
+        Appended assessment, policy, baseline and review work, or None when covered.
+
+    Raises:
+        StepError: A reassessment still omitted the same current source paths.
+
+    """
+    sources: list[str] = sorted(task_sources(run))
+    covered: list[str] = (
+        check_type(_document(run, "regressionPlan")["sourceFiles"], list[str])
+        if latest(run, "regressionPlan") is not None
+        else []
+    )
+    missing: list[str] = [source for source in sources if source not in covered]
+    if not missing:
+        return None
+    if latest(run, "regressionSourcesRefresh") == sources:
+        raise StepError(
+            run.step["script"],
+            OTHER_CAUSE,
+            ("Reassessed regression scope omitted current Task sources", *missing),
+        )
+    keys: tuple[str, ...] = (
+        "build:regression-reassess",
+        "build:regression-review",
+        "build:regression-validate",
+        "build:execution-policy",
+        "build:baseline",
+        "build:select-implementers",
+    )
+    return Completion(
+        artifacts=(value_artifact("regressionSourcesRefresh", list(sources)),),
+        add=(StepGroup(tuple(_new(key, "Refresh evidence for the Task's current governing sources") for key in keys)),),
+    )
+
+
 def _scope_initial(run: StepRun) -> Completion:
     """Assess regression scope before suite work.
 
@@ -108,13 +161,9 @@ def _scope_initial(run: StepRun) -> Completion:
         StepError: The operation cannot proceed with the supplied evidence.
 
     """
-    bead: dict[str, JsonValue] = json_object(run.context.args["bead"])
-    carried: list[str] = list(check_type(bead.get("specPaths", []), list[str]))
-    carried.extend(check_type(bead[key], str) for key in ("specPath", "prdPath") if bead.get(key))
-    root: Path = project_root()
     sources: list[str] = list(
         dict.fromkeys(
-            [str(root / source.split("#", 1)[0]) for source in carried]
+            task_sources(run)
             + [
                 artifact["path"]
                 for step in step_journal.steps_in_order(run.journal())
@@ -208,7 +257,7 @@ def _validate(run: StepRun, final: bool) -> Completion:
     if document.get("ok") is True:
         return Completion(artifacts=(file_artifact("regressionEvidence" if final else "regressionScope", output),))
     key: str = "build:regression-verify" if final else "build:regression-validate"
-    if _count(run, key) >= regression_rounds():
+    if _count(run, key, "regressionCorrection") >= regression_rounds():
         raise StepError(key, OTHER_CAUSE, (str(output),))
     keys: tuple[str, ...] = (
         ("build:regression-remap", "build:regression-map-review", "build:regression-verify")
@@ -340,7 +389,7 @@ def _audit_reviewed(run: StepRun) -> Completion:
     if review["approved"] is True and not needed:
         return Completion()
     again: str = check_type(params["again"], str)
-    if _count(run, again) >= build_rounds():
+    if _count(run, again, name) >= build_rounds():
         raise StepError(again, OTHER_CAUSE, (str(_file(run, name)),))
     return Completion(
         add=(

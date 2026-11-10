@@ -124,13 +124,28 @@ Every decision to run, omit or reuse a stage is recorded on its step and carried
 event, and the commit records the Task's model sessions, correction steps and decisions, so owner
 runs measure what the policy saved.
 
-Correction work is bounded within a dispatch. Implementation and suite-quality correction have
-three rounds, and regression scope/mapping review permits two correction rounds. A later
-dispatch does not inherit the earlier dispatch's consumed allowance. An unresolved correction
+Correction work is bounded by accepted outcomes in the Task journal across dispatches. Implementation
+and suite-quality correction have three rounds, and regression scope/mapping review permits two
+correction rounds. Running ancestors count only with their own completed outcome or their immediate
+agent child's accepted result. Restarting does not replenish the allowance. A fresh suite with the
+same evidence identity and failures after product or test correction stops before another agent round;
+environment recovery and changed requirement, setup or runtime identities remain eligible. An unresolved correction
 records its evidence and stops; no quality gate is bypassed. An empty implementation selection
 for unresolved work stops with the accepted selector's rationale, preserving the named blocker
 and required authority in the failure evidence. Passing tests alone do not override an
 unapproved review or unresolved improvements.
+
+Code review findings identify the owner of each required correction: implementation, tests,
+tooling or contract. Legacy findings receive one fresh ownership review, never a filename-based
+classification. Test findings receive a fresh test-specialist selection, author fingerprints,
+factual suite execution and independent re-review; all other required findings remain open.
+Tooling and contract findings name their required correction rather than being assigned to product
+implementers. An empty corrective selection cannot count as completed work.
+
+When the current Task cites a new immutable source absent from its accepted regression plan,
+the build appends regression reassessment, independent review and validation, execution policy,
+baseline and fresh code review. Existing source snapshots and journal history remain intact.
+If reassessment still omits those current sources, the build stops with the missing paths.
 
 ## Tests and existing behavior
 
@@ -225,8 +240,16 @@ improvement findings receive bounded implementation and re-review.
 The build checkpoints a verified Green state before refactoring. A regressing refactor restores
 that snapshot and verifies the suite again. Before final commit, an independent reviewer inspects
 the resulting code and test diff, the complete suite passes, and the cumulative regression tools
-verify the mapped evidence. Repository hooks run normally at commit. A rejected hook or dirty
-post-hook tree is a recorded work failure, never a reason to bypass hooks.
+verify the mapped evidence. Repository hooks run normally at commit. A rejected hook, remaining product changes, or modified preserved tooling after the hook
+is a recorded work failure, never a reason to bypass hooks.
+
+Story checkpoints commit explicit product paths only. Instruction files, `.claude/`, and canonical
+code-check configuration are Tier 2, including checker-owned sections of mixed configuration
+files. Unrelated tooling changes remain byte-for-byte unchanged in the worktree and index and
+are named as preserved, undelivered tooling in checkpoint evidence. A mixed configuration change
+that requires both owning flows stops with an actionable pipeline ownership error: deliver its
+tooling through a separate main worktree and integrate it before the product checkpoint.
+Preserved tooling dirt is not a failed product checkpoint or evidence of tooling delivery.
 
 The Task's build sets no matrix approval or verified gate. The Story's deployment follows only
 when its Tasks are built, as described in [deploy](pipelines-deploy.md).

@@ -2,18 +2,25 @@
 
 from __future__ import annotations
 
+import configparser
+import fnmatch
+import hashlib
 import json
 import re
 import sys
+import tomllib
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from typeguard import check_type
+import yaml
+from typeguard import TypeCheckError, check_type
 
 from orchestrator.core.handback_contract import OTHER_CAUSE
-from orchestrator.core.io import JsonValue, json_object
-from orchestrator.core.models import StepError
+from orchestrator.core.io import JsonValue, json_object, write_json
+from orchestrator.core.models import PipelineDefectError, StepError
+from orchestrator.core.tool_locks import control_repo
 from orchestrator.core.tools import Tools
 
 GITUTILS: Final = Path(__file__).resolve().parents[2] / "scripts" / "portfolio" / "gitutils.py"
@@ -131,8 +138,240 @@ def provision(tools: Tools, repository: Path, story_id: str) -> Workspace:
     return Workspace(tree, actual_branch, default)
 
 
+@dataclass(frozen=True, slots=True)
+class ToolingOwnership:
+    """Canonical paths and mixed-file sections owned by the tooling flow."""
+
+    names: frozenset[str]
+    tables: tuple[str, ...]
+    sections: tuple[str, ...]
+    tsconfig_bases: frozenset[str]
+
+
+def _ownership() -> ToolingOwnership:
+    """Read checker ownership from the configured canonical spec.
+
+    Returns:
+        Tooling ownership without importing the checks-sync execution environment.
+
+    """
+    config_path: Path = control_repo() / ".polyrepo" / "config.yaml"
+    config: dict[str, JsonValue] = json_object(yaml.safe_load(config_path.read_text(encoding="utf-8")))
+    settings: dict[str, JsonValue] = json_object(config["checks_sync"])
+    spec_path: Path = config_path.parent / check_type(settings["spec_file"], str)
+    spec: dict[str, JsonValue] = json_object(yaml.safe_load(spec_path.read_text(encoding="utf-8")))
+    technologies: list[dict[str, JsonValue]] = [
+        json_object(value) for value in json_object(spec["technologies"]).values()
+    ]
+    removals: list[dict[str, JsonValue]] = [json_object(entry.get("remove", {})) for entry in technologies]
+    canonical: set[str] = {name for entry in technologies for name in json_object(entry.get("files", {}))}
+    removed: set[str] = {name for entry in removals for name in check_type(entry.get("files", []), list[str])}
+    return ToolingOwnership(
+        frozenset({"AGENTS.md", "CLAUDE.md", ".pre-commit-config.yaml", *canonical, *removed}),
+        tuple(name for entry in removals for name in check_type(entry.get("pyproject_tables", []), list[str])),
+        tuple(name for entry in removals for name in check_type(entry.get("setup_cfg_sections", []), list[str])),
+        frozenset(check_type(entry["tsconfig_base"], str) for entry in technologies if entry.get("tsconfig_base")),
+    )
+
+
+def _changed_paths(tools: Tools, tree: Path) -> tuple[str, ...]:
+    """Read all changed paths without rename pairing or quoted filename ambiguity.
+
+    Returns:
+        Index, worktree and untracked paths, including both sides of renames.
+
+    Raises:
+        ValueError: Git reports an unresolved merge.
+
+    """
+    raw: str = tools.git(
+        tree,
+        ["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all"],
+        stage="build:commit",
+    ).stdout
+    entries: list[str] = [entry for entry in raw.split("\0") if entry]
+    conflicts: set[str] = {"DD", "AU", "UD", "UA", "DU", "AA", "UU"}
+    if any(entry[:2] in conflicts for entry in entries):
+        problem: str = "Resolve the Story worktree's merge conflicts before checkpointing"
+        raise ValueError(problem)
+    return tuple(sorted(entry[3:] for entry in entries))
+
+
+def _tooling_path(path: str, ownership: ToolingOwnership) -> bool:
+    """Identify complete tooling files, including nested instruction and checker files.
+
+    Returns:
+        Whether the whole path belongs to Tier 2.
+
+    """
+    parts: tuple[str, ...] = Path(path).parts
+    names: frozenset[str] = frozenset(Path(name).name for name in ownership.names)
+    return bool(set(parts) & {".claude", ".agents", ".beads", ".code-checks"}) or Path(path).name in names
+
+
+def _pop_table(document: dict[str, JsonValue], dotted: str) -> JsonValue:
+    """Remove a named checker table from a parsed mixed configuration.
+
+    Returns:
+        The removed table, or None if absent.
+
+    """
+    parts: list[str] = dotted.split(".")
+    if len(parts) == 1:
+        return document.pop(parts[0], None)
+    child: JsonValue = document.get(parts[0])
+    if not isinstance(child, dict):
+        return None
+    removed: JsonValue = _pop_table(child, ".".join(parts[1:]))
+    if not child:
+        document.pop(parts[0], None)
+    return removed
+
+
+def _typescript_parts(text: str, ownership: ToolingOwnership) -> tuple[JsonValue, JsonValue]:
+    """Separate canonical checker inheritance from product TypeScript configuration.
+
+    Returns:
+        Product settings and the ordered canonical checker bases.
+
+    """
+    document: dict[str, JsonValue] = json_object(json.loads(text or "{}"))
+    inherited: JsonValue = document.pop("extends", [])
+    names: list[str] = [inherited] if isinstance(inherited, str) else check_type(inherited, list[str])
+    canonical: frozenset[str] = ownership.tsconfig_bases | frozenset(f"./{name}" for name in ownership.tsconfig_bases)
+    checker: list[JsonValue] = [name for name in names if name in canonical]
+    product: list[JsonValue] = [name for name in names if name not in canonical]
+    if product:
+        document["extends"] = product
+    return document, checker
+
+
+def _configuration_parts(path: str, text: str, ownership: ToolingOwnership) -> tuple[JsonValue, JsonValue]:
+    """Separate product settings from checker-owned settings without rewriting either.
+
+    Returns:
+        Product and tooling values for semantic ownership comparison.
+
+    """
+    name: str = Path(path).name
+    if name == "tsconfig.json":
+        return _typescript_parts(text, ownership)
+    if name == "setup.cfg":
+        parser: configparser.ConfigParser = configparser.ConfigParser(interpolation=None)
+        parser.read_string(text)
+        parsed: dict[str, JsonValue] = {section: dict(parser.items(section)) for section in parser.sections()}
+        tooling: dict[str, JsonValue] = {
+            section: parsed.pop(section)
+            for section in tuple(parsed)
+            if any(fnmatch.fnmatchcase(section, pattern) for pattern in ownership.sections)
+        }
+        return parsed, tooling
+    if name == "pyproject.toml":
+        document: dict[str, JsonValue] = json_object(tomllib.loads(text))
+        return document, {table: _pop_table(document, table) for table in ownership.tables}
+    document = json_object(yaml.safe_load(text) or {})
+    return document, _pop_table(document, "tasks.lint")
+
+
+def _revision_text(tools: Tools, tree: Path, revision: str, path: str) -> str:
+    """Read an existing revision blob; an absent path has empty configuration content.
+
+    Returns:
+        Exact revision text, or empty text for a missing path.
+
+    """
+    arguments: list[str] = ["ls-tree", "-z", revision, "--", f":(literal){path}"]
+    if not revision:
+        arguments = ["ls-files", "--stage", "-z", "--", f":(literal){path}"]
+    listed: str = tools.git(tree, arguments, stage="build:commit").stdout
+    if not listed:
+        return ""
+    return tools.git(tree, ["show", f"{revision}:{path}"], stage="build:commit").stdout
+
+
+def _checker_present(path: str, value: JsonValue) -> bool:
+    """Distinguish absent checker fields from fields with empty or false settings.
+
+    Returns:
+        Whether textual-only changes need ownership resolution.
+
+    """
+    if Path(path).name == "pyproject.toml":
+        return any(setting is not None for setting in json_object(value).values())
+    if Path(path).name in {"Taskfile.yml", "Taskfile.yaml"}:
+        return value is not None
+    return bool(value)
+
+
+def _product_path(tools: Tools, tree: Path, path: str, ownership: ToolingOwnership) -> bool:
+    """Classify a changed file, refusing to hide product edits inside a mixed file.
+
+    Returns:
+        True for product changes; False for preservable tooling-only changes.
+
+    Raises:
+        ValueError: Product and tooling changes share a configuration file.
+
+    """
+    if _tooling_path(path, ownership):
+        return False
+    if Path(path).name not in {"pyproject.toml", "setup.cfg", "Taskfile.yml", "Taskfile.yaml", "tsconfig.json"}:
+        return True
+    if (tree / path).is_symlink():
+        problem: str = f"Cannot assign mixed configuration ownership through symlink {path}; resolve its owning flow"
+        raise ValueError(problem)
+    previous_text: str = _revision_text(tools, tree, "HEAD", path)
+    before: tuple[JsonValue, JsonValue] = _configuration_parts(path, previous_text, ownership)
+    current: Path = tree / path
+    text: str = current.read_text(encoding="utf-8") if current.exists() else ""
+    after: tuple[JsonValue, JsonValue] = _configuration_parts(path, text, ownership)
+    indexed_text: str = _revision_text(tools, tree, "", path)
+    indexed: tuple[JsonValue, JsonValue] = _configuration_parts(path, indexed_text, ownership)
+    tooling_changed: bool = before[1] != after[1] or before[1] != indexed[1]
+    product_changed: bool = before[0] != after[0] or before[0] != indexed[0]
+    if before == after == indexed and _checker_present(path, before[1]):
+        problem = f"Text-only edits in mixed configuration {path} need explicit tooling/product ownership before commit"
+        raise ValueError(problem)
+    if not tooling_changed:
+        return True
+    if product_changed:
+        problem = (
+            f"Mixed product and tooling edits in {path}; preserve this work and deliver the tooling "
+            "through a separate main worktree, then integrate it into the Story before checkpointing"
+        )
+        raise ValueError(problem)
+    return False
+
+
+def _preserved_state(tools: Tools, tree: Path, paths: tuple[str, ...]) -> str:
+    """Fingerprint preserved files and their exact index changes, including symlinks and modes.
+
+    Returns:
+        A digest suitable for equality checks across normal commit hooks.
+
+    """
+    if not paths:
+        return ""
+    digest = hashlib.sha256()
+    for path in paths:
+        full: Path = tree / path
+        digest.update(path.encode())
+        if not full.exists() and not full.is_symlink():
+            digest.update(b"missing")
+            continue
+        digest.update(str(full.lstat().st_mode).encode())
+        digest.update(str(full.readlink()).encode() if full.is_symlink() else full.read_bytes())
+    indexed: str = tools.git(
+        tree,
+        ["diff", "--cached", "--binary", "--no-ext-diff", "--", *[f":(literal){path}" for path in paths]],
+        stage="build:commit",
+    ).stdout
+    digest.update(indexed.encode())
+    return digest.hexdigest()
+
+
 def checkpoint(tools: Tools, workspace: Workspace, message: str) -> str:
-    """Commit a dirty Story worktree through its normal hooks, preserving clean-tree commits.
+    """Commit product paths through normal hooks while preserving unrelated tooling edits.
 
     Args:
         tools: The dispatch's command boundary.
@@ -145,6 +384,7 @@ def checkpoint(tools: Tools, workspace: Workspace, message: str) -> str:
     Raises:
         TypeError: Arguments have invalid types.
         StepError: Git or the repository's hooks reject the commit.
+        PipelineDefectError: Mixed ownership needs a separate tooling delivery operation.
 
     """
     if not isinstance(workspace, Workspace) or not isinstance(message, str):
@@ -155,12 +395,38 @@ def checkpoint(tools: Tools, workspace: Workspace, message: str) -> str:
         problem = "checkpoint worktree is no longer on its Story branch"
         msg = "build:commit"
         raise StepError(msg, OTHER_CAUSE, (problem,))
-    if facts.get("dirty") is True:
-        tools.git(workspace.tree, ["add", "--all"], stage="build:commit")
-        tools.git(workspace.tree, ["commit", "-m", message], stage="build:commit")
+    if facts.get("dirty") is not True:
+        return check_type(facts["head"], str)
+    try:
+        paths: tuple[str, ...] = _changed_paths(tools, workspace.tree)
+        ownership: ToolingOwnership = _ownership()
+        product: tuple[str, ...] = tuple(
+            path for path in paths if _product_path(tools, workspace.tree, path, ownership)
+        )
+        preserved: tuple[str, ...] = tuple(path for path in paths if path not in product)
+        fingerprint: str = _preserved_state(tools, workspace.tree, preserved)
+    except (OSError, ValueError, KeyError, TypeCheckError, configparser.Error, yaml.YAMLError) as error:
+        stage: str = "build:commit"
+        raise PipelineDefectError(stage, error) from error
+    if product:
+        pathspecs: list[str] = [f":(literal){path}" for path in product]
+        tools.git(workspace.tree, ["add", "--", *pathspecs], stage="build:commit")
+        tools.git(workspace.tree, ["commit", "--only", "-m", message, "--", *pathspecs], stage="build:commit")
     after: dict[str, JsonValue] = git_operation(tools, "build:commit", ["facts", "--path", str(workspace.tree)])
-    if after.get("branch") != workspace.branch or after.get("dirty") is True:
-        problem = "checkpoint did not leave a clean Story worktree on its original branch"
+    remaining: tuple[str, ...] = _changed_paths(tools, workspace.tree)
+    unchanged: bool = _preserved_state(tools, workspace.tree, preserved) == fingerprint
+    if after.get("branch") != workspace.branch or remaining != preserved or not unchanged:
+        problem = "checkpoint changed preserved tooling or left product changes on the Story worktree"
         msg = "build:commit"
         raise StepError(msg, OTHER_CAUSE, (problem,))
-    return check_type(after["head"], str)
+    head: str = check_type(after["head"], str)
+    write_json(
+        tools.evidence / f"checkpoint-{uuid.uuid4().hex}.json",
+        {
+            "head": head,
+            "productPaths": list(product),
+            "preservedToolingPaths": list(preserved),
+            "toolingDelivery": "Preserved only; deliver through Tier 2 main and integrate before relying on it",
+        },
+    )
+    return head
