@@ -58,14 +58,16 @@ available in CodeArtifact, and `deployed` for an actual layer or resource that m
 in the target environment. Package publication never proves layer deployment. Each producer's `evidence`
 is an absolute existing captured evidence artifact path. A closed Task alone never proves delivery. Do not
 invent an issue id, choose a parent for nonexistent work, write an edge, modify source, deploy,
-or create a parameter. If no actual producer Task and real Story/spec context can be
-established, return `missing-work` with the precise work-authoring gap. Name `authoringStory`
+or create a parameter. When an actual Task builds a consumed output, return `prerequisites`
+and name it even when waiting for it would close a cycle through standing edges; do not
+pre-empt that cycle. Return `missing-work` only when no actual Task builds a consumed output, with the
+precise work-authoring gap. Name `authoringStory`
 only when an actual open Story has completed saved scope/spec context authorizing that work.
 The caller uses the existing decomposer and normal append-only writer/scorer in that case;
 otherwise the gap is finite. It is pipeline work,
 never an instruction for the owner to create SSM manually. Use `environment` only when the
 fresh evidence establishes an environment-only defect rather than unfinished producer work.
-The caller validates real identities, writes additive edges, releases the build slot while
+The caller validates real identities, refuses a wait that closes a cycle, writes additive edges, releases the build slot while
 producers progress normally, and reruns the exact suite with a new assessment.
 
 ## The edge test

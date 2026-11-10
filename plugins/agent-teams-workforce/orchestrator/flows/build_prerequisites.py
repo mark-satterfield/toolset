@@ -513,8 +513,11 @@ def diagnose(run: StepRun, again: str, observation: dict[str, JsonValue] | None 
         "Check current readiness rather than inferring missing SSM from an old synth or cached test. "
         "Never create parameters, invent issues, change edges or modify any source. "
         "Each producer evidence value must be an absolute existing captured evidence artifact path. "
-        "Use missing-work when no actual producer Task can be established; name authoringStory only if an actual open "
-        "Story with completed saved scope/spec authorizes the missing work; distinguish an environment-only defect.",
+        "When an actual Task builds the consumed output, route prerequisites and name it, even when waiting for it "
+        "would close a cycle with standing edges: the caller checks cycles and fails only this Task with the cycle. "
+        "Use missing-work only when no actual Task builds a consumed output; name authoringStory only if an actual "
+        "open Story with completed saved scope/spec authorizes the missing work; "
+        "distinguish an environment-only defect.",
         followups=(
             new_step(
                 "build:prerequisites-diagnosed",

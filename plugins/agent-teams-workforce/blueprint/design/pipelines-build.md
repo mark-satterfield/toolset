@@ -166,7 +166,9 @@ It does not invent producer Task IDs or send the consumer implementers work owne
 
 An upstream or environment judgment appends one targeted `task-dependency-mapper` diagnosis using current
 tracker, repository and readiness evidence. The result names real producer Tasks, their actual
-parent Stories and whether their output must be built, published or deployed. The build validates those
+parent Stories and whether their output must be built, published or deployed. A real producer is
+named even when waiting for it would close a cycle, so the cycle check below decides that case
+and the failure names the cycle rather than a work-authoring gap. The build validates those
 identities and adds only missing consumer blockers through the normal cycle-checked writer;
 normal elaboration protections for already started Tasks remain intact. A missing producer or
 missing real authoring context is a finite pipeline work-authoring gap, never an owner SSM task
