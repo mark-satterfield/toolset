@@ -560,6 +560,7 @@ class Execution:
 
         """
         limit: int = self.remaining()
+        self.folder.mkdir(parents=True, exist_ok=True)
         stem: str = Path(record).stem
         stdout_log: Path = self.folder / f"{stem}.stdout.log"
         stderr_log: Path = self.folder / f"{stem}.stderr.log"

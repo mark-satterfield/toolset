@@ -194,8 +194,9 @@ def _setup_suite(run: StepRun, approved: Path) -> None:
     )
     document: dict[str, JsonValue] = json_object(json.loads(result.stdout))
     if result.exit != 0 or document.get("ok") is not True:
+        errors: list[str] = check_type(document.get("errors", []), list[str])
         msg = "build:baseline"
-        raise StepError(msg, OTHER_CAUSE, (str(output),))
+        raise StepError(msg, OTHER_CAUSE, tuple(errors or ["Regression setup failed"]))
 
 
 def _baseline_command(run: StepRun, command: str) -> Completion:
