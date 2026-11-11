@@ -14,7 +14,7 @@ from typeguard import check_type
 from orchestrator.core import pipeline_steps, step_journal
 from orchestrator.core.agents import AgentRunner
 from orchestrator.core.handback_contract import OTHER_CAUSE
-from orchestrator.core.io import JsonValue, json_object
+from orchestrator.core.io import JsonValue, json_object, safe_key, write_json
 from orchestrator.core.journal_run import JournalRunner
 from orchestrator.core.journal_steps import NewStep
 from orchestrator.core.models import RunContext, StepError
@@ -142,10 +142,21 @@ def recorded(runner: JournalRunner, names: tuple[str, ...]) -> dict[str, JsonVal
 
 
 def handback(context: RunContext, stage: str, headline: str, **fields: JsonValue) -> dict[str, JsonValue]:
-    """Build a successful leaf handback in the driver's existing shape.
+    """Build a successful leaf handback and save the whole result as its detail.
 
     Returns:
-        The Story result and any leaf-specific fields.
+        The Story result with its detail path, the run's sessions and any leaf-specific fields.
 
     """
-    return {"ok": True, "stage": stage, "beadId": context.bead, "headline": headline, "detailPath": None, **fields}
+    detail: Path = context.work / "results" / f"{safe_key(context.flow)}-{safe_key(context.run_id)}.json"
+    result: dict[str, JsonValue] = {
+        "ok": True,
+        "stage": stage,
+        "beadId": context.bead,
+        "headline": headline,
+        "detailPath": str(detail),
+        "sessions": json_object({"sessions": context.sessions})["sessions"],
+        **fields,
+    }
+    write_json(detail, result)
+    return result

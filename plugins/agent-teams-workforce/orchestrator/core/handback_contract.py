@@ -235,6 +235,16 @@ class Refusal(TypedDict):
     owner: NotRequired[str]
 
 
+class DeployMechanism(TypedDict):
+    """What a Story's repository publishes and deploys, read from its stacks' declared commands."""
+
+    repository: str
+    publishes: bool
+    publishCommand: list[str]
+    deploys: bool
+    reason: str
+
+
 class ToolingRecommendation(TypedDict):
     """The solutions architect's recommendation to create or update a specialist agent.
 
@@ -284,6 +294,7 @@ class HandbackDocument(TypedDict):
     toolingRecommendations: NotRequired[list[ToolingRecommendation]]
     refusal: NotRequired[Refusal]
     waitingForPrerequisites: NotRequired[WaitingForPrerequisites]
+    mechanism: NotRequired[DeployMechanism]
 
 
 class PhaseEvent(TypedDict):
