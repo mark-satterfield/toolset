@@ -432,10 +432,23 @@
           "reads": ["worktree", "regressionPlan", "regressionScope", "regressionMapped", "regressionMappedReview"],
           "records": [
             {"name": "regressionEvidence", "kind": "file", "holds": "The accepted regressionEvidence evidence"},
-            {"name": "regressionCorrection", "kind": "file", "holds": "Failed validation evidence when a bounded correction is scheduled"}
+            {"name": "regressionCorrection", "kind": "file", "holds": "Failed verification evidence when a bounded reassessment or correction is scheduled"}
           ],
           "adds": [
-            {"kinds": ["build:regression-remap", "build:regression-map-review", "build:regression-verify"], "when": "the check fails below the configured correction allowance; the failure evidence is recorded and the corrected assessment or mapping is independently reviewed and checked again"}
+            {"kinds": ["build:regression-reassess", "build:regression-review", "build:regression-validate", "build:regression-remap", "build:regression-map-review", "build:regression-verify"], "when": "the requirement source bytes, the build's own changes included, changed since the scope was approved, below the configured allowance of such reassessments: the scope is assessed, reviewed and validated for the current bytes, then mapped, reviewed and verified again"},
+            {"kinds": ["build:regression-tests", "build:final-suite", "build:regression-reassess", "build:regression-review", "build:regression-validate", "build:regression-remap", "build:regression-map-review", "build:regression-verify"], "when": "any other failure, a blocking mapping review included, below the configured correction allowance: the tests the review found missing are written and made to pass, the final review covers the changed tree, and the scope is assessed for it before the evidence is mapped, reviewed and verified again"}
+          ]
+        },
+        "build:regression-tests": {
+          "description": "Write the tests the regression mapping needs",
+          "purpose": "A required layer the mapping review found without a test gets one; the mapping alone cannot write it",
+          "runBy": "task-to-deploy",
+          "reads": ["worktree", "regressionPlan", "regressionMapped", "regressionMappedReview", "regressionCorrection"],
+          "records": [
+            {"name": "testSelection", "kind": "file", "holds": "The test design lead's accepted selection for the regression findings"}
+          ],
+          "adds": [
+            {"kinds": ["build:plan-tests"], "when": "after the selection is accepted"}
           ]
         },
         "build:commit": {

@@ -38,6 +38,8 @@ from orchestrator.flows.build_state import (
     CONTRACTS,
     PLUGIN,
     REGRESSION,
+    TEST_LEAD,
+    TEST_SELECTION,
     build_rounds,
 )
 from orchestrator.flows.build_state import (
@@ -61,9 +63,7 @@ from orchestrator.flows.build_workspace import Workspace, checkpoint, git_operat
 if TYPE_CHECKING:
     from orchestrator.core.journal_views import AcceptedArtifact, AcceptedView
 
-TEST_SELECTION: Final = "testSelection"
 TEST_STRATEGY: Final = "testStrategy"
-TEST_LEAD: Final = "test-design-lead"
 STRATEGY_DECIDER: Final = "test-strategy-decider"
 REVIEWER: Final = "code-correctness-reviewer"
 CODE_REVIEW_TREE: Final = "codeReviewTree"

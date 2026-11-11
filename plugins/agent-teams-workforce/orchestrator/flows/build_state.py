@@ -29,6 +29,10 @@ PLUGIN: Final = Path(__file__).resolve().parents[2]
 CONTRACTS: Final = PLUGIN / "skills" / "pipeline-contracts" / "schemas"
 ARTIFACT_CONTRACTS: Final = PLUGIN / "skills" / "artifact-handoff" / "schemas"
 REGRESSION: Final = PLUGIN / "scripts" / "portfolio" / "regression.py"
+TEST_LEAD: Final = "test-design-lead"
+"""The agent that selects the test specialists a correction needs."""
+TEST_SELECTION: Final = "testSelection"
+"""The artifact name of the test design lead's accepted selection."""
 
 
 def build_rounds() -> int:

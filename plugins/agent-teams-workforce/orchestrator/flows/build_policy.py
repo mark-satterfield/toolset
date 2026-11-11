@@ -533,6 +533,7 @@ def summary(run: StepRun) -> dict[str, JsonValue]:
         "build:implementation-recheck",
         "build:regression-reassess",
         "build:regression-remap",
+        "build:regression-tests",
         "build:final-review",
         "build:prerequisites-rediagnose",
     })

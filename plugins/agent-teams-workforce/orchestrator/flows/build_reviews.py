@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Final
 
 from driver_surface_types import REGRESSION_TIMEOUT_DEFAULT, REGRESSION_TIMEOUT_ENV
 from typeguard import check_type
@@ -17,11 +18,13 @@ from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, file
 from orchestrator.core.models import StepError
 from orchestrator.core.tool_locks import seconds
 from orchestrator.flows import build_carried, build_policy
-from orchestrator.flows.build_sessions import OutputContract, latest, reasoned
+from orchestrator.flows.build_sessions import OutputContract, accepted_steps, latest, reasoned
 from orchestrator.flows.build_state import (
     ARTIFACT_CONTRACTS,
     CONTRACTS,
     REGRESSION,
+    TEST_LEAD,
+    TEST_SELECTION,
     build_rounds,
     regression_rounds,
 )
@@ -43,9 +46,14 @@ from orchestrator.flows.build_state import (
 from orchestrator.flows.elaboration_files import project_root
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from step_journal_contract import ValueArtifact
+
+RESCOPE: Final = ("build:regression-reassess", "build:regression-review", "build:regression-validate")
+"""The steps that assess, review and validate the regression scope again."""
+REMAP: Final = ("build:regression-remap", "build:regression-map-review", "build:regression-verify")
+"""The steps that map, review and verify the final regression evidence again."""
+EVIDENCE_WORK: Final = ("build:regression-tests", "build:final-suite")
+"""The steps that write the tests and behaviour a failed final verification found missing, and review them."""
 
 
 def _regression(run: StepRun, mode: str, plan: Path, extra: list[str]) -> tuple[Path, dict[str, JsonValue]]:
@@ -242,10 +250,6 @@ def _review_final(run: StepRun) -> Completion:
 def _validate(run: StepRun, final: bool) -> Completion:
     """Validate or verify the exact regression schema, source seal and independent review.
 
-    A final verification that finds the requirement sources changed since the scope was approved
-    reassesses, reviews and validates the scope again before it maps and verifies the evidence:
-    remapping against a scope approved for other source bytes cannot pass.
-
     Returns:
         Required evidence, or bounded scope correction steps.
 
@@ -262,17 +266,97 @@ def _validate(run: StepRun, final: bool) -> Completion:
     output, document = _regression(run, "verify" if final else "validate", plan, extra)
     if document.get("ok") is True:
         return Completion(artifacts=(file_artifact("regressionEvidence" if final else "regressionScope", output),))
-    key: str = "build:regression-verify" if final else "build:regression-validate"
+    if final:
+        return _verify_correction(run, output, document)
+    key: str = "build:regression-validate"
     if _count(run, key, "regressionCorrection") >= regression_rounds():
         errors: list[str] = check_type(document.get("errors", []), list[str])
         raise StepError(key, OTHER_CAUSE, (*errors, str(output)))
-    keys: tuple[str, ...] = ("build:regression-reassess", "build:regression-review", "build:regression-validate")
-    if final:
-        remap: tuple[str, ...] = ("build:regression-remap", "build:regression-map-review", "build:regression-verify")
-        keys = (*keys, *remap) if document.get("sourcesChanged") is True else remap
+    purpose: str = "Correct the regression scope and validate it again"
     return Completion(
         artifacts=(file_artifact("regressionCorrection", output),),
-        add=(StepGroup(tuple(_new(kind, "Correct the regression contract and verify its evidence") for kind in keys)),),
+        add=(StepGroup(tuple(_new(kind, purpose) for kind in RESCOPE)),),
+    )
+
+
+def _verify_corrections(run: StepRun) -> tuple[int, int]:
+    """Count the final verifications already corrected, by what their correction answered.
+
+    Returns:
+        The reassessments for changed source bytes, and the corrections of the mapping or the
+        evidence it needs.
+
+    """
+    rescopes: int = 0
+    corrections: int = 0
+    for step in accepted_steps(run):
+        if step.get("script") != "build:regression-verify":
+            continue
+        for artifact in step["artifacts"]:
+            if artifact["kind"] != "file" or artifact["name"] != "regressionCorrection":
+                continue
+            failed: dict[str, JsonValue] = json_object(json.loads(Path(artifact["path"]).read_text(encoding="utf-8")))
+            if failed.get("sourcesChanged") is True:
+                rescopes += 1
+            else:
+                corrections += 1
+    return rescopes, corrections
+
+
+def _verify_correction(run: StepRun, output: Path, document: dict[str, JsonValue]) -> Completion:
+    """Correct a failed final verification inside the step, within its allowances.
+
+    Changed source bytes, the build's own changes included, mean the scope is assessed again for
+    them before the evidence is mapped again; that is no correction of the mapping, so it has its
+    own allowance. Any other failure, a blocking mapping review included, is a correction: the test
+    design lead selects the test writers for the tests the review found missing or not asserting
+    their requirement, implementers make a failing new test pass, the final review covers the changed
+    tree, and the scope is assessed for the changed tree before it is mapped, reviewed and verified
+    again. The mapping alone cannot write a test that does not exist.
+
+    Returns:
+        The reassessment or correction steps.
+
+    Raises:
+        StepError: The failure's allowance is spent; it names every error and the evidence file.
+
+    """
+    changed: bool = document.get("sourcesChanged") is True
+    rescopes, corrections = _verify_corrections(run)
+    if (rescopes if changed else corrections) >= regression_rounds():
+        errors: list[str] = check_type(document.get("errors", []), list[str])
+        key: str = "build:regression-verify"
+        raise StepError(key, OTHER_CAUSE, (*errors, str(output)))
+    keys: tuple[str, ...] = (*RESCOPE, *REMAP) if changed else (*EVIDENCE_WORK, *RESCOPE, *REMAP)
+    purpose: str = (
+        "Assess the regression scope for the changed sources, then map and verify its evidence"
+        if changed
+        else "Write the tests the regression mapping review found missing, then map and verify the evidence"
+    )
+    return Completion(
+        artifacts=(file_artifact("regressionCorrection", output),),
+        add=(StepGroup(tuple(_new(kind, purpose) for kind in keys)),),
+    )
+
+
+def _regression_tests(run: StepRun) -> Completion:
+    """Have the test design lead select the writers of the tests a failed final verification needs.
+
+    Returns:
+        The lead's selection session, then the selected test writers and their suite check.
+
+    """
+    return reasoned(
+        run,
+        TEST_LEAD,
+        OutputContract(CONTRACTS / "build-selection.schema.json", TEST_SELECTION),
+        "Select the test specialists that write or change the tests the blocking findings of the latest "
+        "regressionMappedReview and the failed verification in regressionCorrection need: a required layer of "
+        "an impacted requirement with no test, and a mapped test that is absent, fails, or does not assert its "
+        "requirement. A test the current code fails is written all the same; implementation makes it pass. "
+        "Do not change governing requirements. An empty selection is valid only when every finding is corrected "
+        "by the mapping alone",
+        followups=(_new("build:plan-tests", "Write the tests the regression mapping needs"),),
     )
 
 
@@ -502,6 +586,7 @@ def attach_reviews(registry: Registry) -> None:
         "build:regression-remap": _scope_final,
         "build:regression-map-review": _review_final,
         "build:regression-verify": _validate_final,
+        "build:regression-tests": _regression_tests,
         "build:reuse-audit": _reuse,
         "build:cds-audit": _cds,
         "build:design-source": _design,
