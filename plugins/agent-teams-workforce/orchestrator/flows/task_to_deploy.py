@@ -32,7 +32,7 @@ from orchestrator.core.models import RunContext, StepError
 from orchestrator.core.tool_locks import control_repo, seconds
 from orchestrator.core.tools import Tools
 from orchestrator.flows import build_carried, build_policy, build_prerequisite_work, build_prerequisites
-from orchestrator.flows.build_reviews import attach_reviews, refresh_sources
+from orchestrator.flows.build_reviews import attach_reviews, refresh_sources, task_sources
 from orchestrator.flows.build_sessions import OutputContract, accepted_steps, attach, latest, reasoned, view_of
 from orchestrator.flows.build_state import (
     CONTRACTS,
@@ -69,6 +69,8 @@ REVIEWER: Final = "code-correctness-reviewer"
 CODE_REVIEW_TREE: Final = "codeReviewTree"
 FINAL_REVIEW_TREE: Final = "finalReviewTree"
 CARRY_REASON: Final = "its correction belongs to the contract or the tooling, or its correction allowance is spent"
+TESTS_UNOWNED: Final = "testCorrectionUnowned"
+"""The content tree and governing sources on which the test lead selected no specialist for test findings."""
 
 
 def _suite(run: StepRun, name: str, *, fresh: bool = False) -> dict[str, JsonValue]:
@@ -286,10 +288,8 @@ def _plan_tests(run: StepRun) -> Completion:
     concern the selection names as unresolved, and the lead then selects again under its decision.
 
     Returns:
-        Sequential test-writer steps and their suite check, or the selection work they need first.
-
-    Raises:
-        StepError: Required corrective test work has no selected owner.
+        Sequential test-writer steps and their suite check, the selection work they need first, or
+        the review's test-owned findings carried when no test specialist can correct them.
 
     """
     view: AcceptedView = view_of(run)
@@ -319,14 +319,44 @@ def _plan_tests(run: StepRun) -> Completion:
         )
     agents: list[str] = check_type(_document(run, TEST_SELECTION)["agents"], list[str])
     if not agents and run.params().get("required") is True:
-        message: str = "build:plan-tests"
-        rationale: str = check_type(_document(run, TEST_SELECTION)["rationale"], str)
-        raise StepError(message, OTHER_CAUSE, ("Required test corrections have no selected test specialist", rationale))
+        return _carry_unowned_tests(run)
     children: tuple[NewStep, ...] = tuple(
         _new("build:red-write", f"Review and improve suite tests with {agent}", {"testAgent": agent})
         for agent in agents
     )
     return Completion(add=(StepGroup((*children, _new("build:red-check", "Run the suite after test work"))),))
+
+
+def _carry_unowned_tests(run: StepRun) -> Completion:
+    """Carry the code review's test-owned findings the test lead gave to no specialist.
+
+    The lead's empty selection with its rationale is a judgment that no test specialist can make
+    the correction, so the findings are recorded for their owners and the build continues. The tree
+    and the Task's governing sources are recorded so the re-review does not ask for the same correction
+    again on unchanged content under unchanged requirements.
+
+    Returns:
+        The carried findings and the tree they were carried on.
+
+    """
+    review: dict[str, JsonValue] = _document(run, "codeReview")
+    required: list[JsonValue] = build_carried.required(check_type(review["findings"], list[JsonValue]))
+    tests: list[JsonValue] = [finding for finding in required if json_object(finding).get("owner") == "tests"]
+    rationale: str = check_type(_document(run, TEST_SELECTION)["rationale"], str)
+    reason: str = f"no test specialist was selected to correct it: {rationale}"
+    carried: tuple[ValueArtifact, ...] = (build_carried.carry("codeReview", tests, reason),) if tests else ()
+    return Completion(artifacts=(*carried, value_artifact(TESTS_UNOWNED, _unowned_identity(run))))
+
+
+def _unowned_identity(run: StepRun) -> dict[str, JsonValue]:
+    """Identify the content and requirements an empty test selection was judged on.
+
+    Returns:
+        The content tree and the Task's sorted governing sources.
+
+    """
+    sources: list[JsonValue] = [*sorted(task_sources(run))]
+    return {"tree": build_policy.content_tree(run), "sources": sources}
 
 
 def _tests(run: StepRun) -> Completion:
@@ -590,11 +620,13 @@ def _code_reviewed(run: StepRun) -> Completion:
     ownership: Completion | None = _review_ownership(run, required)
     if ownership is not None:
         return ownership
-    reviewed: ValueArtifact = value_artifact(CODE_REVIEW_TREE, build_policy.content_tree(run))
+    tree: str = build_policy.content_tree(run)
+    reviewed: ValueArtifact = value_artifact(CODE_REVIEW_TREE, tree)
     carried: list[JsonValue] = build_carried.owned_elsewhere(required)
     tests: list[JsonValue] = [finding for finding in required if json_object(finding)["owner"] == "tests"]
     if tests:
-        if _count(run, "build:code-reviewed", "reviewTestCorrection") < build_rounds():
+        unowned: bool = latest(run, TESTS_UNOWNED) == _unowned_identity(run)
+        if not unowned and _count(run, "build:code-reviewed", "reviewTestCorrection") < build_rounds():
             return _review_test_correction(run, review)
         carried.extend(tests)
     work: list[JsonValue] = [finding for finding in required if json_object(finding)["owner"] == "implementation"]
@@ -695,10 +727,11 @@ def _empty_selection(run: StepRun, selection: JsonValue) -> Completion:
     """Reassess an empty selection once when the recorded repository state changed.
 
     Returns:
-        Fresh verification work for an observable change.
+        Fresh verification work for an observable change, or, on a passing suite, Green with the
+        review findings no implementer was selected for carried.
 
     Raises:
-        StepError: No change justifies reassessment, or its correction allowance is spent.
+        StepError: The suite fails and no implementer was selected to fix it.
 
     """
     refreshed: Completion | None = refresh_sources(run)
@@ -729,11 +762,36 @@ def _empty_selection(run: StepRun, selection: JsonValue) -> Completion:
         and _count(run, "build:implementation-recheck", "implementationRecovery") < build_rounds()
     ):
         return Completion(add=(StepGroup((_new("build:implementation-recheck", "Reassess the changed repository"),)),))
-    evidence: tuple[str, ...] = ("The unresolved work has no selected implementer",)
-    if selection is not None:
-        evidence += (check_type(_document(run, "implementationSelection")["rationale"], str),)
+    rationale: tuple[str, ...] = (
+        (check_type(_document(run, "implementationSelection")["rationale"], str),) if selection is not None else ()
+    )
+    suite: dict[str, JsonValue] = _latest_suite(run)
+    if suite.get("exitCode") == 0:
+        return _carry_unowned_implementation(run, suite, required, rationale)
     stage: str = "build:plan-code"
-    raise StepError(stage, OTHER_CAUSE, evidence)
+    raise StepError(stage, OTHER_CAUSE, ("The failing suite has no selected implementer", *rationale))
+
+
+def _carry_unowned_implementation(
+    run: StepRun,
+    suite: dict[str, JsonValue],
+    required: list[JsonValue],
+    rationale: tuple[str, ...],
+) -> Completion:
+    """Carry the review's implementation findings no implementer was selected for, on a passing suite.
+
+    With the whole suite passing, what remains is review findings, which are judgments rather than
+    errors, so they are recorded for their owners and the build continues to Green.
+
+    Returns:
+        Green with the reviewed tree and the carried findings.
+
+    """
+    work: list[JsonValue] = [finding for finding in required if json_object(finding).get("owner") == "implementation"]
+    reason: str = " ".join(("no implementation specialist was selected to correct it", *rationale))
+    carried: tuple[ValueArtifact, ...] = (build_carried.carry("codeReview", work, reason),) if work else ()
+    reviewed: ValueArtifact = value_artifact(CODE_REVIEW_TREE, build_policy.content_tree(run))
+    return Completion(artifacts=(value_artifact("greenRun", suite), reviewed, *carried))
 
 
 def _selection_outdated(run: StepRun) -> bool:

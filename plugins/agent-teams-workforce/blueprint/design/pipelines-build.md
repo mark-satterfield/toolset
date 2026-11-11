@@ -137,14 +137,20 @@ and a review finding still open when its correction allowance is spent is carrie
 gate is bypassed and none is turned into a stop. An empty implementation selection
 accepted before the latest suite judgment or code review is replaced by one fresh selection for
 the current failures and findings. An empty implementation selection made for the current
-judgment and review stops with the accepted selector's rationale, preserving the named blocker
-and required authority in the failure evidence. Passing tests alone do not override an
-unapproved review or unresolved implementation findings.
+judgment and review stops with the accepted selector's rationale only while the suite fails; with
+the whole suite passing, what remains is review findings, so the implementation findings are
+carried with that rationale and the build continues to Green. Passing tests alone do not override
+an unapproved review while an implementer is selected for its implementation findings.
 
 Code review findings identify the owner of each required correction: implementation, tests,
 tooling or contract. Legacy findings receive one fresh ownership review, never a filename-based
 classification. Test findings receive a fresh test-specialist selection, author fingerprints,
-factual suite execution and independent re-review, within the build correction allowance.
+factual suite execution and independent re-review, within the build correction allowance. An empty
+test-specialist selection with its rationale is the judgment that no test specialist can make the
+correction (for example a criterion only a person could perform): the test findings are carried
+with that rationale, the tree and governing sources are recorded, and the re-review of that
+unchanged tree under unchanged sources carries them again rather than asking for another
+correction round.
 Implementation findings and suite failures go to the specialists the implementation-lead selects.
 Tooling and contract findings are never assigned to product implementers and never stop the build:
 they are carried. The same holds for the shared-capability and CDS reviews and the final code
