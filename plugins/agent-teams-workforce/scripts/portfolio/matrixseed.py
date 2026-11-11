@@ -53,6 +53,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "resourc
 from matrix_contract import (
     AUTHORITY_SIDE,
     ENTRY_RULES,
+    HOME_RELATIONSHIP,
     KIND_COMPONENT,
     KIND_DOCUMENT,
     KIND_EPIC,
@@ -96,6 +97,7 @@ from matrixstore import (
     as_entry_id,
     create_matrix,
     make_id,
+    merge_homed,
     name_key,
     read_matrix,
     relationship_id,
@@ -1988,6 +1990,27 @@ def _stated_relationship(raw: Mapping[str, JsonValue]) -> StatedRelationship:
     )
 
 
+def _relationship_of(matrix: Matrix, stated: StatedRelationship, side: Side) -> Relationship:
+    """Build the relationship a result file states, with the side its step states.
+
+    An end an earlier write merged into another entry names that entry. A home of an entry of a
+    resource type a stack holds at most one of, in a stack that already holds one, first merges
+    the entry into the held one (``matrixstore.merge_homed``). An id of another form raises
+    ``MatrixError`` from :func:`_stated_id`, as does a merge that cannot be made.
+
+    Returns:
+        The relationship.
+
+    """
+    start: EntryId = _stated_id(stated.start)
+    end: EntryId = _stated_id(stated.end)
+    start = matrix.absorbed.get(start, start)
+    end = matrix.absorbed.get(end, end)
+    if stated.kind == HOME_RELATIONSHIP:
+        start = merge_homed(matrix, start, end, side)
+    return Relationship(kind=stated.kind, start=start, end=end, side=side, attributes=dict(stated.attributes))
+
+
 def _apply_results(matrix: Matrix, results: Sequence[Path], side: Side, applied: Applied) -> None:
     """Record every entry and relationship of some result files with one side.
 
@@ -2017,22 +2040,32 @@ def _apply_results(matrix: Matrix, results: Sequence[Path], side: Side, applied:
     entry: Entry
     for file, entry in sorted(entries, key=lambda found: found[1].kind != KIND_STACK):
         _put(Recorder(matrix, file, applied), entry)
-    for file, raw in relationships:
+    for file, raw in sorted(relationships, key=lambda stated: stated[1].get("kind") != HOME_RELATIONSHIP):
         try:
-            stated: StatedRelationship = _stated_relationship(raw)
-            relationship: Relationship = Relationship(
-                kind=stated.kind,
-                start=_stated_id(stated.start),
-                end=_stated_id(stated.end),
-                side=side,
-                attributes=dict(stated.attributes),
-            )
+            relationship: Relationship = _relationship_of(matrix, _stated_relationship(raw), side)
         except ValueError as error:
             applied["refused"].append(
                 _refusal(file, f"{raw.get('from')} {raw.get('kind')} {raw.get('to')}", error),
             )
             continue
         _link(Recorder(matrix, file, applied), relationship)
+    _report_merged(matrix, applied)
+
+
+def _report_merged(matrix: Matrix, applied: Applied) -> None:
+    """Report each entry a step stated that was merged into the one its stack already holds.
+
+    An entry of a resource type a stack holds at most one of, homed in a stack that already
+    holds one, became that entry (``matrixstore.merge_homed``): it is no longer listed as created or
+    changed, and the entry it became is listed as changed unless it was created by the step.
+    """
+    merged: dict[EntryId, EntryId] = matrix.absorbed
+    applied["entriesCreated"] = [key for key in applied["entriesCreated"] if key not in merged]
+    kept: list[EntryId] = [key for key in applied["entriesChanged"] if key not in merged]
+    kept.extend(
+        into for into in dict.fromkeys(merged.values()) if into not in kept and into not in applied["entriesCreated"]
+    )
+    applied["entriesChanged"] = kept
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

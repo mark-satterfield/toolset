@@ -51,6 +51,7 @@ from matrix_contract import (
     LOCK_DIRECTORY,
     LOCK_SUFFIX,
     MATRIX_ENV,
+    ONE_PER_STACK_TYPES,
     OPERATOR_ROLE,
     REL_DESCRIBED_BY,
     REL_DRIVES,
@@ -487,6 +488,8 @@ class Matrix:
         self._relationships: dict[RelationshipId, Relationship] = {}
         self._starting: dict[EntryId, set[RelationshipId]] = {}
         self._ending: dict[EntryId, set[RelationshipId]] = {}
+        self.absorbed: dict[EntryId, EntryId] = {}
+        """Each entry :func:`absorb` merged into another while this matrix was loaded, with the entry it became."""
         message: str
         entry: Entry
         for entry in source.entries:
@@ -1363,6 +1366,162 @@ def matrix_path(explicit: str | None, environ: Mapping[str, str]) -> Path:
         message: str = f"give --matrix, or set {MATRIX_ENV} or {CONTROL_REPO_ENV}"
         raise MatrixError(message)
     return Path(control).expanduser().joinpath(*DEFAULT_MATRIX_PARTS)
+
+
+def one_per_stack(
+    matrix: Matrix,
+    stack: EntryId,
+    side: Side,
+    resource_type: JsonValue,
+    besides: EntryId | None = None,
+) -> Entry | None:
+    """Find the entry of a resource type a stack holds at most one of, which the stack holds on one side.
+
+    Args:
+        matrix: The matrix.
+        stack: The stack's id.
+        side: The side whose home relationships, and whose entries, are read.
+        resource_type: The resource type of the entry a caller is about to record.
+        besides: An entry left out, such as the one being homed.
+
+    Returns:
+        The entry of that resource type whose home on ``side`` is the stack, or whose id names the
+        stack; the first in id order when the matrix already holds more than one. None when the
+        type is not one a stack holds at most one of (``ONE_PER_STACK_TYPES``), or the stack holds
+        none.
+
+    """
+    if not isinstance(resource_type, str) or resource_type not in ONE_PER_STACK_TYPES:
+        return None
+    homed: set[EntryId] = {
+        relationship.start for relationship in matrix.incoming(stack, (HOME_RELATIONSHIP,)) if relationship.side == side
+    }
+    held: list[Entry] = [
+        entry
+        for entry in matrix.entries()
+        if entry.id != besides
+        and (entry.id in homed or id_stack(entry) == stack)
+        and entry.side == side
+        and entry.attributes.get(ATTR_RESOURCE_TYPE) == resource_type
+    ]
+    return held[0] if held else None
+
+
+def _moved(relationship: Relationship, old: EntryId, new: EntryId) -> Relationship:
+    """Point a relationship that names one entry, at an end or in an attribute, at another.
+
+    Returns:
+        The relationship with each mention of ``old`` replaced by ``new``.
+
+    """
+    references: frozenset[str] = relationship_rule(relationship.kind).references
+    return replace(
+        relationship,
+        start=new if relationship.start == old else relationship.start,
+        end=new if relationship.end == old else relationship.end,
+        attributes={
+            key: new if key in references and value == old else value for key, value in relationship.attributes.items()
+        },
+    )
+
+
+def absorb(matrix: Matrix, old: EntryId, new: EntryId) -> None:
+    """Merge one entry into another of its kind that is the same thing.
+
+    The kept entry keeps its id, name, side and values; the merged entry's name and aliases join
+    its aliases, an attribute it lacks is taken, and an empty purpose is filled. Every
+    relationship of the merged entry, at either end or in an attribute, moves to the kept entry;
+    one the kept entry already holds keeps its attributes and takes those it lacks, and one that
+    would join the kept entry to itself is dropped. The merged entry is then removed, and
+    ``Matrix.absorbed`` records where it went. An entry that does not exist raises
+    ``MatrixError`` from ``Matrix.entry``.
+
+    Args:
+        matrix: The matrix, changed in place.
+        old: The entry merged and removed.
+        new: The entry kept.
+
+    Raises:
+        MatrixRefusedError: The two are one entry, or of different kinds.
+
+    """
+    source: Entry = matrix.entry(old)
+    target: Entry = matrix.entry(new)
+    if old == new or source.kind != target.kind:
+        message: str = f"{old} cannot be merged into {new}: they must be two entries of one kind"
+        raise MatrixRefusedError(message)
+    known: set[str] = {name_key(target.name), *(name_key(alias) for alias in target.aliases)}
+    aliases: list[str] = list(target.aliases)
+    name: str
+    for name in (source.name, *source.aliases):
+        if name.strip() and name_key(name) not in known:
+            known.add(name_key(name))
+            aliases.append(name)
+    matrix.put(
+        replace(
+            target,
+            aliases=tuple(aliases),
+            purpose=target.purpose if target.purpose.strip() else source.purpose,
+            attributes={**source.attributes, **target.attributes},
+        ),
+    )
+    moved: list[Relationship] = [
+        _moved(relationship, old, new)
+        for relationship in matrix.relationships()
+        if old in {relationship.start, relationship.end}
+        or any(relationship.attributes.get(key) == old for key in relationship_rule(relationship.kind).references)
+    ]
+    matrix.remove(old)
+    relationship: Relationship
+    for relationship in moved:
+        if relationship.start == relationship.end:
+            continue
+        kept: Relationship | None = next(
+            (
+                held
+                for held in matrix.outgoing(relationship.start, (relationship.kind,))
+                if relationship_id(held) == relationship_id(relationship)
+            ),
+            None,
+        )
+        matrix.link(
+            relationship if kept is None else replace(kept, attributes={**relationship.attributes, **kept.attributes}),
+        )
+    matrix.absorbed[old] = new
+    held: EntryId
+    into: EntryId
+    for held, into in list(matrix.absorbed.items()):
+        if into == old:
+            matrix.absorbed[held] = new
+
+
+def merge_homed(matrix: Matrix, start: EntryId, stack: EntryId, side: Side) -> EntryId:
+    """Merge an entry being homed in a stack into the one of its resource type the stack already holds.
+
+    An entry of a resource type a stack holds at most one of (``ONE_PER_STACK_TYPES``) that is
+    about to be homed in a stack holding another entry of that type and kind on that side is that
+    entry: it is merged into it (:func:`absorb`).
+
+    Args:
+        matrix: The matrix, changed in place.
+        start: The entry about to be homed; one the matrix does not hold, or that has another home
+            on that side, is left to the link.
+        stack: The stack it is about to be homed in.
+        side: The side of the home relationship.
+
+    Returns:
+        The entry the home relationship is to start from: the held entry after a merge, otherwise
+        ``start``.
+
+    """
+    homed: Entry | None = matrix.find(start)
+    held: Entry | None = (
+        None if homed is None else one_per_stack(matrix, stack, side, homed.attributes.get(ATTR_RESOURCE_TYPE), start)
+    )
+    if homed is None or held is None or held.kind != homed.kind or matrix.home(start, side) not in {None, stack}:
+        return start
+    absorb(matrix, start, held.id)
+    return held.id
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

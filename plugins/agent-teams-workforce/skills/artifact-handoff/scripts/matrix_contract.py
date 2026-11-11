@@ -180,6 +180,7 @@ DEFAULT_MATRIX_PARTS: Final[tuple[str, ...]] = ("ops", "sdlc-automation", "matri
 OPERATOR_ROLE: Final[Role] = ROLE_OPERATOR
 HOME_RELATIONSHIP: Final[RelationshipKind] = REL_HOME_IN
 STACK_KIND: Final[EntryKind] = KIND_STACK
+ONE_PER_STACK_TYPES: Final[frozenset[str]] = frozenset({"rds-db-cluster"})
 AUTHORITY_SIDE: Final[Side] = SIDE_ARCHITECTURE
 ENTRY_MEMBERS: Final[frozenset[str]] = frozenset({
     "aliases",

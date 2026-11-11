@@ -829,3 +829,12 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
     was re-typed to it (an AgentCore agent to `bedrock-agentcore-runtime`, an Aurora cluster to
     `rds-db-cluster`, a queue recorded with its dead-letter queue to `sqs-queue`, the queue it
     names). The entries themselves stay.
+33. **One per stack.** A stack holds at most one entry, on each side, of each resource type the
+    kinds registry lists in `onePerStack`; the list is `rds-db-cluster`, because each service
+    owns one Aurora cluster and every document that mentions the service's cluster generically
+    means that one. No other resource type is listed: a stack may hold several VPCs, user pools,
+    tables, queues or APIs. A new entry of a listed type that `put --stack`, a `homeIn` link, a
+    change file or the architecture or repository seeding step homes in a stack already holding
+    one is merged into the held entry (`matrixstore.merge_homed`, `absorb`): its name and aliases
+    join the held entry's aliases, its relationships move to it, and later operations of the same
+    change file that name it are pointed at the held entry.

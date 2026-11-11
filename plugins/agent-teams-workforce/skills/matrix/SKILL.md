@@ -221,6 +221,11 @@ are validated before the locked write; existing verified marks are preserved.
   then `atw-matrix link <kind> --from <id> --to <id> --side architecture [--heading ...]`. A
   repository-side component, infrastructure or layer takes `--stack stack:<id>`. Look the entry
   up with `find` first so one capability is one feature.
+- A stack holds at most one entry, on each side, of each resource type the kinds registry lists
+  in `onePerStack` (`rds-db-cluster`: a service's own database cluster). A new entry of such a
+  type put with `--stack` of a stack that already holds one, or homed (`homeIn`) in it by `link`,
+  a change file or `seed-apply`, is merged into the held entry: its name joins the held entry's
+  aliases and its relationships move to it. Use the held entry's id from then on.
 - A resource that a shared construct creates in each stack that uses it (for example an SSM
   parameter or a CloudWatch metric filter a shared CDK construct writes into every consuming
   service's stack) gets no entry of its own: it has no one home, and an entry has at most one.

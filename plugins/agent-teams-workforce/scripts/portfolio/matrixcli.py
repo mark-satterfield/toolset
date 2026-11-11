@@ -941,7 +941,8 @@ def _change_parsers(
     entry.add_argument("--purpose", help="one or two sentences that identify the entry")
     entry.add_argument(
         "--stack",
-        help="the id of the stack that holds a repository-side component, infrastructure or layer; it builds the id",
+        help="the id of the stack that holds the entry: it builds the id of a repository-side component, "
+        "infrastructure or layer, and a new entry of a resource type a stack holds one of becomes the one it holds",
     )
     entry.add_argument(
         "--published-by",

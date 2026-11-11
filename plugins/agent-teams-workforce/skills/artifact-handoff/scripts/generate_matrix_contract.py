@@ -70,6 +70,10 @@ ROLES_KEY: Final[str] = "roles"
 OPERATOR_KEY: Final[str] = "operatorRole"
 HOME_KEY: Final[str] = "homeRelationship"
 STACK_KEY: Final[str] = "stackKind"
+ONE_PER_STACK_KEY: Final[str] = "onePerStack"
+RUNTIME_ONLY_KEY: Final[str] = "runtimeOnlyKinds"
+NO_BUILD_ORDER_KEY: Final[str] = "noBuildOrderKinds"
+RESOURCE_TYPE_DEFINITION: Final[str] = "resourceType"
 REQUIRED_ONE_KEY: Final[str] = "requiredOne"
 # The $defs entry of the schema that lists the sides, and the root key that names the side that is the authority.
 SIDE_ENTRY: Final[str] = "side"
@@ -551,6 +555,8 @@ class Vocabulary:
     families: list[str]
     roles: list[str]
     sides: list[str]
+    runtime_only: list[str]
+    no_build_order: list[str]
 
 
 def _checked(schema: Mapping[str, JsonValue], registry: Mapping[str, JsonValue]) -> Vocabulary:
@@ -578,12 +584,18 @@ def _checked(schema: Mapping[str, JsonValue], registry: Mapping[str, JsonValue])
     relationship_kinds: list[str]
     families: list[str]
     relationship_kinds, families = _check_relationship_kinds(registry, known, sides)
+    runtime_only: list[str] = _strings(registry.get(RUNTIME_ONLY_KEY), RUNTIME_ONLY_KEY)
+    no_build_order: list[str] = _strings(registry.get(NO_BUILD_ORDER_KEY), NO_BUILD_ORDER_KEY)
+    _subset(runtime_only, relationship_kinds, RUNTIME_ONLY_KEY, "relationship kinds")
+    _subset(no_build_order, relationship_kinds, NO_BUILD_ORDER_KEY, "relationship kinds")
     return Vocabulary(
         entry_kinds=entry_kinds,
         relationship_kinds=relationship_kinds,
         families=families,
         roles=_check_commands(registry),
         sides=sides,
+        runtime_only=runtime_only,
+        no_build_order=no_build_order,
     )
 
 
@@ -634,6 +646,35 @@ def _open_vocabulary(alias: str, prefix: str, collection: str, values: Sequence[
     )
 
 
+def _kinds_set(constant: str, kinds: Sequence[str], spread: str = "") -> str:
+    """Render relationship kinds as a frozenset constant of their names.
+
+    Returns:
+        The source of the statement; ``spread`` is a set unpacked into it after the kinds.
+
+    """
+    members: list[str] = [f"REL_{_upper_snake(kind)}" for kind in kinds] + ([f"*{spread}"] if spread else [])
+    return f"{constant}: Final[frozenset[RelationshipKind]] = frozenset({{{', '.join(members)}}})"
+
+
+def _build_order_lines(vocabulary: Vocabulary) -> list[str]:
+    """Render the dependency relationships that never order a build.
+
+    Returns:
+        The constant lines, each with its docstring.
+
+    """
+    return [
+        _kinds_set("RUNTIME_ONLY_KINDS", vocabulary.runtime_only),
+        '"""The dependency relationships that hold only at run time: a caller is built against the callee\'s',
+        'specified contract, so a call is context for the caller and never a build need."""',
+        _kinds_set("NO_BUILD_ORDER_KINDS", vocabulary.no_build_order, "RUNTIME_ONLY_KINDS"),
+        '"""The dependency relationships that never order a build: a producer and a routing rule each depend',
+        "only on the bus, and a call holds only at run time. Every other dependency relationship (an import,",
+        'a layer used, a value read, shared infrastructure run in, a rule\'s bus and target) is a build need."""',
+    ]
+
+
 def _vocabulary_lines(vocabulary: Vocabulary) -> tuple[list[str], list[str]]:
     """Render every vocabulary the registry declares.
 
@@ -670,6 +711,7 @@ def _vocabulary_lines(vocabulary: Vocabulary) -> tuple[list[str], list[str]]:
     )
     aliases.append(open_alias)
     constants.extend(open_lines)
+    constants.extend(_build_order_lines(vocabulary))
     names: list[str] = [f"FAMILY_{_upper_snake(family)}" for family in vocabulary.families]
     constants.extend(
         f"{name}: Final = {json.dumps(family)}" for name, family in zip(names, vocabulary.families, strict=True)
@@ -694,6 +736,31 @@ def _members_line(constant: str, members: frozenset[str]) -> str:
         [json.dumps(name) for name in sorted(members)],
         "})",
     )
+
+
+def _one_per_stack(registry: Mapping[str, JsonValue]) -> list[str]:
+    """Read the resource types of which a stack holds at most one entry on each side.
+
+    Returns:
+        The resource types, in registry order.
+
+    Raises:
+        SchemaShapeError: A value does not have the form of the registry's resource type.
+
+    """
+    types: list[str] = _strings(registry.get(ONE_PER_STACK_KEY), ONE_PER_STACK_KEY)
+    definition: dict[str, JsonValue] = _node(
+        _node(registry.get(DEFINITIONS), DEFINITIONS).get(RESOURCE_TYPE_DEFINITION),
+        f"{DEFINITIONS}/{RESOURCE_TYPE_DEFINITION}",
+    )
+    form: re.Pattern[str] = re.compile(
+        _raw_pattern(definition.get("pattern"), f"{DEFINITIONS}/{RESOURCE_TYPE_DEFINITION}/pattern"),
+    )
+    stray: list[str] = [name for name in types if form.fullmatch(name) is None]
+    if stray:
+        message: str = f"matrix contract: {ONE_PER_STACK_KEY} holds {stray}, which are not resource types"
+        raise SchemaShapeError(message)
+    return types
 
 
 def _fixed_lines(schema: Mapping[str, JsonValue], registry: Mapping[str, JsonValue]) -> list[str]:
@@ -725,6 +792,7 @@ def _fixed_lines(schema: Mapping[str, JsonValue], registry: Mapping[str, JsonVal
         f"OPERATOR_ROLE: Final[Role] = ROLE_{_upper_snake(_text(registry.get(OPERATOR_KEY), OPERATOR_KEY))}",
         f"HOME_RELATIONSHIP: Final[RelationshipKind] = REL_{_upper_snake(_text(registry.get(HOME_KEY), HOME_KEY))}",
         f"STACK_KIND: Final[EntryKind] = KIND_{_upper_snake(_text(registry.get(STACK_KEY), STACK_KEY))}",
+        _members_line("ONE_PER_STACK_TYPES", frozenset(_one_per_stack(registry))),
         f"AUTHORITY_SIDE: Final[Side] = SIDE_{_upper_snake(_text(schema.get(AUTHORITY_KEY), AUTHORITY_KEY))}",
         _members_line("ENTRY_MEMBERS", SHAPES[0][1]),
         _members_line("RELATIONSHIP_MEMBERS", SHAPES[1][1]),

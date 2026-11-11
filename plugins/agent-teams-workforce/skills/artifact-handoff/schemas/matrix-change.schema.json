@@ -43,7 +43,7 @@
         "aliases": {"$ref": "#/$defs/Names", "description": "Other names the entry is known by; added to those held."},
         "removeAliases": {"$ref": "#/$defs/Names", "description": "Aliases to remove from the entry."},
         "purpose": {"type": "string", "minLength": 1, "description": "One or two sentences that identify the entry."},
-        "stack": {"$ref": "#/$defs/EntryId", "description": "The stack that holds a repository-side component, infrastructure or layer; it builds the id."},
+        "stack": {"$ref": "#/$defs/EntryId", "description": "The stack that holds the entry: it builds the id of a repository-side component, infrastructure or layer, and a new entry of a resource type a stack holds at most one of (matrix-kinds.json onePerStack) becomes the one the stack already holds, its name joining that entry's aliases."},
         "publishedBy": {"$ref": "#/$defs/EntryId", "description": "The service or component that publishes an event the architecture side records."},
         "unset": {"$ref": "#/$defs/Names", "description": "The names of the attributes to remove from the entry."},
         "attributes": {"$ref": "#/$defs/Attributes"}

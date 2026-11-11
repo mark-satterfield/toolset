@@ -38,7 +38,7 @@ import time
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, TypedDict
+from typing import TYPE_CHECKING, Final, NamedTuple, TypedDict
 
 from typeguard import CollectionCheckStrategy, typechecked
 
@@ -47,6 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifac
 from matrix_contract import (
     AUTHORITY_SIDE,
     ENTRY_RULES,
+    HOME_RELATIONSHIP,
     KIND_DISAGREEMENT,
     KIND_DOCUMENT,
     KIND_EPIC,
@@ -77,6 +78,7 @@ from matrix_contract import (
 )
 from matrixstore import (
     ATTR_EXTERNAL_SOURCE,
+    ATTR_RESOURCE_TYPE,
     DEFAULT_LOCK_WAIT,
     ID_SEPARATOR,
     Matrix,
@@ -86,6 +88,8 @@ from matrixstore import (
     id_stack,
     kind_of,
     make_id,
+    merge_homed,
+    one_per_stack,
     relationship_id,
     repository_side_id,
     require_role,
@@ -104,6 +108,8 @@ DOCUMENTING_KINDS: Final[frozenset[RelationshipKind]] = frozenset({REL_DESCRIBED
 """The relationships that say where the architecture is written, so changing one changes no entry's design."""
 STATED_ID_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_EPIC, KIND_REQUIREMENT, KIND_DOCUMENT})
 """The kinds whose id is built from something other than the name, so a new entry states its id."""
+REDIRECTED_MEMBERS: Final[frozenset[str]] = frozenset({"id", "from", "to", "publishedBy"})
+"""The members of a change-file operation that name an entry another operation may have merged away."""
 ITEM_ID: Final = "id"
 """The member that identifies one object of a list attribute, such as one thing a feature provides."""
 ATTR_REPOSITORY: Final = "repository"
@@ -438,6 +444,45 @@ def _side_kept(existing: Entry | None, side: Side, name: str, purpose: str, stat
     return existing.side
 
 
+class _Found(NamedTuple):
+    """The entry a put changes, and the name, aliases and purpose it states for it."""
+
+    key: EntryId
+    name: str | None
+    aliases: tuple[str, ...]
+    purpose: str | None
+
+
+def _found(
+    matrix: Matrix,
+    stated: _Found,
+    side: Side,
+    stack: EntryId | None,
+    attributes: Mapping[str, JsonValue],
+) -> _Found:
+    """Find the entry a put is about: the one its id names, or the one its stack already holds.
+
+    A new entry of a resource type a stack holds at most one of (``ONE_PER_STACK_TYPES``), put
+    with the stack that already holds one on its side, is that entry: its stated name joins the
+    held entry's aliases and its stated purpose only fills an empty one.
+
+    Returns:
+        What the put states, about the held entry when the stack holds one, otherwise as stated.
+
+    """
+    if stack is None or matrix.find(stated.key) is not None:
+        return stated
+    held: Entry | None = one_per_stack(matrix, stack, side, attributes.get(ATTR_RESOURCE_TYPE))
+    if held is None or held.kind != kind_of(stated.key):
+        return stated
+    return _Found(
+        held.id,
+        None,
+        (*stated.aliases, *([stated.name] if stated.name is not None else [])),
+        stated.purpose if not held.purpose.strip() else None,
+    )
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def put(  # ruff: ignore[too-many-arguments] - One keyword per member of an entry a caller may state.
     matrix: Matrix,
@@ -487,8 +532,11 @@ def put(  # ruff: ignore[too-many-arguments] - One keyword per member of an entr
         removed_aliases: Aliases the entry is no longer known by; one it does not hold changes nothing.
         purpose: One or two sentences that identify the entry.
         attributes: The attributes the kind declares, by name.
-        stack: The id of the stack that holds the entry; needed only to build the id of a
-            repository-side component, piece of infrastructure or layer. It records no home.
+        stack: The id of the stack that holds the entry; needed to build the id of a
+            repository-side component, piece of infrastructure or layer. A new entry of a resource
+            type a stack holds at most one of (``ONE_PER_STACK_TYPES``) whose stack already holds
+            one on its side is that entry: the put changes it, its stated name joins its aliases
+            and its stated purpose only fills an empty one. It records no home.
 
     Returns:
         The entry's id, whether it was created, what changed and the entry.
@@ -518,6 +566,7 @@ def put(  # ruff: ignore[too-many-arguments] - One keyword per member of an entr
     if kind_of(key) != kind:
         message = f"{key} is not the id of a {kind}"
         raise MatrixRefusedError(message)
+    key, name, aliases, purpose = _found(matrix, _Found(key, name, tuple(aliases), purpose), side, stack, stated)
     existing: Entry | None = matrix.find(key)
     base: Entry = _new_entry(matrix, key, side, name) if existing is None else existing
     named: str = name.strip() if name is not None and name.strip() else base.name
@@ -571,7 +620,10 @@ def link(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] - T
     and its side are the same: each side that states a relationship holds its own, and stating
     it for one side leaves the other side's as it is. Stating it again lays the stated attributes
     over the ones held, as :func:`put` does; a change on the architecture side clears its verified
-    flag and that of the entry it starts from, and keeps every approved flag (``Matrix.link``). A
+    flag and that of the entry it starts from, and keeps every approved flag (``Matrix.link``).
+    Homing an entry of a resource type a stack holds at most one of (``ONE_PER_STACK_TYPES``) in a
+    stack that already holds another on that side merges the entry into the held one
+    (``matrixstore.absorb``) and links the held one. A
     relationship that breaks its kind, names an entry the matrix does not
     hold or joins kinds it may not join raises ``MatrixError`` from ``Matrix.link`` and changes
     nothing; so does a second relationship, on one
@@ -589,6 +641,8 @@ def link(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] - T
         The relationship as the matrix now holds it, whether it was added and whether it changed.
 
     """
+    if kind == HOME_RELATIONSHIP:
+        start = merge_homed(matrix, start, end, side)
     wanted: Relationship = Relationship(
         kind=kind,
         start=start,
@@ -996,6 +1050,22 @@ def _apply_put(matrix: Matrix, operation: Mapping[str, JsonValue]) -> PutResult:
     return result
 
 
+def _redirected(matrix: Matrix, operation: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    """Point an operation at the entry each entry it names was merged into earlier in the same change.
+
+    Returns:
+        The operation, with each id an earlier operation merged into another entry
+        (``Matrix.absorbed``) replaced by that entry's id.
+
+    """
+    return {
+        key: matrix.absorbed.get(EntryId(value), value)
+        if key in REDIRECTED_MEMBERS and isinstance(value, str)
+        else value
+        for key, value in operation.items()
+    }
+
+
 def _apply_operation(matrix: Matrix, operation: Mapping[str, JsonValue]) -> Mapping[str, object]:
     """Apply one operation of a change file to a loaded matrix.
 
@@ -1154,7 +1224,7 @@ def apply_changes(matrix: Matrix, change_file: Path, role: Role) -> ApplyResult:
         if index in skipped:
             continue
         try:
-            results.append(_apply_operation(matrix, operation))
+            results.append(_apply_operation(matrix, _redirected(matrix, operation)))
         except (MatrixError, ValueError, TypeError) as error:
             failed.append(_failure(index, _text(operation, "op"), str(error)))
     result["failures"] = sorted(failed, key=_failure_order)
