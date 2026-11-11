@@ -894,7 +894,8 @@ def main() -> None:
     bindings: Path = Path(args.bindings) if args.bindings else Path(args.output).parent / "source-bindings.json"
     source_bytes: dict[str, str] = source_hashes(_strs(plan, "sourceFiles"))
     bound: JsonObject = {**source_bytes}
-    if args.mode == "verify" and (not bindings.is_file() or read(bindings) != bound):
+    sources_changed: bool = args.mode == "verify" and (not bindings.is_file() or read(bindings) != bound)
+    if sources_changed:
         errors.append("Requirement source bytes changed since scope approval; reassess scope before building")
     if args.mode == "validate" and not errors:
         write(bindings, bound)
@@ -902,7 +903,10 @@ def main() -> None:
     if not errors and args.mode == "verify":
         errors, evidence = execute(plan, Path(args.output).parent)
     error_values: list[JsonValue] = [*errors]
-    write(args.output, {"ok": not errors, "errors": error_values, "evidence": evidence})
+    write(
+        args.output,
+        {"ok": not errors, "errors": error_values, "evidence": evidence, "sourcesChanged": sources_changed},
+    )
     if not errors and args.mode == "verify":
         write(args.ledger, {**plan, "execution": evidence})
     required_kinds: list[JsonValue] = [
@@ -924,6 +928,7 @@ def main() -> None:
             "ledger": args.ledger,
             "requiredKinds": required_kinds,
             "reviewApproved": review_approved,
+            "sourcesChanged": sources_changed,
         },
     )
 

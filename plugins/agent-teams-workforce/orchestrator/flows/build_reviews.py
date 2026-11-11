@@ -242,6 +242,10 @@ def _review_final(run: StepRun) -> Completion:
 def _validate(run: StepRun, final: bool) -> Completion:
     """Validate or verify the exact regression schema, source seal and independent review.
 
+    A final verification that finds the requirement sources changed since the scope was approved
+    reassesses, reviews and validates the scope again before it maps and verifies the evidence:
+    remapping against a scope approved for other source bytes cannot pass.
+
     Returns:
         Required evidence, or bounded scope correction steps.
 
@@ -260,12 +264,12 @@ def _validate(run: StepRun, final: bool) -> Completion:
         return Completion(artifacts=(file_artifact("regressionEvidence" if final else "regressionScope", output),))
     key: str = "build:regression-verify" if final else "build:regression-validate"
     if _count(run, key, "regressionCorrection") >= regression_rounds():
-        raise StepError(key, OTHER_CAUSE, (str(output),))
-    keys: tuple[str, ...] = (
-        ("build:regression-remap", "build:regression-map-review", "build:regression-verify")
-        if final
-        else ("build:regression-reassess", "build:regression-review", "build:regression-validate")
-    )
+        errors: list[str] = check_type(document.get("errors", []), list[str])
+        raise StepError(key, OTHER_CAUSE, (*errors, str(output)))
+    keys: tuple[str, ...] = ("build:regression-reassess", "build:regression-review", "build:regression-validate")
+    if final:
+        remap: tuple[str, ...] = ("build:regression-remap", "build:regression-map-review", "build:regression-verify")
+        keys = (*keys, *remap) if document.get("sourcesChanged") is True else remap
     return Completion(
         artifacts=(file_artifact("regressionCorrection", output),),
         add=(StepGroup(tuple(_new(kind, "Correct the regression contract and verify its evidence") for kind in keys)),),
