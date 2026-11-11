@@ -23,7 +23,10 @@ started (``AgentRunner.resumable``, by fingerprint); otherwise the step starts a
 Steps run in walk order. Consecutive sibling steps that each have an agent, have no child steps
 and whose inputs are all done run as concurrent sessions under the dispatch's session slots. The
 child containers of a container the registry names (``Registry.children_together``) run at the
-same time, each its own steps in walk order, at most ``ATW_ORCH_SESSIONS`` of them.
+same time, each its own steps in walk order, at most ``ATW_ORCH_SESSIONS`` of them. A stale file
+found in one of them ends them all, except an open design gap: then each of them that still holds
+a step of the kind that found the gap, not yet run, runs to that step first, so every
+repository's gaps go to the solutions architect in one round.
 
 Work that already succeeded is never redone: an agent step that did not fail and whose output
 file is valid and was written since the step started is recorded from that file, and its agent is
@@ -711,6 +714,10 @@ class JournalRunner:
         """The steps planned again in this dispatch because a file they wrote was stale."""
         self.stale: list[StaleInputError] = []
         """The stale files found by the steps of the group that runs now."""
+        self.gap_steps: set[StepId] = set()
+        """The steps of the group that runs now that found an open design gap (``DesignGapError``)."""
+        self.gap_keys: set[str] = set()
+        """The script keys of those steps: a container still holding one not run runs to it."""
         self.corrected: set[Path] = set()
         """The request files whose writer's session was asked in this dispatch to correct them."""
         self._correcting: threading.Lock = threading.Lock()
@@ -806,15 +813,34 @@ class JournalRunner:
         Each round closes the finished steps inside the container, then runs its first step
         without child steps that is not done, with the steps that run together with it. A stale
         file ends the round's container at once: its writer is set back to planned after every
-        container of the group has ended (:meth:`_replan_stale`).
+        container of the group has ended (:meth:`_replan_stale`). When every stale file is an open
+        design gap, the container goes on until it has run its own step of the kind that found a
+        gap (:meth:`_before_gap_check`), so its gaps are filed in the same round.
         """
-        while not self.stale:
+        while not self.stale or self._before_gap_check(container):
             self._close_finished(within=container)
             journal: Journal = step_journal.read_journal(self.path)
             leaf: Step | None = _open_leaf(step_journal.find_step(journal, container))
             if leaf is None:
                 return
             self._run_group(journal, leaf["id"])
+
+    def _before_gap_check(self, container: StepId) -> bool:
+        """Tell whether a container goes on to its own design gap check while only design gaps are open.
+
+        Returns:
+            True when every stale file found is an open design gap (``DesignGapError``) and the
+            container holds a step that is not done, has not found a gap in this round and has the
+            script key of a step that found one (:attr:`gap_keys`).
+
+        """
+        if not all(isinstance(stale, DesignGapError) for stale in self.stale):
+            return False
+        held: Step = step_journal.find_step(step_journal.read_journal(self.path), container)
+        return any(
+            step.get("script") in self.gap_keys and step["status"] != STATUS_DONE and step["id"] not in self.gap_steps
+            for step in step_journal.steps_in_order_from(held)
+        )
 
     def _replan_stale(self) -> None:
         """Set each step that wrote a stale file, and the steps after it, back to planned.
@@ -826,6 +852,8 @@ class JournalRunner:
         """
         scopes: dict[StepId, StepId | None] = {stale.writer: stale.within for stale in self.stale}
         self.stale = []
+        self.gap_steps = set()
+        self.gap_keys = set()
         if not scopes:
             return
         self.replanned.update(scopes)
@@ -1038,8 +1066,9 @@ class JournalRunner:
 
         A stale file the step finds is kept for :meth:`_replan_stale`, and the step is not failed,
         unless the step that wrote the file was planned again in this dispatch already. An open
-        design gap (``DesignGapError``) is always kept: its own bound fails the step that reads
-        the gaps (``design_gaps.hold_open``). A
+        design gap (``DesignGapError``) is always kept, with the step and its script key, so the
+        containers running beside it run to their own gap check (:meth:`_before_gap_check`): its own
+        bound fails the step that reads the gaps (``design_gaps.hold_open``). A
         malformed request the step finds is corrected by its writer's session
         (:meth:`_correct_request`), and the step is not failed, unless that request was corrected
         in this dispatch already.
@@ -1058,6 +1087,9 @@ class JournalRunner:
         try:
             self._perform(journal, step)
         except StaleInputError as stale:
+            if isinstance(stale, DesignGapError):
+                self.gap_steps.add(step_id)
+                self.gap_keys.update([step["script"]] if "script" in step else [])
             if stale.writer not in self.replanned or isinstance(stale, DesignGapError):
                 self.stale.append(stale)
                 return

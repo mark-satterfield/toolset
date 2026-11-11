@@ -588,7 +588,8 @@ Notes on the diagram:
   the step after the review (`orchestrator/flows/design_gaps.py`): no Story is written and no Task
   decomposed from it. That step sets the solutions architect's last result step and every step
   after it back to planned (the journal's `DesignGapError`, a `StaleInputError` it sets back
-  however often it was set back in the dispatch), the architect is handed each repository's gaps
+  however often it was set back in the dispatch); the repositories' containers running beside it
+  first go on to their own gap check, so the architect is handed every repository's gaps
   and designs what fills them, the architecture maintainer writes the decisions into the
   documents, and the promotion and every spec run again from the settled design. Each accepted
   answer counts one answer for each repository it was handed; a repository whose documents still

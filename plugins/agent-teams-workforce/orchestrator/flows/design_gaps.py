@@ -7,8 +7,10 @@ decomposed from a document that holds an open gap. The step after the review
 (``spec_authoring.story_document``) reads every row (:func:`open_gaps`); when one is left it files
 the repository's gaps under the architecture work folder (:func:`file_gaps`) and sets the
 solutions architect's last result step and every step after it back to planned
-(``DesignGapError``, the journal runner's way back to an earlier step): the architect's next
-session is handed every repository's open gaps (:func:`handed`) and designs what fills them, the
+(``DesignGapError``, the journal runner's way back to an earlier step). The repositories'
+containers running at the same time each go on to their own gap check before the runner sets the
+architect's step back, so the architect's next session is handed every repository's open gaps
+(:func:`handed`) and designs what fills them, the
 architecture maintainer writes the decisions into the documents, which are promoted, and the specs
 are written again against the settled design. The architect's accepted result moves the gaps it
 was handed to the settled folder and counts one answer for each repository (:func:`settle`).

@@ -93,7 +93,10 @@ to its author and leaving a real gap for the step below. Step 9 reads every row
 Story and Tasks: the step files the repository's gaps at `<arch-work>/design-gaps/open/<slug>.json`
 and raises `DesignGapError` (a `StaleInputError`) naming the solutions architect's step that last
 recorded the architecture result, so that step and every step after it are set back to planned,
-however often that step was set back in the dispatch already. The architect's
+however often that step was set back in the dispatch already. The other repositories' containers
+running at the same time are not stopped at once: each that still holds its own step 9 not run
+goes on to it, so its gaps are filed too, and the architect's step is set back once, after every
+container has ended (`journal_run.JournalRunner._before_gap_check`). The architect's
 next session is handed every repository's file as `design gaps` and designs what fills each gap;
 its accepted result (with no further round) moves the files to
 `<arch-work>/design-gaps/settled/<step>/` and counts one answer for each of those repositories in

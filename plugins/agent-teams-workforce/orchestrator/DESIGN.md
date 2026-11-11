@@ -200,7 +200,9 @@ error for an open design gap a spec document records (`design_gaps.hold_open`), 
 solutions architect's last result step as the writer, so the architect settles the gap and every
 later step runs again from the settled design; it is `DesignGapError`, whose writer is set back
 however often it was set back in the dispatch, because the step bounds its rounds itself: a
-repository whose gaps survive two answers of the architect fails it. When the same writer of any
+repository whose gaps survive two answers of the architect fails it. The repositories' containers
+running beside the one that found a gap each go on to their own gap check before they stop, so
+every repository's gaps reach the architect in one round. When the same writer of any
 other stale file is named twice in one dispatch, the step fails; when that writer is a script step, its code wrote the file to a
 contract other than its readers', and the failure is `PipelineDefectError`. A file a step reads
 that is missing, is not JSON or is refused by its contract is the item's failure; a contract whose
