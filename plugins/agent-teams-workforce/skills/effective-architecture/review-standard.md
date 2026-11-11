@@ -139,5 +139,5 @@ I6. Each contract this repository shares with another repository (a route it exp
     target, and a routing rule's spec names the event types it matches.
 I7. A Task can name the repository, stack, handler, table, route, event and the shared
     capabilities it must use without inventing a design, and every acceptance criterion and
-    Definition of Done statement it cites is proved by a test or check the build runs, never
-    by a person performing, observing, reviewing, approving or recording anything.
+    Definition of Done statement it cites is one the `acceptance-criteria` skill's "Only
+    what an easy automated check proves" admits.

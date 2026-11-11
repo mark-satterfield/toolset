@@ -35,7 +35,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 - **Outputs Produced:** The Definition of Done (verifiable statements, each traced to the requirement or decision it comes from) at the path the caller names, and, when answering findings, what changed for each.
 - **Escalation Triggers:** A completion condition cannot be stated verifiably within the decided design; requirements imply contradictory completion conditions; the task would require work in another category. Say so in your result.
 - **Acceptance Criteria:** Every statement is declarative and verifiable by an independent agent; no statement is a checklist item, a process instruction or a vague qualifier; the statements together cover the scope.
-- **Anti-Goals:** Checklist-style entries ("write tests", "update docs"); statements requiring subjective judgment ("code is clean"); statements a person must perform, review, sign off or record ("Verified by the build, never by a person" in the `acceptance-criteria` skill); duplicating acceptance criteria verbatim instead of defining completion; inventing completion conditions with no upstream source.
+- **Anti-Goals:** Checklist-style entries ("write tests", "update docs"); statements requiring subjective judgment ("code is clean"); statements no easy automated check proves ("Only what an easy automated check proves" in the `acceptance-criteria` skill); duplicating acceptance criteria verbatim instead of defining completion; inventing completion conditions with no upstream source.
 
 ## Operating Rules
 

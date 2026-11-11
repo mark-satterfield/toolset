@@ -1,6 +1,6 @@
 ---
 name: acceptance-criteria
-description: How to write acceptance criteria and Definition of Done statements a test can be derived from without interpretation, and how to judge them - one observable outcome per criterion, every item verified by an automated test or check the build runs and never by a person, concrete inputs and values, Given/When/Then or a boolean assertion, the boundary and failure cases each requirement needs, criteria of one requirement that cannot contradict each other, measurable non-functional criteria, Definition of Done as true-or-false statements about the finished work, and the falsifiability test a reviewer applies. Use when writing, revising or reviewing acceptance criteria or a Definition of Done, in a PRD or in a specification's criteria document.
+description: How to write acceptance criteria and Definition of Done statements a test can be derived from without interpretation, and how to judge them - one observable outcome per criterion, every item proved by a straightforward automated test or check the build runs, with checks that need a person's judgment, a real-world condition or special infrastructure left out, concrete inputs and values, Given/When/Then or a boolean assertion, the boundary and failure cases each requirement needs, criteria of one requirement that cannot contradict each other, measurable non-functional criteria, Definition of Done as true-or-false statements about the finished work, and the falsifiability test a reviewer applies. Use when writing, revising or reviewing acceptance criteria or a Definition of Done, in a PRD or in a specification's criteria document.
 user-invocable: false
 ---
 
@@ -63,36 +63,58 @@ document's structure".
   stage"). Without them it is a quality intent, not a criterion.
 - **Assigned when a unit test cannot check it.** A criterion only an integration, end-to-end,
   load, deployed smoke or synthesis assertion test can check names that test; it is not dropped
-  for being hard to unit test, and it is never assigned to a person (below).
+  for being hard to unit test, and it is never assigned to a person ("Only what an easy automated
+  check proves", below).
 
-## Verified by the build, never by a person
+## Only what an easy automated check proves
 
-**Every acceptance criterion and every Definition of Done statement is proved true or false by an
-automated test or an automated check the build runs. No criterion and no Definition of Done
-statement may require a person to perform, observe, review, approve, sign off or record
-anything.** The pipeline asks the owner for nothing, so an item that needs a person makes its
-Task's build fail or leaves it carrying a finding nobody can close.
+**A build Task's criteria document holds only items that a straightforward, standard automated
+test or check the build runs proves true or false.** No acceptance criterion and no Definition of
+Done statement may require a person to perform, observe, review, approve, sign off or record
+anything. The pipeline asks the owner for nothing, so an item that needs a person makes its Task's
+build fail or leaves it carrying a finding nobody can close.
 
-The tests and checks the build runs are: unit, contract, integration and end-to-end tests;
-CDK synthesis assertion tests; axe-core scans and accessibility-tree assertions; the `cds`
-design-system audit; smoke tests against the deployed stack; and a scripted cost estimate
-compared with a stated ceiling. An item names the one that proves it when a unit test cannot.
+The tests and checks that prove an item are:
 
-When the requirement behind an item seems to need a person, write the automated check that
-proves the same requirement instead:
+- a unit, contract, integration or end-to-end test assertion;
+- a CDK synthesis assertion test on the template;
+- a smoke test against the deployed stack;
+- an assertion that a text equals its catalogue entry or the template the sources define;
+- the `cds` design-system audit of the changed UI with zero violations;
+- an axe-core scan with zero violations, where the requirement itself is "no WCAG 2.2 A or AA
+  violations the scanner finds";
+- a scripted cost estimate at the stated usage compared with a stated ceiling.
+
+An item names the one that proves it when a unit test cannot.
+
+**Worded as a person's task, proved by an easy check.** Some items are worded as something a
+person does, but an easy automated check proves exactly the same fact. Rewrite each as that check:
 
 | What the item asked a person to do | The item the build verifies instead |
 |---|---|
-| Use a screen reader (VoiceOver, TalkBack, NVDA), or walk a screen by keyboard | An accessibility-tree assertion on the rendered component (name, role, state, reading order, live-region politeness, focus after the action) and an axe-core scan with zero WCAG 2.2 A and AA violations; keyboard operation as an end-to-end test that drives the keys and asserts focus |
-| Inspect the synthesised stack | A CDK synthesis assertion test on the template (resource, property, policy statement, absence of a resource) |
+| Inspect the synthesised stack for a resource, property or policy | A CDK synthesis assertion test on the template (the resource, the property, the policy statement, or the absence of a resource) |
 | Inspect or try the deployed stack | A smoke or integration test against the deployed stack that asserts the observable result |
-| Review a screen against its design source | The `cds` design-system audit of the changed UI with zero violations, and a rendered-state test for each state the contracts list |
-| Review cost or billing | A scripted cost estimate at the stated usage whose total is at or below the stated ceiling |
-| Sign off, approve, or record a result, an outcome or a review | A true-or-false statement about the finished work that a named test or check proves |
-| Read copy or a message for tone or plain language | An assertion that the text equals the catalogue entry or template the sources define, or a check of the rule the sources state (for example, no status code in the text) |
+| Operate a screen by keyboard | An end-to-end test that drives the keys and asserts focus and the outcome |
+| Check that a message is the defined text | An assertion that the text equals the catalogue entry or template the sources define, or a check of a mechanical rule the sources state (for example, no status code in the text) |
+| Compare cost at the stated usage with a ceiling | A scripted cost estimate at the stated usage whose total is at or below the stated ceiling |
 
-A requirement that no automated test or check can prove at all is a gap in its source, not a
-criterion: report it to the caller and write no item for it.
+**Left out of the build criteria.** A check that needs a person's judgment or a real-world
+condition is not build work, and neither is a check that could only be automated with special
+infrastructure, emulation or an elaborate harness. Write no item for it: it is left out of the
+criteria document. Do not replace it with an automated stand-in that proves something weaker, and
+do not record it as a design gap, a blocker or a finding. Such checks include:
+
+- sign-off, approval, or recording a result, an outcome or a review;
+- review of tone or copy that is a matter of judgment;
+- design review beyond the `cds` audit;
+- the experience of using a real screen reader (VoiceOver, TalkBack, NVDA);
+- real devices and platform authenticators;
+- outcomes measured after release;
+- cost review beyond a scripted estimate.
+
+Wording that mentions a person only as a product feature ("a manual edit", "written by hand", a
+human-in-the-loop confirmation the product offers) is a requirement like any other and is
+unaffected.
 
 ## A criteria document's structure
 
@@ -111,8 +133,9 @@ A specification's criteria document (`spec-<slug>.criteria.md`) is checked by
    that does not open with `Given` (a boolean assertion) needs neither.
 5. **No item names a person's part in verifying it.** Wording such as "(human)", "human test",
    "human review", "manual test", "VoiceOver", "TalkBack", "sign-off" or "by a person" fails the
-   item, as "Verified by the build, never by a person" above states. The list is narrow, so
-   product wording ("a manual edit", "written by hand") passes; a reviewer judges the rest.
+   item; its correction is set out under "Only what an easy automated check proves" above. The
+   list is narrow, so product wording ("a manual edit", "written by hand") passes; a reviewer
+   judges the rest.
 
 Each problem the check reports names the lines of the item, its id and what it lacks.
 
@@ -131,8 +154,9 @@ about the finished work that the test proves.
 Apply the falsifiability test to each criterion on its own: could a test author build a failing
 and a passing case from this text alone? A criterion fails, with the reason, when it is
 untestable (no observable outcome, a judgement word, a value nobody defines), person-verified
-(a person must perform, observe, review, approve, sign off or record anything to show it true;
-replace it as the table under "Verified by the build, never by a person" says), incomplete (a
-boundary or failure case the sources define has no criterion) or ambiguous (two incompatible
-readings, or a conflict with a sibling criterion). A set passes only when every criterion was
+(a person must perform, observe, review, approve, sign off or record anything to show it true,
+or the item is a stand-in of the kind "Left out of the build criteria" rules out; correct it as
+"Only what an easy automated check proves" says), incomplete (a boundary or failure case the
+sources define has no criterion; a check the "Left out of the build criteria" list names is not a
+missing case) or ambiguous (two incompatible readings, or a conflict with a sibling criterion). A set passes only when every criterion was
 judged individually. Wording that does not affect testability is not a finding.

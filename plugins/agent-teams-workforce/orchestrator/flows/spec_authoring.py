@@ -271,7 +271,7 @@ _PERSON_PERFORMED: Final[re.Pattern[str]] = re.compile(
     r"|\breviewed by (?:a |the )(?:person|human|designer|reviewer)\b",
     re.IGNORECASE,
 )
-"""Wording that gives a person a part in verifying an item, which the ``acceptance-criteria`` skill forbids.
+"""Wording that gives a person a part in verifying an item, which the ``acceptance-criteria`` skill leaves out.
 
 The list is deliberately narrow, so product wording ("a manual edit", "written by hand", "a
 human-in-the-loop confirmation") passes; ``spec-reviewer`` judges what the list does not name.
@@ -371,8 +371,8 @@ def criteria_document(path: Path) -> None:
         if person is not None:
             problems.append(
                 f"{item.where()}: {item.id} gives a person a part in verifying it ({person.group(0)!r}); "
-                "rewrite it so a test or check the build runs proves it, as the acceptance-criteria skill's "
-                '"Verified by the build, never by a person" states',
+                "remove the item, or replace it only with an easy automated check that proves exactly the "
+                'same fact, as the acceptance-criteria skill\'s "Only what an easy automated check proves" states',
             )
     for prefix, what in ((CRITERION_PREFIX, "acceptance criterion"), (DONE_PREFIX, "Definition of Done statement")):
         if not any(criterion.startswith(f"{prefix}-") for criterion in seen):
