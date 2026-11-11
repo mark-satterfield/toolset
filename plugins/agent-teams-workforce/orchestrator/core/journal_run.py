@@ -640,6 +640,57 @@ def replan_unhandled(journal: Journal, plans: Sequence[StepPlan], registry: Regi
     return [step["id"] for step, _ in usable]
 
 
+def _shape(steps: Sequence[Step | StepPlan]) -> list[tuple[str | None, str]]:
+    """Name the script key or agent and the description of each of some steps or plans, in order.
+
+    Returns:
+        One pair per step or plan.
+
+    """
+    return [(step.get("script") or step.get("agent"), step["description"]) for step in steps]
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def replan_retired(journal: Journal, registry: Registry) -> list[StepId]:
+    """Plan again each container's child steps that a filling step planned under a plan since retired.
+
+    A container the lane fills while it runs holds the child steps a filling step planned
+    (``journal_registry.fills``), each recorded on that step (``step_journal.planned_by``). When
+    none of those child steps has started and their script keys or agents and descriptions are
+    not those of the plans the lane registers for the container now
+    (``journal_registry.plan_under``), the filling step is set back to planned and the child steps
+    it planned are removed (``step_journal.replan_step``), so it plans them again as the lane plans
+    them now. No other step changes: a step that has started is never removed.
+
+    Args:
+        journal: The journal; changed in place.
+        registry: The plans flows register under containers and the steps that fill them.
+
+    Returns:
+        The ids of the filling steps set back to planned, in walk order.
+
+    """
+    stale: list[StepId] = []
+    container: Step
+    for container in step_journal.steps_in_order(journal):
+        plans: tuple[StepPlan, ...] = registry.plans_under(container["description"])
+        children: dict[StepId, Step] = {child["id"]: child for child in container["steps"]}
+        if not plans or not children:
+            continue
+        filler: Step
+        for filler in step_journal.steps_in_order(journal):
+            if not registry.fills_container(filler, container["description"]):
+                continue
+            group: list[Step] = [children[key] for key in step_journal.planned_by(filler) if key in children]
+            if group and all(step["status"] == STATUS_PLANNED for step in group) and _shape(group) != _shape(plans):
+                stale.append(filler["id"])
+    moment: str = step_journal.timestamp()
+    planner: StepId
+    for planner in stale:
+        step_journal.replan_step(journal, planner, moment)
+    return stale
+
+
 class JournalRunner:
     """Runs the steps of one bead's journal, in order, from the first that is not done."""
 
@@ -1365,10 +1416,13 @@ def open_journal(  # ruff: ignore[too-many-arguments, too-many-positional-argume
 ) -> JournalRunner:
     """Create a bead's journal when its file does not exist, and return the runner for it.
 
-    An existing journal alone says where the run begins. Of its steps, only a step that has not
-    started and names a script key or agent the registry holds no code for is changed: it is
-    replanned from the lane's current plan for its position (:func:`replan_unhandled`), so a
-    journal written before a key was renamed runs the step as the lane plans it now. A journal
+    An existing journal alone says where the run begins. Of its steps, only steps that have not
+    started are changed. Child steps a filling step planned under a container, none started, that
+    differ from the plans the lane registers for the container now are removed and their filling
+    step is set back to planned, so it plans them again (:func:`replan_retired`). Then a step that
+    names a script key or agent the registry holds no code for is replanned from the lane's
+    current plan for its position (:func:`replan_unhandled`), so a journal written before a key
+    was renamed runs the step as the lane plans it now. A journal
     that cannot be created, read or validated raises ``StepJournalError``.
 
     Args:
@@ -1389,6 +1443,8 @@ def open_journal(  # ruff: ignore[too-many-arguments, too-many-positional-argume
     if not path.is_file():
         step_journal.create_journal(path, step_journal.new_journal(bead, bead_type, pipeline, plans))
         return JournalRunner(path, agents, tools, registry)
+    if replan_retired(step_journal.read_journal(path), registry):
+        step_journal.update_journal(path, lambda journal: replan_retired(journal, registry))
     if replan_unhandled(step_journal.read_journal(path), plans, registry):
         step_journal.update_journal(path, lambda journal: replan_unhandled(journal, plans, registry))
     return JournalRunner(path, agents, tools, registry)

@@ -1012,7 +1012,8 @@ def planned_for_name(step_id: StepId) -> str:
     return f"{PLANNED_FOR_PREFIX}{step_id}"
 
 
-def _planned_by(step: Step) -> list[StepId]:
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def planned_by(step: Step) -> list[StepId]:
     """List the steps a step's artifacts record as planned by its result.
 
     Returns:
@@ -1047,7 +1048,7 @@ def _remove_steps(steps: list[Step], gone: set[StepId], removed: list[StepId]) -
 
 def _reset(step: Step, reset: list[StepId], removed: list[StepId], planned: list[StepId]) -> None:
     """Set a step back to planned; drop the child steps of a performed step, reset the others."""
-    planned.extend(_planned_by(step))
+    planned.extend(planned_by(step))
     step["status"] = STATUS_PLANNED
     step.pop("started", None)
     step.pop("finished", None)
@@ -1058,7 +1059,7 @@ def _reset(step: Step, reset: list[StepId], removed: list[StepId], planned: list
     if _performs(step):
         below: Step
         for below in _walk(step["steps"]):
-            planned.extend(_planned_by(below))
+            planned.extend(planned_by(below))
             removed.append(below["id"])
         step["steps"] = []
         return
@@ -1130,6 +1131,82 @@ def invalidate_from(journal: Journal, step_id: StepId, moment: str, within: Step
     planned: list[StepId] = []
     scope: Sequence[Step] = journal["steps"] if within is None else find_step(journal, within)["steps"]
     _invalidate(scope, step_id, reset, removed, planned)
+    return _invalidated(journal, moment, reset, removed, planned)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def replan_step(journal: Journal, step_id: StepId, moment: str) -> Invalidation:
+    """Set one step back to planned and remove the steps its result planned, and nothing else.
+
+    The step is reset as :func:`invalidate_from` resets it, and every step its result planned
+    (its artifacts named as :func:`planned_for_name` names them) is removed with the steps below
+    it, so the step plans them again when it runs again. Every other step keeps its state. A step
+    that is not in the journal raises ``StepRefusedError`` from :func:`find_step`.
+
+    Args:
+        journal: The journal; changed in place.
+        step_id: The step to run again.
+        moment: The present date-time, as :func:`timestamp` gives it.
+
+    Returns:
+        The ids reset, the ids removed, and the ids of the steps whose inputs lost a removed id.
+
+    """
+    reset: list[StepId] = []
+    removed: list[StepId] = []
+    planned: list[StepId] = []
+    _reset(find_step(journal, step_id), reset, removed, planned)
+    return _invalidated(journal, moment, reset, removed, planned)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def restart_point(journal: Journal, step_id: StepId) -> StepId:
+    """Name the step a run must begin at to run a step again with its child steps planned anew.
+
+    A container whose child steps a step beside it planned (its sibling, which did not plan the
+    container itself) keeps those steps when it is reset, so a plan that has since changed would
+    stay. Beginning at the planning step instead removes them, and it plans them again as the
+    lane plans them now. A planning step deeper in another container is not taken: it planned
+    one container among several, and beginning there would also start its other work again.
+
+    Args:
+        journal: The journal.
+        step_id: The step named as the start.
+
+    Returns:
+        The planning step for such a container; otherwise ``step_id``.
+
+    """
+    named: Step = find_step(journal, step_id)
+    parent: Step | None = parent_step(journal, step_id)
+    siblings: list[Step] = journal["steps"] if parent is None else parent["steps"]
+    children: set[StepId] = {child["id"] for child in named["steps"]}
+    if _performs(named) or not children:
+        return step_id
+    planner: Step | None = next(
+        (
+            sibling
+            for sibling in siblings
+            if sibling["id"] != step_id and children & set(planned_by(sibling)) and step_id not in planned_by(sibling)
+        ),
+        None,
+    )
+    return step_id if planner is None else planner["id"]
+
+
+def _invalidated(
+    journal: Journal,
+    moment: str,
+    reset: list[StepId],
+    removed: list[StepId],
+    planned: list[StepId],
+) -> Invalidation:
+    """Remove the planned steps of the reset steps, prune the inputs that named them and settle the journal.
+
+    Returns:
+        The ids reset and not removed, the ids removed, and the ids whose inputs lost a removed id.
+
+    """
     _remove_steps(journal["steps"], set(planned), removed)
     gone: set[StepId] = set(removed)
     reset = [held for held in reset if held not in gone]

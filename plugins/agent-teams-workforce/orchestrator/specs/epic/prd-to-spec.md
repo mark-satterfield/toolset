@@ -31,7 +31,10 @@ any step fails.
 
 An earlier start happens when the owner asks for it: `atw-step-journal invalidate` sets the
 named step and every step after it back to planned, and removes the steps those steps planned. The
-driver's `elabmark.py --bead <id> --start-at <step>` does the same through its `journalstart.py`.
+driver's `elabmark.py --bead <id> --start-at <step>` does the same through its `journalstart.py`;
+a start it is given at a container whose child steps the step beside it planned (Architecture,
+whose steps the open-run step plans) begins at that planning step instead
+(`step_journal.restart_point`), so the steps are planned again as the lane plans them now.
 The next dispatch runs from that step.
 
 The runner makes an earlier start of its own in one case: a step reads a file an earlier step

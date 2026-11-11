@@ -81,7 +81,7 @@ flowchart TD
     ok -->|"no: each problem goes back to the architect as a correction"| detailed
     ok -->|"yes"| trdUpdate["TRD architecture update: one trd-author session adds what the PRD implies and applies the architect's TRD changes - section 4"]
     trdUpdate --> writes["The documents this Epic's maintainers wrote set effective. The architecture of the Epic's reach in the corrected matrix set approved, verified stays false"]
-    writes --> impact["Impact: architecture-impact-analyst rules on every Epic and open Task the promoted views reach. Each other Epic elaborated but unbuilt starts again from its Architecture step; a built item gets a proposed knock-on Task"]
+    writes --> impact["Impact: architecture-impact-analyst rules on every Epic and open Task the promoted views reach. Each other Epic elaborated but unbuilt starts again from the step that plans its Architecture steps; a built item gets a proposed knock-on Task"]
     impact --> archChange{"Did the Epic need an architecture change?"}
     archChange -->|"yes"| spec["Specs written from what is not yet verified - section 6"]
     archChange -->|"no: for example a wording change on a web page"| specNo["A spec with instructions for the change - section 6"]
@@ -138,7 +138,7 @@ Notes on the diagram:
 - After the promotion, `architecture-impact-analyst` rules on every Epic and open Task the
   promoted views reach (`atw-matrix impact`, `affected`), and the step after it
   (`orchestrator/flows/architecture_impact.py`) starts each other Epic it rules elaborated but
-  unbuilt again from its Architecture step, through the driver's `reelaborate.restart`: the one
+  unbuilt again from the step that plans its Architecture steps, through the driver's `reelaborate.restart`: the one
   case in which the pipeline itself makes a run begin earlier. The driver checks the ruling again
   against the tracker, starts again the journals of the Epic's Stories and Tasks a build or deploy
   worked on, and sets the Epic ready with the cause `architecture-changed`; its re-elaboration
