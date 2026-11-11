@@ -257,6 +257,25 @@ _HEADING: Final[re.Pattern[str]] = re.compile(r"^\s{0,3}#{1,6}(?:\s|$)")
 _OPENS_WITH_GIVEN: Final[re.Pattern[str]] = re.compile(r"^[*_`\s]*given\b", re.IGNORECASE)
 _KEYWORDS: Final[tuple[str, ...]] = ("When", "Then")
 """The keywords a criterion that opens with ``Given`` also states, in any letter case."""
+_PERSON_PERFORMED: Final[re.Pattern[str]] = re.compile(
+    r"\(\s*human\b(?!-in-the-loop)"
+    r"|\bhuman[- ](?:test|tests|tested|testing|review|reviews|reviewed|reviewer|check|checks|checked|checking"
+    r"|verified|verification|tester|accessibility|visual|design|sign-?off)"
+    r"|\bhuman (?:or|and) (?:integration|browser|gate|device|e2e|end-to-end|automated)\b|\bhuman/"
+    r"|\bby (?:a |the )?(?:human|person)\b"
+    r"|\bmanual(?:ly)?[- ](?:test|tests|tested|testing|check|checks|checked|review|reviewed|verification|verified"
+    r"|inspection|inspected)"
+    r"|\bvoiceover\b|\btalkback\b"
+    r"|\bsign(?:ed)?[- ]?off\b"
+    r"|\b(?:a|the) (?:person|human) (?:reviews|reviewer|checks|inspects|confirms|tabs|compares)\b"
+    r"|\breviewed by (?:a |the )(?:person|human|designer|reviewer)\b",
+    re.IGNORECASE,
+)
+"""Wording that gives a person a part in verifying an item, which the ``acceptance-criteria`` skill forbids.
+
+The list is deliberately narrow, so product wording ("a manual edit", "written by hand", "a
+human-in-the-loop confirmation") passes; ``spec-reviewer`` judges what the list does not name.
+"""
 
 
 @dataclass(frozen=True)
@@ -323,9 +342,10 @@ def criteria_document(path: Path) -> None:
     document's structure": each acceptance criterion is a list item that opens with its id,
     ``AC-<n>``, and each Definition of Done statement one that opens with ``DOD-<n>``; an item runs
     up to the next such list item or heading, so a statement may wrap over several lines. The
-    document holds at least one of each, every id once, every id followed by its statement, and a
+    document holds at least one of each, every id once, every id followed by its statement, a
     criterion whose statement opens with ``Given`` also states ``When`` and ``Then``, in any
-    letter case.
+    letter case, and no item uses wording that gives a person a part in verifying it
+    (``_PERSON_PERFORMED``).
 
     Raises:
         ValueError: Every structural problem the document has, one per line.
@@ -346,6 +366,13 @@ def criteria_document(path: Path) -> None:
             problems.append(
                 f"{item.where()}: {item.id} opens with Given but states no {' and no '.join(missing)}; "
                 f"add the {' and the '.join(missing)} clause to the item",
+            )
+        person: re.Match[str] | None = _PERSON_PERFORMED.search(item.text)
+        if person is not None:
+            problems.append(
+                f"{item.where()}: {item.id} gives a person a part in verifying it ({person.group(0)!r}); "
+                "rewrite it so a test or check the build runs proves it, as the acceptance-criteria skill's "
+                '"Verified by the build, never by a person" states',
             )
     for prefix, what in ((CRITERION_PREFIX, "acceptance criterion"), (DONE_PREFIX, "Definition of Done statement")):
         if not any(criterion.startswith(f"{prefix}-") for criterion in seen):

@@ -1205,7 +1205,8 @@
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:effective-architecture"
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:acceptance-criteria"
       ],
       "mcpServers": []
     },
@@ -2975,6 +2976,7 @@
         "agent-teams-workforce:api-design-reviewer",
         "agent-teams-workforce:artifact-handoff",
         "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:acceptance-criteria",
         "agent-teams-workforce:dynamodb",
         "agent-teams-workforce:aurora-postgresql",
         "agent-teams-workforce:design-postgres-tables",

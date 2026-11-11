@@ -1,6 +1,6 @@
 ---
 name: acceptance-criteria
-description: How to write acceptance criteria and Definition of Done statements a test can be derived from without interpretation, and how to judge them - one observable outcome per criterion, concrete inputs and values, Given/When/Then or a boolean assertion, the boundary and failure cases each requirement needs, criteria of one requirement that cannot contradict each other, measurable non-functional criteria, Definition of Done as true-or-false statements about the finished work, and the falsifiability test a reviewer applies. Use when writing, revising or reviewing acceptance criteria or a Definition of Done, in a PRD or in a specification's criteria document.
+description: How to write acceptance criteria and Definition of Done statements a test can be derived from without interpretation, and how to judge them - one observable outcome per criterion, every item verified by an automated test or check the build runs and never by a person, concrete inputs and values, Given/When/Then or a boolean assertion, the boundary and failure cases each requirement needs, criteria of one requirement that cannot contradict each other, measurable non-functional criteria, Definition of Done as true-or-false statements about the finished work, and the falsifiability test a reviewer applies. Use when writing, revising or reviewing acceptance criteria or a Definition of Done, in a PRD or in a specification's criteria document.
 user-invocable: false
 ---
 
@@ -62,7 +62,37 @@ document's structure".
   measured ("p95 latency under 300 ms at 50 requests per second, measured at the API Gateway
   stage"). Without them it is a quality intent, not a criterion.
 - **Assigned when a unit test cannot check it.** A criterion only an integration, end-to-end,
-  load or human test can check says so; it is not dropped for being hard to unit test.
+  load, deployed smoke or synthesis assertion test can check names that test; it is not dropped
+  for being hard to unit test, and it is never assigned to a person (below).
+
+## Verified by the build, never by a person
+
+**Every acceptance criterion and every Definition of Done statement is proved true or false by an
+automated test or an automated check the build runs. No criterion and no Definition of Done
+statement may require a person to perform, observe, review, approve, sign off or record
+anything.** The pipeline asks the owner for nothing, so an item that needs a person makes its
+Task's build fail or leaves it carrying a finding nobody can close.
+
+The tests and checks the build runs are: unit, contract, integration and end-to-end tests;
+CDK synthesis assertion tests; axe-core scans and accessibility-tree assertions; the `cds`
+design-system audit; smoke tests against the deployed stack; and a scripted cost estimate
+compared with a stated ceiling. An item names the one that proves it when a unit test cannot.
+
+When the requirement behind an item seems to need a person, write the automated check that
+proves the same requirement instead:
+
+| What the item asked a person to do | The item the build verifies instead |
+|---|---|
+| Use a screen reader (VoiceOver, TalkBack, NVDA), or walk a screen by keyboard | An accessibility-tree assertion on the rendered component (name, role, state, reading order, live-region politeness, focus after the action) and an axe-core scan with zero WCAG 2.2 A and AA violations; keyboard operation as an end-to-end test that drives the keys and asserts focus |
+| Inspect the synthesised stack | A CDK synthesis assertion test on the template (resource, property, policy statement, absence of a resource) |
+| Inspect or try the deployed stack | A smoke or integration test against the deployed stack that asserts the observable result |
+| Review a screen against its design source | The `cds` design-system audit of the changed UI with zero violations, and a rendered-state test for each state the contracts list |
+| Review cost or billing | A scripted cost estimate at the stated usage whose total is at or below the stated ceiling |
+| Sign off, approve, or record a result, an outcome or a review | A true-or-false statement about the finished work that a named test or check proves |
+| Read copy or a message for tone or plain language | An assertion that the text equals the catalogue entry or template the sources define, or a check of the rule the sources state (for example, no status code in the text) |
+
+A requirement that no automated test or check can prove at all is a gap in its source, not a
+criterion: report it to the caller and write no item for it.
 
 ## A criteria document's structure
 
@@ -79,6 +109,10 @@ A specification's criteria document (`spec-<slug>.criteria.md`) is checked by
 4. **A criterion that opens with `Given` states its `When` and `Then`.** The keywords are matched
    as words anywhere in the whole item, wrapped lines included, in any letter case. A criterion
    that does not open with `Given` (a boolean assertion) needs neither.
+5. **No item names a person's part in verifying it.** Wording such as "(human)", "human test",
+   "human review", "manual test", "VoiceOver", "TalkBack", "sign-off" or "by a person" fails the
+   item, as "Verified by the build, never by a person" above states. The list is narrow, so
+   product wording ("a manual edit", "written by hand") passes; a reviewer judges the rest.
 
 Each problem the check reports names the lines of the item, its id and what it lacks.
 
@@ -87,13 +121,18 @@ Each problem the check reports names the lines of the item, its id and what it l
 A Definition of Done statement is a true-or-false statement about the finished work ("Every route
 in the API specification returns the error body the error contract defines"), never a checklist
 step ("Write the error handling") and never a process activity ("Code reviewed"). Each one is
-independently verifiable and traces to the requirement or design decision it comes from.
+independently verifiable by a test or check the build runs, and traces to the requirement or
+design decision it comes from. A statement that a result, review or test outcome "is recorded",
+or that an item "is assigned to" a kind of testing, is a process activity: state instead the fact
+about the finished work that the test proves.
 
 ## Reviewing criteria
 
 Apply the falsifiability test to each criterion on its own: could a test author build a failing
 and a passing case from this text alone? A criterion fails, with the reason, when it is
-untestable (no observable outcome, a judgement word, a value nobody defines), incomplete (a
+untestable (no observable outcome, a judgement word, a value nobody defines), person-verified
+(a person must perform, observe, review, approve, sign off or record anything to show it true;
+replace it as the table under "Verified by the build, never by a person" says), incomplete (a
 boundary or failure case the sources define has no criterion) or ambiguous (two incompatible
 readings, or a conflict with a sibling criterion). A set passes only when every criterion was
 judged individually. Wording that does not affect testability is not a finding.

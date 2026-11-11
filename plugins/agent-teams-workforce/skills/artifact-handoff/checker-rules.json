@@ -432,6 +432,15 @@
           ]
         },
         {
+          "id": "criteria-not-person-verified",
+          "enforced": "gives a person a part in verifying it",
+          "home": "skills/acceptance-criteria/SKILL.md",
+          "stated": "No item names a person's part in verifying it",
+          "agents": [
+            "api-specification-author"
+          ]
+        },
+        {
           "id": "criteria-structure",
           "enforced": "is not structured as Tasks cite it",
           "home": "skills/acceptance-criteria/SKILL.md",

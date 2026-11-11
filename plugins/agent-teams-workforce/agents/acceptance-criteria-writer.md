@@ -46,7 +46,7 @@ repository context's `documents` names only when a criterion turns on it, with
 `atw-matrix heading '<path>#<heading>' ...`. Cover required behavior and failure/boundary cases without inventing scope or
 architecture. Preserve any test strategy the sources state, in the shape of the testStrategy
 property (`properties.testStrategy`) in the artifact-handoff skill's `schemas/tasks.schema.json`;
-do not invent values the sources do not state. Requirements not checkable by unit tests may be assigned to human testing explicitly.
+do not invent values the sources do not state. A requirement a unit test cannot check names the integration, end-to-end, smoke or synthesis assertion test that checks it; no criterion and no Definition of Done statement may need a person to perform, observe, review, approve or record anything ("Verified by the build, never by a person" in the `acceptance-criteria` skill).
 Write the assigned UTF-8 criteria document, keeping the set concise (guidance: 120 criteria and
 30 DoD items). Keep every id stable, and state requirements, not Task wording. Tasks cite the ids,
 and the step checks the document against "A criteria document's structure" in the

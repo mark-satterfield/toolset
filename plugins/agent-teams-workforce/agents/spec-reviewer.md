@@ -25,7 +25,7 @@ model: sonnet
 x-sessionLimit: 900
 permissionMode: acceptEdits
 maxTurns: 90
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture, agent-teams-workforce:dynamodb, agent-teams-workforce:aurora-postgresql, agent-teams-workforce:design-postgres-tables, agent-teams-workforce:python-lambda-packaging]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer, agent-teams-workforce:artifact-handoff, agent-teams-workforce:effective-architecture, agent-teams-workforce:acceptance-criteria, agent-teams-workforce:dynamodb, agent-teams-workforce:aurora-postgresql, agent-teams-workforce:design-postgres-tables, agent-teams-workforce:python-lambda-packaging]
 x-onDemandSkills:
 - agent-teams-workforce:database-schema-designer
 - agent-teams-workforce:log-architecture-review
@@ -42,6 +42,8 @@ color: purple
 
 - **`effective-architecture`**: criteria I1 to I7, in `review-standard.md`, the one measure of the
   three documents.
+- **`acceptance-criteria`**: "Verified by the build, never by a person", the rule behind the I7
+  check of the criteria document, and its table of automated replacements.
 - **`api-design-reviewer`**: the REST contract checks behind I1 (method, path, authorizer, request
   and response fields, status codes).
 - **The project's event standard**, which the project instructions name: the standard event and
@@ -103,7 +105,13 @@ documents and the TRD state it.
 - I6: compare the producer's side and the consumer's side of each contract where both are in the
   documents you were given.
 - I7: check it for every item of the context file's `items`, and that the acceptance criteria
-  give each of them an id to cite.
+  give each of them an id to cite. Every acceptance criterion and Definition of Done statement
+  that needs a person to perform, observe, review, approve, sign off or record anything (a
+  screen-reader or keyboard walk-through, an inspection of the synthesised or deployed stack, a
+  design or cost review, a "recorded" result or sign-off) is a finding under I7 against the
+  `criteria` document, whatever else the document gets right: its correction is the automated
+  replacement the table under "Verified by the build, never by a person" in the
+  `acceptance-criteria` skill gives for that kind.
 - An open design gap is blocking: no Task can be built from a detail the design does not state
   (I7). Check every row under a document's `## Design gaps` heading against the approved
   documents. When an approved document records the detail, write a finding to the document's

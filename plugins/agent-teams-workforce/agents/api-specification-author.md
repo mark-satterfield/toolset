@@ -125,7 +125,7 @@ of an architecture heading only when a criterion turns on it. Cover required beh
 failure and boundary cases without inventing scope or architecture. Preserve any test strategy
 the sources state, in the shape `properties.testStrategy` defines in
 artifact-handoff's `schemas/tasks.schema.json`; do not invent values the sources do not state.
-Requirements not checkable by unit tests may be assigned to human testing explicitly.
+A requirement a unit test cannot check names the integration, end-to-end, smoke or synthesis assertion test that checks it; no criterion and no Definition of Done statement may need a person to perform, observe, review, approve or record anything ("Verified by the build, never by a person" in the `acceptance-criteria` skill).
 
 Write the criteria document at the path the request gives, keeping the set concise (guidance:
 120 criteria and 30 DoD items). Keep every id stable, and state requirements, not Task wording.

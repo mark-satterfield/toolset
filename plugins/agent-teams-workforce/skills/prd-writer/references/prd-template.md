@@ -253,4 +253,4 @@ graph LR
 
 - All P0 acceptance criteria are met.
 - All constraints in this document are satisfied.
-- Manual or automated verification is complete and passing.
+- Every acceptance criterion is proved by an automated test or check that passes.
