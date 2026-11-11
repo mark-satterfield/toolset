@@ -587,9 +587,12 @@ Notes on the diagram:
   sends a row the approved documents do settle back to its author; a real gap goes no further than
   the step after the review (`orchestrator/flows/design_gaps.py`): no Story is written and no Task
   decomposed from it. That step sets the solutions architect's last result step and every step
-  after it back to planned (the journal's `StaleInputError`), the architect is handed each
-  repository's gaps and designs what fills them, and the documents, the promotion and every spec
-  run again from the settled design. A gap left open again in the same dispatch fails the step.
+  after it back to planned (the journal's `DesignGapError`, a `StaleInputError` it sets back
+  however often it was set back in the dispatch), the architect is handed each repository's gaps
+  and designs what fills them, the architecture maintainer writes the decisions into the
+  documents, and the promotion and every spec run again from the settled design. Each accepted
+  answer counts one answer for each repository it was handed; a repository whose documents still
+  hold an open gap after two answers fails the step with that cause.
 - The repositories' containers under Specs and Stories run at the same time, and so do their
   containers under Tasks, at most `ATW_ORCH_SESSIONS` at once (`journal_run.concurrent_containers`),
   because no repository's specs or Tasks wait on another's and run time is a goal of the pipeline.

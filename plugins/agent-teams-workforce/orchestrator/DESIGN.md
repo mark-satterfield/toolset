@@ -198,8 +198,10 @@ the error names as its scope, when it names one), and the run goes on from there
 written again to the current contract. The step after a repository's spec review raises the same
 error for an open design gap a spec document records (`design_gaps.hold_open`), naming the
 solutions architect's last result step as the writer, so the architect settles the gap and every
-later step runs again from the settled design. When the same writer is named twice
-in one dispatch, the step fails; when that writer is a script step, its code wrote the file to a
+later step runs again from the settled design; it is `DesignGapError`, whose writer is set back
+however often it was set back in the dispatch, because the step bounds its rounds itself: a
+repository whose gaps survive two answers of the architect fails it. When the same writer of any
+other stale file is named twice in one dispatch, the step fails; when that writer is a script step, its code wrote the file to a
 contract other than its readers', and the failure is `PipelineDefectError`. A file a step reads
 that is missing, is not JSON or is refused by its contract is the item's failure; a contract whose
 schema cannot be loaded or applied is a `PipelineDefectError` (`architecture_files.checked_file`).

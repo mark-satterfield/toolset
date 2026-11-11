@@ -95,6 +95,17 @@ class StaleInputError(StepError):
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+class DesignGapError(StaleInputError):
+    """A spec document holds an open design gap, so the solutions architect's step runs again.
+
+    ``writer`` is the architect's last result step. Unlike any other stale file, the journal
+    runner sets it back to planned however often it was set back in this dispatch: the number of
+    times the architect may answer one repository's gaps is bounded where the gaps are read
+    (``design_gaps.hold_open``), which fails the step instead of raising this error.
+    """
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 class MalformedRequestError(StepError):
     """A request the step above a helper wrote does not satisfy the contract it was written under.
 

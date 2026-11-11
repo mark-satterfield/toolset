@@ -11,7 +11,8 @@ to the caller unchanged. A stop request (the stop file, an interrupt) leaves the
 step that finds a file an earlier step wrote to a contract that has since changed
 (``StaleInputError``) is not failed: the step that wrote the file and every step after it are set
 back to planned, and the loop goes on from there; the same writer named twice in one dispatch
-fails the step. A file is stale only when its writer's session was made under another agent
+fails the step, except for an open design gap (``DesignGapError``), whose rounds the step that
+reads the gaps bounds itself. A file is stale only when its writer's session was made under another agent
 definition or contracts; a request a helper is launched from that its writer's current session
 wrote wrongly (``MalformedRequestError``) is corrected by that session from the errors, and the
 helper runs again; the same request malformed twice in one dispatch fails the step.
@@ -91,6 +92,7 @@ from .journal_steps import (
 from .journal_views import JournalIndex, index_journal
 from .models import (
     AgentStep,
+    DesignGapError,
     MalformedRequestError,
     PipelineDefectError,
     RunContext,
@@ -984,7 +986,9 @@ class JournalRunner:
         """Run one step and record its failure when it raises.
 
         A stale file the step finds is kept for :meth:`_replan_stale`, and the step is not failed,
-        unless the step that wrote the file was planned again in this dispatch already. A
+        unless the step that wrote the file was planned again in this dispatch already. An open
+        design gap (``DesignGapError``) is always kept: its own bound fails the step that reads
+        the gaps (``design_gaps.hold_open``). A
         malformed request the step finds is corrected by its writer's session
         (:meth:`_correct_request`), and the step is not failed, unless that request was corrected
         in this dispatch already.
@@ -1003,7 +1007,7 @@ class JournalRunner:
         try:
             self._perform(journal, step)
         except StaleInputError as stale:
-            if stale.writer not in self.replanned:
+            if stale.writer not in self.replanned or isinstance(stale, DesignGapError):
                 self.stale.append(stale)
                 return
             writer: Step = step_journal.find_step(step_journal.read_journal(self.path), stale.writer)

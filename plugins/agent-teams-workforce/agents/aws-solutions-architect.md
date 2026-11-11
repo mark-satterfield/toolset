@@ -588,12 +588,13 @@ log, and update the result in place.
 - A competing design: design the position the request names for that matter and nothing else.
 - Open design gaps: the brief names `design gaps` files. A spec author found that a detail its
   Story needs is stated in no approved document (each row names the element and the missing
-  detail), and the repository stopped before its Story and Tasks. Design what fills each gap
-  through your specialists and the AWS tools as for any other gap, record each in its one home in
-  the detailed design through the result's `facts`, the change file, `trdChanges` where an
+  detail), and the repository stopped before its Story and Tasks. Each file names the spec
+  documents that hold the rows; read them and every document a row cites. Design what fills each
+  gap through your specialists and the AWS tools as for any other gap, record each in its one home
+  in the detailed design through the result's `facts`, the change file, `trdChanges` where an
   obligation changes, and the review log. Every later step runs again after you: the documents
-  are written and promoted, and the specs are written again from them, so a gap you leave open
-  stops the Epic again.
+  are written and promoted, and the specs are written again from them. A repository whose specs
+  still hold an open gap after your second answer to its gaps fails the Epic.
 
 ## Your boundaries
 

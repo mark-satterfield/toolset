@@ -7,22 +7,26 @@ decomposed from a document that holds an open gap. The step after the review
 (``spec_authoring.story_document``) reads every row (:func:`open_gaps`); when one is left it files
 the repository's gaps under the architecture work folder (:func:`file_gaps`) and sets the
 solutions architect's last result step and every step after it back to planned
-(``StaleInputError``, the journal runner's one way back to an earlier step): the architect's next
+(``DesignGapError``, the journal runner's way back to an earlier step): the architect's next
 session is handed every repository's open gaps (:func:`handed`) and designs what fills them, the
-documents are written again and promoted, and the specs are written again against the settled
-design. The architect's accepted result moves the gaps it was handed to the settled folder
-(:func:`settle`). A second open gap after that, in the same dispatch, fails the step.
+architecture maintainer writes the decisions into the documents, which are promoted, and the specs
+are written again against the settled design. The architect's accepted result moves the gaps it
+was handed to the settled folder and counts one answer for each repository (:func:`settle`).
+A repository whose documents still hold an open gap after :data:`MAX_ANSWERS` answers fails the
+step: the gaps do not converge.
 """
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 from typing import TYPE_CHECKING, Final
 
 from orchestrator.core import step_journal
-from orchestrator.core.io import JsonValue, write_json
-from orchestrator.core.models import StaleInputError
+from orchestrator.core.handback_contract import OTHER_CAUSE
+from orchestrator.core.io import JsonValue, json_object, write_json
+from orchestrator.core.models import DesignGapError, StepError
 from orchestrator.flows.architecture_files import ARCHITECT, LABEL_RESULT, architecture_folder
 
 # isort: split
@@ -44,6 +48,10 @@ LABEL_GAPS: Final = "design gaps"
 FOLDER: Final = "design-gaps"
 OPEN: Final = "open"
 SETTLED: Final = "settled"
+ANSWERS: Final = "answers.json"
+"""The file, in the design gaps folder, that counts the architect's answers to each repository's gaps."""
+MAX_ANSWERS: Final = 2
+"""The number of the architect's answers a repository's open gaps may survive before the step fails."""
 _SECTION: Final = re.compile(rf"^##\s+{re.escape(HEADING)}\s*$", re.IGNORECASE)
 _NEXT_SECTION: Final = re.compile(r"^#{1,2}\s")
 _SEPARATOR: Final = re.compile(r"^\|[\s:|-]*\|$")
@@ -157,17 +165,51 @@ def file_gaps(run: StepRun, slug: str, repository: str, documents: Sequence[Path
     return evidence
 
 
+def _answers_file(work: Path) -> Path:
+    """Name the file that counts the architect's answers to each repository's gaps.
+
+    Returns:
+        The file in the design gaps folder.
+
+    """
+    return architecture_folder(work) / FOLDER / ANSWERS
+
+
+def answers(work: Path) -> dict[str, int]:
+    """Read how many times the architect answered each repository's open design gaps.
+
+    Returns:
+        The count of each repository's slug; empty when no answer was counted.
+
+    """
+    path: Path = _answers_file(work)
+    if not path.is_file():
+        return {}
+    counted: dict[str, JsonValue] = json_object(json.loads(path.read_text(encoding="utf-8")))
+    return {slug: value for slug, value in counted.items() if isinstance(value, int)}
+
+
 def hold_open(run: StepRun, slug: str, repository: str, documents: Sequence[Path]) -> None:
     """Stop a repository whose spec documents hold an open design gap from reaching its Story and Tasks.
 
     Raises:
-        StaleInputError: A document holds an open gap: the gaps are filed for the solutions
+        DesignGapError: A document holds an open gap: the gaps are filed for the solutions
             architect, and its last result step and every step after it are set back to planned.
+        StepError: A document holds an open gap after the architect answered the repository's
+            gaps :data:`MAX_ANSWERS` times; the gaps are filed and the step fails.
 
     """
     evidence: list[str] = file_gaps(run, slug, repository, documents)
-    if evidence:
-        raise StaleInputError(run.inputs.stage, architect_writer(run), tuple(evidence))
+    if not evidence:
+        return
+    answered: int = answers(run.context.work).get(slug, 0)
+    if answered >= MAX_ANSWERS:
+        cause: str = (
+            f"the spec documents of {repository} still hold open design gaps after the solutions architect "
+            f"answered that repository's design gaps {answered} times; the design does not converge"
+        )
+        raise StepError(run.inputs.stage, OTHER_CAUSE, (cause, *evidence))
+    raise DesignGapError(run.inputs.stage, architect_writer(run), tuple(evidence))
 
 
 def handed(work: Path) -> tuple[tuple[str, Path], ...]:
@@ -184,12 +226,19 @@ def handed(work: Path) -> tuple[tuple[str, Path], ...]:
 
 
 def settle(work: Path, step: StepId) -> None:
-    """Move the open design gaps an accepted architect result was handed to the settled folder, under its step."""
+    """Move the open design gaps an accepted architect result was handed to the settled folder, under its step.
+
+    Each repository whose gaps were moved is counted one more answer of the architect
+    (:func:`answers`).
+    """
     folder: Path = _folder(work, OPEN)
     if not folder.is_dir():
         return
     target: Path = _folder(work, SETTLED) / step
     target.mkdir(parents=True, exist_ok=True)
+    counted: dict[str, int] = answers(work)
     path: Path
     for path in sorted(folder.glob("*.json")):
+        counted[path.stem] = counted.get(path.stem, 0) + 1
         shutil.move(str(path), target / path.name)
+    write_json(_answers_file(work), dict(sorted(counted.items())))

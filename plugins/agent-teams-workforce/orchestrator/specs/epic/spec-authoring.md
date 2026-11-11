@@ -91,13 +91,17 @@ as one row of the table under the document's `## Design gaps` heading and does n
 to its author and leaving a real gap for the step below. Step 9 reads every row
 (`design_gaps.open_gaps`) before anything else. A row left open stops the repository before its
 Story and Tasks: the step files the repository's gaps at `<arch-work>/design-gaps/open/<slug>.json`
-and raises `StaleInputError` naming the solutions architect's step that last recorded the
-architecture result, so that step and every step after it are set back to planned. The architect's
+and raises `DesignGapError` (a `StaleInputError`) naming the solutions architect's step that last
+recorded the architecture result, so that step and every step after it are set back to planned,
+however often that step was set back in the dispatch already. The architect's
 next session is handed every repository's file as `design gaps` and designs what fills each gap;
 its accepted result (with no further round) moves the files to
-`<arch-work>/design-gaps/settled/<step>/`; the documents are written and promoted again, and every
-repository's specs are written again against the settled design. A gap still open after that in the
-same dispatch fails the step.
+`<arch-work>/design-gaps/settled/<step>/` and counts one answer for each of those repositories in
+`<arch-work>/design-gaps/answers.json`; the architecture maintainer writes the decisions into the
+documents, they are promoted again, and every repository's specs are written again against the
+settled design. A repository whose documents still hold an open gap after the architect answered
+its gaps twice (`design_gaps.MAX_ANSWERS`) fails the step, its cause naming the repository, the
+count and each row: the design does not converge.
 
 The Story document lists what the Story builds, one line per item: an event as
 `E<n>: <name>, published by <publishers>: <trigger>`, any other item as
