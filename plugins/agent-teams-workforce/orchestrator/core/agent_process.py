@@ -218,11 +218,10 @@ class _StreamCapture:
         parse_line: Callable[[bytes, SessionFacts], dict[str, JsonValue] | None],
     ) -> None:
         self.request, self.capture, self.facts, self.parse_line = request, capture, facts, parse_line
-        if process.stdin is None or process.stdout is None:
-            message = "agent process was launched without its required pipes"
+        if process.stdout is None:
+            message = "agent process was launched without its output pipe"
             raise RuntimeError(message)
-        self.stdin, self.stdout = process.stdin, process.stdout
-        self.pending = request.prompt.encode("utf-8")
+        self.stdout = process.stdout
         self.buffer = b""
         self.beginning = self.last_line = self.last_beat = time.monotonic()
         self.streamed = False
@@ -233,16 +232,6 @@ class _StreamCapture:
             request.transcripts,
             _duration(request.env, SUBAGENT_IDLE_ENV, SUBAGENT_IDLE_DEFAULT),
         )
-
-    def _write(self, selector: selectors.BaseSelector) -> None:
-        try:
-            count = os.write(self.stdin.fileno(), self.pending)
-            self.pending = self.pending[count:]
-        except BrokenPipeError:
-            self.pending = b""
-        if not self.pending:
-            selector.unregister(self.stdin)
-            self.stdin.close()
 
     def _read(self) -> bool:
         chunk = os.read(self.stdout.fileno(), 65536)
@@ -293,18 +282,12 @@ class _StreamCapture:
 
         """
         with selectors.DefaultSelector() as selector:
-            os.set_blocking(self.stdin.fileno(), False)
             os.set_blocking(self.stdout.fileno(), False)
-            selector.register(self.stdin, selectors.EVENT_WRITE)
             selector.register(self.stdout, selectors.EVENT_READ)
             done = False
             while not done and not self._tick():
-                for key, _ in selector.select(timeout=min(0.2, self.idle, self.limit)):
-                    if key.fileobj is self.stdin:
-                        self._write(selector)
-                    elif self._read():
-                        done = True
-                        break
+                if selector.select(timeout=min(0.2, self.idle, self.limit)) and self._read():
+                    done = True
         return max(0.01, min(self.limit - (time.monotonic() - self.beginning), self.idle))
 
 
@@ -359,7 +342,7 @@ class SessionProcesses:
         for process in live:
             self.kill(process)
 
-    def _launch(self, request: SessionRequest, errors: IO[bytes]) -> subprocess.Popen[bytes]:
+    def _launch(self, request: SessionRequest, prompt: IO[bytes], errors: IO[bytes]) -> subprocess.Popen[bytes]:
         with self._lock:
             if self._stopped:
                 stage = "session"
@@ -373,7 +356,7 @@ class SessionProcesses:
                 request.argv,
                 cwd=request.directory,
                 env=request.env,
-                stdin=subprocess.PIPE,
+                stdin=prompt,
                 stdout=subprocess.PIPE,
                 stderr=errors,
                 start_new_session=True,
@@ -406,8 +389,14 @@ class SessionProcesses:
 
         """
         request.stream.parent.mkdir(parents=True, exist_ok=True)
-        with request.stream.open("wb") as capture, request.stream.with_suffix(".stderr").open("wb") as errors:
-            process = self._launch(request, errors)
+        brief: Path = request.stream.with_suffix(".prompt.md")
+        brief.write_text(request.prompt, encoding="utf-8")
+        with (
+            brief.open("rb") as prompt,
+            request.stream.open("wb") as capture,
+            request.stream.with_suffix(".stderr").open("wb") as errors,
+        ):
+            process = self._launch(request, prompt, errors)
             facts: SessionFacts = {"result": None, "rate": None, "timeout": False, "exit": 0, "pid": process.pid}
             try:
                 request.started(process.pid)
@@ -419,9 +408,8 @@ class SessionProcesses:
                 self.kill(process)
                 with self._lock:
                     self._live.pop(process.pid, None)
-                for pipe in (process.stdin, process.stdout):
-                    if pipe is not None and not pipe.closed:
-                        pipe.close()
+                if process.stdout is not None and not process.stdout.closed:
+                    process.stdout.close()
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def account_wall(self, probe: WallProbe) -> dict[str, JsonValue] | None:
