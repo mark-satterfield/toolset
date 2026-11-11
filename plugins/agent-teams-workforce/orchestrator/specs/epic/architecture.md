@@ -316,7 +316,9 @@ and writes one ruling per Epic and open Task they return to `impact-rulings.sche
 for each Epic other than this one that a ruling names as `epicId` with the verdict
 `elaborated-unbuilt`. The driver checks the ruling again (the Epic is elaborated, no Task of it is
 in progress or closed, no run works on it or its Stories and Tasks), starts the Epic's journal
-again at its Architecture step and each of its Story and Task journals that a build or deploy
+again at its open-run step, which removes the Architecture steps it planned and plans them again as
+the lane plans them now (a start at the Architecture container would resume steps an earlier plugin
+version planned), and each of its Story and Task journals that a build or deploy
 worked on again after its creating step, the same journal change `elabmark.py --start-at` makes,
 and sets `elaboration_state=ready` with the cause `architecture-changed` and no owner. It refuses
 anything else and changes nothing. The step records the value `re-elaborations` (each Epic's
