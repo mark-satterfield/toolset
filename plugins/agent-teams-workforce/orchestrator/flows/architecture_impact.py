@@ -6,16 +6,16 @@ The promotion step plans these two steps after itself whenever it set documents 
    runs ``atw-matrix impact`` and ``atw-matrix affected`` for each changed view and rules on every
    Epic and open Task they return (``impact-rulings.schema.json``). It changes nothing.
 2. A script step applies the rulings. Each other Epic ruled ``elaborated-unbuilt`` (its Stories and
-   Tasks exist, and no Task is in progress or closed) is started again from the step that plans its
-   Architecture steps by the driver's ``reelaborate.restart``, which checks the ruling against the tracker again, makes
-   the journal change ``elabmark.py --start-at`` makes, starts again the journals of its Stories and
-   Tasks a build or deploy worked on, and sets the Epic's elaboration state to ready with the cause
+   Tasks exist, and no build has started on them) is started again from the step that plans its
+   Architecture steps by the driver's ``reelaborate.restart``, which checks the ruling against the tracker
+   and the journals again, makes the journal change ``elabmark.py --start-at`` makes, and sets the
+   Epic's elaboration state to ready with the cause
    ``architecture-changed``; its re-elaboration then rewrites its Stories and Tasks in place,
    matched by ``elab_key``. An ``already-built`` item's knock-on Task is recorded as proposed and
    never created. The Epic being elaborated is never restarted by its own promotion.
 
-A restart the driver refuses (the Epic is not elaborated, a Task of it is in progress or closed, or
-a run works on it now) is recorded and changes nothing. A restart that raises is recorded too, and
+A restart the driver refuses (the Epic is not elaborated, a build has started on it, or a run works
+on it now) is recorded and changes nothing. A restart that raises is recorded too, and
 fails the step once every Epic was tried; running the step again restarts nothing twice, since a
 restarted Epic is no longer elaborated.
 """

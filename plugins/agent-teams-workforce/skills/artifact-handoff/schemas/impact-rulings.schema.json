@@ -5,7 +5,7 @@
   "$ref": "#/$defs/ImpactRulings",
   "$defs": {
     "Verdict": {
-      "description": "unaffected: the change does not reach the item. not-yet-elaborated: an Epic with no Story or Task beneath it. elaborated-unbuilt: Stories and Tasks exist and no Task is in progress or closed; the Epic is elaborated again. already-built: a Task under it is in progress or closed; a knock-on Task is proposed.",
+      "description": "unaffected: the change does not reach the item. not-yet-elaborated: an Epic with no Story or Task beneath it. elaborated-unbuilt: Stories and Tasks exist and no build has started on any of them; the Epic is elaborated again. already-built: a build has started under it (a Task in progress or closed, or a Story in progress); a knock-on Task is proposed.",
       "type": "string",
       "enum": ["unaffected", "not-yet-elaborated", "elaborated-unbuilt", "already-built"]
     },

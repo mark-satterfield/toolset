@@ -140,8 +140,7 @@ Notes on the diagram:
   (`orchestrator/flows/architecture_impact.py`) starts each other Epic it rules elaborated but
   unbuilt again from the step that plans its Architecture steps, through the driver's `reelaborate.restart`: the one
   case in which the pipeline itself makes a run begin earlier. The driver checks the ruling again
-  against the tracker, starts again the journals of the Epic's Stories and Tasks a build or deploy
-  worked on, and sets the Epic ready with the cause `architecture-changed`; its re-elaboration
+  against the tracker and the journals, refuses an Epic a build started on, and sets the Epic ready with the cause `architecture-changed`; its re-elaboration
   rewrites its Stories and Tasks in place by `elab_key`. A built item is never reopened: its
   knock-on Task is recorded as proposed.
 - The solutions architect is the reviewer; no other agent reviews the architecture. The owner:

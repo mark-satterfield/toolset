@@ -56,13 +56,15 @@ and nothing reads them again on its own. You are what reads them again.
 |---|---|---|
 | `unaffected` | The matrix returns it for the view, but what changed does not reach it. | Nothing. Say why, in one line. |
 | `not-yet-elaborated` | An Epic with no Specs or Tasks beneath it yet. | Nothing. It will be elaborated against the architecture as it then stands. |
-| `elaborated-unbuilt` | Specs and Tasks exist and NONE is started or closed. | It goes back for re-elaboration, which updates in place. |
-| `already-built` | At least one Task under it is closed, or in progress. | The built work is never reopened and never rewritten. Propose a `knockOn` Task. |
+| `elaborated-unbuilt` | Specs and Tasks exist and no build has started on any of them. | It goes back for re-elaboration, which updates in place. |
+| `already-built` | A build has started under it: a Task is closed or in progress, or a Story is in progress. | The built work is never reopened and never rewritten. Propose a `knockOn` Task. |
 
 `already-built` is the one that matters and the one that is easy to get wrong. A Task that is
 closed is built; a Task that is in progress is being built right now from the text it already
-has, and rewriting it under someone is worse than leaving it. In both cases the repair is NEW
-work, and its description names three things: the built item it follows, the view that
+has, and rewriting it under someone is worse than leaving it. A Story is in progress from the
+start of its first Task's build, and a build that fails sends its Task back to open: a Story in
+progress over open Tasks is a build that ran, so the Epic is built even though no Task is in
+progress or closed. In every case the repair is NEW work, and its description names three things: the built item it follows, the view that
 changed, and **what specifically will stop working**. A knock-on that says "align with the new
 architecture" is useless to whoever picks it up.
 
@@ -108,7 +110,7 @@ architecture" is useless to whoever picks it up.
   answer; silence is not.
 - **The verified mark does not decide a verdict.** An entry or relationship the matrix returns
   without `verified` may still have to be built. Whether an item is built is read from the
-  status of its Tasks in the tracker, as the four verdicts state.
+  status of its Stories and Tasks in the tracker, as the four verdicts state.
 - Analysis and decision are separate tasks performed by different agents: you establish impact,
   the caller acts on it, and the architecture change itself is already decided.
 - The constraints are the owner's, in arc42 section 2; everything else in the architecture is the

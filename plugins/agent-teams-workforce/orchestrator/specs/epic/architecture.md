@@ -314,12 +314,13 @@ and writes one ruling per Epic and open Task they return to `impact-rulings.sche
 `<arch-work>/impact-<step>.json`, recorded as the file `impact rulings`. The script step
 `reelaborate.restart` then calls the driver's `reelaborate.restart` (`driver_contracts.driver_module`)
 for each Epic other than this one that a ruling names as `epicId` with the verdict
-`elaborated-unbuilt`. The driver checks the ruling again (the Epic is elaborated, no Task of it is
-in progress or closed, no run works on it or its Stories and Tasks), starts the Epic's journal
+`elaborated-unbuilt`. The driver checks the ruling again (the Epic is elaborated, no build has
+started on it: no Task of it in progress or closed, no Story of it in progress, no Story's or
+Task's journal worked on by a build or deploy; and no run works on it or its Stories and Tasks),
+starts the Epic's journal
 again at its open-run step, the step that plans its Architecture steps, which removes the steps it
 planned and plans them again as the lane plans them now (a start given at the Architecture
-container begins there too, `step_journal.restart_point`), and each of its Story and Task journals that a build or deploy
-worked on again after its creating step, the same journal change `elabmark.py --start-at` makes,
+container begins there too, `step_journal.restart_point`), the same journal change `elabmark.py --start-at` makes,
 and sets `elaboration_state=ready` with the cause `architecture-changed` and no owner. It refuses
 anything else and changes nothing. The step records the value `re-elaborations` (each Epic's
 outcome) and the value `knock-on proposals` (each `already-built` item's proposed Task; none is
