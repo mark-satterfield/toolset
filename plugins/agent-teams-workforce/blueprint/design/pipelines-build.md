@@ -301,7 +301,8 @@ rules; a consumer pin or lockfile is never changed ahead of publication.
 
 Shared-capability review considers the capabilities named by the Task's matrix IDs
 (`matrix_elements`). `build_reuse.py` first runs `check-reuse` in process against the changed
-files of the Story worktree: a line that does what a capability provides and a relied-on
+source files of the Story worktree (suffixes in `matrixreuse.SOURCE_SUFFIXES`, outside the
+pipeline's `.agent-workforce` folder, so test reports and logs are never read): a line that does what a capability provides and a relied-on
 capability nothing references are blocking findings it settles, and an id the matrix does not
 hold is a contract finding. A capability the Task's own repository provides is not checked, since
 its definitions there are its implementation, and neither is what a feature that only consumes

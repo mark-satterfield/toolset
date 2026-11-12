@@ -72,7 +72,8 @@ With no path it classifies the worktree's changed paths from `git status`. It ne
 `ATW_CONTROL_REPO` and prints one JSON object: `product` (the paths the checkpoint commits),
 `preserved` (the tooling paths and transient test reports it leaves uncommitted) and `refused`
 (each path whose ownership it refuses, as `<path>: <reason>`). It exits 0 with that object, 2 on a
-usage error, and 1 when the rule cannot run, with the reason on standard error.
+usage error, and 1 when the rule cannot run, with the reason on standard error. A changed
+configuration file it cannot read or decode is a rule that cannot run (exit 1), never a refused path.
 
 ## Driver surface and the ATW_* environment
 

@@ -730,10 +730,12 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
     Task states, or one its stack holds, realizes it) is not checked: its definitions there are
     its implementation. Nor is the walk started from a feature that only consumes such a
     capability and is realized outside the Task's repository too; a feature only the Task's
-    repository realizes is its own product feature and keeps its capability checks. A definition
-    is put to a reviewer only from a product file (a file of the repository's test layout is not
-    read) and only when its name shares two words with a provided behaviour that are not stop
-    words: the fixed list `matrixreuse.STOP_WORDS` of English function words and the words any
+    repository realizes is its own product feature and keeps its capability checks. The check
+    reads only source files: a file whose suffix `matrixreuse.SOURCE_SUFFIXES` lists, outside
+    the pipeline's folder `.agent-workforce` (its test reports quote test definitions). A
+    definition is put to a reviewer only from a product file (a file of the repository's test
+    layout is not read) and only when its name shares two words with a provided behaviour that
+    are not stop words: the fixed list `matrixreuse.STOP_WORDS` of English function words and the words any
     name carries whichever capability it is about (for example api, client, log, secret, error,
     json, get, set, skill, spoke). Word frequency is not the rule, because the words that name a
     shared capability (token, cache, outbox, identity) are as frequent as the noise words.

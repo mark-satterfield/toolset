@@ -308,6 +308,14 @@ def _checker_present(path: str, value: JsonValue) -> bool:
     return bool(value)
 
 
+class OwnershipRefusedError(ValueError):
+    """The checkpoint refuses to assign a changed path to the product or to the tooling.
+
+    It is a ``ValueError``, so a checkpoint that does not classify paths one by one still stops on it.
+    A configuration file that cannot be read or decoded raises its own error instead.
+    """
+
+
 def _product_path(tools: Tools, tree: Path, path: str, ownership: ToolingOwnership) -> bool:
     """Classify a changed file, refusing to hide product edits inside a mixed file.
 
@@ -315,7 +323,7 @@ def _product_path(tools: Tools, tree: Path, path: str, ownership: ToolingOwnersh
         True for product changes; False for preservable tooling-only changes and transient test reports.
 
     Raises:
-        ValueError: Product and tooling changes share a configuration file.
+        OwnershipRefusedError: Product and tooling changes share a configuration file.
 
     """
     if _tooling_path(path, ownership) or Path(path).is_relative_to(RUN_OUTPUT):
@@ -324,7 +332,7 @@ def _product_path(tools: Tools, tree: Path, path: str, ownership: ToolingOwnersh
         return True
     if (tree / path).is_symlink():
         problem: str = f"Cannot assign mixed configuration ownership through symlink {path}; resolve its owning flow"
-        raise ValueError(problem)
+        raise OwnershipRefusedError(problem)
     previous_text: str = _revision_text(tools, tree, "HEAD", path)
     before: tuple[JsonValue, JsonValue] = _configuration_parts(path, previous_text, ownership)
     current: Path = tree / path
@@ -336,7 +344,7 @@ def _product_path(tools: Tools, tree: Path, path: str, ownership: ToolingOwnersh
     product_changed: bool = before[0] != after[0] or before[0] != indexed[0]
     if before == after == indexed and _checker_present(path, before[1]):
         problem = f"Text-only edits in mixed configuration {path} need explicit tooling/product ownership before commit"
-        raise ValueError(problem)
+        raise OwnershipRefusedError(problem)
     if not tooling_changed:
         return True
     if product_changed:
@@ -344,7 +352,7 @@ def _product_path(tools: Tools, tree: Path, path: str, ownership: ToolingOwnersh
             f"Mixed product and tooling edits in {path}; preserve this work and deliver the tooling "
             "through a separate main worktree, then integrate it into the Story before checkpointing"
         )
-        raise ValueError(problem)
+        raise OwnershipRefusedError(problem)
     return False
 
 
@@ -363,13 +371,15 @@ class ToolingPaths:
 def _verdict(tools: Tools, tree: Path, path: str, ownership: ToolingOwnership) -> bool | str:
     """Classify one changed path, turning a refused ownership into its reason.
 
+    A configuration file that cannot be read or decoded is not a refusal: its error propagates.
+
     Returns:
         True for a product path, False for a preserved one, or the reason its ownership is refused.
 
     """
     try:
         return _product_path(tools, tree, path, ownership)
-    except ValueError as error:
+    except OwnershipRefusedError as error:
         return str(error)
 
 
@@ -380,8 +390,9 @@ def classify_tooling_paths(tools: Tools, tree: Path, paths: Sequence[str] | None
     leaves uncommitted (``AGENTS.md``, ``CLAUDE.md``, ``.claude/``, ``.agents/``, ``.beads/``,
     ``.code-checks/``, the checker files the control repository's checks-sync spec names, checker-only
     edits of a mixed configuration file, and transient test reports). The control repository is read
-    from ``ATW_CONTROL_REPO``; a missing variable, unresolved merge conflicts in the worktree, or an
-    unreadable checks-sync configuration raises the error the step that reads it raises.
+    from ``ATW_CONTROL_REPO``; a missing variable, unresolved merge conflicts in the worktree, an
+    unreadable checks-sync configuration, or a changed configuration file that cannot be read or
+    decoded raises the error the step that reads it raises.
 
     Args:
         tools: The command boundary git runs through.

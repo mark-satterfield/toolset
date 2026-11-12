@@ -16,7 +16,10 @@ are its implementation; nor is the walk started from a feature that only consume
 capability and is realized outside the Task's repository too, since what else that feature is
 supported by belongs to those other realizers.
 
-A ``judgment`` item is put to a reviewer only for a product definition: a file of the repository's
+Only source files are read, for the violations and the judgment alike: a file whose suffix is in
+``SOURCE_SUFFIXES``, outside the pipeline's own folder ``PIPELINE_FOLDER``. The test reports a
+build writes there quote test definitions, and no report, log or other non-source file is product
+code. A ``judgment`` item is put to a reviewer only for a product definition: a file of the repository's
 test layout (under a ``testpaths`` entry of its ``pyproject.toml``, or ``tests``, ``test`` or
 ``__tests__`` when it states none, or named as a test file) is not read for definitions. The words
 a definition's name shares with a provided behaviour count only when they are not in
@@ -159,6 +162,37 @@ STOP_WORDS: Final[frozenset[str]] = frozenset({
 DEFAULT_TEST_ROOTS: Final[frozenset[str]] = frozenset({"tests", "test", "__tests__"})
 """The folders that hold tests when the repository's ``pyproject.toml`` states no ``testpaths``."""
 PYPROJECT: Final = "pyproject.toml"
+PIPELINE_FOLDER: Final = ".agent-workforce"
+"""The build pipeline's folder in a worktree: its test reports and regression plan, never product code."""
+SOURCE_SUFFIXES: Final[frozenset[str]] = frozenset({
+    ".bash",
+    ".cjs",
+    ".css",
+    ".cts",
+    ".go",
+    ".graphql",
+    ".html",
+    ".java",
+    ".js",
+    ".json",
+    ".jsx",
+    ".kt",
+    ".kts",
+    ".mjs",
+    ".mts",
+    ".py",
+    ".pyi",
+    ".scss",
+    ".sh",
+    ".sql",
+    ".swift",
+    ".toml",
+    ".ts",
+    ".tsx",
+    ".yaml",
+    ".yml",
+})
+"""The suffixes of the source files the check reads: code, and the configuration a use signal may sit in."""
 _TEST_NAME: Final[re.Pattern[str]] = re.compile(
     r"^(?:test_.+\.py|.+_test\.py|conftest\.py|.+\.(?:test|spec)\.[cm]?[jt]sx?)$",
 )
@@ -231,7 +265,7 @@ class ReuseResult(TypedDict):
     """The ids the check was handed."""
     worktree: str
     files: list[str]
-    """The changed files that were read."""
+    """The changed source files that were read."""
     capabilities: list[CapabilityRef]
     """The shared capabilities checked against."""
     provided: list[EntryId]
@@ -460,13 +494,24 @@ def changed_files(worktree: Path) -> list[str]:
     return sorted(paths)
 
 
-def _lines(worktree: Path, files: Sequence[str]) -> dict[str, list[str]]:
-    """Read the text files among some paths of a worktree.
+def _is_source(relative: str) -> bool:
+    """Tell whether a path of a worktree is a source file the check reads.
 
     Returns:
-        Each text file's path and its lines. A path that is missing or is a directory is left
-        out, and so is a file that is not UTF-8 text: the signals are text, so a binary file
-        cannot hold one.
+        True when its suffix is in ``SOURCE_SUFFIXES`` and it lies outside ``PIPELINE_FOLDER``.
+
+    """
+    path: PurePosixPath = PurePosixPath(relative)
+    return path.suffix in SOURCE_SUFFIXES and PIPELINE_FOLDER not in path.parts
+
+
+def _lines(worktree: Path, files: Sequence[str]) -> dict[str, list[str]]:
+    """Read the source files among some paths of a worktree.
+
+    Returns:
+        Each source file's path and its lines. A path that is not a source file (``_is_source``),
+        is missing or is a directory is left out, and so is a file that is not UTF-8 text: the
+        signals are text, so a binary file cannot hold one.
 
     Raises:
         MatrixError: A file cannot be read.
@@ -476,7 +521,7 @@ def _lines(worktree: Path, files: Sequence[str]) -> dict[str, list[str]]:
     relative: str
     for relative in files:
         file: Path = worktree / relative
-        if not relative or not file.is_file():
+        if not _is_source(relative) or not file.is_file():
             continue
         try:
             content: bytes = file.read_bytes()
@@ -507,8 +552,8 @@ def _unused(
 ) -> tuple[list[ReuseItem], list[str]]:
     """Find the capabilities a Task must use that nothing references.
 
-    The changed files are searched first; the rest of the worktree's tracked files are read only
-    when a signal is not in them.
+    The changed source files are searched first; the rest of the worktree's tracked source files
+    are read only when a signal is not in them.
 
     Returns:
         One item per relied-on ``provides`` item whose use signals occur nowhere, and the items
@@ -543,7 +588,7 @@ def _duplicates(guarded: Sequence[Guarded], changed: Mapping[str, Sequence[str]]
     """Find the changed lines that do themselves what a shared capability provides.
 
     Returns:
-        One item per line of a changed file that holds a duplicate signal of a ``provides`` item.
+        One item per line of a changed source file that holds a duplicate signal of a ``provides`` item.
 
     """
     items: list[ReuseItem] = []
@@ -678,6 +723,7 @@ def check_reuse(
             the capabilities the work that builds the entry must use.
         worktree: The worktree the Task changed.
         files: The changed files, relative to the worktree; None reads them from ``git status``.
+            Only the source files among them are read.
 
     Returns:
         The violations (a capability nothing references, a line that duplicates one), the

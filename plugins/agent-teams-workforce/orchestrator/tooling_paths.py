@@ -10,7 +10,8 @@ With no path it reads the worktree's changed paths from ``git status``. It needs
 ``ATW_CONTROL_REPO`` and prints one JSON object, ``{"product": [...], "preserved": [...],
 "refused": [...]}``: the paths the checkpoint commits, the tooling paths it leaves uncommitted,
 and each path whose ownership it refuses, as ``<path>: <reason>``. It exits 0 with that object,
-2 on a usage error, and 1 when the rule cannot run, with the reason on standard error.
+2 on a usage error, and 1 when the rule cannot run, with the reason on standard error; a changed
+configuration file it cannot read or decode is such a case, never a refused path.
 """
 
 from __future__ import annotations
