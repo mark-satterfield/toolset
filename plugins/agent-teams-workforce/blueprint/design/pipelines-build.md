@@ -289,7 +289,13 @@ been built, and it does not duplicate a shared capability locally. Required exte
 and unpublished SkillSpoke library changes remain explicit blocking facts under their existing
 rules; a consumer pin or lockfile is never changed ahead of publication.
 
-Shared-capability review considers the capabilities named by the Task's matrix IDs. UI work is
+Shared-capability review considers the capabilities named by the Task's matrix IDs
+(`matrix_elements`). `build_reuse.py` first runs `check-reuse` in process against the changed
+files of the Story worktree: a line that does what a capability provides and a relied-on
+capability nothing references are blocking findings it settles, and an id the matrix does not
+hold is a contract finding. Only when the check leaves definitions it cannot rule on is the
+shared-capability-reviewer started, with those items and the settled findings handed in a file
+beside the step's facts; otherwise the step records the review itself. UI work is
 reviewed against the Task's stated supplied bundle or live CDS source. Blocking and warranted
 improvement findings receive bounded implementation and re-review.
 

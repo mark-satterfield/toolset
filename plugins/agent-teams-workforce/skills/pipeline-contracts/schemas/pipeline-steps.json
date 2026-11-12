@@ -288,11 +288,11 @@
           "runBy": "task-to-deploy",
           "reads": ["worktree", "implementers", "reuseReview", "executionPolicy"],
           "records": [
-            {"name": "reuseReview", "kind": "file", "holds": "The accepted reuseReview evidence"},
+            {"name": "reuseReview", "kind": "file", "holds": "The reuseReview under build-review.schema.json: recorded by the step from the check-reuse result when the check leaves no definition to rule on, otherwise the shared-capability-reviewer's review of the definitions handed to it"},
             {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
           ],
           "adds": [
-            {"kinds": ["build:audit-reviewed"], "when": "after reuseReview is accepted, passing review=reuseReview and again=build:reuse-audit, unless the accepted execution policy omits the stage"}
+            {"kinds": ["build:audit-reviewed"], "when": "after reuseReview is recorded or accepted, passing review=reuseReview and again=build:reuse-audit, unless the accepted execution policy omits the stage"}
           ],
           "limit": "The audit consumer bounds implementation corrections and re-review by the configured build correction allowance"
         },

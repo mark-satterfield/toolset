@@ -17,7 +17,7 @@ from orchestrator.core.journal_registry import Registry
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, file_artifact, value_artifact
 from orchestrator.core.models import StepError
 from orchestrator.core.tool_locks import seconds
-from orchestrator.flows import build_carried, build_policy
+from orchestrator.flows import build_carried, build_policy, build_reuse
 from orchestrator.flows.build_sessions import OutputContract, accepted_steps, latest, reasoned
 from orchestrator.flows.build_state import (
     ARTIFACT_CONTRACTS,
@@ -522,25 +522,14 @@ def _reuse(run: StepRun) -> Completion:
     """Review use of shared capabilities instead of duplicating their implementation.
 
     Returns:
-        The shared-capability specialist's independent review, or the policy's recorded omission.
+        The reuse check's recorded review or the reviewer's session for what it cannot rule on
+        (:func:`build_reuse.audit`), or the policy's recorded omission.
 
     """
     decision: build_policy.Decision = build_policy.decide(run, "reuse-audit")
     if decision.action == "omit":
         return Completion(artifacts=(decision.artifact(),))
-    reviewed: Completion = reasoned(
-        run,
-        "shared-capability-reviewer",
-        OutputContract(CONTRACTS / "build-review.schema.json", "reuseReview"),
-        "Review changed code against the shared capabilities the Task's matrix ids require",
-        followups=(
-            _new(
-                "build:audit-reviewed",
-                "Resolve the shared-capability review",
-                {"review": "reuseReview", "again": "build:reuse-audit"},
-            ),
-        ),
-    )
+    reviewed: Completion = build_reuse.audit(run)
     return Completion(artifacts=(*reviewed.artifacts, decision.artifact()), add=reviewed.add)
 
 

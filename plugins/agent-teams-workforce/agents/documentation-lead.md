@@ -5,8 +5,8 @@ description: >-
   current docs, and reports documentation currency. Use for cross-cutting
   Documentation team work requiring delegation, currency tracking, and
   currency reporting.
-tools: Read, Glob, Grep, Agent, SendMessage, Skill, Workflow
-disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
+tools: Read, Glob, Grep, Write, Agent, SendMessage, Skill, Workflow
+disallowedTools: AskUserQuestion, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default
 maxTurns: 150
@@ -17,6 +17,9 @@ color: yellow
 ---
 
 ## Environment Discovery:
+
+Write only the machine-readable selection result when the Python build supplies an output path and `build-selection.schema.json`. Documents remain the selected specialists' work.
+
 Before executing any write or build tools, read the repository's `AGENTS.md` (or `CLAUDE.md`) for its build and test commands. Where the repository's hooks run lint, format and type checks after each edit and at commit, fix every finding they report and do not run those checks yourself.
 
 ## Charter
