@@ -732,8 +732,11 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
     capability and is realized outside the Task's repository too; a feature only the Task's
     repository realizes is its own product feature and keeps its capability checks. A definition
     is put to a reviewer only from a product file (a file of the repository's test layout is not
-    read) and only when its name shares two uncommon words with a provided behaviour, a common word
-    being one in the behaviours of at least one in thirty provided items.
+    read) and only when its name shares two words with a provided behaviour that are not stop
+    words: the fixed list `matrixreuse.STOP_WORDS` of English function words and the words any
+    name carries whichever capability it is about (for example api, client, log, secret, error,
+    json, get, set, skill, spoke). Word frequency is not the rule, because the words that name a
+    shared capability (token, cache, outbox, identity) are as frequent as the noise words.
 17. **Stories and Tasks.** No entries; beads is the authority for both (R40). A Task states
     what it builds in the matrix's ids (R41), and the Task script answers from the Task
     beads which entries a Story built, which open work from other Epics touches an entry and

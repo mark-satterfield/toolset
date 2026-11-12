@@ -12,7 +12,7 @@ import tomllib
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import yaml
 from typeguard import TypeCheckError, check_type
@@ -22,6 +22,9 @@ from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.models import PipelineDefectError, StepError
 from orchestrator.core.tool_locks import control_repo
 from orchestrator.core.tools import Tools
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 GITUTILS: Final = Path(__file__).resolve().parents[2] / "scripts" / "portfolio" / "gitutils.py"
 WORKTREE_PREFIX: Final = "story"
@@ -345,6 +348,60 @@ def _product_path(tools: Tools, tree: Path, path: str, ownership: ToolingOwnersh
     return False
 
 
+@dataclass(frozen=True, slots=True)
+class ToolingPaths:
+    """How the build checkpoint treats each changed path of a Story worktree."""
+
+    product: tuple[str, ...]
+    """The paths the checkpoint commits on the Story branch."""
+    preserved: tuple[str, ...]
+    """The tier 2 tooling paths and transient test reports it leaves uncommitted, for delivery through ``main``."""
+    refused: tuple[str, ...]
+    """Each path whose ownership it refuses to assign, as ``<path>: <reason>``; a checkpoint with one stops."""
+
+
+def _verdict(tools: Tools, tree: Path, path: str, ownership: ToolingOwnership) -> bool | str:
+    """Classify one changed path, turning a refused ownership into its reason.
+
+    Returns:
+        True for a product path, False for a preserved one, or the reason its ownership is refused.
+
+    """
+    try:
+        return _product_path(tools, tree, path, ownership)
+    except ValueError as error:
+        return str(error)
+
+
+def classify_tooling_paths(tools: Tools, tree: Path, paths: Sequence[str] | None = None) -> ToolingPaths:
+    """Classify the changed paths of a Story worktree by the rule the build checkpoint commits by.
+
+    This is the plugin's one public statement of which changes a build commits and which tooling it
+    leaves uncommitted (``AGENTS.md``, ``CLAUDE.md``, ``.claude/``, ``.agents/``, ``.beads/``,
+    ``.code-checks/``, the checker files the control repository's checks-sync spec names, checker-only
+    edits of a mixed configuration file, and transient test reports). The control repository is read
+    from ``ATW_CONTROL_REPO``; a missing variable, unresolved merge conflicts in the worktree, or an
+    unreadable checks-sync configuration raises the error the step that reads it raises.
+
+    Args:
+        tools: The command boundary git runs through.
+        tree: The Story worktree.
+        paths: Its changed paths, relative to the worktree; None reads them from ``git status``.
+
+    Returns:
+        The product, preserved and refused paths.
+
+    """
+    ownership: ToolingOwnership = _ownership()
+    listed: tuple[str, ...] = _changed_paths(tools, tree) if paths is None else tuple(paths)
+    verdicts: list[tuple[str, bool | str]] = [(path, _verdict(tools, tree, path, ownership)) for path in listed]
+    return ToolingPaths(
+        product=tuple(path for path, verdict in verdicts if verdict is True),
+        preserved=tuple(path for path, verdict in verdicts if verdict is False),
+        refused=tuple(f"{path}: {verdict}" for path, verdict in verdicts if isinstance(verdict, str)),
+    )
+
+
 def _preserved_state(tools: Tools, tree: Path, paths: tuple[str, ...]) -> str:
     """Fingerprint preserved files and their exact index changes, including symlinks and modes.
 
@@ -399,17 +456,16 @@ def checkpoint(tools: Tools, workspace: Workspace, message: str) -> str:
         raise StepError(msg, OTHER_CAUSE, (problem,))
     if facts.get("dirty") is not True:
         return check_type(facts["head"], str)
+    stage: str = "build:commit"
     try:
-        paths: tuple[str, ...] = _changed_paths(tools, workspace.tree)
-        ownership: ToolingOwnership = _ownership()
-        product: tuple[str, ...] = tuple(
-            path for path in paths if _product_path(tools, workspace.tree, path, ownership)
-        )
-        preserved: tuple[str, ...] = tuple(path for path in paths if path not in product)
-        fingerprint: str = _preserved_state(tools, workspace.tree, preserved)
+        classified: ToolingPaths = classify_tooling_paths(tools, workspace.tree)
+        fingerprint: str = _preserved_state(tools, workspace.tree, classified.preserved)
     except (OSError, ValueError, KeyError, TypeCheckError, configparser.Error, yaml.YAMLError) as error:
-        stage: str = "build:commit"
         raise PipelineDefectError(stage, error) from error
+    if classified.refused:
+        raise PipelineDefectError(stage, ValueError("; ".join(classified.refused)))
+    product: tuple[str, ...] = classified.product
+    preserved: tuple[str, ...] = classified.preserved
     if product:
         pathspecs: list[str] = [f":(literal){path}" for path in product]
         tools.git(workspace.tree, ["add", "--", *pathspecs], stage="build:commit")

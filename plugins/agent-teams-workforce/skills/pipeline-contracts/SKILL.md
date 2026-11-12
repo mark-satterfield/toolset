@@ -1,6 +1,6 @@
 ---
 name: pipeline-contracts
-description: The one place for the pipeline contracts agents and code share outside a handback or a bead — the driver surface and ATW_* environment every orchestrator and headless session runs in, the Claude CLI rate-limit event, the composite ids, their phases, phase titles and role sets, the step journal, and the steps of the build and deploy pipelines. Use whenever an agent reads an ATW_* variable, requests a stop, names a composite or a phase, or prints progress; never restate a name or value below from memory.
+description: The one place for the pipeline contracts agents and code share outside a handback or a bead — the driver surface and ATW_* environment every orchestrator and headless session runs in, the Claude CLI rate-limit event, the composite ids, their phases, phase titles and role sets, the step journal, the steps of the build and deploy pipelines, and the build's public tooling-path rule (which changed paths a checkpoint commits and which tooling it preserves). Use whenever an agent reads an ATW_* variable, requests a stop, names a composite or a phase, or prints progress; never restate a name or value below from memory.
 ---
 
 # Pipeline contracts
@@ -10,6 +10,8 @@ and the schema, and code loads the generated module or reads the definition thro
 Nothing outside this skill restates a variable name, a denied tool, a composite id, a phase id or
 title, a role set, a progress marker, a field of the step journal, a journal change line or a step
 kind of the build and deploy pipelines.
+This skill also documents the one public rule of the plugin the driver runs, the build's
+tooling-path rule (below); its definition is code, not a schema.
 
 | Contract | Definition | Generated module | Generator | Staleness check |
 |---|---|---|---|---|
@@ -52,6 +54,25 @@ change that skips a number is refused.
 
 Change a contract by editing its schema or `composites.json`, then run its generator. Each check exits
 1 when a generated file differs from what its source generates.
+
+## The build's tooling-path rule
+
+Which changed paths of a Story worktree a build checkpoint commits, and which tooling it leaves
+uncommitted for delivery through tier 2 `main`, is stated once, by
+`orchestrator.flows.build_workspace.classify_tooling_paths(tools, tree, paths=None)`, which returns
+`ToolingPaths(product, preserved, refused)`. The checkpoint commits by it and stops on any refused
+path. A caller outside the plugin (for example the driver's supervisor) runs the public command,
+never the module's private functions:
+
+```bash
+python <plugin root>/orchestrator/tooling_paths.py <worktree> [<path>...]
+```
+
+With no path it classifies the worktree's changed paths from `git status`. It needs
+`ATW_CONTROL_REPO` and prints one JSON object: `product` (the paths the checkpoint commits),
+`preserved` (the tooling paths and transient test reports it leaves uncommitted) and `refused`
+(each path whose ownership it refuses, as `<path>: <reason>`). It exits 0 with that object, 2 on a
+usage error, and 1 when the rule cannot run, with the reason on standard error.
 
 ## Driver surface and the ATW_* environment
 

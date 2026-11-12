@@ -96,7 +96,7 @@
           "reads": ["worktree", "design", "provisioning"],
           "records": [
             {"name": "regressionPrevious", "kind": "file", "holds": "the requirements and mappings recorded before this Task"},
-            {"name": "requiredSources", "kind": "file", "holds": "regression.py prepare's record of the Task's sources (its PRD, spec, criteria, TRD and data model files) that the scope must list in sourceFiles; validation names each one omitted"},
+            {"name": "requiredSources", "kind": "file", "holds": "regression.py prepare's record of the Task's sources (its PRD, spec, criteria, TRD and data model files) that the scope must list in sourceFiles; the review step adds each one omitted"},
             {"name": "regressionPlan", "kind": "file", "holds": "the impact scope the regression-impact-assessor wrote"}
           ],
           "adds": []
@@ -105,8 +105,9 @@
           "description": "Review the regression scope against the requirement sources",
           "purpose": "The scope is approved by a reviewer that did not write it",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "regressionPrevious", "regressionPlan"],
+          "reads": ["worktree", "regressionPrevious", "regressionPlan", "requiredSources"],
           "records": [
+            {"name": "requiredSourcesAdded", "kind": "value", "holds": "Each required source the assessed scope omitted, which this step added to its sourceFiles before the review; absent when none was omitted"},
             {"name": "regressionPlanReview", "kind": "file", "holds": "the regression-coverage-reviewer's review of the scope"}
           ],
           "adds": []
@@ -118,7 +119,7 @@
           "reads": ["worktree", "design", "provisioning", "regressionPrevious", "regressionPlan", "regressionPlanReview"],
           "records": [
             {"name": "regressionPrevious", "kind": "file", "holds": "the requirements and mappings recorded before this Task"},
-            {"name": "requiredSources", "kind": "file", "holds": "regression.py prepare's record of the Task's sources (its PRD, spec, criteria, TRD and data model files) that the scope must list in sourceFiles; validation names each one omitted"},
+            {"name": "requiredSources", "kind": "file", "holds": "regression.py prepare's record of the Task's sources (its PRD, spec, criteria, TRD and data model files) that the scope must list in sourceFiles; the review step adds each one omitted"},
             {"name": "regressionPlan", "kind": "file", "holds": "the corrected impact scope the regression-impact-assessor wrote"}
           ],
           "adds": []

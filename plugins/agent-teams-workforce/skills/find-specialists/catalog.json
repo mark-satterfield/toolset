@@ -2604,7 +2604,7 @@
     },
     {
       "name": "python-library-implementer",
-      "description": "Implements plain Python library and package code - modules and their public API, package entry points and configuration bindings, packaging and distribution metadata in pyproject.toml and the repository's task file, and the removal of obsolete modules, files, extras and tasks - writing minimum code to pass failing tests. Use for Implementation work on a shared library or package that no Lambda handler, AWS service, data store, event, UI, ML or CDK specialty covers.",
+      "description": "Implements plain Python library and package code - modules and their public API, package entry points and configuration bindings, packaging and distribution metadata in pyproject.toml and the repository's task file, and the removal of obsolete modules, files, extras and tasks, an obsolete CDK app and stack included - writing minimum code to pass failing tests. Use for Implementation work on a shared library or package that no Lambda handler, AWS service, data store, event, UI, ML or CDK specialty covers.",
       "skills": [
         "agent-teams-workforce:subagent-contract",
         "agent-teams-workforce:implementer-contract",

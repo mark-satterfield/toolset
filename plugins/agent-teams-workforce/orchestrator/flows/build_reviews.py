@@ -60,6 +60,10 @@ EVIDENCE_WORK: Final = ("build:regression-tests", "build:final-suite")
 """The steps that write the tests and behaviour a failed final verification found missing, and review them."""
 REQUIRED_SOURCES: Final = "requiredSources"
 """The file regression.py prepare writes naming the Task's sources every scope must list, and its artifact."""
+SOURCES_ADDED: Final = "requiredSourcesAdded"
+"""The Task's required sources the build added to an assessed scope that omitted them."""
+SOURCE_FILES: Final = "sourceFiles"
+"""The member of a regression scope that lists every source file read to establish it."""
 REPOSITORY_SETUP_WORK: Final = "repositorySetupWork"
 """One selected specialist's correction of the repository's declarations: the artifact that marks its step."""
 
@@ -252,14 +256,41 @@ def _review(run: StepRun, final: bool) -> Completion:
     )
 
 
-def _review_initial(run: StepRun) -> Completion:
-    """Review regression scope.
+def _with_required_sources(run: StepRun) -> tuple[ValueArtifact, ...]:
+    """Add to the assessed scope's ``sourceFiles`` each of the Task's required sources it omits.
+
+    The build already knows the Task's sources (``requiredSources``, which prepare recorded), so an
+    omission is completed in the assessed scope itself before its reviewer is started, instead of
+    spending a scope correction on it. The reviewer, validation and every later reader then read the
+    completed scope.
 
     Returns:
-        The reviewer's journal children.
+        The ``requiredSourcesAdded`` artifact naming each source added, or nothing when none was
+        omitted or the assess step recorded no required sources.
 
     """
-    return _review(run, False)
+    if latest(run, REQUIRED_SOURCES) is None:
+        return ()
+    required: list[str] = check_type(_document(run, REQUIRED_SOURCES)[REQUIRED_SOURCES], list[str])
+    plan: dict[str, JsonValue] = _document(run, "regressionPlan")
+    listed: list[str] = check_type(plan.get(SOURCE_FILES, []), list[str])
+    omitted: list[str] = [source for source in required if source not in listed]
+    if not omitted:
+        return ()
+    write_json(_file(run, "regressionPlan"), {**plan, SOURCE_FILES: [*listed, *omitted]})
+    return (value_artifact(SOURCES_ADDED, [*omitted]),)
+
+
+def _review_initial(run: StepRun) -> Completion:
+    """Complete the scope's required sources, then review regression scope.
+
+    Returns:
+        The sources added, when any were, and the reviewer's journal children.
+
+    """
+    added: tuple[ValueArtifact, ...] = _with_required_sources(run)
+    reviewed: Completion = _review(run, False)
+    return Completion(artifacts=(*added, *reviewed.artifacts), add=reviewed.add)
 
 
 def _review_final(run: StepRun) -> Completion:

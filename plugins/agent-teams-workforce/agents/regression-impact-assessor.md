@@ -62,7 +62,7 @@ repositories).
   example describing the Task's own deployed stack).
 - List in `sourceFiles` every source of the Task the brief or the prepared required sources
   (`requiredSources`) name, the Task's PRD, spec, criteria, TRD and data model files included;
-  validation names each one omitted.
+  the build adds any one omitted before the review, but read each of them.
 - Cross-repository tests use their actual repository paths. Do not create or reinterpret Epic
   dependency edges.
 - Mappings for tests still to be authored may wait for finalize mode; keep known existing test

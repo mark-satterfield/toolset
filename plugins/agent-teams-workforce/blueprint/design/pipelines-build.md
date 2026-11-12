@@ -30,8 +30,11 @@ The producer-contract checker includes the real dispatch builder/parser and chec
 Task fields against the canonical bead metadata.
 
 Regression preparation includes the Task's supplied Spec and PRD paths as well as journal
-source artifacts, and records them as the Task's required sources (`requiredSources`). Validation
-and final verification name each required source the scope's `sourceFiles` omits, and each run
+source artifacts, and records them as the Task's required sources (`requiredSources`). The scope
+review step adds to the assessed scope's `sourceFiles` each required source the assessor omitted,
+before the reviewer starts, and records them as `requiredSourcesAdded`, so an omission costs no
+scope correction; validation and final verification still name any required source the scope's
+`sourceFiles` omits. They also name each run
 setup that names a resource the Task itself creates (the deployed name of an entry its
 `matrix_elements` state, or of the stack that holds one): the baseline runs every setup before the
 Task's change exists, so a baseline setup may not depend on the Task's own outputs. Each such
@@ -303,8 +306,8 @@ capability nothing references are blocking findings it settles, and an id the ma
 hold is a contract finding. A capability the Task's own repository provides is not checked, since
 its definitions there are its implementation, and neither is what a feature that only consumes
 such a capability is supported by, when another repository realizes that feature too. Only when the
-check leaves product definitions (test files are not read) whose names share uncommon words with a
-provided behaviour is the shared-capability-reviewer started. It is handed each distinct definition once, with its candidate
+check leaves product definitions (test files are not read) whose names share two words outside
+`matrixreuse.STOP_WORDS` with a provided behaviour is the shared-capability-reviewer started. It is handed each distinct definition once, with its candidate
 capability items, in text files of at most 40,000 characters it reads whole, and returns one
 ruling per definition (`build-reuse-rulings.schema.json`). `build:reuse-ruled` then merges the
 rulings with the settled findings into the review by script, and fails the step when a handed
@@ -350,6 +353,9 @@ tooling through a separate main worktree and integrate it before the product che
 Preserved tooling dirt is not a failed product checkpoint or evidence of tooling delivery.
 Test reports under `.agent-workforce/reports/` are transient run output, never product: a
 checkpoint leaves them uncommitted, as the regression runner archives and deletes its own.
+The rule is public: `build_workspace.classify_tooling_paths` states it once, the checkpoint commits
+by it, and `orchestrator/tooling_paths.py` prints it for a caller outside the plugin (the
+pipeline-contracts skill, "The build's tooling-path rule").
 
 The Task's build sets no matrix approval or verified gate. The Story's deployment follows only
 when its Tasks are built, as described in [deploy](pipelines-deploy.md).

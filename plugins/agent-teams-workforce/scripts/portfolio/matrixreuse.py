@@ -19,16 +19,16 @@ supported by belongs to those other realizers.
 A ``judgment`` item is put to a reviewer only for a product definition: a file of the repository's
 test layout (under a ``testpaths`` entry of its ``pyproject.toml``, or ``tests``, ``test`` or
 ``__tests__`` when it states none, or named as a test file) is not read for definitions. The words
-a definition's name shares with a provided behaviour count only when they are not common: a word
-that occurs in the behaviours of at least one in ``COMMON_WORD_SHARE`` of all the items the
-matrix's capabilities provide carries no meaning of its own.
+a definition's name shares with a provided behaviour count only when they are not in
+``STOP_WORDS``: English function words and the words every SkillSpoke-style name carries, which
+say nothing about which capability a definition does. Word frequency is not the rule, because the
+words that name a shared capability (token, cache, outbox, identity) are as frequent among provided
+behaviours as the noise words.
 """
 
-import math
 import re
 import sys
 import tomllib
-from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -60,11 +60,102 @@ REUSE_DUPLICATE: Final[ReuseFinding] = "duplicate"
 REUSE_JUDGMENT: Final[ReuseFinding] = "judgment"
 ATTR_PROVIDES: Final = "provides"
 MIN_SHARED_WORDS: Final = 2
-"""How many uncommon words of a provided behaviour a new definition's name must share to be put to a reviewer."""
-COMMON_WORD_SHARE: Final = 30
-"""A word in the behaviours of at least one in this many provided items is common."""
-MIN_COMMON_COUNT: Final = 2
-"""A word in fewer provided items than this is never common."""
+"""How many words of a provided behaviour outside ``STOP_WORDS`` a definition's name must share to reach a reviewer."""
+STOP_WORDS: Final[frozenset[str]] = frozenset({
+    # English function words that occur in provided behaviours and in definition names.
+    "about",
+    "after",
+    "against",
+    "all",
+    "an",
+    "and",
+    "any",
+    "are",
+    "as",
+    "at",
+    "be",
+    "before",
+    "but",
+    "by",
+    "can",
+    "do",
+    "does",
+    "each",
+    "else",
+    "every",
+    "for",
+    "from",
+    "has",
+    "have",
+    "if",
+    "in",
+    "into",
+    "is",
+    "it",
+    "its",
+    "may",
+    "must",
+    "no",
+    "none",
+    "not",
+    "of",
+    "off",
+    "on",
+    "one",
+    "only",
+    "or",
+    "out",
+    "over",
+    "own",
+    "per",
+    "same",
+    "so",
+    "than",
+    "that",
+    "the",
+    "their",
+    "then",
+    "these",
+    "this",
+    "those",
+    "through",
+    "to",
+    "under",
+    "up",
+    "was",
+    "what",
+    "when",
+    "whether",
+    "which",
+    "while",
+    "who",
+    "whose",
+    "with",
+    "within",
+    # Words any definition name or provided behaviour carries, whichever capability it is about.
+    "api",
+    "body",
+    "client",
+    "data",
+    "error",
+    "errors",
+    "get",
+    "id",
+    "ids",
+    "json",
+    "lib",
+    "log",
+    "logs",
+    "name",
+    "secret",
+    "secrets",
+    "set",
+    "skill",
+    "spoke",
+    "type",
+    "value",
+})
+"""The words a definition's name and a provided behaviour may share without it counting."""
 DEFAULT_TEST_ROOTS: Final[frozenset[str]] = frozenset({"tests", "test", "__tests__"})
 """The folders that hold tests when the repository's ``pyproject.toml`` states no ``testpaths``."""
 PYPROJECT: Final = "pyproject.toml"
@@ -477,25 +568,6 @@ def _duplicates(guarded: Sequence[Guarded], changed: Mapping[str, Sequence[str]]
     return items
 
 
-def _common_words(matrix: Matrix) -> frozenset[str]:
-    """Find the words too common among provided behaviours to show that a name reads like one.
-
-    Returns:
-        Each word in the behaviours of at least one in ``COMMON_WORD_SHARE`` of the items every
-        feature of the matrix provides, and never one in fewer than ``MIN_COMMON_COUNT``.
-
-    """
-    behaviours: list[set[str]] = [
-        set(words(item.behaviour))
-        for entry in matrix.entries()
-        if entry.kind == KIND_FEATURE
-        for item in _provided(entry)
-    ]
-    least: int = max(MIN_COMMON_COUNT, math.ceil(len(behaviours) / COMMON_WORD_SHARE))
-    counts: Counter[str] = Counter(word for behaviour in behaviours for word in behaviour)
-    return frozenset(word for word, count in counts.items() if count >= least)
-
-
 def _test_roots(worktree: Path) -> frozenset[str]:
     """Read where the repository keeps its tests.
 
@@ -546,17 +618,17 @@ def _is_test(relative: str, roots: Iterable[str]) -> bool:
 def _judgment(
     guarded: Sequence[Guarded],
     changed: Mapping[str, Sequence[str]],
-    common: frozenset[str],
 ) -> list[ReuseItem]:
     """Find the product definitions in changed files whose name reads like a provided behaviour.
 
     Returns:
-        One item per definition and ``provides`` item that share enough uncommon words for a
-        reviewer to be asked whether the definition duplicates the behaviour.
+        One item per definition and ``provides`` item that share at least ``MIN_SHARED_WORDS`` words
+        outside ``STOP_WORDS``, for a reviewer to be asked whether the definition duplicates the
+        behaviour.
 
     """
     behaviours: list[tuple[EntryId, Provided, set[str]]] = [
-        (capability.feature.id, item, set(words(item.behaviour)) - common)
+        (capability.feature.id, item, set(words(item.behaviour)) - STOP_WORDS)
         for capability in guarded
         for item in capability.provides
     ]
@@ -648,7 +720,7 @@ def check_reuse(
         ],
         "provided": provided_here,
         "violations": violations,
-        "judgment": _judgment(guarded, product, _common_words(matrix)),
+        "judgment": _judgment(guarded, product),
         "unchecked": unchecked,
         "clean": not violations,
     }
