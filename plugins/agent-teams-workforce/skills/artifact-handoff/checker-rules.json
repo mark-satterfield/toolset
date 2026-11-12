@@ -637,6 +637,7 @@
         "scripts/portfolio/regression.py#_execute_run",
         "scripts/portfolio/regression.py#_judge",
         "scripts/portfolio/regression.py#_base_health",
+        "scripts/portfolio/regression.py#_replay_errors",
         "scripts/portfolio/regression.py#_effective_origins",
         "scripts/portfolio/regression.py#_setup_errors",
         "scripts/portfolio/regression.py#junit_results"
@@ -824,6 +825,24 @@
           "enforced": "cannot prove the test of an existing requirement failed before the change",
           "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
           "stated": "as regression.py verify proves by replaying the failing tests on the code before the change"
+        },
+        {
+          "id": "edited-test-not-broken",
+          "enforced": "as it was before the Task edited it, passed before the change and fails after it",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "when that version passed before the change and fails after it, it is a regression whatever the edited version shows"
+        },
+        {
+          "id": "edited-test-checked",
+          "enforced": "cannot check the test of an existing requirement the Task edited in its version from before the change",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "when that version cannot be checked the test is unproven"
+        },
+        {
+          "id": "configuration-declared",
+          "enforced": "the run cannot be replayed on the code before the change, because these changed dependency manifests or test configuration files",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "leaves the run unreplayable on the code before the change, and verification names it as undeclaredConfiguration"
         },
         {
           "id": "fresh-report",

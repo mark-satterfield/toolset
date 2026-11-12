@@ -440,7 +440,7 @@
             {"name": "regressionOriginCorrections", "kind": "value", "holds": "On success, each {requirementId, planned, effective} origin regression.py derived or raised from the Task's contract citations, when there is any"},
             {"name": "regressionUnmetBefore", "kind": "value", "holds": "On success, each {requirementId, testId} of an existing requirement whose test failed both on the code before the change and after it: unbuilt work of the Epic that owns the requirement, not of this Task"},
             {"name": "carriedFindings", "kind": "value", "holds": "The regressionUnmetBefore gaps carried as contract findings, each with its review, owner, severity, detail and reason, so they are reported for their owners"},
-            {"name": "regressionCorrection", "kind": "file", "holds": "Failed verification evidence when a bounded reassessment or correction is scheduled"}
+            {"name": "regressionCorrection", "kind": "file", "holds": "Failed verification evidence when a bounded reassessment or correction is scheduled; its undeclaredConfiguration names the changed dependency manifests and test configuration no step declared as harness only, which kept a run from replaying on the code before the change"}
           ],
           "adds": [
             {"kinds": ["build:regression-reassess", "build:regression-review", "build:regression-validate", "build:regression-remap", "build:regression-map-review", "build:regression-verify"], "when": "the requirement source bytes, the build's own changes included, changed since the scope was approved and that is the verification's only error (the mapping review is approved and every required layer is mapped), below the configured allowance of such reassessments: the scope is assessed, reviewed and validated for the current bytes, then mapped, reviewed and verified again"},
@@ -449,7 +449,7 @@
         },
         "build:regression-tests": {
           "description": "Write the tests the regression mapping needs",
-          "purpose": "A required layer the mapping review found without a test gets one; the mapping alone cannot write it",
+          "purpose": "A required layer the mapping review found without a test gets one, and a changed manifest or test configuration verification named as undeclaredConfiguration is declared by a test writer when it changed only so the tests run; the mapping alone can do neither",
           "runBy": "task-to-deploy",
           "reads": ["worktree", "regressionPlan", "regressionMapped", "regressionMappedReview", "regressionCorrection"],
           "records": [

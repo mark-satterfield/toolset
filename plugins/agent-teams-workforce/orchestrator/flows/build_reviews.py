@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import sys
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from driver_surface_types import REGRESSION_TIMEOUT_DEFAULT, REGRESSION_TIMEOUT_ENV
+from regression import HARNESS_CONFIGURATION
 from typeguard import check_type
 
 from orchestrator.core import step_journal
@@ -354,6 +356,71 @@ def _handback_harness(run: StepRun) -> list[str]:
     ]
 
 
+def _implementation_changes(run: StepRun) -> list[tuple[list[str], list[str]]]:
+    """Read what each implementation changed and what of it it declared as harness, removed steps included.
+
+    The accepted steps' ``changedFiles`` and ``harnessFiles`` values, and the same fields of every handback in the
+    build's artifact folder that carries ``changedFiles``. A repository-setup correction records its own
+    ``harnessFiles`` on the step that resumes the build, so a change made only to dependency manifests and test
+    configuration, as such a correction makes, is no product change and is left out.
+
+    Returns:
+        Each implementation's changed files and declared harness files; a field that is not a list of strings raises
+        TypeCheckError.
+
+    """
+    changes: list[tuple[list[str], list[str]]] = [
+        (
+            check_type(artifacts["changedFiles"], list[str]),
+            check_type(artifacts.get(HARNESS_FILES, []), list[str]),
+        )
+        for artifacts in (
+            {artifact["name"]: artifact["value"] for artifact in step["artifacts"] if artifact["kind"] == "value"}
+            for step in accepted_steps(run)
+        )
+        if "changedFiles" in artifacts
+    ]
+    documents: list[JsonValue] = [
+        json.loads(handback.read_text(encoding="utf-8"))
+        for handback in sorted((run.context.work / "build").glob(f"*/{HANDBACK}"))
+    ]
+    changes.extend(
+        (check_type(document["changedFiles"], list[str]), check_type(document.get(HARNESS_FILES, []), list[str]))
+        for document in documents
+        if isinstance(document, dict) and "changedFiles" in document
+    )
+    return [(changed, harness) for changed, harness in changes if not all(map(_declaration, changed))]
+
+
+def _declaration(path: str) -> bool:
+    """Report whether a changed file is a dependency manifest or test configuration (regression.py's list).
+
+    Returns:
+        True when its file name matches one of regression.py's HARNESS_CONFIGURATION patterns.
+
+    """
+    name: str = Path(path).name
+    return any(fnmatch(name, pattern) for pattern in HARNESS_CONFIGURATION)
+
+
+def _product_files(run: StepRun, tree: Path) -> list[str]:
+    """List the files an implementation changed without declaring them as harness, relative to the build's tree.
+
+    regression.py verify keeps such a dependency manifest or test configuration as it was before the change when
+    no test writer declared it, and cannot replay on it when one did (declared and also changed for the product).
+
+    Returns:
+        The tree-relative paths, each once, sorted; a path outside the tree is left out.
+
+    """
+    listed: list[str] = [
+        path for changed, harness in _implementation_changes(run) for path in changed if path not in harness
+    ]
+    root: Path = tree.resolve()
+    resolved: list[Path] = [(tree / path).resolve() for path in listed]
+    return sorted({str(path.relative_to(root)) for path in resolved if path.is_relative_to(root)})
+
+
 def _harness_files(run: StepRun, tree: Path) -> list[str]:
     """List the test and harness files the build recorded, relative to its tree.
 
@@ -380,17 +447,19 @@ def _base_arguments(run: StepRun) -> list[str]:
     """Name the code before the Task's change, on which verification replays failing tests of existing requirements.
 
     The Task commits only at build:commit, so the worktree's HEAD is the revision it builds on. The replay base
-    takes only the recorded test and harness files from the tree; a changed dependency manifest or test
-    configuration none of them names leaves the replay unproven.
+    takes only the recorded test and harness files from the tree, less those an implementation also changed for
+    the product; a changed dependency manifest or test configuration that none of them names, or that is both
+    declared and changed for the product, leaves the replay unproven.
 
     Returns:
-        The ``--tree``, ``--base-ref`` and ``--harness-file`` arguments of regression.py verify.
+        The ``--tree``, ``--base-ref``, ``--harness-file`` and ``--product-file`` arguments of regression.py verify.
 
     """
     tree: Path = _workspace(run).tree
     head: str = run.tools.command(["git", "rev-parse", "HEAD"], stage=run.step["script"], cwd=tree).stdout.strip()
     harness: list[str] = [value for path in _harness_files(run, tree) for value in ("--harness-file", path)]
-    return ["--tree", str(tree), "--base-ref", head, *harness]
+    product: list[str] = [value for path in _product_files(run, tree) for value in ("--product-file", path)]
+    return ["--tree", str(tree), "--base-ref", head, *harness, *product]
 
 
 def _origin_artifacts(document: dict[str, JsonValue]) -> tuple[ValueArtifact, ...]:
@@ -551,8 +620,12 @@ def _regression_tests(run: StepRun) -> Completion:
         "requirement. A test of the Task's own requirement (origin task) that the current code fails is written "
         "all the same; implementation makes it pass. A test of an existing requirement that the code before this "
         "Task did not meet is not this Task's work: verification records it as unmetBefore, and no implementer "
-        "changes product code for it. Do not change governing requirements. An empty selection is valid only "
-        "when every finding is corrected by the mapping alone",
+        "changes product code for it. When the failed verification names undeclaredConfiguration (changed "
+        "dependency manifests or test configuration no step declared, so its runs could not be replayed on the "
+        "code before this Task), select a test specialist to read each file's change and declare in its testFiles "
+        "each one changed only so the tests run, even when an earlier step changed it; a file whose change the "
+        "product needs is never declared. Do not change governing requirements. An empty selection is valid only "
+        "when every finding is corrected by the mapping alone and no undeclaredConfiguration is named",
         followups=(_new("build:plan-tests", "Write the tests the regression mapping needs"),),
     )
 

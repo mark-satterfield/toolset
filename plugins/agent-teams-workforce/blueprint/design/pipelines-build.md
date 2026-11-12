@@ -312,9 +312,16 @@ is run and coverage-checked as impacted whatever the plan marks. Verification re
 test of an existing requirement in a detached checkout of the worktree's HEAD that takes from the
 tree only the declared test and harness files: every `testFiles` and `harnessFiles` the build's
 test writers, implementers and repository-setup corrections recorded, in the journal or in a
-handback a restart removed from it. Every other file, an unlisted product change included, stays as
-it was, and a changed dependency manifest or test configuration nobody declared leaves the replay
-unproven, so the base fails closed. The replays have an execution budget of their own. The base run
+handback a restart removed from it, less any dependency manifest or test configuration an
+implementation listed in its `changedFiles` without its `harnessFiles` (a product change). Every
+other file, a product change included, stays as it was. A changed dependency manifest or test
+configuration nobody declared, or one declared and also changed by an implementation for the
+product, leaves the replay unproven, so the base fails closed; verification names those files as
+`undeclaredConfiguration`, and the correction selects a test writer to declare in its `testFiles`
+each one changed only so the tests run, whichever step changed it. A replayed test whose file
+existed before the change and that the Task edited is also run in its version from before the
+change: on the base, and, when it passed there, on the changed code; failing there is a regression
+whatever the edited version shows. The replays have an execution budget of their own. The base run
 counts only when it is healthy: its setup succeeded, it wrote a report without structural errors,
 no test mapped only to existing requirements that passes after the change errored or went missing
 there, and at least one test passing after the change outside the Task's own passed there too; an
