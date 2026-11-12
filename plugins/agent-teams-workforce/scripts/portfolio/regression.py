@@ -28,6 +28,20 @@ CITATION_WORD_CHARACTERS: Final = "A-Za-z0-9_-"
 """A citation token is bounded by none of these characters, so TR-12 never matches TR-120 and E1 never E11."""
 PATH_BEFORE: Final[re.Pattern[str]] = re.compile(r"[^\s(\[`'\"]*$")
 """The path text written directly before a cited name: everything back to whitespace, a bracket or a quote."""
+SLUG: Final[re.Pattern[str]] = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)+")
+"""A PRD or Epic slug, such as myagent-identity-bot-mitigation or ssbd-sego."""
+OPENERS: Final = " \t\n([`'\""
+"""Whitespace and opening brackets or quotes that may stand between a qualifying slug and the name it qualifies."""
+NAME_REST: Final[re.Pattern[str]] = re.compile(r"[\w.-]*")
+"""The rest of a cited file name after its stem, such as .criteria.md."""
+NEXT_SOURCE: Final[re.Pattern[str]] = re.compile(
+    r"[\w./-]+\.(?:md|json|ya?ml)\b|(?<![\w/.#-])[a-z][a-z0-9]*(?:-[a-z0-9]+){2,}(?![\w/.-])",
+)
+"""The naming of the next source after a cited spec: another file, or a standalone PRD or Epic slug."""
+CRITERION: Final[re.Pattern[str]] = re.compile(
+    r"(?<![A-Za-z0-9])(AC|DOD)-(\d+)(?:\s*(?:\.\.\.?|\u2013|\u2014|\bto\b)\s*(?:(?:AC|DOD)-)?(\d+))?(?![0-9])",
+)
+"""An acceptance criterion or Definition of Done id, alone or as a range such as AC-1..AC-5."""
 ARTIFACT_FOLDER: Final = "artifacts"
 """A spec path names its Epic's artifact folder in the segment after this one."""
 HARNESS_CONFIGURATION: Final[tuple[str, ...]] = (
@@ -56,13 +70,17 @@ HARNESS_CONFIGURATION: Final[tuple[str, ...]] = (
     ".python-version",
     "Taskfile.yml",
     "Taskfile.yaml",
-    ".gitignore",
 )
-"""File names of the dependency manifests and test-tool configuration a run needs; a changed one enters the base."""
+"""File names of the dependency manifests and test-tool configuration a run executes through.
+
+A changed one enters the replay base only when the build declared it as a test or harness file; a changed one
+nobody declared leaves the replay unproven, because it may be the product change that broke an existing test.
+"""
 EXECUTION_BUDGET_SECONDS: Final[int] = 500
 OUTPUT_TAIL_BYTES: Final[int] = 16384
 PASSED: Final = "passed"
 FAILED: Final = "failed"
+ERRORED: Final = "errored"
 NOT_RUN: Final = "not run"
 
 type Mode = Literal["prepare", "check", "validate", "verify", "setup"]
@@ -110,15 +128,17 @@ class Base:
 
 @dataclass(frozen=True, slots=True)
 class JunitOutcome:
-    """What one JUnit report shows: the test IDs that passed, the ones that failed, and its structural errors.
+    """What one JUnit report shows: the test IDs that passed, failed and errored, and its structural errors.
 
     A test ID reported more than once (one test run under several projects or configurations) passes only when
-    every case of it passed, and fails when any case of it failed.
+    every case of it passed, and fails when any case of it failed or errored. ``errored`` is the subset of
+    ``failed`` with an ``error`` element: the test could not run to an assertion, as opposed to failing one.
     """
 
     passed: frozenset[str]
     failed: frozenset[str]
     errors: tuple[str, ...]
+    errored: frozenset[str] = frozenset()
 
 
 def _str(obj: JsonObject, key: str) -> str:
@@ -340,7 +360,9 @@ def _names_this_spec(before: str, spec: PurePosixPath) -> bool:
     """Report whether the path written before a spec's name points at this spec.
 
     A bare name, a path through the spec's Epic artifact folder, or a path ending in the spec's own folders
-    names it; a path through any other folder names another Epic's spec of the same name.
+    names it; a path through any other folder names another Epic's spec of the same name. A bare name
+    written directly after a PRD or Epic slug, or a path ending in one, other than this spec's Epic folder
+    (whitespace or an opening bracket between them) names that PRD's or Epic's spec of the same name.
 
     Returns:
         True when the text names this spec.
@@ -350,43 +372,89 @@ def _names_this_spec(before: str, spec: PurePosixPath) -> bool:
     written: tuple[str, ...] = tuple(
         part for part in PurePosixPath(found.group(0) if found else "").parts if part != "/"
     )
-    if not written:
-        return True
     epic: str | None = _epic_folder(spec)
-    folders: tuple[str, ...] = spec.parent.parts
-    return (epic is not None and epic in written) or folders[len(folders) - len(written) :] == written
+    if written:
+        folders: tuple[str, ...] = spec.parent.parts
+        return (epic is not None and epic in written) or folders[len(folders) - len(written) :] == written
+    words: list[str] = before.rstrip(OPENERS).split()
+    qualifier: str = words[-1].rsplit("/", 1)[-1] if words else ""
+    return SLUG.fullmatch(qualifier) is None or qualifier == epic
 
 
-def _cites_spec(text: str, spec_path: str) -> bool:
-    """Report whether text names one of the Task's specs.
+def criteria_ids(text: str) -> set[str]:
+    """List the acceptance criterion and Definition of Done ids a text cites, ranges expanded.
 
     Returns:
-        True when the spec's name, up to its first dot, appears as a token written as this spec's path.
+        Each id, such as ``AC-3`` or ``DOD-1``; ``AC-1..AC-3`` gives AC-1, AC-2 and AC-3.
+
+    """
+    ids: set[str] = set()
+    for match in CRITERION.finditer(text):
+        kind: str = match.group(1)
+        first: int = int(match.group(2))
+        last: int = int(match.group(3)) if match.group(3) else first
+        ids.update(f"{kind}-{number}" for number in range(first, max(first, last) + 1))
+    return ids
+
+
+def _cited_criteria(text: str, spec_path: str) -> set[str]:
+    """Collect the criteria ids a text cites of one spec.
+
+    Each naming of the spec governs the ids written after it, up to the naming of the next source (another
+    file, or a standalone PRD or Epic slug) or the next naming of a spec of the same name, so ids written
+    for another source are not this spec's.
+
+    Returns:
+        The ids cited of this spec; empty when the text never names it.
 
     """
     spec: PurePosixPath = PurePosixPath(spec_path.split("#", 1)[0])
     stem: str = spec.name.split(".", 1)[0]
-    return bool(stem) and any(_names_this_spec(text[:start], spec) for start in _token_found(text, stem))
+    starts: list[int] = _token_found(text, stem) if stem else []
+    ends: list[int] = [*starts[1:], len(text)][: len(starts)]
+    return {
+        criterion
+        for start, end in zip(starts, ends, strict=True)
+        if _names_this_spec(text[:start], spec)
+        for criterion in criteria_ids(_governed(text[:end], start + len(stem)))
+    }
+
+
+def _governed(text: str, name_end: int) -> str:
+    """Cut the text a cited spec name governs: from the end of its stem to the naming of the next source.
+
+    Returns:
+        The governed text, the rest of the name (such as ``.criteria.md#AC-3``) included.
+
+    """
+    rest: re.Match[str] | None = NAME_REST.match(text, name_end)
+    after: int = rest.end() if rest else name_end
+    following: re.Match[str] | None = NEXT_SOURCE.search(text, after)
+    return text[name_end : following.start() if following else len(text)]
 
 
 def cited(requirement: JsonObject, citations: JsonObject) -> bool:
-    """Report whether the Task's contract cites a requirement.
+    """Report whether the Task's contract cites a requirement as its own.
 
     A requirement is cited when its id or sourceRef holds one of the contract's requirement ids as a whole
-    token, or names one of the Task's own specs (:func:`_cites_spec`).
+    token, or when it names one of the Task's specs (:func:`_names_this_spec`) with an acceptance criterion or
+    Definition of Done id the Task's bead lists as its own. The Tasks of a Story share their spec, so naming
+    the spec alone, or citing a criterion another Task owns, is no citation.
 
     Args:
         requirement: One requirement of the plan.
-        citations: The Task's contract citations: ``requirementIds`` and ``specPaths``.
+        citations: The Task's contract citations: ``requirementIds``, ``specPaths``, ``acceptanceCriteria`` and
+            ``definitionOfDone``.
 
     Returns:
         True when the contract cites it.
 
     """
-    text: str = f"{_str(requirement, 'id')} {_str(requirement, 'sourceRef')}"
-    return any(_token_found(text, token) for token in _strs(citations, "requirementIds")) or any(
-        _cites_spec(text, spec) for spec in _strs(citations, "specPaths")
-    )
+    texts: tuple[str, str] = (_str(requirement, "id"), _str(requirement, "sourceRef"))
+    if any(_token_found(text, token) for text in texts for token in _strs(citations, "requirementIds")):
+        return True
+    own: set[str] = {*_strs(citations, "acceptanceCriteria"), *_strs(citations, "definitionOfDone")}
+    return any(_cited_criteria(text, spec) & own for text in texts for spec in _strs(citations, "specPaths"))
 
 
 def origins(plan: JsonObject, citations: JsonObject) -> dict[str, str]:
@@ -424,14 +492,13 @@ def read_citations(path: str) -> JsonObject:
     """Read the Task's contract citations.
 
     Returns:
-        ``requirementIds`` and ``specPaths``, each a list of strings, absent meaning empty; a field that is not
-        a list of strings raises TypeError.
+        ``requirementIds``, ``specPaths``, ``acceptanceCriteria`` and ``definitionOfDone``, each a list of
+        strings, absent meaning empty; a field that is not a list of strings raises TypeError.
 
     """
     document: JsonObject = json_object(json.loads(Path(path).read_text(encoding="utf-8")))
-    requirement_ids: list[JsonValue] = [*_optional_strs(document, "requirementIds")]
-    spec_paths: list[JsonValue] = [*_optional_strs(document, "specPaths")]
-    return {"requirementIds": requirement_ids, "specPaths": spec_paths}
+    fields: tuple[str, ...] = ("requirementIds", "specPaths", "acceptanceCriteria", "definitionOfDone")
+    return {field: [*_optional_strs(document, field)] for field in fields}
 
 
 def _discovery_errors(plan: JsonObject, requirements: list[JsonObject]) -> list[str]:
@@ -512,8 +579,12 @@ def _run_errors(plan: JsonObject, ids: list[str]) -> list[str]:
     return errors
 
 
-def _coverage_errors(plan: JsonObject, requirements: list[JsonObject]) -> list[str]:
-    """Check that every required impacted layer maps to a run in its repository, with concrete tests for a junit run.
+def _coverage_errors(plan: JsonObject, requirements: list[JsonObject], owned: frozenset[str]) -> list[str]:
+    """Check that every required layer of an impacted requirement maps to a run in its repository.
+
+    A requirement the Task owns (``owned``, its effective task origins) is checked as impacted whatever the
+    plan's ``impacted`` says, so the Task cannot pass without its own criterion. A junit run needs concrete
+    tests.
 
     Returns:
         The coverage errors.
@@ -523,7 +594,7 @@ def _coverage_errors(plan: JsonObject, requirements: list[JsonObject]) -> list[s
     runs: dict[str, JsonObject] = {_str(r, "id"): r for r in _objs(plan, "runs")}
     mappings: list[JsonObject] = _objs(plan, "mappings")
     for req in requirements:
-        if not _flag(req, "impacted"):
+        if not _flag(req, "impacted") and _str(req, "id") not in owned:
             continue
         req_id: str = _str(req, "id")
         for layer in _objs(req, "applicability"):
@@ -605,8 +676,20 @@ def _prior_layer_errors(
     return errors
 
 
-def validate(plan: JsonObject, previous: JsonObject | None = None, *, complete: bool = False) -> list[str]:
+def validate(
+    plan: JsonObject,
+    previous: JsonObject | None = None,
+    *,
+    complete: bool = False,
+    owned: frozenset[str] = frozenset(),
+) -> list[str]:
     """Reject incomplete discovery, missing old obligations, and unmapped layers.
+
+    Args:
+        plan: The regression plan or final mapping.
+        previous: The previous ledger, when there is one.
+        complete: Whether the mapping must cover every required layer (the final mapping).
+        owned: The requirements whose effective origin is task; each is covered as impacted.
 
     Returns:
         Every validation error; empty when the plan is acceptable.
@@ -631,7 +714,7 @@ def validate(plan: JsonObject, previous: JsonObject | None = None, *, complete: 
     if old and _flag(_obj(plan, "discovery"), "greenfield"):
         errors.append("Existing cumulative requirements contradict greenfield declaration")
     if complete:
-        errors.extend(_coverage_errors(plan, requirements))
+        errors.extend(_coverage_errors(plan, requirements, owned))
         errors.extend(_prior_mapping_errors(plan, previous, superseded))
         errors.extend(_prior_layer_errors(requirements, old, ids, superseded))
     return errors
@@ -641,10 +724,13 @@ def _case_state(case: ET.Element) -> str:
     """Classify one JUnit test case.
 
     Returns:
-        FAILED when it holds a failure or error, PASSED when it executed and was not skipped, else NOT_RUN.
+        ERRORED when it holds an error, FAILED when it holds a failure, PASSED when it executed and was not
+        skipped, else NOT_RUN.
 
     """
-    if any(case.find(tag) is not None for tag in ("failure", "error")):
+    if case.find("error") is not None:
+        return ERRORED
+    if case.find("failure") is not None:
         return FAILED
     executed: bool = case.get("status", "run").lower() in {"run", "passed", "success"} and case.get(
         "result",
@@ -676,8 +762,9 @@ def junit_results(report: Path, run_id: str) -> JunitOutcome:
         states.setdefault(f"{case.get('classname', '')}::{case.get('name', '')}", set()).add(_case_state(case))
     return JunitOutcome(
         passed=frozenset(test for test, seen in states.items() if seen == {PASSED}),
-        failed=frozenset(test for test, seen in states.items() if FAILED in seen),
+        failed=frozenset(test for test, seen in states.items() if seen & {FAILED, ERRORED}),
         errors=tuple(errors),
+        errored=frozenset(test for test, seen in states.items() if ERRORED in seen),
     )
 
 
@@ -830,14 +917,34 @@ class Execution:
         return exit_code
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class Verification:
-    """What one verification needs besides its runs: the plan's mappings, who owns each requirement, the base."""
+    """What one verification needs besides its runs: the plan's mappings, who owns each requirement, the base.
+
+    The replays on the base share a budget of their own, started by the first replay, so replaying a run never
+    spends the budget of the runs on the tree.
+    """
 
     state: Execution
     mappings: list[JsonObject]
     origins: dict[str, str]
     base: Base | None
+    replay: Execution | None = None
+
+    def replay_state(self) -> Execution:
+        """Return the execution state the replays share, starting its budget on first use.
+
+        Returns:
+            The replays' execution state.
+
+        """
+        if self.replay is None:
+            self.replay = Execution(
+                folder=self.state.folder,
+                deadline=time.monotonic() + EXECUTION_BUDGET_SECONDS,
+                setups={},
+            )
+        return self.replay
 
 
 def execute(
@@ -846,7 +953,9 @@ def execute(
     effective: dict[str, str],
     base: Base | None = None,
 ) -> tuple[list[str], list[JsonValue]]:
-    """Run each mapped run after its setup; exit zero alone never establishes per-test coverage of a junit run.
+    """Run each run mapped to an impacted or Task-owned requirement after its setup.
+
+    Exit zero alone never establishes per-test coverage of a junit run.
 
     Args:
         plan: The final regression mapping.
@@ -869,7 +978,9 @@ def execute(
     )
     evidence: list[JsonValue] = []
     errors: list[str] = []
-    impacted: set[str] = {_str(r, "id") for r in requirements if _flag(r, "impacted")}
+    impacted: set[str] = {
+        _str(r, "id") for r in requirements if _flag(r, "impacted") or effective.get(_str(r, "id")) == TASK
+    }
     needed: set[str] = {_str(m, "runId") for m in verification.mappings if _str(m, "requirementId") in impacted}
     for index, run in enumerate(_objs(plan, "runs")):
         if _str(run, "id") not in needed:
@@ -1039,12 +1150,14 @@ def _judge(
     """Hold the Task to its own requirements in full and to existing ones as far as the code met them before it.
 
     A failing test mapped only to existing requirements is replayed on the code before the change: when it fails
-    there too, its requirements are recorded as unmet before the change and are no error of this Task; when it
-    passed there, or the replay cannot show it failing, it is a regression. A failure on the base counts only
-    when the run there is healthy (:func:`_base_health`); an unhealthy base is an error, never unmet before.
+    there too, cleanly and not with an error, its requirements are recorded as unmet before the change and are
+    no error of this Task; when it passed there, or the replay cannot show it failing, it is a regression. A
+    failure on the base counts only when the run there is healthy (:func:`_base_health`); an unhealthy base is an
+    error, never unmet before. A control test that failed on the base and passes now is recorded as improved.
 
     Returns:
-        The errors, and the record fields of the replay and of the requirements unmet before the change.
+        The errors, and the record fields of the replay, of the requirements unmet before the change and of the
+        tests the change made pass.
 
     """
     run_id: str = _str(run, "id")
@@ -1075,30 +1188,42 @@ def _judge(
         for test in sorted(replay & before.passed)
     )
     control: frozenset[str] = (outcome.passed & linked.keys()) - owned
-    unhealthy: list[str] = _base_health(run_id, record, before, control)
+    unhealthy: list[str] = _base_health(run_id, record, before, Health(control, outcome.passed - owned))
     if unhealthy:
         return [*errors, *unhealthy], {"base": record, "unmetBefore": []}
+    failed_before: frozenset[str] = before.failed - before.errored
     errors.extend(
         f"{run_id}: cannot prove the test of an existing requirement failed before the change: {test}"
-        for test in sorted(replay - before.passed - before.failed)
+        for test in sorted(replay - before.passed - failed_before)
     )
     unmet: list[JsonValue] = [
         {"requirementId": requirement, "testId": test}
-        for test in sorted(replay & before.failed)
+        for test in sorted(replay & failed_before)
         for requirement in sorted(linked[test])
     ]
-    return errors, {"base": record, "unmetBefore": unmet}
+    improved: list[JsonValue] = [*sorted(control & failed_before)]
+    return errors, {"base": record, "unmetBefore": unmet, "improvedBy": improved}
 
 
-def _base_health(run_id: str, record: JsonObject, before: JunitOutcome, control: frozenset[str]) -> list[str]:
+@dataclass(frozen=True, slots=True)
+class Health:
+    """The tests that show whether a replay on the base ran: what passes after the change outside the Task's own.
+
+    ``control`` is the tests mapped only to existing requirements that pass after the change; ``outside`` is
+    every test passing after the change that no Task-owned requirement maps, unmapped tests included.
+    """
+
+    control: frozenset[str]
+    outside: frozenset[str]
+
+
+def _base_health(run_id: str, record: JsonObject, before: JunitOutcome, health: Health) -> list[str]:
     """Judge whether the replay on the code before the change is evidence at all.
 
     The base run is healthy when it was replayed, its setup succeeded, it wrote a JUnit report without
-    structural errors, and every control test passed there. The control tests are the tests mapped only to
-    existing requirements that pass after the change: the base runs them on the same product code they test,
-    so one that does not pass there shows a broken base (a missing harness file, a failed build) or a change to
-    behaviour the Task does not own, and either way the base cannot show what failed before. Tests of the
-    Task's own requirements fail there legitimately, and an unmapped test may be the Task's own, so neither is
+    structural errors, no control test errored or went missing there, and at least one test that passes after
+    the change outside the Task's own passed there too. A control test that ran and failed cleanly on the base
+    is an improvement this Task made, not ill health. The Task's own tests fail there legitimately, so none is
     a control. A run that was not replayed is judged by the caller as unproven, not here.
 
     Returns:
@@ -1107,11 +1232,11 @@ def _base_health(run_id: str, record: JsonObject, before: JunitOutcome, control:
     """
     if record.get("replayed") is not True:
         return []
-    reasons: list[str] = _unhealthy_reasons(record, before, control)
+    reasons: list[str] = _unhealthy_reasons(record, before, health)
     return [f"{run_id}: the run on the code before the change is not healthy: {reason}" for reason in reasons]
 
 
-def _unhealthy_reasons(record: JsonObject, before: JunitOutcome, control: frozenset[str]) -> list[str]:
+def _unhealthy_reasons(record: JsonObject, before: JunitOutcome, health: Health) -> list[str]:
     """Name what makes a replayed base run unhealthy (:func:`_base_health`).
 
     Returns:
@@ -1124,18 +1249,21 @@ def _unhealthy_reasons(record: JsonObject, before: JunitOutcome, control: frozen
         return ["it wrote no JUnit report"]
     reasons: list[str] = [f"its report has a structural error: {error}" for error in before.errors]
     reasons.extend(
-        f"a test of an existing requirement that passes after the change did not pass before it: {test}"
-        for test in sorted(control - before.passed)
+        f"a test of an existing requirement that passes after the change did not run before it: {test}"
+        for test in sorted(health.control - before.passed - (before.failed - before.errored))
     )
+    if not health.outside & before.passed:
+        reasons.append("no test that passes after the change outside the Task's own passed before it")
     return reasons
 
 
 def _replay(run: JsonObject, index: int, verification: Verification) -> tuple[JunitOutcome, JsonObject]:
     """Replay a junit run on the code before the change, when the run is in the Task's tree and a base is known.
 
-    A worktree that cannot be added leaves the run unreplayed, so its tests stay unproven. The worktree is
-    removed whatever happens; a removal that fails is recorded as ``cleanupError`` and never replaces the
-    result or an exception already on its way out.
+    A changed dependency manifest or test configuration the build did not declare as a test or harness file
+    leaves the run unreplayed, as does a worktree that cannot be added, so its tests stay unproven. The
+    worktree is removed whatever happens; a removal that fails is recorded as ``cleanupError`` and never
+    replaces the result or an exception already on its way out.
 
     Returns:
         What the replayed report shows (nothing when there is no replay or no report), and the replay's record.
@@ -1145,7 +1273,14 @@ def _replay(run: JsonObject, index: int, verification: Verification) -> tuple[Ju
     base: Base | None = verification.base
     if base is None or Path(_str(run, "repoPath")).resolve() != base.tree:
         return nothing, {"replayed": False, "reason": "no base revision of the run's tree was given"}
-    state: Execution = verification.state
+    state: Execution = verification.replay_state()
+    try:
+        undeclared: list[str] = _undeclared_configuration(base, state)
+    except GitError as error:
+        return nothing, {"replayed": False, "reason": f"listing the changed files failed: {error}"}
+    if undeclared:
+        reason: str = "changed dependency or test configuration the build did not declare as harness: "
+        return nothing, {"replayed": False, "reason": reason + ", ".join(undeclared)}
     folder: Path = state.folder / f"base-{index}"
     try:
         with deadline_scope(state.remaining()):
@@ -1155,7 +1290,8 @@ def _replay(run: JsonObject, index: int, verification: Verification) -> tuple[Ju
     outcome: JunitOutcome = nothing
     record: JsonObject = {"replayed": False, "reason": "the replay did not finish"}
     try:
-        _copy_harness(base, folder, state)
+        for path in sorted(base.harness_files):
+            _carry(base.tree, folder, path)
         outcome, record = _run_on_base(run, index, folder, state)
     finally:
         removal: str | None = _remove_worktree(base.tree, folder)
@@ -1177,7 +1313,7 @@ def _remove_worktree(tree: Path, folder: Path) -> str | None:
 
 
 def _is_harness_configuration(path: str) -> bool:
-    """Report whether a changed path is a dependency manifest or test-tool configuration a run needs.
+    """Report whether a changed path is a dependency manifest or test-tool configuration a run executes through.
 
     Returns:
         True when its file name matches HARNESS_CONFIGURATION.
@@ -1185,6 +1321,24 @@ def _is_harness_configuration(path: str) -> bool:
     """
     name: str = PurePosixPath(path).name
     return any(fnmatch(name, pattern) for pattern in HARNESS_CONFIGURATION)
+
+
+def _undeclared_configuration(base: Base, state: Execution) -> list[str]:
+    """List the changed dependency manifests and test configuration the build did not declare as harness.
+
+    The base takes from the tree only the declared test and harness files (``Base.harness_files``). A changed
+    manifest or configuration file nobody declared may be the product change that broke an existing test, so
+    it is neither carried into the base nor left out of it silently: its run cannot be replayed.
+
+    Returns:
+        The repository-relative paths, sorted; empty when every changed one is declared.
+
+    """
+    with deadline_scope(state.remaining()):
+        tracked: str = git(str(base.tree), "diff", "--name-only", "-z", base.ref).stdout
+        untracked: str = git(str(base.tree), "ls-files", "-z", "--others", "--exclude-standard").stdout
+    changed: set[str] = {path for path in (*tracked.split("\0"), *untracked.split("\0")) if path}
+    return sorted(path for path in changed - base.harness_files if _is_harness_configuration(path))
 
 
 def _carry(tree: Path, folder: Path, path: str) -> None:
@@ -1200,24 +1354,6 @@ def _carry(tree: Path, folder: Path, path: str) -> None:
         return
     if not source.exists() and target.is_file():
         target.unlink()
-
-
-def _copy_harness(base: Base, folder: Path, state: Execution) -> None:
-    """Add today's tests and their harness to the base checkout, and nothing else.
-
-    The harness is the files the build recorded as tests and harness (``Base.harness_files``) and every changed
-    dependency manifest or test-tool configuration (HARNESS_CONFIGURATION). Every other file stays as it was at
-    the base revision, so a product change nobody listed can never enter the base: the replay runs today's tests
-    against the product code as it was, and fails closed.
-    """
-    with deadline_scope(state.remaining()):
-        tracked: str = git(str(base.tree), "diff", "--name-only", "-z", base.ref).stdout
-        untracked: str = git(str(base.tree), "ls-files", "-z", "--others", "--exclude-standard").stdout
-    configuration: set[str] = {
-        path for path in {*tracked.split("\0"), *untracked.split("\0")} if path and _is_harness_configuration(path)
-    }
-    for path in sorted(base.harness_files | configuration):
-        _carry(base.tree, folder, path)
 
 
 def _run_on_base(run: JsonObject, index: int, folder: Path, state: Execution) -> tuple[JunitOutcome, JsonObject]:
@@ -1301,7 +1437,8 @@ def _parse_args() -> CliArgs:
     )
     parser.add_argument(
         "--citations",
-        help="verify: a JSON file of the Task's contract citations, {requirementIds, specPaths}",
+        help="verify: a JSON file of the Task's contract citations, "
+        "{requirementIds, specPaths, acceptanceCriteria, definitionOfDone}",
     )
     args: argparse.Namespace = parser.parse_args()
     mode: object = args.mode
@@ -1485,6 +1622,17 @@ def _prepare(previous: JsonObject | None, args: CliArgs) -> None:
     )
 
 
+def _review_approved(args: CliArgs) -> bool:
+    """Report whether the independent review given with ``--review`` approves, with evidence and no blocking finding.
+
+    Returns:
+        True when the review approves.
+
+    """
+    review: JsonObject = read(args.review) if args.review else {}
+    return review.get("approved") is True and not blocking_findings(review) and bool(review.get("evidence"))
+
+
 def main() -> None:
     """Prepare, validate or verify a cumulative regression plan and report the result as JSON."""
     args: CliArgs = _parse_args()
@@ -1499,11 +1647,10 @@ def main() -> None:
     if args.mode == "check":
         _check(plan, previous, args)
         return
-    errors: list[str] = validate(plan, previous, complete=args.mode == "verify")
-    review: JsonObject = read(args.review) if args.review else {}
-    review_approved: bool = (
-        review.get("approved") is True and not blocking_findings(review) and bool(review.get("evidence"))
-    )
+    effective, corrections = _effective_origins(plan, args) if args.mode == "verify" else ({}, [])
+    owned: frozenset[str] = frozenset(requirement for requirement, origin in effective.items() if origin == TASK)
+    errors: list[str] = validate(plan, previous, complete=args.mode == "verify", owned=owned)
+    review_approved: bool = _review_approved(args)
     if not review_approved:
         errors.append("Independent source/coverage/supersession review is not approved")
     if args.approved_plan and scope(plan) != scope(read(args.approved_plan)):
@@ -1517,7 +1664,6 @@ def main() -> None:
     if args.mode == "validate" and not errors:
         write(bindings, bound)
     evidence: list[JsonValue] = []
-    effective, corrections = _effective_origins(plan, args) if args.mode == "verify" else ({}, [])
     if not errors and args.mode == "verify":
         errors, evidence = execute(plan, Path(args.output).parent, effective, _base(args))
     error_values: list[JsonValue] = [*errors]

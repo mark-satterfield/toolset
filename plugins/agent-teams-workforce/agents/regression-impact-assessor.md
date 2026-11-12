@@ -32,8 +32,14 @@ repositories).
   in `cumulative-regression` ("Establish the affected requirements") reaches and no further.
 - Set each requirement's origin: task for what the Task's contract cites as what it builds, existing
   for every other current requirement the changed components carry. The gate raises a requirement
-  the contract cites to task whatever you write. In a sourceRef, name a source of another Epic or
-  PRD by its folder path, never by a bare file name the Task's own spec shares.
+  the contract cites to task whatever you write: one whose id or sourceRef holds one of the Task's
+  requirement ids, or that names the Task's own spec together with an acceptance criterion or
+  Definition of Done id the Task's bead lists as its own. The Tasks of a Story share one spec, so
+  in a sourceRef write the exact AC-n and DOD-n ids a requirement rests on, directly after the spec
+  it belongs to, and write a source of another Epic or PRD after that PRD's slug or by its folder
+  path, never by a bare file name the Task's own spec shares.
+- Mark impacted every requirement the Task's contract cites: verification runs and checks the
+  coverage of each one the contract cites whatever impacted says.
 - A missing or unreadable source blocks.
 - Assess every layer of every requirement explicitly. Never drop or weaken a prior mapping without
   an accepted source supersession.
@@ -41,10 +47,11 @@ repositories).
   configuration) for the commands it supports, and declare in plan mode the runs that already
   exist: its lint, format and type checks for a requirement that they pass, and its suite, each
   with what must be prepared before it runs (for example installing dependencies) as its setup.
-  A run's setup installs what the repository declares with its locked install (for example
-  `npm ci`); an ad-hoc install is only for a test-only package the repository does not declare.
-  When such an install fails because of the repository's own declarations, the build corrects the
-  declarations and the setup is reassessed.
+  A run's setup installs only what the repository declares, with its locked install (for example
+  `npm ci`), never an ad-hoc install of a package the repository does not declare. A package the
+  runs need that the repository does not declare, or an install that fails because of the
+  repository's own declarations, is corrected in the repository's declarations by the build, and
+  the setup is reassessed.
 - Cross-repository tests use their actual repository paths. Do not create or reinterpret Epic
   dependency edges.
 - Mappings for tests still to be authored may wait for finalize mode; keep known existing test

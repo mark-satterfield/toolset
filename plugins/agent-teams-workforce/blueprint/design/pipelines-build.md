@@ -302,18 +302,27 @@ verify the mapped evidence.
 
 The regression gate holds a Task to its own requirements (origin task) in full and to existing
 requirements only as far as the code met them before the change. A requirement's effective origin
-is derived from the Task's contract: one its requirement ids or its own spec cite is task whatever
-the plan says, a missing origin is derived and is no error, and origin is no part of the approved
-scope. Verification replays each failing test of an existing requirement in a detached checkout of
-the worktree's HEAD that takes from the tree only the test writers' `testFiles`, the
-`harnessFiles` a repository-setup correction changed, and the changed dependency manifests and
-test-tool configuration; every other file, an unlisted product change included, stays as it was,
-so the base fails closed. The base run counts only when it is healthy: its setup succeeded, it
-wrote a report without structural errors, and every test mapped only to existing requirements that
-passes after the change passed there too; an unhealthy base is a verification error. A test that
-fails on a healthy base records its requirement as `regressionUnmetBefore` and as a carried
-contract finding for the Epic that owns it, and the build continues; a test that passed there is a
-regression and fails verification. A failing test no requirement maps fails it too. Repository hooks run normally at commit. A rejected hook, remaining product changes, or modified preserved tooling after the hook
+is derived from the Task's contract (`citations.json`: the bead's requirement ids, spec paths,
+acceptance criteria and Definition of Done): one whose id or sourceRef holds a requirement id, or
+that names the Task's own spec with an AC-n or DOD-n id the bead lists as its own, is task whatever
+the plan says. The Tasks of a Story share one spec, so naming it alone, or citing another Task's
+criterion, or naming it after another PRD's or Epic's slug, is no citation. A missing origin is
+derived and is no error, origin is no part of the approved scope, and every Task-origin requirement
+is run and coverage-checked as impacted whatever the plan marks. Verification replays each failing
+test of an existing requirement in a detached checkout of the worktree's HEAD that takes from the
+tree only the declared test and harness files: every `testFiles` and `harnessFiles` the build's
+test writers, implementers and repository-setup corrections recorded, in the journal or in a
+handback a restart removed from it. Every other file, an unlisted product change included, stays as
+it was, and a changed dependency manifest or test configuration nobody declared leaves the replay
+unproven, so the base fails closed. The replays have an execution budget of their own. The base run
+counts only when it is healthy: its setup succeeded, it wrote a report without structural errors,
+no test mapped only to existing requirements that passes after the change errored or went missing
+there, and at least one test passing after the change outside the Task's own passed there too; an
+unhealthy base is a verification error. A control test that failed cleanly on the base is recorded
+as `improvedBy`, not ill health. A test that fails cleanly on a healthy base records its
+requirement as `regressionUnmetBefore` and as a carried contract finding for the Epic that owns it,
+and the build continues; a test that passed there is a regression and one that errored there is
+unproven, and either fails verification. A failing test no requirement maps fails it too. Repository hooks run normally at commit. A rejected hook, remaining product changes, or modified preserved tooling after the hook
 is a recorded work failure, never a reason to bypass hooks.
 
 Story checkpoints commit explicit product paths only. Instruction files, `.claude/`, and canonical

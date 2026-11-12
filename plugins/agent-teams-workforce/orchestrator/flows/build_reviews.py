@@ -59,7 +59,13 @@ VERIFY: Final = "build:regression-verify"
 EVIDENCE_WORK: Final = ("build:regression-tests", "build:final-suite")
 """The steps that write the tests and behaviour a failed final verification found missing, and review them."""
 HARNESS_FILES: Final = "harnessFiles"
-"""The repository declaration files a repository-setup correction changed; harness for the replay base."""
+"""The dependency manifests and configuration files a step changed so the tests run; harness for the replay base."""
+HARNESS_NAMES: Final = frozenset({"testFiles", HARNESS_FILES})
+"""The handback fields and journal values that name a build's test and harness files."""
+HANDBACK: Final = "result.json"
+"""The file each agent step of a build writes its handback to, in its own folder of the build's artifacts."""
+VERIFY_RUNS: Final = 2
+"""Verification runs the mapped runs on the tree and may replay them on the base, each within its own budget."""
 
 
 def _regression(run: StepRun, mode: str, plan: Path, extra: list[str]) -> tuple[Path, dict[str, JsonValue]]:
@@ -72,6 +78,7 @@ def _regression(run: StepRun, mode: str, plan: Path, extra: list[str]) -> tuple[
     tree: Path = _workspace(run).tree
     folder: Path = run.context.work / "build" / str(run.step["id"])
     output: Path = folder / f"{run.step['id']}-regression-{mode}.json"
+    phases: int = VERIFY_RUNS if mode == "verify" else 1
     result = run.tools.command(
         [
             sys.executable,
@@ -86,7 +93,7 @@ def _regression(run: StepRun, mode: str, plan: Path, extra: list[str]) -> tuple[
             *extra,
         ],
         stage=run.step["script"],
-        timeout=seconds(REGRESSION_TIMEOUT_ENV, float(REGRESSION_TIMEOUT_DEFAULT)),
+        timeout=phases * seconds(REGRESSION_TIMEOUT_ENV, float(REGRESSION_TIMEOUT_DEFAULT)),
         check=False,
     )
     document: dict[str, JsonValue] = json_object(json.loads(result.stdout))
@@ -304,38 +311,66 @@ def _citations(run: StepRun) -> Path:
     """Write the Task's contract citations, from which regression.py verify derives each requirement's origin.
 
     Returns:
-        The citations file: the bead's ``requirementIds`` and its spec paths (``specPaths`` and ``specPath``).
+        The citations file: the bead's ``requirementIds``, its spec paths (``specPaths`` and ``specPath``), and
+        its own ``acceptanceCriteria`` and ``definitionOfDone`` ids.
 
     """
     bead: dict[str, JsonValue] = json_object(run.context.args["bead"])
     specs: list[str] = list(check_type(bead.get("specPaths", []), list[str]))
     specs.extend([check_type(bead["specPath"], str)] if bead.get("specPath") else [])
     path: Path = run.context.work / "build" / str(run.step["id"]) / "citations.json"
+    lists: tuple[str, ...] = ("requirementIds", "acceptanceCriteria", "definitionOfDone")
     write_json(
         path,
         {
-            "requirementIds": list(check_type(bead.get("requirementIds", []), list[str])),
+            **{key: list(check_type(bead.get(key, []), list[str])) for key in lists},
             "specPaths": list(dict.fromkeys(specs)),
         },
     )
     return path
 
 
+def _handback_harness(run: StepRun) -> list[str]:
+    """Read the test and harness files every handback of the build names, those of removed steps included.
+
+    A restart removes steps from the journal but keeps their edits in the worktree, so the handback a removed
+    test writer left in the build's artifact folder is still the record of the files it wrote.
+
+    Returns:
+        Every path a handback's ``testFiles`` or ``harnessFiles`` names, in folder order; a field that is not a
+        list of strings raises TypeCheckError.
+
+    """
+    documents: list[JsonValue] = [
+        json.loads(handback.read_text(encoding="utf-8"))
+        for handback in sorted((run.context.work / "build").glob(f"*/{HANDBACK}"))
+    ]
+    return [
+        path
+        for document in documents
+        if isinstance(document, dict)
+        for name in sorted(HARNESS_NAMES & document.keys())
+        for path in check_type(document[name], list[str])
+    ]
+
+
 def _harness_files(run: StepRun, tree: Path) -> list[str]:
     """List the test and harness files the build recorded, relative to its tree.
 
     Returns:
-        The union of every accepted ``testFiles`` (the test writers') and ``harnessFiles`` (repository-setup
-        corrections), each once, sorted; a path outside the tree is left out.
+        The union of every accepted ``testFiles`` (the test writers') and ``harnessFiles`` (implementers' and
+        repository-setup corrections'), and of the same fields of every handback in the build's artifact folder
+        (:func:`_handback_harness`), each once, sorted; a path outside the tree is left out.
 
     """
     listed: list[str] = [
         path
         for step in accepted_steps(run)
         for artifact in step["artifacts"]
-        if artifact["kind"] == "value" and artifact["name"] in {"testFiles", HARNESS_FILES}
+        if artifact["kind"] == "value" and artifact["name"] in HARNESS_NAMES
         for path in check_type(artifact["value"], list[str])
     ]
+    listed.extend(_handback_harness(run))
     root: Path = tree.resolve()
     resolved: list[Path] = [(tree / path).resolve() for path in listed]
     return sorted({str(path.relative_to(root)) for path in resolved if path.is_relative_to(root)})
@@ -345,7 +380,8 @@ def _base_arguments(run: StepRun) -> list[str]:
     """Name the code before the Task's change, on which verification replays failing tests of existing requirements.
 
     The Task commits only at build:commit, so the worktree's HEAD is the revision it builds on. The replay base
-    takes only the recorded test and harness files from the tree.
+    takes only the recorded test and harness files from the tree; a changed dependency manifest or test
+    configuration none of them names leaves the replay unproven.
 
     Returns:
         The ``--tree``, ``--base-ref`` and ``--harness-file`` arguments of regression.py verify.

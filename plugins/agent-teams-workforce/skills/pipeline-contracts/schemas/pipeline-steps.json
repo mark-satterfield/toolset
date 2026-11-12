@@ -243,6 +243,7 @@
           "records": [
             {"name": "codeWork", "kind": "file", "holds": "The accepted report under build-implementation.schema.json"},
             {"name": "changedFiles", "kind": "value", "holds": "The accepted changedFiles field of build-implementation.schema.json"},
+            {"name": "harnessFiles", "kind": "value", "holds": "The accepted harnessFiles field of build-implementation.schema.json, when the implementer changed a dependency manifest or test configuration only so the tests run; the regression replay base takes them as harness"},
             {"name": "evidence", "kind": "value", "holds": "The accepted evidence field of build-implementation.schema.json"},
             {"name": "testIssues", "kind": "value", "holds": "The accepted testIssues field of build-implementation.schema.json"},
             {"name": "prerequisites", "kind": "value", "holds": "The accepted prerequisites field of build-implementation.schema.json"}

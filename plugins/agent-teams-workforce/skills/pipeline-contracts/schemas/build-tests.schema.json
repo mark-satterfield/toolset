@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["testFiles", "coverage", "evidence"],
   "properties": {
-    "testFiles": {"type": "array", "items": {"type": "string"}},
+    "testFiles": {"type": "array", "items": {"type": "string"}, "description": "Every file you created or changed: the tests, their fixtures and support files, and every dependency manifest, lock file and test configuration file (for example package.json, package-lock.json, tsconfig.json, playwright.config.ts, Taskfile.yml) you created or changed so the tests run. Regression verification replays a failing test of an existing requirement on the code before this Task with only these files added, and a changed manifest or configuration file nobody names leaves that replay unproven."},
     "coverage": {"type": "string", "minLength": 1},
     "evidence": {"type": "string", "minLength": 1},
     "decisions": {"type": "array", "items": {"type": "object", "required": ["testId", "action", "reason"], "additionalProperties": false, "properties": {"testId": {"type": "string"}, "action": {"enum": ["update", "delete", "keep"]}, "reason": {"type": "string"}}}}

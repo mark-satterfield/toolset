@@ -5,7 +5,8 @@
   "additionalProperties": false,
   "required": ["changedFiles", "evidence", "testIssues", "prerequisites"],
   "properties": {
-    "changedFiles": {"type": "array", "items": {"type": "string"}},
+    "changedFiles": {"type": "array", "items": {"type": "string"}, "description": "Every file you created or changed, relative to the tree."},
+    "harnessFiles": {"type": "array", "items": {"type": "string"}, "description": "The dependency manifests, lock files and test configuration files (for example package.json, tsconfig.json, jest.config.js, pyproject.toml, Taskfile.yml) you changed only so the tests run, relative to the tree; each is also in changedFiles. Regression verification replays a failing test of an existing requirement on the code before this Task with only the test and harness files added, and a changed manifest or configuration file no test writer or implementer names here leaves that replay unproven. Never name a file whose change the product needs, such as a dependency the product code imports."},
     "evidence": {"type": "string", "minLength": 1},
     "testIssues": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["testId", "reason"], "properties": {"testId": {"type": "string"}, "reason": {"type": "string"}, "contractRef": {"type": "string"}}}},
     "prerequisites": {"type": "array", "description": "Prerequisites developed in this run, not reasons to stop at an unbuilt dependency.", "items": {"type": "object", "additionalProperties": false, "required": ["repository", "worktree", "evidence"], "properties": {"repository": {"type": "string"}, "worktree": {"type": "string"}, "evidence": {"type": "string"}}}}
