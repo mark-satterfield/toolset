@@ -213,7 +213,7 @@ override, peer-dependency conflict, or a test configuration naming a package no 
 is routed `repository`, not `environment`: it is build work in the Task's worktree. After its
 fingerprint is recorded, `build:repository-setup` has the implementation lead select specialists,
 each corrects only those declarations in a `build:repository-setup-work` step, and
-`build:repository-setup-done` records the changed files as `harnessFiles`. A failure found at the
+`build:repository-setup-done` resumes the build. A failure found at the
 baseline then reassesses, reviews and validates the regression scope, so each run's setup installs
 the declared dependencies with its locked install, re-derives the execution policy and reruns the
 baseline; a failure a suite judgment routed reruns and reassesses the suite. An empty selection
@@ -301,44 +301,25 @@ the resulting code and test diff, the complete suite passes, and the cumulative 
 verify the mapped evidence.
 
 The regression gate holds a Task to its own requirements (origin task) in full and to existing
-requirements only as far as the code met them before the change. A requirement's effective origin
+requirements only as far as the pipeline itself proved them. A requirement's effective origin
 is derived from the Task's contract (`citations.json`: the bead's requirement ids, spec paths,
 acceptance criteria and Definition of Done): one whose id or sourceRef holds a requirement id, or
 that names the Task's own spec with an AC-n or DOD-n id the bead lists as its own, is task whatever
 the plan says. The Tasks of a Story share one spec, so naming it alone, or citing another Task's
 criterion, or naming it after another PRD's or Epic's slug, is no citation. A missing origin is
 derived and is no error, origin is no part of the approved scope, and every Task-origin requirement
-is run and coverage-checked as impacted whatever the plan marks. Verification replays each failing
-test of an existing requirement in a detached checkout of the worktree's HEAD that takes from the
-tree only the declared test and harness files: every `testFiles` and `harnessFiles` the build's
-test writers, implementers and repository-setup corrections recorded, in the journal or in a
-handback a restart removed from it, less any dependency manifest or test configuration an
-implementation listed in its `changedFiles` without its `harnessFiles` (a product change). A
-repository-setup correction is identified by its step (the accepted step that carries
-`repositorySetupWork`, and the handback in that step's folder), never by which files it changed, and
-its handback also lists every file it changed in `harnessFiles`; any other implementation's
-manifest-only change is a product change. A test file the Task added whose tests the tree's report
-names (pytest names the module, Playwright the file) and which holds no replayed and no control test
-is left out of the base run, so a new test module importing a module the Task adds does not stop
-it; a file holding a replayed or control test is kept, and such a test that cannot run on the base
-stays unproven. Every other file, a product change included, stays as it was. A changed dependency manifest or test
-configuration nobody declared, or one declared and also changed by an implementation for the
-product, leaves the replay unproven, so the base fails closed; verification names those files as
-`undeclaredConfiguration`, and the correction selects a test writer to declare in its `testFiles`
-each one changed only so the tests run, whichever step changed it. A replayed test whose file
-existed before the change and that the Task edited is also run in its version from before the
-change, together with the old tests the plan's `replacements` name for it and every test of an
-edited file that the changed tree no longer reports (a renamed or replaced test): on the base, and,
-when it passed there, on the changed code; failing there is a regression whatever the edited
-version shows. The replays have an execution budget of their own. The base run
-counts only when it is healthy: its setup succeeded, it wrote a report without structural errors,
-no test mapped only to existing requirements that passes after the change errored or went missing
-there, and at least one test passing after the change outside the Task's own passed there too; an
-unhealthy base is a verification error. A control test that failed cleanly on the base is recorded
-as `improvedBy`, not ill health. A test that fails cleanly on a healthy base records its
-requirement as `regressionUnmetBefore` and as a carried contract finding for the Epic that owns it,
-and the build continues; a test that passed there is a regression and one that errored there is
-unproven, and either fails verification. A failing test no requirement maps fails it too. Repository hooks run normally at commit. A rejected hook, remaining product changes, or modified preserved tooling after the hook
+is run and coverage-checked as impacted whatever the plan marks. An existing requirement binds the
+Task only through the tests the regression ledger (the repository's
+`.agent-workforce/regression.json`, written only by a verification that passed) records as proven
+for it: its `proven` list, and each mapped test its execution records as passing, which also reads
+a ledger written before that list existed. A proven test renamed or replaced keeps its
+`replacements` entry, and its new tests are proven in its place; a superseded requirement binds no
+longer. Every proven test must pass. Every other existing requirement (legacy behaviour, or another
+Epic's unbuilt work) does not bind the Task: a mapped test of it that does not pass is recorded as
+`regressionUnmet` (requirement, test and outcome) and as a carried contract finding for the Epic
+that owns it, and a failing test no requirement maps as `regressionUnmappedFailing`; the build
+continues. A verification that passes writes the ledger with every pair proven before and every
+mapped test that passed in it, so what a Task builds binds every later Task. Repository hooks run normally at commit. A rejected hook, remaining product changes, or modified preserved tooling after the hook
 is a recorded work failure, never a reason to bypass hooks.
 
 Story checkpoints commit explicit product paths only. Instruction files, `.claude/`, and canonical

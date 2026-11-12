@@ -6,18 +6,16 @@ import argparse
 import hashlib
 import json
 import re
-import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - The tool exists to run the mapped suite commands.
 import sys
 import time
 import xml.etree.ElementTree as ET  # ruff: ignore[suspicious-xml-etree-import] - Bundled expat 2.7.4 mitigates entity expansion and external entities are never resolved.
-from dataclasses import dataclass, field, replace
-from fnmatch import fnmatch
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Final, Literal
 
 from contracts import JsonObject, JsonValue, json_object
-from gitutils import GitError, cmd_hash_files, deadline_scope, git, separate_group, stop_process
+from gitutils import GitError, cmd_hash_files, deadline_scope, separate_group, stop_process
 from jsonartifact import read_artifact
 
 KINDS: Final[frozenset[str]] = frozenset({"unit", "contract", "integration", "nonfunctional"})
@@ -44,51 +42,12 @@ CRITERION: Final[re.Pattern[str]] = re.compile(
 """An acceptance criterion or Definition of Done id, alone or as a range such as AC-1..AC-5."""
 ARTIFACT_FOLDER: Final = "artifacts"
 """A spec path names its Epic's artifact folder in the segment after this one."""
-HARNESS_CONFIGURATION: Final[tuple[str, ...]] = (
-    "package.json",
-    "package-lock.json",
-    "npm-shrinkwrap.json",
-    "yarn.lock",
-    "pnpm-lock.yaml",
-    "pnpm-workspace.yaml",
-    ".npmrc",
-    ".nvmrc",
-    "tsconfig*.json",
-    "jest.config.*",
-    "jest.setup.*",
-    "vitest.config.*",
-    "playwright.config.*",
-    "babel.config.*",
-    ".babelrc",
-    "pyproject.toml",
-    "uv.lock",
-    "requirements*.txt",
-    "setup.cfg",
-    "pytest.ini",
-    "tox.ini",
-    "conftest.py",
-    ".python-version",
-    "Taskfile.yml",
-    "Taskfile.yaml",
-)
-"""File names of the dependency manifests and test-tool configuration a run executes through.
-
-A changed one enters the replay base only when the build declared it as a test or harness file and no
-implementation changed it for the product. One only an implementation changed stays as it was before the change.
-One nobody declared, or one declared and also changed for the product, leaves the replay unproven, because it may
-be the product change that broke an existing test.
-"""
-TEST_SOURCE_CONFIGURATION: Final[tuple[str, ...]] = ("conftest.py", "jest.setup.*")
-"""Harness configuration that is test code: an edited one is checked in its version from before the change, with
-the tests (:func:`_original_versions`)."""
 EXECUTION_BUDGET_SECONDS: Final[int] = 500
 OUTPUT_TAIL_BYTES: Final[int] = 16384
 PASSED: Final = "passed"
 FAILED: Final = "failed"
 ERRORED: Final = "errored"
 NOT_RUN: Final = "not run"
-UNDECLARED: Final = "undeclaredConfiguration"
-"""The record field and verify output naming changed configuration a replay cannot place."""
 
 type Mode = Literal["prepare", "check", "validate", "verify", "setup"]
 MODES: Final[dict[str, Mode]] = {
@@ -114,52 +73,20 @@ class CliArgs:
     tree: str | None
     repos: list[str]
     bindings: str | None = None
-    base_ref: str | None = None
-    harness_files: tuple[str, ...] = ()
-    product_files: tuple[str, ...] = ()
     citations: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
-class Base:
-    """The code before the change: the tree's base revision with only today's tests and their harness added.
-
-    A failing test of an existing requirement is replayed there to tell an unmet requirement from a regression.
-    ``harness_files`` are the repository-relative test and harness files the build recorded. ``product_files``
-    are the dependency manifests and test configuration an implementation changed without declaring them as
-    harness. The base takes the harness files that are not product files; every other file, a product change
-    included, stays as it was at ``ref``.
-    """
-
-    tree: Path
-    ref: str
-    harness_files: frozenset[str]
-    product_files: frozenset[str] = frozenset()
-
-    @property
-    def carried(self) -> frozenset[str]:
-        """The files the base takes from the tree: the declared harness no implementation changed for the product.
-
-        Returns:
-            The repository-relative paths.
-
-        """
-        return self.harness_files - self.product_files
-
-
-@dataclass(frozen=True, slots=True)
 class JunitOutcome:
-    """What one JUnit report shows: the test IDs that passed, failed and errored, and its structural errors.
+    """What one JUnit report shows: the test IDs that passed and failed, and its structural errors.
 
     A test ID reported more than once (one test run under several projects or configurations) passes only when
-    every case of it passed, and fails when any case of it failed or errored. ``errored`` is the subset of
-    ``failed`` with an ``error`` element: the test could not run to an assertion, as opposed to failing one.
+    every case of it passed, and fails when any case of it failed or errored.
     """
 
     passed: frozenset[str]
     failed: frozenset[str]
     errors: tuple[str, ...]
-    errored: frozenset[str] = frozenset()
 
 
 def _str(obj: JsonObject, key: str) -> str:
@@ -697,6 +624,87 @@ def _prior_layer_errors(
     return errors
 
 
+def _superseded(requirements: list[JsonObject]) -> set[str]:
+    """List the prior requirement IDs the plan's requirements supersede with a source and a reason.
+
+    Returns:
+        The superseded requirement IDs.
+
+    """
+    return {
+        _str(s, "id")
+        for r in requirements
+        for s in _objs(r, "supersedes")
+        if _str(s, "sourceRef").strip() and _str(s, "reason").strip()
+    }
+
+
+def _passed_pairs(mappings: list[JsonObject], execution: list[JsonObject]) -> set[tuple[str, str]]:
+    """Pair each mapped test with its requirement where the execution records it passing in the mapping's run.
+
+    Returns:
+        The ``(requirementId, testId)`` pairs whose test passed.
+
+    """
+    passed: set[tuple[str, str]] = {
+        (_str(record, "runId"), test) for record in execution for test in _optional_strs(record, "passedTestIds")
+    }
+    return {
+        (_str(mapping, "requirementId"), test)
+        for mapping in mappings
+        for test in _strs(mapping, "testIds")
+        if (_str(mapping, "runId"), test) in passed
+    }
+
+
+def proven(previous: JsonObject | None, plan: JsonObject) -> frozenset[tuple[str, str]]:
+    """List the tests a completed build proved for each requirement: the pairs that bind every later Task.
+
+    The ledger is written only by a verification that passed. Its ``proven`` list carries every pair proven so
+    far, and a test its mappings name for a requirement and its execution records as passed in that mapping's
+    run is proven too, which also reads a ledger written before the list existed. A test the plan's
+    ``replacements`` name as replacing a proven test of the same requirement is proven in its place. A
+    requirement the plan supersedes binds no longer.
+
+    Args:
+        previous: The previous ledger, when there is one.
+        plan: The final regression mapping.
+
+    Returns:
+        Each proven ``(requirementId, testId)`` pair.
+
+    """
+    held: set[tuple[str, str]] = {
+        (_str(pair, "requirementId"), _str(pair, "testId")) for pair in _optional_objs(previous, "proven")
+    }
+    held |= _passed_pairs(_optional_objs(previous, "mappings"), _optional_objs(previous, "execution"))
+    renamed: set[tuple[str, str]] = {
+        (_str(replacement, "requirementId"), new)
+        for replacement in _optional_objs(plan, "replacements")
+        if (_str(replacement, "requirementId"), _str(replacement, "oldTestId")) in held
+        for new in _strs(replacement, "newTestIds")
+    }
+    dropped: set[str] = _superseded(_objs(plan, "requirements"))
+    return frozenset(pair for pair in held | renamed if pair[0] not in dropped)
+
+
+def proven_record(held: frozenset[tuple[str, str]], plan: JsonObject, evidence: list[JsonValue]) -> list[JsonValue]:
+    """Write the ledger's ``proven`` list after a verification that passed.
+
+    The pairs proven before (:func:`proven`) and the pairs whose test passed in this verification, each kept while
+    the plan still maps its test to its requirement.
+
+    Returns:
+        Each ``{requirementId, testId}`` pair, sorted.
+
+    """
+    mappings: list[JsonObject] = _objs(plan, "mappings")
+    mapped: set[tuple[str, str]] = {(_str(m, "requirementId"), test) for m in mappings for test in _strs(m, "testIds")}
+    records: list[JsonObject] = [record for record in evidence if isinstance(record, dict)]
+    kept: frozenset[tuple[str, str]] = (held | _passed_pairs(mappings, records)) & mapped
+    return [{"requirementId": requirement, "testId": test} for requirement, test in sorted(kept)]
+
+
 def validate(
     plan: JsonObject,
     previous: JsonObject | None = None,
@@ -722,12 +730,7 @@ def validate(
     errors.extend(_requirement_errors(plan, requirements, ids))
     errors.extend(_run_errors(plan, ids))
     old: dict[str, JsonObject] = {_str(r, "id"): r for r in _optional_objs(previous, "requirements")}
-    superseded: set[str] = {
-        _str(s, "id")
-        for r in requirements
-        for s in _objs(r, "supersedes")
-        if _str(s, "sourceRef").strip() and _str(s, "reason").strip()
-    }
+    superseded: set[str] = _superseded(requirements)
     errors.extend(
         f"{missing}: prior requirement dropped without explicit supersession"
         for missing in old.keys() - set(ids) - superseded
@@ -785,7 +788,6 @@ def junit_results(report: Path, run_id: str) -> JunitOutcome:
         passed=frozenset(test for test, seen in states.items() if seen == {PASSED}),
         failed=frozenset(test for test, seen in states.items() if seen & {FAILED, ERRORED}),
         errors=tuple(errors),
-        errored=frozenset(test for test, seen in states.items() if ERRORED in seen),
     )
 
 
@@ -938,54 +940,34 @@ class Execution:
         return exit_code
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class Verification:
-    """What one verification needs besides its runs: the plan's mappings, who owns each requirement, the base.
+    """What one verification needs besides its runs: the plan's mappings and what binds the Task.
 
-    ``replaced`` holds the old test IDs the plan's ``replacements`` name for each new test ID. The replays on the
-    base share a budget of their own, started by the first replay, so replaying a run never spends the budget of
-    the runs on the tree.
+    ``origins`` is :func:`origins`; ``proven`` is :func:`proven`.
     """
 
     state: Execution
     mappings: list[JsonObject]
     origins: dict[str, str]
-    base: Base | None
-    replaced: dict[str, frozenset[str]] = field(default_factory=dict)
-    replay: Execution | None = None
-
-    def replay_state(self) -> Execution:
-        """Return the execution state the replays share, starting its budget on first use.
-
-        Returns:
-            The replays' execution state.
-
-        """
-        if self.replay is None:
-            self.replay = Execution(
-                folder=self.state.folder,
-                deadline=time.monotonic() + EXECUTION_BUDGET_SECONDS,
-                setups={},
-            )
-        return self.replay
+    proven: frozenset[tuple[str, str]]
 
 
 def execute(
     plan: JsonObject,
     folder: Path,
     effective: dict[str, str],
-    base: Base | None = None,
+    held: frozenset[tuple[str, str]],
 ) -> tuple[list[str], list[JsonValue]]:
-    """Run each run mapped to an impacted or Task-owned requirement after its setup.
+    """Run each run mapped to an impacted or Task-owned requirement, or holding a proven test, after its setup.
 
     Exit zero alone never establishes per-test coverage of a junit run.
 
     Args:
         plan: The final regression mapping.
         folder: Where the evidence is written.
-        effective: The effective origin of each requirement (:func:`origins`).
-        base: The code before the change, on which a failing test of an existing requirement is replayed;
-            None when no base revision is known, so such a failure cannot be shown to predate the change.
+        effective: The origins (:func:`origins`).
+        held: The proven pairs (:func:`proven`).
 
     Returns:
         The execution errors and the per-run evidence records.
@@ -997,15 +979,18 @@ def execute(
         state=state,
         mappings=_objs(plan, "mappings"),
         origins=effective,
-        base=base,
-        replaced=_replaced(plan),
+        proven=held,
     )
     evidence: list[JsonValue] = []
     errors: list[str] = []
     impacted: set[str] = {
         _str(r, "id") for r in requirements if _flag(r, "impacted") or effective.get(_str(r, "id")) == TASK
     }
-    needed: set[str] = {_str(m, "runId") for m in verification.mappings if _str(m, "requirementId") in impacted}
+    needed: set[str] = {
+        _str(m, "runId")
+        for m in verification.mappings
+        if _str(m, "requirementId") in impacted or {(_str(m, "requirementId"), t) for t in _strs(m, "testIds")} & held
+    }
     for index, run in enumerate(_objs(plan, "runs")):
         if _str(run, "id") not in needed:
             continue
@@ -1015,53 +1000,15 @@ def execute(
     return errors, evidence
 
 
-def _replaced(plan: JsonObject) -> dict[str, frozenset[str]]:
-    """Map each new test ID of the plan's ``replacements`` to the old test IDs it replaces.
+def collected(evidence: list[JsonValue], name: str) -> list[JsonValue]:
+    """Collect one list field of every run record, in run order.
 
     Returns:
-        The old test IDs of each new test ID.
+        The entries of each record's ``name`` list.
 
     """
-    pairs: list[tuple[str, str]] = [
-        (new, _str(replacement, "oldTestId"))
-        for replacement in _optional_objs(plan, "replacements")
-        for new in _strs(replacement, "newTestIds")
-    ]
-    replaced: dict[str, set[str]] = {}
-    for new, old in pairs:
-        replaced.setdefault(new, set()).add(old)
-    return {new: frozenset(olds) for new, olds in replaced.items()}
-
-
-def unmet_before(evidence: list[JsonValue]) -> list[JsonValue]:
-    """Collect the existing requirements whose tests failed both before and after the change.
-
-    Returns:
-        Each ``{requirementId, testId}`` pair the runs recorded as unmet before the change.
-
-    """
-    return [
-        pair
-        for record in evidence
-        if isinstance(record, dict) and isinstance(record.get("unmetBefore"), list)
-        for pair in _objs(record, "unmetBefore")
-    ]
-
-
-def undeclared_configuration(evidence: list[JsonValue]) -> list[JsonValue]:
-    """Collect the changed configuration files that kept a run from replaying on the code before the change.
-
-    Returns:
-        The repository-relative paths, each once, sorted.
-
-    """
-    bases: list[JsonObject] = [
-        json_object(record["base"])
-        for record in evidence
-        if isinstance(record, dict) and isinstance(record.get("base"), dict)
-    ]
-    paths: set[str] = {path for base in bases if UNDECLARED in base for path in _strs(base, UNDECLARED)}
-    return [*sorted(paths)]
+    values: list[JsonValue] = [record.get(name) for record in evidence if isinstance(record, dict)]
+    return [entry for value in values if isinstance(value, list) for entry in value]
 
 
 def prepare_tree(plan: JsonObject, tree: Path, repos: list[str], folder: Path) -> tuple[list[str], list[JsonValue]]:
@@ -1178,7 +1125,7 @@ def _execute_run(run: JsonObject, index: int, verification: Verification) -> tup
         "passedTestIds": [*sorted(outcome.passed)],
         "failedTestIds": [*sorted(outcome.failed)],
     }
-    judged_errors, judged = _judge(run, index, exit_code, outcome, verification)
+    judged_errors, judged = _judge(run_id, exit_code, outcome, verification)
     return [*outcome.errors, *judged_errors], record | judged
 
 
@@ -1198,552 +1145,62 @@ def _tests_of(mappings: list[JsonObject], run_id: str) -> dict[str, set[str]]:
     return linked
 
 
+def _binding(linked: dict[str, set[str]], verification: Verification) -> tuple[frozenset[str], frozenset[str]]:
+    """Split a run's mapped tests into the Task's own and the proven ones, the two kinds that bind the Task.
+
+    Returns:
+        The tests mapped to a requirement of effective origin task, and the other tests a completed build proved
+        for a requirement they are mapped to.
+
+    """
+    owned: frozenset[str] = frozenset(
+        test for test, requirements in linked.items() if any(verification.origins.get(r) == TASK for r in requirements)
+    )
+    held: frozenset[str] = frozenset(
+        test for test, requirements in linked.items() if any((r, test) in verification.proven for r in requirements)
+    )
+    return owned, held - owned
+
+
 def _judge(
-    run: JsonObject,
-    index: int,
+    run_id: str,
     exit_code: int,
     outcome: JunitOutcome,
     verification: Verification,
 ) -> tuple[list[str], JsonObject]:
-    """Hold the Task to its own requirements in full and to existing ones as far as the code met them before it.
+    """Hold the Task to its own requirements in full and to existing ones only as far as the pipeline proved them.
 
-    A failing test mapped only to existing requirements is replayed on the code before the change: when it fails
-    there too, cleanly and not with an error, its requirements are recorded as unmet before the change and are
-    no error of this Task; when it passed there, or the replay cannot show it failing, it is a regression. A test
-    the Task edited is also checked in its version from before the change (:func:`_original_versions`): when that
-    version passed before the change and fails after it, it is a regression whatever the edited version shows. A
-    failure on the base counts only when the run there is healthy (:func:`_base_health`); an unhealthy base is an
-    error, never unmet before. A control test that failed on the base and passes now is recorded as improved.
+    A mapped test binds the Task when a requirement it is mapped to is the Task's own, or when a completed build
+    proved it for such a requirement (:func:`proven`); it must pass. Every other mapped test belongs to an existing
+    requirement the pipeline never proved: one that does not pass is recorded as unmet for the requirement, and a
+    failing test no requirement maps is recorded as unmapped, neither as this Task's failure.
 
     Returns:
-        The errors, and the record fields of the replay, of the requirements unmet before the change and of the
-        tests the change made pass.
+        The errors, and the record fields of the unmet requirements and the unmapped failing tests.
 
     """
-    run_id: str = _str(run, "id")
     linked: dict[str, set[str]] = _tests_of(verification.mappings, run_id)
-    owned: set[str] = {
-        test
-        for test, requirements in linked.items()
-        if any(verification.origins.get(r) != EXISTING for r in requirements)
-    }
-    replay: frozenset[str] = (outcome.failed & linked.keys()) - owned
+    owned, held = _binding(linked, verification)
     errors: list[str] = [
         f"{run_id}: test of the Task's own requirement failed: {test}" for test in sorted(outcome.failed & owned)
     ]
     errors.extend(
-        f"{run_id}: failing test is mapped to no requirement: {test}" for test in sorted(outcome.failed - linked.keys())
+        f"{run_id}: test of an existing requirement a completed build proved failed: {test}"
+        for test in sorted(outcome.failed & held)
     )
     errors.extend(
         f"{run_id}: mapped test not executed successfully: {test}"
-        for test in sorted(linked.keys() - outcome.passed - outcome.failed)
+        for test in sorted((owned | held) - outcome.passed - outcome.failed)
     )
     if exit_code and not outcome.failed:
         errors.append(f"{run_id}: exited {exit_code} with no failing test in its report")
-    if not replay:
-        return errors, {}
-    control: frozenset[str] = (outcome.passed & linked.keys()) - owned
-    replayed: Replay = _replay(run, index, verification, Tests(replay, control, outcome.passed | outcome.failed))
-    errors.extend(_replay_errors(run_id, replay, replayed))
-    before: JunitOutcome = replayed.before
-    unhealthy: list[str] = _base_health(run_id, replayed.record, before, Health(control, outcome.passed - owned))
-    if unhealthy:
-        return [*errors, *unhealthy], {"base": replayed.record, "unmetBefore": []}
-    judged: frozenset[str] = replay - replayed.regressed - replayed.unproven
-    failed_before: frozenset[str] = before.failed - before.errored
-    errors.extend(
-        f"{run_id}: cannot prove the test of an existing requirement failed before the change: {test}"
-        for test in sorted(judged - before.passed - failed_before)
-    )
     unmet: list[JsonValue] = [
-        {"requirementId": requirement, "testId": test}
-        for test in sorted(judged & failed_before)
+        {"requirementId": requirement, "testId": test, "outcome": FAILED if test in outcome.failed else NOT_RUN}
+        for test in sorted(linked.keys() - owned - held - outcome.passed)
         for requirement in sorted(linked[test])
     ]
-    improved: list[JsonValue] = [*sorted(control & failed_before)]
-    return errors, {"base": replayed.record, "unmetBefore": unmet, "improvedBy": improved}
-
-
-def _replay_errors(run_id: str, replay: frozenset[str], replayed: Replay) -> list[str]:
-    """Name the regressions and undeclared configuration a replay found, before its health is judged.
-
-    Returns:
-        One error per test that passed before the change and fails after it, in its edited version or in its
-        version from before the change, per test whose version from before the change could not be checked, and
-        one naming the changed configuration no step declared, when there is any.
-
-    """
-    errors: list[str] = [
-        f"{run_id}: test of an existing requirement passed before the change and fails now: {test}"
-        for test in sorted((replay & replayed.before.passed) - replayed.regressed)
-    ]
-    errors.extend(
-        f"{run_id}: the test of an existing requirement, as it was before the Task edited it, passed before the "
-        f"change and fails after it: {test}"
-        for test in sorted(replayed.regressed)
-    )
-    errors.extend(
-        f"{run_id}: cannot check the test of an existing requirement the Task edited in its version from before "
-        f"the change: {test}"
-        for test in sorted(replayed.unproven)
-    )
-    undeclared: list[str] = _strs(replayed.record, UNDECLARED) if UNDECLARED in replayed.record else []
-    if undeclared:
-        errors.append(
-            f"{run_id}: the run cannot be replayed on the code before the change, because these changed dependency "
-            "manifests or test configuration files are declared by no step, or are declared as test or harness "
-            f"files and also changed by an implementation for the product: {', '.join(undeclared)}. A file changed "
-            "only so the tests run is declared by naming it in testFiles (a test writer) or harnessFiles (an "
-            "implementer); a file the product change needs is never declared",
-        )
-    return errors
-
-
-@dataclass(frozen=True, slots=True)
-class Health:
-    """The tests that show whether a replay on the base ran: what passes after the change outside the Task's own.
-
-    ``control`` is the tests mapped only to existing requirements that pass after the change; ``outside`` is
-    every test passing after the change that no Task-owned requirement maps, unmapped tests included.
-    """
-
-    control: frozenset[str]
-    outside: frozenset[str]
-
-
-@dataclass(frozen=True, slots=True)
-class Replay:
-    """What replaying a run's failing tests of existing requirements on the code before the change showed.
-
-    ``before`` is the report of the run on the base with today's tests; ``regressed`` and ``unproven`` are the
-    replayed tests whose version from before the Task edited them was shown failing because of the change, or
-    could not be checked (:func:`_original_versions`).
-    """
-
-    before: JunitOutcome
-    record: JsonObject
-    regressed: frozenset[str] = frozenset()
-    unproven: frozenset[str] = frozenset()
-
-
-def _base_health(run_id: str, record: JsonObject, before: JunitOutcome, health: Health) -> list[str]:
-    """Judge whether the replay on the code before the change is evidence at all.
-
-    The base run is healthy when it was replayed, its setup succeeded, it wrote a JUnit report without
-    structural errors, no control test errored or went missing there, and at least one test that passes after
-    the change outside the Task's own passed there too. A control test that ran and failed cleanly on the base
-    is an improvement this Task made, not ill health. The Task's own tests fail there legitimately, so none is
-    a control. A run that was not replayed is judged by the caller as unproven, not here.
-
-    Returns:
-        One error per reason the replayed run is unhealthy; empty when it is healthy or was not replayed.
-
-    """
-    if record.get("replayed") is not True:
-        return []
-    reasons: list[str] = _unhealthy_reasons(record, before, health)
-    return [f"{run_id}: the run on the code before the change is not healthy: {reason}" for reason in reasons]
-
-
-def _unhealthy_reasons(record: JsonObject, before: JunitOutcome, health: Health) -> list[str]:
-    """Name what makes a replayed base run unhealthy (:func:`_base_health`).
-
-    Returns:
-        The reasons; empty when the run is healthy.
-
-    """
-    ran: str | None = _not_run_reason(record, before)
-    if ran is not None:
-        return [ran]
-    reasons: list[str] = [
-        f"a test of an existing requirement that passes after the change did not run before it: {test}"
-        for test in sorted(health.control - before.passed - (before.failed - before.errored))
-    ]
-    if not health.outside & before.passed:
-        reasons.append("no test that passes after the change outside the Task's own passed before it")
-    return reasons
-
-
-def _not_run_reason(record: JsonObject, outcome: JunitOutcome) -> str | None:
-    """Name why a run in a checkout is no evidence: not replayed, failed setup, no report or a broken report.
-
-    Returns:
-        The reason, or None when the run wrote a structurally sound report.
-
-    """
-    if record.get("replayed") is not True:
-        return f"it did not run: {record.get('reason', 'no reason recorded')}"
-    if record.get("setupErrors"):
-        return "its setup failed"
-    if record.get("reportWritten") is not True:
-        return "it wrote no JUnit report"
-    if outcome.errors:
-        return f"its report has a structural error: {'; '.join(outcome.errors)}"
-    return None
-
-
-@dataclass(frozen=True, slots=True)
-class Tests:
-    """The tests of a run as the tree's report shows them, by the part each plays in the replay.
-
-    ``replay`` is the failing tests of existing requirements being replayed; ``control`` the tests of existing
-    requirements that pass after the change; ``reported`` every test ID the tree's report holds.
-    """
-
-    replay: frozenset[str]
-    control: frozenset[str]
-    reported: frozenset[str]
-
-
-def _replay(run: JsonObject, index: int, verification: Verification, tests: Tests) -> Replay:
-    """Replay a junit run on the code before the change, when the run is in the Task's tree and a base is known.
-
-    The base takes the declared test and harness files no implementation changed for the product
-    (``Base.carried``), less the test files the Task added whose tests the base need not run (:func:`_left_out`),
-    so a new test module that imports a module the Task adds never stops the run on the base. A changed
-    dependency manifest or test configuration that is undeclared, or declared and also changed for the product,
-    leaves the run unreplayed and is recorded as ``undeclaredConfiguration``, as does a worktree that cannot be
-    added, so its tests stay unproven. Tests the Task edited are then checked in their version from before the
-    change (:func:`_original_versions`).
-
-    Returns:
-        What the replay showed; nothing when there is no replay or no report.
-
-    """
-    nothing: JunitOutcome = JunitOutcome(passed=frozenset(), failed=frozenset(), errors=())
-    base: Base | None = verification.base
-    if base is None or Path(_str(run, "repoPath")).resolve() != base.tree:
-        return Replay(nothing, {"replayed": False, "reason": "no base revision of the run's tree was given"})
-    state: Execution = verification.replay_state()
-    try:
-        changed: frozenset[str] = _changed_paths(base, state)
-        at_base: frozenset[str] = _at_revision(base, base.carried, state)
-    except GitError as error:
-        return Replay(nothing, {"replayed": False, "reason": f"listing the changed files failed: {error}"})
-    undeclared: list[JsonValue] = [*_undeclared_configuration(base, changed)]
-    if undeclared:
-        reason: str = "changed dependency or test configuration the build did not declare as harness only"
-        return Replay(nothing, {"replayed": False, "reason": reason, UNDECLARED: undeclared})
-    edits: Edits = Edits(changed, tests, at_base)
-    left_out: frozenset[str] = _left_out(base.carried - at_base, tests)
-    before, record = _in_checkout(run, Checkout(index, "base", base.carried - left_out), base, state)
-    record |= {"leftOut": [*sorted(left_out)]}
-    if record.get("replayed") is not True:
-        return Replay(before, record)
-    return _check_edited(run, index, verification, Replay(before, record), edits)
-
-
-def _left_out(added: frozenset[str], tests: Tests) -> frozenset[str]:
-    """Pick the test files the Task added that the run on the base leaves out.
-
-    A test file the tree's report names (:func:`_names_file`) and whose named tests are all the Task's own or
-    unmapped holds nothing the base must run, and may import a module the Task adds, which stops a pytest or
-    Playwright run on the base before any test runs. A file that holds a replayed or control test is carried, so
-    such a test that cannot run on the base stays unproven. A file the report names no test of (a helper, or a
-    runner whose test IDs do not name their file) is carried, as before.
-
-    Returns:
-        The repository-relative paths of the added test files to leave out.
-
-    """
-    needed: frozenset[str] = tests.replay | tests.control
-    return frozenset(
-        path
-        for path in added
-        if _is_test_source(path)
-        and any(_names_file(test, path) for test in tests.reported)
-        and not any(_names_file(test, path) for test in needed)
-    )
-
-
-def _names_file(test: str, path: str) -> bool:
-    """Report whether a test ID names a test file: its class name holds the file's name before its first dot.
-
-    pytest names a test's module (``tests.test_calc::test_add``) and Playwright its file
-    (``e2e/login.spec.ts::...``) in the class name; a match on a common name only ever keeps a file.
-
-    Returns:
-        True when the class name, split on dots and slashes, holds the file's base name.
-
-    """
-    classname: str = test.split("::", 1)[0]
-    return PurePosixPath(path).name.split(".", 1)[0] in re.split(r"[./\\]", classname)
-
-
-def _check_edited(
-    run: JsonObject,
-    index: int,
-    verification: Verification,
-    replayed: Replay,
-    edits: Edits,
-) -> Replay:
-    """Check the replayed tests the Task edited in their versions from before the change (:func:`_original_versions`).
-
-    Returns:
-        The replay with the check's record, the regressed tests and the tests the check could not decide.
-
-    """
-    edited: frozenset[str] = frozenset(path for path in edits.at_base & edits.changed if _is_test_source(path))
-    if not edited:
-        return replayed
-    original: Original = _original_versions(run, index, replace(edits, edited=edited), verification)
-    record: JsonObject = replayed.record | {"originalTests": original.record}
-    return Replay(replayed.before, record, original.regressed, original.unproven)
-
-
-@dataclass(frozen=True, slots=True)
-class Checkout:
-    """One checkout of the base revision a run is replayed in: its run index, its label and the files it carries.
-
-    ``carried`` are the repository-relative paths made what they are in the tree (:func:`_carry`).
-    """
-
-    index: int
-    label: str
-    carried: frozenset[str]
-
-
-@dataclass(frozen=True, slots=True)
-class Edits:
-    """What the change did to the files a run's tests come from.
-
-    ``changed`` is every path the change touched; ``tests`` the run's tests as the tree reported them;
-    ``at_base`` the carried harness files that existed before the change; ``edited`` the test sources among them
-    it edited.
-    """
-
-    changed: frozenset[str]
-    tests: Tests
-    at_base: frozenset[str] = frozenset()
-    edited: frozenset[str] = frozenset()
-
-
-@dataclass(frozen=True, slots=True)
-class Original:
-    """What checking the edited tests in their versions from before the change showed (:func:`_original_versions`)."""
-
-    record: JsonObject
-    regressed: frozenset[str] = frozenset()
-    unproven: frozenset[str] = frozenset()
-
-
-def _original_versions(run: JsonObject, index: int, edits: Edits, verification: Verification) -> Original:
-    """Check the replayed tests, and the tests they replaced, in their versions from before the Task edited them.
-
-    The run is replayed on the base with the test sources as they were (``original-before``). The tests it
-    checks are the replayed tests, the old tests the plan's ``replacements`` name for them, and every test of an
-    edited file that the tree no longer reports (:func:`_vanished`), so a test renamed or replaced in the edit is
-    checked too. One that passed there is run in that version on the changed code (``original-after``): when it
-    fails there, the change broke what the test held before the Task edited it, so it is a regression. A replayed
-    test that did not exist before, or whose version from before already failed then, is judged on the edited
-    version alone. A check that did not run leaves its tests unproven.
-
-    Returns:
-        The record of both checks, the regressed tests and the tests the checks could not decide.
-
-    """
-    state: Execution = verification.replay_state()
-    base: Base | None = verification.base
-    replay: frozenset[str] = edits.tests.replay
-    if base is None:
-        return Original({"reason": "no base revision"}, unproven=replay)
-    old_code: frozenset[str] = edits.at_base - edits.edited
-    before, before_record = _in_checkout(run, Checkout(index, "original-before", old_code), base, state)
-    record: JsonObject = {"edited": [*sorted(edits.edited)], "before": before_record}
-    not_run: str | None = _not_run_reason(before_record, before)
-    if not_run is not None:
-        return Original(record | {"reason": not_run}, unproven=replay)
-    replaced: frozenset[str] = frozenset(old for test in replay for old in verification.replaced.get(test, frozenset()))
-    held: frozenset[str] = (replay | replaced | _vanished(before.passed, edits)) & before.passed
-    if not held:
-        return Original(record)
-    new_code: frozenset[str] = edits.changed - edits.edited
-    after, after_record = _in_checkout(run, Checkout(index, "original-after", new_code), base, state)
-    record |= {"checked": [*sorted(held)], "after": after_record}
-    not_run = _not_run_reason(after_record, after)
-    if not_run is not None:
-        return Original(record | {"reason": not_run}, unproven=held)
-    return Original(record, regressed=held & after.failed, unproven=held - after.passed - after.failed)
-
-
-def _vanished(passed_before: frozenset[str], edits: Edits) -> frozenset[str]:
-    """List the tests of the edited files that passed in their version from before and the tree no longer reports.
-
-    Returns:
-        The test IDs that name an edited file (:func:`_names_file`) and are absent from the tree's report.
-
-    """
-    return frozenset(
-        test for test in passed_before - edits.tests.reported if any(_names_file(test, path) for path in edits.edited)
-    )
-
-
-def _is_test_source(path: str) -> bool:
-    """Report whether a declared file is test code, as opposed to a dependency manifest or tool configuration.
-
-    Returns:
-        True for a test, fixture or support file, a conftest.py or a jest setup file included.
-
-    """
-    name: str = PurePosixPath(path).name
-    return not _is_harness_configuration(path) or any(fnmatch(name, pattern) for pattern in TEST_SOURCE_CONFIGURATION)
-
-
-def _at_revision(base: Base, paths: frozenset[str], state: Execution) -> frozenset[str]:
-    """List which of the paths existed at the base revision.
-
-    Returns:
-        The repository-relative paths the base revision holds.
-
-    """
-    if not paths:
-        return frozenset()
-    with deadline_scope(state.remaining()):
-        listed: str = git(str(base.tree), "ls-tree", "-r", "--name-only", "-z", base.ref, "--", *sorted(paths)).stdout
-    return frozenset(path for path in listed.split("\0") if path)
-
-
-def _in_checkout(run: JsonObject, checkout: Checkout, base: Base, state: Execution) -> tuple[JunitOutcome, JsonObject]:
-    """Run a junit run in a fresh checkout of the base revision carrying the given files from the tree.
-
-    The worktree is removed whatever happens; a removal that fails is recorded as ``cleanupError`` and never
-    replaces the result or an exception already on its way out.
-
-    Returns:
-        What the report shows (nothing when the worktree could not be added, the setup failed or no report was
-        written), and the run's record.
-
-    """
-    nothing: JunitOutcome = JunitOutcome(passed=frozenset(), failed=frozenset(), errors=())
-    folder: Path = state.folder / f"{checkout.label}-{checkout.index}"
-    try:
-        with deadline_scope(state.remaining()):
-            git(str(base.tree), "worktree", "add", "--detach", str(folder), base.ref)
-    except GitError as error:
-        return nothing, {"replayed": False, "reason": f"git worktree add failed: {error}"}
-    outcome: JunitOutcome = nothing
-    record: JsonObject = {"replayed": False, "reason": "the replay did not finish"}
-    try:
-        for path in sorted(checkout.carried):
-            _carry(base.tree, folder, path)
-        outcome, record = _run_on_base(run, checkout, folder, state)
-    finally:
-        removal: str | None = _remove_worktree(base.tree, folder)
-    return outcome, record | ({"cleanupError": removal} if removal else {})
-
-
-def _remove_worktree(tree: Path, folder: Path) -> str | None:
-    """Remove a replay worktree without the execution deadline, so cleanup runs even with the budget spent.
-
-    Returns:
-        None when the worktree was removed, otherwise the git error's text; it never raises.
-
-    """
-    try:
-        git(str(tree), "worktree", "remove", "--force", str(folder))
-    except GitError as error:
-        return str(error)
-    return None
-
-
-def _is_harness_configuration(path: str) -> bool:
-    """Report whether a changed path is a dependency manifest or test-tool configuration a run executes through.
-
-    Returns:
-        True when its file name matches HARNESS_CONFIGURATION.
-
-    """
-    name: str = PurePosixPath(path).name
-    return any(fnmatch(name, pattern) for pattern in HARNESS_CONFIGURATION)
-
-
-def _changed_paths(base: Base, state: Execution) -> frozenset[str]:
-    """List every path the change touched: tracked files that differ from the base revision, and untracked ones.
-
-    Returns:
-        The repository-relative paths, deleted ones included.
-
-    """
-    with deadline_scope(state.remaining()):
-        tracked: str = git(str(base.tree), "diff", "--name-only", "-z", base.ref).stdout
-        untracked: str = git(str(base.tree), "ls-files", "-z", "--others", "--exclude-standard").stdout
-    return frozenset(path for path in (*tracked.split("\0"), *untracked.split("\0")) if path)
-
-
-def _undeclared_configuration(base: Base, changed: frozenset[str]) -> list[str]:
-    """List the changed dependency manifests and test configuration the replay cannot place.
-
-    The base takes from the tree only the declared harness no implementation changed for the product
-    (``Base.carried``), and keeps a file only an implementation changed as it was before the change. A changed
-    manifest or configuration file nobody declared may be the product change that broke an existing test, and
-    one declared and also changed for the product holds both, so neither is carried into the base nor left out
-    of it silently: its run cannot be replayed.
-
-    Returns:
-        The repository-relative paths, sorted; empty when every changed one is placed.
-
-    """
-    return sorted(
-        path
-        for path in changed
-        if _is_harness_configuration(path) and (path in base.harness_files) == (path in base.product_files)
-    )
-
-
-def _carry(tree: Path, folder: Path, path: str) -> None:
-    """Make one harness path in the base checkout what it is in the tree.
-
-    A file the tree holds is copied; a file the change removed is deleted from the checkout too.
-    """
-    source: Path = tree / path
-    target: Path = folder / path
-    if source.is_file():
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, target)
-        return
-    if not source.exists() and target.is_file():
-        target.unlink()
-
-
-def _run_on_base(
-    run: JsonObject,
-    checkout: Checkout,
-    folder: Path,
-    state: Execution,
-) -> tuple[JunitOutcome, JsonObject]:
-    """Run a junit run's setup and command in a checkout of the base revision and archive its report.
-
-    Returns:
-        What its report shows (nothing when its setup failed or it wrote no report), and its record.
-
-    """
-    nothing: JunitOutcome = JunitOutcome(passed=frozenset(), failed=frozenset(), errors=())
-    stem: str = f"run-{checkout.index}-{checkout.label}"
-    report: Path | None = _fresh_report(run, folder)
-    setup_errors, setups = _setup_errors(run, stem, folder, state)
-    record: JsonObject = {
-        "replayed": True,
-        "setup": setups,
-        "setupErrors": [*setup_errors],
-        "reportWritten": False,
-    }
-    if setup_errors or report is None:
-        return nothing, record
-    output: str = f"{stem}.json"
-    exit_code: int = state.shell(_str(run, "command"), folder, output, {"run": run, "base": checkout.label})
-    archived: Path = state.folder / f"{stem}.xml"
-    outcome: JunitOutcome | None = _archive(report, archived, _str(run, "id"))
-    record |= {"output": str(state.folder / output), "exitCode": exit_code}
-    if outcome is None:
-        return nothing, record
-    record |= {
-        "reportWritten": True,
-        "report": str(archived),
-        "reportErrors": [*outcome.errors],
-        "passedTestIds": [*sorted(outcome.passed)],
-        "failedTestIds": [*sorted(outcome.failed)],
-    }
-    return outcome, record
+    unmapped: list[JsonValue] = [*sorted(outcome.failed - linked.keys())]
+    return errors, {"unmet": unmet, "unmappedFailing": unmapped}
 
 
 def _optional_arg(value: object, name: str) -> str | None:
@@ -1803,19 +1260,6 @@ def _parse_args() -> CliArgs:
     parser.add_argument("--output", required=True)
     parser.add_argument("--tree")
     parser.add_argument("--repo", action="append", default=[])
-    parser.add_argument("--base-ref", help="verify: the revision of --tree the Task builds on, before its change")
-    parser.add_argument(
-        "--harness-file",
-        action="append",
-        default=[],
-        help="verify: a repository-relative test or harness file the replay base takes from the tree; repeatable",
-    )
-    parser.add_argument(
-        "--product-file",
-        action="append",
-        default=[],
-        help="verify: a repository-relative file an implementation changed without declaring it as harness; repeatable",
-    )
     parser.add_argument(
         "--citations",
         help="verify: a JSON file of the Task's contract citations, "
@@ -1842,9 +1286,6 @@ def _parse_args() -> CliArgs:
             tree=_optional_arg(args.tree, "tree"),
             repos=[*_strings_arg(args.repo, "repo")],
             bindings=_optional_arg(args.bindings, "bindings"),
-            base_ref=_optional_arg(args.base_ref, "base-ref"),
-            harness_files=_strings_arg(args.harness_file, "harness-file"),
-            product_files=_strings_arg(args.product_file, "product-file"),
             citations=_optional_arg(args.citations, "citations"),
         )
     message = f"unsupported mode: {mode}"
@@ -1885,32 +1326,6 @@ def _setup(plan: JsonObject, args: CliArgs) -> None:
     error_values: list[JsonValue] = [*errors]
     write(args.output, {"ok": not errors, "errors": error_values, "setup": records})
     _emit({"ok": not errors, "errors": error_values, "path": args.output, "setup": records})
-
-
-def _base(args: CliArgs) -> Base | None:
-    """Name the code before the change from ``--tree``, ``--base-ref``, ``--harness-file`` and ``--product-file``.
-
-    Only the dependency manifests and test configuration among the product files matter: they are the ones the
-    base must not take from the tree.
-
-    Returns:
-        The base, or None when no base revision was given.
-
-    Raises:
-        ValueError: A base revision was given without the tree it belongs to.
-
-    """
-    if args.base_ref is None:
-        return None
-    if args.tree is None:
-        message: str = "--base-ref requires --tree, the tree the revision belongs to"
-        raise ValueError(message)
-    return Base(
-        tree=Path(args.tree).resolve(),
-        ref=args.base_ref,
-        harness_files=frozenset(args.harness_files),
-        product_files=frozenset(path for path in args.product_files if _is_harness_configuration(path)),
-    )
 
 
 def _effective_origins(plan: JsonObject, args: CliArgs) -> tuple[dict[str, str], list[JsonValue]]:
@@ -2008,6 +1423,42 @@ def _review_approved(args: CliArgs) -> bool:
     return review.get("approved") is True and not blocking_findings(review) and bool(review.get("evidence"))
 
 
+def _found(evidence: list[JsonValue]) -> JsonObject:
+    """Collect what verification recorded outside the Task's obligations, for the Epics that own it.
+
+    Returns:
+        ``unmet``: each ``{requirementId, testId, outcome}`` of an existing requirement no completed build proved
+        whose test did not pass; ``unmappedFailing``: each failing test no requirement maps.
+
+    """
+    return {"unmet": collected(evidence, "unmet"), "unmappedFailing": collected(evidence, "unmappedFailing")}
+
+
+def _verify(
+    plan: JsonObject,
+    previous: JsonObject | None,
+    args: CliArgs,
+    effective: dict[str, str],
+) -> tuple[list[str], list[JsonValue]]:
+    """Run the mapped runs, and on success write the ledger with the pairs now proven.
+
+    Returns:
+        The execution errors and the per-run evidence records.
+
+    """
+    held: frozenset[tuple[str, str]] = proven(previous, plan)
+    errors, evidence = execute(plan, Path(args.output).parent, effective, held)
+    if not errors:
+        ledger: JsonObject = {
+            **without_origin(plan),
+            "execution": evidence,
+            "proven": proven_record(held, plan, evidence),
+            **_found(evidence),
+        }
+        write(args.ledger, ledger)
+    return errors, evidence
+
+
 def main() -> None:
     """Prepare, validate or verify a cumulative regression plan and report the result as JSON."""
     args: CliArgs = _parse_args()
@@ -2040,9 +1491,9 @@ def main() -> None:
         write(bindings, bound)
     evidence: list[JsonValue] = []
     if not errors and args.mode == "verify":
-        errors, evidence = execute(plan, Path(args.output).parent, effective, _base(args))
+        errors, evidence = _verify(plan, previous, args, effective)
     error_values: list[JsonValue] = [*errors]
-    found: JsonObject = {"unmetBefore": unmet_before(evidence), UNDECLARED: undeclared_configuration(evidence)}
+    found: JsonObject = _found(evidence)
     write(
         args.output,
         {
@@ -2054,8 +1505,6 @@ def main() -> None:
             "originCorrections": corrections,
         },
     )
-    if not errors and args.mode == "verify":
-        write(args.ledger, {**without_origin(plan), "execution": evidence, "unmetBefore": found["unmetBefore"]})
     _emit(
         {
             "ok": not errors,

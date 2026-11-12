@@ -105,14 +105,6 @@ before this Task. Run the target tests too and confirm they pass.
 Return, to the output schema the caller gives:
 
 - `changedFiles`: every file you created or changed, relative to the tree.
-- `harnessFiles`: the dependency manifests, lock files and test configuration files you changed only
-  so the tests run, relative to the tree (each also in `changedFiles`); never a file whose change
-  the product needs. Regression verification replays failing tests of existing requirements on the
-  code before this Task with only declared test and harness files added. A manifest or
-  configuration file in `changedFiles` and not in `harnessFiles` is a product change and stays as it
-  was before the change, even when a test writer declared it; that leaves the replay unproven, so a
-  file changed only so the tests run belongs in `harnessFiles`. An undeclared changed manifest or
-  configuration file leaves that replay unproven too.
 - `evidence`: actual suite and targeted execution evidence, including failures.
 - `testIssues`: tests that need their author's ruling against the full contract.
 - `prerequisites`: prerequisite work developed in its owning repository, with worktree and evidence.

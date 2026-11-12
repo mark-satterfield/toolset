@@ -46,7 +46,7 @@ from orchestrator.flows.build_state import (
 from orchestrator.flows.elaboration_files import project_root
 
 if TYPE_CHECKING:
-    from step_journal_contract import Step, ValueArtifact
+    from step_journal_contract import ValueArtifact
 
 RESCOPE: Final = ("build:regression-reassess", "build:regression-review", "build:regression-validate")
 """The steps that assess, review and validate the regression scope again."""
@@ -58,16 +58,8 @@ VERIFY: Final = "build:regression-verify"
 """The step that verifies the reviewed final regression evidence."""
 EVIDENCE_WORK: Final = ("build:regression-tests", "build:final-suite")
 """The steps that write the tests and behaviour a failed final verification found missing, and review them."""
-HARNESS_FILES: Final = "harnessFiles"
-"""The dependency manifests and configuration files a step changed so the tests run; harness for the replay base."""
-HARNESS_NAMES: Final = frozenset({"testFiles", HARNESS_FILES})
-"""The handback fields and journal values that name a build's test and harness files."""
 REPOSITORY_SETUP_WORK: Final = "repositorySetupWork"
 """One selected specialist's correction of the repository's declarations: the artifact that marks its step."""
-HANDBACK: Final = "result.json"
-"""The file each agent step of a build writes its handback to, in its own folder of the build's artifacts."""
-VERIFY_RUNS: Final = 2
-"""Verification runs the mapped runs on the tree and may replay them on the base, each within its own budget."""
 
 
 def _regression(run: StepRun, mode: str, plan: Path, extra: list[str]) -> tuple[Path, dict[str, JsonValue]]:
@@ -80,7 +72,6 @@ def _regression(run: StepRun, mode: str, plan: Path, extra: list[str]) -> tuple[
     tree: Path = _workspace(run).tree
     folder: Path = run.context.work / "build" / str(run.step["id"])
     output: Path = folder / f"{run.step['id']}-regression-{mode}.json"
-    phases: int = VERIFY_RUNS if mode == "verify" else 1
     result = run.tools.command(
         [
             sys.executable,
@@ -95,7 +86,7 @@ def _regression(run: StepRun, mode: str, plan: Path, extra: list[str]) -> tuple[
             *extra,
         ],
         stage=run.step["script"],
-        timeout=phases * seconds(REGRESSION_TIMEOUT_ENV, float(REGRESSION_TIMEOUT_DEFAULT)),
+        timeout=seconds(REGRESSION_TIMEOUT_ENV, float(REGRESSION_TIMEOUT_DEFAULT)),
         check=False,
     )
     document: dict[str, JsonValue] = json_object(json.loads(result.stdout))
@@ -115,11 +106,11 @@ def _scope(run: StepRun, final: bool) -> Completion:
         if final
         else "Assess cumulative regression scope from existing obligations and the Task's full sources"
     )
-    if latest(run, HARNESS_FILES) is not None:
+    if latest(run, REPOSITORY_SETUP_WORK) is not None:
         action += (
-            ". This build corrected the repository's own declarations (harnessFiles); each run's setup installs the "
-            "repository's declared dependencies with its locked install (for example npm ci), with no ad-hoc install "
-            "of a package the repository now declares"
+            ". This build corrected the repository's own declarations (repositorySetupWork); each run's setup "
+            "installs the repository's declared dependencies with its locked install (for example npm ci), with no "
+            "ad-hoc install of a package the repository now declares"
         )
     return reasoned(
         run,
@@ -285,7 +276,6 @@ def _validate(run: StepRun, final: bool) -> Completion:
         extra.extend(["--approved-plan", str(_file(run, "regressionPlan"))])
         extra.extend(["--bindings", str(_file(run, "regressionScope").parent / "source-bindings.json")])
         extra.extend(["--citations", str(_citations(run))])
-        extra.extend(_base_arguments(run))
     output, document = _regression(run, "verify" if final else "validate", plan, extra)
     if document.get("ok") is True and final:
         return Completion(
@@ -332,135 +322,6 @@ def _citations(run: StepRun) -> Path:
     return path
 
 
-def _handback_harness(run: StepRun) -> list[str]:
-    """Read the test and harness files every handback of the build names, those of removed steps included.
-
-    A restart removes steps from the journal but keeps their edits in the worktree, so the handback a removed
-    test writer left in the build's artifact folder is still the record of the files it wrote.
-
-    Returns:
-        Every path a handback's ``testFiles`` or ``harnessFiles`` names, in folder order; a field that is not a
-        list of strings raises TypeCheckError.
-
-    """
-    documents: list[JsonValue] = [
-        json.loads(handback.read_text(encoding="utf-8"))
-        for handback in sorted((run.context.work / "build").glob(f"*/{HANDBACK}"))
-    ]
-    return [
-        path
-        for document in documents
-        if isinstance(document, dict)
-        for name in sorted(HARNESS_NAMES & document.keys())
-        for path in check_type(document[name], list[str])
-    ]
-
-
-def _implementation_changes(run: StepRun) -> list[tuple[list[str], list[str]]]:
-    """Read what each implementation changed and what of it it declared as harness, removed steps included.
-
-    The accepted steps' ``changedFiles`` and ``harnessFiles`` values, and the same fields of every handback in the
-    build's artifact folder that carries ``changedFiles``. A repository-setup correction is identified by its step:
-    an accepted step that carries the :data:`REPOSITORY_SETUP_WORK` artifact, and the handback in that step's
-    folder, are left out, because its ``build:repository-setup-done`` step declares every file it changed as
-    harness. Its handback also declares them in ``harnessFiles``, so a correction whose steps were removed adds
-    no product change either. Every other implementation's change is a product change unless it declared it.
-
-    Returns:
-        Each implementation's changed files and declared harness files; a field that is not a list of strings raises
-        TypeCheckError.
-
-    """
-    steps: list[Step] = accepted_steps(run)
-    setup: set[str] = {
-        str(step["id"])
-        for step in steps
-        if any(artifact["name"] == REPOSITORY_SETUP_WORK for artifact in step["artifacts"])
-    }
-    changes: list[tuple[list[str], list[str]]] = [
-        (
-            check_type(artifacts["changedFiles"], list[str]),
-            check_type(artifacts.get(HARNESS_FILES, []), list[str]),
-        )
-        for artifacts in (
-            {artifact["name"]: artifact["value"] for artifact in step["artifacts"] if artifact["kind"] == "value"}
-            for step in steps
-            if str(step["id"]) not in setup
-        )
-        if "changedFiles" in artifacts
-    ]
-    documents: list[JsonValue] = [
-        json.loads(handback.read_text(encoding="utf-8"))
-        for handback in sorted((run.context.work / "build").glob(f"*/{HANDBACK}"))
-        if handback.parent.name not in setup
-    ]
-    changes.extend(
-        (check_type(document["changedFiles"], list[str]), check_type(document.get(HARNESS_FILES, []), list[str]))
-        for document in documents
-        if isinstance(document, dict) and "changedFiles" in document
-    )
-    return changes
-
-
-def _product_files(run: StepRun, tree: Path) -> list[str]:
-    """List the files an implementation changed without declaring them as harness, relative to the build's tree.
-
-    regression.py verify keeps such a dependency manifest or test configuration as it was before the change when
-    no test writer declared it, and cannot replay on it when one did (declared and also changed for the product).
-
-    Returns:
-        The tree-relative paths, each once, sorted; a path outside the tree is left out.
-
-    """
-    listed: list[str] = [
-        path for changed, harness in _implementation_changes(run) for path in changed if path not in harness
-    ]
-    root: Path = tree.resolve()
-    resolved: list[Path] = [(tree / path).resolve() for path in listed]
-    return sorted({str(path.relative_to(root)) for path in resolved if path.is_relative_to(root)})
-
-
-def _harness_files(run: StepRun, tree: Path) -> list[str]:
-    """List the test and harness files the build recorded, relative to its tree.
-
-    Returns:
-        The union of every accepted ``testFiles`` (the test writers') and ``harnessFiles`` (implementers' and
-        repository-setup corrections'), and of the same fields of every handback in the build's artifact folder
-        (:func:`_handback_harness`), each once, sorted; a path outside the tree is left out.
-
-    """
-    listed: list[str] = [
-        path
-        for step in accepted_steps(run)
-        for artifact in step["artifacts"]
-        if artifact["kind"] == "value" and artifact["name"] in HARNESS_NAMES
-        for path in check_type(artifact["value"], list[str])
-    ]
-    listed.extend(_handback_harness(run))
-    root: Path = tree.resolve()
-    resolved: list[Path] = [(tree / path).resolve() for path in listed]
-    return sorted({str(path.relative_to(root)) for path in resolved if path.is_relative_to(root)})
-
-
-def _base_arguments(run: StepRun) -> list[str]:
-    """Name the code before the Task's change, on which verification replays failing tests of existing requirements.
-
-    The Task commits only at build:commit, so the worktree's HEAD is the revision it builds on. The replay base
-    takes only the recorded test and harness files from the tree, less those an implementation also changed for
-    the product; a changed dependency manifest or test configuration that none of them names, or that is both
-    declared and changed for the product, leaves the replay unproven.
-
-    Returns:
-        The ``--tree``, ``--base-ref``, ``--harness-file`` and ``--product-file`` arguments of regression.py verify.
-
-    """
-    tree: Path = _workspace(run).tree
-    head: str = run.tools.command(["git", "rev-parse", "HEAD"], stage=run.step["script"], cwd=tree).stdout.strip()
-    harness: list[str] = [value for path in _harness_files(run, tree) for value in ("--harness-file", path)]
-    product: list[str] = [value for path in _product_files(run, tree) for value in ("--product-file", path)]
-    return ["--tree", str(tree), "--base-ref", head, *harness, *product]
-
-
 def _origin_artifacts(document: dict[str, JsonValue]) -> tuple[ValueArtifact, ...]:
     """Record the origins verification derived or raised from the Task's contract, when there are any.
 
@@ -473,32 +334,43 @@ def _origin_artifacts(document: dict[str, JsonValue]) -> tuple[ValueArtifact, ..
 
 
 def _unmet_artifacts(document: dict[str, JsonValue]) -> tuple[ValueArtifact, ...]:
-    """Report the existing requirements the code did not meet before this Task, for the Epics that own them.
+    """Report the existing requirements no completed build proved whose tests do not pass, for the Epics that own them.
 
     Returns:
-        The ``regressionUnmetBefore`` value and the same gaps carried as contract findings, or nothing.
+        The ``regressionUnmet`` and ``regressionUnmappedFailing`` values, when there are any, and the same gaps
+        carried as contract findings; nothing when there are none.
 
     """
-    unmet: list[JsonValue] = check_type(document.get("unmetBefore", []), list[JsonValue])
-    if not unmet:
-        return ()
+    unmet: list[JsonValue] = check_type(document.get("unmet", []), list[JsonValue])
+    unmapped: list[JsonValue] = check_type(document.get("unmappedFailing", []), list[JsonValue])
     findings: list[JsonValue] = [
         {
             "severity": "improvement",
             "owner": "contract",
-            "detail": f"{pair['requirementId']}: test {pair['testId']} fails before and after this Task; the code "
-            "this Task builds on does not meet the requirement, and building it is the work of the Epic that "
-            "owns it, not of this Task",
+            "detail": f"{pair['requirementId']}: test {pair['testId']} {pair['outcome']}; no completed build proved "
+            "this existing requirement, so it does not bind this Task, and building it is the work of the Epic "
+            "that owns it",
         }
         for pair in (json_object(entry) for entry in unmet)
     ]
+    findings.extend(
+        {
+            "severity": "improvement",
+            "owner": "contract",
+            "detail": f"test {test} fails and no requirement maps it, so it does not bind this Task",
+        }
+        for test in unmapped
+    )
+    if not findings:
+        return ()
+    values: tuple[ValueArtifact, ...] = tuple(
+        value_artifact(name, value)
+        for name, value in (("regressionUnmet", unmet), ("regressionUnmappedFailing", unmapped))
+        if value
+    )
     return (
-        value_artifact("regressionUnmetBefore", unmet),
-        build_carried.carry(
-            "regressionEvidence",
-            findings,
-            "an existing requirement the code did not meet before this Task",
-        ),
+        *values,
+        build_carried.carry("regressionEvidence", findings, "an existing requirement no completed build proved"),
     )
 
 
@@ -617,14 +489,11 @@ def _regression_tests(run: StepRun) -> Completion:
         "regressionMappedReview and the failed verification in regressionCorrection need: a required layer of "
         "an impacted requirement with no test, and a mapped test that is absent, fails, or does not assert its "
         "requirement. A test of the Task's own requirement (origin task) that the current code fails is written "
-        "all the same; implementation makes it pass. A test of an existing requirement that the code before this "
-        "Task did not meet is not this Task's work: verification records it as unmetBefore, and no implementer "
-        "changes product code for it. When the failed verification names undeclaredConfiguration (changed "
-        "dependency manifests or test configuration no step declared, so its runs could not be replayed on the "
-        "code before this Task), select a test specialist to read each file's change and declare in its testFiles "
-        "each one changed only so the tests run, even when an earlier step changed it; a file whose change the "
-        "product needs is never declared. Do not change governing requirements. An empty selection is valid only "
-        "when every finding is corrected by the mapping alone and no undeclaredConfiguration is named",
+        "all the same; implementation makes it pass. A test of an existing requirement no completed build proved "
+        "(the regression ledger records no passing test of it) is not this Task's work: verification records it "
+        "as unmet, and no implementer changes product code for it; a test a completed build proved must pass. "
+        "Do not change governing requirements. An empty selection is valid only when every finding is corrected "
+        "by the mapping alone",
         followups=(_new("build:plan-tests", "Write the tests the regression mapping needs"),),
     )
 

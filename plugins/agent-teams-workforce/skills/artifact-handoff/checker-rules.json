@@ -636,8 +636,6 @@
         "scripts/portfolio/regression.py#execute",
         "scripts/portfolio/regression.py#_execute_run",
         "scripts/portfolio/regression.py#_judge",
-        "scripts/portfolio/regression.py#_base_health",
-        "scripts/portfolio/regression.py#_replay_errors",
         "scripts/portfolio/regression.py#_effective_origins",
         "scripts/portfolio/regression.py#_setup_errors",
         "scripts/portfolio/regression.py#junit_results"
@@ -791,16 +789,10 @@
           "stated": "regression.py derives the effective origin: a requirement the Task's contract cites"
         },
         {
-          "id": "base-healthy",
-          "enforced": "the run on the code before the change is not healthy",
-          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
-          "stated": "counts as unmet before only when the run on the code before the change is healthy"
-        },
-        {
           "id": "mapped-tests-pass",
           "enforced": "mapped test not executed successfully",
           "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
-          "stated": "the gate requires every mapped test ID of a requirement of origin task passing in the report"
+          "stated": "the gate requires every mapped test ID of a requirement of origin task"
         },
         {
           "id": "task-tests-pass",
@@ -809,40 +801,10 @@
           "stated": "every test mapped to it must pass"
         },
         {
-          "id": "unmapped-failure",
-          "enforced": "failing test is mapped to no requirement",
+          "id": "proven-tests-pass",
+          "enforced": "test of an existing requirement a completed build proved failed",
           "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
-          "stated": "no failing test that no requirement maps"
-        },
-        {
-          "id": "existing-not-broken",
-          "enforced": "test of an existing requirement passed before the change and fails now",
-          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
-          "stated": "a test that passed before the change and fails now is a regression"
-        },
-        {
-          "id": "existing-failed-before",
-          "enforced": "cannot prove the test of an existing requirement failed before the change",
-          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
-          "stated": "as regression.py verify proves by replaying the failing tests on the code before the change"
-        },
-        {
-          "id": "edited-test-not-broken",
-          "enforced": "as it was before the Task edited it, passed before the change and fails after it",
-          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
-          "stated": "when that version passed before the change and fails after it, it is a regression whatever the edited version shows"
-        },
-        {
-          "id": "edited-test-checked",
-          "enforced": "cannot check the test of an existing requirement the Task edited in its version from before the change",
-          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
-          "stated": "when that version cannot be checked the test is unproven"
-        },
-        {
-          "id": "configuration-declared",
-          "enforced": "the run cannot be replayed on the code before the change, because these changed dependency manifests or test configuration files",
-          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
-          "stated": "leaves the run unreplayable on the code before the change, and verification names it as undeclaredConfiguration"
+          "stated": "every mapped test ID the regression ledger records as proven for its requirement, passing in the report"
         },
         {
           "id": "fresh-report",

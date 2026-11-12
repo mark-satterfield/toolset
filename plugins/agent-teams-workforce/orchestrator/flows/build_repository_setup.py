@@ -2,21 +2,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
 from typeguard import check_type
 
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, value_artifact
 from orchestrator.core.models import StepError
-from orchestrator.flows.build_reviews import HARNESS_FILES, REPOSITORY_SETUP_WORK
-from orchestrator.flows.build_sessions import OutputContract, accepted_steps, reasoned
-from orchestrator.flows.build_state import CONTRACTS, artifact_document, new_step, workspace_of
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    from orchestrator.core.io import JsonValue
+from orchestrator.flows.build_reviews import REPOSITORY_SETUP_WORK
+from orchestrator.flows.build_sessions import OutputContract, reasoned
+from orchestrator.flows.build_state import CONTRACTS, artifact_document, new_step
 
 SELECTION: Final = "repositorySetupSelection"
 """The implementation lead's selection of the specialists that correct the repository's declarations."""
@@ -125,50 +120,29 @@ def _work(run: StepRun) -> Completion:
         "succeeds: declare in the repository's manifest every package the test configuration and the regression "
         "runs need, resolve a dependency conflict with a proper declaration (for example an npm overrides entry), "
         "regenerate the lock file with the repository's package manager without upgrading unrelated packages, and "
-        "change nothing else. List every file you changed in changedFiles, and list each of them in harnessFiles too",
+        "change nothing else. List every file you changed in changedFiles",
     )
 
 
-def _harness(run: StepRun, tree: Path) -> list[str]:
-    """List the files every accepted repository-setup correction changed, relative to the Task's tree.
-
-    Returns:
-        The tree-relative paths, each once, sorted; a path outside the tree is left out.
-
-    """
-    listed: list[str] = [
-        path
-        for step in accepted_steps(run)
-        if any(artifact["name"] == REPOSITORY_SETUP_WORK for artifact in step["artifacts"])
-        for artifact in step["artifacts"]
-        if artifact["kind"] == "value" and artifact["name"] == "changedFiles"
-        for path in check_type(artifact["value"], list[str])
-    ]
-    root: Path = tree.resolve()
-    resolved: list[Path] = [(tree / path).resolve() for path in listed]
-    return sorted({str(path.relative_to(root)) for path in resolved if path.is_relative_to(root)})
-
-
 def _done(run: StepRun) -> Completion:
-    """Record the corrected declaration files and resume the build where the setup failed.
+    """Resume the build where the setup failed, on the corrected declarations.
 
     A failure found at the baseline reassesses the regression scope, so each run's setup installs the
     now-declared dependencies, re-derives the execution policy bound to that scope and reruns the baseline.
     A failure found by a suite judgment reruns the suite and reassesses it.
 
     Returns:
-        The ``harnessFiles`` value and the resuming steps.
+        The resuming steps.
 
     """
     again: str = check_type(run.params()["again"], str)
-    harness: list[JsonValue] = [*_harness(run, workspace_of(run).tree)]
     purpose: str = "Resume the build on the corrected repository declarations"
     steps = (
         tuple(new_step(key, purpose) for key in RESCOPE_AND_BASELINE)
         if again == BASELINE
         else (new_step("build:prerequisites-suite", "Run and reassess the original suite", {"again": again}),)
     )
-    return Completion(artifacts=(value_artifact(HARNESS_FILES, harness),), add=(StepGroup(steps),))
+    return Completion(add=(StepGroup(steps),))
 
 
 HANDLERS: Final = {

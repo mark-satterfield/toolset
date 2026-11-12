@@ -43,6 +43,11 @@ repositories).
 - A missing or unreadable source blocks.
 - Assess every layer of every requirement explicitly. Never drop or weaken a prior mapping without
   an accepted source supersession.
+- Keep each test the prior ledger records as proven mapped, and carry a renamed or replaced one
+  over as its replacement, as `cumulative-regression` ("What the Task answers for") requires. An
+  existing requirement binds the Task only through its proven tests, so map the failing tests of
+  an existing requirement no completed build proved as they are, and never mark such a requirement
+  task to make its failing tests count.
 - Read the repository's own instructions (its `AGENTS.md`, `Taskfile.yml`, CI workflow and checker
   configuration) for the commands it supports, and declare in plan mode the runs that already
   exist: its lint, format and type checks for a requirement that they pass, and its suite, each
