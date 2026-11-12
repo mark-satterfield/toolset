@@ -11,7 +11,7 @@ import subprocess  # ruff: ignore[suspicious-subprocess-import] - The tool exist
 import sys
 import time
 import xml.etree.ElementTree as ET  # ruff: ignore[suspicious-xml-etree-import] - Bundled expat 2.7.4 mitigates entity expansion and external entities are never resolved.
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 from typing import Final, Literal
@@ -942,14 +942,16 @@ class Execution:
 class Verification:
     """What one verification needs besides its runs: the plan's mappings, who owns each requirement, the base.
 
-    The replays on the base share a budget of their own, started by the first replay, so replaying a run never
-    spends the budget of the runs on the tree.
+    ``replaced`` holds the old test IDs the plan's ``replacements`` name for each new test ID. The replays on the
+    base share a budget of their own, started by the first replay, so replaying a run never spends the budget of
+    the runs on the tree.
     """
 
     state: Execution
     mappings: list[JsonObject]
     origins: dict[str, str]
     base: Base | None
+    replaced: dict[str, frozenset[str]] = field(default_factory=dict)
     replay: Execution | None = None
 
     def replay_state(self) -> Execution:
@@ -996,6 +998,7 @@ def execute(
         mappings=_objs(plan, "mappings"),
         origins=effective,
         base=base,
+        replaced=_replaced(plan),
     )
     evidence: list[JsonValue] = []
     errors: list[str] = []
@@ -1010,6 +1013,24 @@ def execute(
         errors.extend(run_errors)
         evidence.append(record)
     return errors, evidence
+
+
+def _replaced(plan: JsonObject) -> dict[str, frozenset[str]]:
+    """Map each new test ID of the plan's ``replacements`` to the old test IDs it replaces.
+
+    Returns:
+        The old test IDs of each new test ID.
+
+    """
+    pairs: list[tuple[str, str]] = [
+        (new, _str(replacement, "oldTestId"))
+        for replacement in _optional_objs(plan, "replacements")
+        for new in _strs(replacement, "newTestIds")
+    ]
+    replaced: dict[str, set[str]] = {}
+    for new, old in pairs:
+        replaced.setdefault(new, set()).add(old)
+    return {new: frozenset(olds) for new, olds in replaced.items()}
 
 
 def unmet_before(evidence: list[JsonValue]) -> list[JsonValue]:
@@ -1221,10 +1242,10 @@ def _judge(
         errors.append(f"{run_id}: exited {exit_code} with no failing test in its report")
     if not replay:
         return errors, {}
-    replayed: Replay = _replay(run, index, verification, replay)
+    control: frozenset[str] = (outcome.passed & linked.keys()) - owned
+    replayed: Replay = _replay(run, index, verification, Tests(replay, control, outcome.passed | outcome.failed))
     errors.extend(_replay_errors(run_id, replay, replayed))
     before: JunitOutcome = replayed.before
-    control: frozenset[str] = (outcome.passed & linked.keys()) - owned
     unhealthy: list[str] = _base_health(run_id, replayed.record, before, Health(control, outcome.passed - owned))
     if unhealthy:
         return [*errors, *unhealthy], {"base": replayed.record, "unmetBefore": []}
@@ -1361,14 +1382,29 @@ def _not_run_reason(record: JsonObject, outcome: JunitOutcome) -> str | None:
     return None
 
 
-def _replay(run: JsonObject, index: int, verification: Verification, replay: frozenset[str]) -> Replay:
+@dataclass(frozen=True, slots=True)
+class Tests:
+    """The tests of a run as the tree's report shows them, by the part each plays in the replay.
+
+    ``replay`` is the failing tests of existing requirements being replayed; ``control`` the tests of existing
+    requirements that pass after the change; ``reported`` every test ID the tree's report holds.
+    """
+
+    replay: frozenset[str]
+    control: frozenset[str]
+    reported: frozenset[str]
+
+
+def _replay(run: JsonObject, index: int, verification: Verification, tests: Tests) -> Replay:
     """Replay a junit run on the code before the change, when the run is in the Task's tree and a base is known.
 
     The base takes the declared test and harness files no implementation changed for the product
-    (``Base.carried``). A changed dependency manifest or test configuration that is undeclared, or declared and
-    also changed for the product, leaves the run unreplayed and is recorded as ``undeclaredConfiguration``, as
-    does a worktree that cannot be added, so its tests stay unproven. Tests the Task edited are then checked in
-    their version from before the change (:func:`_original_versions`).
+    (``Base.carried``), less the test files the Task added whose tests the base need not run (:func:`_left_out`),
+    so a new test module that imports a module the Task adds never stops the run on the base. A changed
+    dependency manifest or test configuration that is undeclared, or declared and also changed for the product,
+    leaves the run unreplayed and is recorded as ``undeclaredConfiguration``, as does a worktree that cannot be
+    added, so its tests stay unproven. Tests the Task edited are then checked in their version from before the
+    change (:func:`_original_versions`).
 
     Returns:
         What the replay showed; nothing when there is no replay or no report.
@@ -1381,16 +1417,57 @@ def _replay(run: JsonObject, index: int, verification: Verification, replay: fro
     state: Execution = verification.replay_state()
     try:
         changed: frozenset[str] = _changed_paths(base, state)
+        at_base: frozenset[str] = _at_revision(base, base.carried, state)
     except GitError as error:
         return Replay(nothing, {"replayed": False, "reason": f"listing the changed files failed: {error}"})
     undeclared: list[JsonValue] = [*_undeclared_configuration(base, changed)]
     if undeclared:
         reason: str = "changed dependency or test configuration the build did not declare as harness only"
         return Replay(nothing, {"replayed": False, "reason": reason, UNDECLARED: undeclared})
-    before, record = _in_checkout(run, Checkout(index, "base", base.carried), base, state)
+    edits: Edits = Edits(changed, tests, at_base)
+    left_out: frozenset[str] = _left_out(base.carried - at_base, tests)
+    before, record = _in_checkout(run, Checkout(index, "base", base.carried - left_out), base, state)
+    record |= {"leftOut": [*sorted(left_out)]}
     if record.get("replayed") is not True:
         return Replay(before, record)
-    return _check_edited(run, index, verification, Replay(before, record), Edits(changed, replay))
+    return _check_edited(run, index, verification, Replay(before, record), edits)
+
+
+def _left_out(added: frozenset[str], tests: Tests) -> frozenset[str]:
+    """Pick the test files the Task added that the run on the base leaves out.
+
+    A test file the tree's report names (:func:`_names_file`) and whose named tests are all the Task's own or
+    unmapped holds nothing the base must run, and may import a module the Task adds, which stops a pytest or
+    Playwright run on the base before any test runs. A file that holds a replayed or control test is carried, so
+    such a test that cannot run on the base stays unproven. A file the report names no test of (a helper, or a
+    runner whose test IDs do not name their file) is carried, as before.
+
+    Returns:
+        The repository-relative paths of the added test files to leave out.
+
+    """
+    needed: frozenset[str] = tests.replay | tests.control
+    return frozenset(
+        path
+        for path in added
+        if _is_test_source(path)
+        and any(_names_file(test, path) for test in tests.reported)
+        and not any(_names_file(test, path) for test in needed)
+    )
+
+
+def _names_file(test: str, path: str) -> bool:
+    """Report whether a test ID names a test file: its class name holds the file's name before its first dot.
+
+    pytest names a test's module (``tests.test_calc::test_add``) and Playwright its file
+    (``e2e/login.spec.ts::...``) in the class name; a match on a common name only ever keeps a file.
+
+    Returns:
+        True when the class name, split on dots and slashes, holds the file's base name.
+
+    """
+    classname: str = test.split("::", 1)[0]
+    return PurePosixPath(path).name.split(".", 1)[0] in re.split(r"[./\\]", classname)
 
 
 def _check_edited(
@@ -1406,19 +1483,11 @@ def _check_edited(
         The replay with the check's record, the regressed tests and the tests the check could not decide.
 
     """
-    base: Base | None = verification.base
-    if base is None:
-        return replayed
-    try:
-        at_base: frozenset[str] = _at_revision(base, base.carried, verification.replay_state())
-    except GitError as error:
-        record: JsonObject = replayed.record | {"originalTests": {"reason": str(error)}}
-        return Replay(replayed.before, record, unproven=edits.replay)
-    edited: frozenset[str] = frozenset(path for path in at_base & edits.changed if _is_test_source(path))
+    edited: frozenset[str] = frozenset(path for path in edits.at_base & edits.changed if _is_test_source(path))
     if not edited:
         return replayed
-    original: Original = _original_versions(run, index, replace(edits, at_base=at_base, edited=edited), verification)
-    record = replayed.record | {"originalTests": original.record}
+    original: Original = _original_versions(run, index, replace(edits, edited=edited), verification)
+    record: JsonObject = replayed.record | {"originalTests": original.record}
     return Replay(replayed.before, record, original.regressed, original.unproven)
 
 
@@ -1438,12 +1507,13 @@ class Checkout:
 class Edits:
     """What the change did to the files a run's tests come from.
 
-    ``changed`` is every path the change touched; ``replay`` the failing tests being replayed; ``at_base`` the
-    carried harness files that existed before the change; ``edited`` the test sources among them it edited.
+    ``changed`` is every path the change touched; ``tests`` the run's tests as the tree reported them;
+    ``at_base`` the carried harness files that existed before the change; ``edited`` the test sources among them
+    it edited.
     """
 
     changed: frozenset[str]
-    replay: frozenset[str]
+    tests: Tests
     at_base: frozenset[str] = frozenset()
     edited: frozenset[str] = frozenset()
 
@@ -1458,13 +1528,15 @@ class Original:
 
 
 def _original_versions(run: JsonObject, index: int, edits: Edits, verification: Verification) -> Original:
-    """Check the replayed tests in their versions from before the Task edited their files.
+    """Check the replayed tests, and the tests they replaced, in their versions from before the Task edited them.
 
-    The run is replayed on the base with the test sources as they were (``original-before``): a replayed test it
-    reports existed before the change. One that passed there is run in that version on the changed code
-    (``original-after``): when it fails there, the change broke what the test held before the Task edited it, so
-    it is a regression. A replayed test that did not exist before, or whose version from before already failed
-    then, is judged on the edited version alone. A check that did not run leaves its tests unproven.
+    The run is replayed on the base with the test sources as they were (``original-before``). The tests it
+    checks are the replayed tests, the old tests the plan's ``replacements`` name for them, and every test of an
+    edited file that the tree no longer reports (:func:`_vanished`), so a test renamed or replaced in the edit is
+    checked too. One that passed there is run in that version on the changed code (``original-after``): when it
+    fails there, the change broke what the test held before the Task edited it, so it is a regression. A replayed
+    test that did not exist before, or whose version from before already failed then, is judged on the edited
+    version alone. A check that did not run leaves its tests unproven.
 
     Returns:
         The record of both checks, the regressed tests and the tests the checks could not decide.
@@ -1472,24 +1544,38 @@ def _original_versions(run: JsonObject, index: int, edits: Edits, verification: 
     """
     state: Execution = verification.replay_state()
     base: Base | None = verification.base
+    replay: frozenset[str] = edits.tests.replay
     if base is None:
-        return Original({"reason": "no base revision"}, unproven=edits.replay)
+        return Original({"reason": "no base revision"}, unproven=replay)
     old_code: frozenset[str] = edits.at_base - edits.edited
     before, before_record = _in_checkout(run, Checkout(index, "original-before", old_code), base, state)
     record: JsonObject = {"edited": [*sorted(edits.edited)], "before": before_record}
     not_run: str | None = _not_run_reason(before_record, before)
     if not_run is not None:
-        return Original(record | {"reason": not_run}, unproven=edits.replay)
-    held: frozenset[str] = edits.replay & before.passed
+        return Original(record | {"reason": not_run}, unproven=replay)
+    replaced: frozenset[str] = frozenset(old for test in replay for old in verification.replaced.get(test, frozenset()))
+    held: frozenset[str] = (replay | replaced | _vanished(before.passed, edits)) & before.passed
     if not held:
         return Original(record)
     new_code: frozenset[str] = edits.changed - edits.edited
     after, after_record = _in_checkout(run, Checkout(index, "original-after", new_code), base, state)
-    record |= {"after": after_record}
+    record |= {"checked": [*sorted(held)], "after": after_record}
     not_run = _not_run_reason(after_record, after)
     if not_run is not None:
         return Original(record | {"reason": not_run}, unproven=held)
     return Original(record, regressed=held & after.failed, unproven=held - after.passed - after.failed)
+
+
+def _vanished(passed_before: frozenset[str], edits: Edits) -> frozenset[str]:
+    """List the tests of the edited files that passed in their version from before and the tree no longer reports.
+
+    Returns:
+        The test IDs that name an edited file (:func:`_names_file`) and are absent from the tree's report.
+
+    """
+    return frozenset(
+        test for test in passed_before - edits.tests.reported if any(_names_file(test, path) for path in edits.edited)
+    )
 
 
 def _is_test_source(path: str) -> bool:

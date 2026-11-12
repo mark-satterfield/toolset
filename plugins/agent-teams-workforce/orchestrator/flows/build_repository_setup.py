@@ -9,7 +9,7 @@ from typeguard import check_type
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, value_artifact
 from orchestrator.core.models import StepError
-from orchestrator.flows.build_reviews import HARNESS_FILES
+from orchestrator.flows.build_reviews import HARNESS_FILES, REPOSITORY_SETUP_WORK
 from orchestrator.flows.build_sessions import OutputContract, accepted_steps, reasoned
 from orchestrator.flows.build_state import CONTRACTS, artifact_document, new_step, workspace_of
 
@@ -20,8 +20,6 @@ if TYPE_CHECKING:
 
 SELECTION: Final = "repositorySetupSelection"
 """The implementation lead's selection of the specialists that correct the repository's declarations."""
-WORK: Final = "repositorySetupWork"
-"""One selected specialist's correction of the repository's declarations."""
 BASELINE: Final = "build:baseline"
 """The continuation of a setup failure found while measuring the baseline."""
 RESCOPE_AND_BASELINE: Final = (
@@ -122,12 +120,12 @@ def _work(run: StepRun) -> Completion:
     return reasoned(
         run,
         agent,
-        OutputContract(CONTRACTS / "build-implementation.schema.json", WORK),
+        OutputContract(CONTRACTS / "build-implementation.schema.json", REPOSITORY_SETUP_WORK),
         "Correct only the repository declarations the latest prerequisiteDiagnosis names, so the failing setup "
         "succeeds: declare in the repository's manifest every package the test configuration and the regression "
         "runs need, resolve a dependency conflict with a proper declaration (for example an npm overrides entry), "
         "regenerate the lock file with the repository's package manager without upgrading unrelated packages, and "
-        "change nothing else. List every file you changed in changedFiles",
+        "change nothing else. List every file you changed in changedFiles, and list each of them in harnessFiles too",
     )
 
 
@@ -141,7 +139,7 @@ def _harness(run: StepRun, tree: Path) -> list[str]:
     listed: list[str] = [
         path
         for step in accepted_steps(run)
-        if any(artifact["name"] == WORK for artifact in step["artifacts"])
+        if any(artifact["name"] == REPOSITORY_SETUP_WORK for artifact in step["artifacts"])
         for artifact in step["artifacts"]
         if artifact["kind"] == "value" and artifact["name"] == "changedFiles"
         for path in check_type(artifact["value"], list[str])

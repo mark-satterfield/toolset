@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import json
 import sys
-from fnmatch import fnmatch
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from driver_surface_types import REGRESSION_TIMEOUT_DEFAULT, REGRESSION_TIMEOUT_ENV
-from regression import HARNESS_CONFIGURATION
 from typeguard import check_type
 
 from orchestrator.core import step_journal
@@ -48,7 +46,7 @@ from orchestrator.flows.build_state import (
 from orchestrator.flows.elaboration_files import project_root
 
 if TYPE_CHECKING:
-    from step_journal_contract import ValueArtifact
+    from step_journal_contract import Step, ValueArtifact
 
 RESCOPE: Final = ("build:regression-reassess", "build:regression-review", "build:regression-validate")
 """The steps that assess, review and validate the regression scope again."""
@@ -64,6 +62,8 @@ HARNESS_FILES: Final = "harnessFiles"
 """The dependency manifests and configuration files a step changed so the tests run; harness for the replay base."""
 HARNESS_NAMES: Final = frozenset({"testFiles", HARNESS_FILES})
 """The handback fields and journal values that name a build's test and harness files."""
+REPOSITORY_SETUP_WORK: Final = "repositorySetupWork"
+"""One selected specialist's correction of the repository's declarations: the artifact that marks its step."""
 HANDBACK: Final = "result.json"
 """The file each agent step of a build writes its handback to, in its own folder of the build's artifacts."""
 VERIFY_RUNS: Final = 2
@@ -360,15 +360,23 @@ def _implementation_changes(run: StepRun) -> list[tuple[list[str], list[str]]]:
     """Read what each implementation changed and what of it it declared as harness, removed steps included.
 
     The accepted steps' ``changedFiles`` and ``harnessFiles`` values, and the same fields of every handback in the
-    build's artifact folder that carries ``changedFiles``. A repository-setup correction records its own
-    ``harnessFiles`` on the step that resumes the build, so a change made only to dependency manifests and test
-    configuration, as such a correction makes, is no product change and is left out.
+    build's artifact folder that carries ``changedFiles``. A repository-setup correction is identified by its step:
+    an accepted step that carries the :data:`REPOSITORY_SETUP_WORK` artifact, and the handback in that step's
+    folder, are left out, because its ``build:repository-setup-done`` step declares every file it changed as
+    harness. Its handback also declares them in ``harnessFiles``, so a correction whose steps were removed adds
+    no product change either. Every other implementation's change is a product change unless it declared it.
 
     Returns:
         Each implementation's changed files and declared harness files; a field that is not a list of strings raises
         TypeCheckError.
 
     """
+    steps: list[Step] = accepted_steps(run)
+    setup: set[str] = {
+        str(step["id"])
+        for step in steps
+        if any(artifact["name"] == REPOSITORY_SETUP_WORK for artifact in step["artifacts"])
+    }
     changes: list[tuple[list[str], list[str]]] = [
         (
             check_type(artifacts["changedFiles"], list[str]),
@@ -376,31 +384,22 @@ def _implementation_changes(run: StepRun) -> list[tuple[list[str], list[str]]]:
         )
         for artifacts in (
             {artifact["name"]: artifact["value"] for artifact in step["artifacts"] if artifact["kind"] == "value"}
-            for step in accepted_steps(run)
+            for step in steps
+            if str(step["id"]) not in setup
         )
         if "changedFiles" in artifacts
     ]
     documents: list[JsonValue] = [
         json.loads(handback.read_text(encoding="utf-8"))
         for handback in sorted((run.context.work / "build").glob(f"*/{HANDBACK}"))
+        if handback.parent.name not in setup
     ]
     changes.extend(
         (check_type(document["changedFiles"], list[str]), check_type(document.get(HARNESS_FILES, []), list[str]))
         for document in documents
         if isinstance(document, dict) and "changedFiles" in document
     )
-    return [(changed, harness) for changed, harness in changes if not all(map(_declaration, changed))]
-
-
-def _declaration(path: str) -> bool:
-    """Report whether a changed file is a dependency manifest or test configuration (regression.py's list).
-
-    Returns:
-        True when its file name matches one of regression.py's HARNESS_CONFIGURATION patterns.
-
-    """
-    name: str = Path(path).name
-    return any(fnmatch(name, pattern) for pattern in HARNESS_CONFIGURATION)
+    return changes
 
 
 def _product_files(run: StepRun, tree: Path) -> list[str]:
