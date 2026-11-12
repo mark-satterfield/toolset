@@ -31,7 +31,9 @@ repositories).
 - Discover the requirements this change affects from the actual sources, as far as the scope rule
   in `cumulative-regression` ("Establish the affected requirements") reaches and no further.
 - Set each requirement's origin: task for what the Task's contract cites as what it builds, existing
-  for every other current requirement the changed components carry.
+  for every other current requirement the changed components carry. The gate raises a requirement
+  the contract cites to task whatever you write. In a sourceRef, name a source of another Epic or
+  PRD by its folder path, never by a bare file name the Task's own spec shares.
 - A missing or unreadable source blocks.
 - Assess every layer of every requirement explicitly. Never drop or weaken a prior mapping without
   an accepted source supersession.
@@ -39,6 +41,10 @@ repositories).
   configuration) for the commands it supports, and declare in plan mode the runs that already
   exist: its lint, format and type checks for a requirement that they pass, and its suite, each
   with what must be prepared before it runs (for example installing dependencies) as its setup.
+  A run's setup installs what the repository declares with its locked install (for example
+  `npm ci`); an ad-hoc install is only for a test-only package the repository does not declare.
+  When such an install fails because of the repository's own declarations, the build corrects the
+  declarations and the setup is reassessed.
 - Cross-repository tests use their actual repository paths. Do not create or reinterpret Epic
   dependency edges.
 - Mappings for tests still to be authored may wait for finalize mode; keep known existing test

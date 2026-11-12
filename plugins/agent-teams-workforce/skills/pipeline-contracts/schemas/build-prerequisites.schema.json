@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["route", "evidence", "producers"],
   "properties": {
-    "route": {"enum": ["prerequisites", "environment", "missing-work"]},
+    "route": {"description": "prerequisites: an actual Task builds a consumed output this Task waits for. missing-work: no actual Task builds a consumed output. repository: the failure comes from the Task repository's own declarations or configuration (a dependency manifest, lock file, overrides, a peer-dependency conflict, a test or build configuration naming a package no manifest declares), which the build corrects in its worktree. environment: a cause outside the repository (a missing tool or runtime, credentials, network or service availability).", "enum": ["prerequisites", "environment", "missing-work", "repository"]},
     "evidence": {"type": "string", "minLength": 1},
     "authoringStory": {"type": ["string", "null"], "description": "Only an actual existing open Story whose completed saved scope/spec authorizes missing producer work; null when none can be established."},
     "producers": {

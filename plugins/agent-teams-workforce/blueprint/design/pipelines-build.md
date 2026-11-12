@@ -208,6 +208,19 @@ normal elaboration protections for already started Tasks remain intact. A missin
 missing real authoring context is a finite pipeline work-authoring gap, never an owner SSM task
 or permission to create shared resources as test fixtures.
 
+A failure whose cause is the Task repository's own declarations (a dependency manifest, lock file,
+override, peer-dependency conflict, or a test configuration naming a package no manifest declares)
+is routed `repository`, not `environment`: it is build work in the Task's worktree. After its
+fingerprint is recorded, `build:repository-setup` has the implementation lead select specialists,
+each corrects only those declarations in a `build:repository-setup-work` step, and
+`build:repository-setup-done` records the changed files as `harnessFiles`. A failure found at the
+baseline then reassesses, reviews and validates the regression scope, so each run's setup installs
+the declared dependencies with its locked install, re-derives the execution policy and reruns the
+baseline; a failure a suite judgment routed reruns and reassesses the suite. An empty selection
+stops the Task. `environment` remains for a cause outside the repository (a missing tool or
+runtime, credentials, network or service availability) and still ends the build when fresh
+readiness evidence shows it unready.
+
 `build:prerequisites-ready` remains planned while producer stages are pending. Its dispatch
 returns the typed `waitingForPrerequisites` handback without a failure and releases its slot.
 Delivered readiness requires a complete producer Story journal with closure. `published`
@@ -288,11 +301,18 @@ the resulting code and test diff, the complete suite passes, and the cumulative 
 verify the mapped evidence.
 
 The regression gate holds a Task to its own requirements (origin task) in full and to existing
-requirements only as far as the code met them before the change. Verification replays each
-failing test of an existing requirement in a detached checkout of the worktree's HEAD that holds
-the current tests and harness but the product files the Task's steps changed as they were. A test
-that fails there too records its requirement as `regressionUnmetBefore` and as a carried contract
-finding for the Epic that owns it, and the build continues; a test that passed there is a
+requirements only as far as the code met them before the change. A requirement's effective origin
+is derived from the Task's contract: one its requirement ids or its own spec cite is task whatever
+the plan says, a missing origin is derived and is no error, and origin is no part of the approved
+scope. Verification replays each failing test of an existing requirement in a detached checkout of
+the worktree's HEAD that takes from the tree only the test writers' `testFiles`, the
+`harnessFiles` a repository-setup correction changed, and the changed dependency manifests and
+test-tool configuration; every other file, an unlisted product change included, stays as it was,
+so the base fails closed. The base run counts only when it is healthy: its setup succeeded, it
+wrote a report without structural errors, and every test mapped only to existing requirements that
+passes after the change passed there too; an unhealthy base is a verification error. A test that
+fails on a healthy base records its requirement as `regressionUnmetBefore` and as a carried
+contract finding for the Epic that owns it, and the build continues; a test that passed there is a
 regression and fails verification. A failing test no requirement maps fails it too. Repository hooks run normally at commit. A rejected hook, remaining product changes, or modified preserved tooling after the hook
 is a recorded work failure, never a reason to bypass hooks.
 

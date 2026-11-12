@@ -46,7 +46,7 @@ artifact-handoff skill's `schemas/`. The brief names which.
 
 The Python build can hand you `build-prerequisites.schema.json` from pipeline-contracts and a
 fresh prerequisite-context file after an accepted suite assessment identifies an environment
-failure. This is a targeted diagnosis of that consumer, not an Epic dependency assessment.
+failure, or after the regression setup fails. This is a targeted diagnosis of that consumer, not an Epic dependency assessment.
 Read its actual contract, the recorded suite output, the current tracker snapshot, and current
 producer readiness evidence. An old synth or a cached failed test is not evidence that SSM is
 missing now. Use the matrix's actual stack relationships and the supplied resource contracts to
@@ -65,8 +65,14 @@ precise work-authoring gap. Name `authoringStory`
 only when an actual open Story has completed saved scope/spec context authorizing that work.
 The caller uses the existing decomposer and normal append-only writer/scorer in that case;
 otherwise the gap is finite. It is pipeline work,
-never an instruction for the owner to create SSM manually. Use `environment` only when the
-fresh evidence establishes an environment-only defect rather than unfinished producer work.
+never an instruction for the owner to create SSM manually. Return `repository` when the fresh
+evidence shows the cause is in the Task's own repository: a dependency declaration, lock file,
+override, peer-dependency conflict, or a test or build configuration that names a package no
+manifest declares. Name in `evidence` the files and the correction (for example: declare the test
+packages the configuration names as devDependencies; add an overrides entry that resolves a peer
+conflict); the build makes that correction in its worktree and reassesses the setup. Use
+`environment` only for a cause outside the repository: a missing tool or runtime, credentials,
+network or service availability, never unfinished producer work.
 The caller validates real identities, refuses a wait that closes a cycle, writes additive edges, releases the build slot while
 producers progress normally, and reruns the exact suite with a new assessment.
 

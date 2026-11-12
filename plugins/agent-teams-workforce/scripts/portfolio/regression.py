@@ -5,13 +5,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - The tool exists to run the mapped suite commands.
 import sys
 import time
 import xml.etree.ElementTree as ET  # ruff: ignore[suspicious-xml-etree-import] - Bundled expat 2.7.4 mitigates entity expansion and external entities are never resolved.
 from dataclasses import dataclass
-from pathlib import Path
+from fnmatch import fnmatch
+from pathlib import Path, PurePosixPath
 from typing import Final, Literal
 
 from contracts import JsonObject, JsonValue, json_object
@@ -21,6 +23,42 @@ from jsonartifact import read_artifact
 KINDS: Final[frozenset[str]] = frozenset({"unit", "contract", "integration", "nonfunctional"})
 ORIGINS: Final[frozenset[str]] = frozenset({"task", "existing"})
 EXISTING: Final = "existing"
+TASK: Final = "task"
+CITATION_WORD_CHARACTERS: Final = "A-Za-z0-9_-"
+"""A citation token is bounded by none of these characters, so TR-12 never matches TR-120 and E1 never E11."""
+PATH_BEFORE: Final[re.Pattern[str]] = re.compile(r"[^\s(\[`'\"]*$")
+"""The path text written directly before a cited name: everything back to whitespace, a bracket or a quote."""
+ARTIFACT_FOLDER: Final = "artifacts"
+"""A spec path names its Epic's artifact folder in the segment after this one."""
+HARNESS_CONFIGURATION: Final[tuple[str, ...]] = (
+    "package.json",
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    ".npmrc",
+    ".nvmrc",
+    "tsconfig*.json",
+    "jest.config.*",
+    "jest.setup.*",
+    "vitest.config.*",
+    "playwright.config.*",
+    "babel.config.*",
+    ".babelrc",
+    "pyproject.toml",
+    "uv.lock",
+    "requirements*.txt",
+    "setup.cfg",
+    "pytest.ini",
+    "tox.ini",
+    "conftest.py",
+    ".python-version",
+    "Taskfile.yml",
+    "Taskfile.yaml",
+    ".gitignore",
+)
+"""File names of the dependency manifests and test-tool configuration a run needs; a changed one enters the base."""
 EXECUTION_BUDGET_SECONDS: Final[int] = 500
 OUTPUT_TAIL_BYTES: Final[int] = 16384
 PASSED: Final = "passed"
@@ -52,19 +90,22 @@ class CliArgs:
     repos: list[str]
     bindings: str | None = None
     base_ref: str | None = None
-    product_files: tuple[str, ...] = ()
+    harness_files: tuple[str, ...] = ()
+    citations: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class Base:
-    """The code before the change: the tree's base revision with the Task's product files as they were.
+    """The code before the change: the tree's base revision with only today's tests and their harness added.
 
     A failing test of an existing requirement is replayed there to tell an unmet requirement from a regression.
+    ``harness_files`` are the repository-relative test and harness files the build recorded; every other file,
+    an unlisted product change included, stays as it was at ``ref``.
     """
 
     tree: Path
     ref: str
-    product_files: frozenset[str]
+    harness_files: frozenset[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,14 +284,154 @@ def source_hashes(paths: list[str]) -> dict[str, str]:
     return {str(Path(value)): hashlib.sha256(Path(value).read_bytes()).hexdigest() for value in paths}
 
 
+def without_origin(plan: JsonObject) -> JsonObject:
+    """Drop each requirement's origin, which the gate derives from the Task's contract rather than keeps.
+
+    Returns:
+        The plan with every requirement as it is, less its ``origin``.
+
+    """
+    requirements: list[JsonValue] = [
+        {key: value for key, value in requirement.items() if key != "origin"}
+        for requirement in _objs(plan, "requirements")
+    ]
+    return {**plan, "requirements": requirements}
+
+
 def scope(plan: JsonObject) -> JsonObject:
     """Only mapping and execution configuration may change after scope approval.
+
+    A requirement's origin is no part of the scope: the gate derives it (:func:`origins`), so a plan written
+    before origins existed and its mapping written after compare equal.
 
     Returns:
         The plan fields that fix the approved scope.
 
     """
-    return {k: plan[k] for k in ("components", "discovery", "requirements", "sourceFiles")}
+    stripped: JsonObject = without_origin(plan)
+    return {k: stripped[k] for k in ("components", "discovery", "requirements", "sourceFiles")}
+
+
+def _token_found(text: str, token: str) -> list[int]:
+    """Find a citation token as a whole token.
+
+    Returns:
+        The start offset of each occurrence.
+
+    """
+    pattern: str = rf"(?<![{CITATION_WORD_CHARACTERS}]){re.escape(token)}(?![{CITATION_WORD_CHARACTERS}])"
+    return [match.start() for match in re.finditer(pattern, text)]
+
+
+def _epic_folder(spec: PurePosixPath) -> str | None:
+    """Name the Epic artifact folder a spec path runs through.
+
+    Returns:
+        The segment after ``artifacts``, or None when the path has none.
+
+    """
+    parts: tuple[str, ...] = spec.parts
+    if ARTIFACT_FOLDER not in parts[:-1]:
+        return None
+    return parts[parts.index(ARTIFACT_FOLDER) + 1]
+
+
+def _names_this_spec(before: str, spec: PurePosixPath) -> bool:
+    """Report whether the path written before a spec's name points at this spec.
+
+    A bare name, a path through the spec's Epic artifact folder, or a path ending in the spec's own folders
+    names it; a path through any other folder names another Epic's spec of the same name.
+
+    Returns:
+        True when the text names this spec.
+
+    """
+    found: re.Match[str] | None = PATH_BEFORE.search(before)
+    written: tuple[str, ...] = tuple(
+        part for part in PurePosixPath(found.group(0) if found else "").parts if part != "/"
+    )
+    if not written:
+        return True
+    epic: str | None = _epic_folder(spec)
+    folders: tuple[str, ...] = spec.parent.parts
+    return (epic is not None and epic in written) or folders[len(folders) - len(written) :] == written
+
+
+def _cites_spec(text: str, spec_path: str) -> bool:
+    """Report whether text names one of the Task's specs.
+
+    Returns:
+        True when the spec's name, up to its first dot, appears as a token written as this spec's path.
+
+    """
+    spec: PurePosixPath = PurePosixPath(spec_path.split("#", 1)[0])
+    stem: str = spec.name.split(".", 1)[0]
+    return bool(stem) and any(_names_this_spec(text[:start], spec) for start in _token_found(text, stem))
+
+
+def cited(requirement: JsonObject, citations: JsonObject) -> bool:
+    """Report whether the Task's contract cites a requirement.
+
+    A requirement is cited when its id or sourceRef holds one of the contract's requirement ids as a whole
+    token, or names one of the Task's own specs (:func:`_cites_spec`).
+
+    Args:
+        requirement: One requirement of the plan.
+        citations: The Task's contract citations: ``requirementIds`` and ``specPaths``.
+
+    Returns:
+        True when the contract cites it.
+
+    """
+    text: str = f"{_str(requirement, 'id')} {_str(requirement, 'sourceRef')}"
+    return any(_token_found(text, token) for token in _strs(citations, "requirementIds")) or any(
+        _cites_spec(text, spec) for spec in _strs(citations, "specPaths")
+    )
+
+
+def origins(plan: JsonObject, citations: JsonObject) -> dict[str, str]:
+    """Derive each requirement's effective origin.
+
+    A requirement the Task's contract cites, or the plan marks task, is task; every other is existing. The
+    derivation only raises: a plan cannot mark the Task's own criterion existing, and a missing origin is
+    derived, never an error.
+
+    Returns:
+        The effective origin of each requirement id.
+
+    """
+    return {
+        _str(r, "id"): TASK if r.get("origin") == TASK or cited(r, citations) else EXISTING
+        for r in _objs(plan, "requirements")
+    }
+
+
+def origin_corrections(plan: JsonObject, effective: dict[str, str]) -> list[JsonValue]:
+    """Name each requirement whose effective origin is not the one the plan states.
+
+    Returns:
+        One ``{requirementId, planned, effective}`` record per derived or raised origin.
+
+    """
+    return [
+        {"requirementId": _str(r, "id"), "planned": r.get("origin"), "effective": effective[_str(r, "id")]}
+        for r in _objs(plan, "requirements")
+        if r.get("origin") != effective[_str(r, "id")]
+    ]
+
+
+def read_citations(path: str) -> JsonObject:
+    """Read the Task's contract citations.
+
+    Returns:
+        ``requirementIds`` and ``specPaths``, each a list of strings, absent meaning empty; a field that is not
+        a list of strings raises TypeError.
+
+    """
+    document: JsonObject = json_object(json.loads(Path(path).read_text(encoding="utf-8")))
+    requirement_ids: list[JsonValue] = [*_optional_strs(document, "requirementIds")]
+    spec_paths: list[JsonValue] = [*_optional_strs(document, "specPaths")]
+    return {"requirementIds": requirement_ids, "specPaths": spec_paths}
 
 
 def _discovery_errors(plan: JsonObject, requirements: list[JsonObject]) -> list[str]:
@@ -296,7 +477,7 @@ def _requirement_errors(plan: JsonObject, requirements: list[JsonObject], ids: l
             or not set(_strs(r, "componentIds")) <= component_ids
         ):
             errors.append(f"{rid}: missing source or component binding")
-        if r.get("origin") not in ORIGINS:
+        if "origin" in r and r["origin"] not in ORIGINS:
             errors.append(f"{rid}: origin must be task or existing")
         layers: list[JsonObject] = _objs(r, "applicability")
         if {_str(a, "kind") for a in layers} != KINDS or len(layers) != len(KINDS):
@@ -659,12 +840,18 @@ class Verification:
     base: Base | None
 
 
-def execute(plan: JsonObject, folder: Path, base: Base | None = None) -> tuple[list[str], list[JsonValue]]:
+def execute(
+    plan: JsonObject,
+    folder: Path,
+    effective: dict[str, str],
+    base: Base | None = None,
+) -> tuple[list[str], list[JsonValue]]:
     """Run each mapped run after its setup; exit zero alone never establishes per-test coverage of a junit run.
 
     Args:
         plan: The final regression mapping.
         folder: Where the evidence is written.
+        effective: The effective origin of each requirement (:func:`origins`).
         base: The code before the change, on which a failing test of an existing requirement is replayed;
             None when no base revision is known, so such a failure cannot be shown to predate the change.
 
@@ -677,7 +864,7 @@ def execute(plan: JsonObject, folder: Path, base: Base | None = None) -> tuple[l
     verification: Verification = Verification(
         state=state,
         mappings=_objs(plan, "mappings"),
-        origins={_str(r, "id"): str(r.get("origin")) for r in requirements},
+        origins=effective,
         base=base,
     )
     evidence: list[JsonValue] = []
@@ -853,7 +1040,8 @@ def _judge(
 
     A failing test mapped only to existing requirements is replayed on the code before the change: when it fails
     there too, its requirements are recorded as unmet before the change and are no error of this Task; when it
-    passed there, or the replay cannot show it failing, it is a regression.
+    passed there, or the replay cannot show it failing, it is a regression. A failure on the base counts only
+    when the run there is healthy (:func:`_base_health`); an unhealthy base is an error, never unmet before.
 
     Returns:
         The errors, and the record fields of the replay and of the requirements unmet before the change.
@@ -886,6 +1074,10 @@ def _judge(
         f"{run_id}: test of an existing requirement passed before the change and fails now: {test}"
         for test in sorted(replay & before.passed)
     )
+    control: frozenset[str] = (outcome.passed & linked.keys()) - owned
+    unhealthy: list[str] = _base_health(run_id, record, before, control)
+    if unhealthy:
+        return [*errors, *unhealthy], {"base": record, "unmetBefore": []}
     errors.extend(
         f"{run_id}: cannot prove the test of an existing requirement failed before the change: {test}"
         for test in sorted(replay - before.passed - before.failed)
@@ -898,8 +1090,52 @@ def _judge(
     return errors, {"base": record, "unmetBefore": unmet}
 
 
+def _base_health(run_id: str, record: JsonObject, before: JunitOutcome, control: frozenset[str]) -> list[str]:
+    """Judge whether the replay on the code before the change is evidence at all.
+
+    The base run is healthy when it was replayed, its setup succeeded, it wrote a JUnit report without
+    structural errors, and every control test passed there. The control tests are the tests mapped only to
+    existing requirements that pass after the change: the base runs them on the same product code they test,
+    so one that does not pass there shows a broken base (a missing harness file, a failed build) or a change to
+    behaviour the Task does not own, and either way the base cannot show what failed before. Tests of the
+    Task's own requirements fail there legitimately, and an unmapped test may be the Task's own, so neither is
+    a control. A run that was not replayed is judged by the caller as unproven, not here.
+
+    Returns:
+        One error per reason the replayed run is unhealthy; empty when it is healthy or was not replayed.
+
+    """
+    if record.get("replayed") is not True:
+        return []
+    reasons: list[str] = _unhealthy_reasons(record, before, control)
+    return [f"{run_id}: the run on the code before the change is not healthy: {reason}" for reason in reasons]
+
+
+def _unhealthy_reasons(record: JsonObject, before: JunitOutcome, control: frozenset[str]) -> list[str]:
+    """Name what makes a replayed base run unhealthy (:func:`_base_health`).
+
+    Returns:
+        The reasons; empty when the run is healthy.
+
+    """
+    if record.get("setupErrors"):
+        return ["its setup failed"]
+    if record.get("reportWritten") is not True:
+        return ["it wrote no JUnit report"]
+    reasons: list[str] = [f"its report has a structural error: {error}" for error in before.errors]
+    reasons.extend(
+        f"a test of an existing requirement that passes after the change did not pass before it: {test}"
+        for test in sorted(control - before.passed)
+    )
+    return reasons
+
+
 def _replay(run: JsonObject, index: int, verification: Verification) -> tuple[JunitOutcome, JsonObject]:
     """Replay a junit run on the code before the change, when the run is in the Task's tree and a base is known.
+
+    A worktree that cannot be added leaves the run unreplayed, so its tests stay unproven. The worktree is
+    removed whatever happens; a removal that fails is recorded as ``cleanupError`` and never replaces the
+    result or an exception already on its way out.
 
     Returns:
         What the replayed report shows (nothing when there is no replay or no report), and the replay's record.
@@ -911,32 +1147,77 @@ def _replay(run: JsonObject, index: int, verification: Verification) -> tuple[Ju
         return nothing, {"replayed": False, "reason": "no base revision of the run's tree was given"}
     state: Execution = verification.state
     folder: Path = state.folder / f"base-{index}"
-    with deadline_scope(state.remaining()):
-        git(str(base.tree), "worktree", "add", "--detach", str(folder), base.ref)
+    try:
+        with deadline_scope(state.remaining()):
+            git(str(base.tree), "worktree", "add", "--detach", str(folder), base.ref)
+    except GitError as error:
+        return nothing, {"replayed": False, "reason": f"git worktree add failed: {error}"}
+    outcome: JunitOutcome = nothing
+    record: JsonObject = {"replayed": False, "reason": "the replay did not finish"}
     try:
         _copy_harness(base, folder, state)
-        return _run_on_base(run, index, folder, state)
+        outcome, record = _run_on_base(run, index, folder, state)
     finally:
-        git(str(base.tree), "worktree", "remove", "--force", str(folder))
+        removal: str | None = _remove_worktree(base.tree, folder)
+    return outcome, record | ({"cleanupError": removal} if removal else {})
+
+
+def _remove_worktree(tree: Path, folder: Path) -> str | None:
+    """Remove a replay worktree without the execution deadline, so cleanup runs even with the budget spent.
+
+    Returns:
+        None when the worktree was removed, otherwise the git error's text; it never raises.
+
+    """
+    try:
+        git(str(tree), "worktree", "remove", "--force", str(folder))
+    except GitError as error:
+        return str(error)
+    return None
+
+
+def _is_harness_configuration(path: str) -> bool:
+    """Report whether a changed path is a dependency manifest or test-tool configuration a run needs.
+
+    Returns:
+        True when its file name matches HARNESS_CONFIGURATION.
+
+    """
+    name: str = PurePosixPath(path).name
+    return any(fnmatch(name, pattern) for pattern in HARNESS_CONFIGURATION)
+
+
+def _carry(tree: Path, folder: Path, path: str) -> None:
+    """Make one harness path in the base checkout what it is in the tree.
+
+    A file the tree holds is copied; a file the change removed is deleted from the checkout too.
+    """
+    source: Path = tree / path
+    target: Path = folder / path
+    if source.is_file():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        return
+    if not source.exists() and target.is_file():
+        target.unlink()
 
 
 def _copy_harness(base: Base, folder: Path, state: Execution) -> None:
-    """Copy every file the change added or altered, except the Task's product files, into the base checkout.
+    """Add today's tests and their harness to the base checkout, and nothing else.
 
-    The tests and their harness come along; only the product change is left out, so the replay runs today's tests
-    against the product code as it was.
+    The harness is the files the build recorded as tests and harness (``Base.harness_files``) and every changed
+    dependency manifest or test-tool configuration (HARNESS_CONFIGURATION). Every other file stays as it was at
+    the base revision, so a product change nobody listed can never enter the base: the replay runs today's tests
+    against the product code as it was, and fails closed.
     """
     with deadline_scope(state.remaining()):
         tracked: str = git(str(base.tree), "diff", "--name-only", "-z", base.ref).stdout
         untracked: str = git(str(base.tree), "ls-files", "-z", "--others", "--exclude-standard").stdout
-    copies: list[str] = sorted(
-        path
-        for path in {*tracked.split("\0"), *untracked.split("\0")}
-        if path and path not in base.product_files and (base.tree / path).is_file()
-    )
-    for path in copies:
-        (folder / path).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(base.tree / path, folder / path)
+    configuration: set[str] = {
+        path for path in {*tracked.split("\0"), *untracked.split("\0")} if path and _is_harness_configuration(path)
+    }
+    for path in sorted(base.harness_files | configuration):
+        _carry(base.tree, folder, path)
 
 
 def _run_on_base(run: JsonObject, index: int, folder: Path, state: Execution) -> tuple[JunitOutcome, JsonObject]:
@@ -949,7 +1230,12 @@ def _run_on_base(run: JsonObject, index: int, folder: Path, state: Execution) ->
     nothing: JunitOutcome = JunitOutcome(passed=frozenset(), failed=frozenset(), errors=())
     report: Path | None = _fresh_report(run, folder)
     setup_errors, setups = _setup_errors(run, f"run-{index}-base", folder, state)
-    record: JsonObject = {"replayed": True, "setup": setups, "setupErrors": [*setup_errors]}
+    record: JsonObject = {
+        "replayed": True,
+        "setup": setups,
+        "setupErrors": [*setup_errors],
+        "reportWritten": False,
+    }
     if setup_errors or report is None:
         return nothing, record
     output: str = f"run-{index}-base.json"
@@ -959,7 +1245,13 @@ def _run_on_base(run: JsonObject, index: int, folder: Path, state: Execution) ->
     record |= {"output": str(state.folder / output), "exitCode": exit_code}
     if outcome is None:
         return nothing, record
-    record |= {"report": str(archived), "failedTestIds": [*sorted(outcome.failed)]}
+    record |= {
+        "reportWritten": True,
+        "report": str(archived),
+        "reportErrors": [*outcome.errors],
+        "passedTestIds": [*sorted(outcome.passed)],
+        "failedTestIds": [*sorted(outcome.failed)],
+    }
     return outcome, record
 
 
@@ -1002,10 +1294,14 @@ def _parse_args() -> CliArgs:
     parser.add_argument("--repo", action="append", default=[])
     parser.add_argument("--base-ref", help="verify: the revision of --tree the Task builds on, before its change")
     parser.add_argument(
-        "--product-file",
+        "--harness-file",
         action="append",
         default=[],
-        help="verify: a repository-relative product file the Task changed; repeatable",
+        help="verify: a repository-relative test or harness file the replay base takes from the tree; repeatable",
+    )
+    parser.add_argument(
+        "--citations",
+        help="verify: a JSON file of the Task's contract citations, {requirementIds, specPaths}",
     )
     args: argparse.Namespace = parser.parse_args()
     mode: object = args.mode
@@ -1023,13 +1319,13 @@ def _parse_args() -> CliArgs:
     if not isinstance(repo, list) or not all(isinstance(r, str) for r in repo):
         message = "--repo: expected strings"
         raise TypeError(message)
-    product: object = args.product_file
-    if not isinstance(product, list) or not all(isinstance(p, str) for p in product):
-        message = "--product-file: expected strings"
+    harness: object = args.harness_file
+    if not isinstance(harness, list) or not all(isinstance(h, str) for h in harness):
+        message = "--harness-file: expected strings"
         raise TypeError(message)
     sources: list[str] = [s for s in source if isinstance(s, str)]
     repos: list[str] = [r for r in repo if isinstance(r, str)]
-    product_files: tuple[str, ...] = tuple(p for p in product if isinstance(p, str))
+    harness_files: tuple[str, ...] = tuple(h for h in harness if isinstance(h, str))
     resolved: Mode | None = MODES.get(mode) if isinstance(mode, str) else None
     if resolved is not None:
         return CliArgs(
@@ -1044,7 +1340,8 @@ def _parse_args() -> CliArgs:
             repos=repos,
             bindings=_optional_arg(args.bindings, "bindings"),
             base_ref=_optional_arg(args.base_ref, "base-ref"),
-            product_files=product_files,
+            harness_files=harness_files,
+            citations=_optional_arg(args.citations, "citations"),
         )
     message = f"unsupported mode: {mode}"
     raise TypeError(message)
@@ -1087,7 +1384,7 @@ def _setup(plan: JsonObject, args: CliArgs) -> None:
 
 
 def _base(args: CliArgs) -> Base | None:
-    """Name the code before the change from ``--tree``, ``--base-ref`` and ``--product-file``.
+    """Name the code before the change from ``--tree``, ``--base-ref`` and ``--harness-file``.
 
     Returns:
         The base, or None when no base revision was given.
@@ -1101,7 +1398,28 @@ def _base(args: CliArgs) -> Base | None:
     if args.tree is None:
         message: str = "--base-ref requires --tree, the tree the revision belongs to"
         raise ValueError(message)
-    return Base(tree=Path(args.tree).resolve(), ref=args.base_ref, product_files=frozenset(args.product_files))
+    return Base(tree=Path(args.tree).resolve(), ref=args.base_ref, harness_files=frozenset(args.harness_files))
+
+
+def _effective_origins(plan: JsonObject, args: CliArgs) -> tuple[dict[str, str], list[JsonValue]]:
+    """Derive the origins verify holds the Task to, from the reviewed scope and the Task's contract.
+
+    The approved plan is the reviewed scope, so its origins, raised by the contract's citations, are the ones
+    that count; a mapping cannot weaken them.
+
+    Returns:
+        The effective origin of each requirement, and each origin the gate derived or raised.
+
+    Raises:
+        ValueError: No ``--citations`` was given.
+
+    """
+    if args.citations is None:
+        message: str = "verify requires --citations, the Task's contract citations"
+        raise ValueError(message)
+    reviewed: JsonObject = read(args.approved_plan) if args.approved_plan else plan
+    effective: dict[str, str] = origins(reviewed, read_citations(args.citations))
+    return effective, origin_corrections(reviewed, effective)
 
 
 def blocking_findings(review: JsonObject) -> list[JsonValue]:
@@ -1145,25 +1463,34 @@ def required_kinds(plan: JsonObject) -> list[JsonValue]:
     ]
 
 
+def _prepare(previous: JsonObject | None, args: CliArgs) -> None:
+    """Write the previous ledger for the assessor, without origins, and report the sources' revision.
+
+    A requirement an earlier Task built is existing for this one unless this Task's contract cites it, so the
+    previous origins are not carried forward.
+    """
+    approved: JsonObject | None = read(args.approved_plan) if args.approved_plan else None
+    hashes: dict[str, str] = source_hashes(
+        sorted(
+            set(args.source + _optional_strs(approved, "sourceFiles") + _optional_strs(previous, "sourceFiles")),
+        ),
+    )
+    write(args.output, without_origin(previous) if previous else {"requirements": [], "mappings": [], "runs": []})
+    _emit(
+        {
+            "ok": True,
+            "path": args.output,
+            "sourceRevision": hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest(),
+        },
+    )
+
+
 def main() -> None:
     """Prepare, validate or verify a cumulative regression plan and report the result as JSON."""
     args: CliArgs = _parse_args()
     previous: JsonObject | None = read(args.ledger) if Path(args.ledger).is_file() else None
     if args.mode == "prepare":
-        approved: JsonObject | None = read(args.approved_plan) if args.approved_plan else None
-        hashes: dict[str, str] = source_hashes(
-            sorted(
-                set(args.source + _optional_strs(approved, "sourceFiles") + _optional_strs(previous, "sourceFiles")),
-            ),
-        )
-        write(args.output, previous or {"requirements": [], "mappings": [], "runs": []})
-        _emit(
-            {
-                "ok": True,
-                "path": args.output,
-                "sourceRevision": hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest(),
-            },
-        )
+        _prepare(previous, args)
         return
     plan: JsonObject = read(args.plan)
     if args.mode == "setup":
@@ -1190,8 +1517,9 @@ def main() -> None:
     if args.mode == "validate" and not errors:
         write(bindings, bound)
     evidence: list[JsonValue] = []
+    effective, corrections = _effective_origins(plan, args) if args.mode == "verify" else ({}, [])
     if not errors and args.mode == "verify":
-        errors, evidence = execute(plan, Path(args.output).parent, _base(args))
+        errors, evidence = execute(plan, Path(args.output).parent, effective, _base(args))
     error_values: list[JsonValue] = [*errors]
     unmet: list[JsonValue] = unmet_before(evidence)
     write(
@@ -1202,10 +1530,11 @@ def main() -> None:
             "evidence": evidence,
             "sourcesChanged": sources_changed,
             "unmetBefore": unmet,
+            "originCorrections": corrections,
         },
     )
     if not errors and args.mode == "verify":
-        write(args.ledger, {**plan, "execution": evidence, "unmetBefore": unmet})
+        write(args.ledger, {**without_origin(plan), "execution": evidence, "unmetBefore": unmet})
     _emit(
         {
             "ok": not errors,
@@ -1216,6 +1545,7 @@ def main() -> None:
             "reviewApproved": review_approved,
             "sourcesChanged": sources_changed,
             "unmetBefore": unmet,
+            "originCorrections": corrections,
         },
     )
 

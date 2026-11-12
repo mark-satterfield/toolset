@@ -636,6 +636,8 @@
         "scripts/portfolio/regression.py#execute",
         "scripts/portfolio/regression.py#_execute_run",
         "scripts/portfolio/regression.py#_judge",
+        "scripts/portfolio/regression.py#_base_health",
+        "scripts/portfolio/regression.py#_effective_origins",
         "scripts/portfolio/regression.py#_setup_errors",
         "scripts/portfolio/regression.py#junit_results"
       ],
@@ -779,7 +781,19 @@
           "id": "requirement-origin",
           "enforced": "origin must be task or existing",
           "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
-          "stated": "regression.py refuses a requirement whose origin is not task or existing"
+          "stated": "regression.py refuses a requirement whose origin is present and not task or existing"
+        },
+        {
+          "id": "origin-citations",
+          "enforced": "verify requires --citations, the Task's contract citations",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "regression.py derives the effective origin: a requirement the Task's contract cites"
+        },
+        {
+          "id": "base-healthy",
+          "enforced": "the run on the code before the change is not healthy",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "counts as unmet before only when the run on the code before the change is healthy"
         },
         {
           "id": "mapped-tests-pass",
@@ -809,7 +823,7 @@
           "id": "existing-failed-before",
           "enforced": "cannot prove the test of an existing requirement failed before the change",
           "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
-          "stated": "as regression.py verify proves by replaying the failing tests on the pre-change product files"
+          "stated": "as regression.py verify proves by replaying the failing tests on the code before the change"
         },
         {
           "id": "fresh-report",

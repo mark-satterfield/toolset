@@ -25,7 +25,7 @@ from orchestrator.core.io import JsonValue, write_json
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, value_artifact
 from orchestrator.core.models import StepError
 from orchestrator.core.tool_locks import control_repo
-from orchestrator.flows import build_prerequisite_work
+from orchestrator.flows import build_prerequisite_work, build_repository_setup
 from orchestrator.flows.build_reviews import refresh_sources
 from orchestrator.flows.build_sessions import OutputContract, latest, reasoned
 from orchestrator.flows.build_state import (
@@ -517,8 +517,12 @@ def diagnose(run: StepRun, again: str, observation: dict[str, JsonValue] | None 
         "When an actual Task builds the consumed output, route prerequisites and name it, even when waiting for it "
         "would close a cycle with standing edges: the caller checks cycles and fails only this Task with the cycle. "
         "Use missing-work only when no actual Task builds a consumed output; name authoringStory only if an actual "
-        "open Story with completed saved scope/spec authorizes the missing work; "
-        "distinguish an environment-only defect.",
+        "open Story with completed saved scope/spec authorizes the missing work. "
+        "Route repository when the fresh evidence shows the cause is in the Task's own repository: a dependency "
+        "declaration, lock file, override, peer-dependency conflict, or a test or build configuration that names a "
+        "package no manifest declares; name in evidence the files and the correction, which the build makes in its "
+        "worktree. Route environment only for a cause outside the repository: a missing tool or runtime, "
+        "credentials, network or service availability.",
         followups=(
             new_step(
                 "build:prerequisites-diagnosed",
@@ -545,8 +549,8 @@ def diagnosed(run: StepRun) -> Completion:
     judged and diagnosed again. A restart of this step therefore never re-raises a stale diagnosis.
 
     Returns:
-        Fresh evidence for changed governing sources, a slot-releasing readiness gate, or a
-        scoped environment observation.
+        Fresh evidence for changed governing sources, a slot-releasing readiness gate, a correction
+        of the repository's own declarations, or a scoped environment observation.
 
     Raises:
         StepError: The diagnosis names a producer without existing evidence, contradicts the
@@ -558,6 +562,8 @@ def diagnosed(run: StepRun) -> Completion:
         return refreshed
     diagnosis: dict[str, JsonValue] = artifact_document(run, "prerequisiteDiagnosis")
     again: str = check_type(run.params()["again"], str)
+    if diagnosis["route"] == "repository":
+        return build_repository_setup.start(again, check_type(run.params()["fingerprint"], str))
     if diagnosis["route"] == "environment":
         return Completion(
             artifacts=(value_artifact("prerequisiteFingerprint", check_type(run.params()["fingerprint"], str)),),

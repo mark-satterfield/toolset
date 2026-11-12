@@ -31,7 +31,13 @@ from orchestrator.core.journal_steps import (
 from orchestrator.core.models import RunContext, StepError
 from orchestrator.core.tool_locks import control_repo, seconds
 from orchestrator.core.tools import Tools
-from orchestrator.flows import build_carried, build_policy, build_prerequisite_work, build_prerequisites
+from orchestrator.flows import (
+    build_carried,
+    build_policy,
+    build_prerequisite_work,
+    build_prerequisites,
+    build_repository_setup,
+)
 from orchestrator.flows.build_reviews import attach_reviews, refresh_sources, task_sources
 from orchestrator.flows.build_sessions import OutputContract, accepted_steps, attach, latest, reasoned, view_of
 from orchestrator.flows.build_state import (
@@ -1310,6 +1316,7 @@ def _registry() -> Registry:
         "build:final-review": _final_review,
         "build:final-review-checked": _final_review_checked,
         "build:commit": _commit,
+        **build_repository_setup.HANDLERS,
     }
     for key, handler in handlers.items():
         registry.script_step(key)(handler)

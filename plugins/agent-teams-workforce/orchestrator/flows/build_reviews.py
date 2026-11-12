@@ -12,7 +12,7 @@ from typeguard import check_type
 
 from orchestrator.core import step_journal
 from orchestrator.core.handback_contract import OTHER_CAUSE
-from orchestrator.core.io import JsonValue, json_object
+from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import Registry
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, file_artifact, value_artifact
 from orchestrator.core.models import StepError
@@ -58,6 +58,8 @@ VERIFY: Final = "build:regression-verify"
 """The step that verifies the reviewed final regression evidence."""
 EVIDENCE_WORK: Final = ("build:regression-tests", "build:final-suite")
 """The steps that write the tests and behaviour a failed final verification found missing, and review them."""
+HARNESS_FILES: Final = "harnessFiles"
+"""The repository declaration files a repository-setup correction changed; harness for the replay base."""
 
 
 def _regression(run: StepRun, mode: str, plan: Path, extra: list[str]) -> tuple[Path, dict[str, JsonValue]]:
@@ -104,6 +106,12 @@ def _scope(run: StepRun, final: bool) -> Completion:
         if final
         else "Assess cumulative regression scope from existing obligations and the Task's full sources"
     )
+    if latest(run, HARNESS_FILES) is not None:
+        action += (
+            ". This build corrected the repository's own declarations (harnessFiles); each run's setup installs the "
+            "repository's declared dependencies with its locked install (for example npm ci), with no ad-hoc install "
+            "of a package the repository now declares"
+        )
     return reasoned(
         run,
         "regression-impact-assessor",
@@ -267,10 +275,17 @@ def _validate(run: StepRun, final: bool) -> Completion:
     if final:
         extra.extend(["--approved-plan", str(_file(run, "regressionPlan"))])
         extra.extend(["--bindings", str(_file(run, "regressionScope").parent / "source-bindings.json")])
+        extra.extend(["--citations", str(_citations(run))])
         extra.extend(_base_arguments(run))
     output, document = _regression(run, "verify" if final else "validate", plan, extra)
     if document.get("ok") is True and final:
-        return Completion(artifacts=(file_artifact("regressionEvidence", output), *_unmet_artifacts(document)))
+        return Completion(
+            artifacts=(
+                file_artifact("regressionEvidence", output),
+                *_unmet_artifacts(document),
+                *_origin_artifacts(document),
+            ),
+        )
     if document.get("ok") is True:
         return Completion(artifacts=(file_artifact("regressionScope", output),))
     if final:
@@ -285,37 +300,72 @@ def _validate(run: StepRun, final: bool) -> Completion:
     )
 
 
-def _product_files(run: StepRun, tree: Path) -> list[str]:
-    """List the product files this Task's implementers, refactorer and writers changed, relative to its tree.
+def _citations(run: StepRun) -> Path:
+    """Write the Task's contract citations, from which regression.py verify derives each requirement's origin.
 
     Returns:
-        The union of every accepted ``changedFiles``, each once, sorted; a path outside the tree is left out.
+        The citations file: the bead's ``requirementIds`` and its spec paths (``specPaths`` and ``specPath``).
+
+    """
+    bead: dict[str, JsonValue] = json_object(run.context.args["bead"])
+    specs: list[str] = list(check_type(bead.get("specPaths", []), list[str]))
+    specs.extend([check_type(bead["specPath"], str)] if bead.get("specPath") else [])
+    path: Path = run.context.work / "build" / str(run.step["id"]) / "citations.json"
+    write_json(
+        path,
+        {
+            "requirementIds": list(check_type(bead.get("requirementIds", []), list[str])),
+            "specPaths": list(dict.fromkeys(specs)),
+        },
+    )
+    return path
+
+
+def _harness_files(run: StepRun, tree: Path) -> list[str]:
+    """List the test and harness files the build recorded, relative to its tree.
+
+    Returns:
+        The union of every accepted ``testFiles`` (the test writers') and ``harnessFiles`` (repository-setup
+        corrections), each once, sorted; a path outside the tree is left out.
 
     """
     listed: list[str] = [
         path
         for step in accepted_steps(run)
         for artifact in step["artifacts"]
-        if artifact["kind"] == "value" and artifact["name"] == "changedFiles"
+        if artifact["kind"] == "value" and artifact["name"] in {"testFiles", HARNESS_FILES}
         for path in check_type(artifact["value"], list[str])
     ]
+    root: Path = tree.resolve()
     resolved: list[Path] = [(tree / path).resolve() for path in listed]
-    return sorted({str(path.relative_to(tree.resolve())) for path in resolved if path.is_relative_to(tree.resolve())})
+    return sorted({str(path.relative_to(root)) for path in resolved if path.is_relative_to(root)})
 
 
 def _base_arguments(run: StepRun) -> list[str]:
     """Name the code before the Task's change, on which verification replays failing tests of existing requirements.
 
-    The Task commits only at build:commit, so the worktree's HEAD is the revision it builds on.
+    The Task commits only at build:commit, so the worktree's HEAD is the revision it builds on. The replay base
+    takes only the recorded test and harness files from the tree.
 
     Returns:
-        The ``--tree``, ``--base-ref`` and ``--product-file`` arguments of regression.py verify.
+        The ``--tree``, ``--base-ref`` and ``--harness-file`` arguments of regression.py verify.
 
     """
     tree: Path = _workspace(run).tree
     head: str = run.tools.command(["git", "rev-parse", "HEAD"], stage=run.step["script"], cwd=tree).stdout.strip()
-    products: list[str] = [value for path in _product_files(run, tree) for value in ("--product-file", path)]
-    return ["--tree", str(tree), "--base-ref", head, *products]
+    harness: list[str] = [value for path in _harness_files(run, tree) for value in ("--harness-file", path)]
+    return ["--tree", str(tree), "--base-ref", head, *harness]
+
+
+def _origin_artifacts(document: dict[str, JsonValue]) -> tuple[ValueArtifact, ...]:
+    """Record the origins verification derived or raised from the Task's contract, when there are any.
+
+    Returns:
+        The ``regressionOriginCorrections`` value, or nothing.
+
+    """
+    corrections: list[JsonValue] = check_type(document.get("originCorrections", []), list[JsonValue])
+    return (value_artifact("regressionOriginCorrections", corrections),) if corrections else ()
 
 
 def _unmet_artifacts(document: dict[str, JsonValue]) -> tuple[ValueArtifact, ...]:
