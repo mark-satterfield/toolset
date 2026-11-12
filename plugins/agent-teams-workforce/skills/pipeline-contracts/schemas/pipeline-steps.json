@@ -96,6 +96,7 @@
           "reads": ["worktree", "design", "provisioning"],
           "records": [
             {"name": "regressionPrevious", "kind": "file", "holds": "the requirements and mappings recorded before this Task"},
+            {"name": "requiredSources", "kind": "file", "holds": "regression.py prepare's record of the Task's sources (its PRD, spec, criteria, TRD and data model files) that the scope must list in sourceFiles; validation names each one omitted"},
             {"name": "regressionPlan", "kind": "file", "holds": "the impact scope the regression-impact-assessor wrote"}
           ],
           "adds": []
@@ -116,6 +117,8 @@
           "runBy": "task-to-deploy",
           "reads": ["worktree", "design", "provisioning", "regressionPrevious", "regressionPlan", "regressionPlanReview"],
           "records": [
+            {"name": "regressionPrevious", "kind": "file", "holds": "the requirements and mappings recorded before this Task"},
+            {"name": "requiredSources", "kind": "file", "holds": "regression.py prepare's record of the Task's sources (its PRD, spec, criteria, TRD and data model files) that the scope must list in sourceFiles; validation names each one omitted"},
             {"name": "regressionPlan", "kind": "file", "holds": "the corrected impact scope the regression-impact-assessor wrote"}
           ],
           "adds": []
@@ -124,7 +127,7 @@
           "description": "Validate the reviewed regression scope",
           "purpose": "The scope is complete and approved before any test is written, and its requirement sources are bound",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "regressionPlan", "regressionPlanReview"],
+          "reads": ["worktree", "regressionPlan", "regressionPlanReview", "requiredSources"],
           "records": [
             {"name": "regressionScope", "kind": "file", "holds": "The accepted regressionScope evidence"},
             {"name": "regressionCorrection", "kind": "file", "holds": "Failed validation evidence when a bounded correction is scheduled"}
@@ -445,7 +448,7 @@
           "description": "Run the mapped regression runs, each after its setup, and record their evidence",
           "purpose": "The commit carries fresh per-test evidence for every requirement the change can affect",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "regressionPlan", "regressionScope", "regressionMapped", "regressionMappedReview"],
+          "reads": ["worktree", "regressionPlan", "regressionScope", "regressionMapped", "regressionMappedReview", "requiredSources"],
           "records": [
             {"name": "regressionEvidence", "kind": "file", "holds": "The accepted regressionEvidence evidence"},
             {"name": "regressionOriginCorrections", "kind": "value", "holds": "On success, each {requirementId, planned, effective} origin regression.py derived or raised from the Task's contract citations, when there is any"},

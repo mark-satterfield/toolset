@@ -30,7 +30,12 @@ The producer-contract checker includes the real dispatch builder/parser and chec
 Task fields against the canonical bead metadata.
 
 Regression preparation includes the Task's supplied Spec and PRD paths as well as journal
-source artifacts. Final verification names the source seal beside the accepted
+source artifacts, and records them as the Task's required sources (`requiredSources`). Validation
+and final verification name each required source the scope's `sourceFiles` omits, and each run
+setup that names a resource the Task itself creates (the deployed name of an entry its
+`matrix_elements` state, or of the stack that holds one): the baseline runs every setup before the
+Task's change exists, so a baseline setup may not depend on the Task's own outputs. Each such
+error goes to the assessor through the scope correction loop. Final verification names the source seal beside the accepted
 `regressionScope` artifact with `--bindings`, so another step or resumed dispatch reads the
 same approval evidence. Each verification keeps its own execution-output directory.
 
@@ -175,8 +180,10 @@ as unmet rather than met.
 
 When the current Task cites a new immutable source absent from its accepted regression plan,
 the build appends regression reassessment, independent review and validation, execution policy,
-baseline and fresh code review. Existing source snapshots and journal history remain intact.
-If reassessment still omits those current sources, the build stops with the missing paths.
+baseline and fresh code review; the reassessment's purpose names the omitted paths, and
+validation names each one still omitted, so the correction loop hands the assessor the exact
+paths. Existing source snapshots and journal history remain intact. If the scope still omits those
+current sources once the corrections are spent, the build stops with the missing paths.
 The same check runs before an accepted prerequisite diagnosis is applied, a restarted
 `build:prerequisites-diagnosed` included: a diagnosis judges a suite run whose regression scope
 came from the sources cited then, so when the Task now cites a source that scope did not cover,
@@ -295,8 +302,9 @@ files of the Story worktree: a line that does what a capability provides and a r
 capability nothing references are blocking findings it settles, and an id the matrix does not
 hold is a contract finding. A capability the Task's own repository provides is not checked, since
 its definitions there are its implementation, and neither is what a feature that only consumes
-such a capability is supported by. Only when the check leaves definitions it cannot rule on is the
-shared-capability-reviewer started. It is handed each distinct definition once, with its candidate
+such a capability is supported by, when another repository realizes that feature too. Only when the
+check leaves product definitions (test files are not read) whose names share uncommon words with a
+provided behaviour is the shared-capability-reviewer started. It is handed each distinct definition once, with its candidate
 capability items, in text files of at most 40,000 characters it reads whole, and returns one
 ruling per definition (`build-reuse-rulings.schema.json`). `build:reuse-ruled` then merges the
 rulings with the settled findings into the review by script, and fails the step when a handed

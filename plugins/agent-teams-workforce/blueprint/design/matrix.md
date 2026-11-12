@@ -728,7 +728,12 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
     files against them with `check-reuse`; the deterministic check catches a duplicate
     before a reviewer is asked. A capability the Task's own repository provides (an entry the
     Task states, or one its stack holds, realizes it) is not checked: its definitions there are
-    its implementation.
+    its implementation. Nor is the walk started from a feature that only consumes such a
+    capability and is realized outside the Task's repository too; a feature only the Task's
+    repository realizes is its own product feature and keeps its capability checks. A definition
+    is put to a reviewer only from a product file (a file of the repository's test layout is not
+    read) and only when its name shares two uncommon words with a provided behaviour, a common word
+    being one in the behaviours of at least one in thirty provided items.
 17. **Stories and Tasks.** No entries; beads is the authority for both (R40). A Task states
     what it builds in the matrix's ids (R41), and the Task script answers from the Task
     beads which entries a Story built, which open work from other Epics touches an entry and

@@ -437,7 +437,8 @@
       "output": "build selected implementation",
       "agents": [
         "code-refactoring-specialist",
-        "chassis-extension-implementer"
+        "chassis-extension-implementer",
+        "python-library-implementer"
       ],
       "schema": "skills/pipeline-contracts/schemas/build-implementation.schema.json",
       "named": "schema",

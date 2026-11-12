@@ -265,6 +265,7 @@ No workflow starts these agents; they remain for a spec written well before its 
 | chassis-extension-implementer | execute | Implements Lambda handlers as chassis superclass extensions for API endpoints and event consumers; writes minimum code to pass failing unit tests. |
 | api-gateway-cdk-implementer | execute | Implements API Gateway resources, methods, and authorizers in CDK; writes minimum code to pass failing unit tests. |
 | cdk-stack-author | execute | Writes AWS CDK stacks, constructs and app wiring in Python for an infrastructure Task, as the Task, its spec, the provisioning intent and the architecture give them, with the minimum change that makes the failing synth assertion tests pass. Never deploys. |
+| python-library-implementer | execute | Implements plain Python library and package code - modules and their public API, package entry points and configuration bindings, packaging and distribution metadata in pyproject.toml and the repository's task file, and the removal of obsolete modules, files, extras and tasks - writing minimum code to pass failing tests. |
 | event-api-client-implementer | execute | Implements the calls a service makes to the project's central event API to publish the project's events. |
 | event-driven-consumer-implementer | execute | Implements the handler code of a routing rule's target, for whatever target type the target's owner chose. |
 | dynamodb-access-layer-implementer | execute | Implements DynamoDB access patterns from the data model spec; writes minimum code to pass failing tests. |

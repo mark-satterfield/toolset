@@ -22,9 +22,10 @@ from typing import TYPE_CHECKING, Final
 from typeguard import check_type
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
-from matrix_contract import EntryId, MatrixError
+from matrix_contract import KIND_FEATURE, Entry, EntryId, MatrixError
 from matrixreuse import ReuseItem, ReuseResult, check_reuse
 from matrixstore import Matrix, read_matrix
+from matrixtraverse import holder
 
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
@@ -340,6 +341,36 @@ def _reviewer_request(run: StepRun, handed: _Handed, settled: dict[str, JsonValu
         "candidate it duplicates, or not-duplicate; with one sentence of reason"
     )
     return request, record
+
+
+def _physical(entry: Entry) -> bool:
+    """Tell whether an entry's name is the name its resource is deployed under.
+
+    Returns:
+        True for an entry that is not a feature and whose name holds no whitespace.
+
+    """
+    return entry.kind != KIND_FEATURE and bool(entry.name) and not any(character.isspace() for character in entry.name)
+
+
+def own_outputs(run: StepRun) -> list[str]:
+    """Name the resources the Task itself creates, from the ids it states in the matrix.
+
+    Returns:
+        The deployed name of each entry the Task states that is not a feature, and of each stack that
+        holds one, without repeats; empty when the Task states no id the matrix holds.
+
+    """
+    bead: dict[str, JsonValue] = json_object(run.context.args["bead"])
+    ids: list[str] = check_type(bead.get(ELEMENTS, []), list[str])
+    if not ids:
+        return []
+    matrix: Matrix = read_matrix(matrix_file())
+    stated: list[Entry] = [entry for entry in map(matrix.find, map(EntryId, ids)) if entry is not None]
+    stacks: list[Entry | None] = [matrix.find(stack) for entry in stated if (stack := holder(matrix, entry.id))]
+    return list(
+        dict.fromkeys(entry.name for entry in [*stated, *stacks] if entry is not None and _physical(entry)),
+    )
 
 
 def audit(run: StepRun) -> Completion:

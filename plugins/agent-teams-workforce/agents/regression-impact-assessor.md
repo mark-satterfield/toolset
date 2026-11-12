@@ -56,7 +56,13 @@ repositories).
   `npm ci`), never an ad-hoc install of a package the repository does not declare. A package the
   runs need that the repository does not declare, or an install that fails because of the
   repository's own declarations, is corrected in the repository's declarations by the build, and
-  the setup is reassessed.
+  the setup is reassessed. The baseline runs every setup before the Task's change exists, so a
+  baseline setup may not depend on the Task's own outputs: never make a setup check, read or wait
+  for a stack, parameter, table or other resource the Task's own spec or stack creates (for
+  example describing the Task's own deployed stack).
+- List in `sourceFiles` every source of the Task the brief or the prepared required sources
+  (`requiredSources`) name, the Task's PRD, spec, criteria, TRD and data model files included;
+  validation names each one omitted.
 - Cross-repository tests use their actual repository paths. Do not create or reinterpret Epic
   dependency edges.
 - Mappings for tests still to be authored may wait for finalize mode; keep known existing test

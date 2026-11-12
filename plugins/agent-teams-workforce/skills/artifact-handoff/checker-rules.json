@@ -630,6 +630,8 @@
         "scripts/portfolio/regression.py#_prior_mapping_errors",
         "scripts/portfolio/regression.py#_prior_layer_errors",
         "scripts/portfolio/regression.py#source_errors",
+        "scripts/portfolio/regression.py#required_source_errors",
+        "scripts/portfolio/regression.py#own_output_errors",
         "scripts/portfolio/regression.py#main",
         "scripts/portfolio/regression.py#blocking_findings",
         "scripts/portfolio/regression.py#source_hashes",
@@ -658,6 +660,18 @@
           "enforced": "Requirement source is not an absolute readable file",
           "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
           "stated": "regression.py checks each is an existing regular file"
+        },
+        {
+          "id": "required-sources",
+          "enforced": "Required Task source omitted from sourceFiles",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "Every source of the Task that regression.py prepare records"
+        },
+        {
+          "id": "setup-own-outputs",
+          "enforced": "a baseline setup may not depend on the Task's own outputs",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "a baseline setup may not depend on the Task's own outputs"
         },
         {
           "id": "impacted-coverage",

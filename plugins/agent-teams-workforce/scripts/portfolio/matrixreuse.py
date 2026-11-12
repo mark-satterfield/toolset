@@ -13,14 +13,25 @@ that capability; any other id stands for the capabilities the work that builds t
 use (``matrixtraverse.capabilities``). A capability the Task's own repository provides (an entry
 the Task states, or one its stack holds, realizes it) is not checked, since its definitions there
 are its implementation; nor is the walk started from a feature that only consumes such a
-capability, since what else that feature is supported by belongs to its other realizers.
+capability and is realized outside the Task's repository too, since what else that feature is
+supported by belongs to those other realizers.
+
+A ``judgment`` item is put to a reviewer only for a product definition: a file of the repository's
+test layout (under a ``testpaths`` entry of its ``pyproject.toml``, or ``tests``, ``test`` or
+``__tests__`` when it states none, or named as a test file) is not read for definitions. The words
+a definition's name shares with a provided behaviour count only when they are not common: a word
+that occurs in the behaviours of at least one in ``COMMON_WORD_SHARE`` of all the items the
+matrix's capabilities provide carries no meaning of its own.
 """
 
+import math
 import re
 import sys
-from collections.abc import Mapping, Sequence
+import tomllib
+from collections import Counter
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Final, Literal, NotRequired, TypedDict
 
 from typeguard import CollectionCheckStrategy, typechecked
@@ -49,7 +60,17 @@ REUSE_DUPLICATE: Final[ReuseFinding] = "duplicate"
 REUSE_JUDGMENT: Final[ReuseFinding] = "judgment"
 ATTR_PROVIDES: Final = "provides"
 MIN_SHARED_WORDS: Final = 2
-"""How many words of a provided behaviour a new definition's name must share to be put to a reviewer."""
+"""How many uncommon words of a provided behaviour a new definition's name must share to be put to a reviewer."""
+COMMON_WORD_SHARE: Final = 30
+"""A word in the behaviours of at least one in this many provided items is common."""
+MIN_COMMON_COUNT: Final = 2
+"""A word in fewer provided items than this is never common."""
+DEFAULT_TEST_ROOTS: Final[frozenset[str]] = frozenset({"tests", "test", "__tests__"})
+"""The folders that hold tests when the repository's ``pyproject.toml`` states no ``testpaths``."""
+PYPROJECT: Final = "pyproject.toml"
+_TEST_NAME: Final[re.Pattern[str]] = re.compile(
+    r"^(?:test_.+\.py|.+_test\.py|conftest\.py|.+\.(?:test|spec)\.[cm]?[jt]sx?)$",
+)
 STATUS_PATH_AT: Final = 3
 """Where the path starts in one entry of ``git status --porcelain``."""
 _RENAMED: Final = "RC"
@@ -199,22 +220,39 @@ class _Own:
 
         """
         return bool(_provided(matrix.entry(feature_id))) and any(
-            realizing.end in self.entries or holder(matrix, realizing.end) in self.stacks
-            for realizing in matrix.outgoing(feature_id, (REL_REALIZED_BY,))
+            self.holds(matrix, realizing.end) for realizing in matrix.outgoing(feature_id, (REL_REALIZED_BY,))
         )
+
+    def holds(self, matrix: Matrix, entry_id: EntryId) -> bool:
+        """Tell whether an entry is the Task's own: one it states, or one a stack of the Task holds.
+
+        Returns:
+            True when the entry belongs to the Task's repository.
+
+        """
+        return entry_id in self.entries or holder(matrix, entry_id) in self.stacks
 
     def consumer(self, matrix: Matrix, feature_id: EntryId) -> bool:
         """Tell whether a feature only consumes a shared capability the Task's own repository provides.
 
         Such a feature names an entry of the Task among its realizers because that entry provides
-        the capability it is supported by; what else it is supported by belongs to its other realizers.
+        the capability it is supported by; what else it is supported by belongs to its realizers
+        outside the Task's repository. A feature only the Task's repository realizes is its own
+        product feature, and is walked.
 
         Returns:
-            True when the feature is not provided here and is supported by a capability provided here.
+            True when the feature is not provided here, has a realizer outside the Task's
+            repository, and is supported by a capability provided here.
 
         """
-        return not self.provides(matrix, feature_id) and any(
-            self.provides(matrix, supporting.end) for supporting in matrix.outgoing(feature_id, (REL_SUPPORTED_BY,))
+        return (
+            not self.provides(matrix, feature_id)
+            and any(
+                not self.holds(matrix, realizing.end) for realizing in matrix.outgoing(feature_id, (REL_REALIZED_BY,))
+            )
+            and any(
+                self.provides(matrix, supporting.end) for supporting in matrix.outgoing(feature_id, (REL_SUPPORTED_BY,))
+            )
         )
 
 
@@ -237,7 +275,7 @@ def _walked(matrix: Matrix, others: Sequence[EntryId], own: _Own) -> list[EntryI
 
     Returns:
         Each feature an id realizes, and each feature among the ids, without a feature that only
-        consumes a capability the Task's own repository provides.
+        consumes a capability the Task's own repository provides and is realized outside it too.
 
     """
     starts: dict[EntryId, None] = dict.fromkeys(
@@ -439,16 +477,86 @@ def _duplicates(guarded: Sequence[Guarded], changed: Mapping[str, Sequence[str]]
     return items
 
 
-def _judgment(guarded: Sequence[Guarded], changed: Mapping[str, Sequence[str]]) -> list[ReuseItem]:
-    """Find the definitions in changed files whose name reads like a provided behaviour.
+def _common_words(matrix: Matrix) -> frozenset[str]:
+    """Find the words too common among provided behaviours to show that a name reads like one.
 
     Returns:
-        One item per definition and ``provides`` item that share enough words for a reviewer to
-        be asked whether the definition duplicates the behaviour.
+        Each word in the behaviours of at least one in ``COMMON_WORD_SHARE`` of the items every
+        feature of the matrix provides, and never one in fewer than ``MIN_COMMON_COUNT``.
+
+    """
+    behaviours: list[set[str]] = [
+        set(words(item.behaviour))
+        for entry in matrix.entries()
+        if entry.kind == KIND_FEATURE
+        for item in _provided(entry)
+    ]
+    least: int = max(MIN_COMMON_COUNT, math.ceil(len(behaviours) / COMMON_WORD_SHARE))
+    counts: Counter[str] = Counter(word for behaviour in behaviours for word in behaviour)
+    return frozenset(word for word, count in counts.items() if count >= least)
+
+
+def _test_roots(worktree: Path) -> frozenset[str]:
+    """Read where the repository keeps its tests.
+
+    Returns:
+        The ``testpaths`` the worktree's ``pyproject.toml`` states for pytest, or
+        ``DEFAULT_TEST_ROOTS`` when it has none.
+
+    Raises:
+        MatrixError: The ``pyproject.toml`` cannot be read or parsed.
+
+    """
+    pyproject: Path = worktree / PYPROJECT
+    if not pyproject.is_file():
+        return DEFAULT_TEST_ROOTS
+    try:
+        document: dict[str, object] = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        message: str = f"cannot read the test layout in {pyproject}: {error}"
+        raise MatrixError(message) from error
+    tool: object = document.get("tool")
+    pytest_table: object = tool.get("pytest") if isinstance(tool, dict) else None
+    options: object = pytest_table.get("ini_options") if isinstance(pytest_table, dict) else None
+    stated: object = options.get("testpaths") if isinstance(options, dict) else None
+    roots: frozenset[str] = (
+        frozenset(str(PurePosixPath(root)) for root in stated if isinstance(root, str) and root)
+        if isinstance(stated, list)
+        else frozenset()
+    )
+    return roots or DEFAULT_TEST_ROOTS
+
+
+def _is_test(relative: str, roots: Iterable[str]) -> bool:
+    """Tell whether a changed file belongs to the repository's tests.
+
+    Returns:
+        True when the file lies under a test root, or a folder of its path is named like one of
+        ``DEFAULT_TEST_ROOTS``, or its name is a test file's.
+
+    """
+    path: PurePosixPath = PurePosixPath(relative)
+    return (
+        any(path.is_relative_to(root) for root in roots)
+        or bool(DEFAULT_TEST_ROOTS & set(path.parts[:-1]))
+        or _TEST_NAME.match(path.name) is not None
+    )
+
+
+def _judgment(
+    guarded: Sequence[Guarded],
+    changed: Mapping[str, Sequence[str]],
+    common: frozenset[str],
+) -> list[ReuseItem]:
+    """Find the product definitions in changed files whose name reads like a provided behaviour.
+
+    Returns:
+        One item per definition and ``provides`` item that share enough uncommon words for a
+        reviewer to be asked whether the definition duplicates the behaviour.
 
     """
     behaviours: list[tuple[EntryId, Provided, set[str]]] = [
-        (capability.feature.id, item, set(words(item.behaviour)))
+        (capability.feature.id, item, set(words(item.behaviour)) - common)
         for capability in guarded
         for item in capability.provides
     ]
@@ -501,11 +609,11 @@ def check_reuse(
 
     Returns:
         The violations (a capability nothing references, a line that duplicates one), the
-        definitions for a reviewer to rule on, and what could not be checked.
+        product definitions for a reviewer to rule on, and what could not be checked.
 
     Raises:
         ValueError: No id is given.
-        MatrixError: ``worktree`` is not a directory.
+        MatrixError: ``worktree`` is not a directory, or its ``pyproject.toml`` cannot be parsed.
 
     """
     message: str
@@ -523,6 +631,8 @@ def check_reuse(
     unchecked: list[str]
     unused, unchecked = _unused(guarded, changed, worktree)
     violations: list[ReuseItem] = [*unused, *_duplicates(guarded, changed)]
+    roots: frozenset[str] = _test_roots(worktree)
+    product: dict[str, list[str]] = {file: lines for file, lines in changed.items() if not _is_test(file, roots)}
     return {
         "ids": list(dict.fromkeys(entry_ids)),
         "worktree": str(worktree),
@@ -538,7 +648,7 @@ def check_reuse(
         ],
         "provided": provided_here,
         "violations": violations,
-        "judgment": _judgment(guarded, changed),
+        "judgment": _judgment(guarded, product, _common_words(matrix)),
         "unchecked": unchecked,
         "clean": not violations,
     }

@@ -2603,6 +2603,23 @@
       "mcpServers": []
     },
     {
+      "name": "python-library-implementer",
+      "description": "Implements plain Python library and package code - modules and their public API, package entry points and configuration bindings, packaging and distribution metadata in pyproject.toml and the repository's task file, and the removal of obsolete modules, files, extras and tasks - writing minimum code to pass failing tests. Use for Implementation work on a shared library or package that no Lambda handler, AWS service, data store, event, UI, ML or CDK specialty covers.",
+      "skills": [
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:implementer-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:python-coding",
+        "agent-teams-workforce:software-engineering",
+        "agent-teams-workforce:python-lambda-packaging"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server",
+        "gitnexus"
+      ]
+    },
+    {
       "name": "queue-and-topic-designer",
       "description": "Answer a question or do a bounded piece of design for the solutions architect on Amazon SQS queues and Amazon SNS topics: standard or FIFO, visibility timeout, retention, redrive policies and dead- letter queues, SNS subscriptions, filter policies and delivery retry, fan-out, and Amazon MQ where a broker protocol is required.",
       "skills": [

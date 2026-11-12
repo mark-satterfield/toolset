@@ -58,6 +58,8 @@ VERIFY: Final = "build:regression-verify"
 """The step that verifies the reviewed final regression evidence."""
 EVIDENCE_WORK: Final = ("build:regression-tests", "build:final-suite")
 """The steps that write the tests and behaviour a failed final verification found missing, and review them."""
+REQUIRED_SOURCES: Final = "requiredSources"
+"""The file regression.py prepare writes naming the Task's sources every scope must list, and its artifact."""
 REPOSITORY_SETUP_WORK: Final = "repositorySetupWork"
 """One selected specialist's correction of the repository's declarations: the artifact that marks its step."""
 
@@ -153,6 +155,9 @@ def refresh_sources(run: StepRun) -> Completion | None:
     missing: list[str] = [source for source in sources if source not in covered]
     if not missing:
         return None
+    purpose: str = (
+        f"Refresh evidence for the Task's current governing sources, which the scope omits: {', '.join(missing)}"
+    )
     if latest(run, "regressionSourcesRefresh") == sources:
         raise StepError(
             run.step["script"],
@@ -169,7 +174,7 @@ def refresh_sources(run: StepRun) -> Completion | None:
     )
     return Completion(
         artifacts=(value_artifact("regressionSourcesRefresh", list(sources)),),
-        add=(StepGroup(tuple(_new(key, "Refresh evidence for the Task's current governing sources") for key in keys)),),
+        add=(StepGroup(tuple(_new(key, purpose) for key in keys)),),
     )
 
 
@@ -205,7 +210,15 @@ def _scope_initial(run: StepRun) -> Completion:
         errors: list[str] = check_type(prepared.get("errors", []), list[str])
         raise StepError(run.step["script"], OTHER_CAUSE, tuple(errors or ["Regression source preparation failed"]))
     assessed: Completion = _scope(run, False)
-    return Completion(artifacts=(*assessed.artifacts, file_artifact("regressionPrevious", output)), add=assessed.add)
+    required: Path = Path(check_type(prepared[REQUIRED_SOURCES], str))
+    return Completion(
+        artifacts=(
+            *assessed.artifacts,
+            file_artifact("regressionPrevious", output),
+            file_artifact(REQUIRED_SOURCES, required),
+        ),
+        add=assessed.add,
+    )
 
 
 def _scope_final(run: StepRun) -> Completion:
@@ -272,6 +285,9 @@ def _validate(run: StepRun, final: bool) -> Completion:
     plan: Path = _file(run, "regressionMapped" if final else "regressionPlan")
     review: Path = _file(run, "regressionMappedReview" if final else "regressionPlanReview")
     extra: list[str] = ["--review", str(review)]
+    if latest(run, REQUIRED_SOURCES) is not None:
+        extra.extend(["--required-sources", str(_file(run, REQUIRED_SOURCES))])
+    extra.extend(value for name in build_reuse.own_outputs(run) for value in ("--own-output", name))
     if final:
         extra.extend(["--approved-plan", str(_file(run, "regressionPlan"))])
         extra.extend(["--bindings", str(_file(run, "regressionScope").parent / "source-bindings.json")])

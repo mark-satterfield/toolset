@@ -12,11 +12,14 @@ import time
 import xml.etree.ElementTree as ET  # ruff: ignore[suspicious-xml-etree-import] - Bundled expat 2.7.4 mitigates entity expansion and external entities are never resolved.
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Final, Literal
+from typing import TYPE_CHECKING, Final, Literal
 
 from contracts import JsonObject, JsonValue, json_object
 from gitutils import GitError, cmd_hash_files, deadline_scope, separate_group, stop_process
 from jsonartifact import read_artifact
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 KINDS: Final[frozenset[str]] = frozenset({"unit", "contract", "integration", "nonfunctional"})
 ORIGINS: Final[frozenset[str]] = frozenset({"task", "existing"})
@@ -48,6 +51,11 @@ PASSED: Final = "passed"
 FAILED: Final = "failed"
 ERRORED: Final = "errored"
 NOT_RUN: Final = "not run"
+REQUIRED_SOURCES_FILE: Final = "required-sources.json"
+"""Where prepare records, beside its output, the Task's sources every scope must list in ``sourceFiles``."""
+REQUIRED_SOURCES: Final = "requiredSources"
+NAME_CHARACTERS: Final = r"\w./-"
+"""A Task output named in a setup command is bounded by none of these characters."""
 
 type Mode = Literal["prepare", "check", "validate", "verify", "setup"]
 MODES: Final[dict[str, Mode]] = {
@@ -74,6 +82,8 @@ class CliArgs:
     repos: list[str]
     bindings: str | None = None
     citations: str | None = None
+    required_sources: str | None = None
+    own_outputs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -705,12 +715,71 @@ def proven_record(held: frozenset[tuple[str, str]], plan: JsonObject, evidence: 
     return [{"requirementId": requirement, "testId": test} for requirement, test in sorted(kept)]
 
 
+def required_source_errors(plan: JsonObject, required: Sequence[str]) -> list[str]:
+    """Name each of the Task's required sources the plan's ``sourceFiles`` omits.
+
+    Returns:
+        One error per omitted source, naming its path.
+
+    """
+    listed: set[str] = set(_strs(plan, "sourceFiles"))
+    return [f"Required Task source omitted from sourceFiles: {source}" for source in required if source not in listed]
+
+
+def _names(command: str, name: str) -> bool:
+    """Tell whether a command names a resource as a whole token.
+
+    Returns:
+        True when ``name`` occurs in ``command`` bounded by no name character.
+
+    """
+    bounded: str = rf"(?<![{NAME_CHARACTERS}]){re.escape(name)}(?![{NAME_CHARACTERS}])"
+    return re.search(bounded, command) is not None
+
+
+def own_output_errors(plan: JsonObject, outputs: Sequence[str]) -> list[str]:
+    """Name each setup command that needs a resource the Task itself creates.
+
+    The baseline runs every setup before the Task's change exists, so a setup that reads the Task's
+    own deployed stack, parameter or table can never pass there.
+
+    Returns:
+        One error per setup command and Task output it names.
+
+    """
+    commands: list[tuple[str, str]] = [
+        (_str(run, "id"), _str(setup, "command")) for run in _objs(plan, "runs") for setup in _objs(run, "setup")
+    ]
+    return [
+        f"{run_id}: setup `{command}` needs {name}, which this Task itself creates: "
+        "a baseline setup may not depend on the Task's own outputs"
+        for run_id, command in commands
+        for name in outputs
+        if _names(command, name)
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class TaskBounds:
+    """What the Task itself fixes for its scope: the sources it must list and the resources it creates."""
+
+    required: tuple[str, ...] = ()
+    """The Task's sources ``sourceFiles`` must list."""
+    outputs: tuple[str, ...] = ()
+    """The names of the resources the Task itself creates, which no setup may need."""
+
+
+NO_BOUNDS: Final[TaskBounds] = TaskBounds()
+"""No required source and no Task output: the bounds of a plan checked without the Task's preparation."""
+
+
 def validate(
     plan: JsonObject,
     previous: JsonObject | None = None,
     *,
     complete: bool = False,
     owned: frozenset[str] = frozenset(),
+    bounds: TaskBounds = NO_BOUNDS,
 ) -> list[str]:
     """Reject incomplete discovery, missing old obligations, and unmapped layers.
 
@@ -719,6 +788,7 @@ def validate(
         previous: The previous ledger, when there is one.
         complete: Whether the mapping must cover every required layer (the final mapping).
         owned: The requirements whose effective origin is task; each is covered as impacted.
+        bounds: The Task's sources the plan must list and the resources it creates.
 
     Returns:
         Every validation error; empty when the plan is acceptable.
@@ -726,6 +796,8 @@ def validate(
     """
     requirements: list[JsonObject] = _objs(plan, "requirements")
     errors: list[str] = _discovery_errors(plan, requirements)
+    errors.extend(required_source_errors(plan, bounds.required))
+    errors.extend(own_output_errors(plan, bounds.outputs))
     ids: list[str] = [_str(r, "id") for r in requirements]
     errors.extend(_requirement_errors(plan, requirements, ids))
     errors.extend(_run_errors(plan, ids))
@@ -1261,6 +1333,16 @@ def _parse_args() -> CliArgs:
     parser.add_argument("--tree")
     parser.add_argument("--repo", action="append", default=[])
     parser.add_argument(
+        "--required-sources",
+        help="check, validate and verify: the file prepare wrote naming the Task's sources sourceFiles must list",
+    )
+    parser.add_argument(
+        "--own-output",
+        action="append",
+        default=[],
+        help="check, validate and verify: the name of a resource the Task itself creates, which no setup may need",
+    )
+    parser.add_argument(
         "--citations",
         help="verify: a JSON file of the Task's contract citations, "
         "{requirementIds, specPaths, acceptanceCriteria, definitionOfDone}",
@@ -1287,6 +1369,8 @@ def _parse_args() -> CliArgs:
             repos=[*_strings_arg(args.repo, "repo")],
             bindings=_optional_arg(args.bindings, "bindings"),
             citations=_optional_arg(args.citations, "citations"),
+            required_sources=_optional_arg(args.required_sources, "required-sources"),
+            own_outputs=_strings_arg(args.own_output, "own-output"),
         )
     message = f"unsupported mode: {mode}"
     raise TypeError(message)
@@ -1304,7 +1388,14 @@ def _check(plan: JsonObject, previous: JsonObject | None, args: CliArgs) -> None
     as verify checks it before it runs the mapped tests.
     """
     errors: list[str] = source_errors(_strs(plan, "sourceFiles"))
-    errors.extend(validate(plan, previous, complete=args.approved_plan is not None))
+    errors.extend(
+        validate(
+            plan,
+            previous,
+            complete=args.approved_plan is not None,
+            bounds=_bounds(args),
+        ),
+    )
     if args.approved_plan and scope(plan) != scope(read(args.approved_plan)):
         errors.append("Final mapping changed the approved impact scope")
     error_values: list[JsonValue] = [*errors]
@@ -1390,12 +1481,26 @@ def required_kinds(plan: JsonObject) -> list[JsonValue]:
     ]
 
 
+def _bounds(args: CliArgs) -> TaskBounds:
+    """Read what the Task fixes for its scope from the command line.
+
+    Returns:
+        The required sources prepare recorded, when ``--required-sources`` names them, and each ``--own-output``.
+
+    """
+    required: list[str] = _strs(read(args.required_sources), REQUIRED_SOURCES) if args.required_sources else []
+    return TaskBounds(required=tuple(required), outputs=args.own_outputs)
+
+
 def _prepare(previous: JsonObject | None, args: CliArgs) -> None:
-    """Write the previous ledger for the assessor, without origins, and report the sources' revision.
+    """Write the previous ledger for the assessor without origins, record the Task's sources, report their revision.
 
     A requirement an earlier Task built is existing for this one unless this Task's contract cites it, so the
-    previous origins are not carried forward.
+    previous origins are not carried forward. Every ``--source`` is a source of the Task the scope must list in
+    ``sourceFiles``; they are written to ``REQUIRED_SOURCES_FILE`` beside the output for validation.
     """
+    required: Path = Path(args.output).parent / REQUIRED_SOURCES_FILE
+    write(required, {REQUIRED_SOURCES: [*sorted(set(args.source))]})
     approved: JsonObject | None = read(args.approved_plan) if args.approved_plan else None
     hashes: dict[str, str] = source_hashes(
         sorted(
@@ -1407,6 +1512,7 @@ def _prepare(previous: JsonObject | None, args: CliArgs) -> None:
         {
             "ok": True,
             "path": args.output,
+            REQUIRED_SOURCES: str(required),
             "sourceRevision": hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest(),
         },
     )
@@ -1475,7 +1581,13 @@ def main() -> None:
         return
     effective, corrections = _effective_origins(plan, args) if args.mode == "verify" else ({}, [])
     owned: frozenset[str] = frozenset(requirement for requirement, origin in effective.items() if origin == TASK)
-    errors: list[str] = validate(plan, previous, complete=args.mode == "verify", owned=owned)
+    errors: list[str] = validate(
+        plan,
+        previous,
+        complete=args.mode == "verify",
+        owned=owned,
+        bounds=_bounds(args),
+    )
     review_approved: bool = _review_approved(args)
     if not review_approved:
         errors.append("Independent source/coverage/supersession review is not approved")
