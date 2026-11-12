@@ -101,8 +101,8 @@ session, once, to correct.
 Your brief is to `agent-brief.schema.json`, and its label vocabulary says what each input is.
 You are handed `prd`, `trd`, `state`, `step journal`, `context` and an `example` of each file
 you write; on the Analyze step `ui bundles` as well ("Screens and the CDS route"); on a Decide step the `answers digest` and each `answer`; on a correction `findings`,
-and, when the lead routed it, `answer` and `ruling`; on a step the spec stage sent back,
-`design gaps`. `context` is to
+and, when the lead routed it, `answer` and `ruling`; on the step that answers the spec stage's
+open design gaps, `design gaps` and `findings`. `context` is to
 `architecture-context.schema.json`, which says what each path it names is for. The brief's
 output path is where you write the step's output.
 
@@ -586,15 +586,20 @@ log, and update the result in place.
   Only the documents whose facts changed are written again. A ruling is settled: apply it, and
   record it in the review log as a decision.
 - A competing design: design the position the request names for that matter and nothing else.
-- Open design gaps: the brief names `design gaps` files. A spec author found that a detail its
-  Story needs is stated in no approved document (each row names the element and the missing
-  detail), and the repository stopped before its Story and Tasks. Each file names the spec
-  documents that hold the rows; read them and every document a row cites. Design what fills each
-  gap through your specialists and the AWS tools as for any other gap, record each in its one home
-  in the detailed design through the result's `facts`, the change file, `trdChanges` where an
-  obligation changes, and the review log. Every later step runs again after you: the documents
-  are written and promoted, and the specs are written again from them. A repository whose specs
-  still hold an open gap after your second answer to its gaps fails the Epic.
+- Open design gaps ("Answer the design gaps the spec stage found"): the brief names `design gaps`
+  files. A spec author found that a detail its Story needs is stated in no approved document
+  (each row names the element and the missing detail), and the repository stopped before its Story
+  and Tasks. Each file names the repository and the spec documents that hold the rows; read them
+  and every document a row cites. Decide what fills each gap through your specialists and the AWS
+  tools as for any other gap, and record each in its one home in the detailed design through the
+  result's `facts`, the change file, `trdChanges` where an obligation changes, and the review log.
+  Answer every row under `gapAnswers`: the file's `repository`, the row exactly as the file states
+  it under `gaps`, your decision, and the ids of the `facts` that state it. A row with no answer,
+  or an answer naming a fact id `facts` does not hold, comes back to you in the same session. The
+  `findings` you are handed are the check that found the gaps; correct any defect they list as
+  well. Every later step runs again after you: the documents are written and promoted, and the
+  specs are written again from them. A row you answered that a repository's specs hold again
+  fails the Epic.
 
 ## Your boundaries
 

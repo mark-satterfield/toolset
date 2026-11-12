@@ -807,9 +807,10 @@ def result_check(run: StepRun) -> Callable[[Path], dict[str, JsonValue]]:
     Returns:
         A check that reads the output as strict JSON and validates it with its contract. A valid
         result has :func:`_decision_problems` run with the change file beside the context file
-        and the review log, and :func:`_request_problems` on its ``requests``; an invalid one has
-        its schema problems and :func:`_invalid_result_problems`. Every problem is one line of the
-        one ``ArchitectureWorkError`` it raises, which sends the session to its one correction.
+        and the review log, :func:`_request_problems` on its ``requests``, and
+        :func:`_gap_problems`; an invalid one has its schema problems and
+        :func:`_invalid_result_problems`. Every problem is one line of the one
+        ``ArchitectureWorkError`` it raises, which sends the session to its one correction.
 
     """
     context: ArchitectureContext = read_context(run)
@@ -846,12 +847,26 @@ def result_check(run: StepRun) -> Callable[[Path], dict[str, JsonValue]]:
                 ),
                 *_request_problems(result["requests"]),
                 *_ui_recommendation_problems(result["specialistRecommendations"]),
+                *_gap_problems(run.context.work, arch, result),
             ]
         if problems:
             raise ArchitectureWorkError("\n".join(problems))
         return document
 
     return check
+
+
+def _gap_problems(work: Path, arch: Path, result: ArchitectureResult) -> list[str]:
+    """Find the open design gaps a result that asks no further round leaves unanswered.
+
+    Returns:
+        ``design_gaps.unanswered`` for a result whose every request can reuse its answer; empty
+        for one that asks a further round, which answers the gaps in the Decide after it.
+
+    """
+    if any(not answered(entry, arch) for entry in result["requests"]):
+        return []
+    return design_gaps.unanswered(work, result)
 
 
 def _round_check(context: ArchitectureContext) -> Callable[[Path], dict[str, JsonValue]]:
@@ -972,7 +987,8 @@ def architect(run: StepRun) -> AgentLaunch:
     """Build the session of any step the solutions architect performs, always a fresh session.
 
     The Analyze step writes the first round of requests (:func:`_analyze`). Every other step (a
-    Decide, a correction after findings, a competing design the lead orders) writes the
+    Decide, a correction after findings, a competing design the lead orders, the answer to the
+    open design gaps the spec stage filed) writes the
     architecture result, its decisions, which every step after the first updates in place: a
     result already at the result path is kept, so a session that starts again continues from it,
     and a valid file there is never taken as the step's finished output without the session
@@ -980,7 +996,9 @@ def architect(run: StepRun) -> AgentLaunch:
 
     The accepted result is recorded in the matrix. A result that asks a further round plans that
     round and a Decide after it; one that asks it after :data:`MAX_ROUNDS` rounds fails the step.
-    A result that asks none plans the document writes it needs (``architecture_rounds.write_steps``).
+    A result that asks none plans the document writes it needs (``architecture_rounds.write_steps``),
+    and records the open design gaps it was handed, which it answers, as answered
+    (``design_gaps.settle``).
 
     The session is handed files and no folder of the architecture or of the PRDs: it reads the PRD
     it is handed in full, and the documents and headings the Epic reaches through the matrix, which
@@ -1046,7 +1064,12 @@ def architect(run: StepRun) -> AgentLaunch:
     return AgentLaunch(
         output=Path(context["resultPath"]),
         validate=result_check(run),
-        outcome="The architecture result of this PRD.",
+        outcome=(
+            "The architecture result of this PRD, with one entry of gapAnswers for every row of every design gaps "
+            "file you are handed."
+            if design_gaps.handed(run.context.work)
+            else "The architecture result of this PRD."
+        ),
         accept=accept,
         add_dirs=(architecture_folder(run.context.work),),
         files=_handed_files(run, context, prd, EXAMPLE_RESULT),

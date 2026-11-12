@@ -96,12 +96,12 @@ class StaleInputError(StepError):
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 class DesignGapError(StaleInputError):
-    """A spec document holds an open design gap, so the solutions architect's step runs again.
+    """A spec document holds an open design gap, so the architecture check runs again and sends it to the architect.
 
-    ``writer`` is the architect's last result step. Unlike any other stale file, the journal
-    runner sets it back to planned however often it was set back in this dispatch: the number of
-    times the architect may answer one repository's gaps is bounded where the gaps are read
-    (``design_gaps.hold_open``), which fails the step instead of raising this error.
+    ``writer`` is the last architecture check, which, run again, plans the solutions architect's
+    step that answers the filed gaps. Unlike any other stale file, the journal runner sets it back
+    to planned however often it was set back in this dispatch: the gaps are bounded where they are
+    read (``design_gaps.hold_open``), which fails the step instead of raising this error.
     """
 
 

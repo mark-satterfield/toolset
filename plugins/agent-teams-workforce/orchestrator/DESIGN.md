@@ -196,11 +196,12 @@ is not failed (`StaleInputError`): once the steps running with it end, the step
 that wrote the file and every step after it are set back to planned (only those inside the step
 the error names as its scope, when it names one), and the run goes on from there, so the file is
 written again to the current contract. The step after a repository's spec review raises the same
-error for an open design gap a spec document records (`design_gaps.hold_open`), naming the
-solutions architect's last result step as the writer, so the architect settles the gap and every
-later step runs again from the settled design; it is `DesignGapError`, whose writer is set back
-however often it was set back in the dispatch, because the step bounds its rounds itself: a
-repository whose gaps survive two answers of the architect fails it. The repositories' containers
+error for an open design gap a spec document records (`design_gaps.hold_open`), naming the last
+architecture check as the writer: run again, the check plans the architect's step that answers the
+filed gaps, and every later step runs again from the settled design; it is `DesignGapError`, whose
+writer is set back however often it was set back in the dispatch, because the step bounds its
+rounds itself, row by row: a row the architect answered that comes back fails it, and so does an
+open gap of a repository whose gaps went to the architect three times. The repositories' containers
 running beside the one that found a gap each go on to their own gap check before they stop, so
 every repository's gaps reach the architect in one round. When the same writer of any
 other stale file is named twice in one dispatch, the step fails; when that writer is a script step, its code wrote the file to a

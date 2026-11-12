@@ -346,6 +346,18 @@
         "appliesTo": {"description": "The matrix id of the element.", "type": "string"}
       }
     },
+    "GapAnswer": {
+      "description": "The architect's answer to one open design gap it was handed: one row of a `design gaps` file, decided and stated in the design facts the architecture maintainer writes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "gap", "decision", "facts"],
+      "properties": {
+        "repository": {"description": "The `repository` of the `design gaps` file that holds the row, exactly as the file states it.", "type": "string", "minLength": 1},
+        "gap": {"description": "The row, exactly as the `design gaps` file states it under `gaps`.", "type": "string", "minLength": 1},
+        "decision": {"description": "What the design now states for the detail the row names.", "type": "string", "minLength": 1},
+        "facts": {"description": "The ids of the entries of `facts` that state the decision in their homes, where the architecture maintainer writes it.", "type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    },
     "ArchitectureResult": {
       "description": "The solutions architect's result for one Epic, at the context file's `resultPath`: its decisions. The architect's Decide step writes it as the work goes, so that a session that stops loses nothing: the members settled so far, rewritten in place each time a part settles (a fact and its home, a settlement, a feature, a criterion answer). Every later architect step (a second Decide, a correction, a competing design) is a fresh session that continues from this file. The script reads `conclusion`, starts the agent each entry of `requests` names with its request, writes the documents from `facts`, `restatements`, `settlements` and `diagrams`, and checks every criterion answer and the review log at the context file's `reviewLogPath`; what is unapproved comes from the matrix, not from this file. The architect reviews and approves its own architecture against the criteria; the promotion step then sets it effective.",
       "type": "object",
@@ -370,7 +382,8 @@
         "trdChanges": {"description": "Every technical or architecture decision of this design that adds, changes or removes a requirement of the TRD, as one change each; empty when the design changes none. The TRD the architect works from is the seed the script wrote from the constraints that bind the Epic, each requirement headed by its constraint id. Consumed by: the TRD write that the check step of orchestrator/flows/architecture_check.py plans before the promotion, whose request (`trd-request.schema.json`, mode `complete`) carries these changes and this result's `sharedCapabilities`.", "type": "array", "items": {"$ref": "#/$defs/TrdChange"}},
         "requests": {"description": "A second round of requests, one per agent, for what the answers the step was handed raise; empty when the decisions need none. Consumed by: the step of orchestrator/flows/architecture.py that accepts the result, which plans after that step one step for each request whose answer cannot be reused (architecture_rounds.reuse_refusal: an answer is reused only when it is a valid answer whose basis of agent, request, answer contract and concerned files is unchanged), started as the agent the entry names and handed its request, then a fresh Decide step, handed every answer and a digest of them; a Decide of the second round whose result still requests work fails, because the architecture does not converge. The script decides nothing about which agent runs.", "type": "array", "items": {"$ref": "#/$defs/AgentRequest"}},
         "reach": {"description": "One verdict per entry of the Epic's reach: every row of the architecture pack's `reach`, and every entry the architect's corrections brought into the reach. Consumed by: the check step of orchestrator/flows/architecture_check.py, which recomputes the reach (`matrixtraverse.architecture_review_scope`) on the matrix after the architect's change file is applied and fails each entry in it, other than the Epic and its requirements, with no `kept` or `corrected` verdict, and each `pruned` entry still in it; and the promotion step, which compares each `kept` entry with its `contentHash` before it approves.", "type": "array", "items": {"$ref": "#/$defs/ReachVerdict"}},
-        "excluded": {"description": "Each reached service, component, piece of infrastructure or layer with no home stack that no stack builds, with the reason; empty when every one is placed. Consumed by: the check step of orchestrator/flows/architecture_check.py, which fails each such entry with no stack that is not listed here.", "type": "array", "items": {"$ref": "#/$defs/Exclusion"}}
+        "excluded": {"description": "Each reached service, component, piece of infrastructure or layer with no home stack that no stack builds, with the reason; empty when every one is placed. Consumed by: the check step of orchestrator/flows/architecture_check.py, which fails each such entry with no stack that is not listed here.", "type": "array", "items": {"$ref": "#/$defs/Exclusion"}},
+        "gapAnswers": {"description": "One answer for every row of every `design gaps` file the step was handed; absent or empty when it was handed none. Consumed by: the output check of orchestrator/flows/architecture.py, which, for a result that asks no further round, sends back every handed row with no answer and every answer naming a fact id `facts` does not hold (design_gaps.unanswered); and the step that accepts that result, which records each handed row as answered (design_gaps.settle).", "type": "array", "items": {"$ref": "#/$defs/GapAnswer"}}
       }
     },
     "Reason": {

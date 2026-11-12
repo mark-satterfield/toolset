@@ -541,8 +541,8 @@ sequenceDiagram
     SW-)S: spec, with links to the full architecture and design of each component, names and decisions as recorded
     SW-->>WF: spec paths
     alt a spec records an open design gap: a detail the Story needs that no approved document states
-        WF->>WF: the repository stops before its Story and Tasks; the architect's last result step and every step after it are set back to planned
-        Note over WF: the architect, handed each repository's design gaps, designs what fills them; the documents are written and promoted again and the specs written again from them
+        WF->>WF: the repository stops before its Story and Tasks; the last architecture check and every step after it are set back to planned
+        Note over WF: the check plans the architect's step that answers each repository's design gaps row by row; the documents are written and promoted again and the specs written again from them
     end
     WF->>TD: spec paths
     TD-)BD: Stories and Tasks, each stating what it builds with the matrix ids, and pointers to the detail
@@ -585,14 +585,16 @@ Notes on the diagram:
   recorded as a row under the document's `## Design gaps` heading and left open. `spec-reviewer`
   sends a row the approved documents do settle back to its author; a real gap goes no further than
   the step after the review (`orchestrator/flows/design_gaps.py`): no Story is written and no Task
-  decomposed from it. That step sets the solutions architect's last result step and every step
-  after it back to planned (the journal's `DesignGapError`, a `StaleInputError` it sets back
-  however often it was set back in the dispatch); the repositories' containers running beside it
-  first go on to their own gap check, so the architect is handed every repository's gaps
-  and designs what fills them, the architecture maintainer writes the decisions into the
-  documents, and the promotion and every spec run again from the settled design. Each accepted
-  answer counts one answer for each repository it was handed; a repository whose documents still
-  hold an open gap after two answers fails the step with that cause.
+  decomposed from it. That step sets the last architecture check and every step after it back to
+  planned (the journal's `DesignGapError`, a `StaleInputError` it sets back however often it was
+  set back in the dispatch); the repositories' containers running beside it first go on to their
+  own gap check, so every repository's gaps are filed together. The check, run again, plans the
+  architect's own step that answers the gaps: it decides each row and records it under
+  `gapAnswers` with the facts that state it, and a row left without an answer goes back to the
+  same session; the architecture maintainer writes the decisions into the documents, and the
+  promotion and every spec run again from the settled design. The gaps converge row by row: a row
+  the architect answered that comes back fails the step, a row never handed before gets its own
+  round, and a repository whose gaps went to the architect three times fails on any open gap.
 - The repositories' containers under Specs and Stories run at the same time, and so do their
   containers under Tasks, at most `ATW_ORCH_SESSIONS` at once (`journal_run.concurrent_containers`),
   because no repository's specs or Tasks wait on another's and run time is a goal of the pipeline.

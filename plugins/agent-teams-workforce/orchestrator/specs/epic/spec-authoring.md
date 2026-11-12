@@ -36,7 +36,7 @@ session is not planned is written by step 1a instead.
 | 6a | Review the DynamoDB access patterns of the data model (a repository whose stacks hold a DynamoDB store) | agent `dynamodb-schema-access-pattern-reviewer` | `data model`, `TRD`, `repository context` | `spec-<slug>.data-model-review.json` | file `data model review` |
 | 7 | Add the UI design sources to the contracts (frontend) | script `specui.spec_ui_append` | `spec`, `ui sources` | the section `## UI design sources` of `spec-<slug>.md` | file `spec` |
 | 8 | Review the specification documents | agent `spec-reviewer` | `spec`, `data model`, `criteria`, `TRD`, `repository context`, `spec pack` (and, recorded with the review, `data model review`) | `spec-<slug>.review.json` | see "The review" |
-| 9 | Write the Story document | script `spec_authoring.story_document`; first `design_gaps.hold_open` | `spec`, `data model`, `criteria`, `repository context` | when a document holds an open design gap: `<arch-work>/design-gaps/open/<slug>.json`, and the solutions architect's last result step and every step after it are set back to planned; otherwise the section `## Architecture and design documents` at the end of each of the three spec documents; `story-<slug>.json` | file `story document`, value `decision ids` |
+| 9 | Write the Story document | script `spec_authoring.story_document`; first `design_gaps.hold_open` | `spec`, `data model`, `criteria`, `repository context` | when a document holds an open design gap: `<arch-work>/design-gaps/open/<slug>.json`, and the last architecture check and every step after it are set back to planned; otherwise the section `## Architecture and design documents` at the end of each of the three spec documents; `story-<slug>.json` | file `story document`, value `decision ids` |
 | 10 | Write the Story bead | script `beadwrite.write_story` | `story document`, the three spec documents, `span`, `elements` | the Story bead; the Story's journal | value `story`, value `story write`, value `decision ids`; plans the repository's container under Tasks |
 
 Step 1a is planned first, before step 2. Steps 3 and 4 are consecutive agent steps whose inputs
@@ -91,20 +91,25 @@ as one row of the table under the document's `## Design gaps` heading and does n
 to its author and leaving a real gap for the step below. Step 9 reads every row
 (`design_gaps.open_gaps`) before anything else. A row left open stops the repository before its
 Story and Tasks: the step files the repository's gaps at `<arch-work>/design-gaps/open/<slug>.json`
-and raises `DesignGapError` (a `StaleInputError`) naming the solutions architect's step that last
-recorded the architecture result, so that step and every step after it are set back to planned,
-however often that step was set back in the dispatch already. The other repositories' containers
-running at the same time are not stopped at once: each that still holds its own step 9 not run
-goes on to it, so its gaps are filed too, and the architect's step is set back once, after every
-container has ended (`journal_run.JournalRunner._before_gap_check`). The architect's
-next session is handed every repository's file as `design gaps` and designs what fills each gap;
-its accepted result (with no further round) moves the files to
-`<arch-work>/design-gaps/settled/<step>/` and counts one answer for each of those repositories in
-`<arch-work>/design-gaps/answers.json`; the architecture maintainer writes the decisions into the
-documents, they are promoted again, and every repository's specs are written again against the
-settled design. A repository whose documents still hold an open gap after the architect answered
-its gaps twice (`design_gaps.MAX_ANSWERS`) fails the step, its cause naming the repository, the
-count and each row: the design does not converge.
+and raises `DesignGapError` (a `StaleInputError`) naming the last architecture check, so that check
+and every step after it are set back to planned, however often it was set back in the dispatch
+already. The other repositories' containers running at the same time are not stopped at once: each
+that still holds its own step 9 not run goes on to it, so its gaps are filed too, and the check is
+set back once, after every container has ended (`journal_run.JournalRunner._before_gap_check`).
+The check, run again, finds the filed gaps and plans the solutions architect's step "Answer the
+design gaps the spec stage found", then an index and a check. That step is handed every
+repository's file as `design gaps` and decides what fills each gap; its result answers each row
+under `gapAnswers` (the repository, the row exactly as filed, the decision and the ids of the
+`facts` that state it), and the output check sends a row without an answer back to the same
+session (`design_gaps.unanswered`). Its accepted result (with no further round) moves the files to
+`<arch-work>/design-gaps/settled/<step>/` and records, for each repository, one more round and each
+row as answered in `<arch-work>/design-gaps/answers.json` (`design_gaps.settle`); the architecture
+maintainer writes the decisions into the documents, they are promoted again, and every
+repository's specs are written again against the settled design. A repository whose documents hold
+again a row the architect answered fails the step, its cause naming the repository and each such
+row: the design does not converge. A row never handed before gets its own round, until a
+repository's gaps have gone to the architect `design_gaps.MAX_ROUNDS` (3) times; an open gap after
+that fails the step too.
 
 The Story document lists what the Story builds, one line per item: an event as
 `E<n>: <name>, published by <publishers>: <trigger>`, any other item as

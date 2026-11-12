@@ -4,8 +4,9 @@ It runs the matrix check, checks every criterion answer of the architect's resul
 review log (``log-architecture-review``), holds the result's reach verdicts to the Epic's reach as
 the corrected matrix gives it (``matrixtraverse.architecture_review_scope``, the set promotion approves), and
 reads from the matrix the documents the Epic reaches
-that are not effective. It then plans what follows by rule: a mechanical defect goes back to the
-architect, a matter the architect could not settle goes to the lead, and otherwise the one TRD
+that are not effective. It then plans what follows by rule: open design gaps the spec stage filed
+go to the architect's step that answers them (``design_gaps``), a mechanical defect goes back to
+the architect, a matter the architect could not settle goes to the lead, and otherwise the one TRD
 write from the architect's decisions (``trd_steps``) and then the promotion step follow. Nothing
 reviews the architect's work: the architect reviews and approves its own architecture against the
 criteria, and the review log is the record of that review. The step
@@ -55,6 +56,7 @@ from orchestrator.core.journal_steps import (
     StepRun,
     file_artifact,
 )
+from orchestrator.flows import design_gaps
 from orchestrator.flows.architecture_files import (
     ARCHITECT,
     ARCHITECTURE_FOLDER,
@@ -313,6 +315,27 @@ def _correction(run: StepRun, check: CheckResult, path: Path) -> Completion:
     return Completion(add=(StepGroup((NewStep(plan), index_step(["correction"]), again)),))
 
 
+def _gap_answer(run: StepRun, check: CheckResult) -> Completion:
+    """Send the open design gaps the spec stage filed to the architect, and check again after its answer.
+
+    The architect's step is handed this check, so it sees any defect the check found with the gaps.
+
+    Returns:
+        The completion that plans the architect's step that answers the gaps
+        (``design_gaps.ANSWER_DESCRIPTION``), one index step and one check step after this one.
+
+    """
+    plan: StepPlan = {
+        "ref": design_gaps.ANSWER_REF,
+        "description": design_gaps.ANSWER_DESCRIPTION,
+        "purpose": design_gaps.ANSWER_PURPOSE,
+        "agent": ARCHITECT,
+        "inputs": [run.step["id"]],
+    }
+    again: NewStep = check_step([design_gaps.ANSWER_REF], corrections=check["corrections"])
+    return Completion(add=(StepGroup((NewStep(plan), index_step([design_gaps.ANSWER_REF]), again)),))
+
+
 def _review_files(folder: Path, scope: ReviewScope, unlinked: EpicView) -> list[Artifact]:
     """Write what the matrix returned for the review to the Epic's architecture work folder.
 
@@ -332,8 +355,9 @@ def _review_files(folder: Path, scope: ReviewScope, unlinked: EpicView) -> list[
 def check(run: StepRun) -> Completion:
     """Check what code can check, list what is in review, and plan what follows by rule.
 
-    A result file that cannot be read, a matrix that refuses, and a defect that three
-    corrections did not clear end the step as a failure. Every file the step writes is in its
+    Open design gaps the spec stage filed (``design_gaps.handed``) go to the architect first,
+    whatever the check found. A result file that cannot be read, a matrix that refuses, and a
+    defect that three corrections did not clear end the step as a failure. Every file the step writes is in its
     own folder, named for the step, so a later check never overwrites what an earlier one
     recorded.
 
@@ -357,6 +381,8 @@ def check(run: StepRun) -> Completion:
     check_path: Path = folder / "check.json"
     write_json(check_path, checked)
     recorded: list[Artifact] = [file_artifact(ARTIFACT_CHECK, check_path)]
+    if design_gaps.handed(run.context.work):
+        return Completion(artifacts=tuple(recorded), add=_gap_answer(run, checked).add)
     if not checked["valid"]:
         return Completion(artifacts=tuple(recorded), add=_correction(run, checked, check_path).add)
     scope: ReviewScope

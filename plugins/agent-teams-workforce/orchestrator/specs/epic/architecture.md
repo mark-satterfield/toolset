@@ -75,7 +75,7 @@ follows it, among its siblings, before the index and the check (`architecture_ro
 `trdPath`), `context`, `state` (its state file) and an `example` of each file the step writes
 (`skills/artifact-handoff/examples/`), which it is handed instead of the 45K-character schema; and,
 on a later step, the `answers digest`, each `answer`, the `findings` (check results) and each
-`ruling` that step is handed, and on a step the spec stage set back for open design gaps each
+`ruling` that step is handed, and, while the spec stage holds open design gaps, each
 repository's `design gaps` (`design_gaps.handed`). No file is written from the matrix for it: it reads the Epic's pack
 and runs `atw-matrix` reads itself. The session is granted the architecture work folder and no
 folder of the architecture or of the PRDs.
@@ -85,6 +85,7 @@ folder of the architecture or of the PRDs.
 | Analyze ("Analyze the PRD against the architecture and put the questions and draft reviews to the specialists") | the open-run step | the state file, then `<arch-work>/questions.json` (`specialist-round.schema.json`): one request per specialist | one step per request whose answer cannot be reused (`architecture_rounds.reuse_refusal`), then a Decide step (round 1), handed every answer of the round: those the steps write, and as its parameter `answered` each that was reused |
 | Decide ("Decide the architecture with the specialists' answers") | the step whose output asked a round | the architecture result at the context's `resultPath`, updated in place | a further round and a Decide (round 2) when the result's `requests` holds an unanswered request; otherwise the document writes |
 | A correction ("Correct what the mechanical check found"), or a step the lead adds | the check, or the lead | the architecture result, updated in place | as for Decide |
+| The answer to the open design gaps ("Answer the design gaps the spec stage found") | the check, when the spec stage filed open design gaps | the architecture result, updated in place, with one `gapAnswers` entry for each row of each `design gaps` file it is handed | as for Decide; with no further round, the gaps are recorded as answered (`design_gaps.settle`) |
 
 The output check of the Analyze step validates the round and the state file, and refuses a request
 naming an agent the `find-specialists` catalog (`skills/find-specialists/catalog.json`) does not
@@ -247,6 +248,7 @@ follows by rule over the matrix, the criteria file, the architect's result and t
 
 | What the check finds | What it plans |
 |---|---|
+| open design gaps the spec stage filed (`design_gaps.handed`), whatever else it finds | the architect's step that answers them, handed the check result, an index and a new check |
 | a mechanical defect | a correction step for the architect, handed the check result, an index and a new check; after 3 corrections a defect fails the step |
 | no defect, the result's conclusion is `unsettled`, and no lead has run in the container | the step of `architecture-team-lead`, an index and a new check |
 | otherwise, whatever the conclusion | the TRD write, then the promotion step |

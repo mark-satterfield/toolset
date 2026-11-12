@@ -120,6 +120,9 @@
         "orchestrator/flows/architecture.py#_about_problems",
         "orchestrator/flows/architecture.py#_home_problems",
         "orchestrator/flows/architecture.py#_ui_recommendation_problems",
+        "orchestrator/flows/architecture.py#_gap_problems",
+        "orchestrator/flows/design_gaps.py#unanswered",
+        "orchestrator/flows/design_gaps.py#_fact_problems",
         "orchestrator/flows/architecture.py#_compared",
         "orchestrator/flows/architecture_check.py#review_log_findings",
         "orchestrator/flows/repo_scoping.py#story_build_problems",
@@ -142,6 +145,18 @@
           "enforced": "are both empty, so no Story builds anything",
           "home": "agents/aws-solutions-architect.md",
           "stated": "The step that accepts your result fails when both lists are empty"
+        },
+        {
+          "id": "gap-row-answered",
+          "enforced": "no answer to the design gap",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "Answer every row under `gapAnswers`"
+        },
+        {
+          "id": "gap-answer-facts",
+          "enforced": "that facts does not hold",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "an answer naming a fact id `facts` does not hold"
         },
         {
           "id": "story-build-one-list",
