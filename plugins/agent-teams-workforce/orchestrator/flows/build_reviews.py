@@ -267,9 +267,12 @@ def _validate(run: StepRun, final: bool) -> Completion:
     if final:
         extra.extend(["--approved-plan", str(_file(run, "regressionPlan"))])
         extra.extend(["--bindings", str(_file(run, "regressionScope").parent / "source-bindings.json")])
+        extra.extend(_base_arguments(run))
     output, document = _regression(run, "verify" if final else "validate", plan, extra)
+    if document.get("ok") is True and final:
+        return Completion(artifacts=(file_artifact("regressionEvidence", output), *_unmet_artifacts(document)))
     if document.get("ok") is True:
-        return Completion(artifacts=(file_artifact("regressionEvidence" if final else "regressionScope", output),))
+        return Completion(artifacts=(file_artifact("regressionScope", output),))
     if final:
         return _verify_correction(run, output, document)
     if _scope_corrections(run) >= regression_rounds():
@@ -279,6 +282,69 @@ def _validate(run: StepRun, final: bool) -> Completion:
     return Completion(
         artifacts=(file_artifact("regressionCorrection", output),),
         add=(StepGroup(tuple(_new(kind, purpose) for kind in RESCOPE)),),
+    )
+
+
+def _product_files(run: StepRun, tree: Path) -> list[str]:
+    """List the product files this Task's implementers, refactorer and writers changed, relative to its tree.
+
+    Returns:
+        The union of every accepted ``changedFiles``, each once, sorted; a path outside the tree is left out.
+
+    """
+    listed: list[str] = [
+        path
+        for step in accepted_steps(run)
+        for artifact in step["artifacts"]
+        if artifact["kind"] == "value" and artifact["name"] == "changedFiles"
+        for path in check_type(artifact["value"], list[str])
+    ]
+    resolved: list[Path] = [(tree / path).resolve() for path in listed]
+    return sorted({str(path.relative_to(tree.resolve())) for path in resolved if path.is_relative_to(tree.resolve())})
+
+
+def _base_arguments(run: StepRun) -> list[str]:
+    """Name the code before the Task's change, on which verification replays failing tests of existing requirements.
+
+    The Task commits only at build:commit, so the worktree's HEAD is the revision it builds on.
+
+    Returns:
+        The ``--tree``, ``--base-ref`` and ``--product-file`` arguments of regression.py verify.
+
+    """
+    tree: Path = _workspace(run).tree
+    head: str = run.tools.command(["git", "rev-parse", "HEAD"], stage=run.step["script"], cwd=tree).stdout.strip()
+    products: list[str] = [value for path in _product_files(run, tree) for value in ("--product-file", path)]
+    return ["--tree", str(tree), "--base-ref", head, *products]
+
+
+def _unmet_artifacts(document: dict[str, JsonValue]) -> tuple[ValueArtifact, ...]:
+    """Report the existing requirements the code did not meet before this Task, for the Epics that own them.
+
+    Returns:
+        The ``regressionUnmetBefore`` value and the same gaps carried as contract findings, or nothing.
+
+    """
+    unmet: list[JsonValue] = check_type(document.get("unmetBefore", []), list[JsonValue])
+    if not unmet:
+        return ()
+    findings: list[JsonValue] = [
+        {
+            "severity": "improvement",
+            "owner": "contract",
+            "detail": f"{pair['requirementId']}: test {pair['testId']} fails before and after this Task; the code "
+            "this Task builds on does not meet the requirement, and building it is the work of the Epic that "
+            "owns it, not of this Task",
+        }
+        for pair in (json_object(entry) for entry in unmet)
+    ]
+    return (
+        value_artifact("regressionUnmetBefore", unmet),
+        build_carried.carry(
+            "regressionEvidence",
+            findings,
+            "an existing requirement the code did not meet before this Task",
+        ),
     )
 
 
@@ -396,9 +462,11 @@ def _regression_tests(run: StepRun) -> Completion:
         "Select the test specialists that write or change the tests the blocking findings of the latest "
         "regressionMappedReview and the failed verification in regressionCorrection need: a required layer of "
         "an impacted requirement with no test, and a mapped test that is absent, fails, or does not assert its "
-        "requirement. A test the current code fails is written all the same; implementation makes it pass. "
-        "Do not change governing requirements. An empty selection is valid only when every finding is corrected "
-        "by the mapping alone",
+        "requirement. A test of the Task's own requirement (origin task) that the current code fails is written "
+        "all the same; implementation makes it pass. A test of an existing requirement that the code before this "
+        "Task did not meet is not this Task's work: verification records it as unmetBefore, and no implementer "
+        "changes product code for it. Do not change governing requirements. An empty selection is valid only "
+        "when every finding is corrected by the mapping alone",
         followups=(_new("build:plan-tests", "Write the tests the regression mapping needs"),),
     )
 

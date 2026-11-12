@@ -285,7 +285,15 @@ improvement findings receive bounded implementation and re-review.
 The build checkpoints a verified Green state before refactoring. A regressing refactor restores
 that snapshot and verifies the suite again. Before final commit, an independent reviewer inspects
 the resulting code and test diff, the complete suite passes, and the cumulative regression tools
-verify the mapped evidence. Repository hooks run normally at commit. A rejected hook, remaining product changes, or modified preserved tooling after the hook
+verify the mapped evidence.
+
+The regression gate holds a Task to its own requirements (origin task) in full and to existing
+requirements only as far as the code met them before the change. Verification replays each
+failing test of an existing requirement in a detached checkout of the worktree's HEAD that holds
+the current tests and harness but the product files the Task's steps changed as they were. A test
+that fails there too records its requirement as `regressionUnmetBefore` and as a carried contract
+finding for the Epic that owns it, and the build continues; a test that passed there is a
+regression and fails verification. A failing test no requirement maps fails it too. Repository hooks run normally at commit. A rejected hook, remaining product changes, or modified preserved tooling after the hook
 is a recorded work failure, never a reason to bypass hooks.
 
 Story checkpoints commit explicit product paths only. Instruction files, `.claude/`, and canonical

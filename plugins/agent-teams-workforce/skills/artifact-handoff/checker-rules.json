@@ -635,6 +635,7 @@
         "scripts/portfolio/regression.py#source_hashes",
         "scripts/portfolio/regression.py#execute",
         "scripts/portfolio/regression.py#_execute_run",
+        "scripts/portfolio/regression.py#_judge",
         "scripts/portfolio/regression.py#_setup_errors",
         "scripts/portfolio/regression.py#junit_results"
       ],
@@ -775,24 +776,53 @@
           "stated": "A setup command that exits non-zero fails the run with its output"
         },
         {
+          "id": "requirement-origin",
+          "enforced": "origin must be task or existing",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "regression.py refuses a requirement whose origin is not task or existing"
+        },
+        {
           "id": "mapped-tests-pass",
           "enforced": "mapped test not executed successfully",
           "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
-          "stated": "the gate requires exit 0 and every mapped test ID passing in the report"
+          "stated": "the gate requires every mapped test ID of a requirement of origin task passing in the report"
+        },
+        {
+          "id": "task-tests-pass",
+          "enforced": "test of the Task's own requirement failed",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "every test mapped to it must pass"
+        },
+        {
+          "id": "unmapped-failure",
+          "enforced": "failing test is mapped to no requirement",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "no failing test that no requirement maps"
+        },
+        {
+          "id": "existing-not-broken",
+          "enforced": "test of an existing requirement passed before the change and fails now",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "a test that passed before the change and fails now is a regression"
+        },
+        {
+          "id": "existing-failed-before",
+          "enforced": "cannot prove the test of an existing requirement failed before the change",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "as regression.py verify proves by replaying the failing tests on the pre-change product files"
         },
         {
           "id": "fresh-report",
-          "enforced": "failed command or missing fresh JUnit report",
+          "enforced": "missing fresh JUnit report",
           "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
           "stated": "a test run that writes a fresh JUnit XML report to reportPath"
         }
       ],
       "notRules": [
         "unsupported JUnit root",
-        "report contains failed/error tests despite command exit zero",
-        "suite reports failures or errors",
-        "ambiguous duplicate test ID",
-        "run-{index}-setup-{position}.json",
+        "suite reports an error outside its test cases",
+        "with no failing test in its report",
+        "{label}-setup-{position}.json",
         "check exited"
       ],
       "invokedAs": [

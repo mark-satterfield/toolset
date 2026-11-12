@@ -38,17 +38,18 @@
       }
     },
     "requirements": {
-      "description": "Every current requirement the changed components carry: each still-valid prior requirement, and each this change can affect. At least one requirement is impacted and needs evidence at one or more layers: regression.py check refuses a plan with no impacted requirement that has a required layer.",
+      "description": "Every current requirement the changed components carry: each still-valid prior requirement, and each this change can affect, each with its origin. At least one requirement is impacted and needs evidence at one or more layers: regression.py check refuses a plan with no impacted requirement that has a required layer.",
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "sourceRef", "componentIds", "repoPath", "impacted", "impactReason", "applicability", "supersedes"],
+        "required": ["id", "sourceRef", "componentIds", "repoPath", "origin", "impacted", "impactReason", "applicability", "supersedes"],
         "properties": {
           "id": {"description": "Source-qualified, so equal local IDs in different PRDs cannot collide; unique in the plan.", "type": "string", "minLength": 1},
           "sourceRef": {"description": "The document and the requirement or section that states it.", "type": "string", "minLength": 1},
           "componentIds": {"description": "One or more ids from `components`.", "type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
           "repoPath": {"description": "The repository whose runs prove it; a run mapped to it has the same repoPath.", "type": "string", "minLength": 1},
+          "origin": {"description": "task: a requirement this Task's contract cites as what it builds (its acceptance criteria and source references); every test mapped to it must pass. existing: a current requirement the changed components already carry; it binds this Task only as far as the code met it before the change, as regression.py verify proves by replaying the failing tests on the pre-change product files. A failed replay records the requirement as unmetBefore for the Epic that owns it, never as this Task's failure; a test that passed before the change and fails now is a regression. regression.py refuses a requirement whose origin is not task or existing.", "enum": ["task", "existing"]},
           "impacted": {"description": "True when this change can affect it; an unaffected retained requirement is false, and its runs do not execute.", "type": "boolean"},
           "impactReason": {"description": "The evidence for impacted, either way.", "type": "string", "minLength": 1},
           "applicability": {
@@ -96,7 +97,7 @@
           "requirementId": {"type": "string", "minLength": 1},
           "kind": {"$ref": "#/$defs/Layer"},
           "runId": {"description": "The id of a run in runs, in the requirement's repository.", "type": "string", "minLength": 1},
-          "testIds": {"description": "For a junit run, the exact classname::name IDs its report emits, each one passing in it; empty for an exitStatus run.", "type": "array", "items": {"type": "string", "minLength": 1}}
+          "testIds": {"description": "For a junit run, the exact classname::name IDs its report emits; empty for an exitStatus run. A test reported more than once (under several projects or configurations) passes only when every case of it passes.", "type": "array", "items": {"type": "string", "minLength": 1}}
         }
       }
     },
@@ -128,7 +129,7 @@
           "repoPath": {"description": "The absolute path of the repository (or its worktree) the command runs in.", "type": "string", "minLength": 1},
           "command": {"description": "The command, never narrowed to a subset of the suite it gates.", "type": "string", "minLength": 1},
           "format": {
-            "description": "junit: a test run that writes a fresh JUnit XML report to reportPath; the gate requires exit 0 and every mapped test ID passing in the report. exitStatus: a check whose whole result is its exit status, such as a lint, format or type check (for example the repository's ruff or mypy command); exit 0 passes the nonfunctional layer of each requirement mapped to it.",
+            "description": "junit: a test run that writes a fresh JUnit XML report to reportPath; the gate requires every mapped test ID of a requirement of origin task passing in the report, every mapped test ID of an existing requirement passing or failing as it did before the change, and no failing test that no requirement maps. exitStatus: a check whose whole result is its exit status, such as a lint, format or type check (for example the repository's ruff or mypy command); exit 0 passes the nonfunctional layer of each requirement mapped to it.",
             "enum": ["junit", "exitStatus"]
           },
           "reportPath": {"description": "For a junit run only: the XML report the command writes, under the repository's .agent-workforce/reports/, relative to repoPath or absolute.", "type": "string", "minLength": 1},

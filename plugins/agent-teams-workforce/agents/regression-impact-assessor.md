@@ -30,6 +30,8 @@ repositories).
 
 - Discover the requirements this change affects from the actual sources, as far as the scope rule
   in `cumulative-regression` ("Establish the affected requirements") reaches and no further.
+- Set each requirement's origin: task for what the Task's contract cites as what it builds, existing
+  for every other current requirement the changed components carry.
 - A missing or unreadable source blocks.
 - Assess every layer of every requirement explicitly. Never drop or weaken a prior mapping without
   an accepted source supersession.

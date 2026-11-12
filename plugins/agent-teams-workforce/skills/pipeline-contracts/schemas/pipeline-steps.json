@@ -429,9 +429,11 @@
           "description": "Run the mapped regression runs, each after its setup, and record their evidence",
           "purpose": "The commit carries fresh per-test evidence for every requirement the change can affect",
           "runBy": "task-to-deploy",
-          "reads": ["worktree", "regressionPlan", "regressionScope", "regressionMapped", "regressionMappedReview"],
+          "reads": ["worktree", "regressionPlan", "regressionScope", "regressionMapped", "regressionMappedReview", "changedFiles"],
           "records": [
             {"name": "regressionEvidence", "kind": "file", "holds": "The accepted regressionEvidence evidence"},
+            {"name": "regressionUnmetBefore", "kind": "value", "holds": "On success, each {requirementId, testId} of an existing requirement whose test failed both on the code before the change and after it: unbuilt work of the Epic that owns the requirement, not of this Task"},
+            {"name": "carriedFindings", "kind": "value", "holds": "The regressionUnmetBefore gaps carried as contract findings, each with its review, owner, severity, detail and reason, so they are reported for their owners"},
             {"name": "regressionCorrection", "kind": "file", "holds": "Failed verification evidence when a bounded reassessment or correction is scheduled"}
           ],
           "adds": [

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - The tool exists to run the mapped suite commands.
 import sys
 import time
@@ -14,12 +15,17 @@ from pathlib import Path
 from typing import Final, Literal
 
 from contracts import JsonObject, JsonValue, json_object
-from gitutils import GitError, cmd_hash_files, deadline_scope, separate_group, stop_process
+from gitutils import GitError, cmd_hash_files, deadline_scope, git, separate_group, stop_process
 from jsonartifact import read_artifact
 
 KINDS: Final[frozenset[str]] = frozenset({"unit", "contract", "integration", "nonfunctional"})
+ORIGINS: Final[frozenset[str]] = frozenset({"task", "existing"})
+EXISTING: Final = "existing"
 EXECUTION_BUDGET_SECONDS: Final[int] = 500
 OUTPUT_TAIL_BYTES: Final[int] = 16384
+PASSED: Final = "passed"
+FAILED: Final = "failed"
+NOT_RUN: Final = "not run"
 
 type Mode = Literal["prepare", "check", "validate", "verify", "setup"]
 MODES: Final[dict[str, Mode]] = {
@@ -45,6 +51,33 @@ class CliArgs:
     tree: str | None
     repos: list[str]
     bindings: str | None = None
+    base_ref: str | None = None
+    product_files: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class Base:
+    """The code before the change: the tree's base revision with the Task's product files as they were.
+
+    A failing test of an existing requirement is replayed there to tell an unmet requirement from a regression.
+    """
+
+    tree: Path
+    ref: str
+    product_files: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class JunitOutcome:
+    """What one JUnit report shows: the test IDs that passed, the ones that failed, and its structural errors.
+
+    A test ID reported more than once (one test run under several projects or configurations) passes only when
+    every case of it passed, and fails when any case of it failed.
+    """
+
+    passed: frozenset[str]
+    failed: frozenset[str]
+    errors: tuple[str, ...]
 
 
 def _str(obj: JsonObject, key: str) -> str:
@@ -263,6 +296,8 @@ def _requirement_errors(plan: JsonObject, requirements: list[JsonObject], ids: l
             or not set(_strs(r, "componentIds")) <= component_ids
         ):
             errors.append(f"{rid}: missing source or component binding")
+        if r.get("origin") not in ORIGINS:
+            errors.append(f"{rid}: origin must be task or existing")
         layers: list[JsonObject] = _objs(r, "applicability")
         if {_str(a, "kind") for a in layers} != KINDS or len(layers) != len(KINDS):
             errors.append(f"{rid}: every test layer needs an applicability disposition")
@@ -421,38 +456,48 @@ def validate(plan: JsonObject, previous: JsonObject | None = None, *, complete: 
     return errors
 
 
-def junit_results(report: Path, run_id: str) -> tuple[set[str], list[str]]:
-    """Parse only executed passing cases; collection errors and duplicates fail closed.
+def _case_state(case: ET.Element) -> str:
+    """Classify one JUnit test case.
 
     Returns:
-        The IDs of passing tests and the report errors.
+        FAILED when it holds a failure or error, PASSED when it executed and was not skipped, else NOT_RUN.
+
+    """
+    if any(case.find(tag) is not None for tag in ("failure", "error")):
+        return FAILED
+    executed: bool = case.get("status", "run").lower() in {"run", "passed", "success"} and case.get(
+        "result",
+        "completed",
+    ).lower() in {"completed", "passed", "success"}
+    if executed and case.find("skipped") is None:
+        return PASSED
+    return NOT_RUN
+
+
+def junit_results(report: Path, run_id: str) -> JunitOutcome:
+    """Parse the executed cases of a JUnit report; an error outside any test case fails closed.
+
+    Returns:
+        The passing and failing test IDs and the report's structural errors.
 
     """
     tree: ET.ElementTree[ET.Element] = ET.parse(report)  # ruff: ignore[suspicious-xml-element-tree-usage] - Bundled expat 2.7.4 mitigates entity expansion and external entities are never resolved.
-    passed: set[str] = set()
-    all_ids: set[str] = set()
     errors: list[str] = []
     if tree.getroot().tag not in {"testsuites", "testsuite"}:
         errors.append(f"{run_id}: unsupported JUnit root")
-    if any(case.find(tag) is not None for case in tree.iter("testcase") for tag in ("failure", "error")):
-        errors.append(f"{run_id}: report contains failed/error tests despite command exit zero")
     errors.extend(
-        f"{run_id}: suite reports failures or errors"
+        f"{run_id}: suite reports an error outside its test cases"
         for suite in (node for node in tree.iter() if node.tag in {"testsuite", "testsuites"})
-        if any(bool(float(suite.get(key, "0"))) for key in ("errors", "failures")) or suite.find("error") is not None
+        if suite.find("error") is not None
     )
+    states: dict[str, set[str]] = {}
     for case in tree.iter("testcase"):
-        test_id: str = f"{case.get('classname', '')}::{case.get('name', '')}"
-        if test_id in all_ids:
-            errors.append(f"{run_id}: ambiguous duplicate test ID {test_id}")
-        all_ids.add(test_id)
-        executed: bool = case.get("status", "run").lower() in {"run", "passed", "success"} and case.get(
-            "result",
-            "completed",
-        ).lower() in {"completed", "passed", "success"}
-        if executed and not any(case.find(tag) is not None for tag in ("failure", "error", "skipped")):
-            passed.add(test_id)
-    return passed, errors
+        states.setdefault(f"{case.get('classname', '')}::{case.get('name', '')}", set()).add(_case_state(case))
+    return JunitOutcome(
+        passed=frozenset(test for test, seen in states.items() if seen == {PASSED}),
+        failed=frozenset(test for test, seen in states.items() if FAILED in seen),
+        errors=tuple(errors),
+    )
 
 
 def _report_path(run: JsonObject, root: Path) -> Path:
@@ -604,26 +649,63 @@ class Execution:
         return exit_code
 
 
-def execute(plan: JsonObject, folder: Path) -> tuple[list[str], list[JsonValue]]:
+@dataclass(frozen=True, slots=True)
+class Verification:
+    """What one verification needs besides its runs: the plan's mappings, who owns each requirement, the base."""
+
+    state: Execution
+    mappings: list[JsonObject]
+    origins: dict[str, str]
+    base: Base | None
+
+
+def execute(plan: JsonObject, folder: Path, base: Base | None = None) -> tuple[list[str], list[JsonValue]]:
     """Run each mapped run after its setup; exit zero alone never establishes per-test coverage of a junit run.
+
+    Args:
+        plan: The final regression mapping.
+        folder: Where the evidence is written.
+        base: The code before the change, on which a failing test of an existing requirement is replayed;
+            None when no base revision is known, so such a failure cannot be shown to predate the change.
 
     Returns:
         The execution errors and the per-run evidence records.
 
     """
     state: Execution = Execution(folder=folder, deadline=time.monotonic() + EXECUTION_BUDGET_SECONDS, setups={})
+    requirements: list[JsonObject] = _objs(plan, "requirements")
+    verification: Verification = Verification(
+        state=state,
+        mappings=_objs(plan, "mappings"),
+        origins={_str(r, "id"): str(r.get("origin")) for r in requirements},
+        base=base,
+    )
     evidence: list[JsonValue] = []
     errors: list[str] = []
-    mappings: list[JsonObject] = _objs(plan, "mappings")
-    impacted: set[str] = {_str(r, "id") for r in _objs(plan, "requirements") if _flag(r, "impacted")}
-    needed: set[str] = {_str(m, "runId") for m in mappings if _str(m, "requirementId") in impacted}
+    impacted: set[str] = {_str(r, "id") for r in requirements if _flag(r, "impacted")}
+    needed: set[str] = {_str(m, "runId") for m in verification.mappings if _str(m, "requirementId") in impacted}
     for index, run in enumerate(_objs(plan, "runs")):
         if _str(run, "id") not in needed:
             continue
-        run_errors, record = _execute_run(run, index, state, mappings)
+        run_errors, record = _execute_run(run, index, verification)
         errors.extend(run_errors)
         evidence.append(record)
     return errors, evidence
+
+
+def unmet_before(evidence: list[JsonValue]) -> list[JsonValue]:
+    """Collect the existing requirements whose tests failed both before and after the change.
+
+    Returns:
+        Each ``{requirementId, testId}`` pair the runs recorded as unmet before the change.
+
+    """
+    return [
+        pair
+        for record in evidence
+        if isinstance(record, dict) and isinstance(record.get("unmetBefore"), list)
+        for pair in _objs(record, "unmetBefore")
+    ]
 
 
 def prepare_tree(plan: JsonObject, tree: Path, repos: list[str], folder: Path) -> tuple[list[str], list[JsonValue]]:
@@ -644,7 +726,7 @@ def prepare_tree(plan: JsonObject, tree: Path, repos: list[str], folder: Path) -
     for index, run in enumerate(_objs(plan, "runs")):
         if Path(_str(run, "repoPath")).resolve() not in held:
             continue
-        run_errors, run_records = _setup_errors(run, index, root, state)
+        run_errors, run_records = _setup_errors(run, f"run-{index}", root, state)
         records.extend(run_records)
         if run_errors:
             errors.extend(run_errors)
@@ -652,8 +734,14 @@ def prepare_tree(plan: JsonObject, tree: Path, repos: list[str], folder: Path) -
     return errors, records
 
 
-def _setup_errors(run: JsonObject, index: int, root: Path, state: Execution) -> tuple[list[str], list[JsonValue]]:
+def _setup_errors(run: JsonObject, label: str, root: Path, state: Execution) -> tuple[list[str], list[JsonValue]]:
     """Run the run's setup commands in order, each once per repository per verification.
+
+    Args:
+        run: The run whose setup is run.
+        label: The stem of each setup record's name, unique to the run and the tree it runs in.
+        root: The tree the setup runs in.
+        state: The verification's shared execution state.
 
     Returns:
         The setup errors (the first failing command stops the setup) and the setup records.
@@ -665,7 +753,7 @@ def _setup_errors(run: JsonObject, index: int, root: Path, state: Execution) -> 
         command: str = _str(setup, "command")
         key: tuple[str, str] = (str(root), command)
         if key not in state.setups:
-            record: str = f"run-{index}-setup-{position}.json"
+            record: str = f"{label}-setup-{position}.json"
             state.setups[key] = state.shell(command, root, record, {"runId": run_id, "setup": setup})
             records.append({"command": command, "exitCode": state.setups[key], "output": str(state.folder / record)})
         if state.setups[key] != 0:
@@ -673,26 +761,48 @@ def _setup_errors(run: JsonObject, index: int, root: Path, state: Execution) -> 
     return [], records
 
 
-def _execute_run(
-    run: JsonObject,
-    index: int,
-    state: Execution,
-    mappings: list[JsonObject],
-) -> tuple[list[str], JsonObject]:
+def _fresh_report(run: JsonObject, root: Path) -> Path | None:
+    """Resolve a junit run's report path and remove any stale report there.
+
+    Returns:
+        The report path, or None for an exitStatus run.
+
+    """
+    if _str(run, "format") != "junit":
+        return None
+    report: Path = _report_path(run, root)
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.unlink(missing_ok=True)
+    return report
+
+
+def _archive(report: Path, archived: Path, run_id: str) -> JunitOutcome | None:
+    """Move a fresh report into the evidence folder.
+
+    Returns:
+        None when the command wrote no report; otherwise what the report shows, parsed before it is moved.
+
+    """
+    if not report.is_file():
+        return None
+    outcome: JunitOutcome = junit_results(report, run_id)
+    archived.write_bytes(report.read_bytes())
+    report.unlink()
+    return outcome
+
+
+def _execute_run(run: JsonObject, index: int, verification: Verification) -> tuple[list[str], JsonObject]:
     """Run one mapped run after its setup and archive its output and, for a junit run, its report.
 
     Returns:
         The run's errors and its evidence record.
 
     """
+    state: Execution = verification.state
     run_id: str = _str(run, "id")
     root: Path = Path(_str(run, "repoPath")).resolve()
-    junit: bool = _str(run, "format") == "junit"
-    report: Path | None = _report_path(run, root) if junit else None
-    if report is not None:
-        report.parent.mkdir(parents=True, exist_ok=True)
-        report.unlink(missing_ok=True)
-    errors, setups = _setup_errors(run, index, root, state)
+    report: Path | None = _fresh_report(run, root)
+    errors, setups = _setup_errors(run, f"run-{index}", root, state)
     record: JsonObject = {"runId": run_id, "format": _str(run, "format"), "setup": setups}
     if errors:
         return errors, record
@@ -701,28 +811,156 @@ def _execute_run(
     exit_code: int = state.shell(_str(run, "command"), root, output, {"run": run})
     record |= {"output": str(state.folder / output), "testedTreeDigest": revision, "exitCode": exit_code}
     if report is None:
-        if exit_code != 0:
-            errors.append(f"{run_id}: check exited {exit_code}")
-        return errors, record
-    passed: set[str] = set()
-    if exit_code != 0 or not report.is_file():
-        errors.append(f"{run_id}: failed command or missing fresh JUnit report")
-    else:
-        passed, report_errors = junit_results(report, run_id)
-        errors.extend(report_errors)
-        expected: set[str] = {test for m in mappings if _str(m, "runId") == run_id for test in _strs(m, "testIds")}
-        errors.extend(f"{run_id}: mapped test not executed successfully: {test}" for test in expected - passed)
-    archived_report: Path = state.folder / f"run-{index}.xml"
-    if report.is_file():
-        archived_report.write_bytes(report.read_bytes())
-        report.unlink()
-    passed_ids: list[JsonValue] = [*sorted(passed)]
+        return ([f"{run_id}: check exited {exit_code}"] if exit_code else []), record
+    archived: Path = state.folder / f"run-{index}.xml"
+    outcome: JunitOutcome | None = _archive(report, archived, run_id)
+    if outcome is None:
+        return [f"{run_id}: missing fresh JUnit report"], record
     record |= {
-        "report": str(archived_report),
-        "reportSha256": hashlib.sha256(archived_report.read_bytes()).hexdigest() if archived_report.is_file() else "",
-        "passedTestIds": passed_ids,
+        "report": str(archived),
+        "reportSha256": hashlib.sha256(archived.read_bytes()).hexdigest(),
+        "passedTestIds": [*sorted(outcome.passed)],
+        "failedTestIds": [*sorted(outcome.failed)],
     }
-    return errors, record
+    judged_errors, judged = _judge(run, index, exit_code, outcome, verification)
+    return [*outcome.errors, *judged_errors], record | judged
+
+
+def _tests_of(mappings: list[JsonObject], run_id: str) -> dict[str, set[str]]:
+    """Map each test ID a run's mappings name to the requirements mapped to it.
+
+    Returns:
+        The requirement IDs of each mapped test of the run.
+
+    """
+    linked: dict[str, set[str]] = {}
+    pairs: list[tuple[str, str]] = [
+        (test, _str(m, "requirementId")) for m in mappings if _str(m, "runId") == run_id for test in _strs(m, "testIds")
+    ]
+    for test, requirement in pairs:
+        linked.setdefault(test, set()).add(requirement)
+    return linked
+
+
+def _judge(
+    run: JsonObject,
+    index: int,
+    exit_code: int,
+    outcome: JunitOutcome,
+    verification: Verification,
+) -> tuple[list[str], JsonObject]:
+    """Hold the Task to its own requirements in full and to existing ones as far as the code met them before it.
+
+    A failing test mapped only to existing requirements is replayed on the code before the change: when it fails
+    there too, its requirements are recorded as unmet before the change and are no error of this Task; when it
+    passed there, or the replay cannot show it failing, it is a regression.
+
+    Returns:
+        The errors, and the record fields of the replay and of the requirements unmet before the change.
+
+    """
+    run_id: str = _str(run, "id")
+    linked: dict[str, set[str]] = _tests_of(verification.mappings, run_id)
+    owned: set[str] = {
+        test
+        for test, requirements in linked.items()
+        if any(verification.origins.get(r) != EXISTING for r in requirements)
+    }
+    replay: frozenset[str] = (outcome.failed & linked.keys()) - owned
+    errors: list[str] = [
+        f"{run_id}: test of the Task's own requirement failed: {test}" for test in sorted(outcome.failed & owned)
+    ]
+    errors.extend(
+        f"{run_id}: failing test is mapped to no requirement: {test}" for test in sorted(outcome.failed - linked.keys())
+    )
+    errors.extend(
+        f"{run_id}: mapped test not executed successfully: {test}"
+        for test in sorted(linked.keys() - outcome.passed - outcome.failed)
+    )
+    if exit_code and not outcome.failed:
+        errors.append(f"{run_id}: exited {exit_code} with no failing test in its report")
+    if not replay:
+        return errors, {}
+    before, record = _replay(run, index, verification)
+    errors.extend(
+        f"{run_id}: test of an existing requirement passed before the change and fails now: {test}"
+        for test in sorted(replay & before.passed)
+    )
+    errors.extend(
+        f"{run_id}: cannot prove the test of an existing requirement failed before the change: {test}"
+        for test in sorted(replay - before.passed - before.failed)
+    )
+    unmet: list[JsonValue] = [
+        {"requirementId": requirement, "testId": test}
+        for test in sorted(replay & before.failed)
+        for requirement in sorted(linked[test])
+    ]
+    return errors, {"base": record, "unmetBefore": unmet}
+
+
+def _replay(run: JsonObject, index: int, verification: Verification) -> tuple[JunitOutcome, JsonObject]:
+    """Replay a junit run on the code before the change, when the run is in the Task's tree and a base is known.
+
+    Returns:
+        What the replayed report shows (nothing when there is no replay or no report), and the replay's record.
+
+    """
+    nothing: JunitOutcome = JunitOutcome(passed=frozenset(), failed=frozenset(), errors=())
+    base: Base | None = verification.base
+    if base is None or Path(_str(run, "repoPath")).resolve() != base.tree:
+        return nothing, {"replayed": False, "reason": "no base revision of the run's tree was given"}
+    state: Execution = verification.state
+    folder: Path = state.folder / f"base-{index}"
+    with deadline_scope(state.remaining()):
+        git(str(base.tree), "worktree", "add", "--detach", str(folder), base.ref)
+    try:
+        _copy_harness(base, folder, state)
+        return _run_on_base(run, index, folder, state)
+    finally:
+        git(str(base.tree), "worktree", "remove", "--force", str(folder))
+
+
+def _copy_harness(base: Base, folder: Path, state: Execution) -> None:
+    """Copy every file the change added or altered, except the Task's product files, into the base checkout.
+
+    The tests and their harness come along; only the product change is left out, so the replay runs today's tests
+    against the product code as it was.
+    """
+    with deadline_scope(state.remaining()):
+        tracked: str = git(str(base.tree), "diff", "--name-only", "-z", base.ref).stdout
+        untracked: str = git(str(base.tree), "ls-files", "-z", "--others", "--exclude-standard").stdout
+    copies: list[str] = sorted(
+        path
+        for path in {*tracked.split("\0"), *untracked.split("\0")}
+        if path and path not in base.product_files and (base.tree / path).is_file()
+    )
+    for path in copies:
+        (folder / path).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(base.tree / path, folder / path)
+
+
+def _run_on_base(run: JsonObject, index: int, folder: Path, state: Execution) -> tuple[JunitOutcome, JsonObject]:
+    """Run a junit run's setup and command in the base checkout and archive its report.
+
+    Returns:
+        What its report shows (nothing when its setup failed or it wrote no report), and its record.
+
+    """
+    nothing: JunitOutcome = JunitOutcome(passed=frozenset(), failed=frozenset(), errors=())
+    report: Path | None = _fresh_report(run, folder)
+    setup_errors, setups = _setup_errors(run, f"run-{index}-base", folder, state)
+    record: JsonObject = {"replayed": True, "setup": setups, "setupErrors": [*setup_errors]}
+    if setup_errors or report is None:
+        return nothing, record
+    output: str = f"run-{index}-base.json"
+    exit_code: int = state.shell(_str(run, "command"), folder, output, {"run": run, "base": True})
+    archived: Path = state.folder / f"run-{index}-base.xml"
+    outcome: JunitOutcome | None = _archive(report, archived, _str(run, "id"))
+    record |= {"output": str(state.folder / output), "exitCode": exit_code}
+    if outcome is None:
+        return nothing, record
+    record |= {"report": str(archived), "failedTestIds": [*sorted(outcome.failed)]}
+    return outcome, record
 
 
 def _optional_arg(value: object, name: str) -> str | None:
@@ -762,6 +1000,13 @@ def _parse_args() -> CliArgs:
     parser.add_argument("--output", required=True)
     parser.add_argument("--tree")
     parser.add_argument("--repo", action="append", default=[])
+    parser.add_argument("--base-ref", help="verify: the revision of --tree the Task builds on, before its change")
+    parser.add_argument(
+        "--product-file",
+        action="append",
+        default=[],
+        help="verify: a repository-relative product file the Task changed; repeatable",
+    )
     args: argparse.Namespace = parser.parse_args()
     mode: object = args.mode
     plan: str | None = _optional_arg(args.plan, "plan")
@@ -778,8 +1023,13 @@ def _parse_args() -> CliArgs:
     if not isinstance(repo, list) or not all(isinstance(r, str) for r in repo):
         message = "--repo: expected strings"
         raise TypeError(message)
+    product: object = args.product_file
+    if not isinstance(product, list) or not all(isinstance(p, str) for p in product):
+        message = "--product-file: expected strings"
+        raise TypeError(message)
     sources: list[str] = [s for s in source if isinstance(s, str)]
     repos: list[str] = [r for r in repo if isinstance(r, str)]
+    product_files: tuple[str, ...] = tuple(p for p in product if isinstance(p, str))
     resolved: Mode | None = MODES.get(mode) if isinstance(mode, str) else None
     if resolved is not None:
         return CliArgs(
@@ -793,6 +1043,8 @@ def _parse_args() -> CliArgs:
             tree=_optional_arg(args.tree, "tree"),
             repos=repos,
             bindings=_optional_arg(args.bindings, "bindings"),
+            base_ref=_optional_arg(args.base_ref, "base-ref"),
+            product_files=product_files,
         )
     message = f"unsupported mode: {mode}"
     raise TypeError(message)
@@ -834,6 +1086,24 @@ def _setup(plan: JsonObject, args: CliArgs) -> None:
     _emit({"ok": not errors, "errors": error_values, "path": args.output, "setup": records})
 
 
+def _base(args: CliArgs) -> Base | None:
+    """Name the code before the change from ``--tree``, ``--base-ref`` and ``--product-file``.
+
+    Returns:
+        The base, or None when no base revision was given.
+
+    Raises:
+        ValueError: A base revision was given without the tree it belongs to.
+
+    """
+    if args.base_ref is None:
+        return None
+    if args.tree is None:
+        message: str = "--base-ref requires --tree, the tree the revision belongs to"
+        raise ValueError(message)
+    return Base(tree=Path(args.tree).resolve(), ref=args.base_ref, product_files=frozenset(args.product_files))
+
+
 def blocking_findings(review: JsonObject) -> list[JsonValue]:
     """Return the findings of a review that withhold approval.
 
@@ -852,6 +1122,26 @@ def blocking_findings(review: JsonObject) -> list[JsonValue]:
         return []
     return [
         finding for finding in findings if not (isinstance(finding, dict) and finding.get("severity") == "non-blocking")
+    ]
+
+
+def required_kinds(plan: JsonObject) -> list[JsonValue]:
+    """List the test layers a required layer of an impacted requirement names.
+
+    Returns:
+        The layer kinds, sorted.
+
+    """
+    return [
+        *sorted(
+            {
+                _str(a, "kind")
+                for r in _objs(plan, "requirements")
+                if _flag(r, "impacted")
+                for a in _objs(r, "applicability")
+                if _flag(a, "required")
+            },
+        ),
     ]
 
 
@@ -901,34 +1191,31 @@ def main() -> None:
         write(bindings, bound)
     evidence: list[JsonValue] = []
     if not errors and args.mode == "verify":
-        errors, evidence = execute(plan, Path(args.output).parent)
+        errors, evidence = execute(plan, Path(args.output).parent, _base(args))
     error_values: list[JsonValue] = [*errors]
+    unmet: list[JsonValue] = unmet_before(evidence)
     write(
         args.output,
-        {"ok": not errors, "errors": error_values, "evidence": evidence, "sourcesChanged": sources_changed},
+        {
+            "ok": not errors,
+            "errors": error_values,
+            "evidence": evidence,
+            "sourcesChanged": sources_changed,
+            "unmetBefore": unmet,
+        },
     )
     if not errors and args.mode == "verify":
-        write(args.ledger, {**plan, "execution": evidence})
-    required_kinds: list[JsonValue] = [
-        *sorted(
-            {
-                _str(a, "kind")
-                for r in _objs(plan, "requirements")
-                if _flag(r, "impacted")
-                for a in _objs(r, "applicability")
-                if _flag(a, "required")
-            },
-        ),
-    ]
+        write(args.ledger, {**plan, "execution": evidence, "unmetBefore": unmet})
     _emit(
         {
             "ok": not errors,
             "errors": error_values,
             "path": args.output,
             "ledger": args.ledger,
-            "requiredKinds": required_kinds,
+            "requiredKinds": required_kinds(plan),
             "reviewApproved": review_approved,
             "sourcesChanged": sources_changed,
+            "unmetBefore": unmet,
         },
     )
 
