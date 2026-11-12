@@ -315,10 +315,11 @@ def _correction(run: StepRun, check: CheckResult, path: Path) -> Completion:
     return Completion(add=(StepGroup((NewStep(plan), index_step(["correction"]), again)),))
 
 
-def _gap_answer(run: StepRun, check: CheckResult) -> Completion:
+def _gap_answer(run: StepRun) -> Completion:
     """Send the open design gaps the spec stage filed to the architect, and check again after its answer.
 
     The architect's step is handed this check, so it sees any defect the check found with the gaps.
+    The answer is a new design change, so the check after it starts with no corrections spent.
 
     Returns:
         The completion that plans the architect's step that answers the gaps
@@ -332,7 +333,7 @@ def _gap_answer(run: StepRun, check: CheckResult) -> Completion:
         "agent": ARCHITECT,
         "inputs": [run.step["id"]],
     }
-    again: NewStep = check_step([design_gaps.ANSWER_REF], corrections=check["corrections"])
+    again: NewStep = check_step([design_gaps.ANSWER_REF], corrections=0)
     return Completion(add=(StepGroup((NewStep(plan), index_step([design_gaps.ANSWER_REF]), again)),))
 
 
@@ -382,7 +383,7 @@ def check(run: StepRun) -> Completion:
     write_json(check_path, checked)
     recorded: list[Artifact] = [file_artifact(ARTIFACT_CHECK, check_path)]
     if design_gaps.handed(run.context.work):
-        return Completion(artifacts=tuple(recorded), add=_gap_answer(run, checked).add)
+        return Completion(artifacts=tuple(recorded), add=_gap_answer(run).add)
     if not checked["valid"]:
         return Completion(artifacts=tuple(recorded), add=_correction(run, checked, check_path).add)
     scope: ReviewScope

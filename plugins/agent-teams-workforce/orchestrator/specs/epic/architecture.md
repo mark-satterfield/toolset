@@ -248,7 +248,7 @@ follows by rule over the matrix, the criteria file, the architect's result and t
 
 | What the check finds | What it plans |
 |---|---|
-| open design gaps the spec stage filed (`design_gaps.handed`), whatever else it finds | the architect's step that answers them, handed the check result, an index and a new check |
+| open design gaps the spec stage filed (`design_gaps.handed`), whatever else it finds | the architect's step that answers them, handed the check result, an index and a new check that starts with no corrections spent, because the answer is a new design change |
 | a mechanical defect | a correction step for the architect, handed the check result, an index and a new check; after 3 corrections a defect fails the step |
 | no defect, the result's conclusion is `unsettled`, and no lead has run in the container | the step of `architecture-team-lead`, an index and a new check |
 | otherwise, whatever the conclusion | the TRD write, then the promotion step |

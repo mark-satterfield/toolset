@@ -595,7 +595,8 @@ log, and update the result in place.
   result's `facts`, the change file, `trdChanges` where an obligation changes, and the review log.
   Answer every row under `gapAnswers`: the file's `repository`, the row exactly as the file states
   it under `gaps`, your decision, and the ids of the `facts` that state it. A row with no answer,
-  or an answer naming a fact id `facts` does not hold, comes back to you in the same session. The
+  or an answer naming a fact id `facts` does not hold, comes back to you in the same session; answers
+  to rows an earlier round settled are not checked again. The
   `findings` you are handed are the check that found the gaps; correct any defect they list as
   well. Every later step runs again after you: the documents are written and promoted, and the
   specs are written again from them. A row you answered that a repository's specs hold again

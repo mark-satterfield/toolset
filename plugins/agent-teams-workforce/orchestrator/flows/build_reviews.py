@@ -52,6 +52,10 @@ RESCOPE: Final = ("build:regression-reassess", "build:regression-review", "build
 """The steps that assess, review and validate the regression scope again."""
 REMAP: Final = ("build:regression-remap", "build:regression-map-review", "build:regression-verify")
 """The steps that map, review and verify the final regression evidence again."""
+VALIDATE: Final = "build:regression-validate"
+"""The step that validates the reviewed regression scope."""
+VERIFY: Final = "build:regression-verify"
+"""The step that verifies the reviewed final regression evidence."""
 EVIDENCE_WORK: Final = ("build:regression-tests", "build:final-suite")
 """The steps that write the tests and behaviour a failed final verification found missing, and review them."""
 
@@ -268,10 +272,9 @@ def _validate(run: StepRun, final: bool) -> Completion:
         return Completion(artifacts=(file_artifact("regressionEvidence" if final else "regressionScope", output),))
     if final:
         return _verify_correction(run, output, document)
-    key: str = "build:regression-validate"
-    if _count(run, key, "regressionCorrection") >= regression_rounds():
+    if _scope_corrections(run) >= regression_rounds():
         errors: list[str] = check_type(document.get("errors", []), list[str])
-        raise StepError(key, OTHER_CAUSE, (*errors, str(output)))
+        raise StepError(VALIDATE, OTHER_CAUSE, (*errors, str(output)))
     purpose: str = "Correct the regression scope and validate it again"
     return Completion(
         artifacts=(file_artifact("regressionCorrection", output),),
@@ -279,40 +282,81 @@ def _validate(run: StepRun, final: bool) -> Completion:
     )
 
 
+def _corrections(run: StepRun) -> list[tuple[str, Path]]:
+    """List the failure evidence each accepted step recorded as its regressionCorrection.
+
+    Returns:
+        Each correcting step's kind and evidence file, in walk order.
+
+    """
+    recorded: list[tuple[str, Path]] = []
+    for step in accepted_steps(run):
+        recorded.extend(
+            (step["script"], Path(artifact["path"]))
+            for artifact in step["artifacts"]
+            if artifact["kind"] == "file" and artifact["name"] == "regressionCorrection"
+        )
+    return recorded
+
+
+def _scope_corrections(run: StepRun) -> int:
+    """Count the scope corrections since a corrected final verification last reopened the scope.
+
+    A corrected final verification assesses the scope again for the changed tree, so the scope
+    corrections before it, the ones made before implementation included, are spent on another scope.
+
+    Returns:
+        The corrected scope validations after the latest corrected final verification, or since
+        the build began when no final verification was corrected.
+
+    """
+    kinds: list[str] = [kind for kind, _ in _corrections(run)]
+    reopened: int = len(kinds) - kinds[::-1].index(VERIFY) if VERIFY in kinds else 0
+    return kinds[reopened:].count(VALIDATE)
+
+
+def _drift_only(failed: dict[str, JsonValue]) -> bool:
+    """Report whether changed requirement source bytes are a failed final verification's only error.
+
+    The checker adds the changed-bytes error last and runs no evidence while it stands, so a single
+    error with ``sourcesChanged`` means the mapping review is approved and every required layer is
+    mapped.
+
+    Returns:
+        True when the scope only needs assessing again for the current bytes.
+
+    """
+    return failed.get("sourcesChanged") is True and len(check_type(failed.get("errors", []), list[str])) == 1
+
+
 def _verify_corrections(run: StepRun) -> tuple[int, int]:
     """Count the final verifications already corrected, by what their correction answered.
 
     Returns:
-        The reassessments for changed source bytes, and the corrections of the mapping or the
+        The reassessments for changed source bytes alone, and the corrections of the mapping or the
         evidence it needs.
 
     """
-    rescopes: int = 0
-    corrections: int = 0
-    for step in accepted_steps(run):
-        if step.get("script") != "build:regression-verify":
-            continue
-        for artifact in step["artifacts"]:
-            if artifact["kind"] != "file" or artifact["name"] != "regressionCorrection":
-                continue
-            failed: dict[str, JsonValue] = json_object(json.loads(Path(artifact["path"]).read_text(encoding="utf-8")))
-            if failed.get("sourcesChanged") is True:
-                rescopes += 1
-            else:
-                corrections += 1
-    return rescopes, corrections
+    failures: list[dict[str, JsonValue]] = [
+        json_object(json.loads(evidence.read_text(encoding="utf-8")))
+        for kind, evidence in _corrections(run)
+        if kind == VERIFY
+    ]
+    rescopes: int = sum(_drift_only(failed) for failed in failures)
+    return rescopes, len(failures) - rescopes
 
 
 def _verify_correction(run: StepRun, output: Path, document: dict[str, JsonValue]) -> Completion:
     """Correct a failed final verification inside the step, within its allowances.
 
-    Changed source bytes, the build's own changes included, mean the scope is assessed again for
-    them before the evidence is mapped again; that is no correction of the mapping, so it has its
-    own allowance. Any other failure, a blocking mapping review included, is a correction: the test
+    When changed source bytes, the build's own changes included, are the only error, the scope is
+    assessed again for them before the evidence is mapped again; that is no correction of the
+    mapping, so it has its own allowance. Any other failure, a blocking mapping review or an unmapped
+    required layer included and whether or not the bytes also changed, is a correction: the test
     design lead selects the test writers for the tests the review found missing or not asserting
     their requirement, implementers make a failing new test pass, the final review covers the changed
     tree, and the scope is assessed for the changed tree before it is mapped, reviewed and verified
-    again. The mapping alone cannot write a test that does not exist.
+    again, which covers changed bytes too. The mapping alone cannot write a test that does not exist.
 
     Returns:
         The reassessment or correction steps.
@@ -321,12 +365,11 @@ def _verify_correction(run: StepRun, output: Path, document: dict[str, JsonValue
         StepError: The failure's allowance is spent; it names every error and the evidence file.
 
     """
-    changed: bool = document.get("sourcesChanged") is True
+    changed: bool = _drift_only(document)
     rescopes, corrections = _verify_corrections(run)
     if (rescopes if changed else corrections) >= regression_rounds():
         errors: list[str] = check_type(document.get("errors", []), list[str])
-        key: str = "build:regression-verify"
-        raise StepError(key, OTHER_CAUSE, (*errors, str(output)))
+        raise StepError(VERIFY, OTHER_CAUSE, (*errors, str(output)))
     keys: tuple[str, ...] = (*RESCOPE, *REMAP) if changed else (*EVIDENCE_WORK, *RESCOPE, *REMAP)
     purpose: str = (
         "Assess the regression scope for the changed sources, then map and verify its evidence"

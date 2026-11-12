@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "08b8c130ad379270982335a93514ad92220ae2609d7e0f8bfec1d2c7b65e1122"
+SCHEMA_SHA256: Final[str] = "73d1159ee88bfc0483b61bc1b5ca0c03453af9d4fe904b39962def52dbce8b50"
 #: The schema this module was generated from.
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "driver-surface.schema.json"
 
@@ -104,9 +104,15 @@ REGRESSION_TIMEOUT_DEFAULT: Final[str] = "540"
 BUILD_CORRECTION_ENV: Final[str] = "ATW_BUILD_CORRECTION_ROUNDS"
 #: Maximum correction rounds for build implementation, suite-quality and final-code review.
 BUILD_CORRECTION_DEFAULT: Final[str] = "3"
-#: Maximum corrections of regression scope or mapped evidence in one build dispatch.
+#: Maximum regression corrections of each kind in the Task's build journal, across its resumes: scope
+#: corrections after the latest corrected final verification (or since the build began), final
+#: verifications corrected for changed requirement source bytes alone, and other corrected final
+#: verifications.
 REGRESSION_CORRECTION_ENV: Final[str] = "ATW_REGRESSION_CORRECTION_ROUNDS"
-#: Maximum corrections of regression scope or mapped evidence in one build dispatch.
+#: Maximum regression corrections of each kind in the Task's build journal, across its resumes: scope
+#: corrections after the latest corrected final verification (or since the build began), final
+#: verifications corrected for changed requirement source bytes alone, and other corrected final
+#: verifications.
 REGRESSION_CORRECTION_DEFAULT: Final[str] = "2"
 #: Maximum additional architecture corrections after the initial correction during a Story built-
 #: version review.

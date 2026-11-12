@@ -125,8 +125,14 @@ event, and the commit records the Task's model sessions, correction steps and de
 runs measure what the policy saved.
 
 Correction work is bounded by accepted outcomes in the Task journal across dispatches. Implementation
-and suite-quality correction have three rounds, and regression scope/mapping review permits two
-correction rounds. Running ancestors count only with their own completed outcome or their immediate
+and suite-quality correction have three rounds. Regression correction (`ATW_REGRESSION_CORRECTION_ROUNDS`,
+two by default) counts three kinds of round apart: a scope correction counts from the latest final
+verification that was corrected (or from the start of the build), because that verification
+reopens the scope for the changed tree; a final verification whose only error is changed
+requirement source bytes is a reassessment of the scope; and any other failed final verification,
+an unmapped required layer or a blocking mapping review included, is a correction that writes the
+missing tests, runs the final suite and assesses the scope again before the evidence is mapped
+and verified again, which covers changed bytes too. Running ancestors count only with their own completed outcome or their immediate
 agent child's accepted result. Restarting does not replenish the allowance. A fresh suite with the
 same evidence identity and failures after product or test correction stops before another agent round;
 environment recovery and changed requirement, setup or runtime identities remain eligible. Only an

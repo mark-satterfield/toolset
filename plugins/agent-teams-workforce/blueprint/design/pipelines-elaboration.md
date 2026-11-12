@@ -591,7 +591,9 @@ Notes on the diagram:
   own gap check, so every repository's gaps are filed together. The check, run again, plans the
   architect's own step that answers the gaps: it decides each row and records it under
   `gapAnswers` with the facts that state it, and a row left without an answer goes back to the
-  same session; the architecture maintainer writes the decisions into the documents, and the
+  same session (only the rows handed to that step are checked; answers an earlier round settled
+  stay in the result and are not checked again), and the check after the answer starts with no
+  mechanical corrections spent, because the answer is a new design change; the architecture maintainer writes the decisions into the documents, and the
   promotion and every spec run again from the settled design. The gaps converge row by row: a row
   the architect answered that comes back fails the step, a row never handed before gets its own
   round, and a repository whose gaps went to the architect three times fails on any open gap.

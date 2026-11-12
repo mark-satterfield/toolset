@@ -12,7 +12,8 @@ go on to their own gap check before the runner sets the check back, so every rep
 filed together. The check, run again, finds the filed gaps (:func:`handed`) and plans the solutions
 architect's step that answers them (:data:`ANSWER_DESCRIPTION`), then the document writes, the
 index, the check, the promotion and the specs, as after any Decide. That step's result answers
-every row it was handed under ``gapAnswers`` (:func:`unanswered`), and its accepted result moves
+every row it was handed under ``gapAnswers`` (:func:`unanswered`, which checks only the answers to
+the rows handed now), and its accepted result moves
 the gaps to the settled folder and records each row as answered (:func:`settle`).
 
 The gaps converge row by row: a row the architect answered that a repository's documents hold
@@ -320,22 +321,30 @@ def _fact_problems(answer: GapAnswer, fact_ids: set[str]) -> list[str]:
 def unanswered(work: Path, result: ArchitectureResult) -> list[str]:
     """Find each open design gap row the architect was handed that its result does not answer.
 
+    Only the rows handed now are checked. The result is updated in place, so it may still hold
+    answers to rows an earlier round settled; those answers are recorded in ``answers.json`` and
+    are not checked again, so a later step may drop the facts they named.
+
     Returns:
-        One problem for each answer naming a fact the result does not hold, and one for each
-        handed row with no entry of ``gapAnswers`` for its repository and its exact text.
+        One problem for each answer to a handed row naming a fact the result does not hold, and one
+        for each handed row with no entry of ``gapAnswers`` for its repository and its exact text.
 
     """
-    given: list[GapAnswer] = result.get("gapAnswers", [])
+    files: list[tuple[Path, FiledGaps]] = [(path, _filed(path)) for _label, path in handed(work)]
+    rows: dict[tuple[str, str], Path] = {
+        (filed["repository"], gap): path for path, filed in files for gap in _rows(filed)
+    }
+    given: list[GapAnswer] = [
+        answer for answer in result.get("gapAnswers", []) if (answer["repository"], answer["gap"]) in rows
+    ]
     fact_ids: set[str] = {fact["id"] for fact in result["facts"]}
     keys: set[tuple[str, str]] = {(answer["repository"], answer["gap"]) for answer in given}
     problems: list[str] = [problem for answer in given for problem in _fact_problems(answer, fact_ids)]
-    files: list[tuple[Path, FiledGaps]] = [(path, _filed(path)) for _label, path in handed(work)]
     problems.extend(
-        f"gapAnswers: no answer to the design gap {gap!r} of {filed['repository']} ({path}): decide it, state it "
-        "in facts, and record it under gapAnswers with its repository and the row exactly as the file states them"
-        for path, filed in files
-        for gap in _rows(filed)
-        if (filed["repository"], gap) not in keys
+        f"gapAnswers: no answer to the design gap {gap!r} of {repository} ({path}): decide it, state it in facts, "
+        "and record it under gapAnswers with its repository and the row exactly as the file states them"
+        for (repository, gap), path in rows.items()
+        if (repository, gap) not in keys
     )
     return problems
 

@@ -100,8 +100,10 @@ The check, run again, finds the filed gaps and plans the solutions architect's s
 design gaps the spec stage found", then an index and a check. That step is handed every
 repository's file as `design gaps` and decides what fills each gap; its result answers each row
 under `gapAnswers` (the repository, the row exactly as filed, the decision and the ids of the
-`facts` that state it), and the output check sends a row without an answer back to the same
-session (`design_gaps.unanswered`). Its accepted result (with no further round) moves the files to
+`facts` that state it), and the output check sends a row without an answer, or an answer naming a
+fact the result does not hold, back to the same session (`design_gaps.unanswered`). The check
+looks only at the rows handed to the step: answers an earlier round settled stay in the result,
+which is updated in place, and are not checked again. Its accepted result (with no further round) moves the files to
 `<arch-work>/design-gaps/settled/<step>/` and records, for each repository, one more round and each
 row as answered in `<arch-work>/design-gaps/answers.json` (`design_gaps.settle`); the architecture
 maintainer writes the decisions into the documents, they are promoted again, and every
