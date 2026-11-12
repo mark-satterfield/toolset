@@ -293,9 +293,14 @@ Shared-capability review considers the capabilities named by the Task's matrix I
 (`matrix_elements`). `build_reuse.py` first runs `check-reuse` in process against the changed
 files of the Story worktree: a line that does what a capability provides and a relied-on
 capability nothing references are blocking findings it settles, and an id the matrix does not
-hold is a contract finding. Only when the check leaves definitions it cannot rule on is the
-shared-capability-reviewer started, with those items and the settled findings handed in a file
-beside the step's facts; otherwise the step records the review itself. UI work is
+hold is a contract finding. A capability the Task's own repository provides is not checked, since
+its definitions there are its implementation, and neither is what a feature that only consumes
+such a capability is supported by. Only when the check leaves definitions it cannot rule on is the
+shared-capability-reviewer started. It is handed each distinct definition once, with its candidate
+capability items, in text files of at most 40,000 characters it reads whole, and returns one
+ruling per definition (`build-reuse-rulings.schema.json`). `build:reuse-ruled` then merges the
+rulings with the settled findings into the review by script, and fails the step when a handed
+definition has no ruling. Otherwise the audit step records the review itself. UI work is
 reviewed against the Task's stated supplied bundle or live CDS source. Blocking and warranted
 improvement findings receive bounded implementation and re-review.
 

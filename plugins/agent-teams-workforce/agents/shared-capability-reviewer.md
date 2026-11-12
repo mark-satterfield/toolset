@@ -13,31 +13,30 @@ mcpServers:
 
 ## Assignment
 
-The request names a file whose `items` you rule on and whose `settled` findings the check already
-settled. Each item names a definition in a file the Task changed in the work tree (file and
-line), the finding of the deterministic reuse check, and one `provides` entry of a shared capability
-(the capability's name as `feature`): the behaviour its consumers obtain from it and do not
-implement themselves. The item also carries the words the definition shares with that behaviour.
+The request names the text files that list the definitions to rule on, and the text files that state
+what each candidate capability item provides. Read every listed file whole. Each definition has an
+id (D1, D2, ...), its line in the file under whose heading it sits (relative to the work tree), its
+text, and the shared capability items it may duplicate, each as `<feature id>#<provides id>` with the
+words it shares with the provided behaviour. A capability item's behaviour is what its consumers
+obtain from it and do not implement themselves.
 
-For each item read the definition and rule `duplicate` or `not-duplicate`, with one sentence of
+For each definition read its body and rule `duplicate` or `not-duplicate`, with one sentence of
 reason:
 
-- It is a duplicate when the function does, in this repository, what the capability exists to do for
-  its consumers.
+- It is a duplicate when the function does, in this repository, what one of its candidate
+  capability items exists to do for its consumers.
 - Calling the capability is not a duplicate.
 - Logic specific to this service that the capability does not provide is not a duplicate.
+- A test of this repository's own code is not a duplicate.
 - Sharing words with the provided behaviour is not, by itself, a duplicate: judge what the code does.
-- A definition in the repository that provides the capability is its implementation, not a duplicate.
 
-Read the named definition (GitNexus `context` on the symbol shows its body and callees when that
-helps) and the `provides` entry, and nothing else. Read each definition once, however many items
-name it. Leave every file of the work tree as it is.
+Read the definition (GitNexus `context` on the symbol shows its body and callees when that helps)
+and the behaviours of its candidates, and nothing else. Leave every file of the work tree as it is.
+The findings the deterministic check settled are merged into the review by the pipeline; they are
+not yours to copy.
 
 ## Result
 
 Write only the result file named in `output`, in the shape of the output schema the request names
-(`build-review.schema.json`): a blocking finding, owner `implementation`, with the item's file and
-line for each item you rule a duplicate, its detail naming the `feature`, the `provides` id and the
-reason; no finding for a not-duplicate; every `settled` finding copied unchanged. `evidence` states
-how many items you ruled and how many were duplicates. `approved` is true only when no finding is
-blocking.
+(`build-reuse-rulings.schema.json`): exactly one ruling per definition id listed, none left out.
+A duplicate ruling names as `capability` the candidate it duplicates.

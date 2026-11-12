@@ -10,7 +10,10 @@ nothing here judges, and nothing here changes the matrix.
 
 A shared capability is a feature that states what it provides. An id that is such a feature is
 that capability; any other id stands for the capabilities the work that builds the entry must
-use (``matrixtraverse.capabilities``).
+use (``matrixtraverse.capabilities``). A capability the Task's own repository provides (an entry
+the Task states, or one its stack holds, realizes it) is not checked, since its definitions there
+are its implementation; nor is the walk started from a feature that only consumes such a
+capability, since what else that feature is supported by belongs to its other realizers.
 """
 
 import re
@@ -24,10 +27,20 @@ from typeguard import CollectionCheckStrategy, typechecked
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
-from matrix_contract import KIND_FEATURE, Entry, EntryId, EntryKind, JsonValue, MatrixError, Side
+from matrix_contract import (
+    KIND_FEATURE,
+    REL_REALIZED_BY,
+    REL_SUPPORTED_BY,
+    Entry,
+    EntryId,
+    EntryKind,
+    JsonValue,
+    MatrixError,
+    Side,
+)
 from matrixstore import Matrix
 from matrixsync import program_output
-from matrixtraverse import CapabilityReach, capabilities, words
+from matrixtraverse import CapabilityReach, capabilities, holder, words
 
 type ReuseFinding = Literal["unused", "duplicate", "judgment"]
 
@@ -82,6 +95,12 @@ class ReuseItem(TypedDict):
     detail: str
     file: NotRequired[str]
     line: NotRequired[int]
+    definition: NotRequired[str]
+    """For a ``judgment`` item: the definition's line, stripped."""
+    shared: NotRequired[list[str]]
+    """For a ``judgment`` item: the words its name shares with the provided behaviour."""
+    behaviour: NotRequired[str]
+    """For a ``judgment`` item: the provided behaviour."""
 
 
 class CapabilityRef(TypedDict):
@@ -103,6 +122,11 @@ class ReuseResult(TypedDict):
     """The changed files that were read."""
     capabilities: list[CapabilityRef]
     """The shared capabilities checked against."""
+    provided: list[EntryId]
+    """The shared capabilities the Task's own repository provides, which are not checked.
+
+    Their definitions there are their implementation.
+    """
     violations: list[ReuseItem]
     judgment: list[ReuseItem]
     unchecked: list[str]
@@ -159,18 +183,90 @@ def _provided(feature: Entry) -> tuple[Provided, ...]:
     return tuple(items)
 
 
-def _guarded(matrix: Matrix, entry_ids: Sequence[EntryId]) -> list[Guarded]:
+@dataclass(frozen=True, slots=True)
+class _Own:
+    """What the Task's own repository holds: the entries it states and the stacks that hold them."""
+
+    entries: frozenset[EntryId]
+    stacks: frozenset[EntryId]
+
+    def provides(self, matrix: Matrix, feature_id: EntryId) -> bool:
+        """Tell whether a feature is a shared capability the Task's own repository provides.
+
+        Returns:
+            True when the feature states what it provides and an entry the Task states, or an
+            entry a stack of the Task holds, realizes it.
+
+        """
+        return bool(_provided(matrix.entry(feature_id))) and any(
+            realizing.end in self.entries or holder(matrix, realizing.end) in self.stacks
+            for realizing in matrix.outgoing(feature_id, (REL_REALIZED_BY,))
+        )
+
+    def consumer(self, matrix: Matrix, feature_id: EntryId) -> bool:
+        """Tell whether a feature only consumes a shared capability the Task's own repository provides.
+
+        Such a feature names an entry of the Task among its realizers because that entry provides
+        the capability it is supported by; what else it is supported by belongs to its other realizers.
+
+        Returns:
+            True when the feature is not provided here and is supported by a capability provided here.
+
+        """
+        return not self.provides(matrix, feature_id) and any(
+            self.provides(matrix, supporting.end) for supporting in matrix.outgoing(feature_id, (REL_SUPPORTED_BY,))
+        )
+
+
+def _own(matrix: Matrix, entry_ids: Sequence[EntryId]) -> _Own:
+    """Work out what the Task's own repository holds from the ids it states.
+
+    Returns:
+        The stated entries that are not features, and the stacks that hold them.
+
+    """
+    built: frozenset[EntryId] = frozenset(
+        entry_id for entry_id in entry_ids if matrix.entry(entry_id).kind != KIND_FEATURE
+    )
+    stacks: set[EntryId | None] = {holder(matrix, entry_id) for entry_id in built}
+    return _Own(built, frozenset(stack for stack in stacks if stack is not None))
+
+
+def _walked(matrix: Matrix, others: Sequence[EntryId], own: _Own) -> list[EntryId]:
+    """List the features the capability walk starts from.
+
+    Returns:
+        Each feature an id realizes, and each feature among the ids, without a feature that only
+        consumes a capability the Task's own repository provides.
+
+    """
+    starts: dict[EntryId, None] = dict.fromkeys(
+        feature
+        for entry_id in others
+        for feature in (
+            [entry_id]
+            if matrix.entry(entry_id).kind == KIND_FEATURE
+            else [realizing.start for realizing in matrix.incoming(entry_id, (REL_REALIZED_BY,))]
+        )
+    )
+    return [feature for feature in starts if not own.consumer(matrix, feature)]
+
+
+def _guarded(matrix: Matrix, entry_ids: Sequence[EntryId]) -> tuple[list[Guarded], list[EntryId]]:
     """Work out the shared capabilities some ids stand for.
 
-    An id the matrix does not hold raises ``MatrixError`` from ``Matrix.entry``.
+    A capability the Task's own repository provides is not checked: its definitions there are its
+    implementation. Nor is the walk started from a feature that only consumes such a capability. An
+    id the matrix does not hold raises ``MatrixError`` from ``Matrix.entry``.
 
     Returns:
         Each capability once, in id order: a feature among the ids that states what it provides,
         with every item relied on; and each capability the work that builds the other ids must
         use, with the items its ``supportedBy`` relationships name, or every item when they name
-        none.
+        none. Then the capabilities left out because the Task's own repository provides them.
 
     """
+    own: _Own = _own(matrix, entry_ids)
     named: dict[EntryId, set[str] | None] = {}
     others: list[EntryId] = []
     entry_id: EntryId
@@ -180,8 +276,9 @@ def _guarded(matrix: Matrix, entry_ids: Sequence[EntryId]) -> list[Guarded]:
             named[entry_id] = None
         else:
             others.append(entry_id)
+    walked: list[EntryId] = _walked(matrix, others, own)
     reach: CapabilityReach
-    for reach in capabilities(matrix, others) if others else []:
+    for reach in capabilities(matrix, walked) if walked else []:
         if reach.feature in named and named[reach.feature] is None:
             continue
         relied: set[str] | None = named.setdefault(reach.feature, set())
@@ -189,8 +286,9 @@ def _guarded(matrix: Matrix, entry_ids: Sequence[EntryId]) -> list[Guarded]:
             named[reach.feature] = None
         elif relied is not None:
             relied.update(reach.relies)
+    provided_here: list[EntryId] = sorted(feature for feature in named if own.provides(matrix, feature))
     guarded: list[Guarded] = []
-    for entry_id in sorted(named):
+    for entry_id in sorted(set(named) - set(provided_here)):
         feature: Entry = matrix.entry(entry_id)
         provides: tuple[Provided, ...] = _provided(feature)
         wanted: set[str] | None = named[entry_id]
@@ -201,7 +299,7 @@ def _guarded(matrix: Matrix, entry_ids: Sequence[EntryId]) -> list[Guarded]:
                 relied=provides if wanted is None else tuple(item for item in provides if item.id in wanted),
             ),
         )
-    return guarded
+    return guarded, provided_here
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -371,6 +469,9 @@ def _judgment(guarded: Sequence[Guarded], changed: Mapping[str, Sequence[str]]) 
                     "file": file,
                     "line": number,
                     "detail": f"{line.strip()} shares {sorted(named & behaviour)} with: {item.behaviour}",
+                    "definition": line.strip(),
+                    "shared": sorted(named & behaviour),
+                    "behaviour": item.behaviour,
                 }
                 for feature, item, behaviour in behaviours
                 if len(named & behaviour) >= MIN_SHARED_WORDS
@@ -414,7 +515,9 @@ def check_reuse(
     if not worktree.is_dir():
         message = f"the worktree {worktree} is not a directory"
         raise MatrixError(message)
-    guarded: list[Guarded] = _guarded(matrix, entry_ids)
+    guarded: list[Guarded]
+    provided_here: list[EntryId]
+    guarded, provided_here = _guarded(matrix, entry_ids)
     changed: dict[str, list[str]] = _lines(worktree, changed_files(worktree) if files is None else files)
     unused: list[ReuseItem]
     unchecked: list[str]
@@ -433,6 +536,7 @@ def check_reuse(
             }
             for capability in guarded
         ],
+        "provided": provided_here,
         "violations": violations,
         "judgment": _judgment(guarded, changed),
         "unchecked": unchecked,

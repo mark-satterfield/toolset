@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Build reuse rulings",
+  "description": "The shared-capability-reviewer's ruling on each definition the build's reuse audit (build:reuse-audit) handed it: one ruling per handed definition id. build:reuse-ruled merges the rulings with the findings the deterministic reuse check settled into the reuseReview, and fails when a handed definition has no ruling.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "rulings"
+  ],
+  "properties": {
+    "rulings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "definition",
+          "ruling",
+          "reason"
+        ],
+        "properties": {
+          "definition": {
+            "description": "The id of the handed definition, as the definitions file names it (D1, D2, ...).",
+            "type": "string",
+            "pattern": "^D[0-9]+$"
+          },
+          "ruling": {
+            "enum": [
+              "duplicate",
+              "not-duplicate"
+            ]
+          },
+          "capability": {
+            "description": "For a duplicate: the candidate it duplicates, as the definitions file names it (<feature id>#<provides id>).",
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "description": "One sentence: why the definition does or does not do what the capability exists to do.",
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

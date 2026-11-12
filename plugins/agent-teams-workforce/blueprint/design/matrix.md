@@ -501,7 +501,7 @@ those lanes only as far as slices 29 and 31 of section 6 state.
 | B2 Infrastructure intent | `workflows/task-to-deploy.js` `stepInfraIntent`; `workflows/infra-intent.js` | `node stack:<id>` with what it holds, `deps --of` (Q6, Q9, Q11). | Nothing. The intent provisions what the matrix states the stack holds and depends on. |
 | B3 Implementers and Green | `stepSelectImplementers`; `workflows/tdd-green.js`; `agents/cdk-stack-author.md` and the implementer agents | The shared capability ids the Task states (R41); `node` for each provider and its stack (Q6). | Nothing. The implementer result's `upstreamMissing` and `dependencies` are in the step journal. |
 | B4 Regression | `workflows/task-to-deploy.js` `regressionBrief`, `regressionReviewBrief`; `agents/regression-impact-assessor.md`; `skills/cumulative-regression/SKILL.md` | `impact --id` for each entry the Task states (Q19, Q15). | Nothing. The per-repository `regression.json` holds test mappings and execution evidence only. |
-| B5 Reuse audit | `orchestrator/flows/build_reuse.py` `audit()`; `agents/shared-capability-reviewer.md` | `check_reuse` in process with the ids the Task states (`matrix_elements`) and the Story worktree; the reviewer is started only for the definitions the check cannot rule on. | Nothing. A signal the reviewer rules wrong is in the step's result. |
+| B5 Reuse audit | `orchestrator/flows/build_reuse.py` `audit()` and `ruled()`; `agents/shared-capability-reviewer.md` | `check_reuse` in process with the ids the Task states (`matrix_elements`) and the Story worktree, leaving out the capabilities the Task's own repository provides; the reviewer is started only for the definitions the check cannot rule on, and its rulings are merged with the check's findings by script. | Nothing. A signal the reviewer rules wrong is in the step's result. |
 | B6 Suite run | `workflows/suite-run.js` `resolvePrompt` | The stack's `commands.test` (Q21). The resolving session runs only when it is empty. | Nothing. |
 | B7 Commit and Task close | `stepCommit`; `ops/sdlc-automation/lane.py` `_settle_build` | none | Nothing. No flag is set before the Story's test passes (D8). |
 
@@ -726,7 +726,9 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
 16. **A Task's shared capabilities.** Elaboration derives them with `uses` from the entries
     the Task builds and writes their ids into the Task (R41). The build checks the changed
     files against them with `check-reuse`; the deterministic check catches a duplicate
-    before a reviewer is asked.
+    before a reviewer is asked. A capability the Task's own repository provides (an entry the
+    Task states, or one its stack holds, realizes it) is not checked: its definitions there are
+    its implementation.
 17. **Stories and Tasks.** No entries; beads is the authority for both (R40). A Task states
     what it builds in the matrix's ids (R41), and the Task script answers from the Task
     beads which entries a Story built, which open work from other Epics touches an entry and
