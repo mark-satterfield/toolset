@@ -76,10 +76,12 @@ from hierarchy import (
     build_order,
     build_relations,
     build_via,
+    built_producer_stories,
     check_cds_contract,
     check_detailed_work,
     delta_requires,
     derive_prerequisites,
+    drop_cross_repository_built,
     elab_slug,
     item_briefs,
     note_warnings,
@@ -633,6 +635,18 @@ def _prepared(files: StoryFiles, root: Path | None, packages_dir: str | None) ->
             while len(_PREPARED) > _PREPARED_LIMIT:
                 _PREPARED.popitem(last=False)
     return prepared
+
+
+def _drop_foreign_built(repo: Path | None, tasks: list[Task]) -> None:
+    """Leave out the Tasks' ``built`` prerequisites on another repository's Story, read from the tracker.
+
+    Args:
+        repo: The central repository, or None for the `CONTROL_REPO_ENV` repository.
+        tasks: The Tasks about to be written, changed in place.
+
+    """
+    stories: dict[str, Bead] = beadgraph.listed(repo, built_producer_stories(tasks))
+    drop_cross_repository_built(tasks, {bead.id: bead.metadata.get(KEY_REPO_PATH, "") for bead in stories.values()})
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1443,6 +1457,7 @@ class _StoryTaskWriter:
         take_warnings()
         prepared: _PreparedPlan = _prepared(self.files, self.root, self.options.get("packages_dir"))
         tasks: list[Task] = copy.deepcopy(list(prepared.tasks))
+        _drop_foreign_built(self.writer.repo, tasks)
         chosen: list[Task] = self._chosen(tasks)
         self._read_story()
         self.matched, _ = _match_tasks(tasks, self.beads, self.files.slug, prepared.items)
@@ -1649,6 +1664,7 @@ def write_story_task_edges(
     msg: str
     take_warnings()
     tasks: list[Task] = plan_tasks(files, root, packages_dir)
+    _drop_foreign_built(writer.repo, tasks)
     story: Bead | None = _keyed(
         sorted((bead_of(r) for r in children(writer.repo, epic_id, "story")), key=lambda b: b.id),
     ).get(f"story:{files.slug}")

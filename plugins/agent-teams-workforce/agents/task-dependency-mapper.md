@@ -95,6 +95,8 @@ grant, a bus or target B's rule is wired to. Both ends are Tasks; no end is a St
   bus.
 - Sharing a domain, a vocabulary, a repository or an Epic is not an edge, and neither is an
   order chosen for convenience.
+- Work another Epic also plans (overlap) is not an edge: whichever copy builds first decides how
+  much of the other remains.
 - When in doubt the edge is left out: a false edge serializes work that could run in parallel.
 - Each edge carries a one-line reason that names what the dependent Task consumes and the Task
   that provides it. Consider every existing edge when checking for a cycle; a cycle you cannot

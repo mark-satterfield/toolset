@@ -583,6 +583,12 @@ def diagnosed(run: StepRun) -> Completion:
         # from None: a chained ValueError would classify this item's diagnosis as a pipeline defect.
         raise StepError(run.step["script"], OTHER_CAUSE, (str(error),)) from None
     _validate_producers(graph, str(run.bead), producers)
+    foreign: list[str] = _foreign_built(graph, str(run.bead), producers)
+    if foreign:
+        refusal: str = (
+            f"Producers {', '.join(foreign)} are in another repository: required published or deployed, never built"
+        )
+        raise StepError(run.step["script"], OTHER_CAUSE, (refusal,))
     writer: beadgraph.Writer = beadgraph.Writer(control_repo())
     standing: tuple[str, ...] = graph.beads[str(run.bead)].blockers
     blockers: list[str] = sorted({
@@ -646,6 +652,23 @@ def _validate_producers(graph: beadgraph.Graph, consumer: str, producers: list[d
                 OTHER_CAUSE,
                 ("A consumer cannot wait for delivery of its own unfinished Story",),
             )
+
+
+def _foreign_built(graph: beadgraph.Graph, consumer: str, producers: list[dict[str, JsonValue]]) -> list[str]:
+    """Name each ``built`` producer in another repository: its unmerged code gives the consumer nothing.
+
+    Returns:
+        The producer Task ids whose Story is in a repository other than the consumer's.
+
+    """
+    own: beadgraph.Bead | None = graph.beads.get(graph.beads[consumer].parent or "")
+    home: str = "" if own is None else own.metadata.get(KEY_REPO_PATH, "")
+    return [
+        check_type(producer["task"], str)
+        for producer in producers
+        if producer["requiredStage"] == "built"
+        and graph.beads[check_type(producer["story"], str)].metadata.get(KEY_REPO_PATH, home) != home
+    ]
 
 
 def _validate_repository_ownership(

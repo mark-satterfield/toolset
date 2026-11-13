@@ -10,9 +10,11 @@ and Tasks `beadwrite` writes into beads. A Task's `key` is its local decompositi
 from __future__ import annotations
 
 import ast
+import functools
 import hashlib
 import heapq
 import json
+import operator
 import os
 import re
 import sys
@@ -126,6 +128,11 @@ SIZE_KEYS: Final[tuple[str, ...]] = (
     KEY_WSJF_SIZE_CONFIDENCE,
 )
 
+
+#: The list of producer rows in a Task's ``buildPrerequisites``.
+PRODUCERS: Final = "producers"
+#: The required stage of a producer the consumer builds against without its publication or deployment.
+STAGE_BUILT: Final = "built"
 
 #: The slug of an artifact whose item name yields no slug characters; a slug, not an artifact kind.
 _FALLBACK_ARTIFACT_SLUG: Final[str] = "page"
@@ -1324,6 +1331,7 @@ def read_tasks(files: StoryFiles, root: Path | None, options: ReadTaskOptions) -
     nodes: list[str] = [check_type(t["key"], str) for t in unique]
     edges, left = _acyclic(nodes, [], list(edges))
     _WARNINGS.extend(f"tasks-{options.slug}.json: the edge {frm} -> {to} closes a cycle; dropped" for frm, to in left)
+    edges = _reduced(edges)
     order: list[str] | None = build_order(nodes, edges)
     if order is None:
         message: str = "Task edges remain cyclic after normalization"
@@ -1364,7 +1372,6 @@ class _TaskDocument:
     decision_ids: tuple[str, ...]
     surfaces: tuple[str, ...] | None
     reuses: str | None
-    blocked_by_external: tuple[str, ...]
     build_prerequisites: JsonObject
     kind: str
 
@@ -1379,7 +1386,6 @@ class _TaskDocument:
             self.spec_sections,
             self.requirement_ids,
             self.decision_ids,
-            self.blocked_by_external,
         ):
             if not isinstance(values, tuple) or any(not isinstance(value, str) for value in values):
                 raise TypeError(_ARGUMENT_ERROR)
@@ -1389,6 +1395,109 @@ class _TaskDocument:
             raise TypeError(_ARGUMENT_ERROR)
         if (self.reuses is not None and not isinstance(self.reuses, str)) or not isinstance(self.kind, str):
             raise TypeError(_ARGUMENT_ERROR)
+
+
+def _producer_rows(prerequisites: JsonObject) -> list[dict[str, JsonValue]]:
+    return check_type(
+        prerequisites.get(PRODUCERS, []),
+        list[dict[str, JsonValue]],
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+    )
+
+
+def _producer_tasks(prerequisites: JsonObject) -> list[str]:
+    """Name the producer Tasks a Task's ``buildPrerequisites`` declares, each a blocker of the Task.
+
+    Returns:
+        The producer Task ids, in the order the rows state them.
+
+    """
+    return [check_type(row["task"], str) for row in _producer_rows(prerequisites)]
+
+
+def _built_row(row: dict[str, JsonValue]) -> bool:
+    return row.get("requiredStage") == STAGE_BUILT
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def built_producer_stories(tasks: list[Task]) -> list[str]:
+    """Name the producer Stories of every ``built`` prerequisite the Tasks declare.
+
+    Returns:
+        The Story ids, sorted, each once.
+
+    """
+    return sorted({
+        check_type(row["story"], str)
+        for task in tasks
+        for row in _producer_rows(task.build_prerequisites)
+        if _built_row(row)
+    })
+
+
+def _foreign_built(row: dict[str, JsonValue], repo_path: str, story_repos: Mapping[str, str]) -> bool:
+    held: str | None = story_repos.get(check_type(row["story"], str))
+    return _built_row(row) and held is not None and held != repo_path
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def drop_cross_repository_built(tasks: list[Task], story_repos: Mapping[str, str]) -> None:
+    """Drop each ``built`` prerequisite whose producer Story is in another repository.
+
+    Code another repository's Story has built but not merged, published or deployed gives the
+    consumer nothing to build against, so the row is left out of the Task's prerequisites and its
+    producer out of the Task's blockers (unless the producer also owns an item the Task cites).
+
+    Args:
+        tasks: The Story's Tasks, changed in place.
+        story_repos: Each producer Story's repository path, as the tracker records it.
+
+    """
+    for task in tasks:
+        rows: list[dict[str, JsonValue]] = _producer_rows(task.build_prerequisites)
+        foreign: list[dict[str, JsonValue]] = [row for row in rows if _foreign_built(row, task.repo_path, story_repos)]
+        if not foreign:
+            continue
+        task.build_prerequisites = {**task.build_prerequisites, PRODUCERS: [row for row in rows if row not in foreign]}
+        dropped: set[str] = {check_type(row["task"], str) for row in foreign} - set(task.owner_blockers)
+        task.blocked_by_external = [bead for bead in task.blocked_by_external if bead not in dropped]
+        _WARNINGS.append(
+            f"{task.key}: built prerequisites in another repository left out: {', '.join(sorted(dropped))}",
+        )
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def redundant_edges(edges: list[tuple[str, str]]) -> set[tuple[str, str]]:
+    """Find the edges a longer path through other edges already implies (a transitive reduction).
+
+    Args:
+        edges: `(from, to)`: from is built before to; acyclic.
+
+    Returns:
+        The redundant edges.
+
+    Raises:
+        ValueError: The edges form a cycle.
+
+    """
+    nodes: list[str] = sorted({node for edge in edges for node in edge})
+    order: list[str] | None = build_order(nodes, edges)
+    if order is None:
+        message: str = "a transitive reduction needs acyclic edges"
+        raise ValueError(message)
+    bit: dict[str, int] = {node: 1 << index for index, node in enumerate(nodes)}
+    after: dict[str, set[str]] = {}
+    for frm, to in edges:
+        after.setdefault(frm, set()).add(to)
+    beyond: dict[str, int] = {}
+    for node in reversed(order):
+        beyond[node] = functools.reduce(operator.or_, (beyond[nxt] | bit[nxt] for nxt in after.get(node, ())), 0)
+    return {(frm, to) for frm, to in edges if any(beyond[via] & bit[to] for via in after[frm] if via != to)}
+
+
+def _reduced(edges: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    implied: set[tuple[str, str]] = redundant_edges(edges)
+    return [edge for edge in edges if edge not in implied]
 
 
 def _task_strings(value: JsonValue) -> tuple[str, ...]:
@@ -1419,7 +1528,6 @@ def _task_document(value: JsonObject) -> _TaskDocument:
         decision_ids=_task_strings(value.get(ARG_DECISION_IDS)),
         surfaces=tuple(surfaces) if surfaces is not None else None,
         reuses=check_type(reuses, str).strip() or None if reuses is not None else None,
-        blocked_by_external=_task_strings(value.get("blockedByExternal")),
         build_prerequisites=check_type(value.get("buildPrerequisites") or {}, dict[str, JsonValue]),
         kind=check_type(value.get("type") or "", str).strip().casefold(),
     )
@@ -1480,16 +1588,7 @@ def _read_task(key: str, t: _TaskDocument, sources: _TaskSources) -> Task:
         sizes=size_metadata(sources.scores.get(key)),
         verified="true",
         reuses=t.reuses,
-        blocked_by_external=list(
-            dict.fromkeys([
-                *t.blocked_by_external,
-                *(
-                    check_type(row["task"], str)
-                    for row in check_type(t.build_prerequisites.get("producers", []), list[dict[str, JsonValue]])
-                ),
-                *owners,
-            ]),
-        ),
+        blocked_by_external=list(dict.fromkeys([*_producer_tasks(t.build_prerequisites), *owners])),
         cds_bundle_path=bundles[0] if len(bundles) == 1 else None,
         cds_build_specs=build_specs,
         cds_design_source=source,
@@ -2017,6 +2116,8 @@ def derive_prerequisites(files: StoryFiles, tasks: list[Task]) -> list[Task]:
         _WARNINGS.append(
             f"{files.tasks_file.name}: the derived edge {frm} -> {to} closes a cycle; dropped",
         )
+    for frm, to in redundant_edges([(d, t.key) for t in tasks for d in t.depends_on]):
+        by_key[to].depends_on.remove(frm)
     return _ordered_tasks(nodes, tasks, by_key)
 
 

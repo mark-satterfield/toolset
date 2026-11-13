@@ -70,14 +70,14 @@
             ]
           },
           "blockedByExternal": {
-            "description": "Real Task bead ids in other Epics whose outputs this Task consumes or whose work it overlaps; the description names the consumed output and evidence. A closed Task is not proof that its output is deployed.",
+            "description": "Real Task bead ids in other Epics whose same work this Task overlaps; recorded in the description, never an edge. A Task whose output this Task consumes goes in buildPrerequisites.producers.",
             "type": "array",
             "items": {
               "type": "string"
             }
           },
           "buildPrerequisites": {
-            "description": "Structured real external producer stages required before this Task can execute its suite. Evidence is an absolute existing artifact path. Include closed producer Tasks whose Story still needs publication or deployment; do not infer either from Task closure.",
+            "description": "Structured real external producer stages required before this Task can execute its suite; each producer Task becomes a blocker of this Task. `built` only for a producer in the same repository; a producer in another repository is `published` or `deployed`. Evidence is an absolute existing artifact path. Include closed producer Tasks whose Story still needs publication or deployment; do not infer either from Task closure.",
             "type": "object", "additionalProperties": false, "required": ["producers"],
             "properties": {"producers": {"$ref": "../../pipeline-contracts/schemas/build-prerequisites.schema.json#/properties/producers"}}
           },

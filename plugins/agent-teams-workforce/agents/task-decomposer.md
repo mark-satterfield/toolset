@@ -77,15 +77,22 @@ never work; an element with `side: repository` is a hint read from code, not an 
 fact: it may tell a Task where existing code sits, never what to build. An existing started or
 closed Task in `existingTasks` is reused, not rewritten (`bd show <id>` prints its description);
 another Epic's Task that plans the same work replaces this Epic's Task: write no Task for that
-work and name that Task in `blockedByExternal`. `openWork` answers, for each stack in `stacks` and each upstream
+work. A Task of this Story whose work only partly overlaps another Epic's planned Task names that
+Task in `blockedByExternal`; the name is recorded in the description and is never an edge,
+because overlap orders nothing: whichever copy builds first decides how much of the other remains.
+`openWork` answers, for each stack in `stacks` and each upstream
 stack named in `dependsOn`, what `atw-matrix work --id <stack id> --not-epic <epic id>` prints:
 read it instead of running the command. Only for a stack under `openWork.failures`, or when the
 task context holds no `openWork`, run `atw-matrix work --ids <stack id> ... --not-epic <epic id>`
 once for all of those stacks together. Read the actual candidate Tasks: same-stack work can overlap this Story; upstream work is a prerequisite only
-when this Task consumes what that candidate provides. Record those real Task ids in
-`blockedByExternal`, with the consumed output and evidence in the Task's description.
-Also record `buildPrerequisites.producers`: real Task and parent Story ids, `requiredStage`
-(`built`, `published` or `deployed`), the consumed output, and an absolute existing evidence artifact path.
+when this Task consumes what that candidate provides. Record each such producer in
+`buildPrerequisites.producers`, the only field that makes a Task wait for another Epic's Task:
+real Task and parent Story ids, `requiredStage` (`built`, `published` or `deployed`), the consumed
+output, and an absolute existing evidence artifact path; name the consumed output and evidence in
+the Task's description too. `built` is only for a producer in this Story's repository: another
+repository's built but unmerged code gives this Task nothing to build against, so a producer in
+another repository is `published` or `deployed`, and a contract this Task is only tested against
+is a runtime call, never a prerequisite.
 Use `published` for a package available in CodeArtifact and `deployed` for an actual layer or resource deployed in the target environment. A package receipt never satisfies a layer deployment. These structured prerequisites
 reach the scheduler before the consumer suite executes; prose alone is insufficient. A
 dependency is not new work for this Story. Never invent an issue id or infer that a producer is
