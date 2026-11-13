@@ -249,6 +249,11 @@ UI_DESIGN_SUBJECT: Final = re.compile(
     re.IGNORECASE,
 )
 """A specialist recommendation's agent or subject that names UI or front-end design."""
+CHECKLIST_OUTCOME: Final = (
+    "Fill elementValues with every entry `atw-matrix element-checklist --ids <addedOrChangedElements> --changes "
+    "<change file>` lists, each value word for word with the heading that states it."
+)
+"""What every result session is reminded of: the element checklist it fills in the same session as its decision."""
 
 
 @dataclass(frozen=True)
@@ -1066,9 +1071,9 @@ def architect(run: StepRun) -> AgentLaunch:
         validate=result_check(run),
         outcome=(
             "The architecture result of this PRD, with one entry of gapAnswers for every row of every design gaps "
-            "file you are handed."
+            f"file you are handed. {CHECKLIST_OUTCOME}"
             if design_gaps.handed(run.context.work)
-            else "The architecture result of this PRD."
+            else f"The architecture result of this PRD. {CHECKLIST_OUTCOME}"
         ),
         accept=accept,
         add_dirs=(architecture_folder(run.context.work),),

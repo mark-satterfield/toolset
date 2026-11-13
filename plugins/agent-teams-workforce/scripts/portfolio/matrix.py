@@ -12,8 +12,9 @@ variable names another.
 Every sub-command prints one JSON object on stdout. This module holds the reads, which answer
 from the file and change nothing (``epic``, ``find``, ``node``, ``deps``, ``stacks``,
 ``layers``, ``resources``, ``parameters``, ``documents``, ``links``, ``impact``, ``related``,
-``uses``, ``approval``, ``story-scope``, ``review-scope``, ``summary``, and ``heading``, which reads
-the text of document headings from the vault's last commit),
+``uses``, ``approval``, ``story-scope``, ``review-scope``, ``summary``, ``element-checklist``, which
+lists the values each element an Epic's design adds or changes must state, and ``heading``, which
+reads the text of document headings from the vault's last commit),
 and ``check``, which reports every way the file fails its contract. ``matrixcli`` holds the
 sub-commands that change the matrix, bring it up to date, seed it and mark it. The registry's
 command table says which role may run each; the role is the value of the role variable, and the
@@ -34,8 +35,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
 from driver_surface_types import ARCH_PATH_ENV, CONTROL_REPO_ENV, PRD_DIR_ENV
-from matrix_contract import COMMAND_RULES, ENTRY_KINDS, EntryKind, RelationshipKind, entry_kind, relationship_kind
+from matrix_contract import (
+    COMMAND_RULES,
+    ENTRY_KINDS,
+    ROLE_SOLUTIONS_ARCHITECT,
+    EntryKind,
+    RelationshipKind,
+    entry_kind,
+    relationship_kind,
+)
 from matrixcall import EXIT_OK, EXIT_REFUSED, PROGRAM, Call, Outcome
+from matrixchecklist import expected_values, load_checklist, skeleton
 from matrixcli import COMMANDS as CHANGE_COMMANDS
 from matrixcli import add_parsers
 from matrixheadings import committed_headings
@@ -72,6 +82,7 @@ from matrixstore import (
     require_role,
     role_of,
 )
+from matrixwrite import ApplyResult, apply_changes
 
 KIND_SEPARATOR: Final = ","
 
@@ -308,6 +319,37 @@ def _run_review_scope(call: Call) -> Outcome:
     return Outcome(review_scope(read_matrix(call.matrix()), call.required("epic")))
 
 
+def _run_element_checklist(call: Call) -> Outcome:
+    """Run ``element-checklist``.
+
+    The architect's change file, when given, is applied first to the matrix as read, which is
+    never written, so an element the change file adds is listed with its kind.
+
+    Returns:
+        The entries of ``elementValues`` to fill, one per value an element must state that the
+        naming command does not build; the values the naming command builds; each element the
+        matrix holds no entry for; and each operation of the change file that failed.
+
+    """
+    matrix: Matrix = read_matrix(call.matrix())
+    changes: str | None = call.text("changes")
+    failures: list[str] = []
+    if changes is not None:
+        applied: ApplyResult = apply_changes(matrix, Path(changes), ROLE_SOLUTIONS_ARCHITECT)
+        failures = [f"operation {failure['index']}: {failure['error']}" for failure in applied["failures"]]
+    expected, unknown = expected_values(matrix, call.texts("ids"), load_checklist())
+    return Outcome({
+        "elementValues": skeleton(expected),
+        "builtByNamingCommand": [
+            {"element": value["element"], "criterion": value["criterion"], "item": value["item"]}
+            for value in expected
+            if value["namingCommand"]
+        ],
+        "unknownElements": unknown,
+        "changeFailures": failures,
+    })
+
+
 def _run_heading(call: Call) -> Outcome:
     """Run ``heading``.
 
@@ -360,6 +402,7 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     "story-scope": _run_story_scope,
     "review-scope": _run_review_scope,
     "heading": _run_heading,
+    "element-checklist": _run_element_checklist,
     "summary": _run_summary,
     "check": _run_check,
     **CHANGE_COMMANDS,
@@ -535,6 +578,13 @@ def _parser() -> argparse.ArgumentParser:
         nargs="+",
         help="each heading as <path>#<heading>, the path under the architecture root; a path alone names the document",
     )
+    checklist: argparse.ArgumentParser = commands.add_parser(
+        "element-checklist",
+        parents=[where],
+        help="the values each element an Epic's design adds or changes must state (review criteria A15 to A20)",
+    )
+    checklist.add_argument("--ids", nargs="+", required=True, help="the matrix ids of the elements")
+    checklist.add_argument("--changes", help="the architect's change file, applied to a copy of the matrix first")
     add_parsers(commands, where, sources)
     return parser
 

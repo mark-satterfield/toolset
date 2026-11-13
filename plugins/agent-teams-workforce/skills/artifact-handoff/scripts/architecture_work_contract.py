@@ -354,6 +354,17 @@ class GapAnswer(TypedDict):
     facts: list[str]
 
 
+class ElementValue(TypedDict):
+    """Typed form of #/$defs/ElementValue in architecture-result.schema.json."""
+
+    element: str
+    criterion: str
+    item: str
+    applies: bool
+    value: str
+    home: NotRequired[SourceHeading]
+
+
 class ArchitectureResult(TypedDict):
     """Typed form of #/$defs/ArchitectureResult in architecture-result.schema.json."""
 
@@ -377,6 +388,7 @@ class ArchitectureResult(TypedDict):
     reach: list[ReachVerdict]
     excluded: list[Exclusion]
     gapAnswers: NotRequired[list[GapAnswer]]
+    elementValues: NotRequired[list[ElementValue]]
 
 
 class Reason(TypedDict):

@@ -61,5 +61,6 @@
     {"id": "infrastructure:match-events-queue", "verdict": "corrected", "via": "realizedBy"},
     {"id": "service:skillspoke-notification-service", "verdict": "kept", "via": "realizedBy"}
   ],
-  "excluded": []
+  "excluded": [],
+  "elementValues": []
 }

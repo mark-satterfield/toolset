@@ -206,11 +206,23 @@ again; no other repository, no impact analysis and no TRD write the answers do n
 again. The writer is set back however often it was set back in the dispatch, because the step
 bounds its rounds itself, row by row, and never fails the Epic on a gap: a row the architect
 answered that comes back, and every open row of a repository whose gaps went to the architect
-twice (`design_gaps.MAX_ROUNDS`), counted from every record of the rounds (`design_gaps.answers`),
-is carried to the build (`design_gaps.carry`): it moves to the document's `## Decided at build`
-table marked as kind C left open, is recorded in `<arch-work>/design-gaps/leftover/<slug>.json`
-for the Task dependency mapper, and a warning note names the pipeline defect ("design gaps after 2
-rounds") with the Epic, the repository and the rows. A repository at the limit is never handed to
+once (`design_gaps.MAX_ROUNDS`, one round), counted from every record of the rounds
+(`design_gaps.answers`), is carried to the build (`design_gaps.carry`): it moves to the
+document's `## Decided at build` table marked as kind C left open, is recorded in
+`<arch-work>/design-gaps/leftover/<slug>.json` for the Task dependency mapper, and a warning note
+names the pipeline defect ("design gaps after 1 round") with the Epic, the repository and the
+rows. Most kind C gaps are caught before any spec is written: the architecture check holds the
+architect's filled element checklist (`elementValues`, `scripts/portfolio/matrixchecklist.py`,
+from `skills/effective-architecture/element-checklist.json` and the criteria A15 to A20) to the
+values each element the Epic adds or changes must state, sends each one with no entry, an empty
+entry or a home heading that does not exist or does not state it back to the architect through
+the mechanical correction, and once those corrections are spent carries what is left to the spec
+stage (`design_gaps.carry_unfilled`, `<arch-work>/design-gaps/unfilled-values.json`, a warning
+note "element values left unfilled after the mechanical corrections of the architecture"); the
+step after the spec review writes each carried value of an element its Story builds as a kind C
+gap row (`design_gaps.add_unfilled`), which then takes the one gap round and is decided at build.
+A journal whose architecture was promoted before any check listed the checklist is never held
+to it (`architecture_check.checklist_applies`). A repository at the limit is never handed to
 the architect again (`design_gaps.handed`). Only kind C details are gaps: a spec author builds a
 name with the naming command (kind A) and records a detail local to the repository as decided at
 build (kind B), and neither blocks. An answer that changes the elements the Stories

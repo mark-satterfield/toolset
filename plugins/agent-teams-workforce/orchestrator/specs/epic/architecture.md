@@ -78,7 +78,7 @@ follows it, among its siblings, before the index and the check (`architecture_ro
 on a later step, the `answers digest`, each `answer`, the `findings` (check results) and each
 `ruling` that step is handed, and, while the spec stage holds open design gaps, each
 repository's `design gaps` (`design_gaps.handed`, which hands no repository whose gaps already went
-to the architect `design_gaps.MAX_ROUNDS` (2) times: its rows are carried to the build). No file is written from the matrix for it: it reads the Epic's pack
+to the architect `design_gaps.MAX_ROUNDS` (1) time: its rows are carried to the build). No file is written from the matrix for it: it reads the Epic's pack
 and runs `atw-matrix` reads itself. The session is granted the architecture work folder and no
 folder of the architecture or of the PRDs.
 
@@ -243,7 +243,19 @@ technical-requirement criterion, and the review log (`review_log.problems`): a m
 malformed log, a log for another Epic, a decision without two distinct options, a choice that is
 not one of them or no reason, an AWS resource the design adds or changes (an
 `addedOrChangedElements` entry whose matrix entry has a `resourceType`) with no review entry, and
-a design with an AWS resource and no Well-Architected review covering each pillar once. It writes
+a design with an AWS resource and no Well-Architected review covering each pillar once. It also
+holds the result's filled element checklist (`elementValues`) to the values each element under
+`addedOrChangedElements` must state (`matrixchecklist.expected_values` over
+`skills/effective-architecture/element-checklist.json`, the criteria A15 to A20 by the element's
+matrix kind, resource type and execution use; a name the naming command builds is listed and
+never filled): a listed value with no entry, an empty entry, an entry with no home, or a home
+heading that does not exist or does not state the value word for word in the vault's working
+tree (`matrixchecklist.value_problems`) is a mechanical defect. It writes the expected and the
+unfilled values to `<arch-work>/checks/<step id>/element-checklist.json` (file `element
+checklist`). A journal whose promotion is done and none of whose done checks recorded that file
+is not held to the checklist (`architecture_check.checklist_applies`): its architecture was
+approved before the checklist, and a later check (after a gap round) does not send it back
+through it. It writes
 `<arch-work>/checks/<step id>/check.json` (the folder is the check step's own, so a later check
 never overwrites an earlier one) and records it as the file `check result`. It then plans what
 follows by rule over the matrix, the criteria file, the architect's result and the review log:
@@ -251,7 +263,8 @@ follows by rule over the matrix, the criteria file, the architect's result and t
 | What the check finds | What it plans |
 |---|---|
 | open design gaps the spec stage filed (`design_gaps.handed`), whatever else it finds | the architect's step that answers them (`design_gaps.gap_round`), handed the check result, an index and a new check that starts with no corrections spent, because the answer is a new design change |
-| a mechanical defect | a correction step for the architect, handed the check result, an index and a new check; after 3 corrections a defect fails the step |
+| a mechanical defect | a correction step for the architect, handed the check result, an index and a new check; after 3 corrections a defect fails the step, except an unfilled element value, which never fails it |
+| after 3 corrections, unfilled element values and no other defect | the values are carried to the spec stage (`design_gaps.carry_unfilled`: `<arch-work>/design-gaps/unfilled-values.json` and a warning note naming the pipeline defect), are not checked again, and the check plans what follows as with no defect |
 | no defect, the result's conclusion is `unsettled`, and no lead has run in the container | the step of `architecture-team-lead`, an index and a new check |
 | otherwise, whatever the conclusion | the TRD write, unless the journal's last TRD write is done and its request states the result's `trdChanges` and `sharedCapabilities` as they stand (`trd_steps.write_current`), then the promotion step |
 

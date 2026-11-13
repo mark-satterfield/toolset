@@ -20,6 +20,13 @@ agents responsible for it and the agent that reviews and approves it. The standa
 from that file by `artifact-handoff/scripts/review_criteria.py`, so a criterion is changed in
 `review-criteria.json` and nowhere else.
 
+`element-checklist.json` beside it turns the criteria A15 to A20 into the values each element the
+design adds or changes must state, by the element's kind (an interface, a store, an event, a
+compute element, a parameter, a component); each item is a phrase of its criterion's text, so
+the checklist adds no criterion. `atw-matrix element-checklist` lists them for the architect, who
+fills each in its result (`elementValues`), and the architecture check fails on each one left
+empty or not stated at the heading it cites.
+
 Every criterion has a level: architecture and design (arc42 and the detailed architecture
 under `detailed/`), technical requirement (the TRD), or the specs and Tasks. A criterion is
 satisfied by the document that is its home. All of the design, from the system context to the

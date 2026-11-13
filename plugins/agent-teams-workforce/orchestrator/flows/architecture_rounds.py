@@ -12,9 +12,10 @@ the step that accepts that file plans what follows it, among its siblings:
 - a result with no open request: at most three ``architecture-maintainer`` steps, one per group of
   arc42 sections (:data:`SECTION_GROUPS`) whose write request was not already written, each
   write request built here from the result's ``facts``, ``restatements``, ``settlements`` and
-  ``diagrams``, so one session reads each neighbouring document of its group once. Each request
-  and its result are files of their own, named for the request's content, so a later write of a
-  group never replaces the files of an earlier one.
+  ``diagrams``, and from each filled value of its element checklist (``elementValues``) that its
+  home heading does not state yet (:func:`value_facts`), so one session reads each neighbouring
+  document of its group once. Each request and its result are files of their own, named for the
+  request's content, so a later write of a group never replaces the files of an earlier one.
 
 A Decide step is handed a digest of its answers (:func:`write_digest`), so it reads a few KB
 instead of every answer file. The digest names each answer's writer from one walk of one read of
@@ -38,6 +39,7 @@ from architecture_work_contract import (
     validate_write_request,
     validate_write_result,
 )
+from matrixchecklist import states_value
 
 from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
@@ -64,6 +66,8 @@ if TYPE_CHECKING:
         AppliedSettlement,
         ArchitectureResult,
         DigestedAnswer,
+        ElementValue,
+        FactEntry,
         SourceHeading,
         SpecialistAnswer,
         SpecialistRequest,
@@ -108,6 +112,8 @@ SECTION_GROUPS: Final[tuple[tuple[str, str, frozenset[int]], ...]] = (
 """The groups one ``architecture-maintainer`` session writes, each with what it covers and its arc42
 section numbers; ``detailed/`` and any other document go to the first."""
 _SECTION: Final[re.Pattern[str]] = re.compile(r"^arc42/(?P<number>\d{2})-")
+VALUE_FACT_PREFIX: Final = "element-value"
+"""What the id of a fact written for a filled element value opens with (:func:`value_facts`)."""
 
 
 RETIRED_REASON_SOURCE: Final = "source"
@@ -615,10 +621,51 @@ def section_group(document: str) -> str:
     return next((name for name, _covers, numbers in SECTION_GROUPS if number in numbers), SECTION_GROUPS[0][0])
 
 
+def _value_fact(entry: ElementValue, home: SourceHeading) -> FactEntry:
+    """State one filled element value as a fact for its home.
+
+    Returns:
+        The fact, about the element, with the value word for word.
+
+    """
+    return {
+        "id": f"{VALUE_FACT_PREFIX} {entry['criterion']} {entry['element']} {entry['item']}",
+        "statement": f"{entry['item']} of {entry['element']}: {entry['value'].strip()}",
+        "reason": f"Review criterion {entry['criterion']} requires the {entry['item']} of this element here.",
+        "home": home,
+        "linkedFrom": [],
+        "about": [entry["element"].strip()],
+    }
+
+
+def value_facts(arch: Path, result: ArchitectureResult) -> list[FactEntry]:
+    """List, as facts, the filled element values that their home headings do not state yet.
+
+    A value the architect filled in ``elementValues`` and that no heading states yet is written by
+    the architecture maintainer at its home, word for word, as any fact is.
+
+    Returns:
+        One fact for each entry that applies, gives a value and a home, and whose home does not
+        state the value (``matrixchecklist.states_value``), in the result's order.
+
+    """
+    return [
+        _value_fact(entry, home)
+        for entry in result.get("elementValues", [])
+        if entry["applies"]
+        and entry["value"].strip()
+        and (home := entry.get("home")) is not None
+        and home["source"].strip()
+        and home["heading"].strip()
+        and not states_value(arch, {"source": home["source"], "heading": home["heading"]}, entry["value"])
+    ]
+
+
 def write_requests(arch: Path, result: ArchitectureResult) -> dict[str, WriteRequest]:
     """Group what an architecture result has written into one write request per group of sections.
 
-    A fact and a diagram go to the request of their home's group, a restatement to the request of
+    A fact, and a filled element value its home does not state yet (:func:`value_facts`), and a
+    diagram go to the request of their home's group, a restatement to the request of
     the group of the document it is in, and a settlement to the request of each group holding a
     statement that lost, with only that group's places.
 
@@ -632,7 +679,7 @@ def write_requests(arch: Path, result: ArchitectureResult) -> dict[str, WriteReq
     def of(citation: SourceHeading) -> WriteRequest:
         return requests.setdefault(section_group(_document(arch, citation)), _empty(result["bead"]))
 
-    for fact in result["facts"]:
+    for fact in [*result["facts"], *value_facts(arch, result)]:
         of(fact["home"])["facts"].append(fact)
     for restatement in result["restatements"]:
         of(restatement["at"])["restatements"].append(restatement)

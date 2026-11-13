@@ -115,7 +115,7 @@ before you finish, and record every gap you find, not the first. A gap found onl
 costs a whole round of the architecture. Record a row of either table nowhere else, and leave a
 section out when it has no row. An open gap stops the repository before its Story and Tasks: the
 step after the review sends every row back to the solutions architect, who designs what fills it,
-and the spec is then written again against the settled design. After two such rounds a row still
+and the spec is then written again against the settled design. After one such round a row still
 open is carried to the build instead: it moves to `## Decided at build` with its kind marked as
 left open, and the build decides it. Your repository context file
 (`spec-context.schema.json`) names what the Story builds: `items`, `stacks`, `buildScope` and

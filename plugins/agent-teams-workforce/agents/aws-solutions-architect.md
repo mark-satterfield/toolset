@@ -575,6 +575,35 @@ requirements against what realizes the features they are served by, and name onl
 work lands, not everything that realizes those features. The step that accepts your result fails
 when both lists are empty.
 
+### The element checklist
+
+Fill the element checklist in the same session as the decision, once `addedOrChangedElements`
+and the change file are written. List it with
+
+```bash
+atw-matrix element-checklist --ids <each id under addedOrChangedElements> --changes <arch-work>/matrix-changes.json
+```
+
+It prints, for each element, the values criteria A15 to A20 of the `effective-architecture`
+skill require of an element of its kind (an interface's routes, methods, paths, authorizer,
+request and response fields and status codes; a store's key attribute names, indexes, access
+patterns, expiry attribute and data model; an event's publishing service and the values passed
+to the event-publishing API; a compute element's idempotency key fields and timeout settings; a
+component's internal structure), as the entries of `elementValues` to fill, and under
+`builtByNamingCommand` the names the naming command builds, which you never fill. Copy every
+entry into the result's `elementValues` and fill it: `value` is the value word for word as its
+`home` heading states it (for a structure such as a data model, a field list or the routes, one
+line of it that names the structure, word for word), and `home` is the architecture document and
+heading that states it. A value no heading states yet is decided now: state it as a fact with
+that home too, or leave it to the script, which hands the architecture maintainer, as a fact,
+each filled value its home does not state yet. An entry for a value the element does not have
+(for example a read-only function has no idempotency key) sets `applies` to false and gives the
+reason in `value`. The check step reads each cited heading after the documents are written: a
+listed value with no entry, an empty entry, or a heading that does not exist or does not state
+the value word for word comes back to you as a mechanical defect, and what is still unfilled
+after the corrections goes to the spec stage as a design gap and is recorded as a pipeline
+defect.
+
 The result is at the brief's output path, shaped as its `example`. Write it as the work goes,
 so a session that stops loses nothing: the members settled so far, rewritten in place each time
 a part settles.
@@ -620,9 +649,10 @@ log, and update the result in place.
   check that found the gaps; correct any defect they list as well. After you, the documents are
   written and promoted, and the specs of the repositories whose files you were handed are written
   again from them; the TRD is written again only when your `trdChanges` change. A repository's
-  gaps go to you at most twice: a row you answered that its specs hold again, and every row still
-  open after the second round, is carried to the build, which decides it, and the pipeline
-  records it as a defect, so answer completely the first time.
+  gaps go to you once: a row you answered that its specs hold again, and every row still open
+  after that one round, is carried to the build, which decides it, and the pipeline records it as
+  a defect, so answer completely the first time. Fill `elementValues` for every element your
+  answer adds or changes, as in the decision itself.
 
 ## Your boundaries
 

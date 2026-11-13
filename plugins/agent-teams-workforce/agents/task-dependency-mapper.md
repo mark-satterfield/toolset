@@ -120,7 +120,7 @@ library. Each edge's `kind` says what the dependent Task needs (the
 output contract's kinds). Consider same-Story and closure edges when checking for a cycle.
 
 The brief may also name `leftover design gaps` files: each repository's kind C design gap rows
-the architect's rounds left open, which the build now decides (each row names its element and the
+the architect's round left open, which the build now decides (each row names its element and the
 missing detail; the spec documents list them under `## Decided at build`). Such a value is decided
 by whichever build runs first, so where two Stories' Tasks use it (an event value one publishes
 and another matches, a status code or header one returns and another acts on, a key one writes

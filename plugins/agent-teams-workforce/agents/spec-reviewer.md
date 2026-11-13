@@ -132,7 +132,7 @@ documents and the TRD state it.
   falls under, whose correction moves the row to `## Design gaps`; a name recorded as a gap or as
   decided at build is a finding whose correction builds it with the naming command and writes it
   in the spec. A row of `## Decided at build` whose kind marks it as left open after the
-  architect's rounds was carried there by the pipeline: leave it.
+  architect's round was carried there by the pipeline: leave it.
 - A kind C gap is blocking: no Task can be built from a detail the design does not state (I7).
   Check every row under a document's `## Design gaps` heading against the approved documents.
   When an approved document records the detail, write a finding to the document's author under

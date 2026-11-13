@@ -41,7 +41,7 @@ in `tdd-guide` and in your specialty definition.
    give.
 3. The spec's `## Decided at build` table, which the Task cites under its spec sections and its
    description names, lists the details no approved document states that your build decides: kind
-   `B`, local to the repository, and kind C rows left open after the architect's rounds. Decide
+   `B`, local to the repository, and kind C rows left open after the architect's round. Decide
    each one the work needs, in the way the surrounding design and code already do: build a name
    with the naming command (the `resource-naming` skill), and resolve a contradiction or an
    invalid design toward what the TRD and the approved documents require. A kind C row whose value

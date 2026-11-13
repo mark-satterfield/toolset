@@ -83,7 +83,7 @@ from orchestrator.core.journal_steps import (
 from orchestrator.core.models import StepError
 from orchestrator.flows.architecture_files import ARTIFACT_TRD, read_context
 from orchestrator.flows.build_ownership import refuse_ownership_drift, refuse_scope_drift
-from orchestrator.flows.design_gaps import DECIDED_HEADING, decided_at_build, hold_open
+from orchestrator.flows.design_gaps import DECIDED_HEADING, add_unfilled, decided_at_build, hold_open
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_ELEMENTS,
     ARTIFACT_SPAN,
@@ -1366,12 +1366,29 @@ def _decided_lines(documents: Sequence[Path]) -> list[str]:
     return [f"{DECIDED_HEADING} (the build decides each):", *decided, ""] if decided else []
 
 
+def _carried_values(
+    run: StepRun,
+    held: Repository,
+    items: Sequence[Mapping[str, JsonValue]],
+    documents: Sequence[Path],
+) -> None:
+    """Write each element value the architecture check carried for an element the Story builds as a design gap.
+
+    The value goes to the data model or the contracts (``design_gaps.add_unfilled``), and is then
+    handled as any design gap: the one gap round, then decided at build.
+    """
+    built: set[str] = {matrix_id for item in items if isinstance(matrix_id := item.get(KEY_MATRIX_ID), str)}
+    add_unfilled(run, held.slug, built, documents[0], documents[1])
+
+
 @script_step(STORY_DOCUMENT_STEP)
 def story_document(run: StepRun) -> Completion:
     """Write the Story document of one repository from its reviewed spec documents.
 
-    A document that still records an open design gap stops the repository here, before its Story
-    and Tasks: the gaps go back to the solutions architect, and this repository alone is specified
+    Each element value the architecture check carried to the spec stage for an element this Story
+    builds is first written as a design gap of its spec (:func:`_carried_values`). A document
+    that still records an open design gap stops the repository here, before its Story and Tasks:
+    the gaps go back to the solutions architect, and this repository alone is specified
     again from the answers; a gap row left after the round limit, or answered and held again, is
     carried to the build instead (``design_gaps.hold_open``). Otherwise
     each spec document first gets its last section, the links to the architecture and design
@@ -1385,11 +1402,13 @@ def story_document(run: StepRun) -> Completion:
     """
     held: Repository = repository(run.inputs)
     documents: list[Path] = [run.inputs.file(name) for name in (SPEC, DATA_MODEL, CRITERIA)]
+    held_context: dict[str, JsonValue] = json_object(strict_json(run.inputs.file(CONTEXT)))
+    items: list[dict[str, JsonValue]] = objects(held_context["items"])
+    _carried_values(run, held, items, documents)
     hold_open(run, held.slug, held.path, documents)
     dispatch: DispatchArguments = dispatch_arguments()
     matrix: Matrix = run.tools.portfolio_read(STORY_DOCUMENT_STEP, read_matrix, matrix_path(None, os.environ))
     arch: Path = architecture_root(run)
-    held_context: dict[str, JsonValue] = json_object(strict_json(run.inputs.file(CONTEXT)))
     component: list[dict[str, JsonValue]] = objects(held_context[KEY_COMPONENT_DOCUMENTS])
     for written in documents:
         link_documents(written, component)
@@ -1403,7 +1422,6 @@ def story_document(run: StepRun) -> Completion:
     )
     used: list[JsonValue] = list(story_used_as_built(*documents))
     prd: dict[str, JsonValue] = json_object(run.context.args[dispatch.KEY_PRD])
-    items: list[dict[str, JsonValue]] = objects(held_context["items"])
     names: dict[str, str] = {check_type(item[KEY_ID], str): check_type(item[KEY_ELEMENT], str) for item in items}
     lines: list[str] = [
         f"Repository: {held.path}",

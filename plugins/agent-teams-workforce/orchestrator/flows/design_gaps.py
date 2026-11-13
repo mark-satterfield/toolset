@@ -23,10 +23,10 @@ no impact analysis runs in the round.
 
 The Epic never fails on a design gap. A row the architect already answered that a repository's
 documents hold again, and every row of a repository whose gaps went to the architect
-:data:`MAX_ROUNDS` times, is carried to the build (:func:`carry`): it moves from the gap table to
+:data:`MAX_ROUNDS` times (one round), is carried to the build (:func:`carry`): it moves from the gap table to
 the decided-at-build table of its document, marked as a kind C detail left after the rounds, the
 row is recorded in the leftover folder for the Task edges (:func:`leftover`), and a warning note
-reports a pipeline defect: design gaps after :data:`MAX_ROUNDS` rounds. The rounds are counted from
+reports a pipeline defect: design gaps after the :data:`MAX_ROUNDS` round. The rounds are counted from
 every record there is: ``answers.json`` in either of its forms (a bare count, or the rounds with
 the rows) and the settled folder, which keeps each round's files. A repository at the limit is
 never handed to the architect again (:func:`handed`).
@@ -61,7 +61,9 @@ from orchestrator.flows.elaboration_files import SPEC_CONTEXT
 from orchestrator.flows.elaboration_support import emit_event
 
 # isort: split
-# step_journal puts the pipeline-contracts scripts directory on sys.path; the contract import follows it.
+# step_journal puts the pipeline-contracts scripts directory on sys.path, and the orchestrator's bootstrap the
+# portfolio scripts directory; the imports from them follow.
+from matrixchecklist import UnfilledValue
 from step_journal_contract import STATUS_DONE
 
 if TYPE_CHECKING:
@@ -86,22 +88,34 @@ ANSWERS: Final = "answers.json"
 """The file, in the design gaps folder, that records each repository's rounds and the rows the architect answered."""
 KEY_ROUNDS: Final = "rounds"
 KEY_ROWS: Final = "rows"
-MAX_ROUNDS: Final = 2
+MAX_ROUNDS: Final = 1
 """How many times a repository's gaps go to the architect before its open gaps are carried to the build."""
 DECIDED_HEADING: Final = "Decided at build"
 """The heading, at level 2, of the section of a spec document that lists the details the build decides."""
 DECIDED_HEADER: Final = "| Id | Element | Detail the build decides | Kind |"
 DECIDED_SEPARATOR: Final = "|---|---|---|---|"
-KIND_LEFTOVER: Final = f"C, left open after {MAX_ROUNDS} architect rounds"
+_ROUNDS_TEXT: Final = f"{MAX_ROUNDS} round" if MAX_ROUNDS == 1 else f"{MAX_ROUNDS} rounds"
+"""The round limit in words, singular for one round."""
+KIND_LEFTOVER: Final = f"C, left open after {_ROUNDS_TEXT} of the architect"
 """The kind a carried gap row is marked with in the decided-at-build table."""
 LEFTOVER: Final = "leftover"
 """The folder, beside the open and the settled ones, of each repository's gap rows carried to the build."""
 LABEL_LEFTOVER: Final = "leftover design gaps"
 """The label the Task dependency mapper is handed each repository's carried gap rows under."""
-DEFECT: Final = f"design gaps after {MAX_ROUNDS} rounds"
+DEFECT: Final = f"design gaps after {_ROUNDS_TEXT}"
 """How the warning note names the pipeline defect a carried gap row is."""
 EDGE_MARK: Final = "leftover design gap"
 """The words an edge's reason opens with when it orders a carried gap row's provider before its consumer."""
+GAP_HEADER: Final = "| Id | Element whose design lacks it | Missing detail (review criterion) |"
+GAP_SEPARATOR: Final = "|---|---|---|"
+UNFILLED: Final = "unfilled-values.json"
+"""The file, in the design gaps folder, of the element values the architecture check carried to the spec stage."""
+UNFILLED_DEFECT: Final = "element values left unfilled after the mechanical corrections of the architecture"
+"""How the warning note names the pipeline defect a carried element value is."""
+UNFILLED_ID: Final = "EV"
+"""The prefix of the id of a gap row written for a carried element value."""
+DATA_MODEL_CRITERIA: Final[frozenset[str]] = frozenset({"A16", "A20"})
+"""The criteria whose carried values are gap rows of the data model; the others are rows of the contracts."""
 _SECTION: Final = re.compile(rf"^##\s+{re.escape(HEADING)}\s*$", re.IGNORECASE)
 _DECIDED_SECTION: Final = re.compile(rf"^##\s+{re.escape(DECIDED_HEADING)}\s*$", re.IGNORECASE)
 _NEXT_SECTION: Final = re.compile(r"^#{1,2}\s")
@@ -484,8 +498,14 @@ def _without_rows(lines: list[str], rows: Collection[str]) -> list[str]:
     return [*lines[:start], *section, *lines[end:]]
 
 
-def _with_decided(lines: list[str], rows: Sequence[str]) -> list[str]:
-    """Add carried rows to a document's decided-at-build table, writing the section when it has none.
+def _with_rows(
+    lines: list[str],
+    added: Sequence[str],
+    section: re.Pattern[str],
+    heading: str,
+    header: tuple[str, str],
+) -> list[str]:
+    """Add rows to the table of a level-2 section of a document, writing the section when it has none.
 
     A new section goes before the links to the architecture and design documents, or at the end.
 
@@ -493,19 +513,34 @@ def _with_decided(lines: list[str], rows: Sequence[str]) -> list[str]:
         The document's lines.
 
     """
-    added: list[str] = [_decided_row(row) for row in rows]
-    found: tuple[int, int] | None = _bounds(lines, _DECIDED_SECTION)
+    found: tuple[int, int] | None = _bounds(lines, section)
     if found is not None:
         last: int = max(
             (index for index in range(found[0], found[1]) if lines[index].strip().startswith("|")),
             default=found[0],
         )
-        table: list[str] = [] if last > found[0] else ["", DECIDED_HEADER, DECIDED_SEPARATOR]
+        table: list[str] = [] if last > found[0] else ["", *header]
         return [*lines[: last + 1], *table, *added, *lines[last + 1 :]]
     links: tuple[int, int] | None = _bounds(lines, _LINKS_SECTION)
     at: int = len(lines) if links is None else links[0]
-    section: list[str] = [f"## {DECIDED_HEADING}", "", DECIDED_HEADER, DECIDED_SEPARATOR, *added, ""]
-    return [*lines[:at], *([""] if at and lines[at - 1].strip() else []), *section, *lines[at:]]
+    written: list[str] = [f"## {heading}", "", *header, *added, ""]
+    return [*lines[:at], *([""] if at and lines[at - 1].strip() else []), *written, *lines[at:]]
+
+
+def _with_decided(lines: list[str], rows: Sequence[str]) -> list[str]:
+    """Add carried rows to a document's decided-at-build table, writing the section when it has none.
+
+    Returns:
+        The document's lines.
+
+    """
+    return _with_rows(
+        lines,
+        [_decided_row(row) for row in rows],
+        _DECIDED_SECTION,
+        DECIDED_HEADING,
+        (DECIDED_HEADER, DECIDED_SEPARATOR),
+    )
 
 
 def _carry_rows(path: Path, rows: Sequence[str]) -> None:
@@ -695,3 +730,127 @@ def settle(work: Path, step: StepId) -> None:
         _answers_file(work),
         {slug: {KEY_ROUNDS: record.rounds, KEY_ROWS: sorted(record.rows)} for slug, record in sorted(counted.items())},
     )
+
+
+def _unfilled_file(work: Path) -> Path:
+    """Name the file of the element values carried to the spec stage.
+
+    Returns:
+        The file in the design gaps folder.
+
+    """
+    return architecture_folder(work) / FOLDER / UNFILLED
+
+
+def unfilled(work: Path) -> list[UnfilledValue]:
+    """Read the element values the architecture check carried to the spec stage.
+
+    Returns:
+        Each carried value, in the order carried; empty when none was.
+
+    """
+    path: Path = _unfilled_file(work)
+    if not path.is_file():
+        return []
+    return check_type(
+        json.loads(path.read_text(encoding="utf-8")),
+        list[UnfilledValue],
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+    )
+
+
+def carried_values(work: Path) -> set[tuple[str, str, str]]:
+    """Name the element values already carried to the spec stage, by element, criterion and item.
+
+    Returns:
+        The keys of :func:`unfilled`.
+
+    """
+    return {(value["element"], value["criterion"], value["item"]) for value in unfilled(work)}
+
+
+def carry_unfilled(run: StepRun, values: Sequence[UnfilledValue]) -> None:
+    """Carry element values the architect left unfilled to the spec stage, and report the pipeline defect.
+
+    The values join the file :data:`UNFILLED`, which the step after the spec review of each
+    repository reads (:func:`add_unfilled`): each value of an element the repository's Story
+    builds becomes a kind C row of its design gaps, which goes to the architect in the one gap
+    round and is then decided at build. A warning note names the Epic and the values.
+    """
+    if not values:
+        return
+    held: list[UnfilledValue] = unfilled(run.context.work)
+    known: set[tuple[str, str, str]] = {(value["element"], value["criterion"], value["item"]) for value in held}
+    held.extend(value for value in values if (value["element"], value["criterion"], value["item"]) not in known)
+    write_json(_unfilled_file(run.context.work), held)
+    detail: str = (
+        f"pipeline defect, {UNFILLED_DEFECT}: Epic {run.bead}: {len(values)} element values carried to the spec "
+        f"stage as design gaps: {' ; '.join(_detail(value) for value in values)}"
+    )
+    emit_event(run.agents.emit, warning_note(run.inputs.stage, detail))
+
+
+def _detail(value: UnfilledValue) -> str:
+    """Name one carried element value in a gap row's cell.
+
+    Returns:
+        The item, its criterion and what was wrong, with no table mark.
+
+    """
+    return f"{value['item']} ({value['criterion']}): {value['problem']}".replace("|", "/")
+
+
+def unfilled_row(index: int, value: UnfilledValue) -> str:
+    """Write one carried element value as a row of a spec document's design gaps table.
+
+    Returns:
+        The row, its id :data:`UNFILLED_ID` and the value's place in the carried file.
+
+    """
+    return f"| {UNFILLED_ID}{index} | {value['element']} | {_detail(value)} |"
+
+
+def add_unfilled(run: StepRun, slug: str, built: Collection[str], contracts: Path, data_model: Path) -> None:
+    """Write each carried element value of an element a repository's Story builds as a design gap of its spec.
+
+    A value of the data model's criteria (:data:`DATA_MODEL_CRITERIA`) goes to the data model,
+    any other to the contracts; to the one of them that exists when the other does not. A row the
+    architect already answered, one already carried to the build and one the document already
+    holds is not written again.
+
+    Args:
+        run: The step after the spec review.
+        slug: The repository's slug.
+        built: The matrix ids of what the repository's Story builds.
+        contracts: The repository's contracts document.
+        data_model: The repository's data model document.
+
+    """
+    answered_rows: frozenset[str] = answers(run.context.work).get(slug, Answered()).rows
+    carried_rows: set[str] = {row for _repository, row in leftover_rows(run.context.work)}
+    rows: dict[Path, list[str]] = {}
+    index: int
+    value: UnfilledValue
+    for index, value in enumerate(unfilled(run.context.work), start=1):
+        row: str = unfilled_row(index, value)
+        target: Path | None = _unfilled_target(value, contracts, data_model)
+        if value["element"] not in built or target is None or row in answered_rows | carried_rows:
+            continue
+        rows.setdefault(target, []).append(row)
+    for target, added in rows.items():
+        fresh: list[str] = [row for row in added if row not in open_gaps(target)]
+        lines: list[str] = target.read_text(encoding="utf-8").splitlines()
+        written: list[str] = _with_rows(lines, fresh, _SECTION, HEADING, (GAP_HEADER, GAP_SEPARATOR))
+        target.write_text("\n".join(written) + "\n", encoding="utf-8")
+
+
+def _unfilled_target(value: UnfilledValue, contracts: Path, data_model: Path) -> Path | None:
+    """Choose the spec document a carried element value is a design gap of.
+
+    Returns:
+        The data model for a value of :data:`DATA_MODEL_CRITERIA`, the contracts otherwise; the
+        other one when the chosen one does not exist; None when neither exists.
+
+    """
+    first, second = (data_model, contracts) if value["criterion"] in DATA_MODEL_CRITERIA else (contracts, data_model)
+    return next((path for path in (first, second) if path.is_file()), None)

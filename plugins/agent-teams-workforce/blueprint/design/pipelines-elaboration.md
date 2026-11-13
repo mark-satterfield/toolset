@@ -245,6 +245,21 @@ Notes on the diagram:
   architecture, and links it from the Epic's matrix entry (attribute `reviewLog`). arc42 holds no
   decision records, so the log keeps the documents to design facts while every decision and
   review stays findable.
+- Gaps in the detailed design are caught in the architecture stage, before any spec is written,
+  with no reviewer: the owner forbids new architecture reviewers, so the architect's own check is
+  made exhaustive and mechanical. `atw-matrix element-checklist` lists, for every element the
+  Epic adds or changes, the values criteria A15 to A20 require of an element of its kind
+  (`skills/effective-architecture/element-checklist.json`, each item a phrase of its criterion's
+  text, checked by `scripts/portfolio/matrixchecklist.py`; a name the naming command builds is
+  listed and never filled). The architect fills each value, with the heading that states it, in
+  the result's `elementValues` in the session that decides the design; a value no heading states
+  yet is written by the architecture maintainer as a fact. The check step fails on each listed
+  value with no entry, an empty entry, or a heading that does not exist or does not state it word
+  for word, and sends those back to the architect through the mechanical correction, bounded as
+  that correction is (3). The Epic never fails for it: what is left after the bound is carried to
+  the spec stage as kind C design gap rows of the repositories whose Stories build the elements,
+  with a warning note naming the pipeline defect, and takes the one gap round and then Decided at
+  build. A journal whose architecture was promoted before the checklist existed is not held to it.
 - How the architect reaches a specialist is drawn in section 3: it names the agent and its
   request in a round of its requests, and the script starts the agent. The architect starts no
   agent, and each of its steps is a fresh session (`orchestrator/DESIGN.md`, section 11.1): one
@@ -545,10 +560,10 @@ sequenceDiagram
     SW->>A42: reads the approved architecture and design of each component
     SW-)S: spec, with links to the full architecture and design of each component, names and decisions as recorded
     SW-->>WF: spec paths
-    alt a spec records an open kind C design gap (crosses a boundary, contradicts or is invalid) and its repository's gaps went to the architect fewer than 2 times
+    alt a spec records an open kind C design gap (crosses a boundary, contradicts or is invalid) and its repository's gaps have not yet gone to the architect (one round)
         WF->>WF: the repository stops before its Story and Tasks; one gap round is added to the end of the architecture, and only the repositories with gaps are set back
         Note over WF: the architect answers every repository's gaps in one step, element by element; the documents are written and promoted again, the TRD written again only when its changes changed and confirmed again, and the specs of the repositories with gaps written again
-    else a gap row is left after 2 rounds, or comes back after its answer
+    else a gap row is left after the one round, or comes back after its answer
         WF->>WF: the row moves to the spec's Decided at build table, the build decides it, and a warning note records the pipeline defect
     end
     WF->>TD: spec paths
@@ -612,13 +627,13 @@ Notes on the diagram:
   the span back instead. The architect answers element by element: each row and every related
   value A15 to A20 require of the same element, correcting contradictions in the documents
   themselves. The Epic never fails on a gap: a row the architect answered that comes back, and
-  every open row of a repository whose gaps went to the architect twice (`MAX_ROUNDS`, the rounds
+  every open row of a repository whose gaps went to the architect once (`MAX_ROUNDS`, the rounds
   counted from every record of them, `answers.json` in either form and the settled folder), is
   carried to the build. It moves to the document's `## Decided at build` table marked as kind C
   left open, the Story and its Tasks carry it, the implementer decides it and the Story's
   architecture comparison and maintainer write the chosen value into the architecture; the Task
   dependency mapper orders the Task that provides a carried value two repositories use before the
-  Task that uses it; and a warning note records the pipeline defect, "design gaps after 2 rounds",
+  Task that uses it; and a warning note records the pipeline defect, "design gaps after 1 round",
   with the Epic, the repository and the rows.
 - The repositories' containers under Specs and Stories run at the same time, and so do their
   containers under Tasks, at most `ATW_ORCH_SESSIONS` at once (`journal_run.concurrent_containers`),

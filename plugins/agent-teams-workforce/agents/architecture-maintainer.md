@@ -79,6 +79,10 @@ For each fact:
    has none the front matter of its class; a folder index carries the classification keys
    (`document_class: overview`, `lifecycle_state`, `authority`, `provenance`, `purpose`) and no
    catalog key.
+   A fact whose id opens with `element-value` is a value of the architect's element checklist
+   that its home does not state yet: write the value word for word as the statement gives it
+   after the colon, under the heading named, because the architecture check looks for those
+   exact words there.
 4. Write what the request contains and only that. A document has one purpose: a fact outside
    its subject goes to its own home, and neighbouring text stays as it is.
 5. Create a new document only when the request names a home path that does not exist. Give it

@@ -1,0 +1,63 @@
+{
+  "description": "The values each element an Epic's design adds or changes must state in the approved architecture, by the kind of element, taken from the architecture criteria A15 to A20 of review-criteria.json. Each item names its criterion and a phrase of that criterion's text, which the reader (scripts/portfolio/matrixchecklist.py) checks is in the text. An element of a class is matched by its matrix kind, its resourceType or its executionUse; an element matched by several classes must state the items of each. An item marked namingCommand is a name the project's naming command builds: it is listed, never left to fill. `atw-matrix element-checklist` lists the values of the elements it is given, and the architecture check fails on each value the architect's result (elementValues) leaves empty or does not find stated at the heading it cites.",
+  "classes": [
+    {
+      "id": "interface",
+      "when": {"resourceTypePrefixes": ["apigateway-", "appsync-"]},
+      "items": [
+        {"criterion": "A15", "item": "route", "namingCommand": false},
+        {"criterion": "A15", "item": "method", "namingCommand": false},
+        {"criterion": "A15", "item": "path", "namingCommand": false},
+        {"criterion": "A15", "item": "authorizer", "namingCommand": false},
+        {"criterion": "A15", "item": "request and response fields", "namingCommand": false},
+        {"criterion": "A15", "item": "status codes", "namingCommand": false}
+      ]
+    },
+    {
+      "id": "store",
+      "when": {"resourceTypes": ["dynamodb-table", "rds-db-cluster", "rds-db-instance"]},
+      "items": [
+        {"criterion": "A16", "item": "key attribute names", "namingCommand": false},
+        {"criterion": "A16", "item": "indexes", "namingCommand": false},
+        {"criterion": "A16", "item": "access patterns", "namingCommand": false},
+        {"criterion": "A16", "item": "expiry attribute", "namingCommand": false},
+        {"criterion": "A16", "item": "logical or physical data model", "namingCommand": false}
+      ]
+    },
+    {
+      "id": "event",
+      "when": {"kinds": ["event"]},
+      "items": [
+        {"criterion": "A17", "item": "publishing service", "namingCommand": false},
+        {"criterion": "A17", "item": "values passed to the project's event-publishing API", "namingCommand": false}
+      ]
+    },
+    {
+      "id": "compute",
+      "when": {
+        "resourceTypes": ["lambda-function", "stepfunctions-state-machine", "ecs-service"],
+        "executionUse": ["executable"]
+      },
+      "items": [
+        {"criterion": "A18", "item": "Configuration names", "namingCommand": true},
+        {"criterion": "A18", "item": "log, metric and alarm names", "namingCommand": true},
+        {"criterion": "A19", "item": "Idempotency key fields", "namingCommand": false},
+        {"criterion": "A19", "item": "timeout settings", "namingCommand": false}
+      ]
+    },
+    {
+      "id": "parameter",
+      "when": {"resourceTypes": ["ssm-parameter"]},
+      "items": [
+        {"criterion": "A18", "item": "SSM parameter names", "namingCommand": true}
+      ]
+    },
+    {
+      "id": "component",
+      "when": {"kinds": ["component"]},
+      "items": [
+        {"criterion": "A20", "item": "internal structure", "namingCommand": false}
+      ]
+    }
+  ]
+}

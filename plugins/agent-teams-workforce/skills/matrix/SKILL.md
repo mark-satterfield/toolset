@@ -97,6 +97,7 @@ with direction and meaning, are in [references/model.md](references/model.md).
 | What a Story building some entries of a stack must be handed | `atw-matrix story-scope --stack stack:<id> --ids <id> ...` |
 | Documents an Epic reaches that are not effective | `atw-matrix review-scope --epic <beads id>` |
 | The text of document headings, as the vault's last commit holds them | `atw-matrix heading '<path>#<heading>' ...` (a path alone prints the whole document) |
+| The values each element an Epic's design adds or changes must state (criteria A15 to A20), as the entries the solutions architect's result fills | `atw-matrix element-checklist --ids <id> ... [--changes <change file>]` (the change file is applied to a copy first, so an element it adds is listed) |
 | Whether named features and architecture items are approved | `atw-matrix approval --ids <entry id> ...` |
 | The shared items (two or more Epics need them), each with its Epics, the requirements through which each needs it, and what decides who goes first | `atw-matrix shared-items [--epic <beads id>]` |
 | The ordered shared items no record decides, in batches for judging | `atw-matrix shared-items --batches <folder> [--batch-size 25]` |

@@ -1080,6 +1080,12 @@
         "orchestrator/flows/architecture_check.py#check_step",
         "scripts/portfolio/matrixstore.py#file_problems",
         "orchestrator/flows/architecture_check.py#_reach_problems",
+        "orchestrator/flows/architecture_check.py#_checklist",
+        "orchestrator/flows/architecture_check.py#checklist_applies",
+        "orchestrator/flows/architecture_check.py#_element_checklist",
+        "scripts/portfolio/matrixchecklist.py#value_problems",
+        "scripts/portfolio/matrixchecklist.py#_entry_problem",
+        "scripts/portfolio/matrixchecklist.py#sentence",
         "skills/artifact-handoff/scripts/matrix_contract.py#parse_document",
         "scripts/portfolio/matrixstore.py#heading_problems",
         "skills/artifact-handoff/scripts/matrix_contract.py#_raise_unless_shaped",
@@ -1109,6 +1115,42 @@
           "enforced": "names the heading",
           "home": "agents/aws-solutions-architect.md",
           "stated": "A heading the pack or `atw-matrix node <entry id>`"
+        },
+        {
+          "id": "element-value-entry",
+          "enforced": "has no entry in elementValues",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "Copy every entry into the result's `elementValues` and fill it"
+        },
+        {
+          "id": "element-value-filled",
+          "enforced": "is empty: state the value in value",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "`value` is the value word for word as its"
+        },
+        {
+          "id": "element-value-home",
+          "enforced": "names no home: cite the architecture heading that states the value",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "`home` is the architecture document and"
+        },
+        {
+          "id": "element-value-heading",
+          "enforced": "which does not exist",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "a heading that does not exist or does not state"
+        },
+        {
+          "id": "element-value-stated",
+          "enforced": "which does not state the value",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "the value word for word comes back to you as a mechanical defect"
+        },
+        {
+          "id": "element-value-reason",
+          "enforced": "is marked as not applying and gives no reason in value",
+          "home": "agents/aws-solutions-architect.md",
+          "stated": "sets `applies` to false and gives the"
         }
       ],
       "notRules": [
@@ -1118,7 +1160,8 @@
         "the entry filed under",
         "does not satisfy the matrix schema",
         "is not JSON",
-        "is not a JSON object"
+        "is not a JSON object",
+        "atw-matrix element-checklist lists every value an element must state"
       ]
     },
     {

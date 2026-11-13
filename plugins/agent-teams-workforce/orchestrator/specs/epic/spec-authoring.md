@@ -141,16 +141,25 @@ name other entries than the span's items), the repository's context step raises
 `ScopeChangedError` naming the span step, so the span and every step after it run again
 (`build_ownership.refuse_scope_drift`), counted with ownership changes. The Epic never fails on a design gap. A row the architect already answered that a repository's
 documents hold again is carried to the build, and so is every open row of a repository whose gaps
-have gone to the architect `design_gaps.MAX_ROUNDS` (2) times; a row never handed before, below
+have gone to the architect `design_gaps.MAX_ROUNDS` (1) time; a row never handed before, below
 that limit, gets its own round. Carrying a row (`design_gaps.carry`) moves it from the document's
-gap table to its `## Decided at build` table with the kind `C, left open after 2 architect
-rounds`, adds it to `<arch-work>/design-gaps/leftover/<slug>.json`, removes the repository's open
-file, and emits a warning note, "pipeline defect, design gaps after 2 rounds", naming the Epic,
+gap table to its `## Decided at build` table with the kind `C, left open after 1 round of the
+architect`, adds it to `<arch-work>/design-gaps/leftover/<slug>.json`, removes the repository's open
+file, and emits a warning note, "pipeline defect, design gaps after 1 round", naming the Epic,
 the repository and the rows, which the supervisor's ledger and dashboard show. A repository at the
 limit is never handed to the architect again (`design_gaps.handed`). The rounds are counted from
 every record of them (`design_gaps.answers`): `answers.json` in either form it has had (a bare
 count, or `rounds` with `rows`) and the settled folder, one round per settled step folder that
 holds the repository's file, the larger count standing.
+
+Before that check, the step writes each element value the architecture check carried to the spec
+stage (`<arch-work>/design-gaps/unfilled-values.json`, `design_gaps.carry_unfilled`) for an
+element the repository's Story builds (its context's `items`, by `matrixId`) as a kind C row of
+the design gaps of its data model (criteria A16 and A20) or of its contracts (any other), the one
+that exists when the other does not (`design_gaps.add_unfilled`): `| EV<n> | <element> | <item>
+(<criterion>): <what was wrong> |`. A row the architect already answered, one already carried to
+the build and one the document already holds is not written again. The row then takes the one gap
+round and, left open, is decided at build like any other.
 
 The Story document's description lists every decided-at-build row of its spec documents, so the
 Story bead carries them; the decomposer gives each row to the Task that builds its element (its
