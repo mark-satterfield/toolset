@@ -15,7 +15,7 @@ from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix
 from step_journal_contract import StepId
 from typeguard import check_type
 
-from orchestrator.core import step_journal
+from orchestrator.core import step_journal, tool_locks
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_registry import Registry
@@ -38,10 +38,36 @@ from orchestrator.flows.design_gaps import decided_at_build
 from orchestrator.flows.elaboration_files import SPEC_FILES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from matrix_contract import EntryId
 
 MATRIX_QUERIES: Final = "matrixQueries"
 """The value artifact counting the stack scopes that the step's one in-process matrix read served."""
+
+CONCURRENT_WRITES: Final = "concurrentWrites"
+"""The value artifact naming measured architecture changes that this Story's agents did not write."""
+
+BUILT_VERSION_LOCK: Final = "ops/sdlc-automation/state/built-version.lock"
+"""The lock file, under the control repository, that lets one Story's built-version write built/ at a time."""
+
+LOCK_WAIT_ENV: Final = "ATW_BUILT_VERSION_LOCK_WAIT"
+"""The environment variable bounding the seconds a built-version run waits for another to finish."""
+
+LOCK_WAIT_SECONDS: Final = 3600.0
+"""The default wait for the built-version lock."""
+
+REPORTED_KEYS: Final = ("changedFiles", "createdFiles", "deletedFiles")
+"""The file lists an architecture maintainer reports."""
+
+EFFECTIVE_FOLDERS: Final = ("arc42", "detailed")
+"""The folders of the architecture root that hold effective architecture."""
+
+MIRRORED_PARTS: Final = 3
+"""The fewest path parts under built/ that mirror an effective folder: subject, one folder, file name."""
+
+MEASURED_KEYS: Final = ("created", "changed", "deleted")
+"""The kinds of measured difference an architecture snapshot reports."""
 
 
 def _args(run: StepRun) -> dict[str, JsonValue]:
@@ -154,17 +180,81 @@ def _guard(run: StepRun) -> None:
     raise StepError(msg, OTHER_CAUSE, ("section 2 changed; its saved version was restored",))
 
 
-def _inside(root: Path, files: list[str]) -> None:
-    """Reject paths outside the allowed architecture subtree.
+def _under(path: str, roots: tuple[Path, ...]) -> bool:
+    """Report whether an absolute path lies under one of the roots.
 
-    Raises:
-        StepError: A reported or measured path escapes the subtree.
+    Returns:
+        True when the path is absolute and inside a root.
 
     """
-    outside = [path for path in files if not Path(path).is_absolute() or not Path(path).resolve().is_relative_to(root)]
+    return Path(path).is_absolute() and any(Path(path).resolve().is_relative_to(root) for root in roots)
+
+
+def _inside(roots: tuple[Path, ...], files: list[str]) -> None:
+    """Reject paths outside the allowed architecture subtrees.
+
+    Raises:
+        StepError: A reported or measured path escapes every subtree.
+
+    """
+    outside = [path for path in files if not _under(path, roots)]
     if outside:
         msg = "built:bounds"
-        raise StepError(msg, OTHER_CAUSE, (f"architecture writes outside {root}: {outside}",))
+        named = ", ".join(str(root) for root in roots)
+        raise StepError(msg, OTHER_CAUSE, (f"architecture writes outside {named}: {outside}",))
+
+
+def _effective(run: StepRun) -> tuple[Path, ...]:
+    """Name the effective architecture folders a correction may write.
+
+    Returns:
+        The arc42 and detailed folders of the architecture root.
+
+    """
+    return tuple(_root(run) / folder for folder in EFFECTIVE_FOLDERS)
+
+
+def _split(measured: dict[str, list[str]], own: Callable[[str], bool]) -> tuple[dict[str, list[str]], list[str]]:
+    """Separate the measured changes this Story's agents own from concurrent writes by other sessions.
+
+    Returns:
+        The owned changes by kind, and every other measured path.
+
+    """
+    owned = {key: [path for path in measured[key] if own(path)] for key in MEASURED_KEYS}
+    others = sorted({path for key in MEASURED_KEYS for path in measured[key] if not own(path)})
+    return owned, others
+
+
+def _mirrored_folder(root: Path, built_file: str) -> Path | None:
+    """Locate the effective folder a built view describes (built/<subject>/<path> mirrors <path>).
+
+    Returns:
+        The folder of the mirrored effective document, or None for a file directly under a subject.
+
+    """
+    parts = Path(built_file).resolve().relative_to(root / "built").parts
+    if len(parts) < MIRRORED_PARTS:
+        return None
+    return root.joinpath(*parts[1:]).parent
+
+
+def _correction_owner(run: StepRun, reported: list[str]) -> Callable[[str], bool]:
+    """Build the test of whether a measured effective change belongs to this Story's correction.
+
+    A change belongs to it when it lies in effective architecture, in the folder of a file the
+    maintainer reported or of the effective document a built view mirrors.
+
+    Returns:
+        The ownership test for one absolute path.
+
+    """
+    root = _root(run)
+    effective = _effective(run)
+    built = [path for path in _strings(latest(run, "builtFiles")) if _under(path, (root / "built",))]
+    mirrored = {folder for path in built if (folder := _mirrored_folder(root, path)) is not None}
+    folders = {Path(path).resolve().parent for path in reported} | mirrored
+    return lambda path: _under(path, effective) and Path(path).resolve().parent in folders
 
 
 def _start(run: StepRun) -> Completion:
@@ -265,7 +355,8 @@ def _accept_comparison(run: StepRun) -> Completion:
     """
     _guard(run)
     saved, snapshot = _snapshot(run, "tree-compared", [check_type(latest(run, "treeStart"), str)])
-    measured = _changed(run, snapshot)
+    built = (_root(run) / "built",)
+    measured, concurrent = _split(_changed(run, snapshot), lambda path: _under(path, built))
     differences = check_type(latest(run, "differences") or [], list[dict[str, JsonValue]])
     files = sorted(
         set(
@@ -275,7 +366,7 @@ def _accept_comparison(run: StepRun) -> Completion:
             + measured["changed"],
         ),
     )
-    _inside(_root(run) / "built", [*files, *measured["deleted"]])
+    _inside(built, files)
     if bool(files) != bool(differences):
         msg = "compare"
         raise StepError(msg, OTHER_CAUSE, ("comparison must record both differences and built views",))
@@ -289,6 +380,7 @@ def _accept_comparison(run: StepRun) -> Completion:
     artifacts = (
         value_artifact("differences", list(differences)),
         value_artifact("builtFiles", list(files)),
+        value_artifact(CONCURRENT_WRITES, list(concurrent)),
         file_artifact("treeCompared", saved),
     )
     return Completion(artifacts=artifacts, add=(StepGroup(additions),) if additions else ())
@@ -302,7 +394,7 @@ def _correct(run: StepRun) -> Completion:
 
     """
     request = (
-        f"Make effective architecture {_root(run)}/arc42 describe these built views: "
+        f"Make effective architecture {_root(run)}/arc42 and {_root(run)}/detailed describe these built views: "
         f"{_strings(latest(run, 'builtFiles'))}. Preserve section 2 and write nowhere else. "
         "Report every changed, created or deleted file and matched built view. "
         f"Answer these findings: {json.dumps(run.params().get('findings') or [])}"
@@ -317,7 +409,10 @@ def _correct(run: StepRun) -> Completion:
 
 
 def _accept_correction(run: StepRun) -> Completion:
-    """Measure all effective architecture changes, including files the agent omitted.
+    """Accept the maintainer's reported changes and the measured changes in the folders it works in.
+
+    Measured changes elsewhere were written by other sessions (for example an elaboration's
+    architecture maintainer) and are recorded as concurrent writes, never reviewed or promoted here.
 
     Returns:
         Cumulative update and fingerprints for independent review.
@@ -333,10 +428,12 @@ def _accept_correction(run: StepRun) -> Completion:
     if previous:
         against.append(check_type(previous, str))
     saved, snapshot = _snapshot(run, "tree-last", against)
-    measured = _changed(run, snapshot)
+    reported = {key: _strings(earlier.get(key)) + _strings(latest(run, key)) for key in REPORTED_KEYS}
+    own = _correction_owner(run, [path for paths in reported.values() for path in paths])
+    measured, concurrent = _split(_changed(run, snapshot), own)
     update = json_object({
         **{
-            key: sorted(set(_strings(earlier.get(key)) + _strings(latest(run, key)) + measured[measurement]))
+            key: sorted(set(reported[key] + measured[measurement]))
             for key, measurement in (
                 ("changedFiles", "changed"),
                 ("createdFiles", "created"),
@@ -346,12 +443,13 @@ def _accept_correction(run: StepRun) -> Completion:
         "matched": sorted(set(_strings(earlier.get("matched")) + _strings(latest(run, "matched")))),
     })
     touched = [path for key in ("changedFiles", "createdFiles", "deletedFiles") for path in _strings(update[key])]
-    _inside(_root(run) / "arc42", touched)
+    _inside(_effective(run), touched)
     constraints = _root(run) / "arc42" / "02-architecture-constraints"
     if any(Path(path).resolve().is_relative_to(constraints) for path in touched):
         msg = "constraints-written"
         raise StepError(msg, OTHER_CAUSE, ("correction reports writing section 2",))
-    changed_since = [path for paths in _changed(run, snapshot, 1).values() for path in paths] if previous else []
+    since_last = _split(_changed(run, snapshot, 1), own)[0] if previous else {}
+    changed_since = [path for paths in since_last.values() for path in paths]
     if previous and not changed_since:
         msg = "correct"
         raise StepError(msg, OTHER_CAUSE, ("correction changed no file in response to findings",))
@@ -359,6 +457,7 @@ def _accept_correction(run: StepRun) -> Completion:
         artifacts=(
             value_artifact("architectureUpdate", update),
             value_artifact("changedSinceLast", list(changed_since)),
+            value_artifact(CONCURRENT_WRITES, list(concurrent)),
             file_artifact("treeLast", saved),
         ),
     )
@@ -523,7 +622,10 @@ def run(context: RunContext) -> dict[str, JsonValue]:
     }
     for key, handler in handlers.items():
         registry.script_step(key)(handler)
-    runner = execute(context, args, "deploy:built-version", registry)
+    lock = tool_locks.control_repo() / BUILT_VERSION_LOCK
+    wait = tool_locks.seconds(LOCK_WAIT_ENV, LOCK_WAIT_SECONDS)
+    with tool_locks.file_lock(lock, wait, f"built-version {context.bead}"):
+        runner = execute(context, args, "deploy:built-version", registry)
     results = recorded(
         runner,
         (
