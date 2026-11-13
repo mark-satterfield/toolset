@@ -653,7 +653,14 @@
         "scripts/portfolio/regression.py#_judge",
         "scripts/portfolio/regression.py#_effective_origins",
         "scripts/portfolio/regression.py#_setup_errors",
-        "scripts/portfolio/regression.py#junit_results"
+        "scripts/portfolio/regression.py#junit_results",
+        "scripts/portfolio/regression.py#plan_setups",
+        "scripts/portfolio/setuprules.py#setup_findings",
+        "scripts/portfolio/setuprules.py#_judged",
+        "scripts/portfolio/setuprules.py#_refusal",
+        "scripts/portfolio/setuprules.py#_declared_task",
+        "scripts/portfolio/setuprules.py#_presence_check",
+        "scripts/portfolio/setuprules.py#_form_refusal"
       ],
       "rules": [
         {
@@ -715,6 +722,48 @@
           "enforced": "applicability lacks source evidence",
           "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
           "stated": "Why the layer is required or excluded, from the sources"
+        },
+        {
+          "id": "run-phase",
+          "enforced": "phase must be",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "regression.py refuses a run whose phase is neither build nor deployed"
+        },
+        {
+          "id": "setup-forms",
+          "enforced": "is not an allowed setup",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "A setup is one of"
+        },
+        {
+          "id": "setup-deploy",
+          "enforced": "deploys to AWS",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "a deploy (cdk deploy, task cdk:deploy) and any aws call"
+        },
+        {
+          "id": "setup-aws",
+          "enforced": "calls AWS",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "any aws call, since a run that needs deployed resources is phase deployed"
+        },
+        {
+          "id": "setup-ad-hoc",
+          "enforced": "installs packages ad hoc",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "whose packages it reports as undeclared so the build declares them in the repository's manifest"
+        },
+        {
+          "id": "setup-task-declared",
+          "enforced": "names a task the Taskfile in",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "a task the repository's Taskfile declares"
+        },
+        {
+          "id": "setup-task-commands",
+          "enforced": "runs a task whose commands",
+          "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
+          "stated": "whose commands deploy nothing, call no AWS service other than CodeArtifact"
         },
         {
           "id": "run-ids",

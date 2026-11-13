@@ -12,6 +12,12 @@ reusable and the later run's :func:`evidence_key` equals the earlier one: the wo
 (untracked files included, so the dependency lock and tool configuration in the tree too), the
 requirements, the declared command, the setup, the runtime and tool configuration, the contract
 version and the evidence scope. A live check is never reused.
+
+A Task's baseline may also stand on the previous Task's passing final suite in the same Story
+worktree (:func:`prior_story_suite`), when the content tree, the command, the build-phase setup
+commands, the runtime and tool configuration, the contract version and the evidence scope are all
+equal: the baseline is the whole suite on an identical tree, so the requirements are left out of
+that identity.
 """
 
 from __future__ import annotations
@@ -30,7 +36,7 @@ from typing import TYPE_CHECKING, Final, Literal
 from driver_surface_types import SUITE_TIMEOUT_ENV
 from typeguard import check_type
 
-from orchestrator.core.io import JsonValue, json_object
+from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, value_artifact
 from orchestrator.flows.build_sessions import REQUIREMENT_NAMES, OutputContract, reasoned, view_of
 from orchestrator.flows.build_state import (
@@ -66,6 +72,10 @@ BEAD_SCOPE: Final = ("acceptanceCriteria", "definitionOfDone", "requirementIds",
 """The Task's own fields the policy was written from."""
 SUITE_SCOPE: Final = "whole-suite"
 RUNNER: Final = Path(__file__).resolve().with_name("build_suite.py")
+STORY_SUITE: Final = "agent-workforce-story-suite.json"
+"""The file in the Story worktree's git directory that holds its last passing final suite, outside the content."""
+DEPLOYED_PHASE: Final = "deployed"
+"""A regression run the build never runs (regression.py ``DEPLOYED_PHASE``), so its setup prepares nothing here."""
 
 type Action = Literal["run", "omit", "reuse"]
 
@@ -409,6 +419,25 @@ def _contract() -> dict[str, JsonValue]:
     return {"plugin": manifest.get("version"), "runner": _file_digest(str(RUNNER)), "policy": _file_digest(str(SCHEMA))}
 
 
+def _setup_commands(held: AcceptedArtifact | None) -> list[JsonValue]:
+    """List the setup commands the build runs for an accepted regression plan: those of its build-phase runs.
+
+    Returns:
+        The commands in plan order; none when no plan file is accepted.
+
+    """
+    if held is None or held.path is None or not Path(held.path).is_file():
+        return []
+    plan: dict[str, JsonValue] = json_object(json.loads(Path(held.path).read_text(encoding="utf-8")))
+    runs: list[dict[str, JsonValue]] = check_type(plan.get("runs", []), list[dict[str, JsonValue]])
+    return [
+        setup.get("command")
+        for run in runs
+        if run.get("phase") != DEPLOYED_PHASE
+        for setup in check_type(run.get("setup", []), list[dict[str, JsonValue]])
+    ]
+
+
 def evidence_key(run: StepRun, command: str) -> dict[str, JsonValue]:
     """Identify a whole-suite result by everything that can change it.
 
@@ -417,16 +446,15 @@ def evidence_key(run: StepRun, command: str) -> dict[str, JsonValue]:
         command: The declared suite command.
 
     Returns:
-        The key's digest and the content tree it covers.
+        The key's digest, the content tree it covers, and the ``baseline`` digest of the same identity without
+        the requirements, which :func:`prior_story_suite` matches.
 
     """
     view: AcceptedView = view_of(run)
     tree: str = content_tree(run)
-    components: dict[str, JsonValue] = {
+    environment: dict[str, JsonValue] = {
         "tree": tree,
         "command": command,
-        "setup": _artifact_digest(view.artifact("regressionPlan")),
-        "requirements": _requirements(run, view),
         "runtime": {
             "platform": platform.platform(),
             "python": sys.version,
@@ -437,7 +465,67 @@ def evidence_key(run: StepRun, command: str) -> dict[str, JsonValue]:
         "contract": _contract(),
         "scope": SUITE_SCOPE,
     }
-    return {"digest": _digest(components), "tree": tree}
+    components: dict[str, JsonValue] = {
+        **environment,
+        "setup": _artifact_digest(view.artifact("regressionPlan")),
+        "requirements": _requirements(run, view),
+    }
+    baseline: dict[str, JsonValue] = {**environment, "setup": _setup_commands(view.artifact("regressionPlan"))}
+    return {"digest": _digest(components), "tree": tree, "baseline": _digest(baseline)}
+
+
+def _story_suite_file(run: StepRun) -> Path:
+    """Locate the Story worktree's record of its last passing final suite, in its git directory.
+
+    Returns:
+        The file's path; it need not exist.
+
+    """
+    located = run.tools.command(
+        ["git", "rev-parse", "--path-format=absolute", "--git-path", STORY_SUITE],
+        stage=run.step.get("script", "build:evidence"),
+        cwd=workspace_of(run).tree,
+    )
+    return Path(located.stdout.strip())
+
+
+def record_story_suite(run: StepRun, suite: dict[str, JsonValue]) -> None:
+    """Keep a passing final suite for the next Task of the Story worktree, whose baseline may stand on it.
+
+    Args:
+        run: The final-suite step.
+        suite: Its passing suite result, with its evidence key.
+
+    """
+    key: JsonValue = suite.get("evidenceKey")
+    if suite.get("exitCode") != 0 or not isinstance(key, dict) or not isinstance(key.get("baseline"), str):
+        return
+    held: dict[str, JsonValue] = {"baseline": key["baseline"], "suite": suite, "from": f"{run.bead}:{run.step['id']}"}
+    write_json(_story_suite_file(run), held)
+
+
+def prior_story_suite(run: StepRun, key: dict[str, JsonValue]) -> dict[str, JsonValue] | None:
+    """Find the previous Task's passing final suite in the Story worktree that stands for this baseline.
+
+    It stands only when its ``baseline`` identity equals this run's: the same content tree, command,
+    build-phase setup commands, runtime, tool configuration, contract and scope.
+
+    Args:
+        run: The baseline step.
+        key: The key :func:`evidence_key` gives the baseline.
+
+    Returns:
+        A copy of that result marked with the Task step it was reused from, or None when none stands for it.
+
+    """
+    path: Path = _story_suite_file(run)
+    if not path.is_file():
+        return None
+    held: dict[str, JsonValue] = json_object(json.loads(path.read_text(encoding="utf-8")))
+    if held.get("baseline") != key.get("baseline"):
+        return None
+    suite: dict[str, JsonValue] = json_object(held["suite"])
+    return {**suite, "evidenceKey": key, "reusedFrom": check_type(held["from"], str)}
 
 
 def reusable_suite(

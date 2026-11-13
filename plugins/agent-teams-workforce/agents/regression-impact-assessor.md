@@ -60,6 +60,10 @@ repositories).
   baseline setup may not depend on the Task's own outputs: never make a setup check, read or wait
   for a stack, parameter, table or other resource the Task's own spec or stack creates (for
   example describing the Task's own deployed stack).
+- Write each setup in a form the schema's `setup` description allows. A reporter the runs need
+  (for example a JUnit reporter for the suite's test runner) is declared in the repository's
+  manifest, never installed by the setup.
+- Give every run its `phase`, as the schema's `phase` description defines it.
 - List in `sourceFiles` every source of the Task the brief or the prepared required sources
   (`requiredSources`) name, the Task's PRD, spec, criteria, TRD and data model files included;
   the build adds any one omitted before the review, but read each of them.

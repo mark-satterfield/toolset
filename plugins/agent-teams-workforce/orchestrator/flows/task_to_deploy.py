@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+from itertools import count
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -180,7 +181,7 @@ def _setup_suite(run: StepRun, approved: Path) -> Completion | None:
 
     """
     workspace: Workspace = _workspace(run)
-    output: Path = run.context.work / "build" / str(run.step["id"]) / "setup.json"
+    output: Path = _setup_attempt(run)
     repository: str = check_type(_object(run, "bead")["repoPath"], str)
     result = run.tools.command(
         [
@@ -218,6 +219,56 @@ def _setup_suite(run: StepRun, approved: Path) -> Completion | None:
     return None
 
 
+def _setup_attempt(run: StepRun) -> Path:
+    """Name the setup output of this attempt in its own folder, so a retry keeps every earlier attempt's evidence.
+
+    Returns:
+        ``attempt-<n>/setup-<n>.json`` under the step's folder, for the first attempt number not yet used.
+
+    """
+    folder: Path = run.context.work / "build" / str(run.step["id"])
+    attempt: int = next(number for number in count(1) if not (folder / f"attempt-{number}").exists())
+    return folder / f"attempt-{attempt}" / f"setup-{attempt}.json"
+
+
+def _kept_baseline(run: StepRun) -> dict[str, JsonValue] | None:
+    """Keep the Task's accepted baseline: the suite as it stood before the Task changed the tree.
+
+    A baseline step planned again, after the governing sources were refreshed or a setup was corrected,
+    still applies the setup and selects the test writers, but the pre-change suite state it measured stands.
+
+    Returns:
+        A copy of the accepted baseline marked with the step that measured it, or None when none is accepted.
+
+    """
+    held: AcceptedArtifact | None = view_of(run).artifact("baseline")
+    if held is None or not isinstance(held.value, dict):
+        return None
+    return {**held.value, "reusedFrom": held.step}
+
+
+def _measured_baseline(run: StepRun, command: str) -> dict[str, JsonValue]:
+    """Measure the suite before the Task's change, or reuse the Story's previous passing final suite on this tree.
+
+    Returns:
+        The baseline suite result with its evidence key.
+
+    """
+    key: dict[str, JsonValue] = build_policy.evidence_key(run, command)
+    prior: dict[str, JsonValue] | None = build_policy.prior_story_suite(run, key)
+    if prior is not None:
+        return prior
+    evidence: Path = run.context.work / "build" / str(run.step["id"]) / "baseline.json"
+    measured: dict[str, JsonValue] = run_suite(
+        run.tools,
+        _workspace(run).tree,
+        command,
+        evidence,
+        "build:baseline",
+    ).document()
+    return {**measured, "evidenceKey": key}
+
+
 def _baseline_command(run: StepRun, command: str) -> Completion:
     """Run a known declaration and plan the suite work.
 
@@ -225,18 +276,10 @@ def _baseline_command(run: StepRun, command: str) -> Completion:
         Baseline and specialist-selection steps.
 
     """
-    evidence: Path = run.context.work / "build" / str(run.step["id"]) / "baseline.json"
-    key: dict[str, JsonValue] = build_policy.evidence_key(run, command)
-    baseline: dict[str, JsonValue] = run_suite(
-        run.tools,
-        _workspace(run).tree,
-        command,
-        evidence,
-        "build:baseline",
-    ).document()
+    baseline: dict[str, JsonValue] = _kept_baseline(run) or _measured_baseline(run, command)
     recorded: tuple[ValueArtifact, ...] = (
         value_artifact("suiteCommand", command),
-        value_artifact("baseline", {**baseline, "evidenceKey": key}),
+        value_artifact("baseline", baseline),
     )
     decision: build_policy.Decision = build_policy.decide(run, "tests")
     if decision.action == "omit":
@@ -1226,6 +1269,7 @@ def _final_suite(run: StepRun) -> Completion:
     if suite["exitCode"] != 0:
         msg = "build:final-suite"
         raise StepError(msg, OTHER_CAUSE, (str(suite["evidence"]),))
+    build_policy.record_story_suite(run, suite)
     return Completion(artifacts=_suite_artifacts("finalRun", suite, "final-suite"))
 
 

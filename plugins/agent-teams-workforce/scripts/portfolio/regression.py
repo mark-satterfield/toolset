@@ -1,4 +1,4 @@
-"""Validate cumulative requirement coverage, prepare a tree for its runs, and confirm fresh evidence for it."""
+"""Validate regression coverage, prepare a tree for its runs, confirm fresh evidence, and run deployed runs."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Final, Literal
 from contracts import JsonObject, JsonValue, json_object
 from gitutils import GitError, cmd_hash_files, deadline_scope, separate_group, stop_process
 from jsonartifact import read_artifact
+from setuprules import SetupCommand, SetupFindings, setup_findings
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -56,14 +57,22 @@ REQUIRED_SOURCES_FILE: Final = "required-sources.json"
 REQUIRED_SOURCES: Final = "requiredSources"
 NAME_CHARACTERS: Final = r"\w./-"
 """A Task output named in a setup command is bounded by none of these characters."""
+BUILD_PHASE: Final = "build"
+"""A run the build executes: it needs nothing deployed."""
+DEPLOYED_PHASE: Final = "deployed"
+"""A run that needs deployed resources: story-deploy executes it after the Story's deploy verifies."""
+PHASES: Final[frozenset[str]] = frozenset({BUILD_PHASE, DEPLOYED_PHASE})
+DEPLOYED_RUNS: Final = "deployedRuns"
+"""The ledger's obligations for after the deploy: each deployed run and the tests of it that bind the Story."""
 
-type Mode = Literal["prepare", "check", "validate", "verify", "setup"]
+type Mode = Literal["prepare", "check", "validate", "verify", "setup", "deployed"]
 MODES: Final[dict[str, Mode]] = {
     "prepare": "prepare",
     "check": "check",
     "validate": "validate",
     "verify": "verify",
     "setup": "setup",
+    "deployed": "deployed",
 }
 
 
@@ -524,6 +533,11 @@ def _run_errors(plan: JsonObject, ids: list[str]) -> list[str]:
     runs: dict[str, JsonObject] = {_str(r, "id"): r for r in plan_runs}
     if len(runs) != len(plan_runs):
         errors.append("Duplicate run IDs")
+    errors.extend(
+        f"{_str(r, 'id')}: phase must be {BUILD_PHASE} or {DEPLOYED_PHASE}"
+        for r in plan_runs
+        if r.get("phase") not in PHASES
+    )
     for m in _objs(plan, "mappings"):
         req_id: str = _str(m, "requirementId")
         run: JsonObject | None = runs.get(_str(m, "runId"))
@@ -759,6 +773,32 @@ def own_output_errors(plan: JsonObject, outputs: Sequence[str]) -> list[str]:
     ]
 
 
+def deferred(run: JsonObject) -> bool:
+    """Tell whether a run needs deployed resources, so the build leaves it to story-deploy.
+
+    Returns:
+        True for a run of phase deployed.
+
+    """
+    return run.get("phase") == DEPLOYED_PHASE
+
+
+def plan_setups(plan: JsonObject) -> SetupFindings:
+    """Judge every setup command of the plan's runs (:func:`setuprules.setup_findings`).
+
+    Returns:
+        One error per refused setup command, and the packages ad-hoc installs name.
+
+    """
+    return setup_findings(
+        [
+            SetupCommand(_str(run, "id"), Path(_str(run, "repoPath")), _str(setup, "command"))
+            for run in _objs(plan, "runs")
+            for setup in _objs(run, "setup")
+        ],
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class TaskBounds:
     """What the Task itself fixes for its scope: the sources it must list and the resources it creates."""
@@ -798,6 +838,7 @@ def validate(
     errors: list[str] = _discovery_errors(plan, requirements)
     errors.extend(required_source_errors(plan, bounds.required))
     errors.extend(own_output_errors(plan, bounds.outputs))
+    errors.extend(plan_setups(plan).errors)
     ids: list[str] = [_str(r, "id") for r in requirements]
     errors.extend(_requirement_errors(plan, requirements, ids))
     errors.extend(_run_errors(plan, ids))
@@ -1046,7 +1087,6 @@ def execute(
 
     """
     state: Execution = Execution(folder=folder, deadline=time.monotonic() + EXECUTION_BUDGET_SECONDS, setups={})
-    requirements: list[JsonObject] = _objs(plan, "requirements")
     verification: Verification = Verification(
         state=state,
         mappings=_objs(plan, "mappings"),
@@ -1055,18 +1095,126 @@ def execute(
     )
     evidence: list[JsonValue] = []
     errors: list[str] = []
-    impacted: set[str] = {
-        _str(r, "id") for r in requirements if _flag(r, "impacted") or effective.get(_str(r, "id")) == TASK
-    }
-    needed: set[str] = {
-        _str(m, "runId")
-        for m in verification.mappings
-        if _str(m, "requirementId") in impacted or {(_str(m, "requirementId"), t) for t in _strs(m, "testIds")} & held
-    }
+    needed: set[str] = _needed(plan, effective, held)
     for index, run in enumerate(_objs(plan, "runs")):
-        if _str(run, "id") not in needed:
+        if _str(run, "id") not in needed or deferred(run):
             continue
         run_errors, record = _execute_run(run, index, verification)
+        errors.extend(run_errors)
+        evidence.append(record)
+    return errors, evidence
+
+
+def _needed(plan: JsonObject, effective: dict[str, str], held: frozenset[tuple[str, str]]) -> set[str]:
+    """Name the runs mapped to an impacted or Task-owned requirement, or holding a proven test.
+
+    Returns:
+        The run IDs.
+
+    """
+    impacted: set[str] = {
+        _str(r, "id")
+        for r in _objs(plan, "requirements")
+        if _flag(r, "impacted") or effective.get(_str(r, "id")) == TASK
+    }
+    return {
+        _str(m, "runId")
+        for m in _objs(plan, "mappings")
+        if _str(m, "requirementId") in impacted or {(_str(m, "requirementId"), t) for t in _strs(m, "testIds")} & held
+    }
+
+
+def _carried_obligations(previous: JsonObject | None, mappings: list[JsonObject]) -> dict[str, set[str]]:
+    """Read the previous ledger's deployed-run obligations that the plan still maps.
+
+    Returns:
+        Each carried run's binding tests that a mapping of the plan still names for it.
+
+    """
+    return {
+        _str(entry, "runId"): set(_strs(entry, "testIds")) & _tests_of(mappings, _str(entry, "runId")).keys()
+        for entry in _optional_objs(previous, DEPLOYED_RUNS)
+    }
+
+
+def deployed_obligations(
+    plan: JsonObject,
+    previous: JsonObject | None,
+    effective: dict[str, str],
+    held: frozenset[tuple[str, str]],
+) -> list[JsonValue]:
+    """Record what story-deploy must prove of each deployed run after the Story's deploy verifies.
+
+    A deployed run is owed when the build would have run it (:func:`_needed`) or an earlier ledger owed it.
+    Its binding tests are the ones the build would have held the Task to (:func:`_binding`), with the binding
+    tests earlier ledgers owed that the plan still maps; an exitStatus run binds through its exit status alone.
+
+    Returns:
+        One ``{runId, testIds}`` per owed deployed run, in plan order.
+
+    """
+    needed: set[str] = _needed(plan, effective, held)
+    mappings: list[JsonObject] = _objs(plan, "mappings")
+    carried: dict[str, set[str]] = _carried_obligations(previous, mappings)
+    owed: list[str] = [
+        _str(run, "id")
+        for run in _objs(plan, "runs")
+        if deferred(run) and (_str(run, "id") in needed or _str(run, "id") in carried)
+    ]
+    return [
+        {
+            "runId": run_id,
+            "testIds": [*sorted(_bound_tests(mappings, run_id, effective, held) | carried.get(run_id, set()))],
+        }
+        for run_id in owed
+    ]
+
+
+def _bound_tests(
+    mappings: list[JsonObject],
+    run_id: str,
+    effective: dict[str, str],
+    held: frozenset[tuple[str, str]],
+) -> set[str]:
+    """Name a run's mapped tests that bind the Task: its own requirement's, and the proven ones.
+
+    Returns:
+        The binding test IDs.
+
+    """
+    owned, proven_tests = _binding(_tests_of(mappings, run_id), effective, held)
+    return set(owned | proven_tests)
+
+
+def execute_deployed(ledger: JsonObject, folder: Path) -> tuple[list[str], list[JsonValue]]:
+    """Run each deployed run the ledger owes, after its setup, against what is now deployed.
+
+    Each owed run's binding tests must pass; an exitStatus run must exit zero. A mapped test that binds
+    nothing and does not pass is recorded as unmet, as the build records it.
+
+    Returns:
+        The execution errors and the per-run evidence records.
+
+    """
+    state: Execution = Execution(folder=folder, deadline=time.monotonic() + EXECUTION_BUDGET_SECONDS, setups={})
+    mappings: list[JsonObject] = _objs(ledger, "mappings")
+    runs: dict[str, tuple[int, JsonObject]] = {
+        _str(run, "id"): (index, run) for index, run in enumerate(_objs(ledger, "runs")) if deferred(run)
+    }
+    errors: list[str] = []
+    evidence: list[JsonValue] = []
+    for entry in _optional_objs(ledger, DEPLOYED_RUNS):
+        run_id: str = _str(entry, "runId")
+        found: tuple[int, JsonObject] | None = runs.get(run_id)
+        if found is None:
+            errors.append(f"{run_id}: the ledger owes this deployed run but holds no deployed run of that id")
+            continue
+        linked: dict[str, set[str]] = _tests_of(mappings, run_id)
+        proven_pairs: frozenset[tuple[str, str]] = frozenset(
+            (requirement, test) for test in _strs(entry, "testIds") for requirement in linked.get(test, set())
+        )
+        verification: Verification = Verification(state=state, mappings=mappings, origins={}, proven=proven_pairs)
+        run_errors, record = _execute_run(found[1], found[0], verification)
         errors.extend(run_errors)
         evidence.append(record)
     return errors, evidence
@@ -1099,7 +1247,7 @@ def prepare_tree(plan: JsonObject, tree: Path, repos: list[str], folder: Path) -
     errors: list[str] = []
     records: list[JsonValue] = []
     for index, run in enumerate(_objs(plan, "runs")):
-        if Path(_str(run, "repoPath")).resolve() not in held:
+        if deferred(run) or Path(_str(run, "repoPath")).resolve() not in held:
             continue
         run_errors, run_records = _setup_errors(run, f"run-{index}", root, state)
         records.extend(run_records)
@@ -1217,7 +1365,11 @@ def _tests_of(mappings: list[JsonObject], run_id: str) -> dict[str, set[str]]:
     return linked
 
 
-def _binding(linked: dict[str, set[str]], verification: Verification) -> tuple[frozenset[str], frozenset[str]]:
+def _binding(
+    linked: dict[str, set[str]],
+    origins: dict[str, str],
+    proven_pairs: frozenset[tuple[str, str]],
+) -> tuple[frozenset[str], frozenset[str]]:
     """Split a run's mapped tests into the Task's own and the proven ones, the two kinds that bind the Task.
 
     Returns:
@@ -1226,10 +1378,10 @@ def _binding(linked: dict[str, set[str]], verification: Verification) -> tuple[f
 
     """
     owned: frozenset[str] = frozenset(
-        test for test, requirements in linked.items() if any(verification.origins.get(r) == TASK for r in requirements)
+        test for test, requirements in linked.items() if any(origins.get(r) == TASK for r in requirements)
     )
     held: frozenset[str] = frozenset(
-        test for test, requirements in linked.items() if any((r, test) in verification.proven for r in requirements)
+        test for test, requirements in linked.items() if any((r, test) in proven_pairs for r in requirements)
     )
     return owned, held - owned
 
@@ -1252,7 +1404,7 @@ def _judge(
 
     """
     linked: dict[str, set[str]] = _tests_of(verification.mappings, run_id)
-    owned, held = _binding(linked, verification)
+    owned, held = _binding(linked, verification.origins, verification.proven)
     errors: list[str] = [
         f"{run_id}: test of the Task's own requirement failed: {test}" for test in sorted(outcome.failed & owned)
     ]
@@ -1419,6 +1571,18 @@ def _setup(plan: JsonObject, args: CliArgs) -> None:
     _emit({"ok": not errors, "errors": error_values, "path": args.output, "setup": records})
 
 
+def _deployed(ledger: JsonObject | None, args: CliArgs) -> None:
+    """Run the deployed runs the Story's ledger owes (:func:`execute_deployed`) and report them.
+
+    A tree with no ledger owes none.
+    """
+    errors, evidence = execute_deployed(ledger, Path(args.output).parent) if ledger is not None else ([], [])
+    error_values: list[JsonValue] = [*errors]
+    result: JsonObject = {"ok": not errors, "errors": error_values, "evidence": evidence, **_found(evidence)}
+    write(args.output, result)
+    _emit({**result, "path": args.output})
+
+
 def _effective_origins(plan: JsonObject, args: CliArgs) -> tuple[dict[str, str], list[JsonValue]]:
     """Derive the origins verify holds the Task to, from the reviewed scope and the Task's contract.
 
@@ -1559,6 +1723,7 @@ def _verify(
             **without_origin(plan),
             "execution": evidence,
             "proven": proven_record(held, plan, evidence),
+            DEPLOYED_RUNS: deployed_obligations(plan, previous, effective, held),
             **_found(evidence),
         }
         write(args.ledger, ledger)
@@ -1571,6 +1736,9 @@ def main() -> None:
     previous: JsonObject | None = read(args.ledger) if Path(args.ledger).is_file() else None
     if args.mode == "prepare":
         _prepare(previous, args)
+        return
+    if args.mode == "deployed":
+        _deployed(previous, args)
         return
     plan: JsonObject = read(args.plan)
     if args.mode == "setup":
@@ -1605,7 +1773,7 @@ def main() -> None:
     if not errors and args.mode == "verify":
         errors, evidence = _verify(plan, previous, args, effective)
     error_values: list[JsonValue] = [*errors]
-    found: JsonObject = _found(evidence)
+    found: JsonObject = {**_found(evidence), "undeclared": [*plan_setups(plan).undeclared]}
     write(
         args.output,
         {

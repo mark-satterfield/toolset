@@ -9,21 +9,20 @@ from typeguard import check_type
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, value_artifact
 from orchestrator.core.models import StepError
-from orchestrator.flows.build_reviews import REPOSITORY_SETUP_WORK
 from orchestrator.flows.build_sessions import OutputContract, reasoned
 from orchestrator.flows.build_state import CONTRACTS, artifact_document, new_step
 
+REPOSITORY_SETUP_WORK: Final = "repositorySetupWork"
+"""One selected specialist's correction of the repository's declarations: the artifact that marks its step."""
 SELECTION: Final = "repositorySetupSelection"
 """The implementation lead's selection of the specialists that correct the repository's declarations."""
 BASELINE: Final = "build:baseline"
 """The continuation of a setup failure found while measuring the baseline."""
-RESCOPE_AND_BASELINE: Final = (
-    "build:regression-reassess",
-    "build:regression-review",
-    "build:regression-validate",
-    "build:execution-policy",
-    BASELINE,
-)
+VALIDATE: Final = "build:regression-validate"
+"""The continuation of a scope whose setups install packages the repository does not declare."""
+RESCOPE: Final = ("build:regression-reassess", "build:regression-review", VALIDATE)
+"""The steps that assess, review and validate the regression scope again."""
+RESCOPE_AND_BASELINE: Final = (*RESCOPE, "build:execution-policy", BASELINE)
 """The steps that reassess the regression scope for the corrected declarations, re-derive its policy and rerun
 the baseline."""
 
@@ -129,7 +128,8 @@ def _done(run: StepRun) -> Completion:
 
     A failure found at the baseline reassesses the regression scope, so each run's setup installs the
     now-declared dependencies, re-derives the execution policy bound to that scope and reruns the baseline.
-    A failure found by a suite judgment reruns the suite and reassesses it.
+    Undeclared packages found by scope validation reassess the scope, whose policy and baseline steps still
+    follow. A failure found by a suite judgment reruns the suite and reassesses it.
 
     Returns:
         The resuming steps.
@@ -137,9 +137,10 @@ def _done(run: StepRun) -> Completion:
     """
     again: str = check_type(run.params()["again"], str)
     purpose: str = "Resume the build on the corrected repository declarations"
+    resumed: dict[str, tuple[str, ...]] = {BASELINE: RESCOPE_AND_BASELINE, VALIDATE: RESCOPE}
     steps = (
-        tuple(new_step(key, purpose) for key in RESCOPE_AND_BASELINE)
-        if again == BASELINE
+        tuple(new_step(key, purpose) for key in resumed[again])
+        if again in resumed
         else (new_step("build:prerequisites-suite", "Run and reassess the original suite", {"again": again}),)
     )
     return Completion(add=(StepGroup(steps),))

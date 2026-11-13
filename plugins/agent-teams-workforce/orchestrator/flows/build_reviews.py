@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -17,7 +18,8 @@ from orchestrator.core.journal_registry import Registry
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, file_artifact, value_artifact
 from orchestrator.core.models import StepError
 from orchestrator.core.tool_locks import seconds
-from orchestrator.flows import build_carried, build_policy, build_reuse
+from orchestrator.flows import build_carried, build_policy, build_repository_setup, build_reuse
+from orchestrator.flows.build_repository_setup import REPOSITORY_SETUP_WORK, RESCOPE
 from orchestrator.flows.build_sessions import OutputContract, accepted_steps, latest, reasoned
 from orchestrator.flows.build_state import (
     ARTIFACT_CONTRACTS,
@@ -48,8 +50,6 @@ from orchestrator.flows.elaboration_files import project_root
 if TYPE_CHECKING:
     from step_journal_contract import ValueArtifact
 
-RESCOPE: Final = ("build:regression-reassess", "build:regression-review", "build:regression-validate")
-"""The steps that assess, review and validate the regression scope again."""
 REMAP: Final = ("build:regression-remap", "build:regression-map-review", "build:regression-verify")
 """The steps that map, review and verify the final regression evidence again."""
 VALIDATE: Final = "build:regression-validate"
@@ -58,14 +58,14 @@ VERIFY: Final = "build:regression-verify"
 """The step that verifies the reviewed final regression evidence."""
 EVIDENCE_WORK: Final = ("build:regression-tests", "build:final-suite")
 """The steps that write the tests and behaviour a failed final verification found missing, and review them."""
+PREREQUISITE_FINGERPRINT: Final = "prerequisiteFingerprint"
+"""The fingerprint each prerequisite or repository-setup correction records, which bounds those corrections."""
 REQUIRED_SOURCES: Final = "requiredSources"
 """The file regression.py prepare writes naming the Task's sources every scope must list, and its artifact."""
 SOURCES_ADDED: Final = "requiredSourcesAdded"
 """The Task's required sources the build added to an assessed scope that omitted them."""
 SOURCE_FILES: Final = "sourceFiles"
 """The member of a regression scope that lists every source file read to establish it."""
-REPOSITORY_SETUP_WORK: Final = "repositorySetupWork"
-"""One selected specialist's correction of the repository's declarations: the artifact that marks its step."""
 
 
 def _regression(run: StepRun, mode: str, plan: Path, extra: list[str]) -> tuple[Path, dict[str, JsonValue]]:
@@ -336,6 +336,9 @@ def _validate(run: StepRun, final: bool) -> Completion:
         return Completion(artifacts=(file_artifact("regressionScope", output),))
     if final:
         return _verify_correction(run, output, document)
+    declared: Completion | None = _declare_packages(run, output, document)
+    if declared is not None:
+        return declared
     if _scope_corrections(run) >= regression_rounds():
         errors: list[str] = check_type(document.get("errors", []), list[str])
         raise StepError(VALIDATE, OTHER_CAUSE, (*errors, str(output)))
@@ -343,6 +346,55 @@ def _validate(run: StepRun, final: bool) -> Completion:
     return Completion(
         artifacts=(file_artifact("regressionCorrection", output),),
         add=(StepGroup(tuple(_new(kind, purpose) for kind in RESCOPE)),),
+    )
+
+
+def _declare_packages(run: StepRun, output: Path, document: dict[str, JsonValue]) -> Completion | None:
+    """Send packages the scope's setups install ad hoc straight to the repository-setup correction.
+
+    The repository declares them in its manifest, and the scope is then reassessed so its setups use the
+    repository's locked install. The same packages are sent once; after that, and once the bound on
+    prerequisite corrections is spent, the scope correction answers them.
+
+    Returns:
+        The diagnosis and the repository-setup correction, or None when validation named no undeclared package
+        or these packages were already sent.
+
+    """
+    undeclared: list[str] = check_type(document.get("undeclared", []), list[str])
+    if not undeclared:
+        return None
+    repository: str = check_type(json_object(run.context.args["bead"])["repoPath"], str)
+    fingerprint: str = hashlib.sha256(
+        json.dumps({"undeclared": sorted(undeclared), "repository": repository}).encode(),
+    ).hexdigest()
+    sent: list[JsonValue] = [
+        artifact["value"]
+        for step in accepted_steps(run)
+        for artifact in step["artifacts"]
+        if artifact["kind"] == "value" and artifact["name"] == PREREQUISITE_FINGERPRINT
+    ]
+    if fingerprint in sent or len(sent) >= build_rounds():
+        return None
+    diagnosis: Path = output.parent / "undeclared-packages-diagnosis.json"
+    write_json(
+        diagnosis,
+        {
+            "route": "repository",
+            "evidence": f"The regression scope's setups install packages ad hoc that the repository {repository} "
+            f"does not declare: {', '.join(undeclared)}. Declare each in the repository's manifest and regenerate "
+            f"its lock file, so the reassessed setups use the repository's locked install. Validation: {output}",
+            "producers": [],
+        },
+    )
+    started: Completion = build_repository_setup.start(build_repository_setup.VALIDATE, fingerprint)
+    return Completion(
+        artifacts=(
+            file_artifact("regressionCorrection", output),
+            file_artifact("prerequisiteDiagnosis", diagnosis),
+            *started.artifacts,
+        ),
+        add=started.add,
     )
 
 
