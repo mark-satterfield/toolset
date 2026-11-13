@@ -854,21 +854,14 @@ def _green_check(run: StepRun) -> Completion:
     """Use actual suite exits and bounded correction work, not an agent's success assertion.
 
     Returns:
-        Accepted suite evidence or another selected implementation round.
-
-    Raises:
-        StepError: The suite remains failing after the permitted rounds.
+        Accepted suite evidence, another selected implementation round, or the test author's
+        ruling on test-author files the implementation changed.
 
     """
     fingerprint: dict[str, JsonValue] = _test_fingerprint(run)
     previous: JsonValue = latest(run, "testPrint")
     if isinstance(previous, dict) and previous.get("files") != fingerprint["files"]:
-        msg = "green-modified-tests"
-        raise StepError(
-            msg,
-            OTHER_CAUSE,
-            ("Implementation changed test-author files; tests require their author's ruling",),
-        )
+        return _rule_changed_tests(run, previous, fingerprint)
     suite: dict[str, JsonValue] = _suite(run, "green")
     artifacts = (*_suite_artifacts("greenRun", suite, "green-check"), value_artifact("testPrint", fingerprint))
     if suite["exitCode"] == 0:
@@ -918,6 +911,46 @@ def _require_progress(run: StepRun, suite: dict[str, JsonValue]) -> None:
             str(previous.get("evidence")),
             str(suite.get("evidence")),
         ),
+    )
+
+
+def _rule_changed_tests(
+    run: StepRun,
+    previous: dict[str, JsonValue],
+    fingerprint: dict[str, JsonValue],
+) -> Completion:
+    """Give test-author files the implementation changed back to their author's update mode.
+
+    The changed files join the implementer's reported ``testIssues``, the named tests the test
+    author rules on; its accepted versions become the next ``testPrint`` before the suite runs
+    again.
+
+    Returns:
+        The test issues to rule on and the test planning that schedules their author.
+
+    Raises:
+        StepError: Rulings on implementation-changed tests exhaust their configured allowance.
+
+    """
+    recorded: dict[str, str] = check_type(previous["files"], dict[str, str])
+    current: dict[str, str] = check_type(fingerprint["files"], dict[str, str])
+    changed: list[str] = sorted(
+        path for path in recorded.keys() | current.keys() if recorded.get(path) != current.get(path)
+    )
+    if _count(run, check_type(run.step["script"], str), "testIssues") >= build_rounds():
+        stage: str = "green-modified-tests"
+        raise StepError(
+            stage,
+            OTHER_CAUSE,
+            ("Implementation changed test-author files after their author's rulings were spent", *changed),
+        )
+    reason: str = "The implementation changed this test-author file; rule whether the change stands"
+    edited: list[JsonValue] = [{"testId": path, "reason": reason} for path in changed]
+    reported: JsonValue = latest(run, "testIssues")
+    issues: list[JsonValue] = [*(reported if isinstance(reported, list) else []), *edited]
+    return Completion(
+        artifacts=(value_artifact("testIssues", issues),),
+        add=(StepGroup((_new("build:plan-tests", "Rule on the test-author files the implementation changed"),)),),
     )
 
 
@@ -971,18 +1004,15 @@ def _prerequisites_suite(run: StepRun) -> Completion:
     """Rerun the exact recorded suite and append an independent assessment.
 
     Returns:
-        Fresh suite facts and a new assessor session in the original red or green phase.
-
-    Raises:
-        StepError: Tests changed during a green-phase prerequisite wait without author review.
+        Fresh suite facts and a new assessor session in the original red or green phase, or the
+        test author's ruling on test-author files changed during a green-phase prerequisite wait.
 
     """
     again: str = check_type(run.params()["again"], str)
     fingerprint: dict[str, JsonValue] = _test_fingerprint(run)
     previous: JsonValue = latest(run, "testPrint")
     if again == "build:green-reviewed" and isinstance(previous, dict) and previous.get("files") != fingerprint["files"]:
-        stage: str = "green-modified-tests"
-        raise StepError(stage, OTHER_CAUSE, ("Tests changed during prerequisite work; their author must rule",))
+        return _rule_changed_tests(run, previous, fingerprint)
     suite: dict[str, JsonValue] = _suite(run, "prerequisites", fresh=True)
     return Completion(
         artifacts=(

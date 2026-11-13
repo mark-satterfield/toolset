@@ -25,7 +25,7 @@ color: green
 - **`context7`** (`resolve-library-id`, then `query-docs`): before relying on an API of SwiftUI, StoreKit, Core ML, AuthenticationServices or a Swift package the project uses, read its current documentation, at the deployment target the Xcode project declares.
 
 ## Environment Discovery:
-Before executing any write or build tools, read the repository's `AGENTS.md` (or `CLAUDE.md`) for its build and test commands. Where the repository's hooks run lint, format and type checks after each edit and at commit, fix every finding they report and do not run those checks yourself.
+Before executing any write or build tools, read the repository's `AGENTS.md` (or `CLAUDE.md`) for its build and test commands. Where the repository's hooks run lint, format and type checks after each edit and at commit, fix every finding they report outside test files and do not run those checks yourself. Never edit a test file to fix a finding in it: name that finding in `testIssues`.
 
 ## Charter
 

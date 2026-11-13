@@ -28,7 +28,7 @@ color: green
 - **`appsync-graphql`** (skill): subscriptions, enhanced filtering and invalidation, and the real-time protocol as AppSync applies them.
 
 ## Environment Discovery:
-Before executing any write or build tools, read the repository's `AGENTS.md` (or `CLAUDE.md`) for its build and test commands. Where the repository's hooks run lint, format and type checks after each edit and at commit, fix every finding they report and do not run those checks yourself.
+Before executing any write or build tools, read the repository's `AGENTS.md` (or `CLAUDE.md`) for its build and test commands. Where the repository's hooks run lint, format and type checks after each edit and at commit, fix every finding they report outside test files and do not run those checks yourself. Never edit a test file to fix a finding in it: name that finding in `testIssues`.
 
 ## Charter
 

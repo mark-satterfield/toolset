@@ -26,7 +26,7 @@ color: green
 Cite what you relied on in your output, next to the claim it supports: the documentation URL or the skill name.
 
 ## Environment Discovery:
-Before executing any write or build tools, read the repository's `AGENTS.md` (or `CLAUDE.md`) for its build and test commands. Where the repository's hooks run lint, format and type checks after each edit and at commit, fix every finding they report and do not run those checks yourself.
+Before executing any write or build tools, read the repository's `AGENTS.md` (or `CLAUDE.md`) for its build and test commands. Where the repository's hooks run lint, format and type checks after each edit and at commit, fix every finding they report outside test files and do not run those checks yourself. Never edit a test file to fix a finding in it: name that finding in `testIssues`.
 
 **Shared CDK library:** build CDK with the project's shared CDK library when it has one (the project instructions and the shared capabilities the Task states name it and what it provides): use its app, stack, function, API, table and parameter constructs instead of raw constructs or a copied helper module.
 

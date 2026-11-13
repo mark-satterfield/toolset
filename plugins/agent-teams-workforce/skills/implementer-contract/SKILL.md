@@ -66,9 +66,10 @@ do not edit version pins or lockfiles ahead of CodeArtifact.
 
 ## Tests you never change
 
-Never modify, weaken, skip or delete a test. When a test stands between the code and the contract,
-leave it as it is and name it in `testIssues` with the contract reference (`contractRef`), and carry on
-with the rest of the work:
+Never modify, weaken, skip or delete a test, even to fix a finding a repository check reports in a
+test file: name that finding in `testIssues` and leave the file as it is. When a test stands
+between the code and the contract, leave it as it is and name it in `testIssues` with the contract
+reference (`contractRef`), and carry on with the rest of the work:
 
 - `obsolete-by-contract`: it encodes behaviour the contract removes.
 - `defect`: it is wrong on its own terms.
