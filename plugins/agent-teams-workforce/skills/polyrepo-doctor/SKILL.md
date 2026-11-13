@@ -64,9 +64,11 @@ repository.
 `beads-fleet --fix` removes every listed path that is missing or not an active fleet repo
 and adds every unlisted active repo with a `.beads` folder. `deprecated-prs --fix` closes
 every open pull request in a deprecated repo with the comment "Closed: this repository is
-deprecated." and keeps its branch. `agents-sync`, `hooks-sync`, `checks-sync` and `tooling-sync` commit every repo on `main` in its primary working tree and push it, whatever its tier (`AGENTS.md`,
-`.claude/` and the code-check configuration are tier 2 in every repository); a repo whose `main` cannot be brought up to `origin/main`
-(`stale-main`) or whose push the remote rejects (`committed`) keeps its finding until that is settled. `rulesets --fix`
+deprecated." and keeps its branch. `agents-sync`, `hooks-sync`, `checks-sync`, `tooling-sync` and the `gitnexus-sync` files commit every repo on `main` and push it, whatever its tier (`AGENTS.md`,
+`.claude/`, the GitNexus files and the code-check configuration are tier 2 in every repository): in a temporary `main` worktree when the
+primary tree is on `develop`, followed by the same sync on `develop` in the primary tree, pushed directly. A finding names each branch
+and its state (for example `main: outdated; develop: current`); a branch that cannot be brought up to origin (`stale-main`, `stale-develop`)
+or whose push the remote rejects (`committed`) keeps its finding until that is settled. `rulesets --fix`
 creates each missing ruleset on GitHub and replaces each differing one from its file. What stays open needs judgment:
 
 - Reconcile judgment findings: settle them as the `polyrepo-repo` skill's finding table

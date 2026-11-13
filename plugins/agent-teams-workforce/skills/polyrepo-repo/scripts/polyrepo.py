@@ -40,6 +40,7 @@ Usage:
   polyrepo.py hooks-sync [--check] [--dry-run] [--repo R ...] [--space S] [--trailer TEXT]
   polyrepo.py checks-sync [--check] [--dry-run] [--repo R ...] [--space S] [--trailer TEXT]
   polyrepo.py gitnexus-sync [--check] [--dry-run] [--repo R ...] [--space S]
+  polyrepo.py tooling-sync [--check] [--dry-run] [--repo R ...] [--space S] [--trailer TEXT]
   polyrepo.py naming <name>
   polyrepo.py tier <path>
   polyrepo.py tiers
@@ -63,7 +64,11 @@ The tiers are defined in the project's root AGENTS.md ("Code quality"). The mani
 every repository, whether it holds product code: `product` (its product files are tier 1:
 worktrees and a pull request) or `tooling` (the repository is tier 2 throughout). `tier <path>`
 says which the repository containing a path is. `agents-sync` writes AGENTS.md, which is tier 2 in
-every repository, so it commits on `main` whatever the repository's recorded tier.
+every repository, so it commits on `main` whatever the repository's recorded tier. The five syncs
+(`agents-sync`, `hooks-sync`, `checks-sync`, `gitnexus-sync`, `tooling-sync`) commit on `main` and
+push; a repository whose primary tree is on the integration branch (`product_branch_policy`) takes the
+sync on `main` in a temporary worktree outside the repository and on that branch in the primary tree,
+only the synced paths, each pushed directly (branch_landing.py).
 
 Every command takes --json (one JSON object on stdout) and --no-cache (ignore the fetch and
 GitHub-listing freshness window). Exit status: 0 success, 1 findings remain (reconcile, a
@@ -103,6 +108,8 @@ from ruamel.yaml.error import YAMLError
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pipeline-contracts" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "resource-naming" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "artifact-handoff" / "scripts"))
+from branch_landing import Landing, hooks_config, land, worktree_on
+from branch_landing import done as landed
 from branch_sweep import Branch, RepoSweep, outcome, sweep_all
 from checks_sync import (
     CHECKS_JSON,
@@ -182,6 +189,7 @@ from tooling_sync import plan as plan_tooling
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
+    from branch_landing import RunMode, TreeFn
     from name_sweep import FileEdit, FileMove, Rule
     from naming_command import RepositoryNames
 
@@ -614,6 +622,7 @@ class Config:
     exclude_dirs: set[str]
     exclude_names: set[str]
     ttl: int
+    integration_branch: str | None = None
     raw: dict[str, object] = dataclasses.field(default_factory=dict)
     changes: list[str] = dataclasses.field(default_factory=list)
     change_lines: list[str] = dataclasses.field(default_factory=list)
@@ -909,17 +918,20 @@ def load_config(explicit: str | None) -> Config:
     if not root.is_dir():
         msg = f"${env_name} = {root} is not a folder"
         raise PolyrepoError(msg)
+    default_branch = raw.get("default_branch", "main")
+    policy = _branch_policy(raw, default_branch)
     return Config(
         file=f,
         root=root,
         manifest=f.parent / raw.get("manifest", "manifest.yaml"),
         knowledge=f.parent / raw.get("knowledge", "knowledge.yaml"),
         owner=raw["github_owner"],
-        default_branch=raw.get("default_branch", "main"),
+        default_branch=default_branch,
         max_depth=int(raw.get("max_depth", 4)),
         exclude_dirs=set((raw.get("exclude") or {}).get("dirs") or []),
         exclude_names=set((raw.get("exclude") or {}).get("names") or []),
         ttl=int(raw.get("cache_ttl_seconds", 300)),
+        integration_branch=policy.integration_branch if policy is not None else None,
         raw=raw,
     )
 
@@ -3587,22 +3599,6 @@ def _rg_matches(stdout: str, rels: dict[str, str]) -> list[dict[str, object]]:
 # rebase ---------------------------------------------------------------------------------------
 
 
-def _worktree_on(repo: Path, branch: str) -> Path | None:
-    """Return the worktree that has the branch checked out.
-
-    Returns:
-        Its path, or None when no worktree has it.
-
-    """
-    cur: Path | None = None
-    for ln in (git_out(repo, "worktree", "list", "--porcelain") or "").splitlines():
-        if ln.startswith("worktree "):
-            cur = Path(ln[len("worktree ") :])
-        elif ln == f"branch refs/heads/{branch}" and cur is not None:
-            return cur
-    return None
-
-
 def rebase_one(cfg: Config, r: LocalRepo) -> dict[str, object]:
     """Fetch origin and bring main up to origin/main, stopping on a dirty tree or a conflict.
 
@@ -3617,6 +3613,16 @@ def rebase_one(cfg: Config, r: LocalRepo) -> dict[str, object]:
     err = fetch_origin(r.path)
     if err:
         return {**res, "status": "fetch-failed", "detail": err}
+    return _advance_branch(r, b, res)
+
+
+def _advance_branch(r: LocalRepo, b: str, res: dict[str, object]) -> dict[str, object]:
+    """Bring a branch up to its origin copy as last fetched, where it is checked out or not.
+
+    Returns:
+        res with ahead, behind and the status (one of REBASE_OK or the reason it stopped).
+
+    """
     main, om, a, bh = main_vs_origin(r.path, b)
     if not main or not om:
         return {**res, "status": "no-main", "detail": f"no {b} or no origin/{b}"}
@@ -3636,7 +3642,7 @@ def _advance_main(r: LocalRepo, b: str, res: dict[str, object], refs: tuple[str,
         res with the status, and the worktree when main is checked out.
 
     """
-    wt = _worktree_on(r.path, b)
+    wt = worktree_on(git, r.path, b)
     if wt is None:
         return _advance_unchecked_out(r, b, res, refs)
     res["worktree"] = str(wt)
@@ -4171,19 +4177,29 @@ def _creation_branch_policy(cfg: Config, tier: str | None) -> ProductBranchPolic
     Returns:
         The product policy, or None when it does not apply.
 
+    """
+    return _branch_policy(cfg.raw, cfg.default_branch) if tier == "product" else None
+
+
+def _branch_policy(config: Mapping[str, object], default_branch: str) -> ProductBranchPolicy | None:
+    """Read and validate the config's `product_branch_policy`: the integration and release branches and rules.
+
+    Returns:
+        The policy, or None when the config has none.
+
     Raises:
         PolyrepoError: When configured branch names or rule selections are invalid.
 
     """
-    if tier != "product" or not cfg.raw.get("product_branch_policy"):
+    if not config.get("product_branch_policy"):
         return None
-    raw = _map(cfg.raw["product_branch_policy"], "product_branch_policy")
+    raw = _map(config["product_branch_policy"], "product_branch_policy")
     integration, release = str(raw.get("integration_branch", "")), str(raw.get("release_branch", ""))
     for branch in (integration, release):
         if not branch or run(["git", "check-ref-format", "--branch", branch]).returncode != 0:
             message = f"invalid product branch: {branch!r}"
             raise PolyrepoError(message)
-    if integration == release or release != cfg.default_branch:
+    if integration == release or release != default_branch:
         message = "product integration must differ from the configured default/release branch"
         raise PolyrepoError(message)
     include = tuple(_strs(raw.get("include_rulesets"), "include_rulesets"))
@@ -7702,55 +7718,106 @@ def _commit_paths(
     paths: list[str],
     message: str,
     force: bool = False,
+    git_config: Sequence[str] = (),
 ) -> None:
     """Commit only these paths, re-staging once when a pre-commit hook rewrote them.
 
     With force, the paths are staged even inside an ignored folder (the beads fleet list
-    is a tracked file under the gitignored `.beads/`). The message ends with the trailer line
-    of POLYREPO_COMMIT_TRAILER when it is set. When the commit still fails, the
-    GitFailedError that `must` raises propagates.
+    is a tracked file under the gitignored `.beads/`). `git_config` holds git options put before
+    `add` and `commit` (for a linked worktree, the primary tree's hook folder). The message ends
+    with the trailer line of POLYREPO_COMMIT_TRAILER when it is set. When the commit still fails,
+    the GitFailedError that `must` raises propagates.
     """
     message = _with_trailer(message)
     add = ["add", "-f", "--"] if force else ["add", "--"]
-    must(git(repo, *add, *paths))
-    cp = git(repo, "commit", "-m", message, "--", *paths, timeout=300)
+    must(git(repo, *git_config, *add, *paths))
+    cp = git(repo, *git_config, "commit", "-m", message, "--", *paths, timeout=300)
     if cp.returncode != 0:
-        must(git(repo, *add, *paths))
-        must(git(repo, "commit", "-m", message, "--", *paths, timeout=300))
+        must(git(repo, *git_config, *add, *paths))
+        must(git(repo, *git_config, "commit", "-m", message, "--", *paths, timeout=300))
 
 
 AGENTS_SYNC_SUBJECT = "docs(agents): sync the shared instruction blocks"
-AGENTS_SYNC_DONE = frozenset({"pushed", "current-on-origin"})
 AGENTS_SYNC_ADVANCED = frozenset({"up-to-date", "rebased", "fast-forwarded"})
+
+
+def _run_mode(args: argparse.Namespace) -> RunMode:
+    """Read a sync command's --check and --dry-run options.
+
+    Returns:
+        `dry-run`, `check`, or `write` when neither is given.
+
+    """
+    if args.dry_run:
+        return "dry-run"
+    return "check" if args.check else "write"
+
+
+def _fetch_fresh(cfg: Config, repo: Path) -> str | None:
+    """Fetch origin unless it was fetched within the freshness window.
+
+    Returns:
+        None on success or when the last fetch is fresh, else the last line of git's error.
+
+    """
+    return None if fetch_is_fresh(repo, cfg.ttl) else fetch_origin(repo)
+
+
+def _land_sync(cfg: Config, r: LocalRepo, run_mode: RunMode, tree_fn: TreeFn) -> dict[str, object]:
+    """Land, check or dry-run one sync in one repo, on the branches its primary tree's branch calls for.
+
+    A primary tree on the default branch takes the sync there, as committed and pushed from that tree.
+    One on the integration branch (`product_branch_policy.integration_branch`) takes it on the default
+    branch in a separate worktree and on the integration branch in the primary tree (branch_landing.py).
+
+    Returns:
+        {repo, state, ...}; in two-branch mode with `branches`.
+
+    """
+    landing = Landing(
+        git=git,
+        repo=r.path,
+        name=r.name,
+        default_branch=cfg.default_branch,
+        integration_branch=cfg.integration_branch,
+        sync_subjects=frozenset(SYNC_SUBJECTS),
+        fetch=lambda: _fetch_fresh(cfg, r.path),
+        advance_primary=lambda: _advance_for_sync(cfg, r),
+        advance_release=lambda: _advance_stop(cfg, _advance_branch(r, cfg.default_branch, {"repo": r.name})),
+    )
+    return {"repo": r.name, **land(landing, run_mode, tree_fn)}
 
 
 def _sync_one(
     cfg: Config,
     r: LocalRepo,
     blocks: list[AgentsBlock],
-    write: bool,
+    run_mode: RunMode,
     trailer: str | None,
 ) -> dict[str, object]:
-    """Bring one repo's AGENTS.md blocks current: committed on main in its primary working tree and pushed.
+    """Bring one repo's AGENTS.md blocks current, committed on main and pushed.
 
     AGENTS.md is tier 2 in every repository, tooling for building the product, so the blocks are
-    committed directly on main whatever the repo's tier: no worktree, no branch and no pull request.
-    When writing, the primary tree's main is first brought up to `origin/main` (a fast-forward, or a
-    rebase of local commits), so the commit is a fast-forward push.
+    committed directly on main whatever the repo's tier: no branch and no pull request. When the
+    primary tree is on the integration branch, the same blocks are committed on it too (`_land_sync`).
 
     Returns:
         {repo, state} plus, when it wrote, the status and any detail.
 
     """
-    if write and (stopped := _advance_for_sync(cfg, r)) is not None:
-        return {"repo": r.name, "state": "stale-main", **stopped}
-    f = r.path / "AGENTS.md"
-    cur = f.read_text() if f.is_file() else None
-    want = _with_blocks(cur, blocks, r.name)
-    res: dict[str, object] = {"repo": r.name, "state": _agents_state(cur, want, blocks)}
-    if res["state"] == "current" or not write:
-        return res
-    return {**res, **_sync_on_main(cfg, r, blocks, (cur, want), trailer)}
+
+    def tree_fn(tree: Path, _branch: str, write: bool) -> dict[str, object]:
+        f = tree / "AGENTS.md"
+        cur = f.read_text() if f.is_file() else None
+        want = _with_blocks(cur, blocks, r.name)
+        res: dict[str, object] = {"state": _agents_state(cur, want, blocks), "paths": ["AGENTS.md"]}
+        if res["state"] == "current" or not write:
+            return res
+        if cur is not None and _edited_outside_blocks(tree, cur, blocks):
+            return {**res, "status": "skipped", "detail": "AGENTS.md has uncommitted changes outside the synced blocks"}
+        return {**res, **_commit_agents(tree, (cur, want), trailer, hooks_config(git, r.path, tree))}
+
+    return _land_sync(cfg, r, run_mode, tree_fn)
 
 
 def _ff_past_dirty_files(r: LocalRepo, branch: str) -> bool:
@@ -7778,49 +7845,51 @@ def _advance_for_sync(cfg: Config, r: LocalRepo) -> dict[str, object] | None:
     if not git_out(r.path, "remote", "get-url", "origin"):
         return {"status": "skipped", "detail": "no origin"}
     moved = rebase_one(cfg, r)
-    if moved["status"] in AGENTS_SYNC_ADVANCED:
-        return None
     if moved["status"] == "dirty" and moved.get("ahead") == 0 and _ff_past_dirty_files(r, cfg.default_branch):
+        return None
+    return _advance_stop(cfg, moved)
+
+
+def _advance_stop(cfg: Config, moved: dict[str, object]) -> dict[str, object] | None:
+    """Read the outcome of bringing main up to origin/main.
+
+    Returns:
+        None when main is at or past origin/main, else {status, detail} saying why it was not.
+
+    """
+    if moved["status"] in AGENTS_SYNC_ADVANCED:
         return None
     detail = "; ".join(s for s in (str(moved["status"]), str(moved.get("detail") or "")) if s)
     return {"status": "skipped", "detail": f"main not brought up to origin/{cfg.default_branch}: {detail}"}
 
 
-def _sync_on_main(
-    cfg: Config,
-    r: LocalRepo,
-    blocks: list[AgentsBlock],
+def _commit_agents(
+    tree: Path,
     texts: tuple[str | None, str],
     trailer: str | None,
+    git_config: Sequence[str],
 ) -> dict[str, object]:
-    """Commit the new AGENTS.md on the default branch in the primary working tree and push it.
+    """Write the new AGENTS.md in a tree and commit it on the branch checked out there.
 
-    A rejected push (for example branch protection) leaves the commit local, status `committed`.
-
-    `texts` is the file's current text (None when it has none) and the text it should have.
+    `texts` is the file's current text (None when it has none) and the text it should have. A file
+    that is new gets its `CLAUDE.md` symlink in the same commit. On failure the tree is put back.
 
     Returns:
-        The status (`pushed`, `committed` when the push failed, `failed`, `skipped`) and any detail.
+        Nothing when it committed, else the failed status and its detail.
 
     """
     cur, want = texts
-    f = r.path / "AGENTS.md"
-    b = cfg.default_branch
-    branch = git_out(r.path, "symbolic-ref", "--short", "-q", "HEAD")
-    if branch != b:
-        return {"status": "skipped", "detail": f"on {branch}, not {b}"}
-    if cur is not None and _edited_outside_blocks(r.path, cur, blocks):
-        return {"status": "skipped", "detail": "AGENTS.md has uncommitted changes outside the synced blocks"}
+    f = tree / "AGENTS.md"
     f.write_text(want)
     paths = ["AGENTS.md"]
-    claude = r.path / "CLAUDE.md"
+    claude = tree / "CLAUDE.md"
     if cur is None and not claude.exists() and not claude.is_symlink():
         claude.symlink_to("AGENTS.md")
         paths.append("CLAUDE.md")
     try:
-        _commit_paths(r.path, paths, _with_trailer(AGENTS_SYNC_SUBJECT, trailer))
+        _commit_paths(tree, paths, _with_trailer(AGENTS_SYNC_SUBJECT, trailer), git_config=git_config)
     except GitFailedError as exc:
-        git(r.path, "reset", "-q", "--", *paths)
+        git(tree, "reset", "-q", "--", *paths)
         if cur is None:
             f.unlink(missing_ok=True)
         else:
@@ -7828,11 +7897,7 @@ def _sync_on_main(
         if "CLAUDE.md" in paths:
             claude.unlink(missing_ok=True)
         return {"status": "failed", "detail": str(exc)}
-    cp = git(r.path, "push", "origin", b, timeout=120)
-    commit = git_out(r.path, "rev-parse", "--short=8", "HEAD")
-    if cp.returncode != 0:
-        return {"status": "committed", "commit": commit, "detail": f"push failed: {_last_line(cp)}"}
-    return {"status": "pushed", "commit": commit}
+    return {}
 
 
 def _agents_state(cur: str | None, want: str, blocks: list[AgentsBlock]) -> str:
@@ -7867,11 +7932,12 @@ def _edited_outside_blocks(repo: Path, cur: str, blocks: list[AgentsBlock]) -> b
 def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
     """Write the owned blocks into every repo's AGENTS.md, committing and pushing each repo.
 
-    Every repo is committed on its default branch in its primary working tree and pushed, whatever its
-    tier: AGENTS.md is tier 2 in every repository (see `_sync_one`).
+    Every repo is committed on main and pushed, whatever its tier: AGENTS.md is tier 2 in every
+    repository. A repo whose primary tree is on the integration branch is also committed on that
+    branch (see `_land_sync`).
 
     Returns:
-        0 when every repo is current (or was brought current and pushed), else 1.
+        0 when every repo is current (or was brought current and pushed) on every branch, else 1.
 
     """
     blocks = _agents_blocks(cfg)
@@ -7880,15 +7946,13 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
         for r in _local_repos(cfg, args.repo, args.space)
         if not cfg.is_deprecated_name(r.name) and (own := _blocks_for(blocks, r.name, r.space))
     ]
-    write = not args.check and not args.dry_run
+    run_mode = _run_mode(args)
+    write = run_mode == "write"
     with concurrent.futures.ThreadPoolExecutor(max_workers=APPLY_WORKERS if write else WORKERS) as ex:
         results = list(
-            ex.map(lambda rb: _sync_one(cfg, rb[0], rb[1], write, args.trailer), repos),
+            ex.map(lambda rb: _sync_one(cfg, rb[0], rb[1], run_mode, args.trailer), repos),
         )
-    if write:
-        bad = [x for x in results if x["state"] != "current" and x.get("status") not in AGENTS_SYNC_DONE]
-    else:
-        bad = [x for x in results if x["state"] != "current"]
+    bad = [x for x in results if not landed(x, write=write)]
     counts: dict[str, int] = {}
     for x in results:
         counts[str(x["state"])] = counts.get(str(x["state"]), 0) + 1
@@ -7900,7 +7964,7 @@ def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
         for x in results:
             if x["state"] == "current":
                 continue
-            st_ = str(x.get("status", "would update" if args.dry_run else ""))
+            st_ = str(x.get("status", x.get("action", "")))
             detail = str(x.get("detail", ""))
             lines.append(
                 f"  {x['repo']}: {x['state']}{'  ' + st_ if st_ else ''}{'  ' + detail if detail else ''}",
@@ -8130,72 +8194,68 @@ def _hooks_sync_one(
     cfg: Config,
     r: LocalRepo,
     block: HooksBlock,
-    write: bool,
+    run_mode: RunMode,
     trailer: str | None,
 ) -> dict[str, object]:
-    """Bring one repo's hook registrations current, committed on main in its primary tree and pushed.
+    """Bring one repo's hook registrations current, committed on main and pushed.
 
     `.claude/` is tier 2 in every repository, so the change is committed on main whatever the repo's
-    tier. A repo whose settings file has uncommitted changes, or that is not on main, is skipped.
+    tier, and also on the integration branch when the primary tree is on it (`_land_sync`). A tree
+    whose settings file or a hook script has uncommitted changes is skipped.
 
     Returns:
-        {repo, state} plus, when it wrote, the status and any detail.
+        {repo, state, scripts} plus, when it wrote, the status and any detail.
 
     """
-    path = r.path / CLAUDE_SETTINGS
-    try:
-        cur, want = _settings_text(path, block)
-    except PolyrepoError as exc:
-        return {"repo": r.name, "state": "invalid", "status": "skipped", "detail": str(exc)}
-    copies = block.script_copies(r.path)
-    state = "current" if cur == want and not copies else ("missing-file" if cur is None else "outdated")
-    res: dict[str, object] = {"repo": r.name, "state": state, "scripts": sorted(copies)}
-    if state == "current" or not write:
-        return res
-    if git_out(r.path, "status", "--porcelain", "--", CLAUDE_SETTINGS, *copies):
-        return {**res, "status": "skipped", "detail": f"{CLAUDE_SETTINGS} or a hook script has uncommitted changes"}
-    if (stopped := _advance_for_sync(cfg, r)) is not None:
-        return {**res, **stopped}
-    branch = git_out(r.path, "symbolic-ref", "--short", "-q", "HEAD")
-    if branch != cfg.default_branch:
-        return {**res, "status": "skipped", "detail": f"on {branch}, not {cfg.default_branch}"}
-    cur, want = _settings_text(path, block)
-    return {**res, **_commit_hooks(cfg, r, (cur, want), trailer, block.script_copies(r.path))}
+
+    def tree_fn(tree: Path, _branch: str, write: bool) -> dict[str, object]:
+        path = tree / CLAUDE_SETTINGS
+        try:
+            cur, want = _settings_text(path, block)
+        except PolyrepoError as exc:
+            return {"state": "invalid", "status": "skipped", "detail": str(exc)}
+        copies = block.script_copies(tree)
+        state = "current" if cur == want and not copies else ("missing-file" if cur is None else "outdated")
+        scripts = sorted(copies)
+        res: dict[str, object] = {"state": state, "scripts": scripts, "paths": [CLAUDE_SETTINGS, *scripts]}
+        if state == "current" or not write:
+            return res
+        if git_out(tree, "status", "--porcelain", "--", CLAUDE_SETTINGS, *copies):
+            return {**res, "status": "skipped", "detail": f"{CLAUDE_SETTINGS} or a hook script has uncommitted changes"}
+        return {**res, **_commit_hooks(tree, (cur, want), trailer, copies, hooks_config(git, r.path, tree))}
+
+    return _land_sync(cfg, r, run_mode, tree_fn)
 
 
 def _commit_hooks(
-    cfg: Config,
-    r: LocalRepo,
+    tree: Path,
     texts: tuple[str | None, str],
     trailer: str | None,
     copies: dict[str, Copy],
+    git_config: Sequence[str],
 ) -> dict[str, object]:
-    """Write the settings file and the hook script copies, commit them on main and push.
+    """Write the settings file and the hook script copies in a tree and commit them on its branch.
 
     Returns:
-        The status (`pushed`, `committed` when the push failed, `failed`) and any detail.
+        Nothing when it committed, else the failed status and its detail.
 
     """
     cur, want = texts
-    path = r.path / CLAUDE_SETTINGS
+    path = tree / CLAUDE_SETTINGS
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(want, encoding="utf-8")
-    paths = [CLAUDE_SETTINGS, *apply_tooling(r.path, copies)]
+    paths = [CLAUDE_SETTINGS, *apply_tooling(tree, copies)]
     try:
-        _commit_paths(r.path, paths, _with_trailer(HOOKS_SYNC_SUBJECT, trailer))
+        _commit_paths(tree, paths, _with_trailer(HOOKS_SYNC_SUBJECT, trailer), git_config=git_config)
     except GitFailedError as exc:
-        _undo_written(r.path, paths[1:])
-        git(r.path, "reset", "-q", "--", CLAUDE_SETTINGS)
+        _undo_written(tree, paths[1:])
+        git(tree, "reset", "-q", "--", CLAUDE_SETTINGS)
         if cur is None:
             path.unlink(missing_ok=True)
         else:
             path.write_text(cur, encoding="utf-8")
         return {"status": "failed", "detail": str(exc)}
-    cp = git(r.path, "push", "origin", cfg.default_branch, timeout=120)
-    commit = git_out(r.path, "rev-parse", "--short=8", "HEAD")
-    if cp.returncode != 0:
-        return {"status": "committed", "commit": commit, "detail": f"push failed: {_last_line(cp)}"}
-    return {"status": "pushed", "commit": commit}
+    return {}
 
 
 def cmd_hooks_sync(args: argparse.Namespace, cfg: Config) -> int:
@@ -8217,10 +8277,11 @@ def cmd_hooks_sync(args: argparse.Namespace, cfg: Config) -> int:
         for r in _local_repos(cfg, args.repo, args.space)
         if not cfg.is_deprecated_name(r.name) and block.applies_to(r.name, r.space)
     ]
-    write = not args.check and not args.dry_run
+    run_mode = _run_mode(args)
+    write = run_mode == "write"
     with concurrent.futures.ThreadPoolExecutor(max_workers=APPLY_WORKERS if write else WORKERS) as ex:
-        results = list(ex.map(lambda r: _hooks_sync_one(cfg, r, block, write, args.trailer), repos))
-    bad = [x for x in results if x["state"] != "current" and (not write or x.get("status") not in AGENTS_SYNC_DONE)]
+        results = list(ex.map(lambda r: _hooks_sync_one(cfg, r, block, run_mode, args.trailer), repos))
+    bad = [x for x in results if not landed(x, write=write)]
     counts: dict[str, int] = {}
     for x in results:
         counts[str(x["state"])] = counts.get(str(x["state"]), 0) + 1
@@ -8228,7 +8289,8 @@ def cmd_hooks_sync(args: argparse.Namespace, cfg: Config) -> int:
     def text() -> str:
         head = f"{len(results)} repos: " + ", ".join(f"{v} {k}" for k, v in sorted(counts.items()))
         rows = [
-            f"  {x['repo']}: {x['state']}  {x.get('status', '')}  {x.get('commit', '')}  {x.get('detail', '')}".rstrip()
+            f"  {x['repo']}: {x['state']}  {x.get('status', x.get('action', ''))}  {x.get('commit', '')}  "
+            f"{x.get('detail', '')}".rstrip()
             for x in results
             if x["state"] != "current"
         ]
@@ -8243,7 +8305,8 @@ def cmd_hooks_sync(args: argparse.Namespace, cfg: Config) -> int:
 # the common pre-commit fragment and, per technology, the canonical configuration files, the pre-commit
 # fragment and the configurations they replace. checks_sync.py plans what each repository receives
 # from the technologies the tech-stacks scan finds in it; this section commits and pushes it. Everything
-# written is tier 2 (configuration and hooks), so it is committed on main whatever the repo's tier.
+# written is tier 2 (configuration and hooks), so it is committed on main whatever the repo's tier,
+# and on the integration branch too when the primary tree is on it (`_land_sync`).
 
 CHECKS_SYNC_SUBJECT = "chore(checks): sync the canonical checker configurations"
 CHECKS_HOOK_SUBJECT = "chore(checks): run the canonical checks from the commit hook"
@@ -8440,7 +8503,7 @@ def write_checks(cfg: Config, dest: Path, name: str, space: str) -> bool:
     return bool(plan.changes)
 
 
-def _committable(r: LocalRepo, changes: Sequence[FileChange]) -> list[str]:
+def _committable(tree: Path, changes: Sequence[FileChange]) -> list[str]:
     """Name the changed paths a commit can carry: not ignored, and present or tracked.
 
     A tracked path inside an ignored folder (a beads hook under `.beads/`) is kept, so the commit
@@ -8451,18 +8514,20 @@ def _committable(r: LocalRepo, changes: Sequence[FileChange]) -> list[str]:
 
     """
     paths = [c.path for c in changes]
-    ignored = set((git_out(r.path, "check-ignore", "--", *paths) or "").splitlines())
-    tracked = set((git_out(r.path, "ls-files", "--", *paths) or "").splitlines())
+    ignored = set((git_out(tree, "check-ignore", "--", *paths) or "").splitlines())
+    tracked = set((git_out(tree, "ls-files", "--", *paths) or "").splitlines())
     return [c.path for c in changes if c.path not in ignored and (c.wanted is not None or c.path in tracked)]
 
 
 def _commit_changes(
-    r: LocalRepo,
+    tree: Path,
     changes: Sequence[FileChange],
-    subject: str,
-    trailer: str | None,
+    message: tuple[str, str | None],
+    git_config: Sequence[str],
 ) -> dict[str, object] | None:
-    """Write these planned files and commit them on the current branch, putting them back on failure.
+    """Write these planned files and commit them on the tree's branch, putting them back on failure.
+
+    `message` is the subject and the trailer line.
 
     Returns:
         None when they were committed or there was nothing to commit, else the failed status and its detail.
@@ -8470,57 +8535,50 @@ def _commit_changes(
     """
     if not changes:
         return None
-    apply_changes(r.path, changes)
-    paths = _committable(r, changes)
+    apply_changes(tree, changes)
+    paths = _committable(tree, changes)
     if not paths:
         return None
     try:
-        _commit_paths(r.path, paths, _with_trailer(subject, trailer), force=True)
+        _commit_paths(tree, paths, _with_trailer(*message), force=True, git_config=git_config)
     except GitFailedError as exc:
-        git(r.path, "reset", "-q", "--", *paths)
-        restore_changes(r.path, changes)
+        git(tree, "reset", "-q", "--", *paths)
+        restore_changes(tree, changes)
         return {"status": "failed", "detail": str(exc)}
     return None
 
 
 def _commit_checks(
-    cfg: Config,
-    r: LocalRepo,
+    tree: Path,
     plan: RepoPlan,
     trailer: str | None,
-) -> dict[str, object]:
-    """Commit the planned files on main, then the commit hook that runs them, and push.
+    git_config: Sequence[str],
+) -> dict[str, object] | None:
+    """Commit the planned files on the tree's branch, then the commit hook that runs them.
 
     The hook goes in its own later commit, so the commit that brings the canonical checks is
     made before they run on commit, as it is where `pre-commit install` writes the hook outside
     the tree.
 
     Returns:
-        The status (`pushed`, `committed` when the push failed, `failed`) and any detail.
+        None when they were committed, else the failed status and its detail.
 
     """
     files = [c for c in plan.changes if not c.hook]
     hooks = [c for c in plan.changes if c.hook]
-    files_failure = _commit_changes(r, files, CHECKS_SYNC_SUBJECT, trailer)
-    failure = files_failure or _commit_changes(r, hooks, CHECKS_HOOK_SUBJECT, trailer)
-    if failure is not None:
-        return failure
-    cp = git(r.path, "push", "origin", cfg.default_branch, timeout=120)
-    commit = git_out(r.path, "rev-parse", "--short=8", "HEAD")
-    if cp.returncode != 0:
-        return {"status": "committed", "commit": commit, "detail": f"push failed: {_last_line(cp)}"}
-    return {"status": "pushed", "commit": commit}
+    files_failure = _commit_changes(tree, files, (CHECKS_SYNC_SUBJECT, trailer), git_config)
+    return files_failure or _commit_changes(tree, hooks, (CHECKS_HOOK_SUBJECT, trailer), git_config)
 
 
-def _checks_result(name: str, plan: RepoPlan) -> dict[str, object]:
-    """Describe a repo's plan.
+def _checks_result(plan: RepoPlan) -> dict[str, object]:
+    """Describe a tree's plan.
 
     Returns:
-        {repo, state, technologies} plus the changed paths, the removed paths, the notes and the technologies
+        {state, technologies} plus the changed paths, the removed paths, the notes and the technologies
         with no canonical checks.
 
     """
-    res: dict[str, object] = {"repo": name, "state": plan.state, "technologies": list(plan.technologies)}
+    res: dict[str, object] = {"state": plan.state, "technologies": list(plan.technologies)}
     extra = {
         "changes": [c.path for c in plan.changes],
         "removed": [c.path for c in plan.changes if c.wanted is None],
@@ -8531,59 +8589,78 @@ def _checks_result(name: str, plan: RepoPlan) -> dict[str, object]:
     return {**res, **{key: value for key, value in extra.items() if value}}
 
 
+def _for_linked_worktree(plan: RepoPlan) -> RepoPlan:
+    """Keep, of a plan made in a linked worktree (the temporary `main` worktree), only the files to commit.
+
+    The hook belongs to the primary tree, which every worktree shares, and a relative hook folder
+    would put the planned write under the worktree's own `.beads/`, which a worktree never changes.
+    The notes are dropped too: a fresh worktree has no installed Node packages, so its TypeScript and
+    ESLint checks cannot run, and what the notes ask for is the repository's tier 1 work, which the
+    primary tree's plan reports.
+
+    Returns:
+        The plan without hook changes, notes or installing pre-commit.
+
+    """
+    return dataclasses.replace(
+        plan,
+        changes=tuple(c for c in plan.changes if not c.hook),
+        notes=(),
+        install_pre_commit=False,
+    )
+
+
 def _checks_sync_one(
     cfg: Config,
     r: LocalRepo,
     sync: ChecksSync,
-    write: bool,
+    run_mode: RunMode,
     trailer: str | None,
 ) -> dict[str, object]:
-    """Bring one repo's canonical checks current, committed on main in its primary tree and pushed.
+    """Bring one repo's canonical checks current, committed on main and pushed.
 
-    A repo with uncommitted changes in a planned path, or that is not on main, is skipped. After the
-    commit the pre-commit hook is installed when it is not.
+    Each branch is planned from the technologies its own tree holds (`_land_sync`). A tree with
+    uncommitted changes in a planned path is skipped. In the primary tree the pre-commit hook is
+    installed after the commit when it is not; a linked worktree leaves the hook alone.
 
     Returns:
         {repo, state, ...} plus, when it wrote, the status and any detail.
 
     """
-    try:
-        plan = _checks_plan(sync, r.path, r.name)
-    except PolyrepoError as exc:
-        return {"repo": r.name, "state": "invalid", "status": "skipped", "detail": str(exc)}
-    res = _checks_result(r.name, plan)
-    if not write or plan.state == "current":
-        return res
-    if plan.changes:
-        res = {**res, **_sync_checks_files(cfg, r, sync, plan, trailer)}
-    failure = _install_pre_commit(r.path, sync) if plan.install_pre_commit else None
-    return {**res, "status": "failed", "detail": failure} if failure else res
+
+    def tree_fn(tree: Path, _branch: str, write: bool) -> dict[str, object]:
+        try:
+            plan = _checks_plan(sync, tree, r.name)
+        except PolyrepoError as exc:
+            return {"state": "invalid", "status": "skipped", "detail": str(exc)}
+        plan = plan if tree == r.path else _for_linked_worktree(plan)
+        res = _checks_result(plan)
+        if not write or plan.state == "current":
+            return res
+        failure = _sync_checks_files(tree, plan, trailer, hooks_config(git, r.path, tree)) if plan.changes else None
+        if failure is not None:
+            return {**res, **failure}
+        installed = _install_pre_commit(tree, sync) if plan.install_pre_commit else None
+        return {**res, "status": "failed", "detail": installed} if installed else res
+
+    return _land_sync(cfg, r, run_mode, tree_fn)
 
 
 def _sync_checks_files(
-    cfg: Config,
-    r: LocalRepo,
-    sync: ChecksSync,
+    tree: Path,
     plan: RepoPlan,
     trailer: str | None,
-) -> dict[str, object]:
-    """Commit and push the planned files after bringing main up to origin.
+    git_config: Sequence[str],
+) -> dict[str, object] | None:
+    """Commit the planned files in a tree, unless a planned path has uncommitted changes.
 
     Returns:
-        The status and any detail.
+        None when they were committed, else the status and its detail.
 
     """
-    if git_out(r.path, "status", "--porcelain", "--", *[c.path for c in plan.changes]):
+    if git_out(tree, "status", "--porcelain", "--", *[c.path for c in plan.changes]):
         return {"status": "skipped", "detail": "a planned path has uncommitted changes"}
-    if (stopped := _advance_for_sync(cfg, r)) is not None:
-        return stopped
-    branch = git_out(r.path, "symbolic-ref", "--short", "-q", "HEAD")
-    if branch != cfg.default_branch:
-        return {"status": "skipped", "detail": f"on {branch}, not {cfg.default_branch}"}
-    fresh = _checks_plan(sync, r.path, r.name)
-    if not fresh.changes:
-        return {"status": "current-on-origin"}
-    return _commit_checks(cfg, r, fresh, trailer)
+    return _commit_checks(tree, plan, trailer, git_config)
 
 
 def cmd_checks_sync(args: argparse.Namespace, cfg: Config) -> int:
@@ -8605,16 +8682,18 @@ def cmd_checks_sync(args: argparse.Namespace, cfg: Config) -> int:
         for r in _local_repos(cfg, args.repo, args.space)
         if not cfg.is_deprecated_name(r.name) and sync.applies_to(r.name, r.space)
     ]
-    write = not args.check and not args.dry_run
+    run_mode = _run_mode(args)
+    write = run_mode == "write"
     with concurrent.futures.ThreadPoolExecutor(max_workers=APPLY_WORKERS if write else WORKERS) as ex:
-        results = list(ex.map(lambda r: _checks_sync_one(cfg, r, sync, write, args.trailer), repos))
-    bad = [x for x in results if x["state"] != "current" and (not write or x.get("status") not in AGENTS_SYNC_DONE)]
+        results = list(ex.map(lambda r: _checks_sync_one(cfg, r, sync, run_mode, args.trailer), repos))
+    bad = [x for x in results if not landed(x, write=write)]
     counts: dict[str, int] = {}
     for x in results:
         counts[str(x["state"])] = counts.get(str(x["state"]), 0) + 1
 
     def row(x: dict[str, object]) -> list[str]:
-        head = f"  {x['repo']}: {x['state']}  {x.get('status', '')}  {x.get('commit', '')}  {x.get('detail', '')}"
+        status = x.get("status", x.get("action", ""))
+        head = f"  {x['repo']}: {x['state']}  {status}  {x.get('commit', '')}  {x.get('detail', '')}"
         notes = [f"      {note}" for note in _strs(x.get("notes") or [], "notes")]
         unchecked = _strs(x.get("unchecked") or [], "unchecked")
         return [
@@ -8797,6 +8876,7 @@ GITNEXUS_SKILLS = ".claude/skills/gitnexus"
 GITNEXUS_IGNORE = ".gitnexus"
 GITNEXUS_INDEX_TIMEOUT = 3600
 GITNEXUS_FILE_KEYS = ("rc_file", "reindex_script", "pinned_script", "fleet_script", "git_hook_file", "group_file")
+GITNEXUS_SYNC_SUBJECT = "chore(gitnexus): install the pinned GitNexus configuration and skills"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -9026,39 +9106,40 @@ def _gitnexus_hook_one(src: GitNexusSources, r: LocalRepo, write: bool) -> dict[
     return {"hook": "installed"} if err is None else {"hook": "failed", "hook_detail": err}
 
 
-def _gitnexus_sync_one(cfg: Config, src: GitNexusSources, r: LocalRepo, write: bool) -> dict[str, object]:
-    """Bring one repo's GitNexus files and git hook current, committing and pushing the files when write is set.
+def _gitnexus_sync_one(cfg: Config, src: GitNexusSources, r: LocalRepo, run_mode: RunMode) -> dict[str, object]:
+    """Bring one repo's GitNexus files and git hook current, committing and pushing the files when writing.
+
+    The files are landed on main, and on the integration branch too when the primary tree is on it
+    (`_land_sync`); the re-index git hook lives in the primary tree's `.git/config`, so it is never
+    committed.
 
     Returns:
         {repo, state, files, hook} plus, when it wrote, the status and any detail.
 
     """
-    plan = _gitnexus_plan(src, r.path)
-    hook = _gitnexus_hook_one(src, r, write)
-    stale = bool(plan) or hook["hook"] in {"missing", "failed"}
-    res: dict[str, object] = {"repo": r.name, "state": "outdated" if stale else "current", "files": sorted(plan)}
-    res.update(hook)
-    if not plan or not write:
+
+    def tree_fn(tree: Path, _branch: str, write: bool) -> dict[str, object]:
+        plan = _gitnexus_plan(src, tree)
+        res: dict[str, object] = {"state": "outdated" if plan else "current", "files": sorted(plan)}
+        if not plan or not write:
+            return res
+        if git_out(tree, "status", "--porcelain", "--", *plan):
+            return {**res, "status": "skipped", "detail": "files to write have uncommitted changes"}
+        for rel, data in plan.items():
+            dest = tree / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(data)
+        try:
+            _commit_paths(tree, sorted(plan), GITNEXUS_SYNC_SUBJECT, git_config=hooks_config(git, r.path, tree))
+        except GitFailedError as exc:
+            _undo_written(tree, sorted(plan))
+            return {**res, "status": "failed", "detail": str(exc)}
         return res
-    b = cfg.default_branch
-    branch = git_out(r.path, "symbolic-ref", "--short", "-q", "HEAD")
-    if branch != b:
-        return {**res, "status": "skipped", "detail": f"on {branch}, not {b}"}
-    dirty = git_out(r.path, "status", "--porcelain", "--", *plan)
-    if dirty:
-        return {**res, "status": "skipped", "detail": "files to write have uncommitted changes"}
-    for rel, data in plan.items():
-        dest = r.path / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(data)
-    try:
-        _commit_paths(r.path, sorted(plan), "chore(gitnexus): install the pinned GitNexus configuration and skills")
-    except GitFailedError as exc:
-        return {**res, "status": "failed", "detail": str(exc)}
-    cp = git(r.path, "push", "origin", b, timeout=120)
-    if cp.returncode != 0:
-        return {**res, "status": "committed", "detail": f"push failed: {_last_line(cp)}"}
-    return {**res, "status": "pushed"}
+
+    res = _land_sync(cfg, r, run_mode, tree_fn)
+    hook = _gitnexus_hook_one(src, r, run_mode == "write")
+    stale_hook = hook["hook"] in {"missing", "failed"}
+    return {**res, **hook, **({"state": "outdated"} if stale_hook and res["state"] == "current" else {})}
 
 
 def _gitnexus_group_sync(
@@ -9109,25 +9190,21 @@ def cmd_gitnexus_sync(args: argparse.Namespace, cfg: Config) -> int:
     """
     src = _gitnexus_sources(cfg)
     repos = [r for r in _local_repos(cfg, args.repo, args.space) if not cfg.is_deprecated_name(r.name)]
-    write = not args.check and not args.dry_run
-    with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        results = list(ex.map(lambda r: _gitnexus_sync_one(cfg, src, r, write), repos))
+    run_mode = _run_mode(args)
+    write = run_mode == "write"
+    with concurrent.futures.ThreadPoolExecutor(max_workers=APPLY_WORKERS if write else WORKERS) as ex:
+        results = list(ex.map(lambda r: _gitnexus_sync_one(cfg, src, r, run_mode), repos))
     group = _gitnexus_group_sync(cfg, src, repos, write, prune=not args.repo and not args.space)
     queued = gitnexus_queue(cfg, [r.path for r in repos]) if write else None
-    if write:
-        bad = [x for x in results if x["state"] != "current" and x.get("status", "pushed") != "pushed"]
-        bad += [x for x in results if x.get("hook") == "failed"]
-        group_bad = group["state"] != "current" and group.get("status") != "updated"
-    else:
-        bad = [x for x in results if x["state"] != "current"]
-        group_bad = group["state"] != "current"
+    bad = [x for x in results if not landed(x, write=write) or x.get("hook") in {"failed", "missing"}]
+    group_bad = group["state"] != "current" and not (write and group.get("status") == "updated")
 
     def text() -> str:
         lines = [f"{len(results)} repos, {len([x for x in results if x['state'] != 'current'])} not current"]
         for x in results:
             if x["state"] == "current":
                 continue
-            what = str(x.get("status", "would update")) if x["files"] else ""
+            what = str(x.get("status", x.get("action", "would update"))) if x.get("files") else ""
             hook = f"git hook {x['hook']}" if x["hook"] != "current" else ""
             detail = f"{x.get('detail', '')} {x.get('hook_detail', '')}".strip()
             lines.append(f"  {x['repo']}: {' '.join(s for s in (what, hook, detail) if s)}")
@@ -9148,9 +9225,19 @@ def cmd_gitnexus_sync(args: argparse.Namespace, cfg: Config) -> int:
 # The config's `tooling_sync.files` names the tooling the control repo holds the master copy of and
 # copies into every repo (tooling_sync.py plans it), so each repo is self-contained: it runs its own
 # GitNexus scripts, its own project skills and, for a library, its own release script, and nothing in
-# it points back to the control repo. Everything copied is tier 2 tooling, committed on main.
+# it points back to the control repo. Everything copied is tier 2 tooling, committed on main (and on
+# the integration branch when the primary tree is on it, `_land_sync`).
 
 TOOLING_SYNC_SUBJECT = "chore(tooling): sync the repository's own copies of the shared tooling"
+SYNC_SUBJECTS = (
+    AGENTS_SYNC_SUBJECT,
+    HOOKS_SYNC_SUBJECT,
+    CHECKS_SYNC_SUBJECT,
+    CHECKS_HOOK_SUBJECT,
+    TOOLING_SYNC_SUBJECT,
+    GITNEXUS_SYNC_SUBJECT,
+)
+"""The subjects of the commits the five syncs make: an integration branch ahead of origin only by these is pushed."""
 
 
 def _tooling_spec(cfg: Config) -> ToolingSpec | None:
@@ -9209,49 +9296,45 @@ def _tooling_sync_one(
     cfg: Config,
     spec: ToolingSpec,
     r: LocalRepo,
-    write: bool,
+    run_mode: RunMode,
     trailer: str | None,
 ) -> dict[str, object]:
-    """Bring one repo's tooling copies current, committed on main in its primary tree and pushed.
+    """Bring one repo's tooling copies current, committed on main and pushed.
+
+    The copies are landed on main, and on the integration branch too when the primary tree is on it
+    (`_land_sync`). A tree whose files to write have uncommitted changes is skipped.
 
     Returns:
         {repo, state, files} plus, when it wrote, the status, commit and any detail.
 
     """
-    copies = _tooling_plan(cfg, spec, r.path, r.name)
-    res: dict[str, object] = {"repo": r.name, "state": "outdated" if copies else "current", "files": sorted(copies)}
-    if not copies or not write:
-        return res
-    if git_out(r.path, "status", "--porcelain", "--", *copies):
-        return {**res, "status": "skipped", "detail": "files to write have uncommitted changes"}
-    if (stopped := _advance_for_sync(cfg, r)) is not None:
-        return {**res, **stopped}
-    branch = git_out(r.path, "symbolic-ref", "--short", "-q", "HEAD")
-    if branch != cfg.default_branch:
-        return {**res, "status": "skipped", "detail": f"on {branch}, not {cfg.default_branch}"}
-    return {**res, **_land_tooling(cfg, r, apply_tooling(r.path, _tooling_plan(cfg, spec, r.path, r.name)), trailer)}
+
+    def tree_fn(tree: Path, _branch: str, write: bool) -> dict[str, object]:
+        copies = _tooling_plan(cfg, spec, tree, r.name)
+        res: dict[str, object] = {"state": "outdated" if copies else "current", "files": sorted(copies)}
+        if not copies or not write:
+            return res
+        if git_out(tree, "status", "--porcelain", "--", *copies):
+            return {**res, "status": "skipped", "detail": "files to write have uncommitted changes"}
+        paths = apply_tooling(tree, copies)
+        return {**res, **_commit_tooling(tree, paths, trailer, hooks_config(git, r.path, tree))}
+
+    return _land_sync(cfg, r, run_mode, tree_fn)
 
 
-def _land_tooling(cfg: Config, r: LocalRepo, paths: list[str], trailer: str | None) -> dict[str, object]:
-    """Commit the written tooling copies on main and push.
+def _commit_tooling(tree: Path, paths: list[str], trailer: str | None, git_config: Sequence[str]) -> dict[str, object]:
+    """Commit the written tooling copies on the tree's branch, putting them back on failure.
 
     Returns:
-        The status (`pushed`, `committed` when the push failed, `failed`, `current` when nothing was
-        left to write after main was brought up), the commit and any detail.
+        Nothing when it committed, else the failed status and its detail.
 
     """
-    if not paths:
-        return {"state": "current"}
     try:
-        _commit_paths(r.path, paths, _with_trailer(TOOLING_SYNC_SUBJECT, trailer))
+        _commit_paths(tree, paths, _with_trailer(TOOLING_SYNC_SUBJECT, trailer), git_config=git_config)
     except GitFailedError as exc:
-        _undo_written(r.path, paths)
+        _undo_written(tree, paths)
         return {"status": "failed", "detail": str(exc)}
-    commit = git_out(r.path, "rev-parse", "--short=8", "HEAD")
-    cp = git(r.path, "push", "origin", cfg.default_branch, timeout=120)
-    if cp.returncode != 0:
-        return {"status": "committed", "commit": commit, "detail": f"push failed: {_last_line(cp)}"}
-    return {"status": "pushed", "commit": commit}
+    return {}
 
 
 def cmd_tooling_sync(args: argparse.Namespace, cfg: Config) -> int:
@@ -9273,14 +9356,15 @@ def cmd_tooling_sync(args: argparse.Namespace, cfg: Config) -> int:
         for r in _local_repos(cfg, args.repo, args.space)
         if not cfg.is_deprecated_name(r.name) and spec.applies_to(r.name, r.space)
     ]
-    write = not args.check and not args.dry_run
+    run_mode = _run_mode(args)
+    write = run_mode == "write"
     with concurrent.futures.ThreadPoolExecutor(max_workers=APPLY_WORKERS if write else WORKERS) as ex:
-        results = list(ex.map(lambda r: _tooling_sync_one(cfg, spec, r, write, args.trailer), repos))
-    bad = [x for x in results if x["state"] != "current" and (not write or x.get("status") not in AGENTS_SYNC_DONE)]
+        results = list(ex.map(lambda r: _tooling_sync_one(cfg, spec, r, run_mode, args.trailer), repos))
+    bad = [x for x in results if not landed(x, write=write)]
 
     def text() -> str:
         rows = [
-            f"  {x['repo']}: {x.get('status', 'would update')}  {x.get('commit', '')}  "
+            f"  {x['repo']}: {x.get('status', x.get('action', 'would update'))}  {x.get('commit', '')}  "
             f"{', '.join(_strs(x['files'], 'files'))}  {x.get('detail', '')}".rstrip()
             for x in results
             if x["state"] != "current"
@@ -10346,6 +10430,19 @@ def _finding(check: str, subject: str, kind: str, detail: str) -> DoctorFinding:
     return DoctorFinding(check=check, subject=subject, kind=kind, detail=detail)
 
 
+def _branch_states(r: Mapping[str, object]) -> str:
+    """Name the state of each branch a sync checked in a repo, for a repo that takes it on two branches.
+
+    Returns:
+        For example `main: outdated; develop: current`; empty for a repo checked on one branch.
+
+    """
+    branches = r.get("branches")
+    if not isinstance(branches, dict):
+        return ""
+    return "; ".join(f"{name}: {_map(out, 'branch result').get('state')}" for name, out in branches.items())
+
+
 def _run_json(argv: list[str], extra: list[str], timeout: int = 900) -> tuple[int, dict[str, object]]:
     """Run one of the tool's own checks or repairs as a separate process and read its JSON.
 
@@ -10380,10 +10477,11 @@ def _gitnexus_findings(check: str, data: dict[str, object]) -> list[DoctorFindin
     """
     found: list[DoctorFinding] = []
     for r in (_map(x, "gitnexus-sync repo") for x in _seq(data.get("repos") or [], "repos")):
-        if r.get("state") == "current":
+        if landed(r, write=False) and r.get("hook") == "current":
             continue
         files = _strs(r.get("files") or [], "files")
-        parts = [f"GitNexus files out of date: {', '.join(files)}"] if files else []
+        parts = [states] if (states := _branch_states(r)) else []
+        parts += [f"GitNexus files out of date: {', '.join(files)}"] if files else []
         if r.get("hook") != "current":
             parts.append(f"re-index git hook {r.get('hook')}")
         found.append(_finding(check, str(r["repo"]), str(r["state"]), "; ".join(parts)))
@@ -10435,10 +10533,10 @@ def _doctor_findings(check: str, data: dict[str, object]) -> list[DoctorFinding]
                 check,
                 str(r["repo"]),
                 str(r["state"]),
-                str(r.get("detail") or SYNC_CHECK_DETAIL[check]),
+                "; ".join(s for s in (_branch_states(r), str(r.get("detail") or SYNC_CHECK_DETAIL[check])) if s),
             )
             for r in (_map(x, f"{check} repo") for x in _seq(data.get("repos") or [], "repos"))
-            if r.get("state") != "current"
+            if not landed(r, write=False)
         ]
     if check == "beads":
         return [
@@ -11280,8 +11378,8 @@ def _add_hooks_sync_command(add: Callable[[str, str], argparse.ArgumentParser]) 
         "hooks-sync",
         "merge the shared hook registrations into every repo's .claude/settings.json",
     )
-    s.add_argument("--check", action="store_true", help="report repos out of date")
-    s.add_argument("--dry-run", action="store_true", help="same as --check")
+    s.add_argument("--check", action="store_true", help="report repos out of date, on each branch the repo takes")
+    s.add_argument("--dry-run", action="store_true", help="--check, plus the action a write would take on each branch")
     s.add_argument("--repo", action="append", help="only this repo (repeatable)")
     s.add_argument("--space", help="only this app space (default: every app space)")
     s.add_argument("--trailer", help="a line to end each commit message with")
@@ -11294,8 +11392,8 @@ def _add_checks_sync_command(add: Callable[[str, str], argparse.ArgumentParser])
         "checks-sync",
         "give every repo the canonical code checks of its technologies and the commit hook that runs them",
     )
-    s.add_argument("--check", action="store_true", help="report repos out of date")
-    s.add_argument("--dry-run", action="store_true", help="same as --check")
+    s.add_argument("--check", action="store_true", help="report repos out of date, on each branch the repo takes")
+    s.add_argument("--dry-run", action="store_true", help="--check, plus the action a write would take on each branch")
     s.add_argument("--repo", action="append", help="only this repo (repeatable)")
     s.add_argument("--space", help="only this app space (default: every app space)")
     s.add_argument("--trailer", help="a line to end each commit message with")
@@ -11320,8 +11418,8 @@ def _add_tooling_commands(add: Callable[[str, str], argparse.ArgumentParser]) ->
         "tooling-sync",
         "copy the control repo's shared tooling (tooling_sync.files) into every repo, so each is self-contained",
     )
-    s.add_argument("--check", action="store_true", help="report repos out of date")
-    s.add_argument("--dry-run", action="store_true", help="same as --check")
+    s.add_argument("--check", action="store_true", help="report repos out of date, on each branch the repo takes")
+    s.add_argument("--dry-run", action="store_true", help="--check, plus the action a write would take on each branch")
     s.add_argument("--repo", action="append", help="only this repo (repeatable)")
     s.add_argument("--space", help="only this app space (default: every app space)")
     s.add_argument("--trailer", help="a line to end each commit message with")
@@ -11342,8 +11440,8 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
         "agents-sync",
         "write the shared AGENTS.md blocks into every repo",
     )
-    s.add_argument("--check", action="store_true", help="report repos out of date")
-    s.add_argument("--dry-run", action="store_true", help="same as --check")
+    s.add_argument("--check", action="store_true", help="report repos out of date, on each branch the repo takes")
+    s.add_argument("--dry-run", action="store_true", help="--check, plus the action a write would take on each branch")
     s.add_argument("--repo", action="append", help="only this repo (repeatable)")
     s.add_argument("--space", help="only this app space (default: every app space)")
     s.add_argument("--trailer", help="a line to end each commit message with")
@@ -11355,8 +11453,8 @@ def _add_upkeep_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> 
         "gitnexus-sync",
         "give every repo its GitNexus configuration, skills, re-index git hook and group membership",
     )
-    s.add_argument("--check", action="store_true", help="report repos out of date")
-    s.add_argument("--dry-run", action="store_true", help="same as --check")
+    s.add_argument("--check", action="store_true", help="report repos out of date, on each branch the repo takes")
+    s.add_argument("--dry-run", action="store_true", help="--check, plus the action a write would take on each branch")
     s.add_argument("--repo", action="append", help="only this repo (repeatable)")
     s.add_argument("--space", help="only this app space (default: every app space)")
     s.set_defaults(func=cmd_gitnexus_sync)
