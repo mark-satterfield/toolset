@@ -1361,7 +1361,7 @@ def related_view(matrix: Matrix, bead: str) -> RelatedView:
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def uses_view(matrix: Matrix, entry_ids: Sequence[EntryId]) -> UsesResult:
-    """Return the shared capabilities the work that builds some entries must use.
+    """Return the shared capabilities the matrix guesses the work that builds some entries relies on.
 
     The walk is entries → the features they realize → the features those are supported by, to any
     depth → the ones that state what they provide. A shared capability that is itself among the

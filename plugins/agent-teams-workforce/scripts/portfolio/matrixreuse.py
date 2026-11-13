@@ -1,16 +1,17 @@
 """Whether what a Task built takes shared behaviour from where it is provided.
 
 :func:`check_reuse` (``check-reuse``) is the deterministic part of the build pipeline's reuse
-audit. It is handed the ids a Task states and the worktree the Task changed. For the files that
-changed it reports a shared capability the Task must use that nothing references (``unused``), a
-line that does itself what a shared capability provides (``duplicate``), and a new definition
-whose name reads like a provided behaviour, for a reviewer to rule on (``judgment``). Every
-finding is a text match against the signals each ``provides`` item of a capability carries;
-nothing here judges, and nothing here changes the matrix.
+audit. It is handed the ids a Task states and the worktree the Task changed. The matrix is a best
+guess, so what it reports is divergence between that guess and the code, never a requirement the
+code must meet: a relied-on shared capability nothing references (``unused``), a line that does
+itself what a shared capability provides (``duplicate``), and a new definition whose name reads
+like a provided behaviour, for a reviewer to rule on (``judgment``). Every item is a text match
+against the signals each ``provides`` item of a capability carries; nothing here judges, and
+nothing here changes the matrix (``matrixfollow.follow_code`` corrects it from the code).
 
 A shared capability is a feature that states what it provides. An id that is such a feature is
-that capability; any other id stands for the capabilities the work that builds the entry must
-use (``matrixtraverse.capabilities``). A capability the Task's own repository provides (an entry
+that capability; any other id stands for the capabilities the matrix guesses the work that builds
+the entry relies on (``matrixtraverse.capabilities``). A capability the Task's own repository provides (an entry
 the Task states, or one its stack holds, realizes it) is not checked, since its definitions there
 are its implementation; nor is the walk started from a feature that only consumes such a
 capability and is realized outside the Task's repository too, since what else that feature is
@@ -228,7 +229,7 @@ class Guarded:
     feature: Entry
     provides: tuple[Provided, ...]
     relied: tuple[Provided, ...]
-    """The items the work relies on, which have to be referenced: those named, or every item when none is named."""
+    """The items the matrix guesses the work relies on: those named, or every item when none is named."""
 
 
 class ReuseItem(TypedDict):
@@ -274,11 +275,12 @@ class ReuseResult(TypedDict):
     Their definitions there are their implementation.
     """
     violations: list[ReuseItem]
+    """The divergence between the matrix's guess and the code: ``unused`` and ``duplicate`` items."""
     judgment: list[ReuseItem]
     unchecked: list[str]
     """Each ``<capability>#<provides id>`` relied on that carries no use signal, so its use could not be checked."""
     clean: bool
-    """True when there is no violation."""
+    """True when the code and the matrix's guess do not diverge."""
 
 
 def _text(value: JsonValue) -> str:
@@ -301,7 +303,7 @@ def _texts(value: JsonValue) -> tuple[str, ...]:
     return tuple(item for item in value if isinstance(item, str) and item) if isinstance(value, list) else ()
 
 
-def _provided(feature: Entry) -> tuple[Provided, ...]:
+def provided_items(feature: Entry) -> tuple[Provided, ...]:
     """Read what a feature states it provides.
 
     Returns:
@@ -330,7 +332,7 @@ def _provided(feature: Entry) -> tuple[Provided, ...]:
 
 
 @dataclass(frozen=True, slots=True)
-class _Own:
+class Own:
     """What the Task's own repository holds: the entries it states and the stacks that hold them."""
 
     entries: frozenset[EntryId]
@@ -344,7 +346,7 @@ class _Own:
             entry a stack of the Task holds, realizes it.
 
         """
-        return bool(_provided(matrix.entry(feature_id))) and any(
+        return bool(provided_items(matrix.entry(feature_id))) and any(
             self.holds(matrix, realizing.end) for realizing in matrix.outgoing(feature_id, (REL_REALIZED_BY,))
         )
 
@@ -381,7 +383,7 @@ class _Own:
         )
 
 
-def _own(matrix: Matrix, entry_ids: Sequence[EntryId]) -> _Own:
+def own_of(matrix: Matrix, entry_ids: Sequence[EntryId]) -> Own:
     """Work out what the Task's own repository holds from the ids it states.
 
     Returns:
@@ -392,10 +394,10 @@ def _own(matrix: Matrix, entry_ids: Sequence[EntryId]) -> _Own:
         entry_id for entry_id in entry_ids if matrix.entry(entry_id).kind != KIND_FEATURE
     )
     stacks: set[EntryId | None] = {holder(matrix, entry_id) for entry_id in built}
-    return _Own(built, frozenset(stack for stack in stacks if stack is not None))
+    return Own(built, frozenset(stack for stack in stacks if stack is not None))
 
 
-def _walked(matrix: Matrix, others: Sequence[EntryId], own: _Own) -> list[EntryId]:
+def walk_starts(matrix: Matrix, others: Sequence[EntryId], own: Own) -> list[EntryId]:
     """List the features the capability walk starts from.
 
     Returns:
@@ -429,17 +431,17 @@ def _guarded(matrix: Matrix, entry_ids: Sequence[EntryId]) -> tuple[list[Guarded
         none. Then the capabilities left out because the Task's own repository provides them.
 
     """
-    own: _Own = _own(matrix, entry_ids)
+    own: Own = own_of(matrix, entry_ids)
     named: dict[EntryId, set[str] | None] = {}
     others: list[EntryId] = []
     entry_id: EntryId
     for entry_id in dict.fromkeys(entry_ids):
         entry: Entry = matrix.entry(entry_id)
-        if entry.kind == KIND_FEATURE and _provided(entry):
+        if entry.kind == KIND_FEATURE and provided_items(entry):
             named[entry_id] = None
         else:
             others.append(entry_id)
-    walked: list[EntryId] = _walked(matrix, others, own)
+    walked: list[EntryId] = walk_starts(matrix, others, own)
     reach: CapabilityReach
     for reach in capabilities(matrix, walked) if walked else []:
         if reach.feature in named and named[reach.feature] is None:
@@ -453,7 +455,7 @@ def _guarded(matrix: Matrix, entry_ids: Sequence[EntryId]) -> tuple[list[Guarded
     guarded: list[Guarded] = []
     for entry_id in sorted(set(named) - set(provided_here)):
         feature: Entry = matrix.entry(entry_id)
-        provides: tuple[Provided, ...] = _provided(feature)
+        provides: tuple[Provided, ...] = provided_items(feature)
         wanted: set[str] | None = named[entry_id]
         guarded.append(
             Guarded(
@@ -505,7 +507,7 @@ def _is_source(relative: str) -> bool:
     return path.suffix in SOURCE_SUFFIXES and PIPELINE_FOLDER not in path.parts
 
 
-def _lines(worktree: Path, files: Sequence[str]) -> dict[str, list[str]]:
+def source_lines(worktree: Path, files: Sequence[str]) -> dict[str, list[str]]:
     """Read the source files among some paths of a worktree.
 
     Returns:
@@ -535,7 +537,7 @@ def _lines(worktree: Path, files: Sequence[str]) -> dict[str, list[str]]:
     return read
 
 
-def _holds(texts: Mapping[str, Sequence[str]], signals: Sequence[str]) -> bool:
+def holds_signal(texts: Mapping[str, Sequence[str]], signals: Sequence[str]) -> bool:
     """Tell whether some text holds one of some signals.
 
     Returns:
@@ -550,7 +552,7 @@ def _unused(
     changed: Mapping[str, Sequence[str]],
     worktree: Path,
 ) -> tuple[list[ReuseItem], list[str]]:
-    """Find the capabilities a Task must use that nothing references.
+    """Find the relied-on capability items that nothing references.
 
     The changed source files are searched first; the rest of the worktree's tracked source files
     are read only when a signal is not in them.
@@ -570,11 +572,11 @@ def _unused(
             if not item.use_signals:
                 unchecked.append(f"{capability.feature.id}#{item.id}")
                 continue
-            if _holds(changed, item.use_signals):
+            if holds_signal(changed, item.use_signals):
                 continue
             if everything is None:
-                everything = _lines(worktree, program_output("git", ["ls-files", "-z"], worktree).split("\0"))
-            if not _holds(everything, item.use_signals):
+                everything = source_lines(worktree, program_output("git", ["ls-files", "-z"], worktree).split("\0"))
+            if not holds_signal(everything, item.use_signals):
                 items.append({
                     "finding": REUSE_UNUSED,
                     "feature": capability.feature.id,
@@ -613,7 +615,7 @@ def _duplicates(guarded: Sequence[Guarded], changed: Mapping[str, Sequence[str]]
     return items
 
 
-def _test_roots(worktree: Path) -> frozenset[str]:
+def test_roots(worktree: Path) -> frozenset[str]:
     """Read where the repository keeps its tests.
 
     Returns:
@@ -644,7 +646,7 @@ def _test_roots(worktree: Path) -> frozenset[str]:
     return roots or DEFAULT_TEST_ROOTS
 
 
-def _is_test(relative: str, roots: Iterable[str]) -> bool:
+def is_test(relative: str, roots: Iterable[str]) -> bool:
     """Tell whether a changed file belongs to the repository's tests.
 
     Returns:
@@ -719,14 +721,14 @@ def check_reuse(
     Args:
         matrix: The matrix.
         entry_ids: The ids the Task states. A feature that states what it provides is a shared
-            capability and every item it provides has to be referenced; any other id stands for
-            the capabilities the work that builds the entry must use.
+            capability and the Task is guessed to rely on every item it provides; any other id stands for
+            the capabilities the matrix guesses the work that builds the entry relies on.
         worktree: The worktree the Task changed.
         files: The changed files, relative to the worktree; None reads them from ``git status``.
             Only the source files among them are read.
 
     Returns:
-        The violations (a capability nothing references, a line that duplicates one), the
+        The divergence (a relied-on capability nothing references, a line that duplicates one), the
         product definitions for a reviewer to rule on, and what could not be checked.
 
     Raises:
@@ -744,13 +746,13 @@ def check_reuse(
     guarded: list[Guarded]
     provided_here: list[EntryId]
     guarded, provided_here = _guarded(matrix, entry_ids)
-    changed: dict[str, list[str]] = _lines(worktree, changed_files(worktree) if files is None else files)
+    changed: dict[str, list[str]] = source_lines(worktree, changed_files(worktree) if files is None else files)
     unused: list[ReuseItem]
     unchecked: list[str]
     unused, unchecked = _unused(guarded, changed, worktree)
     violations: list[ReuseItem] = [*unused, *_duplicates(guarded, changed)]
-    roots: frozenset[str] = _test_roots(worktree)
-    product: dict[str, list[str]] = {file: lines for file, lines in changed.items() if not _is_test(file, roots)}
+    roots: frozenset[str] = test_roots(worktree)
+    product: dict[str, list[str]] = {file: lines for file, lines in changed.items() if not is_test(file, roots)}
     return {
         "ids": list(dict.fromkeys(entry_ids)),
         "worktree": str(worktree),

@@ -1,13 +1,21 @@
 """The build's reuse audit: the deterministic reuse check, then a reviewer only for what it cannot rule on.
 
+The matrix is a best guess, so every finding of this audit is a note: divergence between the code
+and the matrix is never a build failure, starts no correction round and gives implementers no
+work. The build corrects the matrix from the code after the commit (``build:matrix-follow``,
+:mod:`orchestrator.flows.build_follow`). Re-implementing a shared component is a note too: the
+owner's architecture constraints (arc42 section 2) hold no general rule that code must use shared
+components, and the duplicate signals are the matrix's own guess.
+
 ``build:reuse-audit`` runs ``check-reuse`` (:func:`matrixreuse.check_reuse`) in process against the
 matrix ids the Task states (its ``matrix_elements``) and the Story worktree. A line that does itself
-what a shared capability provides, and a capability the Task must use that nothing references, are
-blocking findings the check settles. A new definition whose name reads like a provided behaviour is
-a definition the check cannot rule on: only then is the shared-capability-reviewer started, handed
-each such definition once, in text files it can read whole. ``build:reuse-ruled`` then merges the
-reviewer's rulings with what the check settled into the review, by script, and fails when a handed
-definition has no ruling. With no such definition the audit step records the review itself.
+what a shared capability provides, a relied-on capability nothing references, and stated ids the
+matrix does not hold are notes the check settles. A new definition whose name reads like a
+provided behaviour is a definition the check cannot rule on: only then is the
+shared-capability-reviewer started, handed each such definition once, in text files it can read
+whole. ``build:reuse-ruled`` then merges the reviewer's rulings with what the check settled into
+the review, by script, and fails when a handed definition has no ruling. With no such definition
+the audit step records the review itself.
 """
 
 from __future__ import annotations
@@ -81,13 +89,13 @@ def _item_text(item: ReuseItem) -> str:
 
 
 def _finding(item: ReuseItem) -> dict[str, JsonValue]:
-    """Turn one violation of the check into a blocking build review finding owned by implementation.
+    """Turn one divergence the check found into a note.
 
     Returns:
-        The finding, with the item's file and line when it has them.
+        The note, with the item's file and line when it has them.
 
     """
-    finding: dict[str, JsonValue] = {"severity": "blocking", "owner": "implementation", "detail": _item_text(item)}
+    finding: dict[str, JsonValue] = {"severity": "note", "detail": _item_text(item)}
     if "file" in item:
         finding["file"] = item["file"]
     if "line" in item:
@@ -146,8 +154,8 @@ def _checked(run: StepRun, ids: list[EntryId]) -> tuple[ReuseResult | None, list
     """Run the deterministic reuse check on the ids the matrix holds.
 
     Returns:
-        The check's result, or None when no stated id is in the matrix; and a contract finding for
-        the stated ids the matrix does not hold.
+        The check's result, or None when no stated id is in the matrix; and a note naming the
+        stated ids the matrix does not hold.
 
     Raises:
         StepError: The check could not read the worktree.
@@ -158,8 +166,7 @@ def _checked(run: StepRun, ids: list[EntryId]) -> tuple[ReuseResult | None, list
     contract: list[dict[str, JsonValue]] = (
         [
             {
-                "severity": "blocking",
-                "owner": "contract",
+                "severity": "note",
                 "detail": f"the Task's {ELEMENTS} name ids the matrix holds no entry for: {', '.join(unknown)}",
             },
         ]
@@ -179,7 +186,7 @@ def _settled_findings(result: ReuseResult) -> list[dict[str, JsonValue]]:
     """Turn what the check settles into review findings.
 
     Returns:
-        Each violation as a blocking finding, and each relied-on behaviour with no use signal as a note.
+        Each divergence, and each relied-on behaviour with no use signal, as a note.
 
     """
     return [
@@ -192,13 +199,14 @@ def _check_evidence(result: ReuseResult) -> str:
     """State what the check read and found.
 
     Returns:
-        The files read, the capabilities checked and those left out as this repository's own, and the violations.
+        The files read, the capabilities checked and those left out as this repository's own, and the divergence.
 
     """
     provided: str = f" ({', '.join(result['provided'])} provided by this repository, not checked)"
     return (
         f"check-reuse read {len(result['files'])} changed file(s) against {len(result['capabilities'])} shared "
-        f"capability(ies){provided if result['provided'] else ''}: {len(result['violations'])} violation(s)"
+        f"capability(ies){provided if result['provided'] else ''}: {len(result['violations'])} divergence(s) "
+        "from the matrix's guess, recorded as notes"
     )
 
 
@@ -434,16 +442,15 @@ def _read_record(path: Path) -> dict[str, JsonValue]:
 
 
 def _ruled_finding(definition: dict[str, JsonValue], ruling: dict[str, JsonValue]) -> dict[str, JsonValue]:
-    """Turn a duplicate ruling into a blocking finding owned by implementation.
+    """Turn a duplicate ruling into a note.
 
     Returns:
-        The finding, at the definition's file and line.
+        The note, at the definition's file and line.
 
     """
     capability: JsonValue = ruling.get("capability") or ", ".join(check_type(definition["candidates"], list[str]))
     return {
-        "severity": "blocking",
-        "owner": "implementation",
+        "severity": "note",
         "file": definition["file"],
         "line": definition["line"],
         "detail": (
@@ -460,7 +467,7 @@ def ruled(run: StepRun) -> Completion:
         run: The ``build:reuse-ruled`` step.
 
     Returns:
-        The review: the settled findings, then a blocking finding per definition ruled a duplicate.
+        The review: the settled notes, then a note per definition ruled a duplicate.
 
     Raises:
         StepError: The reviewer returned no ruling on a handed definition.

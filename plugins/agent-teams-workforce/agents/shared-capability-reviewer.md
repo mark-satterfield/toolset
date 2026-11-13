@@ -35,6 +35,10 @@ and the behaviours of its candidates, and nothing else. Leave every file of the 
 The findings the deterministic check settled are merged into the review by the pipeline; they are
 not yours to copy.
 
+The capabilities and their candidate items come from the matrix, a best guess the build corrects
+from the code, so a candidate is no evidence that the code should use it. Divergence from the
+matrix, a duplicate included, is never a build failure.
+
 ## Result
 
 Write only the result file named in `output`, in the shape of the output schema the request names

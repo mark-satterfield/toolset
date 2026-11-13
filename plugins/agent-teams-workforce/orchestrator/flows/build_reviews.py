@@ -639,7 +639,9 @@ def _audit_reviewed(run: StepRun) -> Completion:
     """Correct the review's findings within the allowance, and never stop on a finding.
 
     Findings owned by the contract or the tooling are carried at once; findings still open when
-    the correction allowance is spent are carried too, and the build continues.
+    the correction allowance is spent are carried too, and the build continues. Every finding of
+    the shared-capability review is a note, whatever severity it was recorded with: divergence from
+    the matrix's guess is corrected in the matrix by ``build:matrix-follow``, never in the code.
 
     Returns:
         A clean review, the carried findings recorded, or implementation and repeat-review work.
@@ -647,6 +649,8 @@ def _audit_reviewed(run: StepRun) -> Completion:
     """
     params = run.params()
     name: str = check_type(params["review"], str)
+    if name == build_reuse.REVIEW:
+        return Completion()
     review: dict[str, JsonValue] = _document(run, name)
     required: list[JsonValue] = build_carried.required(check_type(review["findings"], list[JsonValue]))
     work: list[JsonValue] = build_carried.owned_here(required)

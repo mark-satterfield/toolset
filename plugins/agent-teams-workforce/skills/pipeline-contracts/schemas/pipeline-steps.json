@@ -47,7 +47,7 @@
         "build:code-reviewed": {"description": "Apply the independent code review", "purpose": "Consider architecture, quality and best practices even when tests pass; a finding never stops the build", "runBy": "task-to-deploy", "reads": ["codeReview"], "records": [{"name": "greenRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"}, {"name": "implementationSelection", "kind": "file", "holds": "The accepted implementationSelection evidence"}, {"name": "codeReviewTree", "kind": "value", "holds": "The git tree id of the work tree's content the accepted code review judged"}, {"name": "carriedFindings", "kind": "value", "holds": "The review findings carried instead of corrected: those owned by the contract or the tooling, and those still open when their correction allowance is spent, each with its review, owner, severity, detail and reason"}], "adds": [{"kinds": ["build:plan-code"], "when": "the suite fails or implementation findings require work, after specialist selection; a passing result with no implementation finding records Green without code work, with any contract or tooling findings carried"}]},
         "build:plan-code": {"description": "Plan the selected implementers", "purpose": "Develop missing behavior and warranted improvements", "runBy": "task-to-deploy", "reads": ["implementationSelection", "implementers"], "records": [{"name": "implementers", "kind": "value", "holds": "The accepted implementers evidence"}], "adds": [{"kinds": ["build:implement", "build:green-check"], "when": "one step per selected implementer, followed by the whole-suite check"}, {"kinds": ["build:implementation-recheck"], "when": "an empty selection was made before an observable repository change and that digest was not reassessed"}]},
         "build:green-reviewed": {"description": "Route the post-implementation suite judgment", "purpose": "Correct the artifact responsible for the failure", "runBy": "task-to-deploy", "reads": ["suiteReview"], "records": [], "adds": [{"kinds": ["build:plan-tests"], "when": "the judgment identifies test repair"}, {"kinds": ["build:plan-code"], "when": "the judgment identifies product implementation"}, {"kinds": ["build:prerequisites-diagnosed"], "when": "a bounded current-Task environment diagnosis is accepted"}]},
-        "build:audit-reviewed": {"description": "Resolve the independent audit findings", "purpose": "Correct implementation and test findings in scope within the correction allowance; carry the rest and never stop on a finding", "runBy": "task-to-deploy", "reads": [], "records": [{"name": "carriedFindings", "kind": "value", "holds": "The review findings carried instead of corrected: those owned by the contract or the tooling, and those still open when their correction allowance is spent, each with its review, owner, severity, detail and reason"}], "adds": [{"kinds": ["build:correct-findings", "build:reuse-audit"], "when": "findings require correction and again names build:reuse-audit; a clean review adds nothing"}, {"kinds": ["build:correct-findings", "build:cds-audit"], "when": "findings require correction and again names build:cds-audit; a clean review adds nothing"}], "params": ["review", "again"]},
+        "build:audit-reviewed": {"description": "Resolve the independent audit findings", "purpose": "Correct implementation and test findings in scope within the correction allowance; carry the rest and never stop on a finding. Every finding of review=reuseReview is a note: divergence from the matrix's guess is corrected in the matrix by build:matrix-follow, so that review adds nothing", "runBy": "task-to-deploy", "reads": [], "records": [{"name": "carriedFindings", "kind": "value", "holds": "The review findings carried instead of corrected: those owned by the contract or the tooling, and those still open when their correction allowance is spent, each with its review, owner, severity, detail and reason"}], "adds": [{"kinds": ["build:correct-findings", "build:cds-audit"], "when": "findings require correction and again names build:cds-audit; a clean review adds nothing"}], "params": ["review", "again"]},
         "build:docs-specialist": {"description": "Update stale documentation with {agent}", "purpose": "Keep the changed contracts documented by the selected specialist", "runBy": "task-to-deploy", "params": ["agent"], "reads": ["worktree", "documentationSelection"], "records": [{"name": "documentationWork", "kind": "file", "holds": "The accepted documentation work report under build-implementation.schema.json"}], "adds": []},
         "build:workspace": {
           "description": "Establish the Story's worktree and branch",
@@ -287,12 +287,12 @@
           ]
         },
         "build:reuse-audit": {
-          "description": "Check the changed files against the shared capabilities the Task must use",
-          "purpose": "A behaviour a shared library, layer, chassis or service provides is used from it and written nowhere in this repository",
+          "description": "Compare the changed files with the shared capabilities the matrix guesses the Task relies on",
+          "purpose": "Record, as notes, where the code and the matrix's best guess of the shared capabilities it relies on diverge; divergence is never a build failure, starts no correction round and is corrected in the matrix by build:matrix-follow",
           "runBy": "task-to-deploy",
           "reads": ["worktree", "implementers", "reuseReview", "executionPolicy"],
           "records": [
-            {"name": "reuseReview", "kind": "file", "holds": "The reuseReview under build-review.schema.json, recorded with its approved, findings and evidence values when the check-reuse result leaves no definition to rule on: the check's violations as blocking findings owned by implementation, a blocking contract finding for stated ids the matrix does not hold, and a note per relied-on behaviour with no use signal"},
+            {"name": "reuseReview", "kind": "file", "holds": "The reuseReview under build-review.schema.json, recorded with its approved, findings and evidence values when the check-reuse result leaves no definition to rule on: every finding a note (the check's unused and duplicate items, the stated ids the matrix does not hold, and each relied-on behaviour with no use signal), so the review is approved"},
             {"name": "reuseHanded", "kind": "file", "holds": "When definitions are left to rule on: the record build:reuse-ruled reads, with each distinct definition handed to the shared-capability-reviewer (id, file, line, definition text, candidate capability items), the findings the check settled and the check's evidence. The reviewer is handed the definitions and the candidates' behaviours in text files of at most 40000 characters each"},
             {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
           ],
@@ -300,7 +300,7 @@
             {"kinds": ["build:reuse-ruled", "build:audit-reviewed"], "when": "when the check leaves definitions to rule on: under the shared-capability-reviewer's session (reuseRulings under build-reuse-rulings.schema.json), then build:audit-reviewed passing review=reuseReview and again=build:reuse-audit"},
             {"kinds": ["build:audit-reviewed"], "when": "after the step records reuseReview itself, passing review=reuseReview and again=build:reuse-audit, unless the accepted execution policy omits the stage"}
           ],
-          "limit": "The audit consumer bounds implementation corrections and re-review by the configured build correction allowance"
+          "limit": "The audit consumer adds no correction for this review: all of its findings are notes"
         },
         "build:reuse-ruled": {
           "description": "Merge the reviewer's rulings with what the check settled",
@@ -308,7 +308,7 @@
           "runBy": "task-to-deploy",
           "reads": ["reuseHanded", "reuseRulings"],
           "records": [
-            {"name": "reuseReview", "kind": "file", "holds": "The reuseReview under build-review.schema.json, recorded with its approved, findings and evidence values: the findings the check settled, then a blocking finding owned by implementation for each definition the reviewer ruled a duplicate. The step fails with 'shared-capability-reviewer returned no ruling on N definition(s)' when a handed definition has no ruling"}
+            {"name": "reuseReview", "kind": "file", "holds": "The reuseReview under build-review.schema.json, recorded with its approved, findings and evidence values: the notes the check settled, then a note for each definition the reviewer ruled a duplicate, so the review is approved. The step fails with 'shared-capability-reviewer returned no ruling on N definition(s)' when a handed definition has no ruling"}
           ],
           "adds": []
         },
@@ -483,6 +483,18 @@
           "records": [
             {"name": "commit", "kind": "value", "holds": "the head of the Story's branch after the commit, a string"},
             {"name": "executionSummary", "kind": "value", "holds": "Model sessions by agent, correction steps by kind and every recorded stage decision of the Task"}
+          ],
+          "adds": [
+            {"kinds": ["build:matrix-follow"], "when": "always, after the commit, so the matrix follows the committed code"}
+          ]
+        },
+        "build:matrix-follow": {
+          "description": "Record in the matrix what the Task's code uses",
+          "purpose": "The matrix is a best guess the build corrects from the code: the supportedBy relationships of the features the Task builds match the shared capabilities its committed code uses, and divergence is never a build failure",
+          "runBy": "task-to-deploy",
+          "reads": ["worktree", "branch", "defaultBranch"],
+          "records": [
+            {"name": "matrixFollow", "kind": "value", "holds": "What matrixfollow.follow_code changed under the matrix's lock: ids, files (the source files the Task's own feat(build) commits changed), removed, narrowed and linked supportedBy relationships (kind, start, end, relies), deferred divergence left as it was (start, end, provides, used, reason: realized outside this repository, other open Tasks still build the feature, named only by the Task, or no single wholly-local feature), and unknownIds the matrix holds no entry for. A matrix read or write that cannot be made fails the step as a tooling fault"}
           ],
           "adds": []
         }

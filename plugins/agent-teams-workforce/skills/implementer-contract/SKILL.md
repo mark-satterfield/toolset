@@ -27,7 +27,7 @@ in `tdd-guide` and in your specialty definition.
   references, rationale).
 - The affected files, required behavior, existing suite, current execution evidence and quality findings.
 - The suite command, when the repository declares one.
-- The shared capabilities this Task must use, when it has any.
+- The shared capabilities the matrix guesses this Task relies on, when it has any.
 - The implementers on this Task in build order, when there is more than one.
 - An assigned repair scope, when the caller grants one.
 - Feedback from a previous attempt, when there was one: address every point of it.
@@ -53,11 +53,14 @@ in `tdd-guide` and in your specialty definition.
 
 ## Shared capabilities
 
-Each behaviour the brief lists under the shared capabilities comes from the shared library, layer,
-chassis or service named, through the interface named. The repository holds none of it: no copy, no
-local equivalent, and no direct call to the AWS service or provider the capability wraps. Do what the
-"You must" text of each entry says. When a capability lacks something required, develop that
-prerequisite in its owning repository and normal worktree instead of duplicating it locally.
+The shared capabilities the brief lists are the matrix's best guess at what this work relies on,
+not a requirement. Where the work needs a behaviour a listed capability provides, take it from the
+shared library, layer, chassis or service named, through the interface named, rather than writing
+a copy, a local equivalent or a direct call to the AWS service or provider the capability wraps; the
+"You must" text of each entry says how. Not using a listed capability is not a defect and creates
+no work: the build records in the matrix what the code uses. When a capability you use lacks
+something required, develop that prerequisite in its owning repository and normal worktree instead
+of duplicating it locally.
 SkillSpoke libraries still require publication before a consumer can resolve their changed code;
 do not edit version pins or lockfiles ahead of CodeArtifact.
 

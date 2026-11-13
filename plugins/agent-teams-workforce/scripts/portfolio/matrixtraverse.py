@@ -16,7 +16,7 @@ came from.
   the architect reviews and the approved mark covers once it is approved; :func:`reach_rows`: each
   entry of that scope with whether it is approved, how it is reached and the Epics that share it.
 - :func:`constraints_for`: some entries to the constraints that bind them.
-- :func:`capabilities`: some entries to the shared capabilities the work that builds them must use.
+- :func:`capabilities`: some entries to the shared capabilities the matrix guesses the work that builds them relies on.
 - :func:`impact`: an entry to everything a change to it reaches.
 
 ``matrixquery`` renders what these return as the objects the ``atw-matrix`` reads print.
@@ -292,7 +292,7 @@ class ConstraintReach:
 
 @dataclass(frozen=True, slots=True)
 class CapabilityReach:
-    """One shared capability the work that builds some entries must use."""
+    """One shared capability the matrix guesses the work that builds some entries relies on."""
 
     feature: EntryId
     relies: tuple[str, ...]
@@ -1221,7 +1221,7 @@ def constraints_for(matrix: Matrix, entry_ids: Sequence[EntryId]) -> list[Constr
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def capabilities(matrix: Matrix, entry_ids: Sequence[EntryId]) -> list[CapabilityReach]:
-    """Find the shared capabilities the work that builds some entries must use.
+    """Find the shared capabilities the matrix guesses the work that builds some entries relies on.
 
     The walk is entries → the features they realize → the features those are supported by, to any
     depth; a feature given among the entries is walked from itself. A capability is a feature

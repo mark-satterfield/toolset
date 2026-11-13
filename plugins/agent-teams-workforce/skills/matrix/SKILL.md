@@ -25,6 +25,11 @@ found from `--matrix`, else `ATW_MATRIX`, else `ATW_CONTROL_REPO`. Every sub-com
 options with `--help`. This is machine-local current state, ignored by git; it is neither
 committed nor pushed. Worktree sessions use the same resolved file.
 
+The matrix is a best guess, not a requirement. Where a built Task's code diverges from it (the code
+does not use a shared capability the matrix guessed, uses one the matrix does not record, or the
+Task names an id the matrix lacks), that is never a build failure, a finding that blocks, or work
+for an implementer: the build corrects the matrix from the code (`follow-code`, below).
+
 What the code does outranks this page: the kinds are
 `skills/artifact-handoff/schemas/matrix-kinds.json`, the commands `scripts/portfolio/matrix.py`
 and `matrixcli.py`, the full design `blueprint/design/matrix.md`.
@@ -34,8 +39,8 @@ and `matrixcli.py`, the full design `blueprint/design/matrix.md`.
 Every entry has `id` (`<kind>:<slug>`), `kind`, `name`, `aliases`, `purpose`, `side` and the
 attributes of its kind. Every relationship has `kind`, `from`, `to`, `side` and the attributes of
 its kind. **`side`** says where a fact came from: `architecture` (beads, a PRD, an arc42 document
-or the architect; the authority) or `repository` (what a repository holds today; a hint, never a
-finding when it differs). Any entry may link to any other; a relationship kind names no entry
+or the architect; the planned design, which the build corrects from the code it commits) or
+`repository` (what a repository holds today; a hint, never a finding when it differs). Any entry may link to any other; a relationship kind names no entry
 kinds, and an undeclared lowerCamelCase kind is accepted with no attributes.
 
 The chain from an Epic to a repository:
@@ -88,7 +93,7 @@ with direction and meaning, are in [references/model.md](references/model.md).
 | Every document related to an entry (and its parts) | `atw-matrix documents --id <id>` |
 | Follow links to any depth, either direction, chosen kinds | `atw-matrix links --id <id> --direction in --kinds describedBy,servedBy` |
 | Layers, their packages and users | `atw-matrix layers` |
-| Shared capabilities the work on some entries must use | `atw-matrix uses --ids <id> ...` |
+| Shared capabilities the matrix guesses the work on some entries relies on | `atw-matrix uses --ids <id> ...` |
 | What a Story building some entries of a stack must be handed | `atw-matrix story-scope --stack stack:<id> --ids <id> ...` |
 | Documents an Epic reaches that are not effective | `atw-matrix review-scope --epic <beads id>` |
 | The text of document headings, as the vault's last commit holds them | `atw-matrix heading '<path>#<heading>' ...` (a path alone prints the whole document) |
@@ -171,7 +176,7 @@ is a dependency gap, not a reason to invent an approval hold.
 | `approved: true` | architecture for individual features and components, never an Epic | The architecture agent vetted the item's architecture and design. The mark remains valid across overlapping Epics and changes only when the specific architecture changes and needs reapproval. | Promotion records the architect's approval after reviews pass. Acceptance of an architect's changed design withdraws approval only for the affected architecture. No session restores a mark by hand. |
 | `verified: true` | completed architecture items and features | The feature's build pipeline completed and its architecture exists in code or infrastructure as code. The mark belongs to the item across all Epics. | The build driver records completion through `verify --story`. Unfinished contributing Stories defer an item. Features require all recorded architecture realizers verified; missing realizers remain unknown. No-PR completion uses the same rule. Known implementation changes clear only the affected item's mark. |
 | `lifecycle` | `document` | Mirrors the document's `lifecycle_state`: `effective` (approved) or `in-review`, or another vault value such as `draft` or `superseded`. What the states and the approve action mean: the `effective-architecture` skill, "Lifecycle, the baseline and iteration". | `atw-matrix sync-documents`; the promotion step after `depscore.py arch-approve`. |
-| `side` | everything | `architecture` (authority) or `repository` (hint). | Whoever records the fact: `put` and `link` take `--side`. |
+| `side` | everything | `architecture` (the planned design, corrected from built code) or `repository` (hint). | Whoever records the fact: `put` and `link` take `--side`. |
 
 Seeding sets neither mark. Neither mark blocks reading, linking, designing or Epic work.
 
@@ -212,7 +217,8 @@ are validated before the locked write; existing verified marks are preserved.
 - Writing needs a role in `ATW_MATRIX_ROLE` (unset means `operator`). `put`, `link` and `unlink`:
   `solutions-architect`, `repository-steward`, `script`. `settle`: `solutions-architect`,
   `decider`. `rename` and `remove`: `solutions-architect`, `repository-steward`, `operator`
-  (`remove` also `script`). `record-judgments`: `script`, `operator`. `move-repository`:
+  (`remove` also `script`). `record-judgments`: `script`, `operator`. `follow-code`:
+  `build-workflow`. `move-repository`:
   `repository-steward`, `operator`. `apply`: `solutions-architect`,
   `repository-steward`, `script`, `decider`, and each operation of the file needs the role its
   own sub-command needs. Reads need none.
@@ -263,6 +269,28 @@ are validated before the locked write; existing verified marks are preserved.
   `link`, `unlink` and `settle` as an operation in the run's change file (`matrix-changes.json`,
   to `matrix-change.schema.json`), which the step that accepts the architect's result applies in
   one update.
+
+## The build corrects the matrix from the code
+
+After `build:commit` commits a Task, the build runs `build:matrix-follow`, which calls
+`follow-code` in process (`scripts/portfolio/matrixfollow.py`; on the command line
+`atw-matrix follow-code --task <beads id> --ids <id> ... --worktree <path> --files <path> ...`)
+with the ids in the Task's `matrix_elements`, its Story worktree and the files its own commits
+changed.
+It corrects the architecture-side `supportedBy` relationships of the features the Task builds:
+
+- A relied `provides` item whose use signals occur nowhere in the repository's tracked source is
+  dropped from `relies`; the relationship is unlinked when no item is left. Written only when the
+  feature is wholly in the Task's repository and no other open Task builds it.
+- A shared capability whose use signals occur in the Task's changed product files, and which its
+  ids do not reach, is linked from the one feature the Task builds that is wholly in its repository.
+- Anything else that diverges is recorded as `deferred` with its reason, and ids the matrix lacks as
+  `unknownIds`; neither is written. Items with no use signal are kept.
+
+The step records the `matrixFollow` value (`removed`, `narrowed`, `linked`, `deferred`,
+`unknownIds`). The build's reuse audit (`check-reuse`) records divergence as notes only. A changed
+relationship clears the start feature's `verified` mark; `verify --story` at Story close sets it
+again on the corrected matrix.
 
 ## Reconciling and seeding
 

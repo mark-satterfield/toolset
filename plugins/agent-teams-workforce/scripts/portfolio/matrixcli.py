@@ -5,7 +5,7 @@
 ``rename``, ``remove`` and ``move-repository``;
 ``sync-epics``, ``sync-documents`` and ``sync-events``; ``seed`` and its steps (``seed-stacks``,
 ``seed-packages``, ``seed-inputs``, ``seed-features``, ``seed-realizers``, ``seed-apply``); ``verify`` and the Task
-script's ``built``, ``work`` and ``affected``; ``check-reuse``; ``shared-items`` and
+script's ``built``, ``work`` and ``affected``; ``check-reuse`` and ``follow-code``; ``shared-items`` and
 ``record-judgments``. Each change is
 one locked read-modify-write of the matrix file.
 
@@ -44,6 +44,7 @@ from matrix_contract import (
 from matrixcall import EXIT_OK, EXIT_REFUSED, Call, Outcome
 from matrixcode import COMMAND_VERIFY, record_verified
 from matrixevents import CATALOG_PATH, CatalogEvent, EventsSynced, read_catalog, sync_events
+from matrixfollow import COMMAND_FOLLOW_CODE, FollowResult, FollowScope, follow_code
 from matrixquery import impact_view
 from matrixreuse import check_reuse
 from matrixseed import (
@@ -794,6 +795,27 @@ def _run_check_reuse(call: Call) -> Outcome:
     return Outcome(check_reuse(read_matrix(call.matrix()), ids, worktree, call.texts("files") or None))
 
 
+def _run_follow_code(call: Call) -> Outcome:
+    """Run ``follow-code``.
+
+    Returns:
+        What the correction changed in the matrix from the Task's code, and what it left as it was.
+
+    """
+    scope: FollowScope = FollowScope(
+        task=call.required("task"),
+        entry_ids=tuple(call.entries("ids")),
+        worktree=Path(call.required("worktree")).expanduser(),
+        files=tuple(call.texts("files")),
+        tasks=tuple(read_tasks(call.folder("control", CONTROL_VARIABLES))),
+    )
+
+    def change(matrix: Matrix) -> FollowResult:
+        return follow_code(matrix, scope)
+
+    return Outcome(update_matrix(call.matrix(), change, wait=call.lock_wait()))
+
+
 def _run_shared_items(call: Call) -> Outcome:
     """Run ``shared-items``.
 
@@ -877,6 +899,7 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     COMMAND_WORK: _run_work,
     COMMAND_AFFECTED: _run_affected,
     "check-reuse": _run_check_reuse,
+    COMMAND_FOLLOW_CODE: _run_follow_code,
     "shared-items": _run_shared_items,
     "record-judgments": _run_record_judgments,
 }
@@ -1112,6 +1135,15 @@ def _build_parsers(
     reuse.add_argument("--ids", nargs="+", required=True, help="the shared capability ids the Task states")
     reuse.add_argument("--worktree", required=True, help="the worktree the Task changed")
     reuse.add_argument("--files", nargs="+", help="the changed files; default: what git reports changed")
+    follow: argparse.ArgumentParser = commands.add_parser(
+        COMMAND_FOLLOW_CODE,
+        parents=[where, control],
+        help="correct the supportedBy guesses of the features a built Task builds from what its code uses",
+    )
+    follow.add_argument("--task", required=True, help="the Task's beads id")
+    follow.add_argument("--ids", nargs="+", required=True, help="the ids the Task's matrix_elements state")
+    follow.add_argument("--worktree", required=True, help="the worktree holding the Task's committed code")
+    follow.add_argument("--files", nargs="+", default=[], help="the files the Task's own commits changed")
     shared: argparse.ArgumentParser = commands.add_parser(
         "shared-items",
         parents=[where, sources["prds"]],

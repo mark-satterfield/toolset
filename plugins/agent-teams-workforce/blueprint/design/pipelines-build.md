@@ -95,7 +95,8 @@ flowchart TD
     docs --> finalreview[Independent review of resulting code and test diff]
     finalreview --> final[Whole suite and mapped regression evidence verified]
     final --> commit[Commit through normal hooks on Story branch]
-    commit --> done([Task built; driver closes Task])
+    commit --> follow[Correct the matrix from the committed code]
+    follow --> done([Task built; driver closes Task])
 ```
 
 ## Execution policy and evidence reuse
@@ -295,26 +296,39 @@ fresh execution evidence remain required.
 
 The build develops missing prerequisite services, libraries and infrastructure in their owning
 repositories and normal worktrees. It does not merely stop because a prerequisite has not yet
-been built, and it does not duplicate a shared capability locally. Required external authority
+been built, and it takes a behaviour a shared capability provides from that capability rather than
+writing it locally. Required external authority
 and unpublished SkillSpoke library changes remain explicit blocking facts under their existing
 rules; a consumer pin or lockfile is never changed ahead of publication.
 
 Shared-capability review considers the capabilities named by the Task's matrix IDs
-(`matrix_elements`). `build_reuse.py` first runs `check-reuse` in process against the changed
+(`matrix_elements`). The matrix is a best guess the build corrects from the code, so every
+finding of this review is a note: divergence is never a build failure, starts no correction round
+and gives implementers no work. `build_reuse.py` first runs `check-reuse` in process against the changed
 source files of the Story worktree (suffixes in `matrixreuse.SOURCE_SUFFIXES`, outside the
-pipeline's `.agent-workforce` folder, so test reports and logs are never read): a line that does what a capability provides and a relied-on
-capability nothing references are blocking findings it settles, and an id the matrix does not
-hold is a contract finding. A capability the Task's own repository provides is not checked, since
+pipeline's `.agent-workforce` folder, so test reports and logs are never read): a line that does what a capability provides, a relied-on
+capability nothing references and an id the matrix does not hold are notes it settles. A duplicate
+is a note too: the owner's architecture constraints (arc42 section 2) hold no general rule that
+code must use shared components, and the duplicate signals are the matrix's own guess. A capability the Task's own repository provides is not checked, since
 its definitions there are its implementation, and neither is what a feature that only consumes
 such a capability is supported by, when another repository realizes that feature too. Only when the
 check leaves product definitions (test files are not read) whose names share two words outside
 `matrixreuse.STOP_WORDS` with a provided behaviour is the shared-capability-reviewer started. It is handed each distinct definition once, with its candidate
 capability items, in text files of at most 40,000 characters it reads whole, and returns one
 ruling per definition (`build-reuse-rulings.schema.json`). `build:reuse-ruled` then merges the
-rulings with the settled findings into the review by script, and fails the step when a handed
-definition has no ruling. Otherwise the audit step records the review itself. UI work is
-reviewed against the Task's stated supplied bundle or live CDS source. Blocking and warranted
+rulings, as notes, with the settled notes into the review by script, and fails the step when a
+handed definition has no ruling. Otherwise the audit step records the review itself. UI work is
+reviewed against the Task's stated supplied bundle or live CDS source; its blocking and warranted
 improvement findings receive bounded implementation and re-review.
+
+After the commit, `build:matrix-follow` (`build_follow.py`, `matrixfollow.follow_code`) makes the
+matrix follow the committed code under the matrix's lock. It drops a relied `provides` item whose
+use signals occur nowhere in the repository's tracked source from the architecture-side
+`supportedBy` (unlinking it when none is left) for a feature wholly in the Task's repository that
+no other open Task builds, and links a capability the Task's changed product files use, and its
+ids do not reach, from the Task's one wholly-local feature. Everything else that diverges is
+recorded as deferred with its reason, and ids the matrix lacks as unknown, in the `matrixFollow`
+value. Only a matrix read or write that cannot be made fails the step.
 
 ## Commit and completion
 

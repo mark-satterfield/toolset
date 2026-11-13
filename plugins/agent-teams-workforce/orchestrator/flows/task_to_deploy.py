@@ -33,6 +33,7 @@ from orchestrator.core.tool_locks import control_repo, seconds
 from orchestrator.core.tools import Tools
 from orchestrator.flows import (
     build_carried,
+    build_follow,
     build_policy,
     build_prerequisite_work,
     build_prerequisites,
@@ -1255,10 +1256,10 @@ def _final_review_checked(run: StepRun) -> Completion:
 
 
 def _commit(run: StepRun) -> Completion:
-    """Use normal repository hooks when committing the completed Task.
+    """Use normal repository hooks when committing the completed Task, then correct the matrix from its code.
 
     Returns:
-        The actual resulting HEAD.
+        The actual resulting HEAD, and the step that makes the matrix follow the committed code.
 
     """
     bead: dict[str, JsonValue] = _object(run, "bead")
@@ -1266,6 +1267,7 @@ def _commit(run: StepRun) -> Completion:
     commit: str = checkpoint(run.tools, _workspace(run), f"feat(build): {run.bead} {title}")
     return Completion(
         artifacts=(value_artifact("commit", commit), value_artifact("executionSummary", build_policy.summary(run))),
+        add=(StepGroup((_new(build_follow.STAGE, "Record in the matrix what the Task's code uses"),)),),
     )
 
 
@@ -1316,6 +1318,7 @@ def _registry() -> Registry:
         "build:final-review": _final_review,
         "build:final-review-checked": _final_review_checked,
         "build:commit": _commit,
+        build_follow.STAGE: build_follow.follow,
         **build_repository_setup.HANDLERS,
     }
     for key, handler in handlers.items():

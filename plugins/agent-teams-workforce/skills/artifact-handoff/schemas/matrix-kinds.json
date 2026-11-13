@@ -453,6 +453,7 @@
     "approve-reviewed": {"writes": true, "roles": ["script"]},
     "check": {"writes": false, "roles": ["script", "operator", "repository-steward"]},
     "check-reuse": {"writes": false, "roles": ["build-workflow"]},
+    "follow-code": {"writes": true, "roles": ["build-workflow"]},
     "shared-items": {"writes": false, "anyRole": true},
     "record-judgments": {"writes": true, "roles": ["script", "operator"]},
     "put": {"writes": true, "roles": ["solutions-architect", "repository-steward", "script"]},

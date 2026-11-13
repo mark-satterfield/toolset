@@ -281,7 +281,7 @@ def _run_uses(call: Call) -> Outcome:
     """Run ``uses``.
 
     Returns:
-        The shared capabilities the work that builds the entries must use.
+        The shared capabilities the matrix guesses the work that builds the entries relies on.
 
     """
     return Outcome(uses_view(read_matrix(call.matrix()), call.entries("ids")))
@@ -453,7 +453,7 @@ def _read_parsers(
     uses: argparse.ArgumentParser = commands.add_parser(
         "uses",
         parents=[where],
-        help="the shared capabilities the work that builds some entries must use",
+        help="the shared capabilities the matrix guesses the work that builds some entries relies on",
     )
     uses.add_argument("--ids", nargs="+", required=True, help="the ids of the entries the work builds")
     approval: argparse.ArgumentParser = commands.add_parser(

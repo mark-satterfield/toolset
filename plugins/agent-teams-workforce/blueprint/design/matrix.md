@@ -79,7 +79,9 @@ fact came from (requirements section 4.1, R43, R45, R50). It is one common field
 exception by kind. `put` and `link` require it, and every lookup returns it.
 
 - `architecture`: beads, a PRD or an arc42 document states the fact, or the architect
-  designed it. This side is the authority. An `epic`, a `requirement`, a `feature` and the
+  designed it. This side is the planned design, a best guess: where a built Task's code
+  diverges from its shared-capability relationships, the build corrects them from the code
+  (B8), and the divergence is never a build failure. An `epic`, a `requirement`, a `feature` and the
   relationships among them always carry it.
 - `repository`: the fact was read from what is in a repository today. It is a hint. It is
   never verified by seeding, and it never replaces or changes an architecture-side fact.
@@ -348,7 +350,7 @@ with no basis that does not end at a stack. A change to the item leaves its `dri
 since a relationship that ends at an entry is neither cleared nor removed when the entry changes.
 
 Three further reads serve single steps. `uses --ids <entry ids>` returns the shared
-capabilities the work that builds those entries must use (entries → `realizes` → features →
+capabilities the matrix guesses the work that builds those entries relies on (entries → `realizes` → features →
 `supportedBy` to any depth → features with `provides`, each with its `realizedBy` provider
 and that provider's stack). `story-scope --stack <id> --ids <entry ids>` returns in one
 object the stack and its repository, the documents and headings that describe each entry
@@ -501,9 +503,10 @@ those lanes only as far as slices 29 and 31 of section 6 state.
 | B2 Infrastructure intent | `workflows/task-to-deploy.js` `stepInfraIntent`; `workflows/infra-intent.js` | `node stack:<id>` with what it holds, `deps --of` (Q6, Q9, Q11). | Nothing. The intent provisions what the matrix states the stack holds and depends on. |
 | B3 Implementers and Green | `stepSelectImplementers`; `workflows/tdd-green.js`; `agents/cdk-stack-author.md` and the implementer agents | The shared capability ids the Task states (R41); `node` for each provider and its stack (Q6). | Nothing. The implementer result's `upstreamMissing` and `dependencies` are in the step journal. |
 | B4 Regression | `workflows/task-to-deploy.js` `regressionBrief`, `regressionReviewBrief`; `agents/regression-impact-assessor.md`; `skills/cumulative-regression/SKILL.md` | `impact --id` for each entry the Task states (Q19, Q15). | Nothing. The per-repository `regression.json` holds test mappings and execution evidence only. |
-| B5 Reuse audit | `orchestrator/flows/build_reuse.py` `audit()` and `ruled()`; `agents/shared-capability-reviewer.md` | `check_reuse` in process with the ids the Task states (`matrix_elements`) and the Story worktree, leaving out the capabilities the Task's own repository provides; the reviewer is started only for the definitions the check cannot rule on, and its rulings are merged with the check's findings by script. | Nothing. A signal the reviewer rules wrong is in the step's result. |
+| B5 Reuse audit | `orchestrator/flows/build_reuse.py` `audit()` and `ruled()`; `agents/shared-capability-reviewer.md` | `check_reuse` in process with the ids the Task states (`matrix_elements`) and the Story worktree, leaving out the capabilities the Task's own repository provides; the reviewer is started only for the definitions the check cannot rule on, and its rulings are merged with the check's findings by script. Every finding is a note: divergence from the matrix's guess (unused, duplicate, ids the matrix lacks) blocks nothing and starts no correction round. | Nothing. B8 corrects the matrix. |
 | B6 Suite run | `workflows/suite-run.js` `resolvePrompt` | The stack's `commands.test` (Q21). The resolving session runs only when it is empty. | Nothing. |
-| B7 Commit and Task close | `stepCommit`; `ops/sdlc-automation/lane.py` `_settle_build` | none | Nothing. No flag is set before the Story's test passes (D8). |
+| B7 Commit and Task close | `stepCommit`; `ops/sdlc-automation/lane.py` `_settle_build` | none | Nothing. No flag is set before the Story's test passes (D8). `build:commit` adds B8. |
+| B8 Matrix follows the code | `orchestrator/flows/build_follow.py` `follow()`; `scripts/portfolio/matrixfollow.py` `follow_code()` (`follow-code`, role `build-workflow`) | The ids the Task states, the Story worktree's tracked source, the files the Task's own `feat(build)` commits changed, the repository's stacks, and the other open Tasks from beads. | Under one `update_matrix`: a relied `provides` item whose use signals occur nowhere in the tracked source is dropped from the architecture-side `supportedBy` (unlinked when none is left), only for a feature wholly in this repository that no other open Task builds; a capability the changed product files use and the ids do not reach is linked from the Task's one wholly-local feature; everything else is `deferred`, and ids the matrix lacks are `unknownIds`. The `matrixFollow` value records it. A changed relationship clears the start feature's `verified`; D8 sets it again. |
 
 ### Deploy (the driver's `storydeploy.py` and its workflows)
 
@@ -626,7 +629,7 @@ The Proof column names the command of a slice's sanity check where one fits.
 | 5 | `verify`; the Task script's `built`, `work` and `affected`; the three older marks and `story-built` leave | `scripts/portfolio/matrixcode.py`, new `matrixtasks.py` | The sanity check, lint and strict type checking on the changed files | 2 |
 | 6 | `sync-epics` with requirements; `sync-documents` with `describedBy`, removal and `--paths` | `scripts/portfolio/matrixsync.py` | `atw-matrix check` | 2 |
 | 7 | `seed` and its steps: the empty file, `seed-stacks`, `seed-packages`, `seed-inputs`, `seed-features --list`, `seed-realizers`, `seed-apply`; none runs a `cdk` command; `matrixcarry.py` leaves | new `scripts/portfolio/matrixseed.py`; `matrixcarry.py` | The sanity check, lint and strict type checking on the changed files | 2 |
-| 8 | `review-scope`, `check-reuse` | `scripts/portfolio/matrixreview.py`, `matrixreuse.py` | The sanity check, lint and strict type checking on the changed files | 2 |
+| 8 | `review-scope`, `check-reuse`, `follow-code` | `scripts/portfolio/matrixreview.py`, `matrixreuse.py`, `matrixfollow.py` | The sanity check, lint and strict type checking on the changed files | 2 |
 | 9 | Command table and roles | `scripts/portfolio/matrixcli.py`, `matrix.py`, `matrixcall.py`, `bin/atw-matrix` | `bin/atw-matrix --help` lists the commands of sections 1 to 4 and none of the removed ones | 3 to 8 |
 | 10 | Seed, script steps P1 to P6, no agent: one run of `atw-matrix seed` writes the empty file, the 127 open Epics with their 1,103 requirements, the 179 arc42 documents, one stack for each of the 63 repositories that are not deprecated and whose name ends in a listed type, their packages, and the batch files | `ops/sdlc-automation/matrix.json` through `atw-matrix`; the batch files | `atw-matrix check`; `atw-matrix summary` counts the Epics, requirements, documents, stacks and packages | 9 |
 | 11 | Seed, architecture side (G1), 9 agents: one `aws-solutions-architect` per batch of about 20 effective arc42 documents writes what each document describes, the stack it says each is in, the stack's purpose, the dependencies and the constraints; `seed-apply` records the result files | The result files; `ops/sdlc-automation/matrix.json` through `atw-matrix` | `atw-matrix check`; `atw-matrix layers` returns the layers arc42 states | 10 |
@@ -724,9 +727,13 @@ after slice 34 for the change to take effect. The first pipeline run follows sli
 15. **Stack types.** The matrix stores none and reads the last token. `check` reports a
     token `resource-naming-standard.md` does not list, and the list is extended there.
 16. **A Task's shared capabilities.** Elaboration derives them with `uses` from the entries
-    the Task builds and writes their ids into the Task (R41). The build checks the changed
-    files against them with `check-reuse`; the deterministic check catches a duplicate
-    before a reviewer is asked. A capability the Task's own repository provides (an entry the
+    the Task builds and writes their ids into the Task (R41). They are the matrix's best guess,
+    not a requirement. The build compares the changed files with them with `check-reuse` and
+    records the divergence as notes; the deterministic check catches a duplicate before a
+    reviewer is asked. No divergence fails the build or starts a correction round, because the
+    owner's architecture constraints (arc42 section 2) hold no general rule that code must use
+    shared components and the signals are the matrix's own guess; after the commit the build
+    corrects the matrix from the code (B8). A capability the Task's own repository provides (an entry the
     Task states, or one its stack holds, realizes it) is not checked: its definitions there are
     its implementation. Nor is the walk started from a feature that only consumes such a
     capability and is realized outside the Task's repository too; a feature only the Task's
