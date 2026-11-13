@@ -1,18 +1,29 @@
-"""What a promoted architecture change reaches, and the Epics elaborated against the architecture it changed.
+"""The other Epics whose own approved architecture an Epic's elaboration changed, and their restart.
 
-The promotion step plans these two steps after itself whenever it set documents effective:
+What an Epic's architecture change reaches is assessed once, when its elaboration ends: the Story
+edges step plans these two steps after itself (:func:`follow_steps`), before the step that marks
+the Epic elaborated, and never a promotion, since a design-gap round promotes again within the
+same elaboration.
 
-1. ``architecture-impact-analyst`` is handed the promoted documents and the architect's result. It
-   runs ``atw-matrix impact`` and ``atw-matrix affected`` for each changed view and rules on every
-   Epic and open Task they return (``impact-rulings.schema.json``). It changes nothing.
-2. A script step applies the rulings. Each other Epic ruled ``elaborated-unbuilt`` (its Stories and
-   Tasks exist, and no build has started on them) is started again from the step that plans its
-   Architecture steps by the driver's ``reelaborate.restart``, which checks the ruling against the tracker
-   and the journals again, makes the journal change ``elabmark.py --start-at`` makes, and sets the
-   Epic's elaboration state to ready with the cause
-   ``architecture-changed``; its re-elaboration then rewrites its Stories and Tasks in place,
-   matched by ``elab_key``. An ``already-built`` item's knock-on Task is recorded as proposed and
-   never created. The Epic being elaborated is never restarted by its own promotion.
+The scope (:func:`impact_scope`) is the other Epics whose own work rests on an entry this Epic
+changed: each Epic with a Task whose matrix elements name an entry the architect's result lists
+under ``addedOrChangedElements`` (the Task builds the entry, adds to it, or builds against it, as
+the ``matrix`` skill's "Who builds an entry" reads a Task's entries), with those entries. An Epic
+whose requirements merely reach a changed entry by the rule of reach, through shared
+infrastructure or a view that describes it, is not in it. When the scope is empty, nothing is
+planned.
+
+1. ``architecture-impact-analyst`` is handed the scope (``impact scope``) and the architect's
+   result. It rules on each Epic of the scope and on the open Tasks of those Epics that
+   ``atw-matrix affected`` returns for a changed entry (``impact-rulings.schema.json``): elaborated
+   but unbuilt only when the change makes something that Epic's specs or Tasks state about the
+   entry wrong. It changes nothing.
+2. A script step applies the rulings. Each Epic of the scope ruled ``elaborated-unbuilt``
+   (``impact-rulings.schema.json`` defines the verdicts) is started again from the step that plans
+   its Architecture steps by the driver's ``reelaborate.restart``, which owns how a restart is
+   checked and made. An ``already-built`` item's knock-on Task is recorded as proposed and never
+   created. An Epic outside the scope, and the Epic being elaborated, is never restarted, whatever
+   its ruling.
 
 A restart the driver refuses (the Epic is not elaborated, a build has started on it, or a run works
 on it now) is recorded and changes nothing. A restart that raises is recorded too, and
@@ -23,18 +34,22 @@ restarted Epic is no longer elaborated.
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable
+from collections import defaultdict
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Protocol
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "beads-contract" / "scripts"))
+import beadgraph
 from bead_metadata import CAUSE_ARCHITECTURE_CHANGED
+from matrixtasks import TaskBead, tasks_of
 from typeguard import check_type
 
+from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
 from orchestrator.core.driver_contracts import driver_module
 from orchestrator.core.handback_contract import OTHER_CAUSE
-from orchestrator.core.io import JsonValue, json_object
+from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import agent_step, script_step
 from orchestrator.core.journal_steps import (
     AgentLaunch,
@@ -47,19 +62,28 @@ from orchestrator.core.journal_steps import (
 )
 from orchestrator.flows.architecture_files import (
     LABEL_RESULT,
+    PROMOTE,
     ArchitectureContext,
     architecture_folder,
     read_context,
+    read_result,
 )
+from orchestrator.flows.elaboration_files import control_repository
+from orchestrator.flows.repo_scoping import story_build_entries
+
+# isort: split
+# step_journal puts the pipeline-contracts scripts directory on sys.path; the contract import follows it.
+from step_journal_contract import STATUS_DONE
 
 if TYPE_CHECKING:
-    from step_journal_contract import StepPlan
+    from architecture_work_contract import ArchitectureResult
+    from step_journal_contract import Journal, StepPlan
 
 ANALYST: Final = "architecture-impact-analyst"
 APPLY: Final = "reelaborate.restart"
 """The script step that applies the analyst's rulings."""
-PROMOTED: Final = "promoted documents"
-"""The promotion step's file of the documents it set effective (``architecture_promotion.PROMOTED``)."""
+SCOPE: Final = "impact scope"
+"""The file of the changed entries and the other Epics whose Tasks rest on them."""
 RULINGS: Final = "impact rulings"
 RESTARTS: Final = "re-elaborations"
 KNOCK_ONS: Final = "knock-on proposals"
@@ -68,6 +92,8 @@ VERDICT_UNBUILT: Final = "elaborated-unbuilt"
 VERDICT_BUILT: Final = "already-built"
 ID_LENGTH: Final = 8
 OUTCOME_ERROR: Final = "error"
+KEY_EPIC_ID: Final = "epicId"
+KEY_ENTRIES: Final = "entries"
 
 
 class _Restarted(Protocol):
@@ -77,22 +103,82 @@ class _Restarted(Protocol):
         """Give the outcome as this step records it."""
 
 
-def impact_steps(promotion: str) -> StepGroup:
-    """Plan the analyst and the step that applies its rulings, after the promotion.
+def impact_scope(tasks: Sequence[TaskBead], bead: str, changed: Sequence[str]) -> dict[str, list[str]]:
+    """Map each other Epic whose Tasks rest on an entry this Epic changed to those entries.
 
     Args:
-        promotion: The promotion step, whose file of promoted documents the analyst is handed.
+        tasks: Every Task of the tracker (``matrixtasks.tasks_of``).
+        bead: The Epic being elaborated.
+        changed: The ids the architect's result lists under ``addedOrChangedElements``.
 
     Returns:
-        The two steps, in the order they run.
+        Each other Epic's bead id with the changed entries a Task of it names among its matrix
+        elements or the entries it builds, in id order; empty when no Task of another Epic names one.
 
     """
+    ids: set[str] = set(story_build_entries(changed))
+    pairs: set[tuple[str, str]] = {
+        (task.epic, entry)
+        for task in tasks
+        if task.epic is not None and task.epic != bead
+        for entry in ids & {*task.elements, *task.builds}
+    }
+    scope: defaultdict[str, list[str]] = defaultdict(list)
+    epic: str
+    entry: str
+    for epic, entry in sorted(pairs):
+        scope[epic].append(entry)
+    return dict(scope)
+
+
+def _scope(run: StepRun) -> tuple[list[str], dict[str, list[str]]]:
+    """Read the changed entries of the Epic's result and the other Epics whose Tasks rest on them.
+
+    Returns:
+        The result's ``addedOrChangedElements``, and :func:`impact_scope` on the tracker as it is now.
+
+    """
+    result: ArchitectureResult = read_result(run, read_context(run))
+    graph: beadgraph.Graph = run.tools.portfolio_read(run.inputs.stage, beadgraph.load, control_repository())
+    tasks: list[TaskBead] = run.tools.portfolio_read(run.inputs.stage, tasks_of, graph)
+    changed: list[str] = list(result["addedOrChangedElements"])
+    return changed, impact_scope(tasks, str(run.bead), changed)
+
+
+def _assessed(journal: Journal) -> bool:
+    """Tell whether the architecture as last promoted was already assessed by an applied impact step.
+
+    An Epic whose journal planned the impact steps after a promotion holds them in its Architecture
+    container: a done apply step after the last done promotion has assessed what this Epic changed.
+
+    Returns:
+        True when such a step is done after the last done promotion, in walk order.
+
+    """
+    done: list[str] = [
+        step.get("script", "")
+        for step in step_journal.steps_in_order(journal)
+        if step["status"] == STATUS_DONE and step.get("script") in {PROMOTE, APPLY}
+    ]
+    return bool(done) and done[-1] == APPLY
+
+
+def follow_steps(run: StepRun) -> tuple[StepGroup, ...]:
+    """Plan the analyst and the step that applies its rulings after the step that runs now, when they are due.
+
+    Returns:
+        The two steps, in the order they run; nothing when this Epic's last promoted architecture
+        was already assessed, or when no Task of another Epic rests on an entry this Epic changed.
+
+    """
+    if _assessed(run.journal()) or not _scope(run)[1]:
+        return ()
     analyst: StepPlan = {
         "ref": "impact",
-        "description": "Rule on every Epic and open Task the promoted architecture change reaches",
-        "purpose": "No work elaborated or built against a view this Epic changed is left silently wrong",
+        "description": "Rule on each other Epic whose own work rests on an entry this Epic changed",
+        "purpose": "No work elaborated or built against an entry this Epic changed is left silently wrong",
         "agent": ANALYST,
-        "inputs": [promotion],
+        "inputs": [run.step["id"]],
     }
     apply: StepPlan = {
         "description": "Start again each other Epic elaborated but unbuilt against the changed architecture",
@@ -100,28 +186,41 @@ def impact_steps(promotion: str) -> StepGroup:
         "script": APPLY,
         "inputs": ["impact"],
     }
-    return StepGroup((NewStep(analyst), NewStep(apply)))
+    return (StepGroup((NewStep(analyst), NewStep(apply))),)
 
 
 @agent_step(ANALYST)
 def analyst(run: StepRun) -> AgentLaunch:
-    """Build the analyst's session: the promoted documents and the architect's result in, its rulings out.
+    """Build the analyst's session: the impact scope and the architect's result in, its rulings out.
 
     Returns:
         The launch.
 
     """
     context: ArchitectureContext = read_context(run)
+    changed: list[str]
+    scope: dict[str, list[str]]
+    changed, scope = _scope(run)
+    folder: Path = architecture_folder(run.context.work)
+    path: Path = folder / f"impact-scope-{run.step['id'][:ID_LENGTH]}.json"
+    write_json(
+        path,
+        {
+            "epic": str(run.bead),
+            "changedEntries": changed,
+            "epics": [{KEY_EPIC_ID: epic, KEY_ENTRIES: list(entries)} for epic, entries in scope.items()],
+        },
+    )
 
     def accept(_accepted: StepRun, output: Path) -> Completion:
-        return Completion(artifacts=(file_artifact(RULINGS, output),))
+        return Completion(artifacts=(file_artifact(RULINGS, output), file_artifact(SCOPE, path)))
 
     return AgentLaunch(
-        output=architecture_folder(run.context.work) / f"impact-{run.step['id'][:ID_LENGTH]}.json",
+        output=folder / f"impact-{run.step['id'][:ID_LENGTH]}.json",
         validate=run.tools.plugin / SCHEMA,
-        outcome="A ruling on every Epic and open Task the promoted architecture change reaches.",
+        outcome="A ruling on each Epic of the impact scope and on each open Task of it a changed entry affects.",
         accept=accept,
-        files=((PROMOTED, run.inputs.file(PROMOTED)), (LABEL_RESULT, Path(context["resultPath"]))),
+        files=((SCOPE, path), (LABEL_RESULT, Path(context["resultPath"]))),
         hand_inputs=False,
     )
 
@@ -156,26 +255,28 @@ def restart_epic(epic: str) -> dict[str, JsonValue]:
 
 @script_step(APPLY)
 def apply_rulings(run: StepRun) -> Completion:
-    """Start again each other Epic the analyst ruled elaborated but unbuilt, and record the knock-on proposals.
+    """Start again each Epic of the impact scope the analyst ruled elaborated but unbuilt, and record the knock-ons.
 
-    A restart that raised fails the step (``run.tools.failure``) once every Epic was tried, with
-    each outcome in its evidence.
+    The scope is read again from the tracker (:func:`impact_scope`), so a ruling on an Epic outside
+    it restarts nothing. A restart that raised fails the step, as the module states, through
+    ``run.tools.failure``.
 
     Returns:
         What each restart did, and the knock-on Tasks proposed for already-built items.
 
     """
     rulings: list[dict[str, JsonValue]] = _rulings(run.inputs.file(RULINGS))
+    scope: dict[str, list[str]] = _scope(run)[1]
     epics: list[str] = list(
         dict.fromkeys(
-            check_type(ruling["epicId"], str)
+            check_type(ruling[KEY_EPIC_ID], str)
             for ruling in rulings
-            if ruling["verdict"] == VERDICT_UNBUILT and ruling["epicId"] != str(run.bead)
+            if ruling["verdict"] == VERDICT_UNBUILT and ruling[KEY_EPIC_ID] in scope
         ),
     )
     restarts: list[JsonValue] = [restart_epic(epic) for epic in epics]
     proposals: list[JsonValue] = [
-        {"beadId": ruling["beadId"], "epicId": ruling["epicId"], "knockOn": ruling["knockOn"]}
+        {"beadId": ruling["beadId"], KEY_EPIC_ID: ruling[KEY_EPIC_ID], "knockOn": ruling["knockOn"]}
         for ruling in rulings
         if ruling["verdict"] == VERDICT_BUILT
     ]

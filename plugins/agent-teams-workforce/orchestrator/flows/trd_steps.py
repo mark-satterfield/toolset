@@ -34,6 +34,7 @@ from matrixstore import as_entry_id, update_matrix
 from matrixtraverse import constraints_for, epic_id
 from typeguard import CollectionCheckStrategy, check_type
 
+from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
 from orchestrator.core.io import JsonValue, write_json
 from orchestrator.core.journal_registry import script_step
@@ -51,12 +52,16 @@ from orchestrator.flows.architecture_files import (
 from orchestrator.flows.architecture_pack import SECTION_TWO, pack_file
 from orchestrator.flows.trd_authoring import cited
 
+# isort: split
+# step_journal puts the pipeline-contracts scripts directory on sys.path; the contract import follows it.
+from step_journal_contract import STATUS_DONE
+
 if TYPE_CHECKING:
     from architecture_work_contract import ArchitectureResult, TrdRequest
     from matrix_contract import Entry, EntryId
     from matrixstore import Matrix
     from matrixtraverse import ConstraintReach
-    from step_journal_contract import StepPlan
+    from step_journal_contract import Step, StepPlan
 
 
 SEED_REF: Final = "trd-seed"
@@ -360,6 +365,35 @@ def seed(run: StepRun) -> Completion:
     )
 
 
+def write_current(run: StepRun, result: ArchitectureResult) -> bool:
+    """Tell whether the TRD already holds what a TRD write from the result would apply.
+
+    It does when the journal's last TRD write is done and its request, which every TRD write
+    writes again in place, states the result's ``trdChanges`` and ``sharedCapabilities``.
+
+    Returns:
+        True when no TRD write is due; False when none is done, the last is not done, or its
+        request states other changes or shared capabilities.
+
+    """
+    writes: list[Step] = [
+        step
+        for step in step_journal.steps_in_order(run.journal())
+        if step.get("agent") == TRD_AUTHOR and step["description"] == WRITE_DESCRIPTION
+    ]
+    asked: Path = Path(read_context(run)["helpersFolder"]) / (WRITE_FILE + REQUEST_SUFFIX)
+    if not writes or writes[-1]["status"] != STATUS_DONE or not asked.is_file():
+        return False
+    request: dict[str, JsonValue] = strict_json(asked)
+    return (
+        request.get("changes") == result["trdChanges"]
+        and request.get(
+            "sharedCapabilities",
+        )
+        == result["sharedCapabilities"]
+    )
+
+
 def write_request(run: StepRun) -> Path:
     """Write the request of the TRD write from the architect's result.
 
@@ -394,6 +428,7 @@ __all__ = [
     "seed",
     "seed_plan",
     "seed_requirements",
+    "write_current",
     "write_plan",
     "write_request",
     "write_seed",

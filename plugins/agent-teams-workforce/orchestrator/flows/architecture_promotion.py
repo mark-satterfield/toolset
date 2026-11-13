@@ -8,8 +8,10 @@ entries up to date so that each mirrors its lifecycle (the matrix holds no folde
 the review log from the Epic's matrix entry, removes each disagreement a document maintainer of
 this run corrected the losing statement of, and sets the approved mark on the architecture the
 Epic's elaboration reviewed (its architecture review reach in the corrected matrix).
-It then commits and pushes those documents and the review log, and plans the impact analyst and
-the step that applies its rulings (``architecture_impact``). The matrix remains local.
+It then commits and pushes those documents and the review log. The matrix remains local. What
+the promoted change reaches is assessed once, when the Epic's elaboration ends
+(``architecture_impact``), never after a promotion: a promotion inside a design-gap round is one
+of several of the same elaboration.
 Anything else is a failure with a structured cause.
 """
 
@@ -34,7 +36,7 @@ from step_journal_contract import STATUS_DONE
 from orchestrator.core import step_journal
 from orchestrator.core.io import write_json
 from orchestrator.core.journal_registry import script_step
-from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, file_artifact, value_artifact
+from orchestrator.core.journal_steps import Completion, StepRun, file_artifact, value_artifact
 from orchestrator.flows.architecture_files import (
     ARCHITECTURE_FOLDER,
     LABEL_REQUEST,
@@ -50,7 +52,6 @@ from orchestrator.flows.architecture_files import (
     read_context,
     written_documents,
 )
-from orchestrator.flows.architecture_impact import impact_steps
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -271,12 +272,8 @@ def promote(run: StepRun) -> Completion:
     The documents set effective and committed are exactly those this Epic's document maintainers
     wrote (``architecture_files.written_documents``), each staged by its path with the review log.
 
-    When documents were set effective, the impact analyst and the step that applies its rulings
-    follow (``architecture_impact.impact_steps``).
-
     Returns:
-        The file of what was promoted, the vault commit when one was made or pushed, and the
-        impact steps when documents were set effective.
+        The file of what was promoted, and the vault commit when one was made or pushed.
 
     Raises:
         ArchitectureStepError: The matrix does not show a promoted document as effective; the
@@ -320,5 +317,4 @@ def promote(run: StepRun) -> Completion:
             f"the matrix does not show {len(promoted.not_effective)} promoted documents as effective; see {path}",
             *promoted.not_effective,
         )
-    follows: tuple[StepGroup, ...] = (impact_steps(run.step["id"]),) if promoted.documents else ()
-    return Completion(artifacts=tuple(artifacts), add=follows)
+    return Completion(artifacts=tuple(artifacts))

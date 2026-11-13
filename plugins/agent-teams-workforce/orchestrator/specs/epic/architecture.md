@@ -1,13 +1,16 @@
 # Architecture: the steps of the Architecture container
 
 Code: `orchestrator/flows/prd_to_spec.py` (the open-run step), `architecture.py`,
-`architecture_rounds.py`, `architecture_check.py`, `architecture_ruling.py`, `architecture_promotion.py`,
+`architecture_rounds.py`, `architecture_check.py`, `architecture_completeness.py`,
+`architecture_ruling.py`, `architecture_promotion.py`, `architecture_impact.py`,
 `architecture_earlier.py`, `architecture_files.py` (names, the context file and readers).
 
 One agent, `aws-solutions-architect`, is responsible for the solution: it decides the architecture
 a PRD needs, starting from the effective architecture (the effective arc42 before this Epic runs, which
 is approved as of now and never complete), and reviews and approves it against the criteria of
-`effective-architecture/review-standard.md`; nothing else reviews it. It always reads the PRD.
+`effective-architecture/review-standard.md`; before any spec, `architecture-completeness-reviewer`
+checks independently that the detailed design states what the specs carry ("The completeness
+review"). It always reads the PRD.
 arc42 and the matrix are both input and output: a starting point that may be incomplete or wrong,
 and for an Epic no earlier step has reached the matrix normally holds nothing beyond the
 requirement headings synced from the PRD, which is normal. The order of operations is the owner's
@@ -85,7 +88,7 @@ folder of the architecture or of the PRDs.
 | Analyze ("Analyze the PRD against the architecture and put the questions and draft reviews to the specialists") | the open-run step | the state file, then `<arch-work>/questions.json` (`specialist-round.schema.json`): one request per specialist | one step per request whose answer cannot be reused (`architecture_rounds.reuse_refusal`), then a Decide step (round 1), handed every answer of the round: those the steps write, and as its parameter `answered` each that was reused |
 | Decide ("Decide the architecture with the specialists' answers") | the step whose output asked a round | the architecture result at the context's `resultPath`, updated in place | a further round and a Decide (round 2) when the result's `requests` holds an unanswered request; otherwise the document writes |
 | A correction ("Correct what the mechanical check found"), or a step the lead adds | the check, or the lead | the architecture result, updated in place | as for Decide |
-| The answer to the open design gaps ("Answer the design gaps the spec stage found") | the check, when the spec stage filed open design gaps | the architecture result, updated in place, with one `gapAnswers` entry for each row of each `design gaps` file it is handed | as for Decide; with no further round, the gaps are recorded as answered (`design_gaps.settle`) |
+| The answer to the open design gaps ("Answer the design gaps the spec stage found", or "Answer what the architecture completeness review found") | the journal runner, at the end of the container, when the spec stage filed open design gaps; the check, when the completeness review's findings are filed | the architecture result, updated in place, with one `gapAnswers` entry for each row of each `design gaps` file it is handed | as for Decide; with no further round, the gaps are recorded as answered (`design_gaps.settle`) |
 
 The output check of the Analyze step validates the round and the state file, and refuses a request
 naming an agent the `find-specialists` catalog (`skills/find-specialists/catalog.json`) does not
@@ -248,10 +251,11 @@ follows by rule over the matrix, the criteria file, the architect's result and t
 
 | What the check finds | What it plans |
 |---|---|
-| open design gaps the spec stage filed (`design_gaps.handed`), whatever else it finds | the architect's step that answers them, handed the check result, an index and a new check that starts with no corrections spent, because the answer is a new design change |
+| open design gaps filed for the architect (`design_gaps.handed`: the completeness review's findings), whatever else it finds | the architect's step that answers them (`design_gaps.gap_round`), handed the check result, an index and a new check that starts with no corrections spent, because the answer is a new design change |
 | a mechanical defect | a correction step for the architect, handed the check result, an index and a new check; after 3 corrections a defect fails the step |
 | no defect, the result's conclusion is `unsettled`, and no lead has run in the container | the step of `architecture-team-lead`, an index and a new check |
-| otherwise, whatever the conclusion | the TRD write, then the promotion step |
+| no defect, no lead to run, no promotion done in the journal, and no completeness review run yet, or fewer than 2 run and the last found something (`architecture_completeness.review_due`) | the completeness review, then a new check |
+| otherwise, whatever the conclusion | the TRD write, unless the journal's last TRD write is done and its request states the result's `trdChanges` and `sharedCapabilities` as they stand (`trd_steps.write_current`), then the promotion step |
 
 With no defect it reads what is in review for the Epic, the documents the Epic reaches that are
 not effective with the headings reached (`atw-matrix review-scope --epic`), and writes
@@ -282,7 +286,9 @@ included, and hands none to the owner.
 ## The TRD write
 
 Agent `trd-author`, step "Write the TRD from the architect's decisions", planned by a check that
-found no defect, before the promotion; it runs once per pass through the architecture. The launch
+found no defect, before the promotion; it runs at most once per pass through the architecture, and
+a design-gap round plans it only when the result's `trdChanges` or `sharedCapabilities` differ
+from those the last done TRD write applied (`trd_steps.write_current`). The launch
 builder (`architecture.trd_author`, with `trd_steps.write_request`) writes the request from the
 context file and the architect's result: mode `complete`, the result's `trdChanges` as `changes`
 and its `sharedCapabilities`, at `<helpersFolder>/trd.request.json` with the answer beside it
@@ -293,7 +299,8 @@ matrix holds each requirement it added or changed before promotion completes.
 
 ## Promotion
 
-Script `atw-matrix sync-documents`. It follows the TRD write after a check that found no defect.
+Script `atw-matrix sync-documents`. It follows the TRD write (or, when none is due, the check)
+after a check that found no defect.
 It sets the documents this Epic's maintainers wrote effective in their front matter, each folder
 index they listed a view in included: the value `documents synced` each maintainer step recorded
 (`architecture_files.written_documents`). It copies the review log
@@ -305,35 +312,70 @@ documents and the log in the vault (each that exists or that git tracks). The ma
 It writes `<arch-work>/promoted.json` and records it as the file `promoted documents`,
 with the value `vault commit` when a commit was made. A document other than
 a folder index whose matrix entry does not show it effective fails the step, naming each with the reason; anything else that fails ends
-the step with a structured cause. When it set documents effective, it plans the two impact steps
-after itself (`architecture_impact.impact_steps`).
+the step with a structured cause. It plans nothing after itself: a design-gap round promotes again
+within the same elaboration, so what the Epic changed is assessed once, at its end ("Impact of the
+Epic's architecture change").
 
-## Impact of the promoted change
+## The completeness review
 
-`architecture_impact.py`. `architecture-impact-analyst` is handed `promoted documents` and
-`architecture result`, runs `atw-matrix impact` and `atw-matrix affected` for each promoted view,
-and writes one ruling per Epic and open Task they return to `impact-rulings.schema.json` at
-`<arch-work>/impact-<step>.json`, recorded as the file `impact rulings`. The script step
-`reelaborate.restart` then calls the driver's `reelaborate.restart` (`driver_contracts.driver_module`)
-for each Epic other than this one that a ruling names as `epicId` with the verdict
-`elaborated-unbuilt`. The driver checks the ruling again (the Epic is elaborated, no build has
-started on it: no Task of it in progress or closed, no Story of it in progress, no Story's or
+`architecture_completeness.py`. The check plans `architecture-completeness-reviewer` (step "Review
+the architecture for what a spec would have to decide") and a new check after it, before the TRD
+write and the promotion of the first pass. It is handed `prd`, `trd`, `context`, `architecture
+result` and `review scope`, reads the architecture documents, and checks every element the result
+adds or changes, and every element of the Epic's reach with no approved mark, against criteria A15
+to A20 of `effective-architecture/review-standard.md`, and the approved documents it reads for
+statements that contradict each other. It writes `<arch-work>/completeness-<step>.json`
+(`completeness-findings.schema.json`), recorded as the file `completeness findings` with the value
+`completeness findings found`. The step that accepts it files the findings as the open design gaps
+of `completeness-review` (`<arch-work>/design-gaps/open/completeness-review.json`, the repository
+"the architecture completeness review", one document entry per document a finding rests on), so
+the check after it plans the architect's step that answers them all in one round. The review runs
+at most twice in one pass, the second time only after a review that found something; the last
+review's findings still go to the architect. A pass that has promoted (a design-gap round) runs no
+review.
+
+## Impact of the Epic's architecture change
+
+`architecture_impact.py`. The impact is assessed once per elaboration, when it ends: the Story
+edges step (`storyedges.story_edges`) plans the two steps after itself, before "Mark the Epic
+elaborated" (`architecture_impact.follow_steps`). It plans nothing when a done
+`reelaborate.restart` step already follows the journal's last done promotion (a journal planned
+when the promotion planned them), or when the scope is empty.
+
+The scope (`architecture_impact.impact_scope`) is read from the tracker: for each other Epic with
+a Task whose matrix elements (or the entries it builds, `matrixtasks.TaskBead`) name an entry the
+architect's result lists under `addedOrChangedElements`, those entries. That is the work of the
+other Epic that builds the entry, adds to it or builds against it; an Epic whose requirements only
+reach a changed entry by the rule of reach (shared infrastructure, a view that describes it) is
+not in it.
+
+`architecture-impact-analyst` is handed the scope (`<arch-work>/impact-scope-<step>.json`, file
+`impact scope`) and `architecture result`, runs `atw-matrix affected` for each changed entry, and
+writes one ruling per Epic of the scope and per open Task of those Epics a changed entry affects to
+`impact-rulings.schema.json` (`elaborated-unbuilt` only when the change makes something the Epic's
+specs or Tasks state about the entry wrong) at `<arch-work>/impact-<step>.json`, recorded as the file `impact
+rulings`. The script step `reelaborate.restart` reads the scope again and calls the driver's
+`reelaborate.restart` (`driver_contracts.driver_module`) for each Epic of the scope a ruling names
+as `epicId` with the verdict `elaborated-unbuilt`; a ruling on an Epic outside the scope, or on
+this Epic, restarts nothing. The driver checks the ruling again (the Epic is elaborated, no build
+has started on it: no Task of it in progress or closed, no Story of it in progress, no Story's or
 Task's journal worked on by a build or deploy; and no run works on it or its Stories and Tasks),
-starts the Epic's journal
-again at its open-run step, the step that plans its Architecture steps, which removes the steps it
-planned and plans them again as the lane plans them now (a start given at the Architecture
-container begins there too, `step_journal.restart_point`), the same journal change `elabmark.py --start-at` makes,
-and sets `elaboration_state=ready` with the cause `architecture-changed` and no owner. It refuses
-anything else and changes nothing. The step records the value `re-elaborations` (each Epic's
-outcome) and the value `knock-on proposals` (each `already-built` item's proposed Task; none is
-created). A restart that raised fails the step after every Epic was tried, with each outcome in
-its evidence; running the step again restarts nothing twice, since a restarted Epic is no longer
-elaborated. Re-elaboration rewrites the Epic's Stories (in any status but closed) and its
-unstarted Tasks in place, matched by `elab_key` (`beadwrite.write_story`, `write_task`), and a
-child journal whose steps after the first are all planned is created afresh from the rewritten
-bead (`journal_changes.create_child_journal`).
+starts the Epic's journal again at its open-run step, the step that plans its Architecture steps,
+which removes the steps it planned and plans them again as the lane plans them now (a start given
+at the Architecture container begins there too, `step_journal.restart_point`), the same journal
+change `elabmark.py --start-at` makes, and sets `elaboration_state=ready` with the cause
+`architecture-changed` and no owner. It refuses anything else and changes nothing. The step
+records the value `re-elaborations` (each Epic's outcome) and the value `knock-on proposals` (each
+`already-built` item's proposed Task; none is created). A restart that raised fails the step after
+every Epic was tried, with each outcome in its evidence; running the step again restarts nothing
+twice, since a restarted Epic is no longer elaborated. Re-elaboration rewrites the Epic's Stories
+(in any status but closed) and its unstarted Tasks in place, matched by `elab_key`
+(`beadwrite.write_story`, `write_task`), and a child journal whose steps after the first are all
+planned is created afresh from the rewritten bead (`journal_changes.create_child_journal`).
 
 ## After the container
 
 The outermost step "TRD" (`trd.confirm`, `trd-authoring.md`) follows, then the repository span
-(`repo-scoping.md`).
+(`repo-scoping.md`). A design-gap round (`spec-authoring.md`, step 9) adds its steps to the end of
+this container after the specs have started, and plans the TRD confirmation again; the span and
+the repositories without gaps keep their state.

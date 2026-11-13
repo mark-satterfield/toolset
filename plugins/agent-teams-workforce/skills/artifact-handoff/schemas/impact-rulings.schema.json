@@ -1,16 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Impact rulings",
-  "description": "What an architecture change reaches: architecture-impact-analyst's result after an Epic's architecture is promoted. Consumed by the step after it (orchestrator/flows/architecture_impact.py), which restarts the elaboration of each other Epic ruled elaborated-unbuilt and records every ruling and knock-on proposal.",
+  "description": "What an Epic's architecture change reaches: architecture-impact-analyst's result when the Epic's elaboration ends, on the Epics of the impact scope (the other Epics with a Task whose matrix elements name an entry the Epic changed). Consumed by the step after it (orchestrator/flows/architecture_impact.py), which restarts the elaboration of each Epic of the scope ruled elaborated-unbuilt and records every ruling and knock-on proposal.",
   "$ref": "#/$defs/ImpactRulings",
   "$defs": {
     "Verdict": {
-      "description": "unaffected: the change does not reach the item. not-yet-elaborated: an Epic with no Story or Task beneath it. elaborated-unbuilt: Stories and Tasks exist and no build has started on any of them; the Epic is elaborated again. already-built: a build has started under it (a Task in progress or closed, or a Story in progress); a knock-on Task is proposed.",
+      "description": "unaffected: nothing the item's specs or Tasks state about a changed entry is made wrong by the change. not-yet-elaborated: an Epic with no Story or Task beneath it. elaborated-unbuilt: Stories and Tasks exist, no build has started on any of them, and the change makes something they state about a changed entry wrong; the Epic is elaborated again. already-built: a build has started under it (a Task in progress or closed, or a Story in progress); a knock-on Task is proposed.",
       "type": "string",
       "enum": ["unaffected", "not-yet-elaborated", "elaborated-unbuilt", "already-built"]
     },
     "KnockOn": {
-      "description": "The repair an already-built item needs, proposed and never created: the built item it follows, the view that changed and what will stop working.",
+      "description": "The repair an already-built item needs, proposed and never created: the built item it follows, the entry that changed and what will stop working.",
       "type": "object",
       "additionalProperties": false,
       "required": ["title", "description", "repoPath"],
@@ -27,9 +27,9 @@
     "Ruling": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["beadId", "beadType", "epicId", "verdict", "rationale", "views", "knockOn"],
+      "required": ["beadId", "beadType", "epicId", "verdict", "rationale", "entries", "knockOn"],
       "properties": {
-        "beadId": {"description": "The Epic or open Task the matrix returned.", "type": "string", "minLength": 1},
+        "beadId": {"description": "An Epic of the impact scope, or an open Task of one that atw-matrix affected returned.", "type": "string", "minLength": 1},
         "beadType": {"type": "string", "enum": ["epic", "task"]},
         "epicId": {
           "description": "The Epic the item belongs to: the item itself for an Epic, the Epic `affected` names for a Task. The step after the analyst restarts this Epic when the verdict is elaborated-unbuilt.",
@@ -38,8 +38,8 @@
         },
         "verdict": {"$ref": "#/$defs/Verdict"},
         "rationale": {"description": "One line on why, for every verdict.", "type": "string", "minLength": 1},
-        "views": {
-          "description": "The changed views the ruling rests on, by path under the architecture root.",
+        "entries": {
+          "description": "The changed entries the ruling rests on, by matrix id.",
           "type": "array",
           "items": {"type": "string", "minLength": 1}
         },
@@ -61,7 +61,7 @@
         },
         "rulings": {"type": "array", "items": {"$ref": "#/$defs/Ruling"}},
         "escalations": {
-          "description": "What could not be looked up or classified: a changed view with no document entry, an unreadable matrix or tracker, an item whose build state cannot be established.",
+          "description": "What could not be looked up or classified: a changed entry the matrix does not hold, an unreadable matrix or tracker, an item whose build state cannot be established.",
           "type": "array",
           "items": {"type": "string", "minLength": 1}
         },

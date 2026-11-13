@@ -1,6 +1,7 @@
 """The last steps of an elaboration: scoring, the done rule, Story edges and the Epic's mark.
 
-Each is one script step of the Epic's journal, planned when the journal is created. What a step
+Each is one script step of the Epic's journal, planned when the journal is created; the Story
+edges step plans the impact assessment of the Epic's architecture change before the mark. What a step
 needs from the repositories' steps it reads from the artifacts the steps its inputs name hold.
 """
 
@@ -19,6 +20,7 @@ from orchestrator.core.handback_contract import ITEM_CLASS, OTHER_CAUSE, Failure
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_registry import script_step
 from orchestrator.core.journal_steps import Completion, StepRun, value_artifact
+from orchestrator.flows.architecture_impact import follow_steps
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_REPOSITORIES,
     DONE_RULE,
@@ -133,12 +135,15 @@ def apply_done_rule(run: StepRun) -> Completion:
 
 @script_step(STORY_EDGES)
 def story_edges(run: StepRun) -> Completion:
-    """Write the dependency edges between the Epic's Stories.
+    """Write the dependency edges between the Epic's Stories, then plan the Epic's one impact assessment.
 
-    Story edges that could not be written fail the step.
+    Story edges that could not be written fail the step. The impact analyst and the step that
+    applies its rulings follow, before the Epic is marked elaborated, when they are due
+    (``architecture_impact.follow_steps``): this is the one place an elaboration assesses what
+    its architecture change reaches.
 
     Returns:
-        What the Story edge write returns, as an artifact.
+        What the Story edge write returns, as an artifact, with the impact steps when due.
 
     """
     enter_phase(run.context, run.agents.emit, FINISH_PHASE, STORY_EDGES)
@@ -163,7 +168,7 @@ def story_edges(run: StepRun) -> Completion:
     written: dict[str, JsonValue] = json_object(run.tools.operation(FINISH_PHASE, write))
     if written.get("ok") is False:
         raise run.tools.failure(FINISH_PHASE, OTHER_CAUSE, dict(written))
-    return Completion(artifacts=(value_artifact(STORY_EDGES_RESULT, written),))
+    return Completion(artifacts=(value_artifact(STORY_EDGES_RESULT, written),), add=follow_steps(run))
 
 
 @script_step(MARK_DONE)

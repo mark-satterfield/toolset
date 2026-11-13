@@ -12,10 +12,12 @@ step that finds a file an earlier step wrote to a contract that has since change
 (``StaleInputError``) is not failed: the step that wrote the file and every step after it are set
 back to planned, and the loop goes on from there; the same writer named twice in one dispatch
 fails the step, except for an open design gap (``DesignGapError``), whose rounds the step that
-reads the gaps bounds itself. A file is stale only when its writer's session was made under another agent
-definition or contracts; a request a helper is launched from that its writer's current session
-wrote wrongly (``MalformedRequestError``) is corrected by that session from the errors, and the
-helper runs again; the same request malformed twice in one dispatch fails the step.
+reads the gaps bounds itself: only the repositories that hold gaps are set back, after one
+answer round the runner adds to the Architecture container. A file is stale only when its
+writer's session was made under another agent definition or contracts; a request a helper is
+launched from that its writer's current session wrote wrongly (``MalformedRequestError``) is
+corrected by that session from the errors, and the helper runs again; the same request malformed
+twice in one dispatch fails the step.
 
 A session is continued only when its agent definition and contracts are unchanged since it
 started (``AgentRunner.resumable``, by fingerprint); otherwise the step starts a new one.
@@ -696,6 +698,20 @@ def replan_retired(journal: Journal, registry: Registry) -> list[StepId]:
     return stale
 
 
+def _plan_gap_round(journal: Journal, gap: DesignGapError, moment: str) -> None:
+    """Plan the one gap round the repositories that found open design gaps share.
+
+    The solutions architect's step that answers the filed gaps, the index and the check after it
+    become the last steps of the Architecture container, and each step the TRD confirmation needs
+    is planned again; every repository with a gap is set back in its own container
+    (:meth:`JournalRunner._replan_stale`).
+    """
+    step_journal.add_steps(journal, list(gap.plans), moment, parent=gap.container)
+    confirm: StepId
+    for confirm in gap.reconfirm:
+        step_journal.replan_step(journal, confirm, moment)
+
+
 class JournalRunner:
     """Runs the steps of one bead's journal, in order, from the first that is not done."""
 
@@ -855,11 +871,14 @@ class JournalRunner:
         """Set each step that wrote a stale file, and the steps after it, back to planned.
 
         A writer whose stale file names a scope (``within``) is reset with the steps after it in
-        that scope only. Of the other writers, the first in walk order is reset with every step
-        after it, so every later writer is reset too. Runs after the whole group, so no session of
-        the group is running when its step is reset.
+        that scope only. When open design gaps were found, the gap round they share is planned
+        once, in the same journal change (:func:`_plan_gap_round`). Of the other writers, the
+        first in walk order is reset with every step after it, so every later writer is reset
+        too. Runs after the whole group, so no session of the group is running when its step is
+        reset.
         """
         scopes: dict[StepId, StepId | None] = {stale.writer: stale.within for stale in self.stale}
+        gaps: list[DesignGapError] = [stale for stale in self.stale if isinstance(stale, DesignGapError)]
         self.stale = []
         self.gap_steps = set()
         self.gap_keys = set()
@@ -869,6 +888,8 @@ class JournalRunner:
 
         def change(journal: Journal) -> None:
             moment: str = step_journal.timestamp()
+            if gaps:
+                _plan_gap_round(journal, gaps[0], moment)
             writer: StepId
             scope: StepId | None
             for writer, scope in scopes.items():

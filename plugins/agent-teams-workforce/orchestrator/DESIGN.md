@@ -196,12 +196,18 @@ is not failed (`StaleInputError`): once the steps running with it end, the step
 that wrote the file and every step after it are set back to planned (only those inside the step
 the error names as its scope, when it names one), and the run goes on from there, so the file is
 written again to the current contract. The step after a repository's spec review raises the same
-error for an open design gap a spec document records (`design_gaps.hold_open`), naming the last
-architecture check as the writer: run again, the check plans the architect's step that answers the
-filed gaps, and every later step runs again from the settled design; it is `DesignGapError`, whose
-writer is set back however often it was set back in the dispatch, because the step bounds its
-rounds itself, row by row: a row the architect answered that comes back fails it, and so does an
-open gap of a repository whose gaps went to the architect three times. The repositories' containers
+error for an open design gap a spec document records (`design_gaps.hold_open`): it is
+`DesignGapError`, naming the repository's first spec step as the writer and the repository's
+container as its scope, so that repository alone is specified again. Once the containers end, the
+runner adds one gap round to the end of the Architecture container (the architect's step that
+answers every filed gap, an index and a check, which plans the document writes and the promotion,
+and the TRD write only when the architect's TRD changes changed) and plans the TRD confirmation
+again; no other repository, no impact analysis and no TRD write the answers do not need run
+again. The writer is set back however often it was set back in the dispatch, because the step
+bounds its rounds itself, row by row: a row the architect answered that comes back fails it, and
+so does an open gap of a repository whose gaps went to the architect three times, counted from
+every record of the rounds (`design_gaps.answers`). An answer that changes the elements the Stories
+build sends the span back instead (`ScopeChangedError`, from the repository's context step). The repositories' containers
 running beside the one that found a gap each go on to their own gap check before they stop, so
 every repository's gaps reach the architect in one round. When the same writer of any
 other stale file is named twice in one dispatch, the step fails; when that writer is a script step, its code wrote the file to a
@@ -295,7 +301,10 @@ and, for each level, the agents responsible for it and the agent that reviews an
 
 `aws-solutions-architect` develops the architecture and the TRD to exactly these criteria, answers
 each architecture and technical-requirement criterion in its result, and reviews and approves its
-own architecture against them; nothing else reviews it. Criterion P10 requires that no decision is
+own architecture against them. Before the first promotion, `architecture-completeness-reviewer`
+checks independently that the detailed design states every value criteria A15 to A20 require of
+the elements the Epic reaches, and that no two approved documents contradict each other; its
+findings go back to the architect in one round. Criterion P10 requires that no decision is
 made by instinct: every AWS resource the design defines is reviewed with the AWS tools, the design
 has a Well-Architected review, and every decision between two or more options states the options
 and the reason. The architect records all of it in the Epic's review log, whose contract is the
@@ -1055,9 +1064,11 @@ specification is `<plugin>/blueprint/design/matrix.md`.
 
 The Architecture container holds, in order: the pack; the TRD seed; the architect's Analyze step;
 the steps it plans after itself; the index step; the check step; then either a correction by the
-architect, an index and a new check, or the lead, an index and a new check, or the TRD write and
-the promotion step. The architect reviews and approves its own architecture against the criteria;
-nothing else reviews it.
+architect, an index and a new check, or the lead, an index and a new check, or the completeness
+review and a new check, or the TRD write (when its changes are not yet written) and the promotion
+step. The architect reviews and approves its own architecture against the criteria; the
+completeness review checks independently, before any spec, that the detailed design states what
+the specs will carry.
 
 - **The architect's sessions** (`flows/architecture.py`, `flows/architecture_rounds.py`). The
   architect starts no agent, and each of its steps is a fresh session; files carry the work from
@@ -1099,8 +1110,12 @@ nothing else reviews it.
   `resourceType`) with no review entry, and a design with an AWS resource and no Well-Architected
   review. With no problem it reads what is in review, writes `review-scope.json` and
   `unlinked.json`, records nothing in the matrix, and, when the result's conclusion is
-  `unsettled` and no lead has run, plans the lead and a new check. Otherwise it plans the
-  promotion step.
+  `unsettled` and no lead has run, plans the lead and a new check. Before the first promotion of
+  the pass it plans the completeness review and a new check (`flows/architecture_completeness.py`),
+  at most twice, the second time only after a review that found something; the review's findings
+  are filed as open design gaps, which the next check sends to the architect in one round.
+  Otherwise it plans the TRD write, unless the last one is done and applied the result's TRD
+  changes as they stand (`trd_steps.write_current`), and the promotion step.
 - **The lead** (`flows/architecture_ruling.py`) writes its routing of the unsettled matters and
   adds the steps it calls for under its own step: a correction by the architect, a specialist's
   opinion, a competing design, or the decider. A routing that rejects every matter adds no step.
@@ -1114,7 +1129,10 @@ nothing else reviews it.
   the log from the Epic's entry (attribute `reviewLog`: its path in the vault and its SHA-256),
   removes each settled disagreement whose losing statement was corrected, commits and pushes the
   documents and the log in the vault, and commits and pushes the matrix. A document it cannot set
-  effective fails the step, naming each with the reason.
+  effective fails the step, naming each with the reason. It plans nothing after itself: what the
+  Epic's change reaches is assessed once, when its elaboration ends (`flows/architecture_impact.py`,
+  planned by the Story edges step), for the other Epics with a Task that rests on an entry the
+  Epic changed.
 
 ### 11.2 Repository span
 

@@ -79,16 +79,18 @@ flowchart TD
     repos --> review["The solutions architect reviews and approves its own architecture against the criteria, with the TRD changes its decisions make"]
     review --> ok{"Does the check pass the result and the review log?"}
     ok -->|"no: each problem goes back to the architect as a correction"| detailed
+    ok -->|"yes, before the first promotion"| completeness["Completeness review: architecture-completeness-reviewer checks every element the Epic adds or changes and every unapproved element of its reach against A15 to A20, and approved documents for contradictions; the architect answers every finding in one round"]
+    completeness -->|"findings: answered, written, checked again"| ok
     ok -->|"yes"| trdUpdate["TRD architecture update: one trd-author session adds what the PRD implies and applies the architect's TRD changes - section 4"]
     trdUpdate --> writes["The documents this Epic's maintainers wrote set effective. The architecture of the Epic's reach in the corrected matrix set approved, verified stays false"]
-    writes --> impact["Impact: architecture-impact-analyst rules on every Epic and open Task the promoted views reach. Each other Epic elaborated but unbuilt starts again from the step that plans its Architecture steps; a built item gets a proposed knock-on Task"]
-    impact --> archChange{"Did the Epic need an architecture change?"}
+    writes --> archChange{"Did the Epic need an architecture change?"}
     archChange -->|"yes"| spec["Specs written from what is not yet verified - section 6"]
     archChange -->|"no: for example a wording change on a web page"| specNo["A spec with instructions for the change - section 6"]
     spec --> merge1(("merge"))
     specNo --> merge1
     merge1 --> stories["Stories and Tasks in beads, carrying the decisions or pointers to them - section 8"]
-    stories --> done(["Build pipeline, which reads the TRD for its decisions"])
+    stories --> impact["Impact, once, as the elaboration ends: architecture-impact-analyst rules on each other Epic whose Tasks rest on an entry this Epic changed. Each of them elaborated but unbuilt, whose specs or Tasks the change makes wrong, starts again from the step that plans its Architecture steps; a built item gets a proposed knock-on Task"]
+    impact --> done(["Build pipeline, which reads the TRD for its decisions"])
 ```
 
 Notes on the diagram:
@@ -135,15 +137,26 @@ Notes on the diagram:
   and the review log, and records architecture approval on the individual items reviewed.
   Dependencies established ahead of time order shared work independently of approval and
   verification. Neither mark holds an Epic back; missing ordering is corrected in dependencies.
-- After the promotion, `architecture-impact-analyst` rules on every Epic and open Task the
-  promoted views reach (`atw-matrix impact`, `affected`), and the step after it
-  (`orchestrator/flows/architecture_impact.py`) starts each other Epic it rules elaborated but
-  unbuilt again from the step that plans its Architecture steps, through the driver's `reelaborate.restart`: the one
-  case in which the pipeline itself makes a run begin earlier. The driver checks the ruling again
+- Once, when the Epic's elaboration ends (after its Story edges, before it is marked elaborated),
+  `architecture-impact-analyst` rules on each other Epic with a Task whose matrix elements name an
+  entry this Epic's result names as added or changed, and on the open Tasks of those Epics a
+  changed entry affects (`atw-matrix affected`); an Epic the change reaches only by the rule of
+  reach (shared infrastructure, a view) is not ruled on, and one is ruled elaborated but unbuilt
+  only when the change makes something its specs or Tasks state wrong. The step after it (`orchestrator/flows/architecture_impact.py`) starts each of them
+  it rules elaborated but unbuilt again from the step that plans its Architecture steps, through
+  the driver's `reelaborate.restart`: the one case in which the pipeline itself makes a run begin
+  earlier. A promotion plans no impact step, since a design-gap round promotes again within the
+  same elaboration. The driver checks the ruling again
   against the tracker and the journals, refuses an Epic a build started on, and sets the Epic ready with the cause `architecture-changed`; its re-elaboration
   rewrites its Stories and Tasks in place by `elab_key`. A built item is never reopened: its
   knock-on Task is recorded as proposed.
-- The solutions architect is the reviewer; no other agent reviews the architecture. The owner:
+- The solutions architect is the reviewer and approver of the architecture. One independent check
+  runs before any spec: `architecture-completeness-reviewer` (`orchestrator/flows/architecture_completeness.py`)
+  checks only that the detailed design states what criteria A15 to A20 require of every element
+  the Epic adds or changes and every unapproved element of its reach, and that no two approved
+  documents contradict each other; it judges no design, and its findings go back to the architect
+  in one round, at most twice per pass. Without it the spec stage was the first independent look,
+  and found one unstated value per round. The owner, on the architect as reviewer:
   "The solutions architect is the reviewer. I do not want to introduce new reviewers in for
   architecture. I already took out reviewers." What the owner requires instead is proof: "what I
   do want is some sort of proof that best practices and well-architected principles and security
@@ -541,8 +554,8 @@ sequenceDiagram
     SW-)S: spec, with links to the full architecture and design of each component, names and decisions as recorded
     SW-->>WF: spec paths
     alt a spec records an open design gap: a detail the Story needs that no approved document states
-        WF->>WF: the repository stops before its Story and Tasks; the last architecture check and every step after it are set back to planned
-        Note over WF: the check plans the architect's step that answers each repository's design gaps row by row; the documents are written and promoted again and the specs written again from them
+        WF->>WF: the repository stops before its Story and Tasks; one gap round is added to the end of the architecture, and only the repositories with gaps are set back
+        Note over WF: the architect answers every repository's gaps in one step; the documents are written and promoted again, the TRD written again only when its changes changed and confirmed again, and the specs of the repositories with gaps written again
     end
     WF->>TD: spec paths
     TD-)BD: Stories and Tasks, each stating what it builds with the matrix ids, and pointers to the detail
@@ -585,18 +598,21 @@ Notes on the diagram:
   recorded as a row under the document's `## Design gaps` heading and left open. `spec-reviewer`
   sends a row the approved documents do settle back to its author; a real gap goes no further than
   the step after the review (`orchestrator/flows/design_gaps.py`): no Story is written and no Task
-  decomposed from it. That step sets the last architecture check and every step after it back to
-  planned (the journal's `DesignGapError`, a `StaleInputError` it sets back however often it was
-  set back in the dispatch); the repositories' containers running beside it first go on to their
-  own gap check, so every repository's gaps are filed together. The check, run again, plans the
-  architect's own step that answers the gaps: it decides each row and records it under
-  `gapAnswers` with the facts that state it, and a row left without an answer goes back to the
-  same session (only the rows handed to that step are checked; answers an earlier round settled
-  stay in the result and are not checked again), and the check after the answer starts with no
-  mechanical corrections spent, because the answer is a new design change; the architecture maintainer writes the decisions into the documents, and the
-  promotion and every spec run again from the settled design. The gaps converge row by row: a row
-  the architect answered that comes back fails the step, a row never handed before gets its own
-  round, and a repository whose gaps went to the architect three times fails on any open gap.
+  decomposed from it. That step raises the journal's `DesignGapError`, which sets back only that
+  repository's spec steps; the repositories' containers running beside it first go on to their own
+  gap check, so every repository's gaps are filed together. The journal runner then adds one gap
+  round to the end of the Architecture container: the architect's own step that answers the gaps
+  (it decides each row and records it under `gapAnswers` with the facts that state it, and a row
+  left without an answer goes back to the same session; only the rows handed to that step are
+  checked), an index and a check that starts with no mechanical corrections spent, because the
+  answer is a new design change. The architecture maintainer writes the decisions into the
+  documents, they are promoted, the TRD is written again only when the architect's TRD changes
+  changed and confirmed again, and only the repositories that held gaps are specified again; no
+  impact analysis runs in the round. An answer that changes the elements the Stories build sends
+  the span back instead. The gaps converge row by row: a row the architect answered that comes
+  back fails the step, a row never handed before gets its own round, and a repository whose gaps
+  went to the architect three times fails on any open gap, the rounds counted from every record of
+  them (`answers.json` in either form, and the settled folder).
 - The repositories' containers under Specs and Stories run at the same time, and so do their
   containers under Tasks, at most `ATW_ORCH_SESSIONS` at once (`journal_run.concurrent_containers`),
   because no repository's specs or Tasks wait on another's and run time is a goal of the pipeline.

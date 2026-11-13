@@ -22,7 +22,7 @@ from .handback_contract import OTHER_CAUSE, Session
 from .io import JsonValue, write_json
 
 # isort: split
-from step_journal_contract import STEP_ID_PATTERN, StepId
+from step_journal_contract import STEP_ID_PATTERN, StepId, StepPlan
 
 type ValidationResult = dict[str, JsonValue] | tuple[list[str], list[str]] | None
 type OutputValidator = Callable[[Path], ValidationResult]
@@ -96,13 +96,35 @@ class StaleInputError(StepError):
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 class DesignGapError(StaleInputError):
-    """A spec document holds an open design gap, so the architecture check runs again and sends it to the architect.
+    """A repository's spec documents hold an open design gap, so its specs wait for the architect's answer.
 
-    ``writer`` is the last architecture check, which, run again, plans the solutions architect's
-    step that answers the filed gaps. Unlike any other stale file, the journal runner sets it back
-    to planned however often it was set back in this dispatch: the gaps are bounded where they are
-    read (``design_gaps.hold_open``), which fails the step instead of raising this error.
+    ``writer`` is the repository's first spec step and ``within`` its container: only that
+    repository's spec steps are set back to planned. The runner adds the gap round once for every
+    repository that found a gap in the same round: ``plans``, the solutions architect's step that
+    answers the filed gaps with the index and the check after it, as the last steps of
+    ``container`` (the Architecture container), and plans each step of ``reconfirm`` (the TRD
+    confirmation) again, so the TRD is confirmed against the answered architecture. Nothing else is
+    set back. Unlike any other stale file, the runner sets the writer back however often it was set
+    back in this dispatch: the gaps are bounded where they are read (``design_gaps.hold_open``),
+    which fails the step instead of raising this error.
     """
+
+    def __init__(  # ruff: ignore[too-many-arguments] - The parts of one gap round.
+        self,
+        stage: str,
+        writer: StepId,
+        evidence: tuple[str, ...],
+        within: StepId,
+        *,
+        container: StepId,
+        plans: tuple[StepPlan, ...],
+        reconfirm: tuple[StepId, ...],
+    ) -> None:
+        """Attach the repository's steps to set back, and the gap round the runner adds once."""
+        super().__init__(stage, writer, evidence, within)
+        self.container = container
+        self.plans = plans
+        self.reconfirm = reconfirm
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -118,6 +140,17 @@ class OwnershipChangedError(StaleInputError):
 
 OWNERSHIP_REPLANS: Final = 3
 """How many times one dispatch plans an Epic's span again because the ownership of an entry changed."""
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+class ScopeChangedError(OwnershipChangedError):
+    """The elements the architect's result names for the Epic's Stories differ from those the span step read.
+
+    An answer to a design gap can add or remove an element the Epic builds. ``writer`` is the span
+    step: run again, it reads the result as it stands, and every step after it plans from that.
+    The journal runner treats it as an ownership change: the span step is planned again up to
+    ``OWNERSHIP_REPLANS`` times in one dispatch.
+    """
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

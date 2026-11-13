@@ -338,6 +338,22 @@
       ]
     },
     {
+      "name": "architecture-completeness-reviewer",
+      "description": "Checks an Epic's detailed design, before any TRD write or spec, for every value a spec would otherwise have to decide: each route, store, event value, configuration, log, metric and alarm name, idempotency key, timeout and internal structure criteria A15 to A20 require, for every element the Epic adds or changes and every unapproved element of its reach, and for statements in two approved documents that contradict each other. Reports findings, never fixes, and decides no design.",
+      "skills": [
+        "agent-teams-workforce:artifact-handoff",
+        "agent-teams-workforce:subagent-contract",
+        "agent-teams-workforce:validation-protocol",
+        "agent-teams-workforce:effective-architecture",
+        "agent-teams-workforce:arc42",
+        "agent-teams-workforce:graphrag-lookup",
+        "agent-teams-workforce:matrix"
+      ],
+      "mcpServers": [
+        "mcp-graphrag-server"
+      ]
+    },
+    {
       "name": "architecture-conformance-reviewer",
       "description": "Check, without modifying anything, that a correction of the effective architecture documents describes each element exactly as the built views of a Story record it, at every scope, with conforming front matter and placement and section 2 untouched.",
       "skills": [
@@ -406,7 +422,7 @@
     },
     {
       "name": "architecture-impact-analyst",
-      "description": "Judges what an architecture change reaches. Given the architecture views an integration changed, created or deleted, it takes from the matrix every Epic, open Task and entry those views reach (`atw-matrix impact`, `affected`), and rules on each one: unaffected, not yet elaborated, elaborated but unbuilt, or already built, with a knock-on Task proposed for each built item. It changes no bead and writes no code or document; it writes only its result file. Use after an architecture change created, changed or retired architecture views.",
+      "description": "Judges what an Epic's architecture change reaches. Given the entries the Epic changed and the other Epics with a Task that rests on one of them (the impact scope), it rules on each of those Epics and on the open Tasks of theirs a changed entry affects (`atw-matrix affected`): unaffected, not yet elaborated, elaborated but unbuilt, or already built, with a knock-on Task proposed for each built item. It changes no bead and writes no code or document; it writes only its result file. Use when an Epic's elaboration ends with a change to entries another Epic's architecture rests on.",
       "skills": [
         "agent-teams-workforce:artifact-handoff",
         "agent-teams-workforce:subagent-contract",

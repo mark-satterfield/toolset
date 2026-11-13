@@ -4,12 +4,15 @@ It runs the matrix check, checks every criterion answer of the architect's resul
 review log (``log-architecture-review``), holds the result's reach verdicts to the Epic's reach as
 the corrected matrix gives it (``matrixtraverse.architecture_review_scope``, the set promotion approves), and
 reads from the matrix the documents the Epic reaches
-that are not effective. It then plans what follows by rule: open design gaps the spec stage filed
-go to the architect's step that answers them (``design_gaps``), a mechanical defect goes back to
-the architect, a matter the architect could not settle goes to the lead, and otherwise the one TRD
-write from the architect's decisions (``trd_steps``) and then the promotion step follow. Nothing
-reviews the architect's work: the architect reviews and approves its own architecture against the
-criteria, and the review log is the record of that review. The step
+that are not effective. It then plans what follows by rule: open design gaps filed for the
+architect (by the spec stage, or as the completeness review's findings) go to the architect's step
+that answers them (``design_gaps``), a mechanical defect goes back to the architect, a matter the
+architect could not settle goes to the lead, the completeness review runs before the first
+promotion of the pass (``architecture_completeness``), and otherwise the TRD write from the
+architect's decisions when its changes are not yet written (``trd_steps``) and then the promotion
+step follow. The architect reviews and approves its own architecture against the criteria, and the
+review log is the record of that review; the completeness review checks independently that the
+detailed design states what the specs carry. The step
 judges nothing and records nothing in the matrix: every branch is a rule over the matrix, the
 criteria file, the architect's result and the review log.
 """
@@ -57,11 +60,14 @@ from orchestrator.core.journal_steps import (
     file_artifact,
 )
 from orchestrator.flows import design_gaps
+from orchestrator.flows.architecture_completeness import REVIEW_REF, review_due, review_plan
 from orchestrator.flows.architecture_files import (
     ARCHITECT,
     ARCHITECTURE_FOLDER,
     ARTIFACT_CHECK,
     CHECK,
+    CHECK_DESCRIPTION,
+    CHECK_PURPOSE,
     LABEL_SCOPE,
     LEAD,
     PROMOTE,
@@ -74,7 +80,7 @@ from orchestrator.flows.architecture_files import (
 )
 from orchestrator.flows.architecture_index import index_step
 from orchestrator.flows.spec_review import CRITERIA_FILE
-from orchestrator.flows.trd_steps import write_plan
+from orchestrator.flows.trd_steps import write_current, write_plan
 
 if TYPE_CHECKING:
     from architecture_work_contract import ArchitectureResult
@@ -84,10 +90,6 @@ if TYPE_CHECKING:
     from matrixtraverse import ArchitectureReviewScope
     from step_journal_contract import Artifact, StepPlan
 
-CHECK_DESCRIPTION: Final = "Check what code can check and list what is in review"
-CHECK_PURPOSE: Final = (
-    "Nothing a script can verify reaches the promotion unverified, and the architect's review of its own work is logged"
-)
 CORRECTION_DESCRIPTION: Final = "Correct what the mechanical check found"
 CORRECTION_PURPOSE: Final = (
     "A defect a script can find is corrected by the architect before the architecture is promoted"
@@ -270,11 +272,15 @@ def _open_review(bead: str, added_or_changed: list[str]) -> tuple[ReviewScope, E
     return review_scope(matrix, bead, added_or_changed), epic_view(matrix, bead, unlinked=True)
 
 
-def _promotion(run: StepRun) -> Completion:
-    """Plan the one TRD write from the architect's decisions, then the promotion, after this check.
+def _promotion(run: StepRun, result: ArchitectureResult) -> Completion:
+    """Plan the TRD write from the architect's decisions when it is due, then the promotion, after this check.
+
+    The TRD write is planned unless the last TRD write of the journal is done and applied the
+    TRD changes and shared capabilities the result states now (``trd_steps.write_current``): an
+    answer to design gaps that changes no TRD requirement leaves the TRD as it was written.
 
     Returns:
-        The completion that plans the TRD write and the promotion, each handed this check step.
+        The completion that plans the TRD write when due and the promotion, each handed this check step.
 
     """
     promote: StepPlan = {
@@ -283,7 +289,23 @@ def _promotion(run: StepRun) -> Completion:
         "script": PROMOTE,
         "inputs": [run.step["id"]],
     }
-    return Completion(add=(StepGroup((NewStep(write_plan([run.step["id"]])), NewStep(promote))),))
+    written: bool = write_current(run, result)
+    steps: tuple[NewStep, ...] = (
+        (NewStep(promote),) if written else (NewStep(write_plan([run.step["id"]])), NewStep(promote))
+    )
+    return Completion(add=(StepGroup(steps),))
+
+
+def _review(run: StepRun, corrections: int) -> Completion:
+    """Plan the completeness review, and a check after it, before the TRD write and the promotion.
+
+    Returns:
+        The completion that plans ``architecture-completeness-reviewer``'s step, handed this check,
+        and one check step after it.
+
+    """
+    again: NewStep = check_step([REVIEW_REF], corrections=corrections)
+    return Completion(add=(StepGroup((NewStep(review_plan(run.step["id"])), again)),))
 
 
 def _correction(run: StepRun, check: CheckResult, path: Path) -> Completion:
@@ -316,25 +338,22 @@ def _correction(run: StepRun, check: CheckResult, path: Path) -> Completion:
 
 
 def _gap_answer(run: StepRun) -> Completion:
-    """Send the open design gaps the spec stage filed to the architect, and check again after its answer.
+    """Send the open design gaps filed for the architect to it, and check again after its answer.
 
-    The architect's step is handed this check, so it sees any defect the check found with the gaps.
-    The answer is a new design change, so the check after it starts with no corrections spent.
+    The gaps are those the spec stage filed, or the findings of the completeness review. The
+    architect's step is handed this check, so it sees any defect the check found with the gaps.
 
     Returns:
-        The completion that plans the architect's step that answers the gaps
-        (``design_gaps.ANSWER_DESCRIPTION``), one index step and one check step after this one.
+        The completion that plans ``design_gaps.gap_round``: the architect's step that answers the
+        gaps, one index step and one check step after this one.
 
     """
-    plan: StepPlan = {
-        "ref": design_gaps.ANSWER_REF,
-        "description": design_gaps.ANSWER_DESCRIPTION,
-        "purpose": design_gaps.ANSWER_PURPOSE,
-        "agent": ARCHITECT,
-        "inputs": [run.step["id"]],
-    }
-    again: NewStep = check_step([design_gaps.ANSWER_REF], corrections=0)
-    return Completion(add=(StepGroup((NewStep(plan), index_step([design_gaps.ANSWER_REF]), again)),))
+    slugs: set[str] = {path.stem for _label, path in design_gaps.handed(run.context.work)}
+    description: str = (
+        design_gaps.REVIEW_DESCRIPTION if slugs == {design_gaps.REVIEW_SLUG} else design_gaps.ANSWER_DESCRIPTION
+    )
+    plans: tuple[StepPlan, ...] = design_gaps.gap_round([run.step["id"]], description)
+    return Completion(add=(StepGroup(tuple(NewStep(plan) for plan in plans)),))
 
 
 def _review_files(folder: Path, scope: ReviewScope, unlinked: EpicView) -> list[Artifact]:
@@ -356,11 +375,12 @@ def _review_files(folder: Path, scope: ReviewScope, unlinked: EpicView) -> list[
 def check(run: StepRun) -> Completion:
     """Check what code can check, list what is in review, and plan what follows by rule.
 
-    Open design gaps the spec stage filed (``design_gaps.handed``) go to the architect first,
-    whatever the check found. A result file that cannot be read, a matrix that refuses, and a
-    defect that three corrections did not clear end the step as a failure. Every file the step writes is in its
-    own folder, named for the step, so a later check never overwrites what an earlier one
-    recorded.
+    Open design gaps filed for the architect (``design_gaps.handed``: the completeness review's
+    findings) go to the architect first, whatever the check found; before the first promotion of the
+    pass the completeness review runs before the TRD write and the promotion. A result file that
+    cannot be read, a matrix that refuses, and a defect that three corrections did not clear end the
+    step as a failure. Every file the step writes is in its own folder, named for the step, so a
+    later check never overwrites what an earlier one recorded.
 
     Returns:
         The check result always; the review scope and the Epic's links with nothing recorded at
@@ -406,4 +426,6 @@ def check(run: StepRun) -> Completion:
         }
         again: NewStep = check_step(["lead"], corrections=checked["corrections"])
         return Completion(artifacts=tuple(recorded), add=(StepGroup((NewStep(routing), index_step(["lead"]), again)),))
-    return Completion(artifacts=tuple(recorded), add=_promotion(run).add)
+    if review_due(run):
+        return Completion(artifacts=tuple(recorded), add=_review(run, checked["corrections"]).add)
+    return Completion(artifacts=tuple(recorded), add=_promotion(run, result).add)

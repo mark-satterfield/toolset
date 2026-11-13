@@ -62,6 +62,10 @@ EARLIER_WORK: Final = "architecture.earlier_work"
 
 ARCHITECTURE: Final = "Architecture"
 """The description of the outermost step that contains the architecture steps."""
+CHECK_DESCRIPTION: Final = "Check what code can check and list what is in review"
+CHECK_PURPOSE: Final = (
+    "Nothing a script can verify reaches the promotion unverified, and the architect's review of its own work is logged"
+)
 EARLIER_PREFIX: Final = "earlier work: "
 """What the name of an artifact begins with when an earlier form of the pipeline produced the file."""
 

@@ -82,7 +82,7 @@ from orchestrator.core.journal_steps import (
 )
 from orchestrator.core.models import StepError
 from orchestrator.flows.architecture_files import ARTIFACT_TRD, read_context
-from orchestrator.flows.build_ownership import refuse_ownership_drift
+from orchestrator.flows.build_ownership import refuse_ownership_drift, refuse_scope_drift
 from orchestrator.flows.design_gaps import hold_open
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_ELEMENTS,
@@ -1049,8 +1049,9 @@ def context(run: StepRun) -> Completion:
     constraints and shared capabilities that bind the entries, the TRD requirements that bind
     them and the contract files the repository holds. It plans the spec sessions the Story's
     entries call for (:func:`story_surfaces`). When another Epic came to own an entry the span
-    planned (or stopped owning one) since the span step ran, nothing is specified: the span runs
-    again (``build_ownership.refuse_ownership_drift``).
+    planned (or stopped owning one) since the span step ran, or the architect's result came to name
+    other elements for the Stories (an answer to a design gap), nothing is specified: the span runs
+    again (``build_ownership.refuse_ownership_drift``, ``refuse_scope_drift``).
 
     Returns:
         The repository, its context file and its spec pack as artifacts, with the repository's
@@ -1064,6 +1065,7 @@ def context(run: StepRun) -> Completion:
     held: Repository = repository_of(dict(run.params()), SPEC_CONTEXT)
     enter_phase(run.context, run.agents.emit, SPEC_AUTHORING_PHASE, SPEC_CONTEXT, held.path)
     refuse_ownership_drift(run, SPEC_CONTEXT)
+    refuse_scope_drift(run, SPEC_CONTEXT)
     dispatch: DispatchArguments = dispatch_arguments()
     every_build: dict[str, JsonValue] = json_object(
         run.tools.portfolio(SPEC_CONTEXT, hierarchy.story_builds, span_files(run.inputs)),
@@ -1358,7 +1360,8 @@ def story_document(run: StepRun) -> Completion:
     """Write the Story document of one repository from its reviewed spec documents.
 
     A document that still records an open design gap stops the repository here, before its Story
-    and Tasks: the gaps go back to the solutions architect (``design_gaps.hold_open``). Otherwise
+    and Tasks: the gaps go back to the solutions architect, and this repository alone is specified
+    again from the answers (``design_gaps.hold_open``). Otherwise
     each spec document first gets its last section, the links to the architecture and design
     documents of the component it covers (:func:`link_documents`), once every correction is made.
 

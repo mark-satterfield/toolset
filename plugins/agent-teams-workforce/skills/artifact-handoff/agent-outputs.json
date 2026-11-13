@@ -208,6 +208,23 @@
       ]
     },
     {
+      "output": "completeness findings",
+      "agents": [
+        "architecture-completeness-reviewer"
+      ],
+      "schema": "skills/artifact-handoff/schemas/completeness-findings.schema.json#/$defs/CompletenessFindings",
+      "named": "completeness-findings.schema.json",
+      "pointer": "file",
+      "code": "orchestrator/flows/architecture_completeness.py",
+      "anchors": [
+        "@agent_step(REVIEWER)",
+        "completeness-findings.schema.json"
+      ],
+      "launches": [
+        "reviewer"
+      ]
+    },
+    {
       "output": "impact rulings",
       "agents": [
         "architecture-impact-analyst"
