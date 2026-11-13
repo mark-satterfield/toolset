@@ -33,7 +33,7 @@
       "items": {"type": "object"}
     },
     "capabilities": {
-      "description": "Each shared capability the entries must use, once, as `atw-matrix story-scope` prints it: the feature, the `provides` items relied on and their providers. Specify no behaviour a shared capability provides.",
+      "description": "Each shared capability the matrix guesses the entries rely on, once, as `atw-matrix story-scope` prints it: the feature, the `provides` items relied on and their providers. Specify no behaviour a shared capability provides.",
       "type": "array",
       "items": {"type": "object"}
     },

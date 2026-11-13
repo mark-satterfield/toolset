@@ -321,13 +321,17 @@ handed definition has no ruling. Otherwise the audit step records the review its
 reviewed against the Task's stated supplied bundle or live CDS source; its blocking and warranted
 improvement findings receive bounded implementation and re-review.
 
-After the commit, `build:matrix-follow` (`build_follow.py`, `matrixfollow.follow_code`) makes the
-matrix follow the committed code under the matrix's lock. It drops a relied `provides` item whose
-use signals occur nowhere in the repository's tracked source from the architecture-side
-`supportedBy` (unlinking it when none is left) for a feature wholly in the Task's repository that
-no other open Task builds, and links a capability the Task's changed product files use, and its
-ids do not reach, from the Task's one wholly-local feature. Everything else that diverges is
-recorded as deferred with its reason, and ids the matrix lacks as unknown, in the `matrixFollow`
+After the commit, `build:matrix-follow` (`build_follow.py`, `matrixfollow.follow_code`) fetches the
+repository's `origin` and makes the matrix follow the committed code under the matrix's lock, for
+features wholly in the worktree's repository only. It drops a relied `provides` item whose use
+signals occur nowhere (not in the worktree, the integration branch or any Story branch) from the
+architecture-side `supportedBy` (unlinking it when none is left) when no other Task still builds
+the feature (open, or closed in another Story not closed yet). It adds an item the code (not the
+comments or docstrings) of the Task's changed product files uses through a code-shaped signal,
+and no reached relationship records, to `relies` of the relationship from the Task's one
+wholly-local feature, or links it from that feature. A wrong removal is worse than a stale guess:
+everything else that diverges, and a use shown only by prose signals, is recorded as deferred with
+its reason, and ids the matrix lacks as unknown, in the `matrixFollow`
 value. Only a matrix read or write that cannot be made fails the step.
 
 ## Commit and completion

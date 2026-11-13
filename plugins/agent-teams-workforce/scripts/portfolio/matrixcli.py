@@ -82,7 +82,16 @@ from matrixstore import (
     role_of,
     update_matrix,
 )
-from matrixsync import DocumentsSynced, EpicBead, EpicsSynced, read_epics, sync_documents, sync_epics, vault_root
+from matrixsync import (
+    DocumentsSynced,
+    EpicBead,
+    EpicsSynced,
+    program_output,
+    read_epics,
+    sync_documents,
+    sync_epics,
+    vault_root,
+)
 from matrixtasks import (
     COMMAND_AFFECTED,
     COMMAND_BUILT,
@@ -796,16 +805,18 @@ def _run_check_reuse(call: Call) -> Outcome:
 
 
 def _run_follow_code(call: Call) -> Outcome:
-    """Run ``follow-code``.
+    """Run ``follow-code``, after fetching the worktree's ``origin`` so its other branches are current.
 
     Returns:
         What the correction changed in the matrix from the Task's code, and what it left as it was.
 
     """
+    worktree: Path = Path(call.required("worktree")).expanduser()
+    program_output("git", ["fetch", "origin"], worktree)
     scope: FollowScope = FollowScope(
         task=call.required("task"),
         entry_ids=tuple(call.entries("ids")),
-        worktree=Path(call.required("worktree")).expanduser(),
+        worktree=worktree,
         files=tuple(call.texts("files")),
         tasks=tuple(read_tasks(call.folder("control", CONTROL_VARIABLES))),
     )

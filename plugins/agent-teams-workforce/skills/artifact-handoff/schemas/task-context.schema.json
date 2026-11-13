@@ -11,7 +11,7 @@
     "repoPath": {"description": "The repository's absolute path.", "type": "string", "minLength": 1},
     "slug": {"description": "The repository's slug.", "type": "string", "minLength": 1},
     "stacks": {
-      "description": "Each stack the Story builds in, with the matrix ids of the entries it builds there. For these stacks and the upstream stacks in dependsOn, `openWork` names real candidate Tasks of other Epics. Same-stack work can overlap; an upstream candidate is a prerequisite only when the Task consumes its output. The shared capabilities a Task must use are derived from the items it cites, not stated by the decomposer.",
+      "description": "Each stack the Story builds in, with the matrix ids of the entries it builds there. For these stacks and the upstream stacks in dependsOn, `openWork` names real candidate Tasks of other Epics. Same-stack work can overlap; an upstream candidate is a prerequisite only when the Task consumes its output. The shared capabilities the matrix guesses a Task relies on are derived from the items it cites, not stated by the decomposer.",
       "type": "array",
       "items": {"$ref": "spec-context.schema.json#/$defs/StackEntries"}
     },

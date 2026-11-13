@@ -79,6 +79,8 @@ class TaskBead:
     closed: bool
     story: str | None
     """The nearest Story above the Task; None when it has none."""
+    story_closed: bool
+    """Whether that Story is closed: its work has been delivered. False when the Task has no Story."""
     epic: str | None
     """The nearest Epic above the Task; None when it has none."""
     elements: tuple[str, ...]
@@ -242,15 +244,19 @@ def tasks_of(graph: beadgraph.Graph) -> list[TaskBead]:
         except ValueError as error:
             message = f"cannot read the metadata of the Task {bead.id}: {error}"
             raise MatrixError(message) from error
-        ancestors: list[beadgraph.Bead] = graph.ancestors(bead.id)
         epic: beadgraph.Bead | None = graph.epic_of(bead.id)
+        story: beadgraph.Bead | None = next(
+            (ancestor for ancestor in graph.ancestors(bead.id) if ancestor.kind == STORY_TYPE),
+            None,
+        )
         tasks.append(
             TaskBead(
                 id=bead.id,
                 title=bead.title,
                 status=bead.status,
                 closed=bead.closed,
-                story=next((ancestor.id for ancestor in ancestors if ancestor.kind == STORY_TYPE), None),
+                story=None if story is None else story.id,
+                story_closed=story is not None and story.closed,
                 epic=None if epic is None else epic.id,
                 elements=tuple(dict.fromkeys(contract.get("matrix_elements", []))),
             ),

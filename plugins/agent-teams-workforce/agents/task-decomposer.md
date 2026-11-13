@@ -92,7 +92,7 @@ thing it builds by its item id in `requirementIds`, exactly as the repository co
 An item whose `state` is `built` carries the verified flag, built and tested as the matrix
 records it: it is not work, no Task has to cite it, and no Task is written for it alone.
 Python derives the Task's matrix ids from what it cites (its stack, the entries it builds and the
-shared capabilities that work must use) and writes them into the Task's text and its
+shared capabilities the matrix guesses that work relies on) and writes them into the Task's text and its
 `matrix_elements` key, so state no matrix id yourself. Nothing is written in the matrix for a
 Task.
 When the build supplies validated saved authoring context for a real open producer Story,

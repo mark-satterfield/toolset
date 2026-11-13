@@ -272,25 +272,36 @@ are validated before the locked write; existing verified marks are preserved.
 
 ## The build corrects the matrix from the code
 
-After `build:commit` commits a Task, the build runs `build:matrix-follow`, which calls
-`follow-code` in process (`scripts/portfolio/matrixfollow.py`; on the command line
+After `build:commit` commits a Task, the build fetches the repository's `origin` and runs
+`build:matrix-follow`, which calls `follow-code` in process (`scripts/portfolio/matrixfollow.py`;
+on the command line, which fetches first:
 `atw-matrix follow-code --task <beads id> --ids <id> ... --worktree <path> --files <path> ...`)
 with the ids in the Task's `matrix_elements`, its Story worktree and the files its own commits
-changed.
-It corrects the architecture-side `supportedBy` relationships of the features the Task builds:
+changed. A wrong removal is worse than a stale guess, so
+what cannot be judged safely is deferred, never written. It corrects the architecture-side
+`supportedBy` relationships of the features the Task builds:
 
-- A relied `provides` item whose use signals occur nowhere in the repository's tracked source is
-  dropped from `relies`; the relationship is unlinked when no item is left. Written only when the
-  feature is wholly in the Task's repository and no other open Task builds it.
-- A shared capability whose use signals occur in the Task's changed product files, and which its
-  ids do not reach, is linked from the one feature the Task builds that is wholly in its repository.
+- Only features wholly in the worktree's repository are judged: every entry realizing the feature
+  is held by a stack whose `repository` is the repository the worktree is a clone of. A Task whose
+  ids span two repositories judges nothing of the other one.
+- A relied `provides` item whose use signals occur nowhere is dropped from `relies`; the
+  relationship is unlinked when no item is left. Nowhere means: not in the Story worktree's
+  tracked source, and not in the committed source of the integration branch (`origin/HEAD`) or of
+  any Story branch, local or on the remote. It is written only when no other Task still builds
+  the feature in that repository: an open Task, or a closed Task of another Story that is not
+  closed yet.
+- A capability item whose code-shaped use signals occur in the code of the Task's changed product
+  files (comments and docstrings left out), and which no relationship from what the Task reaches
+  records, is added to `relies` of the relationship from the one feature the Task builds wholly
+  in its repository, or linked from that feature when it has none. A use shown only by a prose
+  signal (words and spaces, such as `central event API`) is deferred: too weak on its own.
 - Anything else that diverges is recorded as `deferred` with its reason, and ids the matrix lacks as
   `unknownIds`; neither is written. Items with no use signal are kept.
 
-The step records the `matrixFollow` value (`removed`, `narrowed`, `linked`, `deferred`,
-`unknownIds`). The build's reuse audit (`check-reuse`) records divergence as notes only. A changed
-relationship clears the start feature's `verified` mark; `verify --story` at Story close sets it
-again on the corrected matrix.
+The step records the `matrixFollow` value (`repository`, `refs`, `removed`, `narrowed`,
+`widened`, `linked`, `deferred`, `unknownIds`). The build's reuse audit (`check-reuse`) records
+divergence as notes only. A changed relationship clears the start feature's `verified` mark;
+`verify --story` at Story close sets it again on the corrected matrix.
 
 ## Reconciling and seeding
 

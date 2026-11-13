@@ -32,7 +32,7 @@ names.
   stated in.
 - `atw-matrix story-scope --stack <stack id> --ids <entry ids>` returns, for the entries a Story
   builds, the stack and its repository, the documents and headings that describe each entry, the
-  constraints that apply and the shared capabilities the work must use.
+  constraints that apply and the shared capabilities the matrix guesses the work relies on.
 
 Every entry and relationship carries `side`. `architecture` means beads, a PRD or an arc42
 document states the fact, or the architect designed it: this side is the authority. `repository`

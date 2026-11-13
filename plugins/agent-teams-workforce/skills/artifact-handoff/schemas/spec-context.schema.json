@@ -18,7 +18,7 @@
       "items": {"type": "object"}
     },
     "stacks": {
-      "description": "Each stack the Story builds in, with the matrix ids of the entries the Story builds in it. `atw-matrix story-scope --stack <stack> --ids <entries>` prints the documents and headings that describe the stack and each entry, the constraints that bind them and the shared capabilities they must use; `atw-matrix uses --ids <entries>` prints the shared capabilities alone, each with what it provides and what its consumers must do.",
+      "description": "Each stack the Story builds in, with the matrix ids of the entries the Story builds in it. `atw-matrix story-scope --stack <stack> --ids <entries>` prints the documents and headings that describe the stack and each entry, the constraints that bind them and the shared capabilities the matrix guesses they rely on; `atw-matrix uses --ids <entries>` prints the shared capabilities alone, each with what it provides and what its consumers must do.",
       "type": "array",
       "items": {"$ref": "#/$defs/StackEntries"}
     },

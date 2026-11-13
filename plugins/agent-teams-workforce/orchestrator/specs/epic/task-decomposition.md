@@ -34,7 +34,7 @@ there, and `openWork`: the open Tasks of other Epics in those stacks and the ups
 read once by the context step (`matrixtasks.work_batch`, what `atw-matrix work --ids` prints), so
 a Task that needs one of them is blocked by it instead of duplicating it.
 A Task cites what it builds by item id; `hierarchy.stated_ids` derives its matrix ids (its stack,
-the entries and the shared capabilities that work must use) from those items, and the decomposer
+the entries and the shared capabilities the matrix guesses that work relies on) from those items, and the decomposer
 states none. Its `dependsOn`
 (`repo_scoping.build_context`) is what the Tasks depend on, never work. A repository-side element
 is a hint read from code: it may tell a Task where existing code sits, never what to build.

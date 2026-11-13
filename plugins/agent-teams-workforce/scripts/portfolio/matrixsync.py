@@ -28,7 +28,7 @@ import re
 import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Runs the resolved git executable with a separate argv and no shell.
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final, Literal, TypedDict
@@ -277,14 +277,15 @@ class EpicsSynced(TypedDict):
     """The Markdown files under the PRD folder that no epic entry names, relative to the vault root."""
 
 
-def _run(executable: str, arguments: Sequence[str], folder: Path) -> str:
+def _run(executable: str, arguments: Sequence[str], folder: Path, accepted: Collection[int] = (0,)) -> str:
     """Run one program and return what it printed.
 
     Returns:
         The program's standard output.
 
     Raises:
-        MatrixError: The program is not installed, could not be started or exited non-zero.
+        MatrixError: The program is not installed, could not be started or exited with a code not
+            in ``accepted``.
 
     """
     resolved: str | None = shutil.which(executable)
@@ -303,28 +304,35 @@ def _run(executable: str, arguments: Sequence[str], folder: Path) -> str:
     except OSError as error:
         message = f"cannot run {executable} in {folder}: {error}"
         raise MatrixError(message) from error
-    if done.returncode != 0:
+    if done.returncode not in accepted:
         message = f"{executable} {' '.join(arguments[:3])} failed in {folder}: {done.stderr.strip()}"
         raise MatrixError(message)
     return done.stdout
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def program_output(executable: str, arguments: Sequence[str], folder: Path) -> str:
+def program_output(
+    executable: str,
+    arguments: Sequence[str],
+    folder: Path,
+    accepted: Collection[int] = (0,),
+) -> str:
     """Run git for another matrix module and return what it printed.
 
-    A program that is not installed, cannot be started or exits non-zero raises ``MatrixError``.
+    A program that is not installed, cannot be started or exits with a code not in ``accepted``
+    raises ``MatrixError``.
 
     Args:
         executable: The program's name; it is resolved on PATH.
         arguments: Its arguments.
         folder: The folder to run it in.
+        accepted: The exit codes that mean the program ran; ``git grep`` exits 1 when nothing matches.
 
     Returns:
         The program's standard output.
 
     """
-    return _run(executable, arguments, folder)
+    return _run(executable, arguments, folder, accepted)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

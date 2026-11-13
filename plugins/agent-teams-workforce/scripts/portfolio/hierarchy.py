@@ -1157,8 +1157,8 @@ def stated_ids(matrix: Matrix, built: Sequence[str]) -> list[str]:
 
     A Task states in full what it builds in the matrix's ids. The stack is a built id that is a
     stack, or the stack that holds a built entry. The shared capabilities are the features the
-    work that builds those entries must use (`matrixtraverse.capabilities`). An id the matrix
-    holds no entry for is kept as stated and adds no stack and no capability.
+    matrix guesses the work that builds those entries relies on (`matrixtraverse.capabilities`).
+    An id the matrix holds no entry for is kept as stated and adds no stack and no capability.
 
     Args:
         matrix: The matrix.

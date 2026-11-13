@@ -1,7 +1,8 @@
 """The build corrects the matrix from the code: ``build:matrix-follow``.
 
 The matrix is a best guess. Once a Task's code is committed (``build:commit`` adds this step), the
-step hands the Task's ids, its Story worktree and the files its own commits changed to
+step fetches the repository's ``origin``, so its integration branch and Story branches are current,
+and hands the Task's ids, its Story worktree and the files its own commits changed to
 :func:`matrixfollow.follow_code` under the matrix's lock, so the ``supportedBy`` relationships of
 the features the Task builds match what the code uses. It records what it changed and what it left
 as the ``matrixFollow`` value. Divergence is never a failure here; only a matrix write or read that
@@ -71,16 +72,17 @@ def follow(run: StepRun) -> Completion:
         run: The ``build:matrix-follow`` step.
 
     Returns:
-        The ``matrixFollow`` value: the relationships removed, narrowed and linked, the divergence
+        The ``matrixFollow`` value: the relationships removed, narrowed, widened and linked, the divergence
         left as it was with its reason, and the ids the matrix holds no entry for.
 
     Raises:
-        StepError: The matrix or the worktree could not be read, or the write could not be made.
+        StepError: The matrix or the worktree could not be read or fetched, or the write could not be made.
 
     """
     bead: dict[str, JsonValue] = json_object(run.context.args["bead"])
     ids: tuple[EntryId, ...] = tuple(EntryId(entry_id) for entry_id in check_type(bead.get(ELEMENTS, []), list[str]))
     workspace: Workspace = workspace_of(run)
+    run.tools.git(workspace.tree, ["fetch", "origin"], stage=STAGE)
     tasks: list[TaskBead] = run.tools.portfolio_read(STAGE, read_tasks, control_repository())
     scope: FollowScope = FollowScope(run.bead, ids, workspace.tree, _own_files(run, workspace), tuple(tasks))
 

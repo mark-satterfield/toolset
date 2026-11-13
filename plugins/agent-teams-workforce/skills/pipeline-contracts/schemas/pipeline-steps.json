@@ -494,7 +494,7 @@
           "runBy": "task-to-deploy",
           "reads": ["worktree", "branch", "defaultBranch"],
           "records": [
-            {"name": "matrixFollow", "kind": "value", "holds": "What matrixfollow.follow_code changed under the matrix's lock: ids, files (the source files the Task's own feat(build) commits changed), removed, narrowed and linked supportedBy relationships (kind, start, end, relies), deferred divergence left as it was (start, end, provides, used, reason: realized outside this repository, other open Tasks still build the feature, named only by the Task, or no single wholly-local feature), and unknownIds the matrix holds no entry for. A matrix read or write that cannot be made fails the step as a tooling fault"}
+            {"name": "matrixFollow", "kind": "value", "holds": "What matrixfollow.follow_code changed under the matrix's lock after a fetch of origin: ids, repository (the worktree's; only features wholly in it are judged), refs (the integration and Story branches searched before removing an item), files (the source files the Task's own feat(build) commits changed), removed, narrowed, widened and linked supportedBy relationships (kind, start, end, relies), deferred divergence left as it was (start, end, provides, used, reason: realized outside this repository, other Tasks still build the feature (open, or closed in a Story not closed yet), used in committed code outside the worktree, named only by the Task, no single wholly-local feature, already reached another way, or only prose signals), and unknownIds the matrix holds no entry for. A fetch, matrix read or write that cannot be made fails the step as a tooling fault"}
           ],
           "adds": []
         }

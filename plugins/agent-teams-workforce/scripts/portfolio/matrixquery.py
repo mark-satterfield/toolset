@@ -1403,7 +1403,7 @@ def story_scope(matrix: Matrix, stack: EntryId, entry_ids: Sequence[EntryId]) ->
     Returns:
         The stack and its repository, the documents and headings that describe the stack and
         each entry, the constraints that bind the stack or an entry, and the shared capabilities
-        the entries must use.
+        the matrix guesses the entries rely on.
 
     Raises:
         MatrixError: ``stack`` is not a stack.

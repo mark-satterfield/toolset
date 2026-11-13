@@ -234,7 +234,7 @@ def context(run: StepRun) -> Completion:
     write, are handed to the decomposer so it reuses them, with the open Tasks of other Epics that
     name each stack the Story builds in, or an upstream stack, or an entry it holds (``openWork``,
     one read for every stack). The decomposer asks the matrix for the shared capabilities the
-    entries the Tasks build must use (``atw-matrix uses --ids``). What
+    matrix guesses the entries the Tasks build rely on (``atw-matrix uses --ids``). What
     the Story builds is the ``items`` of the repository context. The decomposer writes those
     matrix ids into each Task. Nothing is recorded in the matrix.
 
