@@ -43,7 +43,10 @@ and record each difference. Change nothing in the code and nothing in the effect
 3. **Compare everything those headings state**: which block is responsible, which block owns
    the data, who calls whom, what happens in what order, where it runs, and the detailed
    design (routes, fields, keys, types, schemas, names). A name, a field or a value that no
-   approved document states is outside the comparison.
+   approved document states is outside the comparison, with one exception: each row the brief
+   lists under `decidedAtBuild` is a detail the Story's spec left to the build because no
+   approved document stated it. Find the value the code chose for each and record it as a
+   difference of its element, so the architecture states it from now on.
 4. **Write one view per difference** in `built/<element>/` under the architecture root, where
    `<element>` is the entry's name: in the section folder the documentation model names for
    its view type, named for the element it shows. Give it catalog front matter (`view_type`

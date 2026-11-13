@@ -545,9 +545,11 @@ sequenceDiagram
     SW->>A42: reads the approved architecture and design of each component
     SW-)S: spec, with links to the full architecture and design of each component, names and decisions as recorded
     SW-->>WF: spec paths
-    alt a spec records an open design gap: a detail the Story needs that no approved document states
+    alt a spec records an open kind C design gap (crosses a boundary, contradicts or is invalid) and its repository's gaps went to the architect fewer than 2 times
         WF->>WF: the repository stops before its Story and Tasks; one gap round is added to the end of the architecture, and only the repositories with gaps are set back
-        Note over WF: the architect answers every repository's gaps in one step; the documents are written and promoted again, the TRD written again only when its changes changed and confirmed again, and the specs of the repositories with gaps written again
+        Note over WF: the architect answers every repository's gaps in one step, element by element; the documents are written and promoted again, the TRD written again only when its changes changed and confirmed again, and the specs of the repositories with gaps written again
+    else a gap row is left after 2 rounds, or comes back after its answer
+        WF->>WF: the row moves to the spec's Decided at build table, the build decides it, and a warning note records the pipeline defect
     end
     WF->>TD: spec paths
     TD-)BD: Stories and Tasks, each stating what it builds with the matrix ids, and pointers to the detail
@@ -586,13 +588,19 @@ Notes on the diagram:
   Story does not need. After the one review at most three rounds follow, each round's sessions
   running together: one correction, the decider on the disputed findings, one revision to the
   ruling. In a correction or a revision an author works on all its documents in one session.
-- A spec author decides no design, so a detail the Story needs that no approved document states is
-  recorded as a row under the document's `## Design gaps` heading and left open. `spec-reviewer`
+- A spec author decides no design, and sorts a detail the Story needs that no approved document
+  states into three kinds: a name the naming standard produces (A) it builds with the naming
+  command; a detail local to its repository (B) it records under `## Decided at build`, for the
+  build to decide, blocking nothing; a detail that crosses a boundary, contradicts or is invalid
+  (C) is recorded as a row under the document's `## Design gaps` heading and left open. Authors
+  and `spec-reviewer` check every element against I1 to I7 in one pass, so the first round finds
+  every kind C gap, and `spec-reviewer` checks the classification. `spec-reviewer`
   sends a row the approved documents do settle back to its author; a real gap goes no further than
   the step after the review (`orchestrator/flows/design_gaps.py`): no Story is written and no Task
   decomposed from it. That step raises the journal's `DesignGapError`, which sets back only that
-  repository's spec steps; the repositories' containers running beside it first go on to their own
-  gap check, so every repository's gaps are filed together. The journal runner then adds one gap
+  repository's spec steps; the repositories' containers running beside it, and their siblings
+  beyond the session cap, first go on to their own gap check, so every repository's gaps are
+  filed together. The journal runner then adds one gap
   round to the end of the Architecture container: the architect's own step that answers the gaps
   (it decides each row and records it under `gapAnswers` with the facts that state it, and a row
   left without an answer goes back to the same session; only the rows handed to that step are
@@ -601,10 +609,17 @@ Notes on the diagram:
   documents, they are promoted, the TRD is written again only when the architect's TRD changes
   changed and confirmed again, and only the repositories that held gaps are specified again; no
   impact analysis runs in the round. An answer that changes the elements the Stories build sends
-  the span back instead. The gaps converge row by row: a row the architect answered that comes
-  back fails the step, a row never handed before gets its own round, and a repository whose gaps
-  went to the architect three times fails on any open gap, the rounds counted from every record of
-  them (`answers.json` in either form, and the settled folder).
+  the span back instead. The architect answers element by element: each row and every related
+  value A15 to A20 require of the same element, correcting contradictions in the documents
+  themselves. The Epic never fails on a gap: a row the architect answered that comes back, and
+  every open row of a repository whose gaps went to the architect twice (`MAX_ROUNDS`, the rounds
+  counted from every record of them, `answers.json` in either form and the settled folder), is
+  carried to the build. It moves to the document's `## Decided at build` table marked as kind C
+  left open, the Story and its Tasks carry it, the implementer decides it and the Story's
+  architecture comparison and maintainer write the chosen value into the architecture; the Task
+  dependency mapper orders the Task that provides a carried value two repositories use before the
+  Task that uses it; and a warning note records the pipeline defect, "design gaps after 2 rounds",
+  with the Epic, the repository and the rows.
 - The repositories' containers under Specs and Stories run at the same time, and so do their
   containers under Tasks, at most `ATW_ORCH_SESSIONS` at once (`journal_run.concurrent_containers`),
   because no repository's specs or Tasks wait on another's and run time is a goal of the pipeline.

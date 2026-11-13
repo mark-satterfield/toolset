@@ -26,6 +26,7 @@ skills:
 - agent-teams-workforce:graphrag-lookup
 - agent-teams-workforce:matrix
 x-onDemandSkills:
+- agent-teams-workforce:resource-naming
 - agent-teams-workforce:acceptance-criteria
 - agent-teams-workforce:log-architecture-review
 - agent-teams-workforce:pipeline-contracts
@@ -81,14 +82,38 @@ entry's approved architecture, as its documents state it.
 
 The architecture and design documents hold every detail the spec states: the arc42 views and
 the detailed design under `detailed/` were decided during architecture. State each detail as
-those documents record it, or link to it by path and heading; decide none. A detail the Story
-needs that no approved document states is a gap in the design: record it as one row of the table
-under the level-2 heading `## Design gaps` of the document that needs it, with the columns
-`| Id | Element whose design lacks it | Missing detail (review criterion) |`, and do not settle
-it. Record a gap nowhere else, and leave the section out when there is none. An open gap stops
-the repository before its Story and Tasks: the step after the review sends every row back to the
-solutions architect, who designs what fills it, and the spec is then written again against the
-settled design. Your repository context file
+those documents record it, or link to it by path and heading. Sort every detail the Story needs
+that no approved document states into one of three kinds, and record it only as its kind says:
+
+- **A, a name the project's naming standard produces** (an alarm, metric, log group, environment
+  variable, SSM parameter, table, queue or other resource name, a Powertools service or metrics
+  namespace): build it with the naming command (the `resource-naming` skill, `printenv
+  ATW_NAMING_COMMAND`, then `<command> name build ...`) and write it where the spec states the
+  thing it names. It is no gap and is listed nowhere else.
+- **B, local to this one repository** (a handler module or function name, an index's column list,
+  internal retry or backoff values, which internal function does a piece of the work): no other
+  repository and no shared contract depends on it. Record it as one row of the table under the
+  level-2 heading `## Decided at build`, with the columns
+  `| Id | Element | Detail the build decides | Kind |` and the kind `B`. The build decides it,
+  and it blocks nothing.
+- **C, crosses a boundary, contradicts, or is invalid**: a value another repository or a caller
+  relies on (a value passed to the central event API, a status code or header callers act on, a
+  store key or attribute another service reads, a shared contract field); two approved documents
+  or the TRD and a document that state it differently; or a design that cannot work as stated
+  (for example a DynamoDB `ConditionExpression` that uses arithmetic). This is a gap in the
+  design: record it as one row of the table under the level-2 heading `## Design gaps`, with the
+  columns `| Id | Element whose design lacks it | Missing detail (review criterion) |`, and do not
+  settle it.
+
+Find every kind C gap in one pass: check every element the Story builds against every
+implementation criterion (I1 to I7 of the `effective-architecture` skill's review criteria)
+before you finish, and record every gap you find, not the first. A gap found only on a later pass
+costs a whole round of the architecture. Record a row of either table nowhere else, and leave a
+section out when it has no row. An open gap stops the repository before its Story and Tasks: the
+step after the review sends every row back to the solutions architect, who designs what fills it,
+and the spec is then written again against the settled design. After two such rounds a row still
+open is carried to the build instead: it moves to `## Decided at build` with its kind marked as
+left open, and the build decides it. Your repository context file
 (`spec-context.schema.json`) names what the Story builds: `items`, `stacks`, `buildScope` and
 `dependsOn`, and under `documents` every architecture heading the Story's scopes name. Your
 spec pack (`spec pack`, `spec-pack.schema.json`) holds what you read for it: each entry with

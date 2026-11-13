@@ -39,16 +39,25 @@ in `tdd-guide` and in your specialty definition.
    decided: use every name and decision they give as given, read by the paths the brief names, and
    decide only a pure build detail none of them records. Never build, convert or change a name they
    give.
-3. A value known only at deploy time, such as the account, the region or the environment, is resolved
+3. The spec's `## Decided at build` table, which the Task cites under its spec sections and its
+   description names, lists the details no approved document states that your build decides: kind
+   `B`, local to the repository, and kind C rows left open after the architect's rounds. Decide
+   each one the work needs, in the way the surrounding design and code already do: build a name
+   with the naming command (the `resource-naming` skill), and resolve a contradiction or an
+   invalid design toward what the TRD and the approved documents require. A kind C row whose value
+   another repository's Task provides (that Task blocks this one) is decided by that build: read
+   the value from its repository's code and build to it. The Story's architecture comparison reads
+   each decided value from the code and records it in the architecture.
+4. A value known only at deploy time, such as the account, the region or the environment, is resolved
    at deploy time (a CDK prop or deploy-time reference, or an environment variable the stack sets).
    Write no literal for it and do not report a normal deploy-time value as a missing prerequisite.
-4. When the change alters what a deliverable imports, declares or packages, follow the
+5. When the change alters what a deliverable imports, declares or packages, follow the
    `python-lambda-packaging` skill, which states when it applies, and put its packaging record in
    `notes`.
-5. The constraints are the owner's, in arc42 section 2; everything else in the architecture is the
+6. The constraints are the owner's, in arc42 section 2; everything else in the architecture is the
    design so far, followed as established patterns unless a design states a reason and evidence to
    change it.
-6. Existing code and infrastructure as code are never final: change what the Task needs changed,
+7. Existing code and infrastructure as code are never final: change what the Task needs changed,
    as the `software-engineering` skill ("The smallest complete change") says.
 
 ## Shared capabilities

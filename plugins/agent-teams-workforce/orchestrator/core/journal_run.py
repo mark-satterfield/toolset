@@ -12,8 +12,8 @@ step that finds a file an earlier step wrote to a contract that has since change
 (``StaleInputError``) is not failed: the step that wrote the file and every step after it are set
 back to planned, and the loop goes on from there; the same writer named twice in one dispatch
 fails the step, except for an open design gap (``DesignGapError``), whose rounds the step that
-reads the gaps bounds itself: only the repositories that hold gaps are set back, after one
-answer round the runner adds to the Architecture container. A file is stale only when its
+reads the gaps bounds itself, carrying what is left to the build: only the repositories that hold
+gaps are set back, after one answer round the runner adds to the Architecture container. A file is stale only when its
 writer's session was made under another agent definition or contracts; a request a helper is
 launched from that its writer's current session wrote wrongly (``MalformedRequestError``) is
 corrected by that session from the errors, and the helper runs again; the same request malformed
@@ -27,8 +27,9 @@ and whose inputs are all done run as concurrent sessions under the dispatch's se
 child containers of a container the registry names (``Registry.children_together``) run at the
 same time, each its own steps in walk order, at most ``ATW_ORCH_SESSIONS`` of them. A stale file
 found in one of them ends them all, except an open design gap: then each of them that still holds
-a step of the kind that found the gap, not yet run, runs to that step first, so every
-repository's gaps go to the solutions architect in one round.
+a step of the kind that found the gap, not yet run, runs to that step first, and so does every
+sibling container beyond the session cap, so every repository's gaps go to the solutions
+architect in one round.
 
 Work that already succeeded is never redone: an agent step that did not fail and whose output
 file is valid and was written since the step started is recorded from that file, and its agent is
@@ -818,6 +819,7 @@ class JournalRunner:
                     parallel(self.context, [partial(self._run_container, container) for container in containers])
             else:
                 self._run_group(journal, first["id"])
+            self._run_to_gap_checks(containers)
         finally:
             # A failure of the re-plan keeps the round's own failure as its __context__.
             self._replan_stale()
@@ -849,6 +851,40 @@ class JournalRunner:
             if leaf is None:
                 return
             self._run_group(journal, leaf["id"])
+
+    def _run_to_gap_checks(self, ran: Sequence[StepId]) -> None:
+        """Run every other container beside the group to its own design gap check while only design gaps are open.
+
+        The group that ran holds at most ``ATW_ORCH_SESSIONS`` containers; its siblings beyond that
+        cap run to their own gap check too, in groups of that size, before the gap round is planned
+        (:meth:`_replan_stale`), so one round of the architect covers every repository.
+
+        Args:
+            ran: The containers of the group that ran; empty when the step ran in no such container.
+
+        """
+        if not ran:
+            return
+        while waiting := self._gap_checks_waiting(ran[0]):
+            with contextlib.redirect_stdout(sys.stderr):
+                parallel(self.context, [partial(self._run_container, container) for container in waiting])
+
+    def _gap_checks_waiting(self, member: StepId) -> list[StepId]:
+        """Name the sibling containers that still have to run to their own design gap check.
+
+        Returns:
+            At most ``ATW_ORCH_SESSIONS`` sibling containers of ``member``, itself included, for which
+            :meth:`_before_gap_check` holds; empty when no design gap is open.
+
+        """
+        if not self.stale:
+            return []
+        journal: Journal = step_journal.read_journal(self.path)
+        parent: Step | None = step_journal.parent_step(journal, member)
+        siblings: list[Step] = [] if parent is None else parent["steps"]
+        return [step["id"] for step in siblings if step["steps"] and self._before_gap_check(step["id"])][
+            : session_cap()
+        ]
 
     def _before_gap_check(self, container: StepId) -> bool:
         """Tell whether a container goes on to its own design gap check while only design gaps are open.
@@ -1097,8 +1133,8 @@ class JournalRunner:
         A stale file the step finds is kept for :meth:`_replan_stale`, and the step is not failed,
         unless the step that wrote the file was planned again in this dispatch already. An open
         design gap (``DesignGapError``) is always kept, with the step and its script key, so the
-        containers running beside it run to their own gap check (:meth:`_before_gap_check`): its own
-        bound fails the step that reads the gaps (``design_gaps.hold_open``). A
+        containers running beside it run to their own gap check (:meth:`_before_gap_check`): the step
+        that reads the gaps bounds its rounds and carries what is left (``design_gaps.hold_open``). A
         malformed request the step finds is corrected by its writer's session
         (:meth:`_correct_request`), and the step is not failed, unless that request was corrected
         in this dispatch already. A change of the Epic that owns an entry (``OwnershipChangedError``)

@@ -40,6 +40,7 @@ from orchestrator.core.journal_steps import (
     file_artifact,
     value_artifact,
 )
+from orchestrator.flows.design_gaps import edge_mark, leftover, leftover_rows
 from orchestrator.flows.elaboration_files import (
     CLOSURE_EDGES,
     CLOSURE_EDGES_SCHEMA,
@@ -60,6 +61,8 @@ from orchestrator.flows.elaboration_files import (
 from orchestrator.flows.elaboration_support import TASK_EDGES_PHASE, emit_event, enter_phase
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     import hierarchy
     from step_journal_contract import StepPlan
 
@@ -180,7 +183,9 @@ def mapper(run: StepRun) -> AgentLaunch:
     """Build the session that maps the dependencies between Tasks of different Stories.
 
     Accepting the mapper's result writes nothing into the matrix: the edges reach beads in the
-    edge write, and the beads edge alone carries build order.
+    edge write, and the beads edge alone carries build order. The mapper is also handed each
+    repository's design gap rows carried to the build (``design_gaps.leftover``): a value one
+    repository's build decides and another repository's build uses orders the providing Task first.
 
     Returns:
         The launch: the dependency file as output, checked against ``task-deps.schema.json`` and
@@ -207,9 +212,37 @@ def mapper(run: StepRun) -> AgentLaunch:
             *((TASKS_FILE, files.tasks_file) for files in span.stories),
             (CLOSURE_EDGES, run.inputs.file(CLOSURE_EDGES)),
             (EDGE_LIST, run.inputs.file(EDGE_LIST)),
+            *leftover(run.context.work),
         ),
         hand_inputs=False,
     )
+
+
+def _unordered_leftovers(run: StepRun, accepted: Mapping[str, JsonValue]) -> list[str]:
+    """Report the design gap rows carried to the build that no edge orders.
+
+    Such a row's value stays within one repository, or the mapper could not tell which
+    repository's build provides it and which uses it.
+
+    Returns:
+        One warning naming every such row; empty when every carried row is ordered or none was carried.
+
+    """
+    reasons: list[str] = [
+        str(edge.get("reason", "")) for edge in check_type(accepted.get("edges", []), list[dict[str, JsonValue]])
+    ]
+    unordered: list[str] = [
+        mark
+        for repository, row in leftover_rows(run.context.work)
+        if not any((mark := edge_mark(repository, row)) in reason for reason in reasons)
+    ]
+    if not unordered:
+        return []
+    warning: str = (
+        "design gap rows carried to the build with no edge between repositories (the value stays in one "
+        f"repository, or which repository provides it was not decidable): {'; '.join(unordered)}"
+    )
+    return [warning]
 
 
 @script_step(EDGE_WRITE)
@@ -257,6 +290,8 @@ def write(run: StepRun) -> Completion:
     write_json(path, written)
     warning: str
     for warning in check_type(written.get("warnings", []), list[str]):
+        emit_event(run.agents.emit, warning_note(EDGE_WRITE, warning))
+    for warning in _unordered_leftovers(run, accepted):
         emit_event(run.agents.emit, warning_note(EDGE_WRITE, warning))
     if written.get("ok") is False:
         raise run.tools.failure(EDGE_WRITE, OTHER_CAUSE, written)

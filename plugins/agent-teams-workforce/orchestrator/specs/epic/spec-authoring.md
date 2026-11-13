@@ -36,7 +36,7 @@ session is not planned is written by step 1a instead.
 | 6a | Review the DynamoDB access patterns of the data model (a repository whose stacks hold a DynamoDB store) | agent `dynamodb-schema-access-pattern-reviewer` | `data model`, `TRD`, `repository context` | `spec-<slug>.data-model-review.json` | file `data model review` |
 | 7 | Add the UI design sources to the contracts (frontend) | script `specui.spec_ui_append` | `spec`, `ui sources` | the section `## UI design sources` of `spec-<slug>.md` | file `spec` |
 | 8 | Review the specification documents | agent `spec-reviewer` | `spec`, `data model`, `criteria`, `TRD`, `repository context`, `spec pack` (and, recorded with the review, `data model review`) | `spec-<slug>.review.json` | see "The review" |
-| 9 | Write the Story document | script `spec_authoring.story_document`; first `design_gaps.hold_open` | `spec`, `data model`, `criteria`, `repository context` | when a document holds an open design gap: `<arch-work>/design-gaps/open/<slug>.json`, and the repository's steps wait for one gap round (below); otherwise the section `## Architecture and design documents` at the end of each of the three spec documents; `story-<slug>.json` | file `story document`, value `decision ids` |
+| 9 | Write the Story document | script `spec_authoring.story_document`; first `design_gaps.hold_open` | `spec`, `data model`, `criteria`, `repository context` | when a document holds an open design gap below the round limit: `<arch-work>/design-gaps/open/<slug>.json`, and the repository's steps wait for one gap round (below); a row answered and held again, or every row at the limit, moved to the document's `## Decided at build` table and `<arch-work>/design-gaps/leftover/<slug>.json`, with a warning note; otherwise the section `## Architecture and design documents` at the end of each of the three spec documents; `story-<slug>.json` | file `story document`, value `decision ids` |
 | 10 | Write the Story bead | script `beadwrite.write_story` | `story document`, the three spec documents, `span`, `elements` | the Story bead; the Story's journal | value `story`, value `story write`, value `decision ids`; plans the repository's container under Tasks |
 
 Step 1a is planned first, before step 2. Steps 3 and 4 are consecutive agent steps whose inputs
@@ -98,17 +98,26 @@ document and nothing else: its citations stay in its `decisionIds` and reach the
 step 9, and nothing is written to the matrix, whose architecture side only arc42 (through
 `sync-documents`) and the architect's recorded design write.
 
-A detail a Story needs that no approved document states is a design gap. Its author records it
-as one row of the table under the document's `## Design gaps` heading and does not settle it;
-`spec-reviewer` holds every row to the approved documents, sending a row the documents do settle
-to its author and leaving a real gap for the step below. Step 9 reads every row
+A detail a Story needs that no approved document states has one of three kinds. A name the
+project's naming standard produces (kind A) the author builds with the naming command and writes
+in the spec. A detail local to the one repository (kind B) is a row of the table under the
+document's `## Decided at build` heading, with the kind `B`: the build decides it and it blocks
+nothing. A detail that crosses a boundary, contradicts another document or the TRD, or is invalid
+as stated (kind C) is a design gap: its author records it as one row of the table under the
+document's `## Design gaps` heading and does not settle it. The authors and `spec-reviewer` check
+every element against every criterion, I1 to I7, in one pass, so every kind C gap is found in the
+first round. `spec-reviewer` checks the classification (a kind C row filed as decided at build is
+a finding that moves it to the gap table; a name filed as a gap or decided at build is a finding
+that builds it) and holds every gap row to the approved documents, sending a row the documents do
+settle to its author and leaving a real gap for the step below. Step 9 reads every gap row
 (`design_gaps.open_gaps`) before anything else. A row left open stops the repository before its
 Story and Tasks: the step files the repository's gaps at `<arch-work>/design-gaps/open/<slug>.json`
 and raises `DesignGapError` (a `StaleInputError`) naming the repository's context step (step 1)
 as the writer and the repository's container as its scope, however often it was set back in the
 dispatch already. The other repositories' containers running at the same time are not stopped at
-once: each that still holds its own step 9 not run goes on to it, so its gaps are filed too
-(`journal_run.JournalRunner._before_gap_check`). Once every container has ended, the runner, in
+once: each that still holds its own step 9 not run goes on to it, and so does every sibling
+container beyond the session cap, so its gaps are filed too
+(`journal_run.JournalRunner._before_gap_check`, `_run_to_gap_checks`). Once every container has ended, the runner, in
 one journal change, adds one gap round to the end of the Architecture container
 (`design_gaps.gap_round`): the solutions architect's step "Answer the design gaps the spec stage
 found", an index and a check; it plans the outermost step "TRD" (`trd.confirm`) again, so the TRD
@@ -130,14 +139,26 @@ against the settled design. No impact analysis runs in the round. When an answer
 elements the Stories build (the result's `addedOrChangedElements` and `unchangedWorkElements`
 name other entries than the span's items), the repository's context step raises
 `ScopeChangedError` naming the span step, so the span and every step after it run again
-(`build_ownership.refuse_scope_drift`), counted with ownership changes. A repository whose
-documents hold again a row the architect answered fails the step, its cause naming the repository
-and each such row: the design does not converge. A row never handed before gets its own round,
-until a repository's gaps have gone to the architect `design_gaps.MAX_ROUNDS` (3) times; an open gap
-after that fails the step too. The rounds are counted from every record of them
-(`design_gaps.answers`): `answers.json` in either form it has had (a bare count, or `rounds` with
-`rows`) and the settled folder, one round per settled step folder that holds the repository's
-file, the larger count standing.
+(`build_ownership.refuse_scope_drift`), counted with ownership changes. The Epic never fails on a design gap. A row the architect already answered that a repository's
+documents hold again is carried to the build, and so is every open row of a repository whose gaps
+have gone to the architect `design_gaps.MAX_ROUNDS` (2) times; a row never handed before, below
+that limit, gets its own round. Carrying a row (`design_gaps.carry`) moves it from the document's
+gap table to its `## Decided at build` table with the kind `C, left open after 2 architect
+rounds`, adds it to `<arch-work>/design-gaps/leftover/<slug>.json`, removes the repository's open
+file, and emits a warning note, "pipeline defect, design gaps after 2 rounds", naming the Epic,
+the repository and the rows, which the supervisor's ledger and dashboard show. A repository at the
+limit is never handed to the architect again (`design_gaps.handed`). The rounds are counted from
+every record of them (`design_gaps.answers`): `answers.json` in either form it has had (a bare
+count, or `rounds` with `rows`) and the settled folder, one round per settled step folder that
+holds the repository's file, the larger count standing.
+
+The Story document's description lists every decided-at-build row of its spec documents, so the
+Story bead carries them; the decomposer gives each row to the Task that builds its element (its
+`specSections` and description), the Task's implementer decides it, and the Story's architecture
+comparison records the chosen value (`built_version`, `decidedAtBuild`). The Task dependency
+mapper is handed the leftover files: a carried value two Stories' Tasks use orders the providing
+Task before each using Task, and the edge write reports every carried row no edge orders
+(`task_edges`).
 
 The Story document lists what the Story builds, one line per item: an event as
 `E<n>: <name>, published by <publishers>: <trigger>`, any other item as

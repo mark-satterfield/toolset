@@ -120,15 +120,30 @@ documents and the TRD state it.
   it specifies an addition to, or leaves out an `addition` entry it specifies no addition to, is
   a finding under I7: the correction makes its list name exactly the `addition` entries that
   document specifies no addition to.
-- An open design gap is blocking: no Task can be built from a detail the design does not state
-  (I7). Check every row under a document's `## Design gaps` heading against the approved
-  documents. When an approved document records the detail, write a finding to the document's
-  author under the criterion the row names: state the detail as that document records it, with
-  its path and heading, and remove the row. When no approved document records it, the gap is
-  real and the author cannot settle it, so write no finding for it: the step after the review
-  sends every row still open back to the solutions architect, and nothing reaches decomposition
-  while one remains. A detail the Story needs that a document neither states nor lists as a gap
-  is a finding: record it as a row of `## Design gaps`.
+- A detail the Story needs that no approved document states has one of three kinds, and the
+  authors record each by its kind: A, a name the project's naming standard produces, built with
+  the naming command and written in the spec; B, a detail local to this one repository, a row of
+  `## Decided at build` with the kind `B`, which the build decides; C, a detail that crosses a
+  boundary (a value another repository or a caller relies on), contradicts another document or
+  the TRD, or is invalid as stated, a row of `## Design gaps`. A and B are never gaps: never
+  move one into `## Design gaps` and never write a finding asking the architect for one. Check
+  the classification instead: a row of `## Decided at build` that is kind C (another repository
+  or a caller depends on it, or it contradicts or is invalid) is a finding under the criterion it
+  falls under, whose correction moves the row to `## Design gaps`; a name recorded as a gap or as
+  decided at build is a finding whose correction builds it with the naming command and writes it
+  in the spec. A row of `## Decided at build` whose kind marks it as left open after the
+  architect's rounds was carried there by the pipeline: leave it.
+- A kind C gap is blocking: no Task can be built from a detail the design does not state (I7).
+  Check every row under a document's `## Design gaps` heading against the approved documents.
+  When an approved document records the detail, write a finding to the document's author under
+  the criterion the row names: state the detail as that document records it, with its path and
+  heading, and remove the row. When no approved document records it, the gap is real and the
+  author cannot settle it, so write no finding for it: the step after the review sends every row
+  still open back to the solutions architect. A kind C detail the Story needs that a document
+  neither states nor lists as a gap is a finding: record it as a row of `## Design gaps`.
+- Find every kind C gap in this one review: check every element the Story builds against every
+  criterion, I1 to I7, across all three documents, and record every gap and finding you find,
+  not the first. A gap found only on a later pass costs a whole round of the architecture.
 
 A criterion applies to an item the Story builds that has the thing the criterion names: a
 repository with no route has nothing for I1 to find. A document that says, with its reason, that

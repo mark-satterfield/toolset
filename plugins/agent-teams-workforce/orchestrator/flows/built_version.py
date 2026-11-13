@@ -34,6 +34,8 @@ from orchestrator.flows.deploy_support import (
     handback,
     recorded,
 )
+from orchestrator.flows.design_gaps import decided_at_build
+from orchestrator.flows.elaboration_files import SPEC_FILES
 
 if TYPE_CHECKING:
     from matrix_contract import EntryId
@@ -194,6 +196,18 @@ def _story_scopes(requests: list[tuple[str, list[str]]]) -> list[StoryScope]:
     return [story_scope(matrix, stack, ids) for stack, ids in built]
 
 
+def _decided(run: StepRun) -> list[str]:
+    """List the details the Story's spec documents left to the build, as the elaboration handed them on.
+
+    Returns:
+        Each decided-at-build row, naming its spec document; empty when the Story's journal holds
+        no spec document or none leaves a detail to the build.
+
+    """
+    held: list[Path] = [Path(check_type(path, str)) for name in SPEC_FILES if (path := latest(run, name)) is not None]
+    return [f"{path}: {row}" for path in held for row in decided_at_build(path)]
+
+
 def _compare(run: StepRun) -> Completion:
     """Read the Story's recorded build scope and launch its architecture comparison.
 
@@ -220,8 +234,13 @@ def _compare(run: StepRun) -> Completion:
     request = (
         f"Compare deployed Story {run.context.bead} in {run.context.args['repoPath']} with effective "
         f"architecture {_root(run)}/arc42. Record differences only in {_root(run)}/built; "
-        "do not edit effective architecture or section 2. Use the exact scope and headings below.\n"
-        + json.dumps({"stacks": stacks, "entries": entries, "scopes": scopes}, ensure_ascii=False)
+        "do not edit effective architecture or section 2. Use the exact scope and headings below. "
+        "Each row under decidedAtBuild is a detail the Story's spec left to the build because no approved "
+        "document stated it: record the value the code chose for each as a difference.\n"
+        + json.dumps(
+            {"stacks": stacks, "entries": entries, "scopes": scopes, "decidedAtBuild": _decided(run)},
+            ensure_ascii=False,
+        )
     )
     planned: Completion = reasoned(
         run,

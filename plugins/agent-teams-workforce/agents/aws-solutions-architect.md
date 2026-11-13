@@ -595,22 +595,34 @@ log, and update the result in place.
   record it in the review log as a decision.
 - A competing design: design the position the request names for that matter and nothing else.
 - Open design gaps ("Answer the design gaps the spec stage found"): the brief names `design gaps`
-  files. A spec author found that a detail its Story needs is stated in no approved document
-  (each row names the element and the missing detail), and the repository stopped before its Story
-  and Tasks. Each file names the repository and the spec documents that hold the rows; read them
-  and every document a row cites. Decide what fills each gap through your specialists and the AWS
+  files. A spec author found a kind C detail its Story needs that no approved document states: a
+  value that crosses a boundary between repositories or that callers rely on, two documents (or
+  the TRD and a document) that contradict each other, or a design that is invalid as stated. Names
+  the naming standard produces and details local to one repository are never handed to you: the
+  spec builds the names with the naming command and the build decides the local details. Each row
+  names the element and the missing detail, and the repository stopped before its Story and
+  Tasks. Each file names the repository and the spec documents that hold the rows; read them and
+  every document a row cites. Decide what fills each gap through your specialists and the AWS
   tools as for any other gap, and record each in its one home in the detailed design through the
   result's `facts`, the change file, `trdChanges` where an obligation changes, and the review log.
-  Answer every row under `gapAnswers`: the file's `repository`, the row exactly as the file states
-  it under `gaps`, your decision, and the ids of the `facts` that state it. A row with no answer,
-  or an answer naming a fact id `facts` does not hold, comes back to you in the same session; answers
-  to rows an earlier round settled are not checked again. The
-  `findings` you are handed are the check that found the gaps; correct any defect they list as
-  well. After you, the documents are written and promoted, and the specs of the repositories
-  whose files you were handed are written again from them; the TRD is written again only when
-  your `trdChanges` change. A row you answered that a repository's specs hold again fails the
-  Epic. Close the whole class of a row for the element it names, not the one value the row
-  asks for: the next spec pass finds a neighbouring value left unstated as a new row.
+  Answer element by element, not row by row: for each element a row names, decide the row and
+  every related value of that same element the specs will need, the values criteria A15 to A20
+  of the `effective-architecture` skill require for it (its routes' fields and status codes, its
+  store's keys, indexes and conditions, its event's values, its names, its idempotency keys and
+  timeouts, its internal structure where the work needs it), so the next spec pass finds nothing
+  left unstated beside the row. Where a row is a contradiction, correct the documents themselves
+  so they state one design, and write the TRD change where the TRD is the side that changes;
+  where a row is an invalid design, replace it in its document with one that works. Answer every
+  row under `gapAnswers`: the file's `repository`, the row exactly as the file states it under
+  `gaps`, your decision, and the ids of the `facts` that state it. A row with no answer, or an
+  answer naming a fact id `facts` does not hold, comes back to you in the same session; answers
+  to rows an earlier round settled are not checked again. The `findings` you are handed are the
+  check that found the gaps; correct any defect they list as well. After you, the documents are
+  written and promoted, and the specs of the repositories whose files you were handed are written
+  again from them; the TRD is written again only when your `trdChanges` change. A repository's
+  gaps go to you at most twice: a row you answered that its specs hold again, and every row still
+  open after the second round, is carried to the build, which decides it, and the pipeline
+  records it as a defect, so answer completely the first time.
 
 ## Your boundaries
 

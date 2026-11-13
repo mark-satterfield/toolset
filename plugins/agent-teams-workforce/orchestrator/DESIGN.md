@@ -204,11 +204,19 @@ answers every filed gap, an index and a check, which plans the document writes a
 and the TRD write only when the architect's TRD changes changed) and plans the TRD confirmation
 again; no other repository, no impact analysis and no TRD write the answers do not need run
 again. The writer is set back however often it was set back in the dispatch, because the step
-bounds its rounds itself, row by row: a row the architect answered that comes back fails it, and
-so does an open gap of a repository whose gaps went to the architect three times, counted from
-every record of the rounds (`design_gaps.answers`). An answer that changes the elements the Stories
+bounds its rounds itself, row by row, and never fails the Epic on a gap: a row the architect
+answered that comes back, and every open row of a repository whose gaps went to the architect
+twice (`design_gaps.MAX_ROUNDS`), counted from every record of the rounds (`design_gaps.answers`),
+is carried to the build (`design_gaps.carry`): it moves to the document's `## Decided at build`
+table marked as kind C left open, is recorded in `<arch-work>/design-gaps/leftover/<slug>.json`
+for the Task dependency mapper, and a warning note names the pipeline defect ("design gaps after 2
+rounds") with the Epic, the repository and the rows. A repository at the limit is never handed to
+the architect again (`design_gaps.handed`). Only kind C details are gaps: a spec author builds a
+name with the naming command (kind A) and records a detail local to the repository as decided at
+build (kind B), and neither blocks. An answer that changes the elements the Stories
 build sends the span back instead (`ScopeChangedError`, from the repository's context step). The repositories' containers
-running beside the one that found a gap each go on to their own gap check before they stop, so
+running beside the one that found a gap each go on to their own gap check before they stop, and
+so do their sibling containers beyond the session cap (`JournalRunner._run_to_gap_checks`), so
 every repository's gaps reach the architect in one round. When the same writer of any
 other stale file is named twice in one dispatch, the step fails; when that writer is a script step, its code wrote the file to a
 contract other than its readers', and the failure is `PipelineDefectError`. A file a step reads

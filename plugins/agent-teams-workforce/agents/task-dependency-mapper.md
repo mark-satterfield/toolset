@@ -119,6 +119,21 @@ Story: add an entry to `edges` for each candidate whose own work builds or chang
 library. Each edge's `kind` says what the dependent Task needs (the
 output contract's kinds). Consider same-Story and closure edges when checking for a cycle.
 
+The brief may also name `leftover design gaps` files: each repository's kind C design gap rows
+the architect's rounds left open, which the build now decides (each row names its element and the
+missing detail; the spec documents list them under `## Decided at build`). Such a value is decided
+by whichever build runs first, so where two Stories' Tasks use it (an event value one publishes
+and another matches, a status code or header one returns and another acts on, a key one writes
+and another reads), the Task that builds the row's element provides it and every Task of another
+Story that uses the value waits for it: add an edge from the providing Task to each using Task,
+of the kind that says what the user needs (`data`, `contract` or `event-flow`), even where the use
+is a runtime call, because the user's build reads the value the provider's build chose. Open its
+`reason` with `leftover design gap <repository> <row id>` (the repository as the file names it and
+the row's first cell, its whole text when it has none), then the value. Decide the provider from
+the row's element and the matrix (`atw-matrix node <id>` and `deps`): the repository whose Story
+builds the element provides it. A row whose value stays within one Story, or whose provider you
+cannot decide, gets no edge; the step reports every carried row no edge names.
+
 A Story is built after another when one of its Tasks depends on one of the other's, so two
 Stories never depend on each other both ways: no edge of yours may run from a Story to a Story
 that already, through a closure edge or another of your edges, depends on it. When the edge test

@@ -1,13 +1,16 @@
 """Open design gaps in a repository's specification documents, and their way back to the solutions architect.
 
-A spec author designs nothing: a detail its Story needs that no approved document states is a gap
-in the design, recorded as one row of the table under the heading :data:`HEADING` of the document
-that needs it, and settled by nobody in the spec stage. No Story is written and no Task is
-decomposed from a document that holds an open gap. The step after the review
-(``spec_authoring.story_document``) reads every row (:func:`open_gaps`); when one is left it files
-the repository's gaps under the architecture work folder (:func:`file_gaps`) and raises
-``DesignGapError``. The repositories' containers running at the same time each go on to their own
-gap check first, so every repository's gaps are filed together. The round is local: the journal
+A spec author sorts every detail its Story needs that no approved document states into one of
+three kinds. A name the project's naming standard produces (kind A) the author builds with the
+naming command and writes. A detail local to one repository (kind B) is recorded under the
+heading :data:`DECIDED_HEADING`, decided at build, and blocks nothing. A detail that crosses a
+boundary, contradicts another document or is invalid (kind C) is a gap in the design, recorded
+as one row of the table under the heading :data:`HEADING` of the document that needs it. The
+step after the review (``spec_authoring.story_document``) reads every gap row (:func:`open_gaps`)
+through :func:`hold_open`; when one is left it files the repository's gaps under the
+architecture work folder and raises ``DesignGapError``. The repositories' containers each go on
+to their own gap check first, every one of them and not only those running at the same time,
+so every repository's gaps go to the architect in one round. The round is local: the journal
 runner adds one gap round (:func:`gap_round`) to the end of the Architecture container (the
 solutions architect's step that answers the filed gaps, :data:`ANSWER_DESCRIPTION`, the index and
 the check), plans the TRD confirmation again, and sets back only the spec steps of each repository
@@ -18,11 +21,15 @@ then plans the promotion of the answered documents, and the TRD write only when 
 changes differ from those the last TRD write applied. No other repository is specified again, and
 no impact analysis runs in the round.
 
-The gaps converge row by row: a row the architect answered that a repository's documents hold
-again fails the step, while a row never handed before gets its own round. A repository whose gaps
-went to the architect :data:`MAX_ROUNDS` times fails the step when it holds an open gap again. The
-rounds are counted from every record there is: ``answers.json`` in either of its forms (a bare
-count, or the rounds with the rows) and the settled folder, which keeps each round's files.
+The Epic never fails on a design gap. A row the architect already answered that a repository's
+documents hold again, and every row of a repository whose gaps went to the architect
+:data:`MAX_ROUNDS` times, is carried to the build (:func:`carry`): it moves from the gap table to
+the decided-at-build table of its document, marked as a kind C detail left after the rounds, the
+row is recorded in the leftover folder for the Task edges (:func:`leftover`), and a warning note
+reports a pipeline defect: design gaps after :data:`MAX_ROUNDS` rounds. The rounds are counted from
+every record there is: ``answers.json`` in either of its forms (a bare count, or the rounds with
+the rows) and the settled folder, which keeps each round's files. A repository at the limit is
+never handed to the architect again (:func:`handed`).
 """
 
 from __future__ import annotations
@@ -31,12 +38,13 @@ import json
 import re
 import shutil
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Final, TypedDict
 
 from typeguard import CollectionCheckStrategy, check_type
 
 from orchestrator.core import step_journal
-from orchestrator.core.handback_contract import OTHER_CAUSE
+from orchestrator.core.handback_contract import OTHER_CAUSE, warning_note
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.models import DesignGapError, StepError
 from orchestrator.flows.architecture_files import (
@@ -50,14 +58,14 @@ from orchestrator.flows.architecture_files import (
 )
 from orchestrator.flows.architecture_index import index_step
 from orchestrator.flows.elaboration_files import SPEC_CONTEXT
+from orchestrator.flows.elaboration_support import emit_event
 
 # isort: split
 # step_journal puts the pipeline-contracts scripts directory on sys.path; the contract import follows it.
 from step_journal_contract import STATUS_DONE
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-    from pathlib import Path
+    from collections.abc import Collection, Sequence
 
     from architecture_work_contract import ArchitectureResult, GapAnswer
     from step_journal_contract import Journal, Step, StepId, StepPlan
@@ -78,12 +86,29 @@ ANSWERS: Final = "answers.json"
 """The file, in the design gaps folder, that records each repository's rounds and the rows the architect answered."""
 KEY_ROUNDS: Final = "rounds"
 KEY_ROWS: Final = "rows"
-MAX_ROUNDS: Final = 3
-"""How many times a repository's gaps go to the architect before an open gap of it fails the step."""
+MAX_ROUNDS: Final = 2
+"""How many times a repository's gaps go to the architect before its open gaps are carried to the build."""
+DECIDED_HEADING: Final = "Decided at build"
+"""The heading, at level 2, of the section of a spec document that lists the details the build decides."""
+DECIDED_HEADER: Final = "| Id | Element | Detail the build decides | Kind |"
+DECIDED_SEPARATOR: Final = "|---|---|---|---|"
+KIND_LEFTOVER: Final = f"C, left open after {MAX_ROUNDS} architect rounds"
+"""The kind a carried gap row is marked with in the decided-at-build table."""
+LEFTOVER: Final = "leftover"
+"""The folder, beside the open and the settled ones, of each repository's gap rows carried to the build."""
+LABEL_LEFTOVER: Final = "leftover design gaps"
+"""The label the Task dependency mapper is handed each repository's carried gap rows under."""
+DEFECT: Final = f"design gaps after {MAX_ROUNDS} rounds"
+"""How the warning note names the pipeline defect a carried gap row is."""
+EDGE_MARK: Final = "leftover design gap"
+"""The words an edge's reason opens with when it orders a carried gap row's provider before its consumer."""
 _SECTION: Final = re.compile(rf"^##\s+{re.escape(HEADING)}\s*$", re.IGNORECASE)
+_DECIDED_SECTION: Final = re.compile(rf"^##\s+{re.escape(DECIDED_HEADING)}\s*$", re.IGNORECASE)
 _NEXT_SECTION: Final = re.compile(r"^#{1,2}\s")
+_LINKS_SECTION: Final = re.compile(r"^##\s+Architecture and design documents\s*$")
 _SEPARATOR: Final = re.compile(r"^\|[\s:|-]*\|$")
 _LIST_ITEM: Final = re.compile(r"^(?:[-*+]|\d+[.)])\s+\S")
+_LIST_ITEM_MARK: Final = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 
 
 class FiledDocument(TypedDict):
@@ -110,53 +135,82 @@ class Answered:
     """Each gap row the architect answered."""
 
 
-def _section(lines: Sequence[str]) -> list[str]:
-    """Find the design gaps section of a document.
+def _bounds(lines: Sequence[str], heading: re.Pattern[str]) -> tuple[int, int] | None:
+    """Find a level-2 section of a document.
 
     Returns:
-        The lines of the section, stripped and without its heading; empty when it has none.
+        The index of its heading line and the index after its last line; None when it has none.
 
     """
-    inside: bool = False
-    held: list[str] = []
-    for line in lines:
-        if _SECTION.match(line):
-            inside = True
-            continue
-        if inside and _NEXT_SECTION.match(line):
-            break
-        if inside:
-            held.append(line.strip())
-    return held
+    start: int | None = next((index for index, line in enumerate(lines) if heading.match(line)), None)
+    if start is None:
+        return None
+    end: int = next(
+        (index for index in range(start + 1, len(lines)) if _NEXT_SECTION.match(lines[index])),
+        len(lines),
+    )
+    return start, end
 
 
-def open_gaps(path: Path) -> list[str]:
-    """List the open design gaps one spec document records.
+def _table_rows(lines: Sequence[str]) -> list[str]:
+    """Read the rows of the lines of one section.
 
-    Each data row of a table under the heading :data:`HEADING` is one gap; its first row is the
-    table's header. A list item there is one gap too. Prose (for example "None.") is none.
+    Each data row of a table is one row; a table's first row is its header. A list item is one
+    row too. Prose (for example "None.") is none.
 
     Returns:
-        Each gap as its row's text, in document order; empty when the document has no section or
-        the file does not exist.
+        Each row as its stripped text, in document order.
 
     """
-    if not path.is_file():
-        return []
-    gaps: list[str] = []
+    rows: list[str] = []
     header_seen: bool = False
     line: str
-    for line in _section(path.read_text(encoding="utf-8").splitlines()):
+    for line in (held.strip() for held in lines):
         if line.startswith("|"):
             if _SEPARATOR.match(line):
                 continue
             if not header_seen:
                 header_seen = True
                 continue
-            gaps.append(line)
+            rows.append(line)
         elif _LIST_ITEM.match(line):
-            gaps.append(line)
-    return gaps
+            rows.append(line)
+    return rows
+
+
+def _section_rows(path: Path, heading: re.Pattern[str]) -> list[str]:
+    """List the rows one section of a spec document records.
+
+    Returns:
+        Each row's text, in document order; empty when the document has no such section or the
+        file does not exist.
+
+    """
+    if not path.is_file():
+        return []
+    lines: list[str] = path.read_text(encoding="utf-8").splitlines()
+    found: tuple[int, int] | None = _bounds(lines, heading)
+    return [] if found is None else _table_rows(lines[found[0] + 1 : found[1]])
+
+
+def open_gaps(path: Path) -> list[str]:
+    """List the open design gaps one spec document records, each a row under the heading :data:`HEADING`.
+
+    Returns:
+        Each gap as its row's text, in document order; empty when there is none.
+
+    """
+    return _section_rows(path, _SECTION)
+
+
+def decided_at_build(path: Path) -> list[str]:
+    """List the details one spec document leaves to the build, each a row under :data:`DECIDED_HEADING`.
+
+    Returns:
+        Each detail as its row's text, in document order; empty when there is none.
+
+    """
+    return _section_rows(path, _DECIDED_SECTION)
 
 
 def _folder(work: Path, state: str) -> Path:
@@ -217,20 +271,28 @@ def check_writer(run: StepRun) -> StepId:
     return checks[-1]["id"]
 
 
-def file_gaps(run: StepRun, slug: str, repository: str, documents: Sequence[Path]) -> list[FiledDocument]:
-    """Read the open gaps of a repository's spec documents and, when there are any, file them for the architect.
+def _held_gaps(documents: Sequence[Path]) -> list[FiledDocument]:
+    """Read the open gaps of a repository's spec documents.
 
     Returns:
-        Each document that holds a gap, with its rows; empty, and nothing filed, when none does.
+        Each document that holds a gap, with its rows; empty when none does.
 
     """
-    filed: list[FiledDocument] = [
-        {"document": str(path), "gaps": gaps} for path in documents if (gaps := open_gaps(path))
+    return [{"document": str(path), "gaps": gaps} for path in documents if (gaps := open_gaps(path))]
+
+
+def _only(filed: Sequence[FiledDocument], rows: Collection[str], *, keep: bool) -> list[FiledDocument]:
+    """Keep, or leave out, the given rows of each filed document.
+
+    Returns:
+        Each document that still holds a row, with those rows.
+
+    """
+    return [
+        {"document": held["document"], "gaps": kept}
+        for held in filed
+        if (kept := [gap for gap in held["gaps"] if (gap in rows) == keep])
     ]
-    if filed:
-        payload: FiledGaps = {"repository": repository, "documents": filed}
-        write_json(_folder(run.context.work, OPEN) / f"{slug}.json", payload)
-    return filed
 
 
 def _answers_file(work: Path) -> Path:
@@ -338,32 +400,32 @@ def _repository_start(run: StepRun, journal: Journal) -> tuple[StepId, StepId]:
 def hold_open(run: StepRun, slug: str, repository: str, documents: Sequence[Path]) -> None:
     """Stop a repository whose spec documents hold an open design gap from reaching its Story and Tasks.
 
+    A row the architect already answered is carried to the build (:func:`carry`), and so is every
+    row once the repository's gaps went to the architect :data:`MAX_ROUNDS` times: the Epic never
+    fails on a design gap. Any other row goes to the architect.
+
     Raises:
-        DesignGapError: A document holds an open gap: the gaps are filed for the solutions
-            architect, one gap round is added to the Architecture container, the TRD is confirmed
-            again, and the repository's spec steps alone are set back to planned.
-        StepError: A document holds a row the architect already answered, or the repository's gaps
-            already went to the architect :data:`MAX_ROUNDS` times; the gaps are filed and the step fails.
+        DesignGapError: A document holds an open gap the architect was not handed before, below
+            the round limit: the gaps are filed for the solutions architect, one gap round is added
+            to the Architecture container, the TRD is confirmed again, and the repository's spec
+            steps alone are set back to planned.
 
     """
-    filed: list[FiledDocument] = file_gaps(run, slug, repository, documents)
+    filed: list[FiledDocument] = _held_gaps(documents)
     if not filed:
         return
     record: Answered = answers(run.context.work).get(slug, Answered())
-    evidence: list[str] = [f"{held['document']}: {gap}" for held in filed for gap in held["gaps"]]
-    returned: list[str] = [f"{held['document']}: {gap}" for held in filed for gap in held["gaps"] if gap in record.rows]
-    if returned:
-        cause: str = (
-            f"the spec documents of {repository} hold again design gaps the solutions architect already answered; "
-            "the design does not converge"
-        )
-        raise StepError(run.inputs.stage, OTHER_CAUSE, (cause, *returned))
     if record.rounds >= MAX_ROUNDS:
-        cause = (
-            f"the spec documents of {repository} still hold open design gaps after the solutions architect "
-            f"answered that repository's design gaps {record.rounds} times; the design does not converge"
-        )
-        raise StepError(run.inputs.stage, OTHER_CAUSE, (cause, *evidence))
+        carry(run, slug, repository, filed)
+        return
+    repeated: list[FiledDocument] = _only(filed, record.rows, keep=True)
+    if repeated:
+        carry(run, slug, repository, repeated)
+    fresh: list[FiledDocument] = _only(filed, record.rows, keep=False)
+    if not fresh:
+        return
+    payload: FiledGaps = {"repository": repository, "documents": fresh}
+    write_json(_folder(run.context.work, OPEN) / f"{slug}.json", payload)
     journal: Journal = run.journal()
     first: StepId
     container: StepId
@@ -371,7 +433,7 @@ def hold_open(run: StepRun, slug: str, repository: str, documents: Sequence[Path
     raise DesignGapError(
         run.inputs.stage,
         first,
-        tuple(evidence),
+        tuple(f"{held['document']}: {gap}" for held in fresh for gap in held["gaps"]),
         container,
         container=run.step_named(ARCHITECTURE)["id"],
         plans=gap_round([check_writer(run)]),
@@ -379,8 +441,155 @@ def hold_open(run: StepRun, slug: str, repository: str, documents: Sequence[Path
     )
 
 
+def _cells(row: str) -> list[str]:
+    """Split a gap row into the cells of a decided-at-build row: its id, its element and its detail.
+
+    Returns:
+        Three cells; a list item, or a row of fewer cells, gives its whole text as the detail.
+
+    """
+    if not row.startswith("|"):
+        return ["", "", _LIST_ITEM_MARK.sub("", row).strip()]
+    cells: list[str] = [cell.strip() for cell in row.strip("|").split("|")]
+    if len(cells) < len(("id", "element", "detail")):
+        return ["", "", "; ".join(cells)]
+    return [cells[0], cells[1], "; ".join(cells[2:])]
+
+
+def _decided_row(row: str) -> str:
+    """Write one carried gap row as a row of the decided-at-build table.
+
+    Returns:
+        The table row, its kind :data:`KIND_LEFTOVER`.
+
+    """
+    return "| " + " | ".join([*_cells(row), KIND_LEFTOVER]) + " |"
+
+
+def _without_rows(lines: list[str], rows: Collection[str]) -> list[str]:
+    """Take the given rows out of a document's gap section, and the section out when no row is left.
+
+    Returns:
+        The document's lines.
+
+    """
+    found: tuple[int, int] | None = _bounds(lines, _SECTION)
+    if found is None:
+        return lines
+    start: int
+    end: int
+    start, end = found
+    kept: list[str] = [line for line in lines[start + 1 : end] if line.strip() not in rows]
+    section: list[str] = [lines[start], *kept] if _table_rows(kept) else []
+    return [*lines[:start], *section, *lines[end:]]
+
+
+def _with_decided(lines: list[str], rows: Sequence[str]) -> list[str]:
+    """Add carried rows to a document's decided-at-build table, writing the section when it has none.
+
+    A new section goes before the links to the architecture and design documents, or at the end.
+
+    Returns:
+        The document's lines.
+
+    """
+    added: list[str] = [_decided_row(row) for row in rows]
+    found: tuple[int, int] | None = _bounds(lines, _DECIDED_SECTION)
+    if found is not None:
+        last: int = max(
+            (index for index in range(found[0], found[1]) if lines[index].strip().startswith("|")),
+            default=found[0],
+        )
+        table: list[str] = [] if last > found[0] else ["", DECIDED_HEADER, DECIDED_SEPARATOR]
+        return [*lines[: last + 1], *table, *added, *lines[last + 1 :]]
+    links: tuple[int, int] | None = _bounds(lines, _LINKS_SECTION)
+    at: int = len(lines) if links is None else links[0]
+    section: list[str] = [f"## {DECIDED_HEADING}", "", DECIDED_HEADER, DECIDED_SEPARATOR, *added, ""]
+    return [*lines[:at], *([""] if at and lines[at - 1].strip() else []), *section, *lines[at:]]
+
+
+def _carry_rows(path: Path, rows: Sequence[str]) -> None:
+    """Move gap rows of one spec document from its gap table to its decided-at-build table."""
+    lines: list[str] = path.read_text(encoding="utf-8").splitlines()
+    moved: list[str] = _with_decided(_without_rows(lines, set(rows)), rows)
+    path.write_text("\n".join(moved) + "\n", encoding="utf-8")
+
+
+def carry(run: StepRun, slug: str, repository: str, filed: Sequence[FiledDocument]) -> None:
+    """Carry gap rows to the build as details it decides, and report the pipeline defect they are.
+
+    Each row moves from its document's gap table to its decided-at-build table, marked
+    :data:`KIND_LEFTOVER`; it joins the repository's file in the leftover folder, which the Task
+    edges read (:func:`leftover`); the repository's open file, which no architect will be handed
+    again, is removed; and a warning note names the Epic, the repository and the rows.
+    """
+    held: FiledDocument
+    for held in filed:
+        _carry_rows(Path(held["document"]), held["gaps"])
+    target: Path = _folder(run.context.work, LEFTOVER) / f"{slug}.json"
+    earlier: list[FiledDocument] = _filed(target)["documents"] if target.is_file() else []
+    merged: dict[str, list[str]] = {held["document"]: list(held["gaps"]) for held in earlier}
+    for held in filed:
+        known: list[str] = merged.setdefault(held["document"], [])
+        known.extend(gap for gap in held["gaps"] if gap not in known)
+    payload: FiledGaps = {
+        "repository": repository,
+        "documents": [{"document": document, "gaps": gaps} for document, gaps in merged.items()],
+    }
+    write_json(target, payload)
+    (_folder(run.context.work, OPEN) / f"{slug}.json").unlink(missing_ok=True)
+    rows: list[str] = [gap for held in filed for gap in held["gaps"]]
+    detail: str = (
+        f"pipeline defect, {DEFECT}: Epic {run.bead}, repository {repository}: {len(rows)} design gap rows "
+        f"carried to the build as details it decides: {' ; '.join(rows)}"
+    )
+    emit_event(run.agents.emit, warning_note(run.inputs.stage, detail))
+
+
+def leftover(work: Path) -> tuple[tuple[str, Path], ...]:
+    """Name each repository's gap rows carried to the build, for the Task dependency mapper.
+
+    Returns:
+        Each leftover file under the label :data:`LABEL_LEFTOVER`, in name order.
+
+    """
+    folder: Path = _folder(work, LEFTOVER)
+    if not folder.is_dir():
+        return ()
+    return tuple((LABEL_LEFTOVER, path) for path in sorted(folder.glob("*.json")))
+
+
+def leftover_rows(work: Path) -> list[tuple[str, str]]:
+    """List every gap row carried to the build, with its repository.
+
+    Returns:
+        Each repository and row, file by file.
+
+    """
+    return [
+        (filed["repository"], gap)
+        for _label, path in leftover(work)
+        for filed in (_filed(path),)
+        for gap in _rows(filed)
+    ]
+
+
+def edge_mark(repository: str, row: str) -> str:
+    """Name a carried gap row the way an edge's reason that orders its provider first names it.
+
+    Returns:
+        :data:`EDGE_MARK`, the repository and the row's id (its whole text when it has none).
+
+    """
+    identifier: str = _cells(row)[0] or row
+    return f"{EDGE_MARK} {repository} {identifier}"
+
+
 def handed(work: Path) -> tuple[tuple[str, Path], ...]:
     """Name each repository's open design gaps, filed for the solutions architect's next session.
+
+    A repository whose gaps already went to the architect :data:`MAX_ROUNDS` times is not handed:
+    its spec step carries its rows to the build (:func:`hold_open`).
 
     Returns:
         Each filed file under the label :data:`LABEL_GAPS`, in name order.
@@ -389,7 +598,8 @@ def handed(work: Path) -> tuple[tuple[str, Path], ...]:
     folder: Path = _folder(work, OPEN)
     if not folder.is_dir():
         return ()
-    return tuple((LABEL_GAPS, path) for path in sorted(folder.glob("*.json")))
+    spent: set[str] = {slug for slug, record in answers(work).items() if record.rounds >= MAX_ROUNDS}
+    return tuple((LABEL_GAPS, path) for path in sorted(folder.glob("*.json")) if path.stem not in spent)
 
 
 def _filed(path: Path) -> FiledGaps:

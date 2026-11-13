@@ -106,7 +106,7 @@ class DesignGapError(StaleInputError):
     confirmation) again, so the TRD is confirmed against the answered architecture. Nothing else is
     set back. Unlike any other stale file, the runner sets the writer back however often it was set
     back in this dispatch: the gaps are bounded where they are read (``design_gaps.hold_open``),
-    which fails the step instead of raising this error.
+    which carries what is left to the build instead of raising this error.
     """
 
     def __init__(  # ruff: ignore[too-many-arguments] - The parts of one gap round.
