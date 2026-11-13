@@ -1,11 +1,12 @@
-"""Write one Story, one Task, or one Task's edges to Tasks in other Stories into beads.
+"""Write one Story, a Story's Tasks, or the edges between Tasks into beads.
 
-Each command writes ONE bead. It reads the documents its caller hands it by path (`StoryFiles`,
-`SpanStories`) and is keyed by the durable elaboration key: a Story or Task no bead under its
-parent carries is created, an open one that carries it is updated where it differs, and any
-other is left as it is. The plans (`plan_story_tasks`, `plan_task_edges`) read the saved
-documents only and run no `bd` command. A write that fails raises `GraphError` from the
-writer, and a rerun repairs it, because every write is keyed.
+Each command writes one Story, a Story's Tasks, or edges. It reads the documents its caller hands
+it by path (`StoryFiles`, `SpanStories`) and is keyed by the durable elaboration key: a Story or
+Task no bead under its parent carries is created (a Story's missing Tasks in one transaction), an
+open one that carries it is updated where it differs, and any other is left as it is. The plans
+(`plan_story_tasks`, `plan_task_edges`) read the saved documents only and run no `bd` command. A
+write that fails raises `GraphError` from the writer, and a rerun repairs it, because every write
+is keyed.
 """
 
 from __future__ import annotations
@@ -41,6 +42,8 @@ from beadcontracts import (
     RepointedEdge,
     StoryBuild,
     StoryEdgeWrite,
+    StoryTasksOptions,
+    StoryTasksWrite,
     StoryWrite,
     SupersededTasks,
     TaskCorrection,
@@ -49,6 +52,7 @@ from beadcontracts import (
     TaskReplacement,
     TaskWrite,
     TaskWriteOptions,
+    WrittenTask,
 )
 from beadgraph import (
     SCOPE_JUDGING,
@@ -1234,9 +1238,9 @@ def write_task(
 ) -> TaskWrite:
     """Write one Task bead of a Story from its saved Tasks file; its edges are written apart.
 
-    The Task is found by its elaboration key among the Story's Task beads: one that exists is
-    refreshed where it differs, or left as it is once building has started, and is never created
-    a second time. `write_story_task_edges` sets the edges once every Task of the Story is written.
+    The one-Task form of `write_story_tasks`, for a caller that writes chosen Tasks: the Task is
+    found by its elaboration key among the Story's Task beads, refreshed where it differs, left as
+    it is once building has started, and never created a second time.
 
     Returns:
         The Task identity, content action, and warnings.
@@ -1248,42 +1252,128 @@ def write_task(
     if not (isinstance(writer, Writer)) or not (isinstance(epic_id, str)) or not (isinstance(files, StoryFiles)):
         raise TypeError(_ARGUMENT_ERROR)
     check_type(options, TaskWriteOptions, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    return _TaskWriter(writer, epic_id, files, options).execute()
+    written: StoryTasksWrite = _StoryTaskWriter(
+        writer,
+        epic_id,
+        files,
+        {
+            "root": options["root"],
+            "keys": [options["key"]],
+            "packages_dir": options.get("packages_dir"),
+            "append_only": options.get("append_only", False),
+        },
+    ).execute()
+    task: WrittenTask = written["tasks"][0]
+    return {
+        "ok": True,
+        "story": written["story"],
+        "task": task,
+        "warnings": written["warnings"],
+        "dryRun": written["dryRun"],
+        "planned": written["planned"],
+        "summary": {
+            "key": task["key"],
+            "id": task["id"],
+            "action": task["action"],
+            "warnings": len(written["warnings"]),
+        },
+    }
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-class _TaskWriter:
-    """Keep preparation and persistence facts for one keyed Task write."""
+def write_story_tasks(
+    writer: Writer,
+    epic_id: str,
+    files: StoryFiles,
+    **options: Unpack[StoryTasksOptions],
+) -> StoryTasksWrite:
+    """Write a Story's Task beads at once from its saved Tasks file; their edges are written apart.
+
+    One plan read, one read of the Story and of its Task beads, then every Task the Story lacks in
+    one `bd create --graph` transaction. Each Task is found by its elaboration key among the Story's
+    Task beads: one that exists is refreshed where it differs (one `bd update` each), or left as it
+    is once building has started, and is never created a second time, so a rerun creates nothing.
+    A created Task carries the Story's labels, as `bd create --parent` gives a child its parent's.
+    `write_story_task_edges` sets the edges once every Task of the Story is written.
+
+    Returns:
+        Each Task's identity and content action, in build order, and the warnings.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
+    """
+    if not (isinstance(writer, Writer)) or not (isinstance(epic_id, str)) or not (isinstance(files, StoryFiles)):
+        raise TypeError(_ARGUMENT_ERROR)
+    check_type(options, StoryTasksOptions, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    return _StoryTaskWriter(writer, epic_id, files, options).execute()
+
+
+def _graph_node(task: Task, text: str, metadata: dict[str, str], parent: str, inherited: list[str]) -> JsonObject:
+    """Return the `bd create --graph` node that writes one Task as `bd create --parent` would.
+
+    Args:
+        task: The Task.
+        text: Its description.
+        metadata: Its metadata.
+        parent: Its Story bead.
+        inherited: The Story's labels, which `bd create --parent` gives a child.
+
+    Returns:
+        The node, keyed by the Task's elaboration key.
+
+    """
+    labels: list[str] = list(dict.fromkeys([*inherited, *([INFRASTRUCTURE_LABEL] if task.infrastructure else [])]))
+    node: JsonObject = {
+        "key": task.elab_key or task.key,
+        "title": task.title,
+        "type": "task",
+        "description": text,
+        "parent_id": parent,
+        "notes": f"{KEY_REPO_PATH}: {task.repo_path}",
+        "metadata": dict(metadata),
+    }
+    if task.acceptance:
+        node["acceptance_criteria"] = "\n".join(task.acceptance)
+    if labels:
+        node["labels"] = list(labels)
+    return node
+
+
+def _written(task: Task, bead_id: str, action: str) -> WrittenTask:
+    """Return what writing one Task did.
+
+    Returns:
+        The Task's identity and content action.
+
+    """
+    return {
+        "key": task.key,
+        "elabKey": task.elab_key,
+        "id": bead_id,
+        "action": action,
+        "title": task.title,
+        "dependsOn": task.depends_on,
+    }
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+class _StoryTaskWriter:
+    """Keep the facts read once for writing the chosen Tasks of one Story."""
 
     writer: Writer
     epic_id: str
     files: StoryFiles
-    options: TaskWriteOptions
-    slug: str
-    repo: str
-    key: str
+    options: StoryTasksOptions
     root: Path | None
-    packages_dir: str | None
-    tasks: list[Task]
-    by_key: dict[str, Task]
-    task: Task
-    stories: dict[str, Bead]
-    story: Bead | None
     story_id: str
-    records: list[JsonObject]
+    story_labels: list[str]
     priority: dict[str, JsonValue]
     beads: list[Bead]
     keyed: dict[str, Bead]
-    items: dict[str, StoryBuild]
     matched: dict[str, Bead]
-    warnings: list[str]
-    bead: Bead | None
-    text: str
-    meta: dict[str, str]
-    task_id: str
-    action: str
 
-    def __init__(self, writer: Writer, epic_id: str, files: StoryFiles, options: TaskWriteOptions) -> None:
+    def __init__(self, writer: Writer, epic_id: str, files: StoryFiles, options: StoryTasksOptions) -> None:
         if (
             not (isinstance(writer, Writer))
             or not (isinstance(epic_id, str))
@@ -1295,126 +1385,132 @@ class _TaskWriter:
         self.epic_id = epic_id
         self.files = files
         self.options = options
+        self.root = options["root"]
 
-    def _prepare_options(self) -> None:
-        check_type(self.options, TaskWriteOptions, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-        self.slug, self.repo = self.files.slug, self.files.repo
-        self.key, self.root = self.options["key"], self.options["root"]
-        self.packages_dir = self.options.get("packages_dir")
-        if not self.repo.strip():
-            msg: str = f"Task {self.key} of story:{self.slug} has no repository: a Task is never written without one"
-            raise HierarchyError(msg)
-
-    def execute(self) -> TaskWrite:
-        """Prepare one Task and return its persisted tracker changes.
+    def _chosen(self, tasks: list[Task]) -> list[Task]:
+        """Return the Tasks to write, in build order: the keys asked for, or every Task.
 
         Returns:
-            The Task identity and its exact persisted changes.
+            The Tasks.
 
         Raises:
-            HierarchyError: Required repository, Story, Task, or blocker facts are missing.
+            HierarchyError: The Story has no repository, or a key names no Task of the plan.
 
         """
-        msg: str
-        self._prepare_options()
+        if not self.files.repo.strip():
+            msg: str = f"story:{self.files.slug} has no repository: a Task is never written without one"
+            raise HierarchyError(msg)
+        keys: list[str] | None = self.options.get("keys")
+        if keys is None:
+            return tasks
+        by_key: dict[str, Task] = {t.key: t for t in tasks}
+        unknown: list[str] = [key for key in keys if key not in by_key]
+        if unknown:
+            msg = f"{self.files.tasks_file.name} has no Task {', '.join(unknown)}"
+            raise HierarchyError(msg)
+        return [by_key[key] for key in keys]
+
+    def _read_story(self) -> None:
+        """Read the Story bead, its labels and its Task beads.
+
+        Raises:
+            HierarchyError: The Epic has no Story for the repository.
+
+        """
+        records: list[JsonObject] = children(self.writer.repo, self.epic_id, "story")
+        by_id: dict[str, JsonObject] = {str(r["id"]): r for r in records}
+        story: Bead | None = _keyed(sorted((bead_of(r) for r in records), key=lambda b: b.id)).get(
+            f"story:{self.files.slug}",
+        )
+        if story is None:
+            msg: str = f"{self.epic_id} has no Story story:{self.files.slug}: its Story is written before its Tasks"
+            raise HierarchyError(msg)
+        self.story_id = story.id
+        self.story_labels = str_list(by_id[story.id].get("labels") or [])
+        tasks: list[JsonObject] = children(self.writer.repo, self.story_id, "task")
+        self.priority = {str(r["id"]): r.get("priority") for r in tasks}
+        beads: list[Bead] = sorted((bead_of(r) for r in tasks), key=lambda b: b.id)
+        self.keyed = _keyed(beads)
+        self.beads = beads
+
+    def execute(self) -> StoryTasksWrite:
+        """Prepare the chosen Tasks, create the missing ones at once, and refresh the rest.
+
+        Returns:
+            Each chosen Task's identity and content action, in build order, and the warnings.
+
+        """
         take_warnings()
-        prepared: _PreparedPlan = _prepared(self.files, self.root, self.packages_dir)
-        self.tasks = copy.deepcopy(list(prepared.tasks))
-        self.by_key = {t.key: t for t in self.tasks}
-        task: hierarchy.Task | None = self.by_key.get(self.key)
-        if task is None:
-            msg = f"{self.files.tasks_file.name} has no Task {self.key}"
-            raise HierarchyError(msg)
-        self.task = task
-        self.stories = _keyed(
-            sorted((bead_of(r) for r in children(self.writer.repo, self.epic_id, "story")), key=lambda b: b.id),
-        )
-        self.story = self.stories.get(f"story:{self.slug}")
-        if self.story is None:
-            msg = f"{self.epic_id} has no Story story:{self.slug}: its Story is written before its Tasks"
-            raise HierarchyError(msg)
-        self.story_id = self.story.id
-        self.records = children(self.writer.repo, self.story_id, "task")
-        self.priority = {str(r["id"]): r.get("priority") for r in self.records}
-        self.beads = sorted((bead_of(r) for r in self.records), key=lambda b: b.id)
-        self.keyed = _keyed(self.beads)
-        self.items = prepared.items
-        self.matched, _ = _match_tasks(self.tasks, self.beads, self.slug, self.items)
-        self.warnings: list[str] = take_warnings()
-        self.bead = (
-            self.keyed.get(self.task.elab_key or "")
-            if self.options.get("append_only")
-            else self.matched.get(self.task.key)
-        )
-        self.text = task_text(self.task, self.root)
-        self.meta = task_metadata(self.task)
-        if self.task.sizes:
-            self.meta[JUDGED_HASH_KEY] = _judged_hash(
-                self.task.title,
-                self.text,
-                self.priority.get(self.bead.id) if self.bead else DEFAULT_PRIORITY,
+        prepared: _PreparedPlan = _prepared(self.files, self.root, self.options.get("packages_dir"))
+        tasks: list[Task] = copy.deepcopy(list(prepared.tasks))
+        chosen: list[Task] = self._chosen(tasks)
+        self._read_story()
+        self.matched, _ = _match_tasks(tasks, self.beads, self.files.slug, prepared.items)
+        warnings: list[str] = take_warnings()
+        nodes: list[JsonObject] = []
+        done: dict[str, WrittenTask] = {}
+        for task in chosen:
+            bead: Bead | None = (
+                self.keyed.get(task.elab_key or "") if self.options.get("append_only") else self.matched.get(task.key)
             )
-        self._persist()
+            text: str = task_text(task, self.root)
+            meta: dict[str, str] = task_metadata(task)
+            if task.sizes:
+                meta[JUDGED_HASH_KEY] = _judged_hash(
+                    task.title,
+                    text,
+                    self.priority.get(bead.id) if bead else DEFAULT_PRIORITY,
+                )
+            if bead is None:
+                nodes.append(_graph_node(task, text, meta, self.story_id, self.story_labels))
+            else:
+                done[task.key] = _written(task, bead.id, self._existing(task, bead, text, meta))
+        ids: dict[str, str] = self.writer.create_many(nodes)
+        written: list[WrittenTask] = [
+            done.get(task.key) or _written(task, ids[task.elab_key or task.key], "created") for task in chosen
+        ]
+        counts: Counter[str] = Counter(task["action"] for task in written)
         return {
             "ok": True,
             "story": self.story_id,
-            "task": {
-                "key": self.task.key,
-                "elabKey": self.task.elab_key,
-                "id": self.task_id,
-                "action": self.action,
-                "title": self.task.title,
-                "dependsOn": self.task.depends_on,
-            },
-            "warnings": self.warnings,
+            "tasks": written,
+            "warnings": warnings,
             "dryRun": self.writer.dry_run,
             "planned": self.writer.planned,
             "summary": {
-                "key": self.task.key,
-                "id": self.task_id,
-                "action": self.action,
-                "warnings": len(self.warnings),
+                "created": counts["created"],
+                "updated": counts["updated"],
+                "unchanged": counts["unchanged"],
+                "started": counts["unchanged-started"],
+                "warnings": len(warnings),
             },
         }
 
-    def _persist(self) -> None:
-        """Create, retain, or refresh the prepared Task.
+    def _existing(self, task: Task, bead: Bead, text: str, meta: dict[str, str]) -> str:
+        """Retain or refresh a Task that has a bead.
+
+        Returns:
+            The content action.
 
         Raises:
-            HierarchyError: An append-only retry conflicts with an existing durable Task key.
+            HierarchyError: An append-only write conflicts with an existing durable Task key.
 
         """
-        if self.bead is None:
-            args: list[str] = _create_args(
-                "task",
-                title=self.task.title,
-                text=self.text,
-                parent=self.story_id,
-                acceptance=self.task.acceptance,
-                notes=f"{KEY_REPO_PATH}: {self.task.repo_path}",
-                metadata=self.meta,
-            )
-            if self.task.infrastructure:
-                args += ["--labels", INFRASTRUCTURE_LABEL]
-            self.task_id, self.action = (self.writer.create(args, self.task.elab_key or self.key), "created")
-        elif self.options.get("append_only"):
+        if self.options.get("append_only"):
             if (
-                self.bead.title != self.task.title
-                or self.bead.description != self.text
-                or any(self.bead.metadata.get(key) != value for key, value in self.meta.items())
+                bead.title != task.title
+                or bead.description != text
+                or any(bead.metadata.get(key) != value for key, value in meta.items())
             ):
-                message: str = f"Append-only producer Task key conflicts with existing Task {self.bead.id}"
+                message: str = f"Append-only producer Task key conflicts with existing Task {bead.id}"
                 raise HierarchyError(message)
-            self.task_id, self.action = (self.bead.id, "unchanged")
-        elif task_started(self.bead):
-            self.task_id, self.action = (self.bead.id, "unchanged-started")
-        else:
-            self.task_id = self.bead.id
-            self.action = (
-                "updated" if _refresh(self.writer, self.bead, self.task.title, self.text, self.meta) else "unchanged"
-            )
-            if self.task.infrastructure:
-                self.writer.bd(["label", "add", self.bead.id, INFRASTRUCTURE_LABEL])
+            return "unchanged"
+        if task_started(bead):
+            return "unchanged-started"
+        action: str = "updated" if _refresh(self.writer, bead, task.title, text, meta) else "unchanged"
+        if task.infrastructure:
+            self.writer.bd(["label", "add", bead.id, INFRASTRUCTURE_LABEL])
+        return action
 
 
 @dataclass

@@ -19,6 +19,7 @@
     "beadwrite.write_story": 15,
     "task_decomposition.context": 30,
     "beadwrite.plan_story_tasks": 30,
+    "beadwrite.write_story_tasks": 30,
     "beadwrite.write_task": 15,
     "beadwrite.retire_superseded_tasks": 15,
     "beadwrite.write_story_task_edges": 15,

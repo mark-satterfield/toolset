@@ -23,6 +23,7 @@ import json
 import math
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Serialized bd transport uses argv without a shell.
 import sys
+import tempfile
 import time
 from collections.abc import Mapping, Sequence  # ruff: ignore[typing-only-standard-library-import] - typeguard @typechecked resolves these at runtime.
 from dataclasses import dataclass, field
@@ -47,7 +48,7 @@ from beadcontracts import PlannedWrite
 from contracts import JsonObject, JsonValue
 from orchestrator.core import handback_contract
 from orchestrator.core import tool_locks as locks
-from typeguard import CollectionCheckStrategy, check_type, typechecked
+from typeguard import CollectionCheckStrategy, TypeCheckError, check_type, typechecked
 
 _ARGUMENT_ERROR: str = "Arguments violate the beadgraph input contract"
 
@@ -656,6 +657,19 @@ def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> No
 _BULK_DEP_ADD: Final[tuple[str, ...]] = ("dep", "add", "--file", "-", "--no-cycle-check")
 
 
+def _removal_lines(removed: Sequence[tuple[str, str]]) -> str:
+    """Render edge removals as the lines `bd batch` reads, applied in one transaction.
+
+    Args:
+        removed: The `(dependent, blocker)` edges to remove.
+
+    Returns:
+        One `dep remove` line per edge.
+
+    """
+    return "".join(f"dep remove {bead_id} {blocker}\n" for bead_id, blocker in removed)
+
+
 def _dep_lines(edges: Mapping[str, list[str]]) -> str:
     """Render edges as the lines `bd dep add --file -` reads.
 
@@ -766,8 +780,9 @@ class Writer:
         """Add and remove the `blocks` edges of many beads at once, or record them in a dry run.
 
         The cycle check runs here, over every blocking edge the tracker holds, read once, less the
-        edges removed; the removals then run, and the edges are added in one
-        `bd dep add --file - --no-cycle-check` request. Only the bulk form skips the tracker's
+        edges removed; the removals then run in one `bd batch` transaction, and the edges are added
+        in one `bd dep add --file - --no-cycle-check` request, each per database the beads were
+        filed in. Only the bulk form skips the tracker's
         per-edge check: a positional `bd dep add` runs it whatever its flags, and that recursive
         query outgrows the database client's read timeout once the graph is dense, so it fails with
         `i/o timeout`. The read, the check and the writes hold the edge lock
@@ -787,7 +802,8 @@ class Writer:
         if not wanted and not removed:
             return
         if self.dry_run:
-            self.planned.extend({"op": "bd", "args": ["dep", "remove", *pair]} for pair in removed)
+            if removed:
+                self.planned.append({"op": "bd", "args": ["batch"], "stdin": _removal_lines(removed)})
             if wanted:
                 self.planned.append({"op": "bd", "args": list(_BULK_DEP_ADD), "stdin": _dep_lines(wanted)})
             return
@@ -812,13 +828,58 @@ class Writer:
             waits.get(bead_id, set()).discard(blocker)
         for bead_id, blockers in added.items():
             _refuse_cycles(waits, bead_id, blockers)
+        dropped: dict[Path | None, list[tuple[str, str]]] = {}
         for bead_id, blocker in removed:
-            run_bd(["dep", "remove", bead_id, blocker], self.repo)
+            dropped.setdefault(_target(["dep", "remove", bead_id], self.repo), []).append((bead_id, blocker))
+        for home, pairs in dropped.items():
+            run_bd(["batch"], home, stdin=_removal_lines(pairs))
         homes: dict[Path | None, dict[str, list[str]]] = {}
         for bead_id, blockers in added.items():
             homes.setdefault(_target(["dep", "add", bead_id], self.repo), {})[bead_id] = blockers
         for home, edges in homes.items():
             run_bd(list(_BULK_DEP_ADD), home, stdin=_dep_lines(edges))
+
+    def create_many(self, nodes: list[JsonObject]) -> dict[str, str]:
+        """Create many beads in one `bd create --graph` transaction, or record it in a dry run.
+
+        Each node is a `bd create --graph` plan node keyed by `key`; the plan carries no edges.
+        The transaction creates every bead or none, so a failed request leaves nothing to repair
+        and the keyed operation that rereads the tracker can run again.
+
+        Args:
+            nodes: The plan nodes, each with a distinct `key`.
+
+        Returns:
+            Node key -> the new bead's id, or `(new:<key>)` in a dry run; empty for no node.
+
+        Raises:
+            TypeError: An argument violates the declared input contract.
+            GraphError: `bd` failed, or did not name a bead for every node.
+
+        """
+        if not isinstance(nodes, list):
+            raise TypeError(_ARGUMENT_ERROR)
+        keys: list[str] = [str(node["key"]) for node in nodes]
+        if not nodes:
+            return {}
+        plan: str = json.dumps({"nodes": nodes})
+        if self.dry_run:
+            self.planned.append({"op": "bd", "args": ["create", "--json", "--graph", "-"], "stdin": plan})
+            return {key: f"(new:{key})" for key in keys}
+        with tempfile.TemporaryDirectory(prefix="bd-graph-") as held:
+            path: Path = Path(held) / "plan.json"
+            path.write_text(plan, encoding="utf-8")
+            printed: str = run_bd(["create", "--json", "--graph", str(path)], self.repo)
+        try:
+            ids: dict[str, str] = check_type(json.loads(printed)["ids"], dict[str, str])
+        except (json.JSONDecodeError, KeyError, TypeError, TypeCheckError) as exc:
+            message: str = f"`bd create --graph` printed no ids: {exc}: {printed.strip()[:400]}"
+            raise GraphError(message) from exc
+        missing: list[str] = [key for key in keys if key not in ids]
+        if missing:
+            message = f"`bd create --graph` named no bead for {', '.join(missing)}"
+            raise GraphError(message)
+        return ids
 
     def metadata(self, bead_id: str, pairs: dict[str, str]) -> None:
         """Write pipeline metadata onto one bead, or record it in a dry run.

@@ -363,7 +363,7 @@ records the value `re-elaborations` (each Epic's outcome) and the value `knock-o
 every Epic was tried, with each outcome in its evidence; running the step again restarts nothing
 twice, since a restarted Epic is no longer elaborated. Re-elaboration rewrites the Epic's Stories
 (in any status but closed) and its unstarted Tasks in place, matched by `elab_key`
-(`beadwrite.write_story`, `write_task`), and a child journal whose steps after the first are all
+(`beadwrite.write_story`, `write_story_tasks`), and a child journal whose steps after the first are all
 planned is created afresh from the rewritten bead (`journal_changes.create_child_journal`).
 
 ## After the container

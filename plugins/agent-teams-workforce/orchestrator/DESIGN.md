@@ -143,7 +143,7 @@ its code:
   `cdsbundles.list_bundles`, `spec_authoring.normalize_ui`, `specui.spec_ui_append`,
   `spec_review.settle`, `spec_authoring.story_document`,
   `beadwrite.write_story`, `task_decomposition.context`, `beadwrite.plan_story_tasks`,
-  `beadwrite.write_task`, `beadwrite.retire_superseded_tasks`, `beadwrite.write_story_task_edges`, `task_decomposition.record`,
+  `beadwrite.write_story_tasks`, `beadwrite.write_task`, `beadwrite.retire_superseded_tasks`, `beadwrite.write_story_task_edges`, `task_decomposition.record`,
   `beadwrite.closure_task_edges`, `task_edges.listing`, `beadwrite.write_all_task_edges`,
   `elaboration.score`, `elaboration.done_rule`, `storyedges.story_edges`, `elaboration.finish`. A
   handler returns a `Completion` or raises `StepError(stage, cause, evidence)` (section 6).
@@ -866,7 +866,7 @@ a `GraphError` carries one of the three causes above.
 
 ### 6.4 Bead writes have one retry layer (QUESTIONS 7)
 
-**Decision.** `beadwrite.write_story` and `write_task` raise on the first `GraphError`; the
+**Decision.** `beadwrite.write_story`, `write_story_tasks` and `write_task` raise on the first `GraphError`; the
 orchestrator's call site applies the retry of section 6.3. Reason: two retry layers multiply
 attempts and hide the cause.
 

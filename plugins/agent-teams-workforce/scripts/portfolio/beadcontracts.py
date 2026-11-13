@@ -200,6 +200,28 @@ class TaskWrite(TypedDict):
     summary: TaskWriteSummary
 
 
+class StoryTasksSummary(TypedDict):
+    """Describe the summary of writing a Story's Task beads: how many Tasks took each action."""
+
+    created: int
+    updated: int
+    unchanged: int
+    started: int
+    warnings: int
+
+
+class StoryTasksWrite(TypedDict):
+    """Describe the wire record of writing a Story's Task beads at once."""
+
+    ok: bool
+    story: str
+    tasks: list[WrittenTask]
+    warnings: list[str]
+    dryRun: bool
+    planned: list[PlannedWrite]
+    summary: StoryTasksSummary
+
+
 class StoryEdgeSummary(EdgeCounts):
     """Describe the story edge summary wire record."""
 
@@ -396,5 +418,17 @@ class TaskWriteOptions(TypedDict):
 
     key: str
     root: Path | None
+    packages_dir: NotRequired[str | None]
+    append_only: NotRequired[bool]
+
+
+class StoryTasksOptions(TypedDict):
+    """Supply the project root, and optionally the Task keys to write, the packages directory and append-only mode.
+
+    ``keys`` absent or None writes every Task of the plan, in build order.
+    """
+
+    root: Path | None
+    keys: NotRequired[list[str] | None]
     packages_dir: NotRequired[str | None]
     append_only: NotRequired[bool]

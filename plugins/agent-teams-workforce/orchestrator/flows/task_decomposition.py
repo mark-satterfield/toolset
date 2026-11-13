@@ -4,11 +4,12 @@ The Story bead write plans one container per repository under the Tasks containe
 step, the decomposition context. That step plans the decomposer session and the plan step. The
 plan step reads the Tasks file the decomposer wrote and plans what the plan calls for: a correction
 session and another plan step when an item is uncited or a Task is unsized, at most ``CORRECTIONS``
-times before a gap that remains fails the repository's Tasks as an item; otherwise one step per
-Task bead write, the step that retires the Task beads the plan no longer names, and the written
-record. A Task bead write is its own step, so the journal says which Task beads are written.
+times before a gap that remains fails the repository's Tasks as an item; otherwise the step that
+writes the Story's Task beads at once, the step that retires the Task beads the plan no longer
+names, the Story's edges and the written record. A journal planned with one step per Task bead
+write runs those steps as planned; each writes its one Task.
 
-The plan step, each Task bead write and the retiring step first check the Tasks file and the
+The plan step, the Task bead write and the retiring step first check the Tasks file and the
 corrections they read against the contracts those files are written to now. A file its contract
 now refuses was written to an earlier contract: its writer, and every step after it inside its
 repository's container, is set back to planned (``StaleInputError``), and the writer's next
@@ -85,6 +86,7 @@ from orchestrator.flows.elaboration_files import (
     TASK_WRITE,
     TASKS_FILE,
     TASKS_RESULT,
+    TASKS_WRITE,
     UI_SOURCES,
     WORK,
     Repository,
@@ -113,7 +115,7 @@ if TYPE_CHECKING:
 
     from beadcontracts import TaskPlan
     from matrix_contract import EntryId
-    from step_journal_contract import Artifact, Step, StepId, StepPlan
+    from step_journal_contract import Step, StepId, StepPlan
 
 WORK_DECOMPOSE: Final = "decompose"
 WORK_GAPS: Final = "gaps"
@@ -668,47 +670,42 @@ def _correction_steps(run: StepRun, name: str) -> StepGroup:
     return StepGroup((NewStep(correct, {WORK: WORK_GAPS}), NewStep(again, {})))
 
 
-def _write_steps(run: StepRun, name: str, planned: TaskPlan) -> StepGroup:
-    """Plan one step per Task bead write, the retiring step, the Story's edges and the written record.
+def _write_steps(run: StepRun, name: str) -> StepGroup:
+    """Plan the Task bead write, the retiring step, the Story's edges and the written record.
 
     Returns:
         The steps in build order, after the plan step.
 
     """
     handed: list[str] = list(run.step.get("inputs", []))
-    steps: list[NewStep] = []
-    written: list[str] = []
-    for index, task in enumerate(planned["tasks"], 1):
-        written.append(f"task-{index}")
-        write: StepPlan = {
-            "ref": written[-1],
-            "description": f"Write the Task bead {task['key']} of {name}: {task['title']}",
-            "purpose": "The Story has this Task as a bead",
-            "script": TASK_WRITE,
-            "inputs": handed,
-        }
-        steps.append(NewStep(write, {"key": task["key"]}))
+    write: StepPlan = {
+        "ref": "tasks",
+        "description": f"Write the Task beads of {name}",
+        "purpose": "The Story has each of its Tasks as a bead",
+        "script": TASKS_WRITE,
+        "inputs": handed,
+    }
     retire: StepPlan = {
         "ref": "retire",
         "description": f"Retire the Task beads of {name} the plan no longer names",
         "purpose": "The Story's unstarted Task beads are the plan's, and no edge points at a deleted one",
         "script": TASK_RETIRE,
-        "inputs": [*handed, *written],
+        "inputs": [*handed, "tasks"],
     }
     edges: StepPlan = {
         "ref": "edges",
         "description": f"Set the edges between the Tasks of {name}",
         "purpose": "A Task that needs another Task of its Story built first is blocked by it",
         "script": STORY_TASK_EDGES,
-        "inputs": [*handed, *written, "retire"],
+        "inputs": [*handed, "tasks", "retire"],
     }
     record: StepPlan = {
         "description": f"Record the Tasks written for {name}",
         "purpose": "The run can report the Story's Tasks",
         "script": TASK_RECORD,
-        "inputs": [*handed, *written, "retire", "edges"],
+        "inputs": [*handed, "tasks", "retire", "edges"],
     }
-    return StepGroup((*steps, NewStep(retire, {}), NewStep(edges, {}), NewStep(record, {})))
+    return StepGroup((NewStep(write, {}), NewStep(retire, {}), NewStep(edges, {}), NewStep(record, {})))
 
 
 def _gap_detail(planned: TaskPlan, name: str) -> str:
@@ -813,64 +810,102 @@ def plan(run: StepRun) -> Completion:
     record: dict[str, JsonValue] = {"tasks": keys, "warnings": warnings, "coverage": coverage}
     return Completion(
         artifacts=(value_artifact(TASK_PLAN_RECORD, record),),
-        add=(_write_steps(run, name, planned),),
+        add=(_write_steps(run, name),),
     )
 
 
-@script_step(TASK_WRITE)
-def write_task(run: StepRun) -> Completion:
-    """Write one Task bead of a Story and create its journal.
-
-    The Task is found by its elaboration key under the Story, so a second run of this step
-    refreshes the Task it wrote and creates no other. The Tasks file is checked against its
-    current contract first (:func:`refuse_stale_tasks`). The Task bead is written under the
-    ownership lock, after a fresh read of beads finds that no other Epic came to own an entry the
-    span planned for this Epic; otherwise nothing is written and the span runs again
-    (``build_ownership.owned_write``).
+def _task_journal_step(run: StepRun, name: str, task: dict[str, JsonValue]) -> StepPlan:
+    """Describe the step that wrote one Task bead as the first step of the Task's journal.
 
     Returns:
-        The Task as the dispatch reports it, and the write's warnings.
+        The step plan: the one-Task step itself, or the Task's part of the Story's Task bead write.
+
+    """
+    if run.step.get("script") == TASK_WRITE:
+        return creating(run)
+    return {
+        "description": f"Write the Task bead {task['key']} of {name}: {task['title']}",
+        "purpose": "The Story has this Task as a bead",
+        "script": TASKS_WRITE,
+    }
+
+
+def _write_tasks(run: StepRun, stage: str, keys: list[str] | None) -> Completion:
+    """Write the chosen Task beads of a Story, every one when ``keys`` is None, and create their journals.
+
+    Each Task is found by its elaboration key under the Story, so a second run of the step
+    refreshes the Tasks it wrote and creates no other. The Tasks file is checked against its
+    current contract first (:func:`refuse_stale_tasks`). The Task beads are written under the
+    ownership lock, after one fresh read of beads finds that no other Epic came to own an entry
+    the span planned for this Epic; otherwise nothing is written and the span runs again
+    (``build_ownership.owned_write``). The Tasks the Story lacks are created in one transaction
+    (``beadwrite.write_story_tasks``).
+
+    Returns:
+        One value ``task`` per Task, as the dispatch reports it, and the write's warnings.
 
     """
     held: Repository = repository(run.inputs)
-    key: str = check_type(run.params().get("key"), str)
-    enter_phase(run.context, run.agents.emit, TASK_DECOMPOSITION_PHASE, TASK_WRITE, held.path)
+    enter_phase(run.context, run.agents.emit, TASK_DECOMPOSITION_PHASE, stage, held.path)
     refuse_stale_tasks(run)
     files: hierarchy.StoryFiles = story_files(run.inputs)
     control: Path = control_repository()
 
     def attempt() -> dict[str, JsonValue]:
-        writer: beadgraph.Writer = run.tools.portfolio(TASK_WRITE, beadgraph.Writer, control)
-        with owned_write(run, TASK_WRITE):
+        writer: beadgraph.Writer = run.tools.portfolio(stage, beadgraph.Writer, control)
+        with owned_write(run, stage):
             return json_object(
                 run.tools.portfolio(
-                    TASK_WRITE,
-                    beadwrite.write_task,
+                    stage,
+                    beadwrite.write_story_tasks,
                     writer,
                     run.bead,
                     files,
-                    key=key,
                     root=project_root(),
+                    keys=keys,
                     packages_dir=_packages(run),
                 ),
             )
 
-    written: dict[str, JsonValue] = run.tools.operation(TASK_WRITE, attempt)
-    task: dict[str, JsonValue] = json_object(written["task"])
-    handed: list[Artifact] = [*handed_on(run.inputs, TASKS_FILE), value_artifact(TASK_KEY, key)]
-    create_child_journal(
-        run.journal_path.parent,
-        BeadId(check_type(task["id"], str)),
-        BEAD_TYPE_TASK,
-        [creating(run)],
-        handed,
-    )
+    written: dict[str, JsonValue] = run.tools.operation(stage, attempt)
+    tasks: list[dict[str, JsonValue]] = objects(written["tasks"])
+    name: str = Path(held.path).name
+    for task in tasks:
+        create_child_journal(
+            run.journal_path.parent,
+            BeadId(check_type(task["id"], str)),
+            BEAD_TYPE_TASK,
+            [_task_journal_step(run, name, task)],
+            [*handed_on(run.inputs, TASKS_FILE), value_artifact(TASK_KEY, task["key"])],
+        )
     return Completion(
         artifacts=(
-            value_artifact(TASK, task),
+            *(value_artifact(TASK, task) for task in tasks),
             value_artifact(TASK_WARNINGS, written["warnings"]),
         ),
     )
+
+
+@script_step(TASKS_WRITE)
+def write_tasks(run: StepRun) -> Completion:
+    """Write every Task bead of a Story at once and create each Task's journal (:func:`_write_tasks`).
+
+    Returns:
+        One value ``task`` per Task, and the write's warnings.
+
+    """
+    return _write_tasks(run, TASKS_WRITE, None)
+
+
+@script_step(TASK_WRITE)
+def write_task(run: StepRun) -> Completion:
+    """Write the one Task bead of a step a journal planned per Task, and create its journal (:func:`_write_tasks`).
+
+    Returns:
+        The value ``task``, and the write's warnings.
+
+    """
+    return _write_tasks(run, TASK_WRITE, [check_type(run.params().get("key"), str)])
 
 
 @script_step(TASK_RETIRE)
