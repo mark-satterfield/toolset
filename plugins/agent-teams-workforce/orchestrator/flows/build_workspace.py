@@ -179,11 +179,12 @@ def _ownership() -> ToolingOwnership:
     )
 
 
-def _changed_paths(tools: Tools, tree: Path) -> tuple[str, ...]:
-    """Read all changed paths without rename pairing or quoted filename ambiguity.
+def _status_entries(tools: Tools, tree: Path) -> list[str]:
+    """Read every porcelain status entry without rename pairing or quoted filename ambiguity.
 
     Returns:
-        Index, worktree and untracked paths, including both sides of renames.
+        Each entry as its two status letters, a space and its path; renames appear as a
+        deletion and an addition.
 
     Raises:
         ValueError: Git reports an unresolved merge.
@@ -199,7 +200,27 @@ def _changed_paths(tools: Tools, tree: Path) -> tuple[str, ...]:
     if any(entry[:2] in conflicts for entry in entries):
         problem: str = "Resolve the Story worktree's merge conflicts before checkpointing"
         raise ValueError(problem)
-    return tuple(sorted(entry[3:] for entry in entries))
+    return entries
+
+
+def _changed_paths(tools: Tools, tree: Path) -> tuple[str, ...]:
+    """Read all changed paths.
+
+    Returns:
+        Index, worktree and untracked paths, including both sides of renames.
+
+    """
+    return tuple(sorted(entry[3:] for entry in _status_entries(tools, tree)))
+
+
+def _staged_deletions(tools: Tools, tree: Path) -> frozenset[str]:
+    """Read the paths whose deletion is already staged, which ``git add`` no longer matches.
+
+    Returns:
+        The paths whose index status is a deletion.
+
+    """
+    return frozenset(entry[3:] for entry in _status_entries(tools, tree) if entry[0] == "D")
 
 
 def _tooling_path(path: str, ownership: ToolingOwnership) -> bool:
@@ -471,15 +492,18 @@ def checkpoint(tools: Tools, workspace: Workspace, message: str) -> str:
     try:
         classified: ToolingPaths = classify_tooling_paths(tools, workspace.tree)
         fingerprint: str = _preserved_state(tools, workspace.tree, classified.preserved)
+        deleted: frozenset[str] = _staged_deletions(tools, workspace.tree)
     except (OSError, ValueError, KeyError, TypeCheckError, configparser.Error, yaml.YAMLError) as error:
         raise PipelineDefectError(stage, error) from error
     if classified.refused:
         raise PipelineDefectError(stage, ValueError("; ".join(classified.refused)))
     product: tuple[str, ...] = classified.product
     preserved: tuple[str, ...] = classified.preserved
+    additions: list[str] = [f":(literal){path}" for path in product if path not in deleted]
+    if additions:
+        tools.git(workspace.tree, ["add", "--", *additions], stage="build:commit")
     if product:
         pathspecs: list[str] = [f":(literal){path}" for path in product]
-        tools.git(workspace.tree, ["add", "--", *pathspecs], stage="build:commit")
         tools.git(workspace.tree, ["commit", "--only", "-m", message, "--", *pathspecs], stage="build:commit")
     after: dict[str, JsonValue] = git_operation(tools, "build:commit", ["facts", "--path", str(workspace.tree)])
     remaining: tuple[str, ...] = _changed_paths(tools, workspace.tree)
