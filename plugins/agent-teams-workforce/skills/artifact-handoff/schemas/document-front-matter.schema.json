@@ -151,6 +151,15 @@
           "items": {
             "$ref": "#/$defs/Citation"
           }
+        },
+        "usedAsBuilt": {
+          "description": "The entries of the repository context's `buildScope` with scope `addition` (another Epic's Task builds each, `builtBy`) to which this Epic adds nothing at all: the Story uses each exactly as its owner builds it, so no Task of the Story has to cite it. An `addition` entry not listed here needs a Task that builds this Epic's addition to it. Every id must be an `addition` entry of the context (`spec_authoring.document_check`). Omitted or empty when the Epic adds to every such entry or the Story has none.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
         }
       }
     }

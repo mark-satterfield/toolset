@@ -74,6 +74,9 @@ BUILT_KINDS: Final[frozenset[EntryKind]] = frozenset({
 })
 """The kinds of entry, other than a stack, that a Task builds; any other id a Task names, such as a shared
 capability it uses, is listed as not built."""
+FALLBACK_BUILT_KINDS: Final[frozenset[EntryKind]] = BUILT_KINDS - {KIND_SERVICE}
+"""The kinds of a ``matrix_elements`` id read as built by a Task that records no ``builds_entries``: a
+service id there names the service the Task works in, never that the Task builds the whole service."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,8 +110,8 @@ def built_entries(metadata: Mapping[str, str], elements: Sequence[str]) -> tuple
 
     A Task elaboration wrote from 7.71.91 records them under ``builds_entries``. A Task without
     that key (written earlier, or outside elaboration) is read from its ``matrix_elements``: the
-    ids of a kind a Task builds (:data:`BUILT_KINDS`), which leaves out its stack and the shared
-    capabilities it uses.
+    ids of a kind :data:`FALLBACK_BUILT_KINDS` names, which leaves out its stack, the service it
+    works in and the shared capabilities it uses.
 
     Args:
         metadata: The Task's metadata.
@@ -123,7 +126,7 @@ def built_entries(metadata: Mapping[str, str], elements: Sequence[str]) -> tuple
     """
     stated: str | None = metadata.get(KEY_BUILDS_ENTRIES)
     if stated is None:
-        return tuple(dict.fromkeys(entry for entry in elements if _built_kind(entry)))
+        return tuple(dict.fromkeys(entry for entry in elements if _fallback_built(entry)))
     try:
         decoded: object = json.loads(stated or "[]")
     except json.JSONDecodeError as error:
@@ -135,15 +138,15 @@ def built_entries(metadata: Mapping[str, str], elements: Sequence[str]) -> tuple
     return tuple(dict.fromkeys(entry for entry in decoded if isinstance(entry, str)))
 
 
-def _built_kind(entry: str) -> bool:
-    """Report whether an id names an entry of a kind a Task builds; an id with no kind is not one.
+def _fallback_built(entry: str) -> bool:
+    """Report whether a ``matrix_elements`` id names an entry a Task without ``builds_entries`` builds.
 
     Returns:
-        True when the id's kind is in :data:`BUILT_KINDS`.
+        True when the id's kind is in :data:`FALLBACK_BUILT_KINDS`; an id with no kind is not one.
 
     """
     try:
-        return kind_of(as_entry_id(entry)) in BUILT_KINDS
+        return kind_of(as_entry_id(entry)) in FALLBACK_BUILT_KINDS
     except MatrixError:
         return False
 

@@ -1703,15 +1703,16 @@ def planned_items(files: StoryFiles) -> list[str]:
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def work_items(files: StoryFiles) -> list[str]:
-    """Name the work of a Story: what it builds that is not verified and no other Epic builds.
+    """Name the work of a Story: what it builds that is not verified and that it does not use as built.
 
     An item the span marks verified (``state``, :data:`STATE_VERIFIED`) is built and tested as
-    the matrix records it, and an item another Epic's Task builds (``builtBy``) is that Epic's
-    work, so neither is work here: no Task has to cite it.
+    the matrix records it, so it is not work: no Task has to cite it. An item another Epic's Task
+    builds (``builtBy``) is work, an addition Task that cites it, unless the Story document
+    records its entry under ``usedAsBuilt``: the spec states that this Epic adds nothing to it.
 
     Returns:
         The ids of the items the span places in the Story's repository, less the verified ones
-        and the ones another Epic builds.
+        and the ones another Epic builds that the Story uses as built.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -1719,8 +1720,13 @@ def work_items(files: StoryFiles) -> list[str]:
     """
     if not (isinstance(files, StoryFiles)):
         raise TypeError(_ARGUMENT_ERROR)
-    owned: set[str] = {key for key, item in story_builds(files.scope).items() if owned_elsewhere(item)}
-    return [key for key in planned_items(files) if key not in owned]
+    used: set[str] = set(str_list(_read_json(files.story).get("usedAsBuilt")))
+    unused: set[str] = {
+        key
+        for key, item in story_builds(files.scope).items()
+        if owned_elsewhere(item) and str(item.get("matrixId") or "") in used
+    }
+    return [key for key in planned_items(files) if key not in unused]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

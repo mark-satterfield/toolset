@@ -9,6 +9,7 @@
   "properties": {
     "title": {"description": "The Story bead's title: the repository's name and the PRD's title.", "type": "string", "minLength": 1},
     "description": {"description": "The Story bead's description: the repository, each thing the Story builds, and the paths of its three spec documents.", "type": "string", "minLength": 1},
-    "decisionIds": {"description": "The architecture citations of the contracts and the data-model documents (their decisionIds front matter), without repeats.", "type": "array", "items": {"type": "string", "minLength": 1}}
+    "decisionIds": {"description": "The architecture citations of the contracts and the data-model documents (their decisionIds front matter), without repeats.", "type": "array", "items": {"type": "string", "minLength": 1}},
+    "usedAsBuilt": {"description": "The matrix ids the contracts and the data-model documents record under `usedAsBuilt` in their front matter, without repeats: entries another Epic's Task builds to which this Epic adds nothing, so no Task of the Story has to cite them (`hierarchy.work_items`). Omitted in a Story document written before the field existed, which reads as empty.", "type": "array", "items": {"type": "string", "minLength": 1}}
   }
 }

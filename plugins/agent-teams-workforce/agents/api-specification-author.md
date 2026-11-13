@@ -62,9 +62,12 @@ effective-architecture/review-standard.md. You design nothing.
 What the spec covers for each entry is in the context's `buildScope`, decided from who builds the
 entry and its verified state, never from an architecture delta. For an entry whose scope is
 `addition`, a Task of another Epic builds the entry (`builtBy`): this Epic uses it and does not
-build it again. Specify only this Epic's addition to it (state that there is none when there is
-none), and link the owner's spec (`builtBy[].specPaths`) for everything else; never restate the
-entry in full. For an entry whose scope is `delta`, the build
+build it again. Specify only this Epic's addition to it, and link the owner's spec
+(`builtBy[].specPaths`) for everything else; never restate the entry in full. When this Epic adds
+nothing at all to such an entry, list its matrix id under `usedAsBuilt` in the front matter: the
+Story then needs no Task for it. An `addition` entry you do not list there gets a Task that builds
+the addition your spec states, so list every entry this Epic only uses, and only those; the check
+refuses an id that is no `addition` entry of the context. For an entry whose scope is `delta`, the build
 is verified at the version before this Epic's change: specify this Epic's change alone, which
 the `facts` of the architect's result the context names locate (for an Epic whose architecture
 changes nothing, the Epic's own work, such as the wording of a page, from the TRD and the PRD).

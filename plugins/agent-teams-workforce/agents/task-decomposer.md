@@ -56,12 +56,14 @@ how to build, not new requirements or test-only activities.
 A Task is a coherent unit of build work, sized on the wsjf skill's scale, of any size. Coupled
 things the Story builds (an item's `requires` and `requiredBy` name another unverified item of
 the Story) may be built in different Tasks when the Task order carries the coupling: the Task
-that builds the prerequisite comes first. Every thing the Story builds is cited by some Task,
-except an item with `builtBy`: a Task of another Epic builds its entry, so it is not this Epic's
-work and gets no Task of its own. When the spec states an addition this Epic makes to such an
-item, one Task builds only that addition and cites the item; Python blocks it, and every Task
-whose items require the item, by the `builtBy` Tasks. A Story whose every item has `builtBy` and
-no addition gets no Task. The output check refuses Tasks that each need another of
+that builds the prerequisite comes first. Every thing the Story builds is cited by some Task.
+An item with `builtBy` is built by a Task of another Epic: this Epic never builds it again. It is
+cited by one Task that builds only this Epic's addition to it, as the spec states that addition;
+Python records the entry under the Task's `adds_to_entries` and blocks the Task, and every Task
+whose items require the item, by the `builtBy` Tasks. The one exception is an item whose entry
+the story document lists as used as built: the spec records that this Epic adds nothing to it,
+so no Task cites it, and a Story whose every item is verified or so listed gets no Task. The
+output check refuses Tasks that each need another of
 them built first, through the couplings and your `edges`: build those coupled things together in
 one Task. A coupling or an edge orders a build only when one Task's build consumes
 what another builds (code it imports, a layer, a value it reads, infrastructure it runs in): a

@@ -732,8 +732,8 @@ def _empty_with_work(run: StepRun, files: hierarchy.StoryFiles, planned: TaskPla
     """Report whether a plan holds no Task while its Story has work (``hierarchy.work_items``).
 
     Returns:
-        True when the plan is empty and the Story has an item that is neither verified nor built
-        by another Epic's Task.
+        True when the plan is empty and the Story has an item that is neither verified nor used
+        as another Epic's Task builds it (the Story document's ``usedAsBuilt``).
 
     """
     return not planned["tasks"] and bool(run.tools.portfolio_read(TASK_PLAN, hierarchy.work_items, files))
@@ -748,8 +748,8 @@ def plan(run: StepRun) -> Completion:
     file.
 
     A plan with no Task is a gap only while the Story has work: a Story whose every item is
-    verified or built by another Epic's Task (``hierarchy.work_items``) and that adds nothing to
-    one needs no Task.
+    verified, or built by another Epic's Task and recorded by the spec as used as built (the Story
+    document's ``usedAsBuilt``, ``hierarchy.work_items``), needs no Task.
 
     Returns:
         For a plan with an uncited item, an unsized Task or no Task, while fewer than

@@ -94,9 +94,10 @@ The order is fixed, and only the stacks of what the Stories build are reached:
    the Epic that owns its entry when that is another Epic (`buildowner.mark_built_by`), `[]`
    otherwise. The owner of an entry is, among every Task of every Epic that builds it (any status,
    closed included; `builds_entries`, else the built kinds of `matrix_elements`), the Task whose
-   build started, else the earliest written, else the lowest id. An item with `builtBy` is not
-   this Epic's work: its spec states only this Epic's addition (`spec-authoring.md`) and no Task
-   has to cite it (`task-decomposition.md`). A started build of the same entry by a third Epic is
+   build started, else the earliest written, else the lowest id. An item with `builtBy` is never
+   built again by this Epic: its spec states only this Epic's addition (`spec-authoring.md`), one
+   Task builds that addition, and no Task cites it when the spec records under `usedAsBuilt` that
+   the Epic adds nothing to it (`task-decomposition.md`). A started build of the same entry by a third Epic is
    a warning of the elements file, for the owner's ruling.
 2. A stack that names no repository is given the repository name the naming command
    validates or converts (`repository_name`, run with list arguments, not through a shell): a

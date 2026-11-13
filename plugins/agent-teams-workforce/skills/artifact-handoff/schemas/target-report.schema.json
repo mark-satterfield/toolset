@@ -154,7 +154,7 @@
         "closure": {"description": "Path of the closure.json the item came from.", "type": "string"},
         "trigger": {"description": "An event item only: the event's description, the event entry's purpose in the matrix.", "type": "string"},
         "publishedBy": {"description": "An event item only: its publishers, each as the id of the item that builds it when one in the same item set does, else as its matrix id.", "type": "array", "items": {"type": "string"}},
-        "builtBy": {"description": "Set by the span step: the Tasks of the Epic that owns the item's matrix entry when that Epic is another Epic (a Task of it builds the entry), else empty. An item with builtBy is not work for this Epic: no Task has to cite it, and a Task that does builds only this Epic's addition and is blocked by these Tasks.", "type": "array", "items": {"$ref": "#/$defs/BuiltBy"}}
+        "builtBy": {"description": "Set by the span step: the Tasks of the Epic that owns the item's matrix entry when that Epic is another Epic (a Task of it builds the entry), else empty. This Epic never builds an item with builtBy again: the Task that cites it builds only this Epic's addition and is blocked by these Tasks, and no Task cites it when the spec lists its entry under usedAsBuilt (this Epic adds nothing to it).", "type": "array", "items": {"$ref": "#/$defs/BuiltBy"}}
       }
     },
     "DeltaSummary": {

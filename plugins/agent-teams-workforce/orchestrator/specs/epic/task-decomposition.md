@@ -62,11 +62,13 @@ coupling, Tasks that each need another built first build their coupled things in
 every thing the Story builds is cited by some Task.
 
 A thing the Story builds whose entry carries the verified flag (the span marks its item `state`
-`built`) is not work (`hierarchy.work_items`): no Task has to cite it. Nor is a thing whose entry
-a Task of another Epic builds (the span records that Epic's Tasks on the item as `builtBy`,
-`repo-scoping.md`): one Epic builds an entry and every other Epic uses it. Such an item gets no
-Task of its own. When the spec states an addition this Epic makes to it, one Task builds only that
-addition and cites the item; `hierarchy.read_tasks` records the entry under its `adds_to_entries`
+`built`) is not work (`hierarchy.work_items`): no Task has to cite it. A thing whose entry a Task
+of another Epic builds (the span records that Epic's Tasks on the item as `builtBy`,
+`repo-scoping.md`) is never built again: one Epic builds an entry and every other Epic uses it.
+It is still work, the addition this Epic makes to it, unless the Story document lists its entry
+under `usedAsBuilt` (the spec records that the Epic adds nothing to it, `spec-authoring.md`); then
+no Task cites it and the Story document records it as used as built. Otherwise one Task builds only
+the addition the spec states and cites the item; `hierarchy.read_tasks` records the entry under its `adds_to_entries`
 (never `builds_entries`) and blocks it, and every Task whose cited items require the item, by the
 `builtBy` Tasks (`buildowner.owner_blockers`, written as outside blockers by the Story edge step,
 which first removes an edge the other way between the same two Tasks). The elaboration keys are

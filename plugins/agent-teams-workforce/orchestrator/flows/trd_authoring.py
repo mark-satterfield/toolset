@@ -231,6 +231,35 @@ def _front_matter_problem(front: dict[str, JsonValue], definition: str) -> str |
     return None
 
 
+def front_matter(path: Path) -> dict[str, JsonValue]:
+    """Read the YAML front matter of an authored document.
+
+    Returns:
+        The front matter, every value a JSON value.
+
+    Raises:
+        DocumentValidationError: The document is missing or empty, has no front matter, or its
+            front matter is not valid YAML or not an object.
+
+    """
+    text: str = path.read_text(encoding="utf-8")
+    if not text.strip():
+        message: str = f"missing or empty document: {path}"
+        raise DocumentValidationError(message)
+    if not text.startswith("---\n") or "\n---" not in text[4:]:
+        message = f"{path}: YAML frontmatter is missing"
+        raise DocumentValidationError(message)
+    try:
+        raw_front: object = _json_safe_yaml(text[4:].split("\n---", 1)[0]) or {}
+    except yaml.YAMLError as exc:
+        message = f"{path}: invalid YAML frontmatter: {exc}"
+        raise DocumentValidationError(message) from exc
+    if not isinstance(raw_front, dict):
+        message = f"{path}: frontmatter must be an object"
+        raise DocumentValidationError(message)
+    return json_object(raw_front)
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def document(path: Path, matrix: Matrix, definition: str, arch: Path) -> tuple[list[str], list[str]]:
     """Validate document frontmatter and check each architecture citation against the matrix.
@@ -259,22 +288,7 @@ def document(path: Path, matrix: Matrix, definition: str, arch: Path) -> tuple[l
         or not isinstance(arch, Path)
     ):
         raise TypeError(_ARGUMENT_ERROR)
-    text: str = path.read_text(encoding="utf-8")
-    if not text.strip():
-        message: str = f"missing or empty document: {path}"
-        raise DocumentValidationError(message)
-    if not text.startswith("---\n") or "\n---" not in text[4:]:
-        message = f"{path}: YAML frontmatter is missing"
-        raise DocumentValidationError(message)
-    try:
-        raw_front: object = _json_safe_yaml(text[4:].split("\n---", 1)[0]) or {}
-    except yaml.YAMLError as exc:
-        message = f"{path}: invalid YAML frontmatter: {exc}"
-        raise DocumentValidationError(message) from exc
-    if not isinstance(raw_front, dict):
-        message = f"{path}: frontmatter must be an object"
-        raise DocumentValidationError(message)
-    front: dict[str, JsonValue] = json_object(raw_front)
+    front: dict[str, JsonValue] = front_matter(path)
     problem: str | None = _front_matter_problem(front, definition)
     if problem is not None:
         message = f"{path}: {problem}"

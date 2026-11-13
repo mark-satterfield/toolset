@@ -290,6 +290,7 @@
         "orchestrator/flows/architecture.py#_record_constraints",
         "orchestrator/flows/architecture.py#_constraint",
         "orchestrator/flows/trd_authoring.py#document",
+        "orchestrator/flows/trd_authoring.py#front_matter",
         "orchestrator/flows/trd_authoring.py#_front_matter_problem"
       ],
       "rules": [
@@ -404,9 +405,12 @@
         "orchestrator/flows/spec_review.py#correction.check",
         "orchestrator/flows/spec_review.py#correction.account_check",
         "orchestrator/flows/spec_authoring.py#document_check",
+        "orchestrator/flows/spec_authoring.py#document_check.check",
+        "orchestrator/flows/spec_authoring.py#used_as_built",
         "orchestrator/flows/spec_authoring.py#criteria_document",
         "orchestrator/flows/spec_authoring.py#_missing_keywords",
         "orchestrator/flows/trd_authoring.py#document",
+        "orchestrator/flows/trd_authoring.py#front_matter",
         "orchestrator/flows/trd_authoring.py#_front_matter_problem"
       ],
       "rules": [
@@ -505,6 +509,12 @@
           "enforced": "front matter does not satisfy",
           "home": "skills/artifact-handoff/schemas/document-front-matter.schema.json",
           "stated": "The front matter of one repository's contracts document"
+        },
+        {
+          "id": "used-as-built-addition",
+          "enforced": "usedAsBuilt names entries that are no buildScope entry",
+          "home": "skills/artifact-handoff/schemas/document-front-matter.schema.json",
+          "stated": "Every id must be an `addition` entry of the context"
         },
         {
           "id": "citations-resolve",

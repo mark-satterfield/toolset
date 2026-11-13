@@ -1216,7 +1216,8 @@ def _read_story_builds(run: StepRun) -> tuple[Matrix, list[DeltaItem], list[str]
     (``addedOrChangedElements``) and the existing elements it names as where the Epic's work
     that leaves them unchanged lands (``unchangedWorkElements``). Each item records, under
     ``builtBy``, the Tasks of the Epic that owns its entry when that is another Epic
-    (``buildowner.mark_built_by``, from one read of beads): such an item is not this Epic's work.
+    (``buildowner.mark_built_by``, from one read of beads): this Epic never builds such an item
+    again and only adds to it.
 
     Returns:
         The matrix as it is after the names are recorded, the items (:func:`story_builds`), and

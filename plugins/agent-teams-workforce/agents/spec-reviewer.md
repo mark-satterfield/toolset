@@ -114,7 +114,11 @@ documents and the TRD state it.
   Epic's Task (`builtBy`): the documents state only this Epic's addition to it and link the
   owner's spec for the rest. A document that restates such an entry in full, or specifies work
   on it beyond the addition, is a finding under I7: the correction cuts it to the addition and a
-  link to the `builtBy[].specPaths`.
+  link to the `builtBy[].specPaths`. A document whose front matter lists an entry as used as built
+  while it, or another document of the Story, specifies an addition to that entry,
+  or that leaves out of that list an `addition` entry to which no document of the Story
+  specifies any addition, is a finding under I7: the correction makes the list name exactly the
+  `addition` entries this Epic adds nothing to.
 - An open design gap is blocking: no Task can be built from a detail the design does not state
   (I7). Check every row under a document's `## Design gaps` heading against the approved
   documents. When an approved document records the detail, write a finding to the document's

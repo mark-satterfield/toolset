@@ -139,7 +139,7 @@ from orchestrator.flows.spec_pack import (
     scope_bindings,
     trd_requirements,
 )
-from orchestrator.flows.trd_authoring import SPEC_FRONT_MATTER, document
+from orchestrator.flows.trd_authoring import SPEC_FRONT_MATTER, DocumentValidationError, document, front_matter
 
 # isort: split
 # The journal modules put the pipeline-contracts scripts directory on sys.path.
@@ -226,6 +226,8 @@ SCOPE_FULL: Final = "full"
 """What a spec covers for one entry: this Epic's change alone, or all the work that brings the build
 up to the entry's approved architecture."""
 KEY_BUILD_SCOPE: Final = "buildScope"
+USED_AS_BUILT_HEADING: Final = "Used as built (another Epic's Task builds it; this Epic adds nothing to it):"
+"""The Story document's list of the entries its spec documents record under ``usedAsBuilt``."""
 KEY_COMPONENT_DOCUMENTS: Final = "componentDocuments"
 LINKS_HEADING: Final = "## Architecture and design documents"
 """The last section of every spec document: the links to the documents of the component it covers."""
@@ -419,15 +421,53 @@ def document_check(run: StepRun, name: str) -> OutputValidator:
 
     Returns:
         The check: every architecture citation of the contracts and of the data model names a
-        document and heading the matrix holds; the criteria document has the structure Tasks cite
-        (:func:`criteria_document`).
+        document and heading the matrix holds, and every entry its ``usedAsBuilt`` names is an
+        ``addition`` entry of the repository context (:func:`used_as_built`); the criteria
+        document has the structure Tasks cite (:func:`criteria_document`).
 
     """
     if name == CRITERIA:
         return criteria_document
     matrix: Matrix = run.tools.portfolio_read(name, read_matrix, matrix_path(None, os.environ))
     arch: Path = architecture_root(run)
-    return lambda path: document(path, matrix, SPEC_FRONT_MATTER, arch)
+    held_context: Path | None = run.inputs.optional_file(CONTEXT)
+    additions: set[str] | None = None if held_context is None else addition_entries(held_context)
+
+    def check(path: Path) -> tuple[list[str], list[str]]:
+        found: tuple[list[str], list[str]] = document(path, matrix, SPEC_FRONT_MATTER, arch)
+        if additions is None:
+            return found
+        foreign: list[str] = [entry for entry in used_as_built(path) if entry not in additions]
+        if foreign:
+            message: str = (
+                f"{path}: usedAsBuilt names entries that are no buildScope entry with scope "
+                f"{SCOPE_ADDITION!r} in the repository context: {foreign}"
+            )
+            raise DocumentValidationError(message)
+        return found
+
+    return check
+
+
+def addition_entries(held_context: Path) -> set[str]:
+    """Name the entries a repository's Story uses that another Epic's Task builds.
+
+    Returns:
+        The entries of the context's ``buildScope`` with scope ``addition``.
+
+    """
+    rows: list[dict[str, JsonValue]] = objects(json_object(strict_json(held_context)).get(KEY_BUILD_SCOPE, []))
+    return {str(row["entry"]) for row in rows if row.get("scope") == SCOPE_ADDITION}
+
+
+def used_as_built(path: Path) -> list[str]:
+    """Read the entries a spec document records as used as built: this Epic adds nothing to them.
+
+    Returns:
+        The front matter's ``usedAsBuilt``; empty when the document records none.
+
+    """
+    return check_type(front_matter(path).get("usedAsBuilt", []), list[str])
 
 
 def author_files(run: StepRun, names: Sequence[str]) -> tuple[tuple[str, Path], ...]:
@@ -1275,6 +1315,7 @@ def story_document(run: StepRun) -> Completion:
             if value.strip()
         ),
     )
+    used: list[JsonValue] = list(dict.fromkeys(entry for path in documents[:2] for entry in used_as_built(path)))
     prd: dict[str, JsonValue] = json_object(run.context.args[dispatch.KEY_PRD])
     items: list[dict[str, JsonValue]] = objects(held_context["items"])
     names: dict[str, str] = {check_type(item[KEY_ID], str): check_type(item[KEY_ELEMENT], str) for item in items}
@@ -1284,6 +1325,7 @@ def story_document(run: StepRun) -> Completion:
         "What the Story builds:",
         *(f"- {built_line(item, names, matrix)}" for item in items),
         "",
+        *([USED_AS_BUILT_HEADING, *(f"- {entry}" for entry in used), ""] if used else []),
         "Specifications:",
         *(f"- {path}" for path in documents),
         "",
@@ -1297,6 +1339,7 @@ def story_document(run: StepRun) -> Completion:
             "title": f"{Path(held.path).name}: {prd.get(dispatch.PRD_TITLE) or run.bead}",
             "description": "\n".join(lines),
             "decisionIds": decisions,
+            "usedAsBuilt": used,
         },
         STORY_DOCUMENT_SCHEMA,
     )

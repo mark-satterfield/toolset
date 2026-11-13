@@ -3,9 +3,10 @@
 An entry of the matrix is built once. Among every Task of every Epic that builds the entry (any
 status, closed included; :attr:`matrixtasks.TaskBead.builds`), the owner Task is the one whose
 build started, else the earliest written, else the lowest id. Its Epic is the owner Epic. An item
-of another Epic whose entry the owner Epic builds is not work for that Epic: it records the owner
-Epic's Tasks under ``builtBy``, no Task has to cite it, and a Task that does builds only its
-Epic's addition and is blocked by those Tasks. An Epic's own Tasks take part in the comparison, so
+of another Epic whose entry the owner Epic builds is never built again by that Epic: it records the
+owner Epic's Tasks under ``builtBy``, and the Task that cites it builds only its Epic's addition
+and is blocked by those Tasks; when the spec records that the Epic adds nothing to it
+(``usedAsBuilt``), no Task cites it. An Epic's own Tasks take part in the comparison, so
 an Epic that owns an entry keeps it when it is elaborated again, and a Task that only adds to an
 entry (``adds_to_entries``) never builds it.
 """

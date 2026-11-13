@@ -67,8 +67,11 @@ detailed architecture under `detailed/` or in the matrix. What a spec covers for
 Story builds is the context's `buildScope`, read from who builds the entry and its verified flag
 (`spec_authoring.entry_scope`), never from an architecture delta: `addition` when a Task of
 another Epic builds the entry (the item's `builtBy`, carried on the row), so the spec states only
-this Epic's addition to it, or that there is none, and links the owner's spec
-(`builtBy[].specPaths`) for the rest; `delta` when the entry carries
+this Epic's addition to it and links the owner's spec (`builtBy[].specPaths`) for the rest, and
+when the Epic adds nothing to it the contracts or the data-model document lists the entry under
+`usedAsBuilt` in its front matter (`document-front-matter.schema.json#/$defs/SpecDocument`;
+`spec_authoring.document_check` refuses an id that is no `addition` entry, and the Story document
+carries the union as `usedAsBuilt`, `story-document.schema.json`); `delta` when the entry carries
 the verified mark, so nothing it must be built as has changed since its last build and test, and
 the spec covers this Epic's own work for it alone; `full` when the entry is not verified (a
 change cleared the mark, or it was never built), and the spec covers all the work that brings the

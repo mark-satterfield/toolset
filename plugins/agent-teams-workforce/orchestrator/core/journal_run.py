@@ -718,6 +718,8 @@ class JournalRunner:
         """How often each span step was planned again in this dispatch because ownership changed."""
         self.stale: list[StaleInputError] = []
         """The stale files found by the steps of the group that runs now."""
+        self._staling: threading.Lock = threading.Lock()
+        """Held while a step that found an ownership change counts it and keeps it (:meth:`_keep_ownership_change`)."""
         self.gap_steps: set[StepId] = set()
         """The steps of the group that runs now that found an open design gap (``DesignGapError``)."""
         self.gap_keys: set[str] = set()
@@ -794,11 +796,15 @@ class JournalRunner:
         if first is None:
             return False
         containers: list[StepId] = concurrent_containers(journal, first["id"], self.registry)
-        if len(containers) > 1:
-            with contextlib.redirect_stdout(sys.stderr):
-                parallel(self.context, [partial(self._run_container, container) for container in containers])
-        else:
-            self._run_group(journal, first["id"])
+        try:
+            if len(containers) > 1:
+                with contextlib.redirect_stdout(sys.stderr):
+                    parallel(self.context, [partial(self._run_container, container) for container in containers])
+            else:
+                self._run_group(journal, first["id"])
+        except Exception:
+            self._replan_stale()
+            raise
         self._replan_stale()
         self._close_finished()
         return True
@@ -1076,8 +1082,9 @@ class JournalRunner:
         malformed request the step finds is corrected by its writer's session
         (:meth:`_correct_request`), and the step is not failed, unless that request was corrected
         in this dispatch already. A change of the Epic that owns an entry (``OwnershipChangedError``)
-        is kept up to ``OWNERSHIP_REPLANS`` times per span step in one dispatch, and then fails the
-        step as an item failure: another Epic is racing for the same entries.
+        is kept for :meth:`_replan_stale` (:meth:`_keep_ownership_change`): the span step is planned
+        again once per round, up to ``OWNERSHIP_REPLANS`` times in one dispatch, and after that the
+        step fails as an item failure: another Epic is racing for the same entries.
 
         A script step that wrote a file stale again after it ran again is pipeline code that
         failed: its code wrote the file to a contract other than the one its readers check, and
@@ -1095,11 +1102,10 @@ class JournalRunner:
         try:
             self._perform(journal, step)
         except OwnershipChangedError as changed:
-            if self.ownership_replans.get(changed.writer, 0) >= OWNERSHIP_REPLANS:
-                self._record_failure(step_id, stage_of(step), changed)
-                raise
-            self.ownership_replans[changed.writer] = self.ownership_replans.get(changed.writer, 0) + 1
-            self.stale.append(changed)
+            if self._keep_ownership_change(changed):
+                return
+            self._record_failure(step_id, stage_of(step), changed)
+            raise
         except StaleInputError as stale:
             if isinstance(stale, DesignGapError):
                 self.gap_steps.add(step_id)
@@ -1122,6 +1128,29 @@ class JournalRunner:
         except Exception as exc:
             self._record_failure(step_id, stage_of(step), exc)
             raise
+
+    def _keep_ownership_change(self, changed: OwnershipChangedError) -> bool:
+        """Keep an ownership change for :meth:`_replan_stale`, counting one re-plan per span step per round.
+
+        Every container of a round checks the whole Epic, so each finds the same change. The
+        first to find it in the round counts the re-plan of the span step; the others keep their
+        container's finding with it and count nothing.
+
+        Returns:
+            False when the span step was already planned again ``OWNERSHIP_REPLANS`` times in this
+            dispatch and no container of this round has kept the change yet; True otherwise.
+
+        """
+        with self._staling:
+            if any(stale.writer == changed.writer for stale in self.stale):
+                self.stale.append(changed)
+                return True
+            replans: int = self.ownership_replans.get(changed.writer, 0)
+            if replans >= OWNERSHIP_REPLANS:
+                return False
+            self.ownership_replans[changed.writer] = replans + 1
+            self.stale.append(changed)
+            return True
 
     def _correct_request(self, step_id: StepId, malformed: MalformedRequestError) -> None:
         """Continue the session that wrote a malformed request, to correct the request file in place.
