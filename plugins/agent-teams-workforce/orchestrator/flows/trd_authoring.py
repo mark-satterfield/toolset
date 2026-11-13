@@ -87,6 +87,8 @@ TRD_FRONT_MATTER: Final = "TrdDocument"
 """The TRD's definition in :data:`FRONT_MATTER_CONTRACT`."""
 SPEC_FRONT_MATTER: Final = "SpecDocument"
 """The contracts and data-model documents' definition in :data:`FRONT_MATTER_CONTRACT`."""
+CRITERIA_FRONT_MATTER: Final = "CriteriaDocument"
+"""The criteria document's definition in :data:`FRONT_MATTER_CONTRACT`; its front matter is optional."""
 
 
 class DocumentValidationError(ValueError):
@@ -208,7 +210,7 @@ def cited(matrix: Matrix, arch: Path, citation: str) -> tuple[EntryId, str] | No
     return None
 
 
-def _front_matter_problem(front: dict[str, JsonValue], definition: str) -> str | None:
+def front_matter_problem(front: dict[str, JsonValue], definition: str) -> str | None:
     """Check a document's front matter against its definition in the front matter contract.
 
     Args:
@@ -289,7 +291,7 @@ def document(path: Path, matrix: Matrix, definition: str, arch: Path) -> tuple[l
     ):
         raise TypeError(_ARGUMENT_ERROR)
     front: dict[str, JsonValue] = front_matter(path)
-    problem: str | None = _front_matter_problem(front, definition)
+    problem: str | None = front_matter_problem(front, definition)
     if problem is not None:
         message = f"{path}: {problem}"
         raise DocumentValidationError(message)

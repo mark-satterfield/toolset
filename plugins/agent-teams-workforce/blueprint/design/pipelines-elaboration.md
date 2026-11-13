@@ -708,7 +708,7 @@ Decisions in this diagram, each for one reason:
   status) with that Epic's Tasks (`builtBy`, `scripts/portfolio/buildowner.py`); the owner is the
   Task whose build started, else the earliest written. This Epic never builds such an item again:
   its spec states only this Epic's addition (`buildScope` `addition`), one Task builds that
-  addition and records the entry under `adds_to_entries`, unless the spec lists the entry under
+  addition and records the entry under `adds_to_entries`, unless every spec document lists it under
   `usedAsBuilt` (the Epic adds nothing to it; then no Task cites it), and every Task that cites or
   requires it is blocked by the owner's Tasks. A Task records what it builds under
   `builds_entries`. Two Epics elaborated at once cannot both claim an entry: each Task bead is

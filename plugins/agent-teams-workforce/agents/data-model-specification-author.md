@@ -71,11 +71,13 @@ What the spec covers for each entry is in the context's `buildScope`, decided fr
 entry and its verified state, never from an architecture delta. For an entry whose scope is
 `addition`, a Task of another Epic builds the entry (`builtBy`): this Epic uses it and does not
 build it again. Specify only this Epic's addition to it, and link the owner's spec
-(`builtBy[].specPaths`) for everything else; never restate the entry in full. When this Epic adds
-nothing at all to such an entry, list its matrix id under `usedAsBuilt` in the front matter: the
-Story then needs no Task for it. An `addition` entry you do not list there gets a Task that builds
-the addition your spec states, so list every entry this Epic only uses, and only those; the check
-refuses an id that is no `addition` entry of the context. For an entry whose scope is `delta`, the build
+(`builtBy[].specPaths`) for everything else; never restate the entry in full. List under
+`usedAsBuilt` in the front matter the matrix id of every such entry to which your data model
+specifies no addition, and only those, including entries the data model does not touch. An entry
+counts as used as built, with no Task, only when every spec document of the Story lists it (yours,
+the contracts' and the criteria's); an entry any document leaves out gets a Task that builds the
+addition the documents state. The check refuses an id that is no `addition` entry of the
+context. For an entry whose scope is `delta`, the build
 is verified at the version before this Epic's change: specify this Epic's change alone, which
 the `facts` of the architect's result the context names locate (for an Epic whose architecture
 changes nothing, the Epic's own work, such as the wording of a page, from the TRD and the PRD).

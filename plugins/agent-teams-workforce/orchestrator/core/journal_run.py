@@ -802,10 +802,9 @@ class JournalRunner:
                     parallel(self.context, [partial(self._run_container, container) for container in containers])
             else:
                 self._run_group(journal, first["id"])
-        except Exception:
+        finally:
+            # A failure of the re-plan keeps the round's own failure as its __context__.
             self._replan_stale()
-            raise
-        self._replan_stale()
         self._close_finished()
         return True
 

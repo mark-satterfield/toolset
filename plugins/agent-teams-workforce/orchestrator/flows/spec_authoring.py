@@ -32,6 +32,7 @@ design documents of the component it covers, written by :func:`story_document`.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -139,7 +140,14 @@ from orchestrator.flows.spec_pack import (
     scope_bindings,
     trd_requirements,
 )
-from orchestrator.flows.trd_authoring import SPEC_FRONT_MATTER, DocumentValidationError, document, front_matter
+from orchestrator.flows.trd_authoring import (
+    CRITERIA_FRONT_MATTER,
+    SPEC_FRONT_MATTER,
+    DocumentValidationError,
+    document,
+    front_matter,
+    front_matter_problem,
+)
 
 # isort: split
 # The journal modules put the pipeline-contracts scripts directory on sys.path.
@@ -227,7 +235,9 @@ SCOPE_FULL: Final = "full"
 up to the entry's approved architecture."""
 KEY_BUILD_SCOPE: Final = "buildScope"
 USED_AS_BUILT_HEADING: Final = "Used as built (another Epic's Task builds it; this Epic adds nothing to it):"
-"""The Story document's list of the entries its spec documents record under ``usedAsBuilt``."""
+"""The Story document's list of the entries every one of its spec documents records under ``usedAsBuilt``."""
+FRONT_MATTER_FENCE: Final = "---\n"
+"""The line that opens a document's YAML front matter."""
 KEY_COMPONENT_DOCUMENTS: Final = "componentDocuments"
 LINKS_HEADING: Final = "## Architecture and design documents"
 """The last section of every spec document: the links to the documents of the component it covers."""
@@ -421,32 +431,53 @@ def document_check(run: StepRun, name: str) -> OutputValidator:
 
     Returns:
         The check: every architecture citation of the contracts and of the data model names a
-        document and heading the matrix holds, and every entry its ``usedAsBuilt`` names is an
-        ``addition`` entry of the repository context (:func:`used_as_built`); the criteria
-        document has the structure Tasks cite (:func:`criteria_document`).
+        document and heading the matrix holds; the criteria document has the structure Tasks
+        cite (:func:`criteria_document`); and every entry the document's ``usedAsBuilt`` names
+        is an ``addition`` entry of the repository context (:func:`refuse_foreign`).
 
     """
-    if name == CRITERIA:
-        return criteria_document
-    matrix: Matrix = run.tools.portfolio_read(name, read_matrix, matrix_path(None, os.environ))
-    arch: Path = architecture_root(run)
     held_context: Path | None = run.inputs.optional_file(CONTEXT)
     additions: set[str] | None = None if held_context is None else addition_entries(held_context)
+    if name == CRITERIA:
+
+        def criteria_check(path: Path) -> None:
+            criteria_document(path)
+            refuse_foreign(path, criteria_used_as_built(path), additions)
+
+        return criteria_check
+    matrix: Matrix = run.tools.portfolio_read(name, read_matrix, matrix_path(None, os.environ))
+    arch: Path = architecture_root(run)
 
     def check(path: Path) -> tuple[list[str], list[str]]:
         found: tuple[list[str], list[str]] = document(path, matrix, SPEC_FRONT_MATTER, arch)
-        if additions is None:
-            return found
-        foreign: list[str] = [entry for entry in used_as_built(path) if entry not in additions]
-        if foreign:
-            message: str = (
-                f"{path}: usedAsBuilt names entries that are no buildScope entry with scope "
-                f"{SCOPE_ADDITION!r} in the repository context: {foreign}"
-            )
-            raise DocumentValidationError(message)
+        refuse_foreign(path, used_as_built(path), additions)
         return found
 
     return check
+
+
+def refuse_foreign(path: Path, listed: Sequence[str], additions: Collection[str] | None) -> None:
+    """Refuse a ``usedAsBuilt`` that names an entry which is no ``addition`` entry of the context.
+
+    Args:
+        path: The spec document.
+        listed: The entries its ``usedAsBuilt`` names.
+        additions: The context's ``addition`` entries; None when the step is handed no context,
+            which checks nothing.
+
+    Raises:
+        DocumentValidationError: An entry listed is no ``addition`` entry.
+
+    """
+    if additions is None:
+        return
+    foreign: list[str] = [entry for entry in listed if entry not in additions]
+    if foreign:
+        message: str = (
+            f"{path}: usedAsBuilt names entries that are no buildScope entry with scope "
+            f"{SCOPE_ADDITION!r} in the repository context: {foreign}"
+        )
+        raise DocumentValidationError(message)
 
 
 def addition_entries(held_context: Path) -> set[str]:
@@ -461,13 +492,48 @@ def addition_entries(held_context: Path) -> set[str]:
 
 
 def used_as_built(path: Path) -> list[str]:
-    """Read the entries a spec document records as used as built: this Epic adds nothing to them.
+    """Read the entries the contracts or the data model records as used as built: it specifies no addition to them.
 
     Returns:
         The front matter's ``usedAsBuilt``; empty when the document records none.
 
     """
     return check_type(front_matter(path).get("usedAsBuilt", []), list[str])
+
+
+def criteria_used_as_built(path: Path) -> list[str]:
+    """Read the entries the criteria document records as used as built, from its optional front matter.
+
+    Returns:
+        The front matter's ``usedAsBuilt``; empty when the document has no front matter or records none.
+
+    Raises:
+        DocumentValidationError: The front matter is not valid YAML or does not satisfy its
+            definition (:data:`CRITERIA_FRONT_MATTER`).
+
+    """
+    if not path.read_text(encoding="utf-8").startswith(FRONT_MATTER_FENCE):
+        return []
+    front: dict[str, JsonValue] = front_matter(path)
+    problem: str | None = front_matter_problem(front, CRITERIA_FRONT_MATTER)
+    if problem is not None:
+        message: str = f"{path}: {problem}"
+        raise DocumentValidationError(message)
+    return check_type(front.get("usedAsBuilt", []), list[str])
+
+
+def story_used_as_built(contracts: Path, data_model: Path, criteria: Path) -> list[str]:
+    """Name the entries a Story uses exactly as another Epic's Task builds them.
+
+    An entry counts only when every spec document of the Story lists it under ``usedAsBuilt``, so
+    an addition any one document specifies keeps its Task.
+
+    Returns:
+        The entries every document lists, in the contracts document's order.
+
+    """
+    others: list[set[str]] = [set(used_as_built(data_model)), set(criteria_used_as_built(criteria))]
+    return [entry for entry in dict.fromkeys(used_as_built(contracts)) if all(entry in listed for listed in others)]
 
 
 def author_files(run: StepRun, names: Sequence[str]) -> tuple[tuple[str, Path], ...]:
@@ -1060,9 +1126,10 @@ def context(run: StepRun) -> Completion:
 def not_applicable(run: StepRun) -> Completion:
     """Write the contracts or the data model of a repository whose Story builds nothing it specifies.
 
-    The document has the front matter every spec document has, with no citation, and lists what
-    the Story builds, so the criteria, the review and the Story read it as they read an authored
-    one.
+    The document has the front matter every spec document has, with no citation and with every
+    ``addition`` entry of the context under ``usedAsBuilt``, since it specifies no addition to any,
+    and lists what the Story builds, so the criteria, the review and the Story read it as they
+    read an authored one.
 
     Returns:
         The document, recorded under its artifact name.
@@ -1076,9 +1143,11 @@ def not_applicable(run: StepRun) -> Completion:
     if not isinstance(name, str) or name not in NOT_APPLICABLE_SUBJECT:
         raise StepError(SPEC_NOT_APPLICABLE, OTHER_CAUSE, (f"no spec document a script writes: {name!r}",))
     built: list[dict[str, JsonValue]] = objects(strict_json(run.inputs.file(SPEC_PACK))["entries"])
+    used: list[str] = sorted(addition_entries(run.inputs.file(CONTEXT)))
     lines: list[str] = [
         "---",
         "decisionIds: []",
+        f"usedAsBuilt: {json.dumps(used)}",
         "---",
         "",
         f"# {DOCUMENT_TITLE[name]} of {Path(held.path).name}",
@@ -1315,7 +1384,7 @@ def story_document(run: StepRun) -> Completion:
             if value.strip()
         ),
     )
-    used: list[JsonValue] = list(dict.fromkeys(entry for path in documents[:2] for entry in used_as_built(path)))
+    used: list[JsonValue] = list(story_used_as_built(*documents))
     prd: dict[str, JsonValue] = json_object(run.context.args[dispatch.KEY_PRD])
     items: list[dict[str, JsonValue]] = objects(held_context["items"])
     names: dict[str, str] = {check_type(item[KEY_ID], str): check_type(item[KEY_ELEMENT], str) for item in items}

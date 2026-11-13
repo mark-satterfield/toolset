@@ -139,7 +139,7 @@
       }
     },
     "SpecDocument": {
-      "description": "The front matter of one repository's contracts document (<work>/spec-<slug>.md, written by api-specification-author) and data-model document (<work>/spec-<slug>.data-model.md, written by data-model-specification-author). The step `spec_authoring.story_document` (orchestrator/flows/spec_authoring.py) carries the citations of both onto the Story document and the Story bead.",
+      "description": "The front matter of one repository's contracts document (<work>/spec-<slug>.md, written by api-specification-author, or by the script `spec_authoring.not_applicable` when the Story needs no contracts) and data-model document (<work>/spec-<slug>.data-model.md, written by data-model-specification-author or by that script). The step `spec_authoring.story_document` (orchestrator/flows/spec_authoring.py) carries the citations of both onto the Story document and the Story bead.",
       "type": "object",
       "required": [
         "decisionIds"
@@ -153,15 +153,27 @@
           }
         },
         "usedAsBuilt": {
-          "description": "The entries of the repository context's `buildScope` with scope `addition` (another Epic's Task builds each, `builtBy`) to which this Epic adds nothing at all: the Story uses each exactly as its owner builds it, so no Task of the Story has to cite it. An `addition` entry not listed here needs a Task that builds this Epic's addition to it. Every id must be an `addition` entry of the context (`spec_authoring.document_check`). Omitted or empty when the Epic adds to every such entry or the Story has none.",
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "uniqueItems": true
+          "$ref": "#/$defs/UsedAsBuilt"
         }
       }
+    },
+    "CriteriaDocument": {
+      "description": "The optional front matter of one repository's criteria document (<work>/spec-<slug>.criteria.md, written by api-specification-author). It holds only `usedAsBuilt`; a criteria document without front matter lists no entry, so every `addition` entry of its Story needs a Task. `spec_authoring.document_check` checks it.",
+      "type": "object",
+      "properties": {
+        "usedAsBuilt": {
+          "$ref": "#/$defs/UsedAsBuilt"
+        }
+      }
+    },
+    "UsedAsBuilt": {
+      "description": "The entries of the repository context's `buildScope` with scope `addition` (another Epic's Task builds each, `builtBy`) to which this document specifies no addition. Every spec document of a Story (contracts, data model and criteria) carries its own list, and a document the script `spec_authoring.not_applicable` writes lists every `addition` entry, since it specifies nothing. An entry is used as built, so that no Task of the Story has to cite it, only when every spec document of the Story lists it: an entry any document leaves out needs a Task that builds this Epic's addition to it (`spec_authoring.story_document`). Every id must be an `addition` entry of the context (`spec_authoring.document_check`). Omitted or empty when the document specifies an addition to every such entry or the Story has none.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
     }
   }
 }

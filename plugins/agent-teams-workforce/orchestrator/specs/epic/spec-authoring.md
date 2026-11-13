@@ -68,10 +68,12 @@ Story builds is the context's `buildScope`, read from who builds the entry and i
 (`spec_authoring.entry_scope`), never from an architecture delta: `addition` when a Task of
 another Epic builds the entry (the item's `builtBy`, carried on the row), so the spec states only
 this Epic's addition to it and links the owner's spec (`builtBy[].specPaths`) for the rest, and
-when the Epic adds nothing to it the contracts or the data-model document lists the entry under
-`usedAsBuilt` in its front matter (`document-front-matter.schema.json#/$defs/SpecDocument`;
-`spec_authoring.document_check` refuses an id that is no `addition` entry, and the Story document
-carries the union as `usedAsBuilt`, `story-document.schema.json`); `delta` when the entry carries
+each spec document, the criteria included, lists under `usedAsBuilt` in its front matter the
+`addition` entries it specifies no addition to (`document-front-matter.schema.json#/$defs/UsedAsBuilt`;
+a document `spec_authoring.not_applicable` writes lists every one, and
+`spec_authoring.document_check` refuses an id that is no `addition` entry), and the Story document
+carries as `usedAsBuilt` the entries every document lists (`spec_authoring.story_used_as_built`,
+`story-document.schema.json`); `delta` when the entry carries
 the verified mark, so nothing it must be built as has changed since its last build and test, and
 the spec covers this Epic's own work for it alone; `full` when the entry is not verified (a
 change cleared the mark, or it was never built), and the spec covers all the work that brings the

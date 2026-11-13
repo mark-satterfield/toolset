@@ -291,7 +291,7 @@
         "orchestrator/flows/architecture.py#_constraint",
         "orchestrator/flows/trd_authoring.py#document",
         "orchestrator/flows/trd_authoring.py#front_matter",
-        "orchestrator/flows/trd_authoring.py#_front_matter_problem"
+        "orchestrator/flows/trd_authoring.py#front_matter_problem"
       ],
       "rules": [
         {
@@ -406,12 +406,15 @@
         "orchestrator/flows/spec_review.py#correction.account_check",
         "orchestrator/flows/spec_authoring.py#document_check",
         "orchestrator/flows/spec_authoring.py#document_check.check",
+        "orchestrator/flows/spec_authoring.py#document_check.criteria_check",
+        "orchestrator/flows/spec_authoring.py#refuse_foreign",
         "orchestrator/flows/spec_authoring.py#used_as_built",
+        "orchestrator/flows/spec_authoring.py#criteria_used_as_built",
         "orchestrator/flows/spec_authoring.py#criteria_document",
         "orchestrator/flows/spec_authoring.py#_missing_keywords",
         "orchestrator/flows/trd_authoring.py#document",
         "orchestrator/flows/trd_authoring.py#front_matter",
-        "orchestrator/flows/trd_authoring.py#_front_matter_problem"
+        "orchestrator/flows/trd_authoring.py#front_matter_problem"
       ],
       "rules": [
         {
