@@ -65,6 +65,18 @@ def json_object(value: object) -> JsonObject:
     return result
 
 
+class BuiltBy(TypedDict):
+    """One Task of another Epic that builds a matrix entry: the entry's owner (``buildowner``)."""
+
+    task: str
+    epic: str
+    story: str | None
+    status: str
+    started: bool
+    """Whether the Task's build started: it is closed, in progress, or carries a build lifecycle key."""
+    specPaths: list[str]
+
+
 class DeltaItem(TypedDict):
     """Catalog element or prerequisite emitted by the architecture delta writer."""
 
@@ -83,6 +95,8 @@ class DeltaItem(TypedDict):
     closure: NotRequired[str]
     trigger: NotRequired[str]
     publishedBy: NotRequired[list[str]]
+    builtBy: NotRequired[list[BuiltBy]]
+    """Set by the span step: the owner Epic's Tasks when another Epic owns the entry, else empty."""
 
 
 class GitFailureFact(TypedDict):

@@ -33,6 +33,8 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "resource-naming" / "scripts"))
+import beadgraph
+import buildowner
 import hierarchy
 from driver_surface_types import CONTROL_REPO_ENV
 from matrix_contract import (
@@ -54,6 +56,7 @@ from matrix_contract import (
     family_kinds,
 )
 from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix, update_matrix
+from matrixtasks import TaskBead, tasks_of
 from matrixtraverse import (
     ATTR_APP,
     ATTR_REPOSITORY,
@@ -108,6 +111,7 @@ from orchestrator.flows.elaboration_files import (
     ARTIFACT_REPOSITORIES,
     ARTIFACT_SPAN,
     SPEC_CONTEXT,
+    control_repository,
 )
 from orchestrator.flows.elaboration_support import REPO_SCOPING_PHASE, enter_phase
 from orchestrator.flows.repo_placement import forbidden
@@ -1205,15 +1209,18 @@ def _spec_steps(run: StepRun, ruling: PlacementRuling, repos: list[str]) -> tupl
     return (StepGroup(tuple(steps)),) if steps else ()
 
 
-def _read_story_builds(run: StepRun) -> tuple[Matrix, list[DeltaItem]]:
+def _read_story_builds(run: StepRun) -> tuple[Matrix, list[DeltaItem], list[str]]:
     """Read what the Epic's Stories build, and name the repository of each stack that names none.
 
     What the Stories build is what the architect's result adds or changes
     (``addedOrChangedElements``) and the existing elements it names as where the Epic's work
-    that leaves them unchanged lands (``unchangedWorkElements``).
+    that leaves them unchanged lands (``unchangedWorkElements``). Each item records, under
+    ``builtBy``, the Tasks of the Epic that owns its entry when that is another Epic
+    (``buildowner.mark_built_by``, from one read of beads): such an item is not this Epic's work.
 
     Returns:
-        The matrix as it is after the names are recorded, and the items (:func:`story_builds`).
+        The matrix as it is after the names are recorded, the items (:func:`story_builds`), and
+        one warning per started build of an item's entry by a third Epic.
 
     Raises:
         StepError: The architect's result names nothing a Story builds in.
@@ -1235,8 +1242,11 @@ def _read_story_builds(run: StepRun) -> tuple[Matrix, list[DeltaItem]]:
             f"{FIELD_ADDED_OR_CHANGED} and {FIELD_UNCHANGED_WORK} are both empty"
         )
         raise StepError(SPAN, OTHER_CAUSE, (message,))
+    graph: beadgraph.Graph = run.tools.portfolio_read(SPAN, beadgraph.load, control_repository())
+    tasks: list[TaskBead] = run.tools.portfolio_read(SPAN, tasks_of, graph)
+    duplicates: list[str] = buildowner.mark_built_by(items, buildowner.builders(tasks), str(run.bead))
     run.tools.portfolio(SPAN, _record_repository_names, items)
-    return run.tools.portfolio(SPAN, read_matrix, matrix_path(None, os.environ)), items
+    return run.tools.portfolio(SPAN, read_matrix, matrix_path(None, os.environ)), items, duplicates
 
 
 @script_step(SPAN)
@@ -1271,7 +1281,8 @@ def span(run: StepRun) -> Completion:
         raise SessionSetupError(str(error)) from error
     matrix: Matrix
     items: list[DeltaItem]
-    matrix, items = _read_story_builds(run)
+    duplicates: list[str]
+    matrix, items, duplicates = _read_story_builds(run)
     work: Path = run.context.work
     homes: dict[str, RepositoryStacks] = run.tools.portfolio(SPAN, repository_stacks, matrix, items)
     repositories: list[dict[str, JsonValue]] = _objects(inventory(run.tools)["repos"])
@@ -1279,8 +1290,9 @@ def span(run: StepRun) -> Completion:
     elements: DeltaResult = {
         "ok": True,
         "refusals": [],
-        "summary": {"ok": True, "refusals": [], "items": len(items)},
+        "summary": {"ok": True, "refusals": [], "items": len(items), "warnings": len(duplicates)},
         "items": items,
+        "warnings": duplicates,
     }
     write_json(work / ELEMENTS_FILE, elements)
     artifacts: list[Artifact] = [file_artifact(ARTIFACT_ELEMENTS, work / ELEMENTS_FILE)]

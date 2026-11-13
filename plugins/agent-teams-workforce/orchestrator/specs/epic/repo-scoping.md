@@ -90,7 +90,14 @@ repository may hold no product entry (the control repository, the architecture f
 The order is fixed, and only the stacks of what the Stories build are reached:
 
 1. The items are built (`story_builds`); an item whose entry carries the verified flag has
-   `state` `built`.
+   `state` `built`. Then beads is read once and each item records, under `builtBy`, the Tasks of
+   the Epic that owns its entry when that is another Epic (`buildowner.mark_built_by`), `[]`
+   otherwise. The owner of an entry is, among every Task of every Epic that builds it (any status,
+   closed included; `builds_entries`, else the built kinds of `matrix_elements`), the Task whose
+   build started, else the earliest written, else the lowest id. An item with `builtBy` is not
+   this Epic's work: its spec states only this Epic's addition (`spec-authoring.md`) and no Task
+   has to cite it (`task-decomposition.md`). A started build of the same entry by a third Epic is
+   a warning of the elements file, for the owner's ruling.
 2. A stack that names no repository is given the repository name the naming command
    validates or converts (`repository_name`, run with list arguments, not through a shell): a
    stack is named after its repository, so its own name when `name check <stack name> --kind
@@ -138,7 +145,7 @@ A stack arc42 names that has no repository, and in which no Story builds, is nev
 
 | File | Artifact | Content |
 |---|---|---|
-| `<work>/span-elements.json` | `elements` | the items of what the Stories build |
+| `<work>/span-elements.json` | `elements` | the items of what the Stories build, each with its `builtBy`, and `warnings` naming started duplicate builds |
 | `<work>/repo-scoping.json` | `span` | one placement per repository: its path, name, item ids and whether it is a frontend repository |
 | `<work>/repo-creation.json` | `repository creation` | only when a repository had to be created: what was created and what failed |
 | | `repositories` (value) | the repository paths of the span, in order |

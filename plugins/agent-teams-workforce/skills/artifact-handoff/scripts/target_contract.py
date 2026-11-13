@@ -43,6 +43,7 @@ ELEMENT_STATES: Final[frozenset[ElementState]] = frozenset({STATE_UNKNOWN, STATE
 
 KEY_APPROVAL_FILES: Final = "approvalFiles"
 KEY_ARCHITECTURE_CHANGE: Final = "architectureChange"
+KEY_BUILT_BY: Final = "builtBy"
 KEY_CLOSURE: Final = "closure"
 KEY_DELTA_DIR: Final = "deltaDir"
 KEY_DELTA_EXISTS: Final = "deltaExists"
@@ -54,6 +55,7 @@ KEY_DRY_RUN: Final = "dryRun"
 KEY_EFFECTIVE_ARCHITECTURE: Final = "effectiveArchitecture"
 KEY_EFFECTIVE_ARCHITECTURE_VALIDATED: Final = "effectiveArchitectureValidated"
 KEY_ELEMENT: Final = "element"
+KEY_EPIC: Final = "epic"
 KEY_EVIDENCE: Final = "evidence"
 KEY_FILES: Final = "files"
 KEY_ID: Final = "id"
@@ -77,13 +79,18 @@ KEY_REQUIRES: Final = "requires"
 KEY_SCOPE: Final = "scope"
 KEY_SEEDED: Final = "seeded"
 KEY_SHOWS: Final = "shows"
+KEY_SPEC_PATHS: Final = "specPaths"
+KEY_STARTED: Final = "started"
 KEY_STATE: Final = "state"
+KEY_STATUS: Final = "status"
+KEY_STORY: Final = "story"
 KEY_SUBJECT: Final = "subject"
 KEY_SUBJECT_NAME: Final = "subjectName"
 KEY_SUBJECT_REFUSALS: Final = "subjectRefusals"
 KEY_SUMMARY: Final = "summary"
 KEY_TARGET_DIR: Final = "targetDir"
 KEY_TARGET_HASHES: Final = "targetHashes"
+KEY_TASK: Final = "task"
 KEY_TRIGGER: Final = "trigger"
 KEY_UNNAMED: Final = "unnamed"
 KEY_VIEW_TYPE: Final = "view_type"
@@ -194,6 +201,17 @@ class DeltaView(TypedDict):
     repository: NotRequired[str | None]
 
 
+class BuiltBy(TypedDict):
+    """Typed form of #/$defs/BuiltBy in target-report.schema.json."""
+
+    task: str
+    epic: str
+    story: str | None
+    status: str
+    started: bool
+    specPaths: list[str]
+
+
 class DeltaItem(TypedDict):
     """Typed form of #/$defs/DeltaItem in target-report.schema.json."""
 
@@ -212,6 +230,7 @@ class DeltaItem(TypedDict):
     closure: NotRequired[str]
     trigger: NotRequired[str]
     publishedBy: NotRequired[list[str]]
+    builtBy: NotRequired[list[BuiltBy]]
 
 
 class DeltaSummary(TypedDict):

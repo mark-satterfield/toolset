@@ -119,6 +119,20 @@
         "repository": {"type": ["string", "null"]}
       }
     },
+    "BuiltBy": {
+      "description": "One Task of another Epic that builds a matrix entry: the owner of the entry by the build-ownership rule.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task", "epic", "story", "status", "started", "specPaths"],
+      "properties": {
+        "task": {"type": "string"},
+        "epic": {"type": "string"},
+        "story": {"type": ["string", "null"]},
+        "status": {"type": "string"},
+        "started": {"description": "Whether the Task's build started: it is closed, in progress, or carries a build lifecycle key.", "type": "boolean"},
+        "specPaths": {"description": "The spec paths the Task builds against (its spec_paths key).", "type": "array", "items": {"type": "string"}}
+      }
+    },
     "DeltaItem": {
       "description": "One build item: a delta-view element, an implementation gap, or a prerequisite from closure.json.",
       "type": "object",
@@ -139,7 +153,8 @@
         "reason": {"type": "string"},
         "closure": {"description": "Path of the closure.json the item came from.", "type": "string"},
         "trigger": {"description": "An event item only: the event's description, the event entry's purpose in the matrix.", "type": "string"},
-        "publishedBy": {"description": "An event item only: its publishers, each as the id of the item that builds it when one in the same item set does, else as its matrix id.", "type": "array", "items": {"type": "string"}}
+        "publishedBy": {"description": "An event item only: its publishers, each as the id of the item that builds it when one in the same item set does, else as its matrix id.", "type": "array", "items": {"type": "string"}},
+        "builtBy": {"description": "Set by the span step: the Tasks of the Epic that owns the item's matrix entry when that Epic is another Epic (a Task of it builds the entry), else empty. An item with builtBy is not work for this Epic: no Task has to cite it, and a Task that does builds only this Epic's addition and is blocked by these Tasks.", "type": "array", "items": {"$ref": "#/$defs/BuiltBy"}}
       }
     },
     "DeltaSummary": {

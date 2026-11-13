@@ -35,6 +35,10 @@ produced it.
   others use it, or the Epics share it independently (like two Epics whose Lambdas both need
   the VPC). That is a judgment made from the Epics' requirements and recorded in the matrix; no
   script infers it from counts or names.
+- A `drives` judgment orders the Epics' elaboration and nothing else. Which Epic's Task builds a
+  shared entry is decided when an Epic is planned, by the build-ownership rule of the `matrix`
+  skill ("Who builds an entry"): the first Epic whose Task builds the entry owns it, and every
+  other Epic uses it and builds only its own addition, whatever `drives` says.
 
 ## Where Epic order comes from
 

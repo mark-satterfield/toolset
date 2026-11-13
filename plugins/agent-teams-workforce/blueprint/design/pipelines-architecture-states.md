@@ -274,4 +274,7 @@ C's and then Epic D's changes are approved with no build between them, the servi
 verified, and the next spec covers the work that brings the build, from the code there, up to
 v1.1.3. Elements a change does not touch stay verified and get no work, so only changes become
 Tasks. The spec step reads this from the flag of each element it builds
-(`spec_authoring.entry_scope`, the spec context's `buildScope`).
+(`spec_authoring.entry_scope`, the spec context's `buildScope`). An element a Task of another
+Epic already builds (the span's `builtBy`) has scope `addition` whatever its flag: the spec states
+only this Epic's addition and links the owner's spec, because one Epic builds an element and every
+other Epic uses it.

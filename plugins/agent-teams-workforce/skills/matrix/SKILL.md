@@ -101,6 +101,7 @@ with direction and meaning, are in [references/model.md](references/model.md).
 | The shared items (two or more Epics need them), each with its Epics, the requirements through which each needs it, and what decides who goes first | `atw-matrix shared-items [--epic <beads id>]` |
 | The ordered shared items no record decides, in batches for judging | `atw-matrix shared-items --batches <folder> [--batch-size 25]` |
 | Open Tasks that name an entry / that a change affects / what a Story built | `atw-matrix work --id <id>` / `affected --id <id>` / `built --story <id>` |
+| Which Epic builds an entry (its owner), and the Tasks that build it | `atw-matrix builders --ids <id> ... [--epic <beads id>]`: per id, `ownerEpic`, `builtBy` (the owner Epic's Tasks; empty when `--epic` is the owner) and every builder, from one read of beads |
 | Open Tasks that name each of several entries, from one read of beads and the matrix | `atw-matrix work --ids <id> ... [--not-epic <beads id>]`: one read per id under `reads`, each id that is not an entry's under `failures` (the others are still answered; any failure exits 1) |
 | Counts; repository-side entries with no architecture counterpart | `atw-matrix summary [--unlinked]` |
 | Does the file meet its contract? | `atw-matrix check` |
@@ -154,6 +155,18 @@ R="${CLAUDE_PLUGIN_ROOT}/skills/matrix/scripts/matrix-reach"
 feature with no covering document), `requirementsReachNothing`, `requirementsNoStack`,
 `requirementsNoRepository` (with the stacks that name none), `entriesNoStack`,
 `stacksNoRepository`.
+
+## Who builds an entry
+
+An entry is built once. The Tasks that build it are the Tasks whose `builds_entries` key names it
+(a Task without that key: the ids of its `matrix_elements` of a kind a Task builds; never the
+stack or the shared capabilities `matrix_elements` also names). Among every Task of every Epic
+that builds it, any status, closed included, the owner Task is the one whose build started, else
+the earliest written, else the lowest id; its Epic owns the entry (`buildowner.py`). Every other
+Epic uses the entry: elaboration marks its item `builtBy` with the owner's Tasks, plans no Task
+to build it, specifies and builds only that Epic's addition to it (`adds_to_entries`), and blocks
+the Tasks that need it by the owner's Tasks. Which Epic owns an entry is decided by this rule
+when an Epic is planned, whatever a `drives` judgment says; `drives` orders Epics, nothing more.
 
 ## Approved, verified, effective and side
 

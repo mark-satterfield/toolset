@@ -32,7 +32,10 @@ that already exist under the Story and that are started, or that elaboration did
 the decomposer reuses them. It names the stacks the Story builds in with the entries it builds
 there, and `openWork`: the open Tasks of other Epics in those stacks and the upstream stacks,
 read once by the context step (`matrixtasks.work_batch`, what `atw-matrix work --ids` prints), so
-a Task that needs one of them is blocked by it instead of duplicating it.
+a Task that needs one of them is blocked by it instead of duplicating it. Before it writes the
+file, the context step checks that no other Epic came to own an entry the span planned since the
+span ran (`build_ownership.refuse_ownership_drift`); on a change the span and every step after it
+run again.
 A Task cites what it builds by item id; `hierarchy.stated_ids` derives its matrix ids (its stack,
 the entries and the shared capabilities the matrix guesses that work relies on) from those items, and the decomposer
 states none. Its `dependsOn`
@@ -59,10 +62,19 @@ coupling, Tasks that each need another built first build their coupled things in
 every thing the Story builds is cited by some Task.
 
 A thing the Story builds whose entry carries the verified flag (the span marks its item `state`
-`built`) is not work (`hierarchy.work_items`): no Task has to cite it.
+`built`) is not work (`hierarchy.work_items`): no Task has to cite it. Nor is a thing whose entry
+a Task of another Epic builds (the span records that Epic's Tasks on the item as `builtBy`,
+`repo-scoping.md`): one Epic builds an entry and every other Epic uses it. Such an item gets no
+Task of its own. When the spec states an addition this Epic makes to it, one Task builds only that
+addition and cites the item; `hierarchy.read_tasks` records the entry under its `adds_to_entries`
+(never `builds_entries`) and blocks it, and every Task whose cited items require the item, by the
+`builtBy` Tasks (`buildowner.owner_blockers`, written as outside blockers by the Story edge step,
+which first removes an edge the other way between the same two Tasks). The elaboration keys are
+assigned over the items a Task may cite (`hierarchy.planned_items`: the unverified ones, owned
+ones included), so an addition Task keeps the key of a Task that built the whole item before.
 
-A plan has a gap when it holds no Task, a thing the Story builds is cited by no Task, or a
-Task has no size. One correction is asked for. A correction that is merged a second time adds
+A plan has a gap when it holds no Task while the Story has work (`hierarchy.work_items` is not
+empty), a thing the Story builds is cited by no Task, or a Task has no size. One correction is asked for. A correction that is merged a second time adds
 nothing, because its Tasks cite items the first merge covered.
 
 ## A stored Tasks file
@@ -86,7 +98,17 @@ next Task, and the journal says which Tasks are written.
 A write finds the Task under the Story by its elaboration key, and failing that by the items it
 cites and by its title. A Task that exists is updated where it differs, or left as it is once
 building has started; a second Task is never created, so the step is safe to run again after an
-invalidation. It writes no edge.
+invalidation. It writes no edge. The Task records the entries it builds under `builds_entries` (the
+cited items no other Epic builds) and the entries it only adds to under `adds_to_entries`; its
+description then gains an "Adds to" line naming them and the Tasks it waits for.
+
+Two Epics elaborated at once must not both claim an entry. The write holds the ownership lock
+(`tool_locks.ownership_lock`), reads every Task again and runs `buildowner.ownership_drift` over
+every item of the Epic; only when no item's owner Epic differs from the `builtBy` the span recorded
+does it write the Task bead, still under the lock, so the next writer sees the claim. Otherwise it
+writes nothing and raises `OwnershipChangedError` naming the span step: the span and every step
+after it run again, up to three times in one dispatch, after which the step fails as an item
+failure.
 
 Once every Task bead of the Story is written, one step sets the Story's edges at once: the Task's
 edges onto the Tasks of the same Story it depends on (the decomposer's `edges`, and those
@@ -95,7 +117,9 @@ onto the one Task that builds the item requiring it, when the relationship order
 `repo-scoping.md`), and a blocker outside the Story
 (`blockedByExternal`), written only when the tracker holds that bead; one it does not hold is left
 out with a warning. An edge between Tasks of the Story that the saved Tasks no longer name is
-removed, and a Task whose build has started is left as it is. It compares with what beads holds, so
+removed, and a Task whose build has started is left as it is. An edge the other way between a
+Task and another Epic's Task it waits for as the builder of an entry (`owner_blockers`) is removed
+in the same request, so the owner edge closes no cycle. It compares with what beads holds, so
 it is safe to run again. One read of the edges, one cycle check and one request happen under one
 hold of the edge lock.
 
@@ -118,8 +142,10 @@ the files `spec`, `data model`, `criteria`, `ui sources` when present, `TRD`, `s
 When the decomposer's step runs again and its plan no longer names a Task bead that elaboration
 wrote earlier (its elaboration key is a `task:` key of the Story) and nobody has started, step 7
 deletes that bead. A Task bead under the Story that elaboration did not write is never deleted. Before it does, each `blocks` edge
-from a Task of another Story onto it is added onto every written Task that cites an item it cited.
-An edge with no such Task is reported as a warning. On a first run the step finds nothing to do.
+from a Task of another Story onto it is added onto every written Task that cites an item it cited;
+where none does, onto the other Epic's Tasks that build those items (`builtBy`). A Task that is
+itself in that `builtBy` gains no edge: an owner never waits for an Epic that only uses or adds
+to its entry. An edge with neither is reported as a warning. On a first run the step finds nothing to do.
 
 ## The result of a repository
 

@@ -16,7 +16,7 @@ import os
 import re
 import threading
 from collections import Counter, OrderedDict
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from operator import itemgetter
 from pathlib import Path
@@ -79,7 +79,9 @@ from hierarchy import (
     elab_slug,
     item_briefs,
     note_warnings,
+    owned_elsewhere,
     plan_inputs_digest,
+    planned_items,
     read_story,
     read_task_deps,
     read_tasks,
@@ -102,7 +104,9 @@ from bead_metadata import (
     CDS_DESIGN_SOURCE_CDS,
     CDS_DESIGN_SOURCE_NONE,
     KEY_ACCEPTANCE_CRITERIA,
+    KEY_ADDS_TO_ENTRIES,
     KEY_BUILD_PREREQUISITES,
+    KEY_BUILDS_ENTRIES,
     KEY_CDS_ARTIFACT,
     KEY_CDS_BUILD_SPECS,
     KEY_CDS_BUNDLE_PATH,
@@ -268,6 +272,11 @@ def contract_block(task: Task, root: Path | None) -> str:
         f"Requirement ids: {', '.join(task.requirement_ids) or '(none)'}",
         f"Matrix ids (stack, entries built, shared capabilities used):\n{listed(task.matrix_elements)}",
     ]
+    if task.adds_to_entries:
+        lines.append(
+            "Adds to (another Epic's Task builds the entry; build only this Epic's addition, "
+            f"after {', '.join(task.owner_blockers)}):\n{listed(task.adds_to_entries)}",
+        )
     if task.events:
         lines.append(f"Events built (each with its publisher):\n{listed(task.events)}")
     lines += [
@@ -337,6 +346,8 @@ def task_metadata(task: Task) -> dict[str, str]:
     m[KEY_DEFINITION_OF_DONE] = _json(task.definition_of_done)
     m[KEY_REQUIREMENT_IDS] = _json(task.requirement_ids)
     m[KEY_MATRIX_ELEMENTS] = _json(task.matrix_elements)
+    m[KEY_BUILDS_ENTRIES] = _json(task.builds_entries)
+    m[KEY_ADDS_TO_ENTRIES] = _json(task.adds_to_entries)
     m[KEY_BUILD_PREREQUISITES] = _json(task.build_prerequisites)
     m[KEY_SURFACES] = _json(task.surfaces) if task.surfaces is not None else UNKNOWN
     m[KEY_TEST_STRATEGY] = _json(task.test_strategy) if task.test_strategy else UNKNOWN
@@ -582,7 +593,7 @@ def _read_plan(files: StoryFiles, root: Path | None, packages_dir: str | None) -
     check_detailed_work(files, tasks)
     tasks = derive_prerequisites(files, tasks)
     check_cds_contract(files.slug, tasks)
-    _assign_keys(tasks, files.slug, work_items(files))
+    _assign_keys(tasks, files.slug, planned_items(files))
     return tasks
 
 
@@ -1431,18 +1442,22 @@ class _StoryEdges:
         }
 
 
-def _story_edge_changes(
+def _story_edge_changes(  # ruff: ignore[too-many-arguments] - the caller's facts, one each
     story_id: str,
     tasks: list[Task],
     beads: list[Bead],
     matched: dict[str, Bead],
     held: set[str],
+    *,
+    waits: Mapping[str, set[str]],
 ) -> _StoryEdges:
     """Compare the edges a Story's saved Tasks name with what beads holds.
 
     A Task whose build has started is left as it is. A Task gains each blocker it lacks, and loses
     each blocker among the Story's Tasks that the saved Tasks no longer name; a blocker outside the
-    Story is only ever added.
+    Story is only ever added. An edge the other way between a Task and another Epic's Task that
+    builds an entry it adds to or requires (the owner Task blocked by this Task) is removed before
+    the owner edge is added, so the owner edge closes no cycle.
 
     Args:
         story_id: The Story bead.
@@ -1450,6 +1465,8 @@ def _story_edge_changes(
         beads: The Story's Task beads, read with their edges.
         matched: Task key -> its bead.
         held: The external blockers the tracker holds.
+        waits: Every blocking edge the tracker holds (bead -> its blockers); empty when no Task
+            names an owner Task.
 
     Returns:
         The changes, the blockers outside the Story by Task bead, the Tasks not written, and the
@@ -1486,6 +1503,9 @@ def _story_edge_changes(
         if add:
             changes.added[bead.id] = add
         changes.removed.extend((bead.id, b) for b in bead.blockers if b in story_ids and b not in blockers)
+        changes.removed.extend(
+            (owner, bead.id) for owner in task.owner_blockers if owner in outer and bead.id in waits.get(owner, set())
+        )
         changes.standing += len(blockers) + len(outer) - len(add)
         changes.outside[bead.id] = list(
             dict.fromkeys([*(b for b in bead.blockers if b not in story_ids), *outer]),
@@ -1549,6 +1569,7 @@ def write_story_task_edges(
         beads,
         matched,
         beadgraph.existing(writer.repo, external),
+        waits=beadgraph.blocking_edges(writer.repo) if any(task.owner_blockers for task in tasks) else {},
     )
     if changes.missing:
         msg = f"{', '.join(dict.fromkeys(changes.missing))} are not written under {story.id}"
@@ -1798,11 +1819,19 @@ def _required_builders(name: str, item: str, requirement: str, context: _Closure
     Returns:
         Matching builders and placement or coverage warnings. A required item the span marks
         verified (:data:`hierarchy.STATE_VERIFIED`) is built already, so it needs no builder and
-        nothing has to come first.
+        nothing has to come first. A required item another Epic's Task builds (``builtBy``) that
+        no Task of this Epic cites needs none here either: that Task is its builder, and each Task
+        that requires it already waits for it (``Task.owner_blockers``).
 
     """
     own_item: StoryBuild | None = context.detailed.get(requirement)
     if own_item is not None and own_item.get("state") == STATE_VERIFIED:
+        return [], []
+    if (
+        own_item is not None
+        and owned_elsewhere(own_item)
+        and not any(requirement in built for built in context.builds.values())
+    ):
         return [], []
     if own_item is None:
         warnings: list[str] = (
@@ -2167,6 +2196,7 @@ def _within_story_changes(graph: Graph, epic_id: str, stories: list[_SpanStory])
     """
     merged: _StoryEdges = _StoryEdges()
     held: set[str] = set(graph.beads)
+    waits: dict[str, set[str]] = {bead.id: set(bead.blockers) for bead in graph.beads.values()}
     builds: dict[str, StoryBuild] = story_builds(stories[0].files.scope) if stories else {}
     under: dict[str, list[Bead]] = {}
     for bead in graph.beads.values():
@@ -2180,7 +2210,7 @@ def _within_story_changes(graph: Graph, epic_id: str, stories: list[_SpanStory])
         beads: list[Bead] = sorted((b for b in under.get(bead_of_story.id, []) if b.kind == "task"), key=lambda b: b.id)
         matched: dict[str, Bead]
         matched, _ = _match_tasks(story.tasks, beads, story.files.slug, builds)
-        one: _StoryEdges = _story_edge_changes(bead_of_story.id, story.tasks, beads, matched, held)
+        one: _StoryEdges = _story_edge_changes(bead_of_story.id, story.tasks, beads, matched, held, waits=waits)
         merged.added |= one.added
         merged.removed += one.removed
         merged.standing += one.standing
@@ -2364,6 +2394,36 @@ def write_all_task_edges(
     }
 
 
+def _replacements(
+    dependent: str,
+    retired: set[str],
+    builds: Mapping[str, set[str]],
+    owners: Mapping[str, list[str]],
+) -> list[str]:
+    """Name the Tasks a dependent of a retired Task waits for instead.
+
+    The written Tasks that cite an item the retired Task cited replace it; where none does, the
+    other Epics' Tasks that build those items (``builtBy``) do. A Task that builds one of those
+    items for its own Epic (it is in their ``builtBy``) waits for no Task of this Epic that only
+    adds to them, so it gains no replacement.
+
+    Args:
+        dependent: The Task of another Story that waited for the retired Task.
+        retired: The items the retired Task cited.
+        builds: Each written Task of the Story -> the items it cites.
+        owners: Each item -> the ``builtBy`` Tasks the span recorded for it.
+
+    Returns:
+        The replacements, each once, in order.
+
+    """
+    owning: set[str] = {task for item in retired for task in owners.get(item, [])}
+    if dependent in owning:
+        return []
+    written: list[str] = [bead for bead, items in builds.items() if items & retired]
+    return written or sorted(owning)
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's facts, one each
     graph: Graph,
@@ -2429,6 +2489,9 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
     builds: dict[str, set[str]] = {
         matched[task.key].id: set(task.requirement_ids) for task in tasks if task.key in matched
     }
+    owners: dict[str, list[str]] = {
+        key: [row["task"] for row in item.get("builtBy", [])] for key, item in story_builds(files.scope).items()
+    }
     repointed: list[RepointedEdge] = []
     warnings: list[str] = []
     additions: dict[str, dict[str, None]] = {}
@@ -2436,7 +2499,7 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
         if dependent.kind != "task" or dependent.parent == story.id:
             continue
         for blocker in [held for held in dependent.blockers if held in cited]:
-            targets: list[str] = [bead for bead, items in builds.items() if items & cited[blocker]]
+            targets: list[str] = _replacements(dependent.id, cited[blocker], builds, owners)
             if not targets:
                 warnings.append(f"no written Task replaces {blocker}, which blocked {dependent.id}")
             additions.setdefault(dependent.id, {}).update(

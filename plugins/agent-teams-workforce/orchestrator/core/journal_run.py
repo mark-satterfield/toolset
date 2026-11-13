@@ -94,9 +94,11 @@ from .journal_steps import (
 )
 from .journal_views import JournalIndex, index_journal
 from .models import (
+    OWNERSHIP_REPLANS,
     AgentStep,
     DesignGapError,
     MalformedRequestError,
+    OwnershipChangedError,
     PipelineDefectError,
     RunContext,
     StaleInputError,
@@ -712,6 +714,8 @@ class JournalRunner:
         self.bead: BeadId = step_journal.read_journal(path)["bead"]
         self.replanned: set[StepId] = set()
         """The steps planned again in this dispatch because a file they wrote was stale."""
+        self.ownership_replans: dict[StepId, int] = {}
+        """How often each span step was planned again in this dispatch because ownership changed."""
         self.stale: list[StaleInputError] = []
         """The stale files found by the steps of the group that runs now."""
         self.gap_steps: set[StepId] = set()
@@ -1071,7 +1075,9 @@ class JournalRunner:
         bound fails the step that reads the gaps (``design_gaps.hold_open``). A
         malformed request the step finds is corrected by its writer's session
         (:meth:`_correct_request`), and the step is not failed, unless that request was corrected
-        in this dispatch already.
+        in this dispatch already. A change of the Epic that owns an entry (``OwnershipChangedError``)
+        is kept up to ``OWNERSHIP_REPLANS`` times per span step in one dispatch, and then fails the
+        step as an item failure: another Epic is racing for the same entries.
 
         A script step that wrote a file stale again after it ran again is pipeline code that
         failed: its code wrote the file to a contract other than the one its readers check, and
@@ -1081,11 +1087,19 @@ class JournalRunner:
             StaleInputError: The agent step that wrote the stale file was planned again in this
                 dispatch already.
             MalformedRequestError: The malformed request was corrected in this dispatch already.
+            OwnershipChangedError: The span step was planned again ``OWNERSHIP_REPLANS`` times in
+                this dispatch already.
 
         """
         step_id: StepId = step["id"]
         try:
             self._perform(journal, step)
+        except OwnershipChangedError as changed:
+            if self.ownership_replans.get(changed.writer, 0) >= OWNERSHIP_REPLANS:
+                self._record_failure(step_id, stage_of(step), changed)
+                raise
+            self.ownership_replans[changed.writer] = self.ownership_replans.get(changed.writer, 0) + 1
+            self.stale.append(changed)
         except StaleInputError as stale:
             if isinstance(stale, DesignGapError):
                 self.gap_steps.add(step_id)

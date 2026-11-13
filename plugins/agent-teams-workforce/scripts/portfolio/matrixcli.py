@@ -5,7 +5,7 @@
 ``rename``, ``remove`` and ``move-repository``;
 ``sync-epics``, ``sync-documents`` and ``sync-events``; ``seed`` and its steps (``seed-stacks``,
 ``seed-packages``, ``seed-inputs``, ``seed-features``, ``seed-realizers``, ``seed-apply``); ``verify`` and the Task
-script's ``built``, ``work`` and ``affected``; ``check-reuse`` and ``follow-code``; ``shared-items`` and
+script's ``built``, ``work``, ``affected`` and ``builders``; ``check-reuse`` and ``follow-code``; ``shared-items`` and
 ``record-judgments``. Each change is
 one locked read-modify-write of the matrix file.
 
@@ -94,12 +94,14 @@ from matrixsync import (
 )
 from matrixtasks import (
     COMMAND_AFFECTED,
+    COMMAND_BUILDERS,
     COMMAND_BUILT,
     COMMAND_WORK,
     TaskBead,
     WorkBatch,
     affected,
     built,
+    entry_builders,
     read_tasks,
     work,
     work_batch,
@@ -786,6 +788,17 @@ def _run_affected(call: Call) -> Outcome:
     return Outcome(affected(matrix, tasks, entry_id, impact_view(matrix, entry_id)["ids"]))
 
 
+def _run_builders(call: Call) -> Outcome:
+    """Run ``builders``.
+
+    Returns:
+        For each entry, the Epic that owns it and the Tasks that build it, from one read of beads.
+
+    """
+    tasks: list[TaskBead] = read_tasks(call.folder("control", CONTROL_VARIABLES))
+    return Outcome(entry_builders(tasks, call.texts("ids"), call.text("epic")))
+
+
 def _run_check_reuse(call: Call) -> Outcome:
     """Run ``check-reuse``.
 
@@ -909,6 +922,7 @@ COMMANDS: Final[dict[str, Callable[[Call], Outcome]]] = {
     COMMAND_BUILT: _run_built,
     COMMAND_WORK: _run_work,
     COMMAND_AFFECTED: _run_affected,
+    COMMAND_BUILDERS: _run_builders,
     "check-reuse": _run_check_reuse,
     COMMAND_FOLLOW_CODE: _run_follow_code,
     "shared-items": _run_shared_items,
@@ -1138,6 +1152,13 @@ def _build_parsers(
         help="the open Tasks a change to an entry affects",
     )
     touched.add_argument("--id", required=True, help="the entry's id")
+    owning: argparse.ArgumentParser = commands.add_parser(
+        COMMAND_BUILDERS,
+        parents=[where, control],
+        help="the Epic that owns each entry and the Tasks that build it, from one read of beads",
+    )
+    owning.add_argument("--ids", nargs="+", required=True, help="the entries' ids")
+    owning.add_argument("--epic", help="the Epic asking: builtBy is empty for an entry it owns")
     reuse: argparse.ArgumentParser = commands.add_parser(
         "check-reuse",
         parents=[where],

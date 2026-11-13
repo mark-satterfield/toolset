@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Final
 
 import beadcontracts
+import buildowner
 import contracts
 import portfolio_path  # ruff: ignore[unused-import] - Puts the artifact-handoff contract modules on the path first.
 from beadcontracts import StoryBuild, TaskEdge
@@ -579,6 +580,13 @@ class Task:
     cds_bundles: list[str] = field(default_factory=list)
     cds_artifacts: list[dict[str, str]] = field(default_factory=list)
     matrix_elements: list[str] = field(default_factory=list)
+    builds_entries: list[str] = field(default_factory=list)
+    """The matrix ids of the entries the Task builds: each cited item no other Epic owns."""
+    adds_to_entries: list[str] = field(default_factory=list)
+    """The matrix ids of the cited items another Epic's Task builds: the Task builds only its addition."""
+    owner_blockers: list[str] = field(default_factory=list)
+    """The other Epics' Tasks that build an item the Task cites or one such item requires
+    (``buildowner.owner_blockers``); each is also in ``blocked_by_external``."""
     build_prerequisites: JsonObject = field(default_factory=dict)
     events: list[str] = field(default_factory=list)
     """Each event the Task cites, as :func:`event_text` renders it."""
@@ -589,6 +597,9 @@ class Task:
     def __post_init__(self) -> None:
         """Validate every constructor field, including all collection entries."""
         check_type(self.matrix_elements, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.builds_entries, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.adds_to_entries, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.owner_blockers, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.build_prerequisites, JsonObject, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.events, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.key, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1267,6 +1278,8 @@ class _TaskSources:
     """The matrix, read when a Task builds an entry of it; None when nothing the Story builds names one."""
     events: dict[str, str]
     """The line of each event the Epic's Stories build, by item id (:func:`event_lines`)."""
+    items: dict[str, StoryBuild]
+    """Every item the Epic's Stories build, by item id, with the ``builtBy`` the span recorded."""
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1333,6 +1346,7 @@ def read_tasks(files: StoryFiles, root: Path | None, options: ReadTaskOptions) -
         elements,
         shared_matrix(matrix_path(None, os.environ)) if elements else None,
         event_lines(every_build),
+        every_build,
     )
     by_key: dict[str, dict[str, contracts.JsonValue]] = {check_type(t["key"], str): t for t in unique}
     return [_read_task(key, _task_document(by_key[key]), sources) for key in order]
@@ -1431,6 +1445,18 @@ def _read_task(key: str, t: _TaskDocument, sources: _TaskSources) -> Task:
     built: list[str] = list(
         dict.fromkeys(sources.elements[item] for item in t.requirement_ids if item in sources.elements),
     )
+    added: list[str] = list(
+        dict.fromkeys(
+            sources.elements[item]
+            for item in t.requirement_ids
+            if item in sources.elements and owned_elsewhere(sources.items[item])
+        ),
+    )
+    owners: list[str] = list(
+        dict.fromkeys(
+            blocker for item in t.requirement_ids for blocker in buildowner.owner_blockers(item, sources.items)
+        ),
+    )
     return Task(
         key=key,
         repo_path=sources.options.repo,
@@ -1442,6 +1468,9 @@ def _read_task(key: str, t: _TaskDocument, sources: _TaskSources) -> Task:
         spec_sections=list(t.spec_sections),
         requirement_ids=list(t.requirement_ids),
         matrix_elements=stated_ids(sources.matrix, built) if sources.matrix is not None else built,
+        builds_entries=[entry for entry in built if entry not in added],
+        adds_to_entries=added,
+        owner_blockers=owners,
         build_prerequisites=t.build_prerequisites,
         events=list(dict.fromkeys(sources.events[item] for item in t.requirement_ids if item in sources.events)),
         decision_ids=list(t.decision_ids) or list(sources.options.story_decision_ids),
@@ -1458,6 +1487,7 @@ def _read_task(key: str, t: _TaskDocument, sources: _TaskSources) -> Task:
                     check_type(row["task"], str)
                     for row in check_type(t.build_prerequisites.get("producers", []), list[dict[str, JsonValue]])
                 ),
+                *owners,
             ]),
         ),
         cds_bundle_path=bundles[0] if len(bundles) == 1 else None,
@@ -1639,12 +1669,21 @@ def _coupled_in(group: Sequence[str], crossing: Sequence[tuple[str, str, str, st
     })
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def work_items(files: StoryFiles) -> list[str]:
-    """Name the work of a Story: what it builds that is not verified.
+def owned_elsewhere(item: buildowner.OwnedItem) -> bool:
+    """Report whether another Epic's Task builds an item's entry (the span recorded ``builtBy``).
 
-    An item the span marks verified (``state``, :data:`STATE_VERIFIED`) is built and tested as
-    the matrix records it, so it is not work: no Task has to cite it.
+    Returns:
+        True when the item carries a ``builtBy`` row.
+
+    """
+    return bool(item.get("builtBy"))
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def planned_items(files: StoryFiles) -> list[str]:
+    """Name what a Story's Tasks may cite: what it builds that is not verified.
+
+    An item another Epic builds (``builtBy``) is kept: a Task that adds to it cites it.
 
     Returns:
         The ids of the items the span places in the Story's repository, less the verified ones.
@@ -1660,6 +1699,28 @@ def work_items(files: StoryFiles) -> list[str]:
         for key, item in story_builds(files.scope).items()
         if item["slug"] == files.slug and item.get("state") != STATE_VERIFIED
     ]
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def work_items(files: StoryFiles) -> list[str]:
+    """Name the work of a Story: what it builds that is not verified and no other Epic builds.
+
+    An item the span marks verified (``state``, :data:`STATE_VERIFIED`) is built and tested as
+    the matrix records it, and an item another Epic's Task builds (``builtBy``) is that Epic's
+    work, so neither is work here: no Task has to cite it.
+
+    Returns:
+        The ids of the items the span places in the Story's repository, less the verified ones
+        and the ones another Epic builds.
+
+    Raises:
+        TypeError: An argument violates the declared input contract.
+
+    """
+    if not (isinstance(files, StoryFiles)):
+        raise TypeError(_ARGUMENT_ERROR)
+    owned: set[str] = {key for key, item in story_builds(files.scope).items() if owned_elsewhere(item)}
+    return [key for key in planned_items(files) if key not in owned]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1711,7 +1772,7 @@ def check_detailed_work(files: StoryFiles, tasks: list[Task]) -> None:
     """
     if not (isinstance(files, StoryFiles)) or not (isinstance(tasks, list)):
         raise TypeError(_ARGUMENT_ERROR)
-    work: set[str] = set(work_items(files))
+    work: set[str] = set(planned_items(files))
     idle: list[str] = [t.key for t in tasks if not work.intersection(t.requirement_ids)]
     if idle:
         _WARNINGS.append(
@@ -1932,8 +1993,11 @@ def derive_prerequisites(files: StoryFiles, tasks: list[Task]) -> list[Task]:
     builders: dict[str, list[str]] = _task_builders(tasks)
     problems: list[str] = []
     saved_edges: list[tuple[str, str]] = [(d, t.key) for t in tasks for d in t.depends_on]
+    owned: set[str] = {key for key, item in story_builds(files.scope).items() if owned_elsewhere(item)}
     for key, item, needed in _story_needs(files, requires, builders):
         found: list[str] = [k for k in builders.get(needed, []) if k != key]
+        if not found and needed in owned:
+            continue
         if not found:
             problems.append(f"{key} builds {item}, which requires {needed}; no Task of this Story builds it")
         by_key[key].depends_on.extend(k for k in found if k not in by_key[key].depends_on)

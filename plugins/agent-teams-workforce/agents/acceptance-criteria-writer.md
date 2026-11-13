@@ -44,7 +44,9 @@ when the TRD's text does not settle a criterion. Your spec pack (`spec pack`,
 builds: read it, not the vault and not the matrix. Read the text of an architecture heading the
 repository context's `documents` names only when a criterion turns on it, with
 `atw-matrix heading '<path>#<heading>' ...`. Cover required behavior and failure/boundary cases without inventing scope or
-architecture. Preserve any test strategy the sources state, in the shape of the testStrategy
+architecture. For an entry whose `buildScope` row in the repository context has scope
+`addition`, another Epic's Task builds the entry (`builtBy`): write criteria for this Epic's
+addition to it alone, never for the entry as a whole. Preserve any test strategy the sources state, in the shape of the testStrategy
 property (`properties.testStrategy`) in the artifact-handoff skill's `schemas/tasks.schema.json`;
 do not invent values the sources do not state. Which items the criteria document holds, and which it leaves out, is set by "Only what an easy automated check proves" in the `acceptance-criteria` skill.
 Write the assigned UTF-8 criteria document, keeping the set concise (guidance: 120 criteria and

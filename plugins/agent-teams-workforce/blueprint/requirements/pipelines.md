@@ -155,6 +155,13 @@ The owner:
 - "It isn't just because we seeded the arc42 and matrix to help speed things along that we need to worry about approved or verified, at any point in time, and Epic progress through the pipeline and change the architecture. In fact we can process 20 Epics through elaboration with out building anything.  Verification is the only way to prove tht the architecture is likely to work."
 - "That's why verified flag is available to just about anything." and "The linkage could have a verified flag. The node could have a verified flag. Neither wold be required for every situation."
 
+#### One Epic builds a thing; every other Epic uses it
+
+The owner, 2026-11-12, on several Epics each building the same alerts:
+
+- "This should be impossible -> 'several Epics each build the same alerts'. If one Epic builds something that another Epic needs, then the second epic should just use the first Epic's work."
+- "That' insane. Fix this."
+
 #### The TRD is written, then updated, during architecture
 
 The owner's statements about the TRD, in date order, quoted as given:

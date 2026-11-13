@@ -106,6 +106,21 @@ class DesignGapError(StaleInputError):
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+class OwnershipChangedError(StaleInputError):
+    """Another Epic came to own a matrix entry after the span step marked the Epic's items, or stopped owning one.
+
+    ``writer`` is the span step: run again, it marks each item with the Tasks of the Epic that
+    owns its entry now (``builtBy``), and every step after it plans from that. Two Epics
+    elaborated at once can race more than once, so the journal runner sets the span back to
+    planned up to ``OWNERSHIP_REPLANS`` times in one dispatch before it fails the step.
+    """
+
+
+OWNERSHIP_REPLANS: Final = 3
+"""How many times one dispatch plans an Epic's span again because the ownership of an entry changed."""
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 class MalformedRequestError(StepError):
     """A request the step above a helper wrote does not satisfy the contract it was written under.
 

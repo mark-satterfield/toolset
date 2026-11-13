@@ -14,6 +14,7 @@ stores nothing. It answers three questions, each one ``atw-matrix`` command:
 - :func:`affected` (``affected --id``): the open Tasks a change to an entry affects.
 """
 
+import json
 import sys
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
@@ -27,6 +28,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifac
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "beads-contract" / "scripts"))
 import beadgraph
 import beads_contract
+import buildowner
+from bead_metadata import BUILD_LIFECYCLE_KEYS, KEY_BUILDS_ENTRIES
+from contracts import BuiltBy
 from matrix_contract import (
     HOME_RELATIONSHIP,
     KIND_COMPONENT,
@@ -43,7 +47,7 @@ from matrix_contract import (
     MatrixError,
     Side,
 )
-from matrixstore import Matrix, MatrixRefusedError, as_entry_id
+from matrixstore import Matrix, MatrixRefusedError, as_entry_id, kind_of
 
 if TYPE_CHECKING:
     from bead_metadata import BuildContract
@@ -52,6 +56,9 @@ if TYPE_CHECKING:
 COMMAND_BUILT: Final = "built"
 COMMAND_WORK: Final = "work"
 COMMAND_AFFECTED: Final = "affected"
+COMMAND_BUILDERS: Final = "builders"
+IN_PROGRESS: Final = "in_progress"
+"""The beads status of a Task whose build is running."""
 TASK_TYPE: Final = "task"
 """The beads issue type of a Task."""
 STORY_TYPE: Final = "story"
@@ -85,6 +92,70 @@ class TaskBead:
     """The nearest Epic above the Task; None when it has none."""
     elements: tuple[str, ...]
     """The ids the Task's ``matrix_elements`` key carries, in the order stated."""
+    created: str = ""
+    """When the Task was written (its record's ``created_at``); empty when the record has none."""
+    started: bool = False
+    """Whether the Task's build started: it is closed, in progress, or carries a build lifecycle key."""
+    builds: tuple[str, ...] = ()
+    """The matrix ids of the entries the Task builds (:func:`built_entries`)."""
+    spec_paths: tuple[str, ...] = ()
+    """The spec paths the Task builds against."""
+
+
+def built_entries(metadata: Mapping[str, str], elements: Sequence[str]) -> tuple[str, ...]:
+    """Name the matrix entries a Task builds: the ownership record of the build-ownership rule.
+
+    A Task elaboration wrote from 7.71.91 records them under ``builds_entries``. A Task without
+    that key (written earlier, or outside elaboration) is read from its ``matrix_elements``: the
+    ids of a kind a Task builds (:data:`BUILT_KINDS`), which leaves out its stack and the shared
+    capabilities it uses.
+
+    Args:
+        metadata: The Task's metadata.
+        elements: The ids its ``matrix_elements`` key carries.
+
+    Returns:
+        The entry ids, each once, in the order stated.
+
+    Raises:
+        MatrixError: ``builds_entries`` is not a JSON array of strings.
+
+    """
+    stated: str | None = metadata.get(KEY_BUILDS_ENTRIES)
+    if stated is None:
+        return tuple(dict.fromkeys(entry for entry in elements if _built_kind(entry)))
+    try:
+        decoded: object = json.loads(stated or "[]")
+    except json.JSONDecodeError as error:
+        message: str = f"{KEY_BUILDS_ENTRIES} is not JSON: {error}"
+        raise MatrixError(message) from error
+    if not isinstance(decoded, list) or not all(isinstance(entry, str) for entry in decoded):
+        message = f"{KEY_BUILDS_ENTRIES} is not a JSON array of strings"
+        raise MatrixError(message)
+    return tuple(dict.fromkeys(entry for entry in decoded if isinstance(entry, str)))
+
+
+def _built_kind(entry: str) -> bool:
+    """Report whether an id names an entry of a kind a Task builds; an id with no kind is not one.
+
+    Returns:
+        True when the id's kind is in :data:`BUILT_KINDS`.
+
+    """
+    try:
+        return kind_of(as_entry_id(entry)) in BUILT_KINDS
+    except MatrixError:
+        return False
+
+
+def build_started(status: str, metadata: Mapping[str, str], *, closed: bool) -> bool:
+    """Report whether a Task's build started: closed, in progress, or a build lifecycle key set.
+
+    Returns:
+        True when it started.
+
+    """
+    return closed or status == IN_PROGRESS or any(metadata.get(key) for key in BUILD_LIFECYCLE_KEYS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +248,66 @@ class WorkBatch(TypedDict):
     """One per id that could not be answered; the other ids are answered all the same."""
 
 
+class EntryBuilders(TypedDict):
+    """Who builds one entry, by the build-ownership rule (``buildowner``)."""
+
+    id: str
+    ownerEpic: str | None
+    """The Epic whose Task owns the entry; None when no Task builds it."""
+    builtBy: list[BuiltBy]
+    """The owner Epic's Tasks that build it; empty when it has no owner or the asking Epic owns it."""
+    builders: list[BuiltBy]
+    """Every Task, of any Epic, that builds it."""
+
+
+class BuildersRead(TypedDict):
+    """What ``builders --ids`` prints."""
+
+    command: str
+    epic: NotRequired[str]
+    entries: list[EntryBuilders]
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def entry_builders(tasks: Sequence[TaskBead], ids: Sequence[str], epic: str | None = None) -> BuildersRead:
+    """Name, for each entry, the Epic that owns it and the Tasks that build it.
+
+    Args:
+        tasks: The Task beads (:func:`read_tasks`).
+        ids: The entries asked about; a repeated id is answered once.
+        epic: The Epic asking, whose own ownership empties ``builtBy``; None leaves it as the
+            owner Epic's Tasks.
+
+    Returns:
+        One row per id, in the order given.
+
+    Raises:
+        MatrixRefusedError: No id is given.
+
+    """
+    wanted: list[str] = list(dict.fromkeys(stated.strip() for stated in ids if stated.strip()))
+    if not wanted:
+        message: str = "builders needs at least one entry id"
+        raise MatrixRefusedError(message)
+    index: buildowner.BuilderIndex = buildowner.builders(tasks)
+    asking: str = (epic or "").strip()
+    read: BuildersRead = {
+        "command": COMMAND_BUILDERS,
+        "entries": [
+            {
+                "id": entry,
+                "ownerEpic": buildowner.owner_epic(index.get(entry, [])),
+                "builtBy": buildowner.built_by(index, entry, asking),
+                "builders": [builder.row() for builder in index.get(entry, [])],
+            }
+            for entry in wanted
+        ],
+    }
+    if asking:
+        read["epic"] = asking
+    return read
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def read_tasks(control: Path | None = None) -> list[TaskBead]:
     """Read every Task from beads, with its Story, its Epic and the ids it carries.
@@ -249,6 +380,12 @@ def tasks_of(graph: beadgraph.Graph) -> list[TaskBead]:
             (ancestor for ancestor in graph.ancestors(bead.id) if ancestor.kind == STORY_TYPE),
             None,
         )
+        elements: tuple[str, ...] = tuple(dict.fromkeys(contract.get("matrix_elements", [])))
+        try:
+            builds: tuple[str, ...] = built_entries(bead.metadata, elements)
+        except MatrixError as error:
+            message = f"cannot read what the Task {bead.id} builds: {error}"
+            raise MatrixError(message) from error
         tasks.append(
             TaskBead(
                 id=bead.id,
@@ -258,7 +395,11 @@ def tasks_of(graph: beadgraph.Graph) -> list[TaskBead]:
                 story=None if story is None else story.id,
                 story_closed=story is not None and story.closed,
                 epic=None if epic is None else epic.id,
-                elements=tuple(dict.fromkeys(contract.get("matrix_elements", []))),
+                elements=elements,
+                created=str(record.get("created_at") or ""),
+                started=build_started(bead.status, bead.metadata, closed=bead.closed),
+                builds=builds,
+                spec_paths=tuple(contract.get("specPaths", [])),
             ),
         )
     return sorted(tasks, key=lambda task: task.id)

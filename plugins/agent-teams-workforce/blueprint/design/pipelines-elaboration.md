@@ -702,3 +702,16 @@ Decisions in this diagram, each for one reason:
   well as same-stack overlapping work, records justified prerequisites in `blockedByExternal`,
   and leaves resource creation to the producer's normal build and deployment. A closed producer
   Task alone does not establish that a required resource is deployed.
+- One Epic builds a matrix entry and every other Epic uses it (the owner: "If one Epic builds
+  something that another Epic needs, then the second epic should just use the first Epic's
+  work."). The span step marks each item whose entry a Task of another Epic already builds (any
+  status) with that Epic's Tasks (`builtBy`, `scripts/portfolio/buildowner.py`); the owner is the
+  Task whose build started, else the earliest written. Such an item is not this Epic's work: no
+  Task has to cite it, its spec states only this Epic's addition (`buildScope` `addition`), a
+  Task that adds to it records the entry under `adds_to_entries`, and every Task that cites or
+  requires it is blocked by the owner's Tasks. A Task records what it builds under
+  `builds_entries`. Two Epics elaborated at once cannot both claim an entry: each Task bead is
+  written under the ownership lock after a fresh ownership check, and a change of owner sends the
+  Epic back to its span step (`OwnershipChangedError`). `backfill_built_entries.py` gives Tasks
+  written before this rule their `builds_entries` and reports the entries two Epics already
+  build, for the owner's cleanup.

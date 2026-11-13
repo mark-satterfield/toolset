@@ -124,3 +124,27 @@ def edge_lock(command: str) -> Generator[None]:
     wait: float = 2 * seconds("ATW_BD_TIMEOUT", 180) + EDGE_LOCK_MARGIN
     with file_lock(control_repo() / EDGE_LOCK, wait, command):
         yield
+
+
+#: The lock file of a Task bead write that claims matrix entries for its Epic, under the control repository.
+OWNERSHIP_LOCK: Final[str] = "ops/sdlc-automation/state/bd-ownership.lock"
+
+
+@contextmanager
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def ownership_lock(command: str) -> Generator[None]:
+    """Hold the lock around a Task bead write that claims matrix entries (``builds_entries``).
+
+    The holder reads every Task, checks that no other Epic came to own an entry its Epic planned
+    to build, and writes the Task bead. Two Epics elaborated at once could each find an entry
+    unowned and both claim it, so that read, check and write run one process at a time. The
+    holder makes a read of every bead and the `bd` calls of one Task write, each bounded by
+    `ATW_BD_TIMEOUT`; a waiter allows several of them. The lock file names the holder.
+
+    Yields:
+        Control while the lock is held.
+
+    """
+    wait: float = 4 * seconds("ATW_BD_TIMEOUT", 180) + EDGE_LOCK_MARGIN
+    with file_lock(control_repo() / OWNERSHIP_LOCK, wait, command):
+        yield

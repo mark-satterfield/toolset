@@ -55,6 +55,7 @@ from orchestrator.core.journal_steps import (
 )
 from orchestrator.core.models import OutputValidator, StaleInputError, StepError
 from orchestrator.flows.architecture_files import ARTIFACT_TRD
+from orchestrator.flows.build_ownership import owned_write, refuse_ownership_drift
 from orchestrator.flows.build_prerequisites import producer_candidates
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_ELEMENTS,
@@ -236,7 +237,9 @@ def context(run: StepRun) -> Completion:
     one read for every stack). The decomposer asks the matrix for the shared capabilities the
     matrix guesses the entries the Tasks build rely on (``atw-matrix uses --ids``). What
     the Story builds is the ``items`` of the repository context. The decomposer writes those
-    matrix ids into each Task. Nothing is recorded in the matrix.
+    matrix ids into each Task. Nothing is recorded in the matrix. When another Epic came to own an
+    entry the span planned (or stopped owning one) since the span step ran, nothing is decomposed:
+    the span runs again (``build_ownership.refuse_ownership_drift``).
 
     Returns:
         The repository and the task context file as artifacts, with the decomposer's step and
@@ -245,6 +248,7 @@ def context(run: StepRun) -> Completion:
     """
     held: Repository = repository_of(dict(run.params()), TASK_CONTEXT)
     enter_phase(run.context, run.agents.emit, TASK_DECOMPOSITION_PHASE, TASK_CONTEXT, held.path)
+    refuse_ownership_drift(run, TASK_CONTEXT)
     story: str = check_type(json_object(run.inputs.value(STORY))["id"], str)
     control: Path = control_repository()
 
@@ -724,6 +728,17 @@ def _gap_detail(planned: TaskPlan, name: str) -> str:
     return f"{name} after {CORRECTIONS} corrections: {'; '.join(gaps)}"
 
 
+def _empty_with_work(run: StepRun, files: hierarchy.StoryFiles, planned: TaskPlan) -> bool:
+    """Report whether a plan holds no Task while its Story has work (``hierarchy.work_items``).
+
+    Returns:
+        True when the plan is empty and the Story has an item that is neither verified nor built
+        by another Epic's Task.
+
+    """
+    return not planned["tasks"] and bool(run.tools.portfolio_read(TASK_PLAN, hierarchy.work_items, files))
+
+
 @script_step(TASK_PLAN)
 def plan(run: StepRun) -> Completion:
     """Read the Tasks the decomposer wrote and plan what they call for.
@@ -731,6 +746,10 @@ def plan(run: StepRun) -> Completion:
     The Tasks file and the corrections are checked against their current contracts first
     (:func:`refuse_stale_tasks`); a correction the step is handed is then merged into the Tasks
     file.
+
+    A plan with no Task is a gap only while the Story has work: a Story whose every item is
+    verified or built by another Epic's Task (``hierarchy.work_items``) and that adds nothing to
+    one needs no Task.
 
     Returns:
         For a plan with an uncited item, an unsized Task or no Task, while fewer than
@@ -763,13 +782,13 @@ def plan(run: StepRun) -> Completion:
     uncited: list[JsonValue] = list(planned["uncited"])
     unsized: list[JsonValue] = list(planned["unsized"])
     name: str = Path(held.path).name
-    if not planned["tasks"] or uncited or unsized:
+    if _empty_with_work(run, files, planned) or uncited or unsized:
         if len(run.inputs.files(TASK_CORRECTION)) >= CORRECTIONS:
             stage: str = UNCITED_STAGE if planned["tasks"] else WORK_DECOMPOSE
             raise StepError(stage, OTHER_CAUSE, (_gap_detail(planned, name), str(files.tasks_file)))
         gaps: Path = write_contract(
             run.context.work / f"tasks-{held.slug}.gaps.json",
-            {"uncited": uncited, "unsized": unsized, "empty": not planned["tasks"]},
+            {"uncited": uncited, "unsized": unsized, "empty": _empty_with_work(run, files, planned)},
             TASK_GAPS_SCHEMA,
         )
         return Completion(
@@ -804,7 +823,10 @@ def write_task(run: StepRun) -> Completion:
 
     The Task is found by its elaboration key under the Story, so a second run of this step
     refreshes the Task it wrote and creates no other. The Tasks file is checked against its
-    current contract first (:func:`refuse_stale_tasks`).
+    current contract first (:func:`refuse_stale_tasks`). The Task bead is written under the
+    ownership lock, after a fresh read of beads finds that no other Epic came to own an entry the
+    span planned for this Epic; otherwise nothing is written and the span runs again
+    (``build_ownership.owned_write``).
 
     Returns:
         The Task as the dispatch reports it, and the write's warnings.
@@ -819,18 +841,19 @@ def write_task(run: StepRun) -> Completion:
 
     def attempt() -> dict[str, JsonValue]:
         writer: beadgraph.Writer = run.tools.portfolio(TASK_WRITE, beadgraph.Writer, control)
-        return json_object(
-            run.tools.portfolio(
-                TASK_WRITE,
-                beadwrite.write_task,
-                writer,
-                run.bead,
-                files,
-                key=key,
-                root=project_root(),
-                packages_dir=_packages(run),
-            ),
-        )
+        with owned_write(run, TASK_WRITE):
+            return json_object(
+                run.tools.portfolio(
+                    TASK_WRITE,
+                    beadwrite.write_task,
+                    writer,
+                    run.bead,
+                    files,
+                    key=key,
+                    root=project_root(),
+                    packages_dir=_packages(run),
+                ),
+            )
 
     written: dict[str, JsonValue] = run.tools.operation(TASK_WRITE, attempt)
     task: dict[str, JsonValue] = json_object(written["task"])

@@ -81,6 +81,7 @@ from orchestrator.core.journal_steps import (
 )
 from orchestrator.core.models import StepError
 from orchestrator.flows.architecture_files import ARTIFACT_TRD, read_context
+from orchestrator.flows.build_ownership import refuse_ownership_drift
 from orchestrator.flows.design_gaps import hold_open
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_ELEMENTS,
@@ -219,6 +220,7 @@ WRITTEN_AS: Final[dict[str, str]] = {SPEC: "the contracts", DATA_MODEL: "the dat
 UI_SCHEMA: Final = "skills/artifact-handoff/schemas/spec-ui.schema.json"
 CONTEXT_PURPOSE: Final = "The items this repository builds and the steps that specify them are known"
 TASKS_PURPOSE: Final = "The Story has Tasks that name what to build"
+SCOPE_ADDITION: Final = "addition"
 SCOPE_DELTA: Final = "delta"
 SCOPE_FULL: Final = "full"
 """What a spec covers for one entry: this Epic's change alone, or all the work that brings the build
@@ -720,28 +722,54 @@ def _scope_documents(root: Path, scopes: Sequence[StoryScope]) -> list[JsonValue
     return rows
 
 
-def entry_scope(matrix: Matrix, entry_id: EntryId) -> dict[str, JsonValue]:
-    """Decide what a spec covers for one entry the Story builds, from its verified state.
+def entry_scope(matrix: Matrix, entry_id: EntryId, built_by: Sequence[JsonValue] = ()) -> dict[str, JsonValue]:
+    """Decide what a spec covers for one entry the Story builds, from who builds it and its verified state.
 
     Args:
         matrix: The matrix.
         entry_id: The entry.
+        built_by: The ``builtBy`` rows the span recorded for the entry: the Tasks of another Epic
+            that build it; empty when this Epic builds it.
 
     Returns:
-        The entry, whether it carries the verified mark, and its scope: ``delta`` when it
-        is verified, so nothing it must be built as has changed since its last build and test and
-        the spec covers this Epic's own work for it alone; ``full`` when it is not verified (a
-        change cleared the flag, or it was never built), so the spec covers all the work that
-        brings the build up to the entry's approved architecture.
+        The entry, whether it carries the verified mark, and its scope: ``addition`` with
+        ``builtBy`` when another Epic's Task builds it, so the spec states only this Epic's
+        addition and links the owner's spec for the rest; else ``delta`` when it is verified, so
+        nothing it must be built as has changed since its last build and test and the spec covers
+        this Epic's own work for it alone; else ``full`` (a change cleared the flag, or it was
+        never built), so the spec covers all the work that brings the build up to the entry's
+        approved architecture.
 
     """
     found: Entry | None = matrix.find(entry_id)
     verified: bool = found is not None and found.verified
+    if built_by:
+        return {"entry": entry_id, "verified": verified, "scope": SCOPE_ADDITION, "builtBy": list(built_by)}
     return {
         "entry": entry_id,
         "verified": verified,
         "scope": SCOPE_DELTA if verified else SCOPE_FULL,
     }
+
+
+def build_scopes(matrix: Matrix, entries: Sequence[EntryId], items: Sequence[JsonValue]) -> list[JsonValue]:
+    """Decide what the spec covers for each entry a Story builds (:func:`entry_scope`).
+
+    Args:
+        matrix: The matrix.
+        entries: The entries the Story builds.
+        items: The span's items placed in the Story's repository, with the ``builtBy`` of each.
+
+    Returns:
+        One ``buildScope`` row per entry, in order.
+
+    """
+    owners: dict[str, list[JsonValue]] = {
+        str(json_object(item).get("matrixId")): list(check_type(json_object(item).get("builtBy", []), list[JsonValue]))
+        for item in items
+        if json_object(item).get("builtBy")
+    }
+    return [entry_scope(matrix, entry, owners.get(entry, [])) for entry in entries]
 
 
 def component_documents(arch: Path, matrix: Matrix, ids: Sequence[EntryId]) -> list[JsonValue]:
@@ -914,7 +942,9 @@ def context(run: StepRun) -> Completion:
     of every heading the context's ``documents`` name as the vault's last commit holds it, the
     constraints and shared capabilities that bind the entries, the TRD requirements that bind
     them and the contract files the repository holds. It plans the spec sessions the Story's
-    entries call for (:func:`story_surfaces`).
+    entries call for (:func:`story_surfaces`). When another Epic came to own an entry the span
+    planned (or stopped owning one) since the span step ran, nothing is specified: the span runs
+    again (``build_ownership.refuse_ownership_drift``).
 
     Returns:
         The repository, its context file and its spec pack as artifacts, with the repository's
@@ -927,6 +957,7 @@ def context(run: StepRun) -> Completion:
     """
     held: Repository = repository_of(dict(run.params()), SPEC_CONTEXT)
     enter_phase(run.context, run.agents.emit, SPEC_AUTHORING_PHASE, SPEC_CONTEXT, held.path)
+    refuse_ownership_drift(run, SPEC_CONTEXT)
     dispatch: DispatchArguments = dispatch_arguments()
     every_build: dict[str, JsonValue] = json_object(
         run.tools.portfolio(SPEC_CONTEXT, hierarchy.story_builds, span_files(run.inputs)),
@@ -943,7 +974,7 @@ def context(run: StepRun) -> Completion:
     prd: Path = Path(check_type(json_object(run.context.args[dispatch.KEY_PRD])[dispatch.PRD_PATH], str)).resolve()
     stacked: list[JsonValue] = [{"stack": stack, "entries": list(built)} for stack, built in stacks.items()]
     entries: list[EntryId] = list(dict.fromkeys(entry for built in stacks.values() for entry in built))
-    scoped: list[JsonValue] = [entry_scope(matrix, entry) for entry in entries]
+    scoped: list[JsonValue] = build_scopes(matrix, entries, items)
     component: list[JsonValue] = component_documents(architecture_root(run), matrix, [*stacks, *entries])
     documents: list[JsonValue] = _scope_documents(architecture_root(run), scopes)
     path: Path = write_contract(

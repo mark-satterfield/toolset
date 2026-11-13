@@ -113,7 +113,8 @@ of the context file. It is an index. It holds the PRD's path; the Epic's require
 `atw-matrix epic` gives them (`epicView`); under `reach`, one row for each entry the Epic reaches
 by the rule of reach (the `matrix` skill), each with its `kind`, `approved` (whether it carries
 the approved mark), `via` (the link that puts it in reach), `sharedWith` (the other Epics that
-reach it) and `headings`, each heading that describes it as `<path>#<heading>`; under
+reach it), `builtBy` (the Tasks of another Epic that build it, empty when none does) and
+`headings`, each heading that describes it as `<path>#<heading>`; under
 `constraints`, the id, name and `appliesTo` of each constraint that binds a reached entry; and
 `constraintsFile`, the file that holds every constraint that applies in full (its `statement`,
 `selector`, `trd` and `statedIn`), those of section 2 included. The pack is your view of the vault
@@ -265,6 +266,11 @@ An entry another Epic also reaches is shared (the pack's `sharedWith`). Before y
 change to anything that exists, run `atw-matrix impact --id <id>`: it names what rests on the
 entry, and its `constrainedBy` the constraints that bind it. Design the change so that
 everything that rests on it still holds.
+
+An entry whose row has `builtBy` is built by that Epic's Task: one Epic builds an entry and
+every other Epic uses it. Use it as built: do not design it again and do not create another
+entry for the same thing. Name it under `addedOrChangedElements` only for a change your design
+makes to it, and state only that change; the later steps plan only your addition.
 
 The reuse decisions reach the TRD, the specs, the Tasks and the implementers from the
 `supportedBy` relationships you record and from `sharedCapabilities` in your result, so
@@ -556,7 +562,9 @@ neither is unfinished work: finish it before you finish. Your answers, with the 
 your review and approval of the architecture.
 
 Name in your result what the Epic's Stories build. Under `addedOrChangedElements`, every
-element your design adds or changes. Under `unchangedWorkElements`, every existing element your
+element your design adds or changes. An entry another Epic's Task builds (the pack's `builtBy`)
+is listed only for a change your design makes to it; its Stories then specify and build only
+that change. Under `unchangedWorkElements`, every existing element your
 design leaves unchanged where the Epic still has work, such as new wording on an existing page:
 the services, components, infrastructure, events, routing rules, layers or packages whose code,
 content or configuration the Epic's work changes without changing their architecture, each by

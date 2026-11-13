@@ -37,6 +37,7 @@ RECORDS: Final[tuple[str, ...]] = (
     "TargetSummary",
     "TargetResult",
     "DeltaView",
+    "BuiltBy",
     "DeltaItem",
     "DeltaSummary",
     "DeltaResult",

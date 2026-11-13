@@ -16,7 +16,7 @@ type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValu
 type JsonObject = dict[str, JsonValue]
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "e4bd6d412a8d2ba6ca36f9accf75c8f01aa1cdef6aca74f4d09751d4d7494925"
+SCHEMA_SHA256: Final[str] = "e0e048843ce6e21ac90268f20391b96da7d5698836696c73bb4e268e717c572c"
 
 #: The literal a producer writes for an undecided -or-unknown contract value; read as None.
 UNKNOWN: Final[str] = "unknown"
@@ -200,6 +200,12 @@ KEY_ELABORATION_STATE_OWNER: Final[str] = "elaboration_state_owner"
 KEY_ELAB_KEY: Final[str] = "elab_key"
 #: The Task a follow-up Task replaces, set when the original was already built.
 KEY_ELAB_FOLLOWS: Final[str] = "elab_follows"
+#: JSON array of the matrix ids of the entries the Task builds: each cited item no Task of another Epic owns. The
+#: build-ownership record; matrix_elements also names the stack and shared capabilities.
+KEY_BUILDS_ENTRIES: Final[str] = "builds_entries"
+#: JSON array of the matrix ids of entries another Epic's Task builds, to which this Task adds only this Epic's
+#: addition. Never makes the Task a builder of the entry.
+KEY_ADDS_TO_ENTRIES: Final[str] = "adds_to_entries"
 KEY_ARTIFACT_TRD_PATH: Final[str] = "artifact_trd_path"
 KEY_ARTIFACT_TRD_SHA256: Final[str] = "artifact_trd_sha256"
 #: On the Epic.
@@ -480,6 +486,8 @@ LANE_KEYS: Final[tuple[str, ...]] = (
     KEY_ELABORATION_STATE_OWNER,
     KEY_ELAB_KEY,
     KEY_ELAB_FOLLOWS,
+    KEY_BUILDS_ENTRIES,
+    KEY_ADDS_TO_ENTRIES,
 )
 #: Keys recording an authored document on its bead.
 ARTIFACT_KEYS: Final[tuple[str, ...]] = (
@@ -588,6 +596,8 @@ class BeadMetadata(TypedDict, total=False):
     elaboration_state_owner: str
     elab_key: str
     elab_follows: str
+    builds_entries: str
+    adds_to_entries: str
     artifact_trd_path: str
     artifact_trd_sha256: str
     artifact_trd_vault_path: str

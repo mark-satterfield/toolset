@@ -110,6 +110,11 @@ documents and the TRD state it.
   a finding under I7 against the `criteria` document, whatever else the document gets right, and
   its correction is the one that rule gives. A check that rule leaves out is never a finding for
   being absent.
+- An entry whose `buildScope` row in the context file has scope `addition` is built by another
+  Epic's Task (`builtBy`): the documents state only this Epic's addition to it and link the
+  owner's spec for the rest. A document that restates such an entry in full, or specifies work
+  on it beyond the addition, is a finding under I7: the correction cuts it to the addition and a
+  link to the `builtBy[].specPaths`.
 - An open design gap is blocking: no Task can be built from a detail the design does not state
   (I7). Check every row under a document's `## Design gaps` heading against the approved
   documents. When an approved document records the detail, write a finding to the document's

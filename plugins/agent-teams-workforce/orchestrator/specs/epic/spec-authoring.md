@@ -64,8 +64,11 @@ architecture), never from the working tree.
 The authors write specs and design nothing: every detail a spec states (endpoints, payload and
 data schemas, keys, parameter names) was decided during architecture and is in arc42, in the
 detailed architecture under `detailed/` or in the matrix. What a spec covers for each entry the
-Story builds is the context's `buildScope`, read from the entry's verified flag
-(`spec_authoring.entry_scope`), never from an architecture delta: `delta` when the entry carries
+Story builds is the context's `buildScope`, read from who builds the entry and its verified flag
+(`spec_authoring.entry_scope`), never from an architecture delta: `addition` when a Task of
+another Epic builds the entry (the item's `builtBy`, carried on the row), so the spec states only
+this Epic's addition to it, or that there is none, and links the owner's spec
+(`builtBy[].specPaths`) for the rest; `delta` when the entry carries
 the verified mark, so nothing it must be built as has changed since its last build and test, and
 the spec covers this Epic's own work for it alone; `full` when the entry is not verified (a
 change cleared the mark, or it was never built), and the spec covers all the work that brings the
@@ -75,6 +78,11 @@ Story builds (`spec_authoring.component_documents`); step 9, after every correct
 of the three spec documents with a link to each (`spec_authoring.link_documents`, which replaces
 the section on a rerun) and lists them in the Story document, so whoever builds from the spec has
 the full architecture of the component.
+
+Before it writes anything, the context step checks that no other Epic came to own an entry the
+span planned (or stopped owning one) since the span ran (`build_ownership.refuse_ownership_drift`);
+on a change the span and every step after it run again, so no spec session works on a stale
+snapshot.
 
 The contracts and the data model must have the front matter of
 `document-front-matter.schema.json#/$defs/SpecDocument`, whose `decisionIds` each resolve to a file

@@ -9,7 +9,9 @@ a decision turns on them. ``pack.json`` holds:
 - ``epicView``: what ``atw-matrix epic`` returns for the Epic;
 - ``reach``: one row per entry of the architecture review reach (``matrixtraverse.reach_rows``, the rule
   of reach): its ``id``, ``kind``, ``approved`` (whether it carries the approved mark), ``via`` (the
-  links that put it in reach), ``sharedWith`` (the other Epics that reach it) and ``headings``,
+  links that put it in reach), ``sharedWith`` (the other Epics that reach it), ``builtBy`` (the
+  Tasks of another Epic that build it: that Epic owns it, so this Epic uses it as built and states
+  only a change it makes; ``buildowner.built_by``) and ``headings``,
   each document heading that describes it (``covers`` for a requirement, ``describedBy`` for any
   other entry) as a reference ``<path>#<heading>``, the path under the architecture root, which
   ``atw-matrix heading`` takes to print the heading's text from the vault's last commit;
@@ -29,6 +31,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final, TypedDict
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
+import beadgraph
+import buildowner
+from contracts import BuiltBy
 from matrix_contract import (
     KIND_CONSTRAINT,
     KIND_DOCUMENT,
@@ -40,6 +45,7 @@ from matrix_contract import (
 from matrixheadings import heading_ref
 from matrixquery import epic_view
 from matrixstore import read_matrix
+from matrixtasks import tasks_of
 from matrixtraverse import constraints_for, epic_id, reach_rows
 
 from orchestrator.core import step_journal
@@ -89,6 +95,8 @@ class PackRow(TypedDict):
     approved: bool
     via: str
     sharedWith: list[str]
+    builtBy: list[BuiltBy]
+    """The Tasks of the Epic that owns the entry when that is another Epic; empty otherwise."""
     headings: list[str]
     """Each document heading that describes the entry, as ``<path>#<heading>``."""
 
@@ -243,17 +251,23 @@ def _constraints(matrix: Matrix, scope: list[EntryId]) -> list[PackConstraint]:
     return [_constraint(matrix, matrix.entry(entry_id), binding[entry_id]) for entry_id in sorted(binding)]
 
 
-def matrix_part(bead: str) -> MatrixPart:
-    """Read from the matrix what the pack and its constraints file hold.
+def matrix_part(bead: str, control: Path | None = None) -> MatrixPart:
+    """Read from the matrix, and who builds each entry from beads, what the pack and its constraints file hold.
+
+    Args:
+        bead: The Epic's beads id.
+        control: The control repository whose beads hold the Tasks; None reads the one the
+            driver's environment names.
 
     Returns:
-        The Epic's view, its reach rows with the headings that describe each, and every
-        constraint that applies, in full.
+        The Epic's view, its reach rows with the Tasks of another Epic that build each and the
+        headings that describe each, and every constraint that applies, in full.
 
     """
     matrix: Matrix = read_matrix(matrix_file())
     epic: EntryId = epic_id(bead)
     rows: list[ReachRow] = reach_rows(matrix, epic)
+    owners: buildowner.BuilderIndex = buildowner.builders(tasks_of(beadgraph.load(control)))
     reach: list[PackRow] = [
         {
             "id": row.id,
@@ -261,6 +275,7 @@ def matrix_part(bead: str) -> MatrixPart:
             "approved": row.approved,
             "via": row.via,
             "sharedWith": [*row.shared_with],
+            "builtBy": buildowner.built_by(owners, row.id, bead),
             "headings": _describing(matrix, row),
         }
         for row in rows

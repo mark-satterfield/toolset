@@ -59,8 +59,12 @@ You write a spec: the build work of the API, event, error and UI contracts of wh
 repository's Story builds, for criteria I1 to I7 of the review standard,
 effective-architecture/review-standard.md. You design nothing.
 
-What the spec covers for each entry is in the context's `buildScope`, decided from the entry's
-verified state, never from an architecture delta. For an entry whose scope is `delta`, the build
+What the spec covers for each entry is in the context's `buildScope`, decided from who builds the
+entry and its verified state, never from an architecture delta. For an entry whose scope is
+`addition`, a Task of another Epic builds the entry (`builtBy`): this Epic uses it and does not
+build it again. Specify only this Epic's addition to it (state that there is none when there is
+none), and link the owner's spec (`builtBy[].specPaths`) for everything else; never restate the
+entry in full. For an entry whose scope is `delta`, the build
 is verified at the version before this Epic's change: specify this Epic's change alone, which
 the `facts` of the architect's result the context names locate (for an Epic whose architecture
 changes nothing, the Epic's own work, such as the wording of a page, from the TRD and the PRD).

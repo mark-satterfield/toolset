@@ -165,6 +165,11 @@ this page does not restate it. Python producers and consumers import the generat
 `scripts/check_bead_metadata_generated.py` fails when it is stale); the driver loads both files
 from the installed plugin through its `beadmeta.py`.
 
+Which matrix entries a Task builds is its `builds_entries` key, and the entries it only adds to
+(another Epic's Task builds them) its `adds_to_entries` key, both elaboration-lane keys outside
+both fingerprints; `matrix_elements` also names the Task's stack and shared capabilities and is
+not the ownership record (the `matrix` skill, "Who builds an entry").
+
 `bd` metadata is flat `key=value` TEXT, so **every value is a string**: lists and objects are
 compact JSON. The build-contract keys are inside the READINESS fingerprint and outside the
 JUDGING one; every other group is outside both, which is what lets each consumer store its own

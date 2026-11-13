@@ -38,7 +38,7 @@
       }
     },
     "buildScope": {
-      "description": "What the spec covers for each entry the Story builds, decided from the entry's verified state in the matrix, never from an architecture delta. `delta`: the entry is verified, so nothing it must be built as has changed since its last build and test, and the spec covers this Epic's own work for it alone (such as the wording of a page). `full`: the entry is not verified (a change cleared the flag, or it was never built), so the spec covers all the work that brings the build up to the entry's approved architecture.",
+      "description": "What the spec covers for each entry the Story builds, decided from which Epic builds the entry and from the entry's verified state in the matrix, never from an architecture delta. `addition`: a Task of another Epic builds the entry (`builtBy`), so this Epic does not build it again: the spec states only this Epic's addition to it, or that there is none, and links the owner's spec (`builtBy[].specPaths`) for the rest. `delta`: the entry is verified, so nothing it must be built as has changed since its last build and test, and the spec covers this Epic's own work for it alone (such as the wording of a page). `full`: neither (a change cleared the flag, or it was never built), so the spec covers all the work that brings the build up to the entry's approved architecture.",
       "type": "array",
       "items": {
         "type": "object",
@@ -47,7 +47,12 @@
         "properties": {
           "entry": {"description": "The entry's matrix id.", "type": "string", "minLength": 1},
           "verified": {"description": "Whether the entry carries the verified mark.", "type": "boolean"},
-          "scope": {"enum": ["delta", "full"]}
+          "scope": {"enum": ["addition", "delta", "full"]},
+          "builtBy": {
+            "description": "For `addition`: the Tasks of the Epic that builds the entry, each with its Epic, Story, status, whether its build started and the spec paths it builds against.",
+            "type": "array",
+            "items": {"$ref": "target-report.schema.json#/$defs/BuiltBy"}
+          }
         }
       }
     },

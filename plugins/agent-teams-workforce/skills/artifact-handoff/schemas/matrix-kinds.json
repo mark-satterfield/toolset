@@ -449,6 +449,7 @@
     "built": {"writes": false, "anyRole": true},
     "work": {"writes": false, "anyRole": true},
     "affected": {"writes": false, "anyRole": true},
+    "builders": {"writes": false, "anyRole": true},
     "approval": {"writes": false, "anyRole": true},
     "approve-reviewed": {"writes": true, "roles": ["script"]},
     "check": {"writes": false, "roles": ["script", "operator", "repository-steward"]},

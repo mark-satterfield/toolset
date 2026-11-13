@@ -803,6 +803,20 @@
       ],
       "description": "The Task a follow-up Task replaces, set when the original was already built."
     },
+    "builds_entries": {
+      "type": "string",
+      "x-groups": [
+        "LANE_KEYS"
+      ],
+      "description": "JSON array of the matrix ids of the entries the Task builds: each cited item no Task of another Epic owns. The build-ownership record; matrix_elements also names the stack and shared capabilities."
+    },
+    "adds_to_entries": {
+      "type": "string",
+      "x-groups": [
+        "LANE_KEYS"
+      ],
+      "description": "JSON array of the matrix ids of entries another Epic's Task builds, to which this Task adds only this Epic's addition. Never makes the Task a builder of the entry."
+    },
     "artifact_trd_path": {
       "type": "string",
       "x-groups": [
