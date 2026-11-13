@@ -79,8 +79,6 @@ flowchart TD
     repos --> review["The solutions architect reviews and approves its own architecture against the criteria, with the TRD changes its decisions make"]
     review --> ok{"Does the check pass the result and the review log?"}
     ok -->|"no: each problem goes back to the architect as a correction"| detailed
-    ok -->|"yes, before the first promotion"| completeness["Completeness review: architecture-completeness-reviewer checks every element the Epic adds or changes and every unapproved element of its reach against A15 to A20, and approved documents for contradictions; the architect answers every finding in one round"]
-    completeness -->|"findings: answered, written, checked again"| ok
     ok -->|"yes"| trdUpdate["TRD architecture update: one trd-author session adds what the PRD implies and applies the architect's TRD changes - section 4"]
     trdUpdate --> writes["The documents this Epic's maintainers wrote set effective. The architecture of the Epic's reach in the corrected matrix set approved, verified stays false"]
     writes --> archChange{"Did the Epic need an architecture change?"}
@@ -150,13 +148,7 @@ Notes on the diagram:
   against the tracker and the journals, refuses an Epic a build started on, and sets the Epic ready with the cause `architecture-changed`; its re-elaboration
   rewrites its Stories and Tasks in place by `elab_key`. A built item is never reopened: its
   knock-on Task is recorded as proposed.
-- The solutions architect is the reviewer and approver of the architecture. One independent check
-  runs before any spec: `architecture-completeness-reviewer` (`orchestrator/flows/architecture_completeness.py`)
-  checks only that the detailed design states what criteria A15 to A20 require of every element
-  the Epic adds or changes and every unapproved element of its reach, and that no two approved
-  documents contradict each other; it judges no design, and its findings go back to the architect
-  in one round, at most twice per pass. Without it the spec stage was the first independent look,
-  and found one unstated value per round. The owner, on the architect as reviewer:
+- The solutions architect is the reviewer; no other agent reviews the architecture. The owner:
   "The solutions architect is the reviewer. I do not want to introduce new reviewers in for
   architecture. I already took out reviewers." What the owner requires instead is proof: "what I
   do want is some sort of proof that best practices and well-architected principles and security

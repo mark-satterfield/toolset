@@ -18,9 +18,6 @@ then plans the promotion of the answered documents, and the TRD write only when 
 changes differ from those the last TRD write applied. No other repository is specified again, and
 no impact analysis runs in the round.
 
-The findings of the architecture completeness review (``architecture_completeness``) take the same
-way to the architect, filed as the gaps of :data:`REVIEW_SLUG` before any spec is written.
-
 The gaps converge row by row: a row the architect answered that a repository's documents hold
 again fails the step, while a row never handed before gets its own round. A repository whose gaps
 went to the architect :data:`MAX_ROUNDS` times fails the step when it holds an open gap again. The
@@ -79,11 +76,6 @@ OPEN: Final = "open"
 SETTLED: Final = "settled"
 ANSWERS: Final = "answers.json"
 """The file, in the design gaps folder, that records each repository's rounds and the rows the architect answered."""
-REVIEW_SLUG: Final = "completeness-review"
-"""The name the architecture completeness review's findings are filed under among the open design gaps."""
-REVIEW_SOURCE: Final = "the architecture completeness review"
-"""What the filed findings of the completeness review name as their ``repository``."""
-REVIEW_DESCRIPTION: Final = "Answer what the architecture completeness review found"
 KEY_ROUNDS: Final = "rounds"
 KEY_ROWS: Final = "rows"
 MAX_ROUNDS: Final = 3
@@ -177,23 +169,11 @@ def _folder(work: Path, state: str) -> Path:
     return architecture_folder(work) / FOLDER / state
 
 
-def open_file(work: Path, slug: str) -> Path:
-    """Name the file one repository's open gaps are filed in.
-
-    Returns:
-        ``<slug>.json`` in the folder of the open design gaps.
-
-    """
-    return _folder(work, OPEN) / f"{slug}.json"
-
-
-def gap_round(inputs: list[str], description: str = ANSWER_DESCRIPTION) -> tuple[StepPlan, ...]:
+def gap_round(inputs: list[str]) -> tuple[StepPlan, ...]:
     """Plan the round that takes filed gaps to the solutions architect.
 
     Args:
         inputs: The steps the architect's step is handed, by id or by ref: the check before it.
-        description: What the architect's step does: answer the spec stage's gaps, or the
-            completeness review's findings (:data:`REVIEW_DESCRIPTION`).
 
     Returns:
         The architect's step, the index and the check after it, in the order they run. The
@@ -202,7 +182,7 @@ def gap_round(inputs: list[str], description: str = ANSWER_DESCRIPTION) -> tuple
     """
     answer: StepPlan = {
         "ref": ANSWER_REF,
-        "description": description,
+        "description": ANSWER_DESCRIPTION,
         "purpose": ANSWER_PURPOSE,
         "agent": ARCHITECT,
         "inputs": inputs,
@@ -249,7 +229,7 @@ def file_gaps(run: StepRun, slug: str, repository: str, documents: Sequence[Path
     ]
     if filed:
         payload: FiledGaps = {"repository": repository, "documents": filed}
-        write_json(open_file(run.context.work, slug), payload)
+        write_json(_folder(run.context.work, OPEN) / f"{slug}.json", payload)
     return filed
 
 

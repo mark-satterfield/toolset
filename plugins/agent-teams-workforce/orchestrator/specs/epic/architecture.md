@@ -1,16 +1,14 @@
 # Architecture: the steps of the Architecture container
 
 Code: `orchestrator/flows/prd_to_spec.py` (the open-run step), `architecture.py`,
-`architecture_rounds.py`, `architecture_check.py`, `architecture_completeness.py`,
-`architecture_ruling.py`, `architecture_promotion.py`, `architecture_impact.py`,
-`architecture_earlier.py`, `architecture_files.py` (names, the context file and readers).
+`architecture_rounds.py`, `architecture_check.py`, `architecture_ruling.py`,
+`architecture_promotion.py`, `architecture_impact.py`, `architecture_earlier.py`,
+`architecture_files.py` (names, the context file and readers).
 
 One agent, `aws-solutions-architect`, is responsible for the solution: it decides the architecture
 a PRD needs, starting from the effective architecture (the effective arc42 before this Epic runs, which
 is approved as of now and never complete), and reviews and approves it against the criteria of
-`effective-architecture/review-standard.md`; before any spec, `architecture-completeness-reviewer`
-checks independently that the detailed design states what the specs carry ("The completeness
-review"). It always reads the PRD.
+`effective-architecture/review-standard.md`; nothing else reviews it. It always reads the PRD.
 arc42 and the matrix are both input and output: a starting point that may be incomplete or wrong,
 and for an Epic no earlier step has reached the matrix normally holds nothing beyond the
 requirement headings synced from the PRD, which is normal. The order of operations is the owner's
@@ -88,7 +86,7 @@ folder of the architecture or of the PRDs.
 | Analyze ("Analyze the PRD against the architecture and put the questions and draft reviews to the specialists") | the open-run step | the state file, then `<arch-work>/questions.json` (`specialist-round.schema.json`): one request per specialist | one step per request whose answer cannot be reused (`architecture_rounds.reuse_refusal`), then a Decide step (round 1), handed every answer of the round: those the steps write, and as its parameter `answered` each that was reused |
 | Decide ("Decide the architecture with the specialists' answers") | the step whose output asked a round | the architecture result at the context's `resultPath`, updated in place | a further round and a Decide (round 2) when the result's `requests` holds an unanswered request; otherwise the document writes |
 | A correction ("Correct what the mechanical check found"), or a step the lead adds | the check, or the lead | the architecture result, updated in place | as for Decide |
-| The answer to the open design gaps ("Answer the design gaps the spec stage found", or "Answer what the architecture completeness review found") | the journal runner, at the end of the container, when the spec stage filed open design gaps; the check, when the completeness review's findings are filed | the architecture result, updated in place, with one `gapAnswers` entry for each row of each `design gaps` file it is handed | as for Decide; with no further round, the gaps are recorded as answered (`design_gaps.settle`) |
+| The answer to the open design gaps ("Answer the design gaps the spec stage found") | the journal runner, at the end of the container, when the spec stage filed open design gaps | the architecture result, updated in place, with one `gapAnswers` entry for each row of each `design gaps` file it is handed | as for Decide; with no further round, the gaps are recorded as answered (`design_gaps.settle`) |
 
 The output check of the Analyze step validates the round and the state file, and refuses a request
 naming an agent the `find-specialists` catalog (`skills/find-specialists/catalog.json`) does not
@@ -251,10 +249,9 @@ follows by rule over the matrix, the criteria file, the architect's result and t
 
 | What the check finds | What it plans |
 |---|---|
-| open design gaps filed for the architect (`design_gaps.handed`: the completeness review's findings), whatever else it finds | the architect's step that answers them (`design_gaps.gap_round`), handed the check result, an index and a new check that starts with no corrections spent, because the answer is a new design change |
+| open design gaps the spec stage filed (`design_gaps.handed`), whatever else it finds | the architect's step that answers them (`design_gaps.gap_round`), handed the check result, an index and a new check that starts with no corrections spent, because the answer is a new design change |
 | a mechanical defect | a correction step for the architect, handed the check result, an index and a new check; after 3 corrections a defect fails the step |
 | no defect, the result's conclusion is `unsettled`, and no lead has run in the container | the step of `architecture-team-lead`, an index and a new check |
-| no defect, no lead to run, no promotion done in the journal, and no completeness review run yet, or fewer than 2 run and the last found something (`architecture_completeness.review_due`) | the completeness review, then a new check |
 | otherwise, whatever the conclusion | the TRD write, unless the journal's last TRD write is done and its request states the result's `trdChanges` and `sharedCapabilities` as they stand (`trd_steps.write_current`), then the promotion step |
 
 With no defect it reads what is in review for the Epic, the documents the Epic reaches that are
@@ -315,24 +312,6 @@ a folder index whose matrix entry does not show it effective fails the step, nam
 the step with a structured cause. It plans nothing after itself: a design-gap round promotes again
 within the same elaboration, so what the Epic changed is assessed once, at its end ("Impact of the
 Epic's architecture change").
-
-## The completeness review
-
-`architecture_completeness.py`. The check plans `architecture-completeness-reviewer` (step "Review
-the architecture for what a spec would have to decide") and a new check after it, before the TRD
-write and the promotion of the first pass. It is handed `prd`, `trd`, `context`, `architecture
-result` and `review scope`, reads the architecture documents, and checks every element the result
-adds or changes, and every element of the Epic's reach with no approved mark, against criteria A15
-to A20 of `effective-architecture/review-standard.md`, and the approved documents it reads for
-statements that contradict each other. It writes `<arch-work>/completeness-<step>.json`
-(`completeness-findings.schema.json`), recorded as the file `completeness findings` with the value
-`completeness findings found`. The step that accepts it files the findings as the open design gaps
-of `completeness-review` (`<arch-work>/design-gaps/open/completeness-review.json`, the repository
-"the architecture completeness review", one document entry per document a finding rests on), so
-the check after it plans the architect's step that answers them all in one round. The review runs
-at most twice in one pass, the second time only after a review that found something; the last
-review's findings still go to the architect. A pass that has promoted (a design-gap round) runs no
-review.
 
 ## Impact of the Epic's architecture change
 

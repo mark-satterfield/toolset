@@ -301,10 +301,7 @@ and, for each level, the agents responsible for it and the agent that reviews an
 
 `aws-solutions-architect` develops the architecture and the TRD to exactly these criteria, answers
 each architecture and technical-requirement criterion in its result, and reviews and approves its
-own architecture against them. Before the first promotion, `architecture-completeness-reviewer`
-checks independently that the detailed design states every value criteria A15 to A20 require of
-the elements the Epic reaches, and that no two approved documents contradict each other; its
-findings go back to the architect in one round. Criterion P10 requires that no decision is
+own architecture against them; nothing else reviews it. Criterion P10 requires that no decision is
 made by instinct: every AWS resource the design defines is reviewed with the AWS tools, the design
 has a Well-Architected review, and every decision between two or more options states the options
 and the reason. The architect records all of it in the Epic's review log, whose contract is the
@@ -1064,11 +1061,9 @@ specification is `<plugin>/blueprint/design/matrix.md`.
 
 The Architecture container holds, in order: the pack; the TRD seed; the architect's Analyze step;
 the steps it plans after itself; the index step; the check step; then either a correction by the
-architect, an index and a new check, or the lead, an index and a new check, or the completeness
-review and a new check, or the TRD write (when its changes are not yet written) and the promotion
-step. The architect reviews and approves its own architecture against the criteria; the
-completeness review checks independently, before any spec, that the detailed design states what
-the specs will carry.
+architect, an index and a new check, or the lead, an index and a new check, or the TRD write
+(when its changes are not yet written) and the promotion step. The architect reviews and approves
+its own architecture against the criteria; nothing else reviews it.
 
 - **The architect's sessions** (`flows/architecture.py`, `flows/architecture_rounds.py`). The
   architect starts no agent, and each of its steps is a fresh session; files carry the work from
@@ -1110,11 +1105,7 @@ the specs will carry.
   `resourceType`) with no review entry, and a design with an AWS resource and no Well-Architected
   review. With no problem it reads what is in review, writes `review-scope.json` and
   `unlinked.json`, records nothing in the matrix, and, when the result's conclusion is
-  `unsettled` and no lead has run, plans the lead and a new check. Before the first promotion of
-  the pass it plans the completeness review and a new check (`flows/architecture_completeness.py`),
-  at most twice, the second time only after a review that found something; the review's findings
-  are filed as open design gaps, which the next check sends to the architect in one round.
-  Otherwise it plans the TRD write, unless the last one is done and applied the result's TRD
+  `unsettled` and no lead has run, plans the lead and a new check. Otherwise it plans the TRD write, unless the last one is done and applied the result's TRD
   changes as they stand (`trd_steps.write_current`), and the promotion step.
 - **The lead** (`flows/architecture_ruling.py`) writes its routing of the unsettled matters and
   adds the steps it calls for under its own step: a correction by the architect, a specialist's
