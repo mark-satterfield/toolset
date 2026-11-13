@@ -311,13 +311,10 @@ capability nothing references and an id the matrix does not hold are notes it se
 is a note too: the owner's architecture constraints (arc42 section 2) hold no general rule that
 code must use shared components, and the duplicate signals are the matrix's own guess. A capability the Task's own repository provides is not checked, since
 its definitions there are its implementation, and neither is what a feature that only consumes
-such a capability is supported by, when another repository realizes that feature too. Only when the
-check leaves product definitions (test files are not read) whose names share two words outside
-`matrixreuse.STOP_WORDS` with a provided behaviour is the shared-capability-reviewer started. It is handed each distinct definition once, with its candidate
-capability items, in text files of at most 40,000 characters it reads whole, and returns one
-ruling per definition (`build-reuse-rulings.schema.json`). `build:reuse-ruled` then merges the
-rulings, as notes, with the settled notes into the review by script, and fails the step when a
-handed definition has no ruling. Otherwise the audit step records the review itself. UI work is
+such a capability is supported by, when another repository realizes that feature too. A product
+definition (test files are not read) whose name shares two words outside `matrixreuse.STOP_WORDS`
+with a provided behaviour is a candidate match, recorded as a note with the capability item it
+matches. The audit step records the review itself, always, by script, and starts no agent. UI work is
 reviewed against the Task's stated supplied bundle or live CDS source; its blocking and warranted
 improvement findings receive bounded implementation and re-review.
 

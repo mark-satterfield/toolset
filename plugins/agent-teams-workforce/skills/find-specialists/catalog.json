@@ -2914,17 +2914,6 @@
       ]
     },
     {
-      "name": "shared-capability-reviewer",
-      "description": "Rules, for each definition a deterministic reuse check could not rule on, whether a function a Task added duplicates a behaviour a shared capability (a shared library, layer, chassis or service) provides to its consumers — duplicate or not-duplicate, with one sentence of reason. Reads only the named function and the provides entry; writes only its result file.",
-      "skills": [
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:python-lambda-packaging"
-      ],
-      "mcpServers": [
-        "gitnexus"
-      ]
-    },
-    {
       "name": "slo-error-budget-designer",
       "description": "Designs a deployed service's SLOs and error budgets: SLIs from the CloudWatch metrics it emits, targets and windows traced to its NFRs, error budget policy and multi-window burn-rate CloudWatch alarms; recommends, never adopts. A specialist a caller chooses when a service needs SLOs.",
       "skills": [

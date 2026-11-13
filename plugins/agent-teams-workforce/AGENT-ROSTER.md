@@ -402,7 +402,6 @@ Sessions the named workflows start for one mechanical or judging step.
 | test-failure-parser | execute | Reads the saved output of one test-suite run and names every failure it reports — each failing test, and each test file the runner could not load — with the output line that names it and the runner's final summary, whatever the test runner. Never reruns the suite, fixes code or changes the log. |
 | cds-live-auditor | test | Audits the UI files a Task changed against the live Configurable Design System (cds) when no mockup or cds bundle was supplied, and rules each finding. |
 | cds-finding-reviewer | test | Rules on the findings a deterministic cds audit of a Task's changed UI could not rule on - each class name the supplied cds bundle's stylesheets do not name - as a violation, allowed, or a cds gap, against the bundle and the configured design system; changes no file. |
-| shared-capability-reviewer | test | Rules, for each definition a deterministic reuse check could not rule on, whether a function a Task added duplicates a behaviour a shared capability (a shared library, layer, chassis or service) provides to its consumers — duplicate or not-duplicate, with one sentence of reason. Reads only the named function and the provides entry; writes only its result file. |
 | workflow-command-runner | execute | Executes one workflow-supplied checksum-guarded deterministic command and returns its exact compact machine receipt; never interprets or authors its payload. |
 
 ## Standalone

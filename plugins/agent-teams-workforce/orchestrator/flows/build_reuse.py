@@ -1,4 +1,4 @@
-"""The build's reuse audit: the deterministic reuse check, then a reviewer only for what it cannot rule on.
+"""The build's reuse audit: the deterministic reuse check, recorded as the review by script.
 
 The matrix is a best guess, so every finding of this audit is a note: divergence between the code
 and the matrix is never a build failure, starts no correction round and gives implementers no
@@ -8,21 +8,15 @@ owner's architecture constraints (arc42 section 2) hold no general rule that cod
 components, and the duplicate signals are the matrix's own guess.
 
 ``build:reuse-audit`` runs ``check-reuse`` (:func:`matrixreuse.check_reuse`) in process against the
-matrix ids the Task states (its ``matrix_elements``) and the Story worktree. A line that does itself
-what a shared capability provides, a relied-on capability nothing references, and stated ids the
-matrix does not hold are notes the check settles. A new definition whose name reads like a
-provided behaviour is a definition the check cannot rule on: only then is the
-shared-capability-reviewer started, handed each such definition once, in text files it can read
-whole. ``build:reuse-ruled`` then merges the reviewer's rulings with what the check settled into
-the review, by script, and fails when a handed definition has no ruling. With no such definition
-the audit step records the review itself.
+matrix ids the Task states (its ``matrix_elements``) and the Story worktree, and records the review
+itself, always; it starts no agent. A line that does itself what a shared capability provides, a
+relied-on capability nothing references, stated ids the matrix does not hold, and each new
+definition whose name reads like a provided behaviour (a candidate match) are notes in the review.
 """
 
 from __future__ import annotations
 
-import json
 import sys
-from dataclasses import dataclass
 from itertools import starmap
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -40,39 +34,16 @@ from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, file_artifact, value_artifact
 from orchestrator.core.models import StepError
 from orchestrator.flows.architecture_files import matrix_file
-from orchestrator.flows.build_sessions import OutputContract, reasoned
-from orchestrator.flows.build_state import CONTRACTS, artifact_document, artifact_file, new_step, workspace_of
+from orchestrator.flows.build_state import new_step, workspace_of
 
 if TYPE_CHECKING:
     from step_journal_contract import Artifact
 
 STAGE: Final = "build:reuse-audit"
-RULED_STAGE: Final = "build:reuse-ruled"
 REVIEW: Final = "reuseReview"
-RULINGS: Final = "reuseRulings"
-"""The artifact name of the reviewer's rulings."""
-HANDED: Final = "reuseHanded"
-"""The artifact name of the record of what was handed to the reviewer, read by ``build:reuse-ruled``."""
-REVIEWER: Final = "shared-capability-reviewer"
 ELEMENTS: Final = "matrix_elements"
 """The bead field that holds the matrix ids the Task states."""
 REVIEW_FILE: Final = "reuse-review.json"
-HANDED_FILE: Final = "reuse-handed.json"
-DEFINITIONS_STEM: Final = "reuse-definitions"
-CAPABILITIES_STEM: Final = "reuse-capabilities"
-CHUNK_CHARACTERS: Final = 40_000
-"""The most characters one handed text file holds, so the reviewer can read each listed file whole."""
-DUPLICATE: Final = "duplicate"
-LISTED_UNRULED: Final = 5
-"""How many definitions without a ruling the failure names."""
-
-
-@dataclass(frozen=True)
-class _Handed:
-    """What the reviewer is handed: one entry per distinct definition, and the behaviours it is matched to."""
-
-    definitions: list[dict[str, JsonValue]]
-    behaviours: dict[str, str]
 
 
 def _item_text(item: ReuseItem) -> str:
@@ -89,7 +60,7 @@ def _item_text(item: ReuseItem) -> str:
 
 
 def _finding(item: ReuseItem) -> dict[str, JsonValue]:
-    """Turn one divergence the check found into a note.
+    """Turn one item the check found into a note.
 
     Returns:
         The note, with the item's file and line when it has them.
@@ -183,14 +154,15 @@ def _checked(run: StepRun, ids: list[EntryId]) -> tuple[ReuseResult | None, list
 
 
 def _settled_findings(result: ReuseResult) -> list[dict[str, JsonValue]]:
-    """Turn what the check settles into review findings.
+    """Turn what the check found into review findings.
 
     Returns:
-        Each divergence, and each relied-on behaviour with no use signal, as a note.
+        Each divergence, each candidate match and each relied-on behaviour with no use signal, as a note.
 
     """
     return [
         *(_finding(item) for item in result["violations"]),
+        *(_finding(item) for item in result["judgment"]),
         *(_unchecked_note(unchecked) for unchecked in result["unchecked"]),
     ]
 
@@ -199,156 +171,17 @@ def _check_evidence(result: ReuseResult) -> str:
     """State what the check read and found.
 
     Returns:
-        The files read, the capabilities checked and those left out as this repository's own, and the divergence.
+        The files read, the capabilities checked and those left out as this repository's own, the
+        divergence and the candidate matches.
 
     """
     provided: str = f" ({', '.join(result['provided'])} provided by this repository, not checked)"
     return (
         f"check-reuse read {len(result['files'])} changed file(s) against {len(result['capabilities'])} shared "
         f"capability(ies){provided if result['provided'] else ''}: {len(result['violations'])} divergence(s) "
-        "from the matrix's guess, recorded as notes"
+        f"from the matrix's guess and {len(result['judgment'])} candidate match(es) of a new definition with a "
+        "provided behaviour, recorded as notes"
     )
-
-
-def _candidate(item: ReuseItem) -> str:
-    """Name the capability item a definition may duplicate.
-
-    Returns:
-        ``<feature id>#<provides id>``.
-
-    """
-    return f"{item['feature']}#{item['provides']}"
-
-
-def _handed(judgment: list[ReuseItem]) -> _Handed:
-    """Group the check's judgment items by definition, each definition once.
-
-    Returns:
-        One entry per distinct file and line, numbered D1, D2, ... in file and line order, with the
-        definition's text and each candidate capability item with the words it shares; and each
-        candidate's behaviour.
-
-    """
-    places: list[tuple[str, int]] = sorted({(item.get("file", ""), item.get("line", 0)) for item in judgment})
-    numbered: dict[tuple[str, int], str] = {place: f"D{number}" for number, place in enumerate(places, start=1)}
-    definitions: list[dict[str, JsonValue]] = [
-        {
-            "id": numbered[place],
-            "file": place[0],
-            "line": place[1],
-            "definition": next(item.get("definition", "") for item in judgment if _place(item) == place),
-            "candidates": [
-                f"{_candidate(item)} (shares {', '.join(item.get('shared', []))})"
-                for item in judgment
-                if _place(item) == place
-            ],
-        }
-        for place in places
-    ]
-    return _Handed(definitions, {_candidate(item): item.get("behaviour", "") for item in judgment})
-
-
-def _place(item: ReuseItem) -> tuple[str, int]:
-    """Name where a judgment item's definition is.
-
-    Returns:
-        Its file and line.
-
-    """
-    return item.get("file", ""), item.get("line", 0)
-
-
-def _definition_lines(definitions: list[dict[str, JsonValue]]) -> list[str]:
-    """Lay out the handed definitions as text, grouped under a heading per file.
-
-    Returns:
-        The lines: ``## <file>``, then per definition ``<id> line <n>: <definition>`` and one
-        indented line per candidate.
-
-    """
-    lines: list[str] = []
-    previous: JsonValue = None
-    for definition in definitions:
-        heading: list[str] = [] if definition["file"] == previous else [f"## {definition['file']}"]
-        previous = definition["file"]
-        candidates: list[str] = [
-            f"    may duplicate {candidate}" for candidate in check_type(definition["candidates"], list[str])
-        ]
-        lines.extend([
-            *heading,
-            f"{definition['id']} line {definition['line']}: {definition['definition']}",
-            *candidates,
-        ])
-    return lines
-
-
-def _chunks(lines: list[str]) -> list[str]:
-    """Split text lines into chunks no longer than :data:`CHUNK_CHARACTERS`.
-
-    A file heading opens a new chunk only when its file's lines do not fit, so a chunk may hold
-    the end of one file's definitions and the start of the next's.
-
-    Returns:
-        The chunks, each a newline-joined text.
-
-    """
-    chunks: list[list[str]] = [[]]
-    size: int = 0
-    for line in lines:
-        if chunks[-1] and size + len(line) + 1 > CHUNK_CHARACTERS:
-            chunks.append([])
-            size = 0
-        chunks[-1].append(line)
-        size += len(line) + 1
-    return ["\n".join(chunk) + "\n" for chunk in chunks if chunk]
-
-
-def _write_chunks(folder: Path, stem: str, lines: list[str]) -> list[Path]:
-    """Write text lines to as many files as keep each under :data:`CHUNK_CHARACTERS`.
-
-    Returns:
-        The files written, in order.
-
-    """
-    written: list[Path] = [folder / f"{stem}-{number}.txt" for number, _ in enumerate(_chunks(lines), start=1)]
-    for path, text in zip(written, _chunks(lines), strict=True):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-    return written
-
-
-def _reviewer_request(run: StepRun, handed: _Handed, settled: dict[str, JsonValue]) -> tuple[str, Path]:
-    """Write the definitions to rule on, and the behaviours they are matched to, to files the reviewer reads whole.
-
-    Args:
-        run: The ``build:reuse-audit`` step.
-        handed: The definitions and behaviours.
-        settled: What the check settled, kept in the record for ``build:reuse-ruled``: the
-            ``settled`` findings and the check's ``evidence``.
-
-    Returns:
-        The request, naming those files; and the record of what was handed, for ``build:reuse-ruled``.
-
-    """
-    folder: Path = run.context.work / "build" / str(run.step["id"])
-    definition_files: list[Path] = _write_chunks(folder, DEFINITIONS_STEM, _definition_lines(handed.definitions))
-    behaviour_lines: list[str] = [
-        f"{candidate}: {behaviour}" for candidate, behaviour in sorted(handed.behaviours.items())
-    ]
-    capability_files: list[Path] = _write_chunks(folder, CAPABILITIES_STEM, behaviour_lines)
-    record: Path = folder / HANDED_FILE
-    write_json(record, {**settled, "definitions": [*handed.definitions]})
-    named: str = ", ".join(str(path) for path in definition_files)
-    behaviours: str = ", ".join(str(path) for path in capability_files)
-    request: str = (
-        f"Rule on each of the {len(handed.definitions)} definitions the deterministic reuse check could not rule "
-        f"on, listed in {named}: each has an id (D1, D2, ...), its line in the file heading it (relative to the "
-        f"work tree) and the shared capability items it may duplicate, as <feature id>#<provides id>, with the "
-        f"words it shares with each. What each capability item provides is stated in {behaviours}. Read every "
-        "listed file whole. Return exactly one ruling per definition id: duplicate, naming as capability the "
-        "candidate it duplicates, or not-duplicate; with one sentence of reason"
-    )
-    return request, record
 
 
 def _physical(entry: Entry) -> bool:
@@ -382,14 +215,13 @@ def own_outputs(run: StepRun) -> list[str]:
 
 
 def audit(run: StepRun) -> Completion:
-    """Check the changed files against the Task's shared capabilities; start the reviewer only when needed.
+    """Check the changed files against the Task's shared capabilities and record the review.
 
     Args:
         run: The ``build:reuse-audit`` step.
 
     Returns:
-        The review the step recorded, or the reviewer's session and the step that merges its
-        rulings; then the consumer of the review.
+        The review the step recorded, approved with every finding a note; then the consumer of the review.
 
     """
     bead: dict[str, JsonValue] = json_object(run.context.args["bead"])
@@ -403,107 +235,9 @@ def audit(run: StepRun) -> Completion:
     contract: list[dict[str, JsonValue]] = []
     if ids:
         result, contract = _checked(run, ids)
-    if result is not None and result["judgment"]:
-        request: str
-        record: Path
-        settled: list[JsonValue] = [*contract, *_settled_findings(result)]
-        request, record = _reviewer_request(
-            run,
-            _handed(result["judgment"]),
-            {"settled": settled, "evidence": _check_evidence(result)},
-        )
-        started: Completion = reasoned(
-            run,
-            REVIEWER,
-            OutputContract(CONTRACTS / "build-reuse-rulings.schema.json", RULINGS),
-            request,
-            followups=(new_step(RULED_STAGE, "Merge the reviewer's rulings with what the check settled"), consumer),
-        )
-        return Completion(artifacts=(*started.artifacts, file_artifact(HANDED, record)), add=started.add)
     document: dict[str, JsonValue] = (
-        _review(
-            [*contract, *_settled_findings(result)],
-            f"{_check_evidence(result)}, no definition left for a reviewer to rule on",
-        )
+        _review([*contract, *_settled_findings(result)], _check_evidence(result))
         if result is not None
         else _review(contract, f"the Task states no matrix id the reuse check can use: {ids}")
     )
     return Completion(artifacts=_recorded(run, document), add=(StepGroup((consumer,)),))
-
-
-def _read_record(path: Path) -> dict[str, JsonValue]:
-    """Read the record of what was handed to the reviewer.
-
-    Returns:
-        Its object.
-
-    """
-    return json_object(json.loads(path.read_text(encoding="utf-8")))
-
-
-def _ruled_finding(definition: dict[str, JsonValue], ruling: dict[str, JsonValue]) -> dict[str, JsonValue]:
-    """Turn a duplicate ruling into a note.
-
-    Returns:
-        The note, at the definition's file and line.
-
-    """
-    capability: JsonValue = ruling.get("capability") or ", ".join(check_type(definition["candidates"], list[str]))
-    return {
-        "severity": "note",
-        "file": definition["file"],
-        "line": definition["line"],
-        "detail": (
-            f"{definition['file']}:{definition['line']} duplicates {capability}: {definition['definition']} "
-            f"({ruling['reason']})"
-        ),
-    }
-
-
-def ruled(run: StepRun) -> Completion:
-    """Merge the reviewer's rulings with what the check settled into the review.
-
-    Args:
-        run: The ``build:reuse-ruled`` step.
-
-    Returns:
-        The review: the settled notes, then a note per definition ruled a duplicate.
-
-    Raises:
-        StepError: The reviewer returned no ruling on a handed definition.
-
-    """
-    handed: dict[str, JsonValue] = _read_record(artifact_file(run, HANDED))
-    definitions: list[dict[str, JsonValue]] = [
-        json_object(definition) for definition in check_type(handed["definitions"], list[JsonValue])
-    ]
-    rulings: dict[str, dict[str, JsonValue]] = {
-        check_type(ruling["definition"], str): ruling
-        for ruling in (
-            json_object(ruling) for ruling in check_type(artifact_document(run, RULINGS)["rulings"], list[JsonValue])
-        )
-    }
-    unruled: list[dict[str, JsonValue]] = [
-        definition for definition in definitions if check_type(definition["id"], str) not in rulings
-    ]
-    if unruled:
-        named: str = "; ".join(
-            f"{definition['id']} {definition['file']}:{definition['line']}" for definition in unruled[:LISTED_UNRULED]
-        )
-        raise StepError(
-            RULED_STAGE,
-            OTHER_CAUSE,
-            (f"{REVIEWER} returned no ruling on {len(unruled)} definition(s): {named}",),
-        )
-    duplicates: list[dict[str, JsonValue]] = [
-        _ruled_finding(definition, rulings[check_type(definition["id"], str)])
-        for definition in definitions
-        if rulings[check_type(definition["id"], str)]["ruling"] == DUPLICATE
-    ]
-    settled: list[dict[str, JsonValue]] = [
-        json_object(finding) for finding in check_type(handed["settled"], list[JsonValue])
-    ]
-    evidence: str = (
-        f"{handed['evidence']}; {REVIEWER} ruled {len(definitions)} definition(s), {len(duplicates)} duplicate(s)"
-    )
-    return Completion(artifacts=_recorded(run, _review([*settled, *duplicates], evidence)))

@@ -569,8 +569,7 @@ def _reuse(run: StepRun) -> Completion:
     """Review use of shared capabilities instead of duplicating their implementation.
 
     Returns:
-        The reuse check's recorded review or the reviewer's session for what it cannot rule on
-        (:func:`build_reuse.audit`), or the policy's recorded omission.
+        The reuse check's recorded review (:func:`build_reuse.audit`), or the policy's recorded omission.
 
     """
     decision: build_policy.Decision = build_policy.decide(run, "reuse-audit")
@@ -766,7 +765,6 @@ def attach_reviews(registry: Registry) -> None:
         "build:regression-verify": _validate_final,
         "build:regression-tests": _regression_tests,
         "build:reuse-audit": _reuse,
-        "build:reuse-ruled": build_reuse.ruled,
         "build:cds-audit": _cds,
         "build:design-source": _design,
         "build:infra-intent": _infrastructure,

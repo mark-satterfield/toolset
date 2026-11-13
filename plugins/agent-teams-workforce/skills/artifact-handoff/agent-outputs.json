@@ -524,23 +524,6 @@
       ]
     },
     {
-      "output": "build reuse rulings",
-      "agents": [
-        "shared-capability-reviewer"
-      ],
-      "schema": "skills/pipeline-contracts/schemas/build-reuse-rulings.schema.json",
-      "named": "schema",
-      "pointer": "brief",
-      "code": "orchestrator/flows/build_sessions.py",
-      "anchors": [
-        "params[\"schema\"]",
-        "validate=schema"
-      ],
-      "launches": [
-        "_launch"
-      ]
-    },
-    {
       "output": "build suite review",
       "agents": [
         "acceptance-criteria-coverage-assessor"

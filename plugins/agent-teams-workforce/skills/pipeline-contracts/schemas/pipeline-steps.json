@@ -292,25 +292,13 @@
           "runBy": "task-to-deploy",
           "reads": ["worktree", "implementers", "reuseReview", "executionPolicy"],
           "records": [
-            {"name": "reuseReview", "kind": "file", "holds": "The reuseReview under build-review.schema.json, recorded with its approved, findings and evidence values when the check-reuse result leaves no definition to rule on: every finding a note (the check's unused and duplicate items, the stated ids the matrix does not hold, and each relied-on behaviour with no use signal), so the review is approved"},
-            {"name": "reuseHanded", "kind": "file", "holds": "When definitions are left to rule on: the record build:reuse-ruled reads, with each distinct definition handed to the shared-capability-reviewer (id, file, line, definition text, candidate capability items), the findings the check settled and the check's evidence. The reviewer is handed the definitions and the candidates' behaviours in text files of at most 40000 characters each"},
+            {"name": "reuseReview", "kind": "file", "holds": "The reuseReview under build-review.schema.json, recorded by script on every run with its approved, findings and evidence values; the step starts no agent. Every finding is a note (the check's unused and duplicate items, each candidate match of a new definition with a provided behaviour, the stated ids the matrix does not hold, and each relied-on behaviour with no use signal), so the review is approved; the evidence counts the files read, the capabilities checked, the divergence and the candidate matches"},
             {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
           ],
           "adds": [
-            {"kinds": ["build:reuse-ruled", "build:audit-reviewed"], "when": "when the check leaves definitions to rule on: under the shared-capability-reviewer's session (reuseRulings under build-reuse-rulings.schema.json), then build:audit-reviewed passing review=reuseReview and again=build:reuse-audit"},
             {"kinds": ["build:audit-reviewed"], "when": "after the step records reuseReview itself, passing review=reuseReview and again=build:reuse-audit, unless the accepted execution policy omits the stage"}
           ],
           "limit": "The audit consumer adds no correction for this review: all of its findings are notes"
-        },
-        "build:reuse-ruled": {
-          "description": "Merge the reviewer's rulings with what the check settled",
-          "purpose": "The findings the deterministic check settled reach the review by script, and every handed definition has a ruling",
-          "runBy": "task-to-deploy",
-          "reads": ["reuseHanded", "reuseRulings"],
-          "records": [
-            {"name": "reuseReview", "kind": "file", "holds": "The reuseReview under build-review.schema.json, recorded with its approved, findings and evidence values: the notes the check settled, then a note for each definition the reviewer ruled a duplicate, so the review is approved. The step fails with 'shared-capability-reviewer returned no ruling on N definition(s)' when a handed definition has no ruling"}
-          ],
-          "adds": []
         },
         "build:refactor-snapshot": {
           "description": "Record the work tree as it is before the refactor",

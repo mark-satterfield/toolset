@@ -1,6 +1,6 @@
 # Inside the Agentic SDLC Workforce
 
-220 agents. Five task categories. Two pipelines, one upstream creation phase, one cross-cutting documentation team, and a governance tier that no one outranks. This is a complete software delivery lifecycle staffed entirely by bounded specialist agents — and the central design bet is that none of them is trusted very much.
+219 agents. Five task categories. Two pipelines, one upstream creation phase, one cross-cutting documentation team, and a governance tier that no one outranks. This is a complete software delivery lifecycle staffed entirely by bounded specialist agents — and the central design bet is that none of them is trusted very much.
 
 The doctrine behind the system is simple to state: the agent is not the unit of trust; the workflow is. Every agent has a narrow purpose, explicit decision boundaries, least-privilege tools, and exactly one task category — *plan*, *orchestrate*, *execute*, *approve*, or *test*. An agent that plans never decides. An agent that builds never approves its own output. An agent that finds a flaw never fixes it. Work moves between agents through explicit artifacts. Where a composite gates a phase, the gate has three possible outcomes: pass, loop with structured feedback, or escalate upstream.
 
@@ -755,14 +755,13 @@ The Story's Python driver publishes, synthesizes, deploys and verifies directly.
 
 ### Workflow Helpers — Standalone Specialists
 
-Specialists for genuine configuration, design-system and shared-capability judgment. 4 agents.
+Specialists for genuine configuration and design-system judgment. 3 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
 | `test-command-resolver` | Specialist | Advisor |
 | `cds-live-auditor` | Specialist | Validator |
 | `cds-finding-reviewer` | Specialist | Validator |
-| `shared-capability-reviewer` | Specialist | Validator |
 
 ### Standalone — Standalone Specialists
 
@@ -996,7 +995,6 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `test-command-resolver` | Workflow Helpers | Standalone Specialists | Specialist | Advisor | execute | Finds the command a repository itself declares for running its whole test suite — from its AGENTS.md or CLAUDE.md, else the test task of its Taskfile — and returns it exactly as declared, or a resolution error naming the files read. Runs nothing and changes nothing. | subagent-contract | Read, Glob, Grep, Agent |
 | `cds-live-auditor` | Workflow Helpers | Standalone Specialists | Specialist | Validator | test | Audits the UI files a Task changed against the live Configurable Design System (cds) when no mockup or cds bundle was supplied, and rules each finding. | subagent-contract, validation-protocol, cds:apply-design-system, cds:audit-against-system, graphrag-lookup | Read, Glob, Grep, Bash, Write, Agent |
 | `cds-finding-reviewer` | Workflow Helpers | Standalone Specialists | Specialist | Validator | test | Rules on the findings a deterministic cds audit of a Task's changed UI could not rule on - each class name the supplied cds bundle's stylesheets do not name - as a violation, allowed, or a cds gap, against the bundle and the configured design system; changes no file. | subagent-contract, validation-protocol, cds:apply-design-system, cds:audit-against-system, graphrag-lookup | Read, Glob, Grep, Bash, Agent |
-| `shared-capability-reviewer` | Workflow Helpers | Standalone Specialists | Specialist | Validator | test | Rules, for each definition a deterministic reuse check could not rule on, whether a function a Task added duplicates a behaviour a shared capability (a shared library, layer, chassis or service) provides to its consumers — duplicate or not-duplicate, with one sentence of reason. Reads only the named function and the provides entry; writes only its result file. | subagent-contract, python-lambda-packaging | Read, Grep, Write, Agent |
 | `polyrepo-steward` | Standalone | Standalone Specialists | Specialist | Executor | execute | The fleet's caretaker and the place to ask about this project's repositories. It learns about the fleet as it answers, and keeps what it learns for the next question. Ask it first whenever your work involves more than one repository. It also carries out the routine management of the fleet and keeps its records true to the fleet. That management can write into a repository, but the steward never authors or edits a repository's content. It owns the repository templates, the shared master copies and its own tool: it keeps them current and says when they need to change. The specialist agents built for that work write the changes. | subagent-contract, graphrag-lookup, polyrepo-repo, polyrepo-info, polyrepo-governance, polyrepo-beads, matrix | Bash, Read, Write, Edit, Glob, Grep, Agent |
 
 ## References

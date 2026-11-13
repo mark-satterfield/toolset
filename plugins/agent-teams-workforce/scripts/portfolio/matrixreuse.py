@@ -5,7 +5,7 @@ audit. It is handed the ids a Task states and the worktree the Task changed. The
 guess, so what it reports is divergence between that guess and the code, never a requirement the
 code must meet: a relied-on shared capability nothing references (``unused``), a line that does
 itself what a shared capability provides (``duplicate``), and a new definition whose name reads
-like a provided behaviour, for a reviewer to rule on (``judgment``). Every item is a text match
+like a provided behaviour, a candidate match (``judgment``). Every item is a text match
 against the signals each ``provides`` item of a capability carries; nothing here judges, and
 nothing here changes the matrix (``matrixfollow.follow_code`` corrects it from the code).
 
@@ -20,7 +20,7 @@ supported by belongs to those other realizers.
 Only source files are read, for the violations and the judgment alike: a file whose suffix is in
 ``SOURCE_SUFFIXES``, outside the pipeline's own folder ``PIPELINE_FOLDER``. The test reports a
 build writes there quote test definitions, and no report, log or other non-source file is product
-code. A ``judgment`` item is put to a reviewer only for a product definition: a file of the repository's
+code. A ``judgment`` item is found only for a product definition: a file of the repository's
 test layout (under a ``testpaths`` entry of its ``pyproject.toml``, or ``tests``, ``test`` or
 ``__tests__`` when it states none, or named as a test file) is not read for definitions. The words
 a definition's name shares with a provided behaviour count only when they are not in
@@ -64,7 +64,7 @@ REUSE_DUPLICATE: Final[ReuseFinding] = "duplicate"
 REUSE_JUDGMENT: Final[ReuseFinding] = "judgment"
 ATTR_PROVIDES: Final = "provides"
 MIN_SHARED_WORDS: Final = 2
-"""How many words of a provided behaviour outside ``STOP_WORDS`` a definition's name must share to reach a reviewer."""
+"""The fewest words of a provided behaviour outside ``STOP_WORDS`` a definition name shares in a candidate match."""
 STOP_WORDS: Final[frozenset[str]] = frozenset({
     # English function words that occur in provided behaviours and in definition names.
     "about",
@@ -670,8 +670,7 @@ def _judgment(
 
     Returns:
         One item per definition and ``provides`` item that share at least ``MIN_SHARED_WORDS`` words
-        outside ``STOP_WORDS``, for a reviewer to be asked whether the definition duplicates the
-        behaviour.
+        outside ``STOP_WORDS``: a candidate match, recorded by the build's reuse audit as a note.
 
     """
     behaviours: list[tuple[EntryId, Provided, set[str]]] = [
@@ -729,7 +728,7 @@ def check_reuse(
 
     Returns:
         The divergence (a relied-on capability nothing references, a line that duplicates one), the
-        product definitions for a reviewer to rule on, and what could not be checked.
+        candidate matches of a product definition with a provided behaviour, and what could not be checked.
 
     Raises:
         ValueError: No id is given.
