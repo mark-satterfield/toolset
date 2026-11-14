@@ -366,8 +366,11 @@ Epic's unbuilt work) does not bind the Task: a mapped test of it that does not p
 `regressionUnmet` (requirement, test and outcome) and as a carried contract finding for the Epic
 that owns it, and a failing test no requirement maps as `regressionUnmappedFailing`; the build
 continues. A verification that passes writes the ledger with every pair proven before and every
-mapped test that passed in it, so what a Task builds binds every later Task. Repository hooks run normally at commit. A rejected hook, remaining product changes, or modified preserved tooling after the hook
-is a recorded work failure, never a reason to bypass hooks.
+mapped test that passed in it, so what a Task builds binds every later Task. Repository hooks run normally at commit. When the hooks reject a checkpoint commit (`build:commit` or
+`build:refactor-snapshot`), the step records `commitHookRejection` (the failing hook ids and their trimmed
+output), hands it once to `build:correct-findings` and commits again; a second rejection of that step, remaining
+product changes, or modified preserved tooling after the hook is a recorded work failure whose message names the
+failing hooks and their output, never a reason to bypass hooks.
 
 Story checkpoints commit explicit product paths only. Instruction files, `.claude/`, and canonical
 code-check configuration are Tier 2, including checker-owned sections of mixed configuration

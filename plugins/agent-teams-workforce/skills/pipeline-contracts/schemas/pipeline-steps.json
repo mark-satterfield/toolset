@@ -307,9 +307,12 @@
           "reads": ["worktree", "codeReview", "codeReviewTree", "executionPolicy"],
           "records": [
             {"name": "refactorSnapshot", "kind": "value", "holds": "the git tree id of the work tree before the refactor, a string"},
-            {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
+            {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"},
+            {"name": "commitHookRejection", "kind": "value", "holds": "When the repository's commit hooks rejected the step's commit: hooks (the failing hook ids), output (their trimmed output) and evidence (the command evidence file)"}
           ],
-          "adds": []
+          "adds": [
+            {"kinds": ["build:correct-findings", "build:refactor-snapshot"], "when": "the repository's commit hooks rejected the checkpoint commit and this step's commit was not corrected before; a second rejection fails the Task"}
+          ]
         },
         "build:refactor": {
           "description": "Refactor the code the implementers changed",
@@ -470,10 +473,12 @@
           "reads": ["worktree", "branch", "defaultBranch", "suiteCommand", "finalRun"],
           "records": [
             {"name": "commit", "kind": "value", "holds": "the head of the Story's branch after the commit, a string"},
-            {"name": "executionSummary", "kind": "value", "holds": "Model sessions by agent, correction steps by kind and every recorded stage decision of the Task"}
+            {"name": "executionSummary", "kind": "value", "holds": "Model sessions by agent, correction steps by kind and every recorded stage decision of the Task"},
+            {"name": "commitHookRejection", "kind": "value", "holds": "When the repository's commit hooks rejected the step's commit: hooks (the failing hook ids), output (their trimmed output) and evidence (the command evidence file)"}
           ],
           "adds": [
-            {"kinds": ["build:matrix-follow"], "when": "always, after the commit, so the matrix follows the committed code"}
+            {"kinds": ["build:matrix-follow"], "when": "after a successful commit, so the matrix follows the committed code"},
+            {"kinds": ["build:correct-findings", "build:commit"], "when": "the repository's commit hooks rejected the commit and this step's commit was not corrected before; a second rejection fails the Task"}
           ]
         },
         "build:matrix-follow": {

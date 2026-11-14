@@ -33,6 +33,70 @@ GIT_OPERATION_SECONDS: Final = 120.0
 GIT_OPERATION_MARGIN_SECONDS: Final = 20.0
 RUN_OUTPUT: Final = Path(".agent-workforce") / "reports"
 """Transient test reports; the regression runner archives and deletes its own, and none is committed."""
+CHECKPOINT_STAGE: Final = "build:commit"
+HOOK_ID: Final = re.compile(r"^- hook id: (\S+)\s*$", re.MULTILINE)
+HOOK_STATUS: Final = re.compile(r"\.{3,}(?:\(no files to check\))?(Passed|Failed|Skipped)\s*$")
+HOOK_REPORT_LINES: Final = 40
+HOOK_REPORT_LINE_CHARS: Final = 300
+
+
+class HookRejectionError(StepError):
+    """The repository's commit hooks rejected a checkpoint commit.
+
+    The message names the failing hooks and carries their trimmed output, so the failure says
+    what to fix instead of only where the evidence is.
+    """
+
+    def __init__(self, hooks: tuple[str, ...], report: str, evidence: str) -> None:
+        """Attach the failing hook ids, their output and the command evidence path."""
+        summary: str = f"commit hooks rejected the commit: {', '.join(hooks)}"
+        super().__init__(CHECKPOINT_STAGE, OTHER_CAUSE, (summary, report, evidence))
+        self.hooks = hooks
+        self.report = report
+
+
+def _hook_report(output: str) -> str:
+    """Keep the output lines of the hooks that failed, from each failed status line to the next status line.
+
+    Args:
+        output: The commit command's combined output.
+
+    Returns:
+        At most HOOK_REPORT_LINES non-blank lines, each cut to HOOK_REPORT_LINE_CHARS.
+
+    """
+    kept: list[str] = []
+    inside: bool = False
+    for line in output.splitlines():
+        status: re.Match[str] | None = HOOK_STATUS.search(line)
+        inside = status.group(1) == "Failed" if status is not None else inside
+        kept.extend([line.strip()[:HOOK_REPORT_LINE_CHARS]] if inside and line.strip() else [])
+    return "\n".join(kept[:HOOK_REPORT_LINES])
+
+
+def hook_rejection(error: StepError) -> tuple[tuple[str, ...], str, str] | None:
+    """Read a failed commit's evidence and recognize a rejection by the repository's hooks.
+
+    Args:
+        error: The failure the commit command raised; its last evidence item is the command evidence file.
+
+    Returns:
+        The failing hook ids, their trimmed output and the evidence path, or None when the evidence
+        shows no failed hook.
+
+    """
+    if not error.evidence:
+        return None
+    evidence: Path = Path(error.evidence[-1])
+    try:
+        recorded: dict[str, JsonValue] = json_object(json.loads(evidence.read_text(encoding="utf-8")))
+    except OSError, ValueError, TypeError:
+        return None
+    output: str = f"{recorded.get('stdout') or ''}\n{recorded.get('stderr') or ''}"
+    hooks: tuple[str, ...] = tuple(dict.fromkeys(HOOK_ID.findall(output)))
+    if not hooks:
+        return None
+    return hooks, _hook_report(output), str(evidence)
 
 
 @dataclass(frozen=True, slots=True)
@@ -496,6 +560,30 @@ def _preserved_state(tools: Tools, tree: Path, paths: tuple[str, ...]) -> str:
     return digest.hexdigest()
 
 
+def _commit_product(tools: Tools, tree: Path, message: str, product: Sequence[str]) -> None:
+    """Commit exactly the product paths through the repository's hooks.
+
+    Args:
+        tools: The dispatch's command boundary.
+        tree: The Story worktree.
+        message: Task-specific commit message.
+        product: The product paths to commit.
+
+    Raises:
+        HookRejectionError: The repository's hooks rejected the commit.
+        StepError: Git failed the commit for another reason.
+
+    """
+    pathspecs: list[str] = [f":(literal){path}" for path in product]
+    try:
+        tools.git(tree, ["commit", "--only", "-m", message, "--", *pathspecs], stage=CHECKPOINT_STAGE)
+    except StepError as error:
+        rejection: tuple[tuple[str, ...], str, str] | None = hook_rejection(error)
+        if rejection is None:
+            raise
+        raise HookRejectionError(*rejection) from error
+
+
 def checkpoint(tools: Tools, workspace: Workspace, message: str) -> str:
     """Commit product paths through normal hooks while preserving unrelated tooling edits.
 
@@ -509,7 +597,8 @@ def checkpoint(tools: Tools, workspace: Workspace, message: str) -> str:
 
     Raises:
         TypeError: Arguments have invalid types.
-        StepError: Git or the repository's hooks reject the commit.
+        StepError: Git or the repository's hooks reject the commit; a hook rejection is a
+            HookRejectionError naming the failing hooks and their output.
         PipelineDefectError: Mixed ownership needs a separate tooling delivery operation.
 
     """
@@ -538,8 +627,7 @@ def checkpoint(tools: Tools, workspace: Workspace, message: str) -> str:
     if additions:
         tools.git(workspace.tree, ["add", "--", *additions], stage="build:commit")
     if product:
-        pathspecs: list[str] = [f":(literal){path}" for path in product]
-        tools.git(workspace.tree, ["commit", "--only", "-m", message, "--", *pathspecs], stage="build:commit")
+        _commit_product(tools, workspace.tree, message, product)
     after: dict[str, JsonValue] = git_operation(tools, "build:commit", ["facts", "--path", str(workspace.tree)])
     remaining: tuple[str, ...] = _changed_paths(tools, workspace.tree)
     unchanged: bool = _preserved_state(tools, workspace.tree, preserved) == fingerprint
