@@ -358,6 +358,14 @@ Notes on the diagram:
   sent to the architecture stage, where `architecture-maintainer` corrects the document (it goes
   `in-review`, then `effective` when approved) and the matrix, because architecture has one
   approver. A fix that would change the design (section 4) takes the same path.
+- When the correction rounds are spent and the review still has findings, the deploy does not
+  stop: the latest correction stands, the reviewed documents are promoted, the remaining findings
+  (review findings and changed files the review did not cover) and the built views they leave
+  unmatched are carried in `built-version-carried.json` in the Story's built-version artifact
+  folder and in the step's `carriedFindings` value, the dashboard shows their count and that
+  file, and the deploy goes on to the pull request. A write outside the Story's bounds, a change
+  to section 2 or a promotion the architecture tool refuses for another reason still fails the
+  Story.
 - The comparison runs after the deployment works and before the pull request, so the record
   describes what was deployed and works.
 - The comparer's subject in its own file is "Compare the code one Story built with the approved

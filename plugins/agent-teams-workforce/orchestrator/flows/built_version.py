@@ -17,7 +17,7 @@ from typeguard import check_type
 
 from orchestrator.core import step_journal, tool_locks
 from orchestrator.core.handback_contract import OTHER_CAUSE
-from orchestrator.core.io import JsonValue, json_object
+from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import Registry
 from orchestrator.core.journal_steps import Completion, NewStep, StepGroup, StepRun, file_artifact, value_artifact
 from orchestrator.core.models import RunContext, StepError
@@ -68,6 +68,18 @@ MIRRORED_PARTS: Final = 3
 
 MEASURED_KEYS: Final = ("created", "changed", "deleted")
 """The kinds of measured difference an architecture snapshot reports."""
+
+CARRIED_FINDINGS: Final = "carriedFindings"
+"""The value artifact holding the review findings still open when the correction rounds are spent."""
+
+CARRIED_FILE: Final = "carriedFindingsFile"
+"""The file artifact naming the JSON document that records the carried findings."""
+
+RETAINED_VIEWS: Final = "retainedBuiltViews"
+"""The value artifact naming built views kept because the carried findings leave them unmatched."""
+
+CARRIED_NAME: Final = "built-version-carried.json"
+"""The file name, in the Story's built-version artifact folder, of the carried findings record."""
 
 
 def _args(run: StepRun) -> dict[str, JsonValue]:
@@ -485,14 +497,59 @@ def _review(run: StepRun) -> Completion:
     )
 
 
+def _approval() -> tuple[StepGroup, ...]:
+    """Plan the promotion of the reviewed correction and the removal of matched built views.
+
+    Returns:
+        The approve and remove steps as one group.
+
+    """
+    return (StepGroup((addition("deploy:built-approve"), addition("deploy:built-remove"))),)
+
+
+def _corrections(run: StepRun) -> int:
+    """Count the correction passes the Story's built-version step has planned.
+
+    Returns:
+        The number of ``deploy:built-correct`` steps under the dispatched step.
+
+    """
+    reference = json_object(_args(run)["journal"])
+    parent = step_journal.find_step(run.journal(), StepId(check_type(reference["step"], str)))
+    return sum(step.get("script") == "deploy:built-correct" for step in step_journal.steps_in_order_from(parent))
+
+
+def _carry(run: StepRun, findings: list[dict[str, JsonValue]], retained: list[str]) -> Path:
+    """Write the record of the findings and built views the Story carries to its pull request.
+
+    Returns:
+        The record's path in the Story's built-version artifact folder.
+
+    """
+    path = run.context.work / "built-version" / CARRIED_NAME
+    write_json(path, {"story": run.context.bead, CARRIED_FINDINGS: findings, RETAINED_VIEWS: retained})
+    return path
+
+
+def _carried(run: StepRun) -> list[dict[str, JsonValue]]:
+    """Read the findings the review carried when its correction rounds were spent.
+
+    Returns:
+        The carried findings; empty when the review approved the correction.
+
+    """
+    return check_type(latest(run, CARRIED_FINDINGS) or [], list[dict[str, JsonValue]])
+
+
 def _accept_review(run: StepRun) -> Completion:
-    """Reject omitted review coverage and bound repeated correction passes.
+    """Reject omitted review coverage, bound repeated correction passes and carry what is left.
+
+    When the correction rounds are spent and findings remain, the latest correction stands: the
+    findings are carried, as a value and a file, and the approval steps follow as for a
+    conforming review.
 
     Returns:
         Review artifact and the next correction or approval steps.
-
-    Raises:
-        StepError: The configured correction limit is exhausted.
 
     """
     _guard(run)
@@ -511,16 +568,17 @@ def _accept_review(run: StepRun) -> Completion:
         "matchedBuiltViews": _strings(latest(run, "matchedBuiltViews")),
     })
     if conformance["conforms"] is True:
+        return Completion(artifacts=(value_artifact("conformance", conformance),), add=_approval())
+    if _corrections(run) > built_rounds():
+        carried: list[dict[str, JsonValue]] = list(findings)
         return Completion(
-            artifacts=(value_artifact("conformance", conformance),),
-            add=(StepGroup((addition("deploy:built-approve"), addition("deploy:built-remove"))),),
+            artifacts=(
+                value_artifact("conformance", conformance),
+                value_artifact(CARRIED_FINDINGS, list(carried)),
+                file_artifact(CARRIED_FILE, _carry(run, carried, [])),
+            ),
+            add=_approval(),
         )
-    reference = json_object(_args(run)["journal"])
-    parent = step_journal.find_step(run.journal(), StepId(check_type(reference["step"], str)))
-    corrections = sum(step.get("script") == "deploy:built-correct" for step in step_journal.steps_in_order_from(parent))
-    if corrections > built_rounds():
-        msg = "correct"
-        raise StepError(msg, OTHER_CAUSE, (f"architecture correction still fails review: {findings}",))
     return Completion(
         artifacts=(value_artifact("conformance", conformance),),
         add=(
@@ -535,11 +593,14 @@ def _accept_review(run: StepRun) -> Completion:
 def _approve(run: StepRun) -> Completion:
     """Promote only independently reviewed effective architecture files.
 
+    A file the review did not cover is left unpromoted without failing when the review carried
+    it as a finding.
+
     Returns:
         The actual architecture promotion result.
 
     Raises:
-        StepError: Promotion refuses an unreviewed or invalid file.
+        StepError: Promotion refuses an invalid file or an unreviewed file that is not carried.
 
     """
     _guard(run)
@@ -560,7 +621,9 @@ def _approve(run: StepRun) -> Completion:
             ",".join(_strings(review.get("reviewedFiles"))),
         ],
     )
-    if result.get("unreviewed") or result.get("refused") or result.get("failed"):
+    carried = {str(Path(check_type(row.get("file"), str)).resolve()) for row in _carried(run)}
+    uncarried = [path for path in _strings(result.get("unreviewed")) if path not in carried]
+    if uncarried or result.get("refused") or result.get("failed"):
         msg = "approve"
         raise StepError(msg, OTHER_CAUSE, (f"architecture promotion refused: {result}",))
     return Completion(artifacts=(value_artifact("approval", json_object(result["summary"])),))
@@ -569,11 +632,14 @@ def _approve(run: StepRun) -> Completion:
 def _remove(run: StepRun) -> Completion:
     """Remove a built view only when both maintainer and reviewer say it now matches.
 
+    When the review carried findings, the built views left unmatched are kept and carried with
+    them instead of failing the Story.
+
     Returns:
-        The removed built view paths.
+        The removed built view paths, and any retained views with their carried record.
 
     Raises:
-        StepError: Any built view remains unmatched.
+        StepError: A built view remains unmatched and the review carried no findings.
 
     """
     built = _strings(latest(run, "builtFiles"))
@@ -593,11 +659,18 @@ def _remove(run: StepRun) -> Completion:
                 f"docs(architecture): remove matched built views of Story {run.context.bead}",
             ],
         )
-    unmatched = set(built) - set(removable)
-    if unmatched:
+    unmatched = sorted(set(built) - set(removable))
+    carried = _carried(run)
+    if unmatched and not carried:
         msg = "correct"
-        raise StepError(msg, OTHER_CAUSE, (f"unmatched built views retained: {sorted(unmatched)}",))
-    return Completion(artifacts=(value_artifact("removedBuiltViews", list(removable)),))
+        raise StepError(msg, OTHER_CAUSE, (f"unmatched built views retained: {unmatched}",))
+    removed = value_artifact("removedBuiltViews", list(removable))
+    if not unmatched:
+        return Completion(artifacts=(removed,))
+    record = _carry(run, carried, unmatched)
+    return Completion(
+        artifacts=(removed, value_artifact(RETAINED_VIEWS, list(unmatched)), file_artifact(CARRIED_FILE, record)),
+    )
 
 
 def run(context: RunContext) -> dict[str, JsonValue]:
@@ -635,6 +708,9 @@ def run(context: RunContext) -> dict[str, JsonValue]:
             "conformance",
             "approval",
             "removedBuiltViews",
+            CARRIED_FINDINGS,
+            CARRIED_FILE,
+            RETAINED_VIEWS,
         ),
     )
     if "removedBuiltViews" in results:
@@ -642,6 +718,20 @@ def run(context: RunContext) -> dict[str, JsonValue]:
     return handback(
         context,
         "recorded" if results.get("builtFiles") else "matches",
-        f"Story {context.bead}: built architecture compared and reconciled",
+        _headline(context.bead, results),
         **results,
     )
+
+
+def _headline(bead: str, results: dict[str, JsonValue]) -> str:
+    """Say how the Story's architecture reconciliation ended, naming any carried findings.
+
+    Returns:
+        The handback headline.
+
+    """
+    headline = f"Story {bead}: built architecture compared and reconciled"
+    carried = check_type(results.get(CARRIED_FINDINGS) or [], list[JsonValue])
+    if not carried:
+        return headline
+    return f"{headline}; {len(carried)} review findings carried to the pull request in {results.get(CARRIED_FILE)}"
