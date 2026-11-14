@@ -16,7 +16,7 @@ type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValu
 type JsonObject = dict[str, JsonValue]
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "e0e048843ce6e21ac90268f20391b96da7d5698836696c73bb4e268e717c572c"
+SCHEMA_SHA256: Final[str] = "2a595584ae4c00d07af6cac37c3de214c15834a754ef00b6d00af5ad9ab2e687"
 
 #: The literal a producer writes for an undecided -or-unknown contract value; read as None.
 UNKNOWN: Final[str] = "unknown"
@@ -229,6 +229,11 @@ KEY_STORY_OWNED_BLOCKERS: Final[str] = "story_owned_blockers"
 KEY_STORY_OWNED_BLOCKERS_AT: Final[str] = "story_owned_blockers_at"
 #: Keyed by blocker id.
 KEY_STORY_EDGE_REASONS: Final[str] = "story_edge_reasons"
+#: The build_prerequisites producer rows depscore.py replace-tasks took off other open Tasks because they named a
+#: Task of this Story it deleted: each {consumer, row, buildsEntries}, buildsEntries the deleted Task's
+#: builds_entries. The Story's next retire-superseded step points each row at the written Tasks that build one of
+#: those entries, drops a row none builds, and removes the key.
+KEY_STORY_REPLACED_PREREQUISITES: Final[str] = "story_replaced_prerequisites"
 KEY_WSJF: Final[str] = "wsjf"
 KEY_WSJF_CALCULATED_AT: Final[str] = "wsjf_calculated_at"
 KEY_WSJF_RUBRIC: Final[str] = "wsjf_rubric"
@@ -511,6 +516,7 @@ STORY_KEYS: Final[tuple[str, ...]] = (
     KEY_STORY_OWNED_BLOCKERS,
     KEY_STORY_OWNED_BLOCKERS_AT,
     KEY_STORY_EDGE_REASONS,
+    KEY_STORY_REPLACED_PREREQUISITES,
 )
 #: Keys WSJF scoring writes; numeric values are stored as text.
 WSJF_KEYS: Final[tuple[str, ...]] = (
@@ -615,6 +621,7 @@ class BeadMetadata(TypedDict, total=False):
     story_owned_blockers: str
     story_owned_blockers_at: str
     story_edge_reasons: str
+    story_replaced_prerequisites: str
     wsjf: str
     wsjf_calculated_at: str
     wsjf_rubric: str

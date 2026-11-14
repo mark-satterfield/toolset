@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import NotRequired, TypedDict
 
 import portfolio_path  # ruff: ignore[unused-import] - Puts the artifact-handoff contract scripts on sys.path.
-from contracts import DeltaItem, JsonObject
+from contracts import DeltaItem, JsonObject, JsonValue
 from recon_contract import ArtifactKind, DesignSource
 
 
@@ -251,11 +251,24 @@ class ReplacedTask(TypedDict):
     requirementIds: NotRequired[list[str]]
 
 
+class OrphanedPrerequisite(TypedDict):
+    """A ``build_prerequisites`` producer row replace-tasks took off an open Task because it named a deleted Task.
+
+    The Story of the deleted Task holds the row until its Tasks are written again; ``buildsEntries`` is the
+    deleted Task's ``builds_entries``, which name the written Tasks the row then points at.
+    """
+
+    consumer: str
+    row: dict[str, JsonValue]
+    buildsEntries: list[str]
+
+
 class ReplacementSummary(TypedDict):
     """Describe the replacement summary wire record."""
 
     deleted: int
     kept: int
+    orphanedPrerequisites: int
 
 
 class TaskReplacement(TypedDict):
@@ -265,6 +278,7 @@ class TaskReplacement(TypedDict):
     story: str | None
     deleted: list[ReplacedTask]
     kept: list[ReplacedTask]
+    orphanedPrerequisites: list[OrphanedPrerequisite]
     reason: str
     dryRun: bool
     planned: list[PlannedWrite]

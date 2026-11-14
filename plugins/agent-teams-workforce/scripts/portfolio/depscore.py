@@ -55,7 +55,8 @@
     add-tasks            merge a corrective pass into a Story's saved Tasks and detailing;
                          no `bd` call
     replace-tasks        delete a Story's unstarted Task beads before its Tasks are
-                         decomposed again (an input upstream of them changed)
+                         decomposed again (an input upstream of them changed); the
+                         producer rows naming them are held on the Story until then
     write-task           write ONE Task of a Story and its edges to the Story's Tasks
     plan-task-edges      the saved Task edges between an Epic's Stories, checked; no `bd` call
     write-all-task-edges write every Task's edges to Tasks in the Epic's other Stories

@@ -1268,7 +1268,11 @@ elaboration is done.
   `build_prerequisites` producer row of an open Task that names it is then pointed at every
   written Task of the Story whose `builds_entries` share a matrix entry with its `builds_entries`;
   a row with no such Task is removed, and a declaration left with no row is removed, so no row
-  names a deleted Task or a later Task that reuses its id.
+  names a deleted Task or a later Task that reuses its id. `depscore.py replace-tasks`, which
+  deletes a Story's unstarted Tasks before they are written again, takes each such row off its
+  consumer and holds it on the Story (`story_replaced_prerequisites`) with the deleted Task's
+  `builds_entries`; the Story's next retire step points each held row at the written Tasks by
+  the same rule and clears the key.
 - **A `web-ui` Task citing UI items of two artifacts: warn and keep the first**, as
   `hierarchy.check_cds_contract` does. The planner can settle it deterministically; refusing would
   fail the Story for a normalization.

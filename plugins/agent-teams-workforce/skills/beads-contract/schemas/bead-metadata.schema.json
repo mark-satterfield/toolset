@@ -981,6 +981,13 @@
       ],
       "description": "Keyed by blocker id."
     },
+    "story_replaced_prerequisites": {
+      "$ref": "#/$defs/JsonList",
+      "x-groups": [
+        "STORY_KEYS"
+      ],
+      "description": "The build_prerequisites producer rows depscore.py replace-tasks took off other open Tasks because they named a Task of this Story it deleted: each {consumer, row, buildsEntries}, buildsEntries the deleted Task's builds_entries. The Story's next retire-superseded step points each row at the written Tasks that build one of those entries, drops a row none builds, and removes the key."
+    },
     "wsjf": {
       "type": "string",
       "x-groups": [

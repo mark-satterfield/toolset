@@ -37,6 +37,7 @@ from beadcontracts import (
     EdgeCounts,
     EdgePlan,
     ExistingTask,
+    OrphanedPrerequisite,
     PlannedTask,
     ReplacedTask,
     RepointedEdge,
@@ -127,6 +128,7 @@ from bead_metadata import (
     KEY_SPEC_PATH,
     KEY_SPEC_PATHS,
     KEY_SPEC_SECTIONS,
+    KEY_STORY_REPLACED_PREREQUISITES,
     KEY_SURFACES,
     KEY_TEST_STRATEGY,
     UNKNOWN,
@@ -1164,7 +1166,12 @@ def replace_tasks(writer: Writer, epic_id: str, *, slug: str, reason: str) -> Ta
     Runs only when something upstream of the Story's Tasks changed. A Task elaboration wrote
     (elaboration key `task:...`) that no one has started (open/blocked, no build-lane facts)
     is deleted; a started or closed Task, or one elaboration did not write, is kept and
-    returned, so the new decomposition is told about it instead of duplicating it.
+    returned, so the new decomposition is told about it instead of duplicating it. Before the
+    delete, every ``build_prerequisites`` producer row of another open Task that names a deleted
+    Task is taken off that Task and held on the Story with the deleted Task's ``builds_entries``
+    (``_hold_orphaned_prerequisites``), so no row names a deleted Task or a later Task that reuses
+    its id; the Story's next `retire_superseded_tasks` points each held row at the written Tasks
+    that build one of those entries.
 
     Args:
         writer: The tracker writer; a dry-run writer records the deletion instead.
@@ -1174,7 +1181,8 @@ def replace_tasks(writer: Writer, epic_id: str, *, slug: str, reason: str) -> Ta
 
     Returns:
         `story` (its id, or None when the Story has no bead yet), `deleted` and `kept`, each
-        `{id, title, elabKey, status}` (`kept` also with `requirementIds`), and `reason`.
+        `{id, title, elabKey, status}` (`kept` also with `requirementIds`), the
+        `orphanedPrerequisites` rows held on the Story, and `reason`.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -1197,6 +1205,8 @@ def replace_tasks(writer: Writer, epic_id: str, *, slug: str, reason: str) -> Ta
     story: beadgraph.Bead | None = stories.get(f"story:{slug}")
     deleted: list[ReplacedTask] = []
     kept: list[ReplacedTask] = []
+    built: dict[str, list[str]] = {}
+    orphaned: list[OrphanedPrerequisite] = []
     if story is not None:
         records: list[contracts.JsonObject] = children(writer.repo, story.id, "task")
         for b in sorted((bead_of(r) for r in records), key=lambda b: b.id):
@@ -1208,18 +1218,88 @@ def replace_tasks(writer: Writer, epic_id: str, *, slug: str, reason: str) -> Ta
                 kept.append(facts | {"requirementIds": ids})
             else:
                 deleted.append(facts)
+                built[b.id] = _cited_ids(b.metadata.get(KEY_BUILDS_ENTRIES))
         if deleted:
+            orphaned = _hold_orphaned_prerequisites(writer, story, built)
             writer.bd(["delete", *(d["id"] for d in deleted), "--force"])
     return {
         "ok": True,
         "story": story.id if story is not None else None,
         "deleted": deleted,
         "kept": kept,
+        "orphanedPrerequisites": orphaned,
         "reason": reason,
         "dryRun": writer.dry_run,
         "planned": writer.planned,
-        "summary": {"deleted": len(deleted), "kept": len(kept)},
+        "summary": {"deleted": len(deleted), "kept": len(kept), "orphanedPrerequisites": len(orphaned)},
     }
+
+
+def _hold_orphaned_prerequisites(
+    writer: Writer,
+    story: Bead,
+    built: Mapping[str, list[str]],
+) -> list[OrphanedPrerequisite]:
+    """Take every open Task's producer rows naming a Task about to be deleted, and hold them on its Story.
+
+    The Story record is written first, so a failure part-way leaves each row either still on its
+    consumer or held on the Story, never lost.
+
+    Args:
+        writer: The tracker writer.
+        story: The Story whose Tasks are about to be deleted.
+        built: Each Task about to be deleted -> its ``builds_entries``.
+
+    Returns:
+        The rows taken, in consumer id order.
+
+    """
+    graph: Graph = beadgraph.load(writer.repo)
+    consumers: list[tuple[Bead, dict[str, JsonValue], list[dict[str, JsonValue]]]] = [
+        (bead, _declaration(bead), _declared_rows(_declaration(bead)))
+        for bead in sorted(graph.beads.values(), key=lambda bead: bead.id)
+        if bead.kind == "task" and not bead.closed and bead.id not in built
+    ]
+    orphaned: list[OrphanedPrerequisite] = [
+        {"consumer": bead.id, "row": row, "buildsEntries": built[_row_producer(row)]}
+        for bead, _, rows in consumers
+        for row in rows
+        if _row_producer(row) in built
+    ]
+    if not orphaned:
+        return []
+    stored: list[dict[str, JsonValue]] = [
+        {"consumer": entry["consumer"], "row": entry["row"], "buildsEntries": list(entry["buildsEntries"])}
+        for entry in [*_held_prerequisites(graph.beads.get(story.id, story)), *orphaned]
+    ]
+    writer.metadata(
+        story.id,
+        {KEY_STORY_REPLACED_PREREQUISITES: _json(list({_json(entry): entry for entry in stored}.values()))},
+    )
+    taken: set[str] = {entry["consumer"] for entry in orphaned}
+    for bead, declaration, rows in (consumer for consumer in consumers if consumer[0].id in taken):
+        _write_declaration(writer, bead.id, declaration, [row for row in rows if _row_producer(row) not in built])
+    return orphaned
+
+
+def _held_prerequisites(story: Bead) -> list[OrphanedPrerequisite]:
+    """Read the producer rows replace-tasks holds on a Story.
+
+    Args:
+        story: The Story.
+
+    Returns:
+        The held rows; empty when the Story holds none.
+
+    """
+    raw: str = story.metadata.get(KEY_STORY_REPLACED_PREREQUISITES, "")
+    if not raw:
+        return []
+    return check_type(
+        json.loads(raw),
+        list[OrphanedPrerequisite],
+        collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+    )
 
 
 def _judged_hash(title: str, text: str, priority: JsonValue) -> str:
@@ -2605,49 +2685,73 @@ def _repointed_rows(
     return list({_json(row): row for row in rewritten}.values())
 
 
-def _successors(tasks: list[Task], matched: Mapping[str, Bead], retired: list[Bead]) -> dict[str, list[str]]:
-    """Name, for each retired Task, the written Tasks that now produce what it produced.
+def _builders(entries: Mapping[str, set[str]], built: list[str]) -> list[str]:
+    """Name the written Tasks that build one of the entries a retired Task built.
 
     A written Task produces what a retired Task produced when their ``builds_entries`` share a
     matrix entry; a Task that only adds to an entry is not its producer.
 
     Args:
-        tasks: The Story's saved Tasks.
-        matched: Each saved Task's local key -> its written bead.
-        retired: The superseded beads about to be deleted.
+        entries: Each written Task -> the entries it builds, in build order.
+        built: The retired Task's ``builds_entries``.
 
     Returns:
-        Each retired bead id -> its successors' ids, in build order; empty when none builds an
-        entry it built.
+        The successors' ids, in build order; empty when none builds an entry it built.
 
     """
-    entries: dict[str, set[str]] = {
-        matched[task.key].id: set(task.builds_entries) for task in tasks if task.key in matched
-    }
-    return {
-        bead.id: [
-            written
-            for written, built in entries.items()
-            if built & set(_cited_ids(bead.metadata.get(KEY_BUILDS_ENTRIES)))
-        ]
-        for bead in retired
-    }
+    return [written for written, builds in entries.items() if builds & set(built)]
+
+
+def _open_task(graph: Graph, bead_id: str) -> bool:
+    """Report whether a bead is an open Task of the tracker.
+
+    Returns:
+        True when the bead exists, is a Task and is not closed.
+
+    """
+    bead: Bead | None = graph.beads.get(bead_id)
+    return bead is not None and bead.kind == "task" and not bead.closed
+
+
+def _restored_rows(
+    held: list[OrphanedPrerequisite],
+    entries: Mapping[str, set[str]],
+) -> dict[str, list[dict[str, JsonValue]]]:
+    """Point each producer row held on the Story at the written Tasks that build what its Task built.
+
+    Args:
+        held: The rows replace-tasks held on the Story.
+        entries: Each written Task -> the entries it builds, in build order.
+
+    Returns:
+        Each consumer -> its rows to add; a held row no written Task replaces adds none.
+
+    """
+    restored: dict[str, list[dict[str, JsonValue]]] = {}
+    for entry in held:
+        restored.setdefault(entry["consumer"], []).extend(
+            {**entry["row"], "task": target} for target in _builders(entries, entry["buildsEntries"])
+        )
+    return restored
 
 
 def _repoint_prerequisites(
     graph: Graph,
     writer: Writer,
     successors: Mapping[str, list[str]],
+    restored: Mapping[str, list[dict[str, JsonValue]]],
 ) -> list[RepointedPrerequisite]:
     """Point every open Task's producer rows that name a retired Task at the Tasks that replace it.
 
     A declaration left with no producer row is removed. The rows are rewritten before the retired
     beads are deleted, so no row ever names a deleted Task, nor a later Task that reuses its id.
+    The rows held on the Story for a consumer are added in the same write.
 
     Args:
         graph: The tracker graph.
         writer: The tracker writer.
         successors: Each retired Task -> the written Tasks that build an entry it built.
+        restored: Each consumer -> the held rows to add, already pointed at written Tasks.
 
     Returns:
         Each row moved or removed.
@@ -2664,9 +2768,10 @@ def _repoint_prerequisites(
         declaration: dict[str, JsonValue] = _declaration(consumer)
         rows: list[dict[str, JsonValue]] = _declared_rows(declaration)
         retired: list[str] = list(dict.fromkeys(_row_producer(row) for row in rows if _row_producer(row) in successors))
-        if not retired:
+        added: list[dict[str, JsonValue]] = restored.get(consumer.id, [])
+        if not retired and not added:
             continue
-        kept: list[dict[str, JsonValue]] = _repointed_rows(rows, successors)
+        kept: list[dict[str, JsonValue]] = _repointed_rows([*rows, *added], successors)
         moved.extend(
             {"dependent": consumer.id, "deleted": producer, "replacement": target}
             for producer in retired
@@ -2707,6 +2812,44 @@ def _write_declaration(
     writer.metadata(bead_id, {KEY_BUILD_PREREQUISITES: _json({**declaration, hierarchy.PRODUCERS: rows})})
 
 
+def _rewrite_prerequisites(
+    graph: Graph,
+    writer: Writer,
+    story: Bead,
+    entries: Mapping[str, set[str]],
+    retired: list[Bead],
+) -> list[RepointedPrerequisite]:
+    """Point the producer rows naming a retired Task, and the rows held on the Story, at the written Tasks.
+
+    Args:
+        graph: The tracker graph, read after the Story's Tasks were written.
+        writer: The tracker writer.
+        story: The Story.
+        entries: Each written Task of the Story -> the entries it builds, in build order.
+        retired: The superseded beads about to be deleted.
+
+    Returns:
+        Each producer row moved or removed.
+
+    """
+    stored: list[OrphanedPrerequisite] = _held_prerequisites(story)
+    held: list[OrphanedPrerequisite] = [entry for entry in stored if _open_task(graph, entry["consumer"])]
+    prerequisites: list[RepointedPrerequisite] = _repoint_prerequisites(
+        graph,
+        writer,
+        {bead.id: _builders(entries, _cited_ids(bead.metadata.get(KEY_BUILDS_ENTRIES))) for bead in retired},
+        _restored_rows(held, entries),
+    )
+    prerequisites.extend(
+        {"dependent": entry["consumer"], "deleted": _row_producer(entry["row"]), "replacement": target}
+        for entry in held
+        for target in _or_removed(_builders(entries, entry["buildsEntries"]))
+    )
+    if stored:
+        writer.bd(["update", story.id, "--unset-metadata", KEY_STORY_REPLACED_PREREQUISITES])
+    return prerequisites
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's facts, one each
     graph: Graph,
@@ -2727,8 +2870,11 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
     ``build_prerequisites`` that names a superseded bead is pointed at each written Task of the
     Story whose ``builds_entries`` share a matrix entry with the superseded bead's
     ``builds_entries`` (a Task that builds the same entry produces the same output); a row no
-    written Task replaces is removed, and a declaration left with no row is removed. Only once
-    those writes succeed are the superseded beads deleted.
+    written Task replaces is removed, and a declaration left with no row is removed. Each row
+    `replace_tasks` held on the Story is added back to its open consumer, pointed at each written
+    Task whose ``builds_entries`` share an entry with the deleted Task's; a held row none builds is
+    dropped, and the Story's held rows are cleared. Only once those writes succeed are the
+    superseded beads deleted.
     Run again, it adds no edge twice and finds nothing left to delete.
 
     Args:
@@ -2797,10 +2943,12 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
                 {"dependent": dependent.id, "deleted": blocker, "replacement": target} for target in targets
             )
     writer.write_blocks({bead_id: list(added) for bead_id, added in additions.items()})
-    prerequisites: list[RepointedPrerequisite] = _repoint_prerequisites(
+    prerequisites: list[RepointedPrerequisite] = _rewrite_prerequisites(
         graph,
         writer,
-        _successors(tasks, matched, [bead for bead in left if bead.id in cited]),
+        story,
+        {matched[task.key].id: set(task.builds_entries) for task in tasks if task.key in matched},
+        [bead for bead in left if bead.id in cited],
     )
     deleted: list[ReplacedTask] = [
         {
