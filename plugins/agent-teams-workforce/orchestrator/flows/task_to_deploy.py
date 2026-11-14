@@ -66,7 +66,7 @@ from orchestrator.flows.build_state import (
     workspace_of as _workspace,
 )
 from orchestrator.flows.build_suite import declared_command, run_suite
-from orchestrator.flows.build_workspace import Workspace, checkpoint, git_operation, provision
+from orchestrator.flows.build_workspace import Workspace, checkpoint, git_operation, integrate, provision
 
 if TYPE_CHECKING:
     from orchestrator.core.journal_views import AcceptedArtifact, AcceptedView
@@ -1024,12 +1024,13 @@ def _green_reviewed(run: StepRun) -> Completion:
 
 
 def _prerequisites_ready(run: StepRun) -> Completion:
-    """Observe current readiness after producer work reaches its recorded required stage.
+    """Bring the producers' merged work into the Story branch, then observe current readiness.
 
     Returns:
         A fresh read-only observation, followed by the original suite and its assessment.
 
     """
+    integrate(run.tools, _workspace(run), run.step["script"])
     return build_prerequisites.observe(run, check_type(run.params()["again"], str))
 
 

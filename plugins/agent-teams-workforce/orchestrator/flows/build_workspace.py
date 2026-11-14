@@ -143,6 +143,41 @@ def provision(tools: Tools, repository: Path, story_id: str) -> Workspace:
     return Workspace(tree, actual_branch, default)
 
 
+def integrate(tools: Tools, workspace: Workspace, stage: str) -> None:
+    """Merge the fetched integration branch into the Story branch, so work it waited on is present.
+
+    A Task that waited on a producer Task of another Story in its repository resumes on its own
+    Story branch; the producer's commits reach that branch only through ``origin/<default branch>``
+    after the producer Story's pull request merged. Uncommitted changes are stashed for the merge and
+    restored after it.
+
+    Args:
+        tools: The dispatch's command boundary.
+        workspace: The verified Story worktree.
+        stage: The journal step for attribution.
+
+    Raises:
+        StepError: The merge conflicts; it is aborted and the Story branch is left as it was.
+
+    """
+    tools.git(workspace.tree, ["fetch", "origin"], stage=stage)
+    integration: str = f"origin/{workspace.default_branch}"
+    merged = tools.command(
+        ["git", "merge", "--no-edit", "--autostash", integration],
+        stage=stage,
+        cwd=workspace.tree,
+        check=False,
+    )
+    if not merged.exit:
+        return
+    tools.command(["git", "merge", "--abort"], stage=stage, cwd=workspace.tree, check=False)
+    message: str = (
+        f"merging {integration} into {workspace.branch} conflicts; the merge was aborted: "
+        f"{(merged.stdout + merged.stderr).strip()[-2000:]}"
+    )
+    raise StepError(stage, OTHER_CAUSE, (message,))
+
+
 @dataclass(frozen=True, slots=True)
 class ToolingOwnership:
     """Canonical paths and mixed-file sections owned by the tooling flow."""
