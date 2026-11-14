@@ -1264,7 +1264,11 @@ elaboration is done.
   that elaboration wrote and that no Task of the new plan matches is deleted after the plan's Tasks
   are written (`beadwrite.retire_superseded_tasks`). Before the delete, each `blocks` edge from a
   Task outside the Story onto it is added onto every written Task that cites at least one of the
-  same work items. An edge with no such Task is recorded as a warning, not re-added.
+  same work items. An edge with no such Task is recorded as a warning, not re-added. Each
+  `build_prerequisites` producer row of an open Task that names it is then pointed at every
+  written Task of the Story whose `builds_entries` share a matrix entry with its `builds_entries`;
+  a row with no such Task is removed, and a declaration left with no row is removed, so no row
+  names a deleted Task or a later Task that reuses its id.
 - **A `web-ui` Task citing UI items of two artifacts: warn and keep the first**, as
   `hierarchy.check_cds_contract` does. The planner can settle it deterministically; refusing would
   fail the Story for a normalization.

@@ -40,6 +40,7 @@ from beadcontracts import (
     PlannedTask,
     ReplacedTask,
     RepointedEdge,
+    RepointedPrerequisite,
     StoryBuild,
     StoryEdgeWrite,
     StoryTasksOptions,
@@ -2536,6 +2537,176 @@ def _replacements(
     return written or sorted(owning)
 
 
+def _declaration(bead: Bead) -> dict[str, JsonValue]:
+    """Read a Task's ``build_prerequisites`` declaration.
+
+    Args:
+        bead: The Task.
+
+    Returns:
+        The declaration; empty when the key is missing or does not hold a JSON object.
+
+    """
+    raw: str = bead.metadata.get(KEY_BUILD_PREREQUISITES, "")
+    if not raw:
+        return {}
+    try:
+        decoded: object = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(decoded, dict):
+        return {}
+    return check_type(decoded, dict[str, JsonValue], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+
+
+def _declared_rows(declaration: Mapping[str, JsonValue]) -> list[dict[str, JsonValue]]:
+    """Return the producer rows of a ``build_prerequisites`` declaration.
+
+    Args:
+        declaration: The declaration.
+
+    Returns:
+        Its producer rows; rows that are not JSON objects are left out.
+
+    """
+    rows: JsonValue = declaration.get(hierarchy.PRODUCERS)
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _row_producer(row: Mapping[str, JsonValue]) -> str:
+    """Return the producer Task a producer row names.
+
+    Returns:
+        Its Task id, or an empty string when the row names none.
+
+    """
+    return str(row.get("task") or "")
+
+
+def _repointed_rows(
+    rows: list[dict[str, JsonValue]],
+    successors: Mapping[str, list[str]],
+) -> list[dict[str, JsonValue]]:
+    """Replace each row naming a retired Task by one row per Task that now builds what it built.
+
+    Args:
+        rows: A consumer's producer rows.
+        successors: Each retired Task -> the written Tasks that build an entry it built.
+
+    Returns:
+        The rows, each once, in order; a retired Task with no successor loses its row.
+
+    """
+    rewritten: list[dict[str, JsonValue]] = [
+        {**row, "task": target} for row in rows for target in successors.get(_row_producer(row), [_row_producer(row)])
+    ]
+    return list({_json(row): row for row in rewritten}.values())
+
+
+def _successors(tasks: list[Task], matched: Mapping[str, Bead], retired: list[Bead]) -> dict[str, list[str]]:
+    """Name, for each retired Task, the written Tasks that now produce what it produced.
+
+    A written Task produces what a retired Task produced when their ``builds_entries`` share a
+    matrix entry; a Task that only adds to an entry is not its producer.
+
+    Args:
+        tasks: The Story's saved Tasks.
+        matched: Each saved Task's local key -> its written bead.
+        retired: The superseded beads about to be deleted.
+
+    Returns:
+        Each retired bead id -> its successors' ids, in build order; empty when none builds an
+        entry it built.
+
+    """
+    entries: dict[str, set[str]] = {
+        matched[task.key].id: set(task.builds_entries) for task in tasks if task.key in matched
+    }
+    return {
+        bead.id: [
+            written
+            for written, built in entries.items()
+            if built & set(_cited_ids(bead.metadata.get(KEY_BUILDS_ENTRIES)))
+        ]
+        for bead in retired
+    }
+
+
+def _repoint_prerequisites(
+    graph: Graph,
+    writer: Writer,
+    successors: Mapping[str, list[str]],
+) -> list[RepointedPrerequisite]:
+    """Point every open Task's producer rows that name a retired Task at the Tasks that replace it.
+
+    A declaration left with no producer row is removed. The rows are rewritten before the retired
+    beads are deleted, so no row ever names a deleted Task, nor a later Task that reuses its id.
+
+    Args:
+        graph: The tracker graph.
+        writer: The tracker writer.
+        successors: Each retired Task -> the written Tasks that build an entry it built.
+
+    Returns:
+        Each row moved or removed.
+
+    """
+    consumer: Bead
+    moved: list[RepointedPrerequisite] = []
+    open_tasks: list[Bead] = [
+        bead
+        for bead in sorted(graph.beads.values(), key=lambda bead: bead.id)
+        if bead.kind == "task" and not bead.closed and bead.id not in successors
+    ]
+    for consumer in open_tasks:
+        declaration: dict[str, JsonValue] = _declaration(consumer)
+        rows: list[dict[str, JsonValue]] = _declared_rows(declaration)
+        retired: list[str] = list(dict.fromkeys(_row_producer(row) for row in rows if _row_producer(row) in successors))
+        if not retired:
+            continue
+        kept: list[dict[str, JsonValue]] = _repointed_rows(rows, successors)
+        moved.extend(
+            {"dependent": consumer.id, "deleted": producer, "replacement": target}
+            for producer in retired
+            for target in _or_removed(successors[producer])
+        )
+        _write_declaration(writer, consumer.id, declaration, kept)
+    return moved
+
+
+def _or_removed(targets: list[str]) -> list[str | None]:
+    """Return a retired producer's successors, or one None standing for its removed row.
+
+    Returns:
+        The successors, or ``[None]`` when there are none.
+
+    """
+    return [*targets] if targets else [None]
+
+
+def _write_declaration(
+    writer: Writer,
+    bead_id: str,
+    declaration: dict[str, JsonValue],
+    rows: list[dict[str, JsonValue]],
+) -> None:
+    """Write a consumer's rewritten ``build_prerequisites``, or remove it when no row is left.
+
+    Args:
+        writer: The tracker writer.
+        bead_id: The consumer Task.
+        declaration: Its declaration as read.
+        rows: The producer rows it keeps.
+
+    """
+    if not rows:
+        writer.bd(["update", bead_id, "--unset-metadata", KEY_BUILD_PREREQUISITES])
+        return
+    writer.metadata(bead_id, {KEY_BUILD_PREREQUISITES: _json({**declaration, hierarchy.PRODUCERS: rows})})
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's facts, one each
     graph: Graph,
@@ -2552,7 +2723,12 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
     Story) that no saved Task matches and that no one has started is superseded; a Task bead
     elaboration did not write is never touched. Each `blocks` edge from a Task of another Story onto it is first added
     onto every written Task that cites an item it cited, every such edge in one cycle-checked
-    `Writer.write_blocks` request; only once that succeeds are the superseded beads deleted.
+    `Writer.write_blocks` request. Then every producer row of an open Task's
+    ``build_prerequisites`` that names a superseded bead is pointed at each written Task of the
+    Story whose ``builds_entries`` share a matrix entry with the superseded bead's
+    ``builds_entries`` (a Task that builds the same entry produces the same output); a row no
+    written Task replaces is removed, and a declaration left with no row is removed. Only once
+    those writes succeed are the superseded beads deleted.
     Run again, it adds no edge twice and finds nothing left to delete.
 
     Args:
@@ -2564,8 +2740,8 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
         packages_dir: The packages directory a cited cds bundle must sit in, or None.
 
     Returns:
-        The Story, the beads deleted, the edges moved, and a warning for each edge onto a deleted
-        bead that no written Task replaces.
+        The Story, the beads deleted, the edges moved, the producer rows moved or removed, and a
+        warning for each edge onto a deleted bead that no written Task replaces.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -2621,6 +2797,11 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
                 {"dependent": dependent.id, "deleted": blocker, "replacement": target} for target in targets
             )
     writer.write_blocks({bead_id: list(added) for bead_id, added in additions.items()})
+    prerequisites: list[RepointedPrerequisite] = _repoint_prerequisites(
+        graph,
+        writer,
+        _successors(tasks, matched, [bead for bead in left if bead.id in cited]),
+    )
     deleted: list[ReplacedTask] = [
         {
             "id": bead.id,
@@ -2638,10 +2819,16 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
         "story": story.id,
         "deleted": deleted,
         "repointed": repointed,
+        "prerequisites": prerequisites,
         "warnings": warnings,
         "dryRun": writer.dry_run,
         "planned": writer.planned,
-        "summary": {"deleted": len(deleted), "repointed": len(repointed), "warnings": len(warnings)},
+        "summary": {
+            "deleted": len(deleted),
+            "repointed": len(repointed),
+            "prerequisites": len(prerequisites),
+            "warnings": len(warnings),
+        },
     }
 
 

@@ -279,11 +279,24 @@ class RepointedEdge(TypedDict):
     replacement: str
 
 
+class RepointedPrerequisite(TypedDict):
+    """One ``build_prerequisites`` producer row that named a deleted Task, and the Task it now names.
+
+    ``replacement`` is None when no written Task builds what the deleted Task built, and the row
+    was removed.
+    """
+
+    dependent: str
+    deleted: str
+    replacement: str | None
+
+
 class SupersededSummary(TypedDict):
     """Count what retiring a Story's superseded Tasks did."""
 
     deleted: int
     repointed: int
+    prerequisites: int
     warnings: int
 
 
@@ -294,6 +307,7 @@ class SupersededTasks(TypedDict):
     story: str
     deleted: list[ReplacedTask]
     repointed: list[RepointedEdge]
+    prerequisites: list[RepointedPrerequisite]
     warnings: list[str]
     dryRun: bool
     planned: list[PlannedWrite]
