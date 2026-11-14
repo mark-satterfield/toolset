@@ -42,6 +42,15 @@ error goes to the assessor through the scope correction loop. Final verification
 `regressionScope` artifact with `--bindings`, so another step or resumed dispatch reads the
 same approval evidence. Each verification keeps its own execution-output directory.
 
+The regression ledger travels with the repository: a merged Story's ledger reaches every later
+Story worktree through `develop`. `regression.py` therefore records each source file inside the
+repository relative to the repository root, and places a source path against the tree it runs in
+(the git top level of the ledger's tree, or `--tree`): a relative path, and an absolute path
+inside the repository's main clone or any `.worktrees/<name>/` worktree of it, name the same file
+in the current tree, and each source's hash is keyed by that repository-relative name. A source
+outside the repository (a vault document, a spec in the control repository) stays absolute. A
+ledger written with absolute worktree paths therefore resolves without being edited.
+
 `build_workspace.py` calls the existing git utilities directly to create or reuse the Story's
 worktree and independently confirm its repository and branch. Every command pins its working
 directory. A Task cannot commit on the default branch or detached HEAD.

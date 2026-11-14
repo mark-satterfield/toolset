@@ -7,7 +7,7 @@
   "required": ["components", "discovery", "requirements", "mappings", "runs", "sourceFiles", "replacements"],
   "properties": {
     "sourceFiles": {
-      "description": "The absolute path of each regular file actually read to establish the scope, vault document backing files included; never a directory, a worktree or a repository root. Section citations go in the sourceRef fields. regression.py checks each is an existing regular file and binds its bytes when the scope is approved. Every source of the Task that regression.py prepare records (its PRD, spec, criteria, TRD and data model files) is listed; the build adds each one omitted before the scope is reviewed.",
+      "description": "The absolute path of each regular file actually read to establish the scope, vault document backing files included; never a directory, a worktree or a repository root. Section citations go in the sourceRef fields. regression.py checks each is an existing regular file and binds its bytes when the scope is approved. A file inside the Task's repository may also be listed relative to the repository root; regression.py places a relative path, and an absolute path in the repository's main clone or any of its .worktrees/<name>/ worktrees, in the tree it runs in, and the ledger it writes records each such file relative to the repository root. Every source of the Task that regression.py prepare records (its PRD, spec, criteria, TRD and data model files) is listed; the build adds each one omitted before the scope is reviewed.",
       "type": "array",
       "minItems": 1,
       "items": {"type": "string", "pattern": "^/"}

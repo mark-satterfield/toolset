@@ -15,12 +15,12 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final, Literal
 
 from contracts import JsonObject, JsonValue, json_object
-from gitutils import GitError, cmd_hash_files, deadline_scope, separate_group, stop_process
+from gitutils import GitError, cmd_hash_files, deadline_scope, out, separate_group, stop_process
 from jsonartifact import read_artifact
 from setuprules import SetupCommand, SetupFindings, setup_findings
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 KINDS: Final[frozenset[str]] = frozenset({"unit", "contract", "integration", "nonfunctional"})
 ORIGINS: Final[frozenset[str]] = frozenset({"task", "existing"})
@@ -64,6 +64,12 @@ DEPLOYED_PHASE: Final = "deployed"
 PHASES: Final[frozenset[str]] = frozenset({BUILD_PHASE, DEPLOYED_PHASE})
 DEPLOYED_RUNS: Final = "deployedRuns"
 """The ledger's obligations for after the deploy: each deployed run and the tests of it that bind the Story."""
+WORKTREES_FOLDER: Final = ".worktrees"
+"""The folder of a repository's main clone that holds its Story worktrees, one folder each."""
+WORKTREE_DEPTH: Final[int] = 2
+"""The path parts ``.worktrees/<name>`` that lead from the main clone to the top of one of its Story worktrees."""
+SOURCE_FILES: Final = "sourceFiles"
+"""The member of a plan and of the ledger that lists every source file read to establish the scope."""
 
 type Mode = Literal["prepare", "check", "validate", "verify", "setup", "deployed"]
 MODES: Final[dict[str, Mode]] = {
@@ -241,34 +247,132 @@ def write(path: str | Path, value: JsonValue) -> None:
     tmp.replace(target)
 
 
-def source_errors(paths: list[str]) -> list[str]:
-    """Name each requirement source that is not the absolute path of an existing regular file.
+def _inside(source: Path, root: Path) -> Path | None:
+    """Place a path under a root.
+
+    Returns:
+        The path relative to the root, or None when it lies outside it.
+
+    """
+    return source.relative_to(root) if source.is_relative_to(root) else None
+
+
+def _in_worktree(inside_main: Path) -> bool:
+    """Tell whether a path relative to the main clone lies inside one of its Story worktrees.
+
+    Returns:
+        True for ``.worktrees/<name>/<file>``.
+
+    """
+    return len(inside_main.parts) > WORKTREE_DEPTH and inside_main.parts[0] == WORKTREES_FOLDER
+
+
+@dataclass(frozen=True, slots=True)
+class Repository:
+    """The tree a run works in and its repository's main clone, which together place the in-repository sources."""
+
+    tree: Path
+    """The top level of the working tree the run works in."""
+    main: Path
+    """The top level of the repository's main clone, whose ``.worktrees/<name>/`` folders hold its Story worktrees."""
+
+    def key(self, value: str) -> str:
+        """Name a requirement source the same way from every tree of the repository.
+
+        A path inside the repository (the current tree, the main clone, or any ``.worktrees/<name>/`` worktree of
+        the main clone) is named relative to the repository root; a relative path already is; any other path is
+        named as written.
+
+        Args:
+            value: The source as a plan or ledger lists it.
+
+        Returns:
+            The repository-relative path of an in-repository source, otherwise the source unchanged.
+
+        """
+        source: Path = Path(value)
+        if not source.is_absolute():
+            return str(source)
+        inside_main: Path | None = _inside(source, self.main)
+        if inside_main is not None and _in_worktree(inside_main):
+            return str(Path(*inside_main.parts[WORKTREE_DEPTH:]))
+        inside_tree: Path | None = _inside(source, self.tree)
+        if inside_tree is not None:
+            return str(inside_tree)
+        return value if inside_main is None else str(inside_main)
+
+    def resolve(self, value: str) -> Path:
+        """Find the file a requirement source names in the current tree.
+
+        Args:
+            value: The source as a plan or ledger lists it.
+
+        Returns:
+            The in-repository source's path in the current tree, or the source outside the repository.
+
+        """
+        placed: Path = Path(self.key(value))
+        return placed if placed.is_absolute() else self.tree / placed
+
+    def stored(self, sources: Sequence[str]) -> list[str]:
+        """Name each source as the ledger records it, once each, in order.
+
+        Returns:
+            Each source's :meth:`key`, without repeats.
+
+        """
+        return list(dict.fromkeys(self.key(value) for value in sources))
+
+
+def repository(start: Path) -> Repository:
+    """Find the working tree holding a path and its repository's main clone.
+
+    Args:
+        start: A path in the tree, such as its regression ledger, which need not exist yet.
+
+    Returns:
+        The tree's top level and the main clone's top level, as git reports them.
+
+    Raises:
+        ValueError: No existing folder at or above the path is inside a git working tree.
+
+    """
+    folder: Path = next((candidate for candidate in (start, *start.parents) if candidate.is_dir()), start)
+    tree: str | None = out(str(folder), "rev-parse", "--show-toplevel")
+    common: str | None = out(str(folder), "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if tree is None or common is None:
+        message: str = f"{folder} is not inside a git working tree"
+        raise ValueError(message)
+    return Repository(tree=Path(tree), main=Path(common).parent)
+
+
+def source_errors(paths: list[str], repo: Repository) -> list[str]:
+    """Name each requirement source that is not an existing regular file once placed in the current tree.
 
     Returns:
         One error per such source; empty when every source is a readable file.
 
     """
     return [
-        f"Requirement source is not an absolute readable file: {value}"
-        for value in paths
-        if not Path(value).is_absolute() or not Path(value).is_file()
+        f"Requirement source is not a readable file: {value}" for value in paths if not repo.resolve(value).is_file()
     ]
 
 
-def source_hashes(paths: list[str]) -> dict[str, str]:
+def source_hashes(paths: list[str], repo: Repository) -> dict[str, str]:
     """Bind the actual source bytes, independent of model-authored evidence prose.
 
     Returns:
-        The SHA-256 of each source file, keyed by its path.
+        The SHA-256 of each source file, keyed by its :meth:`Repository.key`, so a hash taken in one tree of the
+        repository matches the same file's hash taken in another.
 
     Raises:
-        ValueError: A source is not an absolute readable file.
+        ValueError: A source is not a readable file.
 
     """
-    errors: list[str] = source_errors(paths)
+    errors: list[str] = source_errors(paths, repo)
     if errors:
         raise ValueError(errors[0])
-    return {str(Path(value)): hashlib.sha256(Path(value).read_bytes()).hexdigest() for value in paths}
+    return {repo.key(value): hashlib.sha256(repo.resolve(value).read_bytes()).hexdigest() for value in paths}
 
 
 def without_origin(plan: JsonObject) -> JsonObject:
@@ -729,15 +833,23 @@ def proven_record(held: frozenset[tuple[str, str]], plan: JsonObject, evidence: 
     return [{"requirementId": requirement, "testId": test} for requirement, test in sorted(kept)]
 
 
-def required_source_errors(plan: JsonObject, required: Sequence[str]) -> list[str]:
+def required_source_errors(plan: JsonObject, bounds: TaskBounds) -> list[str]:
     """Name each of the Task's required sources the plan's ``sourceFiles`` omits.
+
+    A source listed by its path in another tree of the same repository, or relative to the repository root,
+    lists the same file.
 
     Returns:
         One error per omitted source, naming its path.
 
     """
-    listed: set[str] = set(_strs(plan, "sourceFiles"))
-    return [f"Required Task source omitted from sourceFiles: {source}" for source in required if source not in listed]
+    place: Callable[[str], str] = bounds.repository.key if bounds.repository is not None else str
+    listed: set[str] = {place(source) for source in _strs(plan, SOURCE_FILES)}
+    return [
+        f"Required Task source omitted from sourceFiles: {source}"
+        for source in bounds.required
+        if place(source) not in listed
+    ]
 
 
 def _names(command: str, name: str) -> bool:
@@ -807,6 +919,8 @@ class TaskBounds:
     """The Task's sources ``sourceFiles`` must list."""
     outputs: tuple[str, ...] = ()
     """The names of the resources the Task itself creates, which no setup may need."""
+    repository: Repository | None = None
+    """The repository that places in-repository sources; None compares sources as written."""
 
 
 NO_BOUNDS: Final[TaskBounds] = TaskBounds()
@@ -836,7 +950,7 @@ def validate(
     """
     requirements: list[JsonObject] = _objs(plan, "requirements")
     errors: list[str] = _discovery_errors(plan, requirements)
-    errors.extend(required_source_errors(plan, bounds.required))
+    errors.extend(required_source_errors(plan, bounds))
     errors.extend(own_output_errors(plan, bounds.outputs))
     errors.extend(plan_setups(plan).errors)
     ids: list[str] = [_str(r, "id") for r in requirements]
@@ -1533,19 +1647,19 @@ def _emit(value: JsonValue) -> None:
     sys.stdout.write(json.dumps(value) + "\n")
 
 
-def _check(plan: JsonObject, previous: JsonObject | None, args: CliArgs) -> None:
+def _check(plan: JsonObject, previous: JsonObject | None, args: CliArgs, repo: Repository) -> None:
     """Check a newly written plan for everything validate later requires that holds without a review.
 
     The scope is checked as validate checks it; a final mapping (``--approved-plan`` given) also
     as verify checks it before it runs the mapped tests.
     """
-    errors: list[str] = source_errors(_strs(plan, "sourceFiles"))
+    errors: list[str] = source_errors(_strs(plan, SOURCE_FILES), repo)
     errors.extend(
         validate(
             plan,
             previous,
             complete=args.approved_plan is not None,
-            bounds=_bounds(args),
+            bounds=_bounds(args, repo),
         ),
     )
     if args.approved_plan and scope(plan) != scope(read(args.approved_plan)):
@@ -1645,18 +1759,32 @@ def required_kinds(plan: JsonObject) -> list[JsonValue]:
     ]
 
 
-def _bounds(args: CliArgs) -> TaskBounds:
+def _bounds(args: CliArgs, repo: Repository) -> TaskBounds:
     """Read what the Task fixes for its scope from the command line.
 
     Returns:
-        The required sources prepare recorded, when ``--required-sources`` names them, and each ``--own-output``.
+        The required sources prepare recorded, when ``--required-sources`` names them, each ``--own-output``, and
+        the repository that places them.
 
     """
     required: list[str] = _strs(read(args.required_sources), REQUIRED_SOURCES) if args.required_sources else []
-    return TaskBounds(required=tuple(required), outputs=args.own_outputs)
+    return TaskBounds(required=tuple(required), outputs=args.own_outputs, repository=repo)
 
 
-def _prepare(previous: JsonObject | None, args: CliArgs) -> None:
+def _readable_sources(previous: JsonObject, repo: Repository) -> JsonObject:
+    """Point the previous ledger's sources at their files in the current tree, for the assessor to read.
+
+    Returns:
+        The ledger without origins, each of its ``sourceFiles`` the absolute path :meth:`Repository.resolve` finds.
+
+    """
+    ledger: JsonObject = without_origin(previous)
+    if SOURCE_FILES not in ledger:
+        return ledger
+    return {**ledger, SOURCE_FILES: [str(repo.resolve(value)) for value in repo.stored(_strs(ledger, SOURCE_FILES))]}
+
+
+def _prepare(previous: JsonObject | None, args: CliArgs, repo: Repository) -> None:
     """Write the previous ledger for the assessor without origins, record the Task's sources, report their revision.
 
     A requirement an earlier Task built is existing for this one unless this Task's contract cites it, so the
@@ -1668,10 +1796,18 @@ def _prepare(previous: JsonObject | None, args: CliArgs) -> None:
     approved: JsonObject | None = read(args.approved_plan) if args.approved_plan else None
     hashes: dict[str, str] = source_hashes(
         sorted(
-            set(args.source + _optional_strs(approved, "sourceFiles") + _optional_strs(previous, "sourceFiles")),
+            set(
+                repo.stored(
+                    args.source + _optional_strs(approved, SOURCE_FILES) + _optional_strs(previous, SOURCE_FILES),
+                ),
+            ),
         ),
+        repo,
     )
-    write(args.output, without_origin(previous) if previous else {"requirements": [], "mappings": [], "runs": []})
+    write(
+        args.output,
+        _readable_sources(previous, repo) if previous else {"requirements": [], "mappings": [], "runs": []},
+    )
     _emit(
         {
             "ok": True,
@@ -1709,8 +1845,12 @@ def _verify(
     previous: JsonObject | None,
     args: CliArgs,
     effective: dict[str, str],
+    repo: Repository,
 ) -> tuple[list[str], list[JsonValue]]:
     """Run the mapped runs, and on success write the ledger with the pairs now proven.
+
+    The ledger records each in-repository source relative to the repository root (:meth:`Repository.key`), so
+    the ledger a merged Story leaves holds for every later tree of the repository.
 
     Returns:
         The execution errors and the per-run evidence records.
@@ -1719,8 +1859,10 @@ def _verify(
     held: frozenset[tuple[str, str]] = proven(previous, plan)
     errors, evidence = execute(plan, Path(args.output).parent, effective, held)
     if not errors:
+        sources: list[JsonValue] = [*repo.stored(_strs(plan, SOURCE_FILES))]
         ledger: JsonObject = {
             **without_origin(plan),
+            SOURCE_FILES: sources,
             "execution": evidence,
             "proven": proven_record(held, plan, evidence),
             DEPLOYED_RUNS: deployed_obligations(plan, previous, effective, held),
@@ -1730,22 +1872,35 @@ def _verify(
     return errors, evidence
 
 
+def _source_seal(plan: JsonObject, args: CliArgs, repo: Repository) -> tuple[Path, JsonObject]:
+    """Name the source seal file and take the seal of the plan's sources as they are now.
+
+    Returns:
+        The seal file (``--bindings``, or ``source-bindings.json`` beside the output) and the hash of each source,
+        keyed by its :meth:`Repository.key`.
+
+    """
+    bindings: Path = Path(args.bindings) if args.bindings else Path(args.output).parent / "source-bindings.json"
+    return bindings, {**source_hashes(_strs(plan, SOURCE_FILES), repo)}
+
+
 def main() -> None:
     """Prepare, validate or verify a cumulative regression plan and report the result as JSON."""
     args: CliArgs = _parse_args()
     previous: JsonObject | None = read(args.ledger) if Path(args.ledger).is_file() else None
-    if args.mode == "prepare":
-        _prepare(previous, args)
-        return
     if args.mode == "deployed":
         _deployed(previous, args)
         return
-    plan: JsonObject = read(args.plan)
     if args.mode == "setup":
-        _setup(plan, args)
+        _setup(read(args.plan), args)
         return
+    repo: Repository = repository(Path(args.tree) if args.tree else Path(args.ledger))
+    if args.mode == "prepare":
+        _prepare(previous, args, repo)
+        return
+    plan: JsonObject = read(args.plan)
     if args.mode == "check":
-        _check(plan, previous, args)
+        _check(plan, previous, args, repo)
         return
     effective, corrections = _effective_origins(plan, args) if args.mode == "verify" else ({}, [])
     owned: frozenset[str] = frozenset(requirement for requirement, origin in effective.items() if origin == TASK)
@@ -1754,16 +1909,14 @@ def main() -> None:
         previous,
         complete=args.mode == "verify",
         owned=owned,
-        bounds=_bounds(args),
+        bounds=_bounds(args, repo),
     )
     review_approved: bool = _review_approved(args)
     if not review_approved:
         errors.append("Independent source/coverage/supersession review is not approved")
     if args.approved_plan and scope(plan) != scope(read(args.approved_plan)):
         errors.append("Final mapping changed the approved impact scope")
-    bindings: Path = Path(args.bindings) if args.bindings else Path(args.output).parent / "source-bindings.json"
-    source_bytes: dict[str, str] = source_hashes(_strs(plan, "sourceFiles"))
-    bound: JsonObject = {**source_bytes}
+    bindings, bound = _source_seal(plan, args, repo)
     sources_changed: bool = args.mode == "verify" and (not bindings.is_file() or read(bindings) != bound)
     if sources_changed:
         errors.append("Requirement source bytes changed since scope approval; reassess scope before building")
@@ -1771,7 +1924,7 @@ def main() -> None:
         write(bindings, bound)
     evidence: list[JsonValue] = []
     if not errors and args.mode == "verify":
-        errors, evidence = _verify(plan, previous, args, effective)
+        errors, evidence = _verify(plan, previous, args, effective, repo)
     error_values: list[JsonValue] = [*errors]
     found: JsonObject = {**_found(evidence), "undeclared": [*plan_setups(plan).undeclared]}
     write(

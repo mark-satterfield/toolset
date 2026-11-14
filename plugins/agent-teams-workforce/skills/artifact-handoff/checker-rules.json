@@ -677,7 +677,7 @@
         },
         {
           "id": "source-files-readable",
-          "enforced": "Requirement source is not an absolute readable file",
+          "enforced": "Requirement source is not a readable file",
           "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
           "stated": "regression.py checks each is an existing regular file"
         },
