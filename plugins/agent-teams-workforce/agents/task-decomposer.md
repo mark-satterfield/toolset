@@ -120,10 +120,6 @@ Python derives the Task's matrix ids from what it cites (its stack, the entries 
 shared capabilities the matrix guesses that work relies on) and writes them into the Task's text and its
 `matrix_elements` key, so state no matrix id yourself. Nothing is written in the matrix for a
 Task.
-When the build supplies validated saved authoring context for a real open producer Story,
-retain every original Task and score exactly and append only missing work its scope/spec already
-authorizes. Create no bead and change no spec. The normal writer appends new durable keys,
-preserves started and closed Tasks, and scores only new Tasks before identities are reassessed.
 Write the result at the brief's output path. Its shape is artifact-handoff's `tasks.schema.json`:
 write exactly the shape that schema defines, and no other fields. Each field means what the `tasks` section of artifact-handoff's
 Epic contracts says it means: the local key series (T1...), the surface set and what an empty

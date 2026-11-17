@@ -61,11 +61,10 @@ invent an issue id, choose a parent for nonexistent work, write an edge, modify 
 or create a parameter. When an actual Task builds a consumed output, return `prerequisites`
 and name it even when waiting for it would close a cycle through standing edges; do not
 pre-empt that cycle. Return `missing-work` only when no actual Task builds a consumed output, with the
-precise work-authoring gap. Name `authoringStory`
-only when an actual open Story has completed saved scope/spec context authorizing that work.
-The caller uses the existing decomposer and normal append-only writer/scorer in that case;
-otherwise the gap is finite. It is pipeline work,
-never an instruction for the owner to create SSM manually. Return `repository` when the fresh
+precise missing work. Name as `authoringStory` the actual open Story whose specs should authorize
+that work, or null when none can be established. The build never authors that work: it hands that
+Story (with null, the consumer's own Story) back to elaboration to be specified again. It is
+pipeline work, never an instruction for the owner to create SSM manually. Return `repository` when the fresh
 evidence shows the cause is in the Task's own repository: a dependency declaration, lock file,
 override, peer-dependency conflict, or a test or build configuration that names a package no
 manifest declares. Name in `evidence` the files and the correction (for example: declare the test

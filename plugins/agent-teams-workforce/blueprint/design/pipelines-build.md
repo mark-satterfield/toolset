@@ -150,7 +150,9 @@ reopens the scope for the changed tree; a final verification whose only error is
 requirement source bytes is a reassessment of the scope; and any other failed final verification,
 an unmapped required layer or a blocking mapping review included, is a correction that writes the
 missing tests, runs the final suite and assesses the scope again before the evidence is mapped
-and verified again, which covers changed bytes too. Running ancestors count only with their own completed outcome or their immediate
+and verified again, which covers changed bytes too. Source bytes that still change once the
+reassessment allowance is spent are an upstream defect (`source-changed`, see Upstream defects):
+the Story's requirements are moving under the build. Running ancestors count only with their own completed outcome or their immediate
 agent child's accepted result. Restarting does not replenish the allowance. A fresh suite with the
 same evidence identity and failures after product or test correction stops before another agent round;
 environment recovery and changed requirement, setup or runtime identities remain eligible. Only an
@@ -176,9 +178,12 @@ with that rationale, the tree and governing sources are recorded, and the re-rev
 unchanged tree under unchanged sources carries them again rather than asking for another
 correction round.
 Implementation findings and suite failures go to the specialists the implementation-lead selects.
-Tooling and contract findings are never assigned to product implementers and never stop the build:
-they are carried. The same holds for the shared-capability and CDS reviews and the final code
-review: their implementation and test findings are corrected within the allowance, and their
+Tooling and contract findings are never assigned to product implementers and never stop the build.
+A blocking contract finding (a contradiction between the Story's specs and the design, or within
+the specs) is an upstream defect (`contract-finding`, see Upstream defects): no build correction
+removes it, so it is never carried. Every other tooling and contract finding is carried. The same
+holds for the shared-capability and CDS reviews and the final code review: their implementation and test findings are
+corrected within the allowance, a blocking contract finding goes upstream, and their other
 contract and tooling findings, and any finding still open when the allowance is spent, are carried.
 A final review whose remaining findings are carried covers the current tree, so the final suite
 runs next. An empty corrective selection cannot count as completed work.
@@ -222,11 +227,11 @@ An upstream or environment judgment appends one targeted `task-dependency-mapper
 tracker, repository and readiness evidence. The result names real producer Tasks, their actual
 parent Stories and whether their output must be built, published or deployed. A real producer is
 named even when waiting for it would close a cycle, so the cycle check below decides that case
-and the failure names the cycle rather than a work-authoring gap. The build validates those
-identities and adds only missing consumer blockers through the normal cycle-checked writer;
-normal elaboration protections for already started Tasks remain intact. A missing producer or
-missing real authoring context is a finite pipeline work-authoring gap, never an owner SSM task
-or permission to create shared resources as test fixtures.
+and the upstream defect names the cycle rather than missing producer work. The build validates
+those identities and adds only missing consumer blockers through the normal cycle-checked writer;
+normal elaboration protections for already started Tasks remain intact. Missing producer work is
+an upstream defect of the Story whose specs should hold it, never an owner SSM task or permission
+to create shared resources as test fixtures.
 
 A failure whose cause is the Task repository's own declarations (a dependency manifest, lock file,
 override, peer-dependency conflict, or a test configuration naming a package no manifest declares)
@@ -246,8 +251,10 @@ failure: the Story has no specs or Tasks yet. `build:prerequisite-elaboration` r
 the Epic is marked elaborated; its dispatch returns the typed `waitingForPrerequisites` handback with
 no producers and an `elaboration` naming the Epic and the Story, and releases its slot. Elaboration
 never waits on a build, so this wait closes no completion cycle. Once the Epic is elaborated the
-build diagnoses again against the Tasks it wrote. An elaborated Story that still lacks accepted
-authoring artifacts fails the Task as an item failure.
+build diagnoses again against the Tasks it wrote. When the producer Story's Epic is elaborated and
+no Task still builds the consumed output, that producer Story is specified again
+(`producer-missing`, see Upstream defects); when the diagnosis names no open Story that should
+authorize the work, the Task's own Story is specified again.
 
 `build:prerequisites-ready` remains planned while producer stages are pending. Its dispatch
 returns the typed `waitingForPrerequisites` handback without a failure and releases its slot.
@@ -275,18 +282,47 @@ Structured `buildPrerequisites.producers` from decomposition is stored as the ca
 Older Tasks without that field are not retroactively assigned guessed dependencies; the bounded
 current-Task diagnosis repairs their actual prerequisites when discovered. Effective Task,
 producer Story completion and actual host repository-holder dependencies are checked together
-for cycles; unschedulable waits are explicit workflow gaps rather than indefinite holds.
-A cycle that the diagnosed Task's proposed wait closes, and a proposed producer row without an
-absolute existing evidence artifact, fail only that Task as an `item` failure whose evidence
-names the cycle and the diagnosis; they never classify as `pipeline-code-defect`, so other
-lanes keep dispatching.
+for cycles; unschedulable waits are explicit holds rather than indefinite ones. A cycle that the
+diagnosed Task's proposed wait closes is an upstream defect of the Task's Story
+(`completion-cycle`, see Upstream defects) whose evidence names the cycle and the diagnosis. A
+proposed producer row without an absolute existing evidence artifact, a diagnosis that contradicts
+the tracker, and producers built in another repository fail only that Task as an `item` failure;
+none classifies as `pipeline-code-defect`, so other lanes keep dispatching.
 
-When missing producer work has an actual open Story and completed saved authoring context,
-the normal task decomposer appends only work that scope/spec already authorizes. Existing Task
-and score objects remain exact, normal append-only durable-key writes make uncertain retries
-idempotent, and only new Task ids receive normal Task scoring. No architecture or Epic assessment
-runs. The changed tracker facts receive a bounded new diagnosis before consumer edges are added.
-Absent that real authoring context, the pipeline records the precise finite work-authoring gap.
+The build never authors producer work. Missing producer work goes back to the elaboration of the
+Story whose specs should hold it, which writes its Tasks; the build then diagnoses again against
+them.
+
+## Upstream defects
+
+Some dead ends of a build have their cause in the Task's Story's specs or Tasks, not in its code,
+so a retry repeats them. The build hands them back to elaboration instead of failing:
+
+| Dead end | Kind | Story specified again | Step that runs again if released |
+|---|---|---|---|
+| A `missing-work` diagnosis names no open Story that should authorize the work | `producer-missing` | the Task's own Story | `build:prerequisites-rediagnose` |
+| A `missing-work` diagnosis names an open producer Story whose Epic is elaborated | `producer-missing` | the producer Story | `build:prerequisites-rediagnose` |
+| The diagnosed Task's proposed wait closes a completion cycle | `completion-cycle` | the Task's own Story | `build:prerequisites-rediagnose` |
+| The code review, the final code review or an audit review holds a blocking finding owned by the contract | `contract-finding` | the Task's own Story | the review step |
+| Source bytes still change at final verification once the reassessment allowance is spent | `source-changed` | the Task's own Story | `build:regression-verify` |
+
+A journal planned before producer authoring was removed still holds `build:prerequisite-author` or
+`build:prerequisite-authored`; each now takes the `producer-missing` route for the Story its
+saved authoring context named.
+
+The deciding step records the `upstreamDefect` value (`orchestrator/flows/build_upstream.py`):
+the Task, the Story, its Epic, the kind, the evidence lines and file, a fingerprint (sha256 of
+`[kind, task, story, evidence]`), the step that runs again and when the defect was raised. It plans
+`build:upstream-respec`. While the Story's respec is pending (its `respec_state` is set, its Epic
+is not elaborated, or its `respec_state` was not cleared after the defect was raised), the
+dispatch returns the typed `upstreamDefect` handback at stage `upstream-defect`: not a failure,
+and the build slot is released. The driver records the request on the Story and its Epic's
+elaboration writes the Story's specs and Tasks again, which resets the Task's build. When the
+request is cleared without that reset (for example by an owner decision), the gate runs the step
+that met the defect again.
+
+A producer Story whose Epic is still elaborating is a wait (`build:prerequisite-elaboration`), not
+an upstream defect.
 
 Build artifact readers expose recorded facts from completed steps and running structural
 ancestors only, through one accepted view per journal revision and step

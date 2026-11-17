@@ -478,6 +478,15 @@ The driver sets the failure origin from the handback's structured failure
 (`<driver>/pluginhandback.py`): a cause of `api` or `quota`, and the classification `interrupted`,
 are `environment`; every other failure is `work`.
 
+A build that releases its slot without failing hands back unfinished work: `waitingForPrerequisites`
+at stage `waiting-for-prerequisites`, or `upstreamDefect` at stage `upstream-defect`
+(`handback_contract.UpstreamDefect`, `validate_upstream_defect`). An upstream defect is a build dead
+end whose cause is in the Task's Story's specs or Tasks (missing producer work, a completion cycle,
+a blocking contract finding, requirement source bytes that keep changing): the build records it
+through `orchestrator/flows/build_upstream.py` and its gate `build:upstream-respec`, and the driver
+hands the Story back to elaboration as a respec request (`specs/epic/driver-contract.md`, section
+4; `blueprint/design/pipelines-build.md`, Upstream defects).
+
 The dispatch arguments the orchestrator reads, the scratch file names and the `run.py` command line
 are defined in one place, `ops/sdlc-automation/dispatchargs.py` (`DispatchArguments`,
 `build_arguments`, `parse_arguments`, `command`); the plugin reads them through

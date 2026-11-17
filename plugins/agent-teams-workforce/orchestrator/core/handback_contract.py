@@ -24,6 +24,14 @@ Rules beyond the field types:
   not an interruption.
 - ``beadsEmitted`` is not negative; every number is finite; integers are never booleans.
 - ``artifacts.phases`` keys are ``trd`` or ``spec:<repository slug>``.
+- A document carries ``waitingForPrerequisites`` exactly when its stage is
+  ``waiting-for-prerequisites``; it is then unfinished work: ok false, lifecycleDone false, no
+  failure, no refusal, no required human actions, and the wait names the document's bead.
+- A document carries ``upstreamDefect`` exactly when its stage is ``upstream-defect``
+  (:data:`UPSTREAM_STAGE`). The build met a defect whose cause is in its Story's specs or Tasks:
+  the attempt pauses and releases its build slot, and the Story goes back to elaboration. It is
+  not a failure: ok false, lifecycleDone false, no failure, no refusal, no required human actions,
+  no ``waitingForPrerequisites``, and ``upstreamDefect.task`` is the document's bead.
 """
 
 import json
@@ -51,6 +59,7 @@ type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValu
 type PhaseStatus = Literal["passed"]
 type FailureClass = Literal["setup", "transient", "item", "pipeline-code-defect", "interrupted"]
 type StopStage = Literal["interrupted", "shutdown"]
+type UpstreamKind = Literal["producer-missing", "completion-cycle", "contract-finding", "source-changed"]
 
 VERSION: Final = 1
 
@@ -90,6 +99,13 @@ SHUTDOWN_STAGE: Final[StopStage] = "shutdown"
 """Stage of a supervisor shutdown or drain."""
 STOP_STAGES: Final[frozenset[StopStage]] = frozenset(get_args(StopStage.__value__))
 VALIDATION_STAGE: Final = "handback-validation"
+WAITING_STAGE: Final = "waiting-for-prerequisites"
+"""Stage of a build that released its slot to wait for producer work or an unfinished elaboration."""
+UPSTREAM_STAGE: Final = "upstream-defect"
+"""Stage of a build that released its slot because its Story's specs or Tasks must be specified again."""
+UPSTREAM_KINDS: Final[frozenset[UpstreamKind]] = frozenset(get_args(UpstreamKind.__value__))
+"""What a build found wrong upstream: missing producer work, a completion cycle, a blocking contract
+finding, or requirement source bytes that changed after the scope was approved."""
 """Stage of a replacement document when the rejected document named no usable stage."""
 
 SHUTDOWN_CAUSE: Final = "shutdown"
@@ -294,6 +310,26 @@ class WaitingForPrerequisites(TypedDict):
     elaboration: NotRequired[WaitingElaboration]
 
 
+class UpstreamDefect(TypedDict):
+    """A defect a build met whose cause is in its Story's specs or Tasks, handed back to elaboration.
+
+    The build pauses and releases its slot; the driver records a respec request on ``story`` and
+    the Story's Epic restarts its specs and Tasks. ``again`` is the build step that runs again
+    when the request is cleared without a journal reset. ``fingerprint`` is the sha256 of the JSON
+    list ``[kind, task, story, evidence]``; ``at`` is when the build raised the defect.
+    """
+
+    task: str
+    story: str
+    epic: str
+    kind: UpstreamKind
+    evidence: list[str]
+    evidencePath: str | None
+    fingerprint: str
+    again: str
+    at: str
+
+
 class HandbackDocument(TypedDict):
     """The version one orchestrator-to-driver result."""
 
@@ -312,6 +348,7 @@ class HandbackDocument(TypedDict):
     toolingRecommendations: NotRequired[list[ToolingRecommendation]]
     refusal: NotRequired[Refusal]
     waitingForPrerequisites: NotRequired[WaitingForPrerequisites]
+    upstreamDefect: NotRequired[UpstreamDefect]
     mechanism: NotRequired[DeployMechanism]
 
 
@@ -497,6 +534,9 @@ class Wire:
     shutdown_stage: StopStage
     stop_stages: frozenset[StopStage]
     validation_stage: str
+    waiting_stage: str
+    upstream_stage: str
+    upstream_kinds: frozenset[UpstreamKind]
     shutdown_cause: str
     other_cause: str
     api_cause: str
@@ -539,6 +579,9 @@ wire: Final[Wire] = Wire(
     shutdown_stage=SHUTDOWN_STAGE,
     stop_stages=STOP_STAGES,
     validation_stage=VALIDATION_STAGE,
+    waiting_stage=WAITING_STAGE,
+    upstream_stage=UPSTREAM_STAGE,
+    upstream_kinds=UPSTREAM_KINDS,
     shutdown_cause=SHUTDOWN_CAUSE,
     other_cause=OTHER_CAUSE,
     api_cause=API_CAUSE,
@@ -754,23 +797,10 @@ def _check_document_rules(value: Mapping[str, object]) -> None:
             message = f"handback.artifacts.phases: key {key!r} is not {TRD_PHASE!r} or {SPEC_PHASE_PREFIX}<slug>"
             raise HandbackValidationError(message, value)
     failure: object = value.get("failure")
-    waiting: object = value.get("waitingForPrerequisites")
-    if waiting is not None:
-        checked: Mapping[str, object] = validate_waiting_prerequisites(waiting)
-        flags: tuple[bool, ...] = (
-            value.get("ok") is False,
-            value.get("stage") == "waiting-for-prerequisites",
-            value.get("lifecycleDone") is False,
-            failure is None,
-            not value.get("requiredHumanActions"),
-            value.get("refusal") is None,
-            checked.get("task") == value.get("beadId"),
-        )
-        if not all(flags):
-            message = "handback: prerequisite waiting is unfinished work, without a failure"
-            raise HandbackValidationError(message, value)
-    elif value.get("stage") == "waiting-for-prerequisites":
-        message = "handback: prerequisite wait stage requires its structured wait"
+    _check_paused(value, "waitingForPrerequisites", WAITING_STAGE, validate_waiting_prerequisites)
+    _check_paused(value, "upstreamDefect", UPSTREAM_STAGE, validate_upstream_defect)
+    if value.get("upstreamDefect") is not None and value.get("waitingForPrerequisites") is not None:
+        message = "handback: an upstream defect and a prerequisite wait cannot be handed back together"
         raise HandbackValidationError(message, value)
     if failure is not None:
         _is_failure(failure, "handback.failure", value)
@@ -782,6 +812,47 @@ def _check_document_rules(value: Mapping[str, object]) -> None:
     failed_at: object = failure.get("stage") if isinstance(failure, dict) else None
     if stated == INTERRUPTED_CLASS and stage != failed_at:
         message = f"handback: an interrupted failure requires its stop stage {failed_at!r}, not {stage!r}"
+        raise HandbackValidationError(message, value)
+
+
+def _check_paused(
+    value: Mapping[str, object],
+    field: str,
+    stage: str,
+    check: Callable[[object], Mapping[str, object]],
+) -> None:
+    """Require a slot-releasing record and its stage to come together, as unfinished work.
+
+    Args:
+        value: The handback document.
+        field: The record's field: ``waitingForPrerequisites`` or ``upstreamDefect``.
+        stage: The stage that field requires.
+        check: The record's own validator.
+
+    Raises:
+        HandbackValidationError: The record and its stage do not come together, or the document
+            is not unfinished work without a failure for its own bead.
+
+    """
+    record: object = value.get(field)
+    message: str
+    if record is None:
+        if value.get("stage") == stage:
+            message = f"handback: stage {stage!r} requires its structured {field}"
+            raise HandbackValidationError(message, value)
+        return
+    checked: Mapping[str, object] = check(record)
+    flags: tuple[bool, ...] = (
+        value.get("ok") is False,
+        value.get("stage") == stage,
+        value.get("lifecycleDone") is False,
+        value.get("failure") is None,
+        not value.get("requiredHumanActions"),
+        value.get("refusal") is None,
+        checked.get("task") == value.get("beadId"),
+    )
+    if not all(flags):
+        message = f"handback: {field} is unfinished work at stage {stage!r}, without a failure, for its own bead"
         raise HandbackValidationError(message, value)
 
 
@@ -837,6 +908,34 @@ def validate_waiting_prerequisites(value: object) -> Mapping[str, object]:
             not producer[key].strip() for key in ("task", "story", "output", "evidence")
         ):
             _reject("waitingForPrerequisites.producers", "nonempty producer identifiers and evidence", producer, value)
+    return value
+
+
+def validate_upstream_defect(value: object) -> Mapping[str, object]:
+    """Validate the upstream defect a build hands back, at plugin and driver boundaries.
+
+    Args:
+        value: The structured defect carried by a handback.
+
+    Returns:
+        The same validated mapping.
+
+    """
+    _conforms(value, UpstreamDefect, "upstreamDefect", value)
+    if not isinstance(value, dict):
+        _reject("upstreamDefect", "object", value, value)
+    for key in ("task", "story", "epic", "fingerprint", "again", "at"):
+        text: object = value.get(key)
+        if not isinstance(text, str) or not text.strip():
+            _reject(f"upstreamDefect.{key}", "nonempty string", text, value)
+    if value.get("kind") not in UPSTREAM_KINDS:
+        _reject("upstreamDefect.kind", f"one of {sorted(UPSTREAM_KINDS)}", value.get("kind"), value)
+    evidence: object = value.get("evidence")
+    if not isinstance(evidence, list) or not evidence or any(not str(line).strip() for line in evidence):
+        _reject("upstreamDefect.evidence", "nonempty list of nonempty lines", evidence, value)
+    path: object = value.get("evidencePath")
+    if path is not None and (not isinstance(path, str) or not path.strip()):
+        _reject("upstreamDefect.evidencePath", "null or a nonempty path", path, value)
     return value
 
 

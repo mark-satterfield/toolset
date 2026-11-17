@@ -154,6 +154,25 @@ Readers: `attempts.py` (turns a handback into an `Outcome`), `failurecause.py`, 
 
 The build and deploy parts of `Handback` are recorded on the handback event or unused by this lane.
 
+**Build handbacks that release the slot.** A build hands back unfinished work, never a failure, in
+two shapes, each checked by `handback_contract.validate`: `waitingForPrerequisites` at stage
+`waiting-for-prerequisites` (`Wire.waiting_stage`), and `upstreamDefect` at stage
+`upstream-defect` (`Wire.upstream_stage`, `UPSTREAM_STAGE`). Either document has `ok` false,
+`lifecycleDone` false, no `failure`, no `refusal`, no `requiredHumanActions`, and its record names
+the document's `beadId` as its `task`; the two never come together, and the stage is used only with
+its record. `upstreamDefect` (`handback_contract.UpstreamDefect`, checked alone by
+`validate_upstream_defect`) names a defect whose cause is in the Task's Story's specs or Tasks:
+`task`, `story` (the Story to specify again: the Task's own Story, or the producer Story missing
+work belongs to), `epic` (that Story's Epic), `kind` (`UPSTREAM_KINDS`: `producer-missing`,
+`completion-cycle`, `contract-finding`, `source-changed`), non-empty `evidence` lines,
+`evidencePath` (a file or null), `fingerprint` (sha256 of the JSON list
+`[kind, task, story, evidence]`), `again` (the build step that runs again if the request is cleared
+without a journal reset) and `at` (when the build raised it). It releases the build slot and is not
+counted as a failure; the driver records a respec request on `story`, and that Story's Epic writes
+its specs and Tasks again before the Task is built again. The build hands it back again on each
+dispatch while the Story's `respec_state` is set, its Epic is not elaborated, or its
+`respec_state` was not cleared after `at`.
+
 **Interruption.** An item stopped by an owner stop-execution of that item, a SIGTERM to it, or a
 supervisor shutdown or drain gets a handback from `handback_contract.interrupted_failure`:
 classification `INTERRUPTED_CLASS`, cause `SHUTDOWN_CAUSE`, and stage `INTERRUPTED_STAGE` for an

@@ -18,7 +18,7 @@ from orchestrator.core.journal_registry import Registry
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, file_artifact, value_artifact
 from orchestrator.core.models import StepError
 from orchestrator.core.tool_locks import seconds
-from orchestrator.flows import build_carried, build_policy, build_repository_setup, build_reuse
+from orchestrator.flows import build_carried, build_policy, build_repository_setup, build_reuse, build_upstream
 from orchestrator.flows.build_repository_setup import REPOSITORY_SETUP_WORK, RESCOPE
 from orchestrator.flows.build_sessions import OutputContract, accepted_steps, latest, reasoned
 from orchestrator.flows.build_state import (
@@ -548,18 +548,23 @@ def _verify_correction(run: StepRun, output: Path, document: dict[str, JsonValue
     their requirement, implementers make a failing new test pass, the final review covers the changed
     tree, and the scope is assessed for the changed tree before it is mapped, reviewed and verified
     again, which covers changed bytes too. The mapping alone cannot write a test that does not exist.
+    Source bytes that still change once the reassessment allowance is spent are an upstream
+    defect: the Story's requirements are moving under the build, so the Story goes back to
+    elaboration and the verification runs again if the respec is cleared without a journal reset.
 
     Returns:
-        The reassessment or correction steps.
+        The reassessment or correction steps, or the ``source-changed`` upstream defect.
 
     Raises:
-        StepError: The failure's allowance is spent; it names every error and the evidence file.
+        StepError: The correction allowance is spent; it names every error and the evidence file.
 
     """
     changed: bool = _drift_only(document)
     rescopes, corrections = _verify_corrections(run)
-    if (rescopes if changed else corrections) >= regression_rounds():
-        errors: list[str] = check_type(document.get("errors", []), list[str])
+    errors: list[str] = check_type(document.get("errors", []), list[str])
+    if changed and rescopes >= regression_rounds():
+        return build_upstream.route(run, "source-changed", (*errors, str(output)), again=VERIFY, evidence_path=output)
+    if corrections >= regression_rounds() and not changed:
         raise StepError(VERIFY, OTHER_CAUSE, (*errors, str(output)))
     keys: tuple[str, ...] = (*RESCOPE, *REMAP) if changed else (*EVIDENCE_WORK, *RESCOPE, *REMAP)
     purpose: str = (
@@ -689,13 +694,16 @@ def _infrastructure(run: StepRun) -> Completion:
 def _audit_reviewed(run: StepRun) -> Completion:
     """Correct the review's findings within the allowance, and never stop on a finding.
 
-    Findings owned by the contract or the tooling are carried at once; findings still open when
-    the correction allowance is spent are carried too, and the build continues. Every finding of
+    A blocking contract finding hands the Story back to elaboration, and the review runs again if
+    the respec is cleared without a journal reset. Other findings owned by the contract or the
+    tooling are carried at once; findings still open when the correction allowance is spent are
+    carried too, and the build continues. Every finding of
     the shared-capability review is a note, whatever severity it was recorded with: divergence from
     the matrix's guess is corrected in the matrix by ``build:matrix-follow``, never in the code.
 
     Returns:
-        A clean review, the carried findings recorded, or implementation and repeat-review work.
+        The upstream defect, a clean review, the carried findings recorded, or implementation and
+        repeat-review work.
 
     """
     params = run.params()
@@ -704,12 +712,15 @@ def _audit_reviewed(run: StepRun) -> Completion:
         return Completion()
     review: dict[str, JsonValue] = _document(run, name)
     required: list[JsonValue] = build_carried.required(check_type(review["findings"], list[JsonValue]))
+    again: str = check_type(params["again"], str)
+    upstream: Completion | None = build_upstream.contract_route(run, name, required, again=again)
+    if upstream is not None:
+        return upstream
     work: list[JsonValue] = build_carried.owned_here(required)
     reason: str = "its correction belongs to the contract or the tooling, or its correction allowance is spent"
     carried: tuple[ValueArtifact, ...] = (build_carried.carry(name, required, reason),) if required else ()
     if not work and (review["approved"] is True or required):
         return Completion(artifacts=carried)
-    again: str = check_type(params["again"], str)
     if _count(run, again, name) >= build_rounds():
         return Completion(artifacts=carried)
     return Completion(
