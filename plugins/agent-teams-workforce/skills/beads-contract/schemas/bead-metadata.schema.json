@@ -881,6 +881,14 @@
         },
         "defects": {
           "type": "array",
+          "description": "The defects that decide the gate: every defect, or during a respec only those of the Stories being specified again.",
+          "items": {
+            "$ref": "#/$defs/BuildabilityDefect"
+          }
+        },
+        "reported": {
+          "type": "array",
+          "description": "During a respec: the defects of the Stories nobody is specifying again; reported, never deciding the gate.",
           "items": {
             "$ref": "#/$defs/BuildabilityDefect"
           }

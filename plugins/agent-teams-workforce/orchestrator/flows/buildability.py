@@ -15,9 +15,14 @@ route (``bead_metadata.DefectRoute``):
   (``build_prerequisites.validate_wait_graph``); or a Task consumes an item another Epic's Task
   builds without being ordered after that Task.
 - ``producer-absent`` (escalate, owner): a Task consumes a buildable item no Task of any Epic
-  builds, that is not verified in code and that no other Epic's ``drives`` judgment claims.
+  builds (neither the item nor the stack it is homed in), that is not verified in code, that no
+  other Epic's ``drives`` judgment claims and that no other Epic still elaborating also needs.
 - ``producer-epic-unordered`` (escalate, owner): the matrix orders another Epic before this one,
   that Epic is not done with elaboration, and no ``blocks`` or ``tracks`` edge orders it first.
+
+A defect that routes to a respec names its Story (else its first Task's Story); one that names
+none escalates to the owner. During a respec (a Story of the Epic has the respec state
+restarted) only the restarted Stories' defects decide the gate; the rest are reported.
 
 The gate is pure: it reads its arguments and the files the journal's artifacts name, and writes
 nothing. The step and the backfill write the report.
@@ -54,8 +59,10 @@ from bead_metadata import (
     KEY_ELAB_KEY,
     KEY_ELABORATION_STATE,
     KEY_MATRIX_ELEMENTS,
+    KEY_RESPEC_STATE,
     PARK_DECISION_ARCHITECTURE,
     PARK_DECISION_OWNER,
+    RESPEC_RESTARTED,
     ROUTE_ESCALATE,
     ROUTE_RESPEC,
     BuildabilityDefect,
@@ -157,19 +164,42 @@ class _Epic:
         return [bead for bead in self.graph.descendants(self.id) if bead.kind == "task" and not bead.closed]
 
     def add(self, kind: BuildabilityKind, story: str | None, tasks: Sequence[str], evidence: Sequence[str]) -> None:
-        """Record one defect, with its route and, for an escalated one, who decides it."""
+        """Record one defect, with its route and, for an escalated one, who decides it.
+
+        A defect that routes to a respec always names a Story: the one given, else the Story of
+        its first Task under this Epic. One that names none escalates to the owner, since no Story
+        can be specified again for it.
+        """
+        named: str | None = story or next(
+            (parent for task in tasks if (parent := self.story_of_task(task)) in self.stories.values()),
+            None,
+        )
         defect: BuildabilityDefect = {
             "kind": kind,
             "route": ROUTE_RESPEC,
-            "story": story,
+            "story": named,
             "tasks": list(tasks),
             "evidence": list(evidence),
         }
         if kind == DEFECT_DESIGN_GAP_CARRIED:
             defect |= {"route": ROUTE_ESCALATE, "decision": PARK_DECISION_ARCHITECTURE}
-        elif kind in {DEFECT_PRODUCER_ABSENT, DEFECT_PRODUCER_EPIC_UNORDERED}:
+        elif kind in {DEFECT_PRODUCER_ABSENT, DEFECT_PRODUCER_EPIC_UNORDERED} or named is None:
             defect |= {"route": ROUTE_ESCALATE, "decision": PARK_DECISION_OWNER}
         self.defects.append(defect)
+
+    def respecified(self) -> set[str]:
+        """Name the Epic's Stories being specified again: their respec state is restarted.
+
+        Returns:
+            The Story bead ids; empty outside a respec.
+
+        """
+        return {
+            story
+            for story in self.stories.values()
+            if (held := self.graph.beads.get(story)) is not None
+            and held.metadata.get(KEY_RESPEC_STATE) == RESPEC_RESTARTED
+        }
 
 
 def _done_artifacts(journal: Journal) -> list[Artifact]:
@@ -516,10 +546,34 @@ def _ordered(epic: _Epic, consumer: beadgraph.Bead, owner: buildowner.Builder) -
 
 
 def _absent(epic: _Epic, row: _Consumed, needs: dict[str, list[str]]) -> None:
-    """Record a consumed item no Task of any Epic builds (``producer-absent``), naming the Epics that need it."""
+    """Record a consumed item no Task of any Epic builds (``producer-absent``), naming the Epics that need it.
+
+    While another Epic that needs the item is not done with its elaboration, that Epic may still
+    write the Task that builds it: the build waits for that elaboration, so no defect is recorded.
+    """
     others: list[str] = [held for held in needs.get(row.target, []) if held != epic.id]
+    elaborating: list[str] = [
+        held
+        for held in others
+        if (bead := epic.graph.beads.get(held)) is not None
+        and not bead.closed
+        and bead.metadata.get(KEY_ELABORATION_STATE) != ELABORATION_DONE
+    ]
+    if elaborating:
+        return
     evidence: str = f"no Task of any Epic builds {row.target}; Epics that need it: {', '.join(others) or 'none'}"
     epic.add(DEFECT_PRODUCER_ABSENT, row.story, [], [evidence, row.row])
+
+
+def _home_builders(matrix: Matrix, entry: EntryId, index: buildowner.BuilderIndex) -> list[buildowner.Builder]:
+    """Find the Tasks that build the stack an entry is homed in: building the stack builds the entry.
+
+    Returns:
+        The home stack's builders; empty when the entry has no home or no Task builds it.
+
+    """
+    home: EntryId | None = matrix.home(entry)
+    return [] if home is None else index.get(str(home), [])
 
 
 def _producers(epic: _Epic, matrix: Matrix, tasks: Sequence[TaskBead]) -> None:
@@ -540,7 +594,7 @@ def _producers(epic: _Epic, matrix: Matrix, tasks: Sequence[TaskBead]) -> None:
         held: Entry | None = None if entry is None else matrix.find(entry)
         if entry is None or (held is not None and held.verified):
             continue
-        builders: list[buildowner.Builder] = index.get(row.target, [])
+        builders: list[buildowner.Builder] = index.get(row.target, []) or _home_builders(matrix, entry, index)
         if not builders:
             if _buildable(row.target) and not _claimed(matrix, entry, epic.id):
                 _absent(epic, row, needs)
@@ -643,7 +697,10 @@ def evaluate(
         tasks: Every Task bead (``matrixtasks.tasks_of``), for the builders of each entry.
 
     Returns:
-        The report: buildable when no defect was found, and every defect, deduplicated.
+        The report: buildable when no deciding defect was found, with the defects deduplicated.
+        During a respec (a Story of the Epic is restarted) only the defects of the restarted
+        Stories decide; the others are listed under ``reported``, since no one is specifying their
+        Stories again and they were there before.
 
     """
     checked: _Epic = _Epic(epic, graph, _span(journal, _work_folder(epic, journal)), _stories(graph, epic))
@@ -652,14 +709,19 @@ def evaluate(
     _wait_graph(checked)
     _producers(checked, matrix, tasks)
     _epic_order(checked, matrix)
-    defects: list[BuildabilityDefect] = _deduplicated(checked.defects)
-    return {
+    found: list[BuildabilityDefect] = _deduplicated(checked.defects)
+    scope: set[str] = checked.respecified()
+    defects: list[BuildabilityDefect] = [defect for defect in found if not scope or (defect["story"] or "") in scope]
+    report: BuildabilityReport = {
         "epic": epic,
         "buildable": not defects,
         "at": beadgraph.now_iso(),
         "reportPath": str(checked.span.work / REPORT_FILE),
         "defects": defects,
     }
+    if scope:
+        report["reported"] = [defect for defect in found if defect not in defects]
+    return report
 
 
 def evaluate_epic(epic: str, journals: Path) -> BuildabilityReport:

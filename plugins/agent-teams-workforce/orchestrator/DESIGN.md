@@ -1273,16 +1273,21 @@ elaboration is done.
   `build_prerequisites.validate_wait_graph`), and a dependency on an item another Epic's Task
   builds whose owner Task (`buildowner.owner`) is neither closed, reached through the consumers'
   blockers, nor named by their declared prerequisites (`producer-unordered`); an item of a kind
-  Tasks build that no Task of any Epic builds, is not verified and no other Epic's `drives`
-  judgment claims (`producer-absent`); and an Epic the matrix orders first (`epicorder.analyse`)
+  Tasks build that no Task of any Epic builds (neither the item nor the stack it is homed in,
+  `Matrix.home`), is not verified, no other Epic's `drives` judgment claims and no other Epic still
+  elaborating also needs (`producer-absent`); and an Epic the matrix orders first (`epicorder.analyse`)
   that is not done with elaboration and that no `blocks` or `tracks` edge orders first
   (`producer-epic-unordered`). Each defect takes a route (`DefectRoute`): `cycle-edge-dropped`,
   `completion-cycle` and `producer-unordered` go to `respec` (the Story's specs and Tasks are
   written again); `design-gap-carried` escalates for an architecture decision and the two producer
-  checks escalate for an owner decision. The report (`BuildabilityReport`) is written to
+  checks escalate for an owner decision; a respec defect that names no Story (by itself or its first
+  Task's parent) escalates for an owner decision. During a respec (a Story of the Epic has
+  `respec_state=restarted`; `elaboration.start` then takes the done Epic and leaves it `done` with the
+  cause `respec-requested`) only the restarted Stories' defects decide the gate, and the others are
+  listed under the report's `reported`. The report (`BuildabilityReport`) is written to
   `<work>/buildability.json` and to the Epic's `elaboration_buildability`
-  (`elaboration.record_buildability`). A failed gate leaves the Epic `in_progress` with the cause
-  `buildability` and fails the step with that item-class cause and the report; the done rule takes
+  (`elaboration.record_buildability`). A failed gate leaves the Epic in its state (`in_progress`, or `done`
+  during a respec) with the cause `buildability` and fails the step with that item-class cause and the report; the done rule takes
   the report's `buildable` as its edge check, and in a journal planned before the gate step
   existed it runs the gate itself. `buildability.evaluate_epic` runs the same gate over an Epic
   from its journal file, for the driver's one-shot backfill.

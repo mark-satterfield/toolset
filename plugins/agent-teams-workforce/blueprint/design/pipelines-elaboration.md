@@ -145,13 +145,18 @@ Notes on the diagram:
   an older journal carried to the build (`design-gap-carried`); declared build prerequisites that
   close a Task/Story completion cycle or that the wait graph refuses (`completion-cycle`,
   `producer-unordered`); a consumed item another Epic's Task builds, whose Task is not ordered
-  before the consumers (`producer-unordered`); a consumed item no Task of any Epic builds
+  before the consumers (`producer-unordered`); a consumed item no Task of any Epic builds, neither
+  the item nor the stack it is homed in, while no other Epic that needs it is still elaborating
   (`producer-absent`); and an Epic the matrix orders first that is neither done with elaboration
   nor ordered first by an edge (`producer-epic-unordered`). `cycle-edge-dropped`,
   `completion-cycle` and `producer-unordered` take the respec route: the Story's specs and Tasks
   are written again, with the defects handed to the authors as `respecDefects`. `design-gap-carried`
-  escalates for an architecture decision, and the two producer checks for an owner decision. A
-  failing Epic stays `in_progress` with the cause `buildability`, its report on
+  escalates for an architecture decision, and the two producer checks for an owner decision; a
+  respec defect that names no Story escalates for an owner decision too. During a respec (a Story
+  of the Epic has `respec_state=restarted`) the Epic stays `done`, so the Tasks of its other Stories
+  keep building, and only the restarted Stories' defects decide the gate; the others are listed
+  under the report's `reported`. A failing Epic keeps its state (`in_progress`, or `done` during a
+  respec) with the cause `buildability`, its report on
   `elaboration_buildability` and in `<work>/buildability.json`; the done rule passes no Epic the
   gate failed. Once marked elaborated, a Story whose respec was restarted has its respec state
   cleared; a parked Epic (state `parked`) is refused at the start until the owner unparks it.
