@@ -209,6 +209,10 @@ Notes on the diagram:
   item they both need whose architecture is not approved, so that an Epic waits for the Epic that
   builds and owns what it uses and no two Epics work at once on the same ordered shared item. Ready Epics are taken in their WSJF order behind those
   dependencies, because it puts the most value per effort first.
+- Before WSJF, the elaboration lane ranks eligible Epics by an urgency class and a fair share
+  (`ops/sdlc-automation/fairshare.py`, section 5.2), because WSJF with in-progress only breaking
+  ties let four failing Epics take 85 of 99 dispatches while a producer Epic other work waited on
+  got none.
 - A Task is ready when the Tasks it depends on (beads dependency edges) are closed, and ready Tasks
   are taken in WSJF order, because the edges carry build order and WSJF orders what is free to run.
 - A bead of any kind not routed to a pipeline is skipped with the reason logged and left for a
@@ -410,6 +414,91 @@ Notes on the diagram:
   (`AGENTS.md`).
 - A value known only at deploy time, such as the region or environment, is not a failure: it is
   handled at deploy time (the owner).
+
+### 5.1 A defect upstream of the build: a Story is specified again
+
+**Subject:** what the driver does when a build, the buildability gate or the owner's backfill finds
+that a Story's specs or Tasks cannot be built as written.
+**Scope:** one Story of one Epic.
+**Purpose:** the defect is removed where it was made, in elaboration, instead of failing the build
+again on every dispatch.
+**Sources:** the code: `ops/sdlc-automation/respec.py`, `reelaborate.py` (`restart_story`),
+`lane.py`, `selection.py`; the plugin: `orchestrator/flows/build_upstream.py`,
+`orchestrator/flows/buildability.py`.
+
+```mermaid
+flowchart TD
+    b["A build hands back upstream-defect, or a completion cycle shows among build waits"] --> r["respec_requested and respec_state=requested on the Story"]
+    g["The Epic's buildability gate fails with a defect that routes to a respec"] --> r
+    o["The owner's backfill: buildability.py backfill --apply"] --> r
+    r --> h["The build lane takes none of the Story's Tasks; the build slot is released, not failed"]
+    h --> pick["The elaboration lane picks the Epic first: urgency class respec"]
+    pick --> rs{"reelaborate.restart_story, just before the Epic is dispatched"}
+    rs -->|"a Task of the Story is closed"| park["Refused: the Story is marked refused and the Epic is parked for the owner"]
+    rs -->|"a live run works the Epic, the Story or a Task"| defer["Deferred: the Epic is skipped this pass and tried again"]
+    rs -->|"otherwise"| run["Restarted: the Story's specs from its context step, the Epic's Task edges onward and its Tasks' build journals are set back; respec_state=restarted"]
+    run --> elab["The Epic's elaboration writes the Story's specs and Tasks again with the defects in their context files"]
+    elab --> done["Marking the Epic elaborated clears the respec state; the Tasks are built again"]
+```
+
+Notes on the diagram:
+
+- The five build dead ends that now take this route instead of failing: a producer work-authoring
+  gap, an unschedulable completion cycle, a blocking contract finding (a design/spec contradiction
+  or a spec self-contradiction), and requirement source bytes changed since scope approval once the
+  rescope allowance is spent. The build no longer authors producer work itself.
+- A Task's closed build is never specified again: `restart_story` refuses a Story with a closed Task.
+- A producer Epic that is still elaborating is a wait, not a defect: the build waits for it.
+
+### 5.2 Parking an Epic, and fair elaboration slots
+
+**Subject:** how the elaboration lane stops dispatching an Epic it cannot settle, and how it shares
+its slots.
+**Scope:** the elaboration lane over all eligible Epics.
+**Sources:** the code: `ops/sdlc-automation/epicpark.py`, `fairshare.py`, `ordering.py`, `elabmark.py`.
+
+```mermaid
+flowchart TD
+    f(["An Epic's elaboration fails with an item failure"]) --> c{"What failed?"}
+    c -->|"the buildability gate"| bg{"Does a defect escalate?"}
+    bg -->|"yes"| pk["Parked: buildability, an owner or architecture decision"]
+    bg -->|"no"| rq["Each named Story's respec is requested - section 5.1"]
+    c -->|"a design gap the architect's round did not settle"| pd["Parked: design-gap, an architecture decision"]
+    c -->|"anything else"| st{"The second failure in a row at the same stage?"}
+    rq --> st
+    st -->|"yes"| pr["Parked: repeated-failure, an owner decision"]
+    st -->|"no"| again["Dispatched again later"]
+    pk --> own["The owner decides, then elabmark.py --bead id --unpark --apply restores its earlier state"]
+    pd --> own
+    pr --> own
+```
+
+Notes on the diagram:
+
+- A parked Epic carries `elaboration_state=parked`, its cause and its park record
+  (`elaboration_park`); the lane takes no parked Epic, and the dashboard lists it under what needs
+  the owner. A refused respec parks the Epic too (`respec-refused`).
+- The failure count starts again at a done elaboration, a park, an unpark and an owner's mark
+  (`elabmark.py --set` or `--start-at`); a Story's respec restart does not start it again.
+- Fair slots: the lane ranks eligible Epics first by urgency (an Epic with a Story whose respec is
+  requested; then one the owner restarted by hand or an open Task's build waits on; then the rest),
+  then puts an Epic dispatched three times (`FAIR_SHARE_DISPATCHES`) without progress after the
+  others of its class, and only then by WSJF.
+
+### 5.3 The owner's backfill of the buildability gate
+
+Epics marked elaborated before the buildability gate existed were never checked. The owner runs, once:
+
+```bash
+"$SKILLSPOKE_CC/.venv/bin/python" "$SKILLSPOKE_CC/ops/sdlc-automation/buildability.py" backfill [--epic <epic id>]... [--apply]
+```
+
+Without `--apply` it prints the plan as JSON and writes nothing. With `--apply` it writes each
+evaluated Epic's `elaboration_buildability`, a respec request on every Story a respec defect names and
+on the Story of every open Task whose latest build failure is one of the dead ends of section 5.1,
+and `buildability_failed` for each Epic with an escalated defect. It never parks an Epic and never
+changes a journal: the elaboration lane restarts each Story before it next dispatches its Epic. No
+session or agent runs it.
 
 ## 6. Where beads and the matrix are read
 
