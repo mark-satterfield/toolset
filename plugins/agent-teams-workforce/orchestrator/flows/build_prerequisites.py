@@ -299,7 +299,8 @@ def _add_wait_edges(graph: beadgraph.Graph, edges: dict[str, set[str]], wait: di
 
     """
     consumer: str = check_type(wait["task"], str)
-    if consumer in graph.beads and graph.beads[consumer].closed:
+    if (consumer in graph.beads and graph.beads[consumer].closed) or wait.get("elaboration") is not None:
+        # An Epic's elaboration never waits on a build, so a wait for one adds no completion edge.
         return
     producers: list[dict[str, JsonValue]] = check_type(wait["producers"], list[dict[str, JsonValue]])
     _producer_rows(producers)

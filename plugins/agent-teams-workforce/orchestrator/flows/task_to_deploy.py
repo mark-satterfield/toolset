@@ -1426,6 +1426,7 @@ def _registry() -> Registry:
         "build:prerequisites-diagnosed": build_prerequisites.diagnosed,
         "build:prerequisites-ready": _prerequisites_ready,
         "build:environment-observe": _prerequisites_ready,
+        build_prerequisite_work.ELABORATION_STAGE: build_prerequisite_work.elaborated,
         "build:prerequisite-author": build_prerequisite_work.author,
         "build:prerequisite-authored": build_prerequisite_work.authored,
         "build:prerequisites-rediagnose": _prerequisites_rediagnose,
@@ -1493,6 +1494,9 @@ def run(context: RunContext) -> dict[str, JsonValue]:
                     "lifecycleDone": False,
                     "waitingForPrerequisites": wait,
                 }
+        held: dict[str, JsonValue] | None = _elaboration_handback(context, path, journal, next_step, tools)
+        if held is not None:
+            return held
         if not runner.run_next():
             break
     journal = step_journal.read_journal(path)
@@ -1521,6 +1525,60 @@ def run(context: RunContext) -> dict[str, JsonValue]:
         "commit": artifacts.get("commit"),
         "suite": artifacts.get("finalRun"),
     }
+
+
+def _elaboration_handback(
+    context: RunContext,
+    path: Path,
+    journal: Journal,
+    next_step: Step | None,
+    tools: Tools,
+) -> dict[str, JsonValue] | None:
+    """Release the build slot while the build stands at its gate and the Epic still elaborates.
+
+    Returns:
+        The slot-releasing wait handback naming the Epic, else None.
+
+    """
+    if next_step is None or next_step.get("script") != build_prerequisite_work.ELABORATION_STAGE:
+        return None
+    waiting: dict[str, JsonValue] | None = _elaboration_wait(journal, tools)
+    if waiting is None:
+        return None
+    elaboration: dict[str, JsonValue] = json_object(waiting["elaboration"])
+    return {
+        "ok": False,
+        "stage": "waiting-for-prerequisites",
+        "beadId": context.bead,
+        "headline": (
+            f"{context.bead} waits for Epic {elaboration['epic']} to finish elaboration, "
+            f"which writes producer Story {elaboration['story']}'s specs and Tasks"
+        ),
+        "detailPath": str(path),
+        "sessions": json_object({"sessions": context.sessions})["sessions"],
+        "lifecycleDone": False,
+        "waitingForPrerequisites": waiting,
+    }
+
+
+def _elaboration_wait(journal: Journal, tools: Tools) -> dict[str, JsonValue] | None:
+    """Read the accepted elaboration wait and check its Epic without a session.
+
+    Returns:
+        The accepted wait while its Epic has not finished elaboration, else None.
+
+    """
+    waits: list[JsonValue] = [
+        artifact["value"]
+        for step in step_journal.steps_in_order(journal)
+        if step["status"] == "done"
+        for artifact in step["artifacts"]
+        if artifact["name"] == build_prerequisite_work.ELABORATION_WAIT and artifact["kind"] == "value"
+    ]
+    wait: dict[str, JsonValue] = json_object(waits[-1])
+    stage: str = build_prerequisite_work.ELABORATION_STAGE
+    pending: bool = tools.portfolio_read(stage, build_prerequisite_work.elaboration_pending, wait, control_repo())
+    return wait if pending else None
 
 
 def _prerequisite_wait(journal: Journal) -> dict[str, JsonValue]:

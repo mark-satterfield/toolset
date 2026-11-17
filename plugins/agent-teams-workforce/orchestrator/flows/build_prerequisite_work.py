@@ -12,7 +12,7 @@ import beadgraph
 import beadwrite
 import hierarchy
 import scoring
-from bead_metadata import KEY_ELAB_KEY, KEY_REPO_PATH
+from bead_metadata import ELABORATION_DONE, KEY_ELAB_KEY, KEY_ELABORATION_STATE, KEY_REPO_PATH
 from step_journal_contract import BeadId, Journal
 from typeguard import check_type
 
@@ -25,15 +25,25 @@ from orchestrator.flows.build_sessions import OutputContract, latest, reasoned
 from orchestrator.flows.build_state import ARTIFACT_CONTRACTS, artifact_document, artifact_file, new_step
 from orchestrator.flows.elaboration_files import control_repository, project_root
 
+ELABORATION_STAGE = "build:prerequisite-elaboration"
+"""The gate that holds a consumer while its producer Story's Epic finishes elaboration."""
+ELABORATION_WAIT = "prerequisiteElaborationWait"
+"""The journal value naming the consumer, its diagnosis and the Epic and Story it waits for."""
+
 
 def prepare(run: StepRun, diagnosis: dict[str, JsonValue]) -> Completion:
     """Locate real completed Story authoring inputs before assigning missing producer work.
 
+    A producer Story whose Epic has not finished elaboration has no specs or Tasks yet; the
+    consumer waits for that elaboration instead of failing.
+
     Returns:
-        A completed source-context record followed by the existing decomposer.
+        A completed source-context record followed by the existing decomposer, or the wait for
+        the producer Story's Epic to finish elaboration.
 
     Raises:
-        StepError: No actual open Story with complete accepted authoring artifacts exists.
+        StepError: No actual open Story exists, or an elaborated one lacks complete accepted
+            authoring artifacts.
 
     """
     graph: beadgraph.Graph = run.tools.portfolio_read(run.step["script"], beadgraph.load, control_repository())
@@ -50,6 +60,8 @@ def prepare(run: StepRun, diagnosis: dict[str, JsonValue]) -> Completion:
     epic: beadgraph.Bead | None = graph.epic_of(story.id)
     if epic is None:
         raise StepError(run.step["script"], OTHER_CAUSE, (f"Producer Story {story.id} has no actual Epic",))
+    if epic.metadata.get(KEY_ELABORATION_STATE) != ELABORATION_DONE:
+        return _await_elaboration(run, story, epic)
     context: dict[str, JsonValue] = _source(run.journal_path.parent, story, epic)
     return Completion(
         artifacts=(
@@ -64,6 +76,72 @@ def prepare(run: StepRun, diagnosis: dict[str, JsonValue]) -> Completion:
                     {
                         "again": check_type(run.params()["again"], str),
                     },
+                ),
+            )),
+        ),
+    )
+
+
+def _await_elaboration(run: StepRun, story: beadgraph.Bead, epic: beadgraph.Bead) -> Completion:
+    """Hold the consumer until the producer Story's Epic has written its specs and Tasks.
+
+    Returns:
+        The accepted wait and the gate that releases the build slot while the Epic elaborates.
+
+    """
+    fingerprint: str = check_type(run.params()["fingerprint"], str)
+    wait: dict[str, JsonValue] = {
+        "task": str(run.bead),
+        "evidencePath": str(artifact_file(run, "prerequisiteDiagnosis")),
+        "fingerprint": fingerprint,
+        "producers": [],
+        "elaboration": {"epic": epic.id, "story": story.id},
+    }
+    return Completion(
+        artifacts=(value_artifact(ELABORATION_WAIT, wait), value_artifact("prerequisiteFingerprint", fingerprint)),
+        add=(
+            StepGroup((
+                new_step(
+                    ELABORATION_STAGE,
+                    f"Wait for Epic {epic.id} to finish elaboration",
+                    {"again": check_type(run.params()["again"], str)},
+                ),
+            )),
+        ),
+    )
+
+
+def elaboration_pending(wait: dict[str, JsonValue], control: Path) -> bool:
+    """Check, without a session, whether the awaited Epic has not finished its elaboration.
+
+    Args:
+        wait: The accepted elaboration wait.
+        control: Central tracker repository.
+
+    Returns:
+        Whether the Epic is still not marked elaborated.
+
+    """
+    epic: str = check_type(json_object(wait["elaboration"])["epic"], str)
+    graph: beadgraph.Graph = beadgraph.load(control)
+    found: beadgraph.Bead | None = graph.beads.get(epic)
+    return found is None or found.metadata.get(KEY_ELABORATION_STATE) != ELABORATION_DONE
+
+
+def elaborated(run: StepRun) -> Completion:
+    """Diagnose again against the Tasks the producer Story's finished elaboration wrote.
+
+    Returns:
+        A fresh diagnosis of the now-decomposed producer work within the correction allowance.
+
+    """
+    return Completion(
+        add=(
+            StepGroup((
+                new_step(
+                    "build:prerequisites-rediagnose",
+                    "Diagnose the producer work the finished elaboration wrote",
+                    {"again": check_type(run.params()["again"], str)},
                 ),
             )),
         ),

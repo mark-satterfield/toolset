@@ -241,6 +241,14 @@ stops the Task. `environment` remains for a cause outside the repository (a miss
 runtime, credentials, network or service availability) and still ends the build when fresh
 readiness evidence shows it unready.
 
+A `missing-work` diagnosis whose producer Story's Epic has not finished elaboration is a wait, not a
+failure: the Story has no specs or Tasks yet. `build:prerequisite-elaboration` remains planned until
+the Epic is marked elaborated; its dispatch returns the typed `waitingForPrerequisites` handback with
+no producers and an `elaboration` naming the Epic and the Story, and releases its slot. Elaboration
+never waits on a build, so this wait closes no completion cycle. Once the Epic is elaborated the
+build diagnoses again against the Tasks it wrote. An elaborated Story that still lacks accepted
+authoring artifacts fails the Task as an item failure.
+
 `build:prerequisites-ready` remains planned while producer stages are pending. Its dispatch
 returns the typed `waitingForPrerequisites` handback without a failure and releases its slot.
 Delivered readiness requires a complete producer Story journal with closure. `published`

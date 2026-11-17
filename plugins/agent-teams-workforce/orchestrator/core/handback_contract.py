@@ -267,13 +267,25 @@ class WaitingProducer(TypedDict):
     evidence: str
 
 
+class WaitingElaboration(TypedDict):
+    """An Epic whose elaboration must finish before its producer Story's missing work can be authored."""
+
+    epic: str
+    story: str
+
+
 class WaitingForPrerequisites(TypedDict):
-    """Accepted prerequisite work that releases a build slot without failing the item."""
+    """Accepted prerequisite work that releases a build slot without failing the item.
+
+    A wait names either real producer Tasks or, with no producers, the Epic whose unfinished
+    elaboration holds the producer Story's specs and Tasks.
+    """
 
     task: str
     evidencePath: str
     fingerprint: str
     producers: list[WaitingProducer]
+    elaboration: NotRequired[WaitingElaboration]
 
 
 class HandbackDocument(TypedDict):
@@ -800,8 +812,12 @@ def validate_waiting_prerequisites(value: object) -> Mapping[str, object]:
     if not isinstance(value, dict):
         _reject("waitingForPrerequisites", "object", value, value)
     producers: object = value.get("producers")
-    if not isinstance(producers, list) or not producers:
-        _reject("waitingForPrerequisites.producers", "nonempty producer list", producers, value)
+    elaboration: object = value.get("elaboration")
+    if not isinstance(producers, list) or bool(producers) == (elaboration is not None):
+        expected: str = "nonempty producer list, or none with elaboration"
+        _reject("waitingForPrerequisites.producers", expected, producers, value)
+    if isinstance(elaboration, dict) and any(not str(elaboration[key]).strip() for key in ("epic", "story")):
+        _reject("waitingForPrerequisites.elaboration", "nonempty Epic and Story identifiers", elaboration, value)
     for key in ("task", "evidencePath", "fingerprint"):
         text: object = value.get(key)
         if not isinstance(text, str) or not text.strip():
