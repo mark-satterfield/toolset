@@ -331,9 +331,16 @@ Epic's architecture change").
 
 `architecture_impact.py`. The impact is assessed once per elaboration, when it ends: the Story
 edges step (`storyedges.story_edges`) plans the two steps after itself, before "Mark the Epic
-elaborated" (`architecture_impact.follow_steps`). It plans nothing when a done
-`reelaborate.restart` step already follows the journal's last done promotion (a journal planned
-when the promotion planned them), or when the scope is empty.
+elaborated" (`architecture_impact.follow_steps`). The changed entries come only from a promotion
+this run of the Epic made: the journal's last done promotion, unless a done `reelaborate.restart`
+step already follows it (a journal planned when the promotion planned them) or an earlier end of
+elaboration recorded it as assessed (`<arch-work>/impact-assessed-<promotion step id>.json`). An
+Epic started again at its specs keeps its earlier, assessed promotion, so it plans nothing and
+restarts no other Epic. The step plans nothing either when the scope is empty, and then records
+the promotion as assessed; the `reelaborate.restart` step records it when it completes. Only the
+Story edges step plans the two steps (`journal_registry.planned_after`): one a promotion planned
+under an earlier plan, not done, is taken out when a run opens the journal
+(`journal_run.replan_retired`).
 
 The scope (`architecture_impact.impact_scope`) is read from the tracker: for each other Epic with
 a Task whose matrix elements (or the entries it builds, `matrixtasks.TaskBead`) name an entry the
@@ -353,10 +360,9 @@ as `epicId` with the verdict `elaborated-unbuilt`; a ruling on an Epic outside t
 this Epic, restarts nothing. The driver checks the ruling again (the Epic is elaborated, no build
 has started on it: no Task of it in progress or closed, no Story of it in progress, no Story's or
 Task's journal worked on by a build or deploy; and no run works on it or its Stories and Tasks),
-starts the Epic's journal again at its open-run step, the step that plans its Architecture steps,
-which removes the steps it planned and plans them again as the lane plans them now (a start given
-at the Architecture container begins there too, `step_journal.restart_point`), the same journal
-change `elabmark.py --start-at` makes, and sets `elaboration_state=ready` with the cause
+starts the Epic's journal again at its "Specs and Stories" step, so the Epic is specified again
+against the changed architecture without designing its own again, the same journal change
+`elabmark.py --start-at` makes, and sets `elaboration_state=ready` with the cause
 `architecture-changed` and no owner. It refuses anything else and changes nothing. The step
 records the value `re-elaborations` (each Epic's outcome) and the value `knock-on proposals` (each
 `already-built` item's proposed Task; none is created). A restart that raised fails the step after

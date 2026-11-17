@@ -50,10 +50,11 @@ def _exception_chain(exc: BaseException) -> list[BaseException]:
 def stop_stage(exc: BaseException) -> StopStage | None:
     """Name the stop an exception chain records, if it records one.
 
-    A supervisor stop (``PipelineStoppedError``) is the shutdown stage; an owner signal
-    (``InterruptedError`` raised by the SIGTERM/SIGINT handler, or ``KeyboardInterrupt``) is the
-    interrupted stage. A ``SessionCleanupError`` anywhere in the chain is a code defect, not a
-    stop, and yields ``None``.
+    A supervisor stop (``PipelineStoppedError``) is the shutdown stage, and so is a
+    ``SessionCleanupError`` caused by a ``BrokenPipeError``: persisting a session's end could not
+    reach the supervisor because it had stopped. An owner signal (``InterruptedError`` raised by the
+    SIGTERM/SIGINT handler, or ``KeyboardInterrupt``) is the interrupted stage. Any other
+    ``SessionCleanupError`` in the chain is a code defect, not a stop, and yields ``None``.
 
     Returns:
         The stop stage, or ``None`` when the chain is not a stop.
@@ -67,7 +68,7 @@ def stop_stage(exc: BaseException) -> StopStage | None:
         raise TypeError(message)
     chain: list[BaseException] = _exception_chain(exc)
     if any(isinstance(item, SessionCleanupError) for item in chain):
-        return None
+        return SHUTDOWN_STAGE if any(isinstance(item, BrokenPipeError) for item in chain) else None
     if any(isinstance(item, PipelineStoppedError) for item in chain):
         return SHUTDOWN_STAGE
     if any(isinstance(item, (InterruptedError, KeyboardInterrupt)) for item in chain):

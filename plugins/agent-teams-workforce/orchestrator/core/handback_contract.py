@@ -18,8 +18,10 @@ Rules beyond the field types:
   shutdown or drain. An interrupted failure has cause ``shutdown`` and stage ``interrupted``
   (owner stop-execution or SIGTERM of that one item) or ``shutdown`` (supervisor shutdown or
   drain); a failure with either stop stage is classified ``interrupted``. A document whose
-  ``stage`` is a stop stage carries an interrupted failure. A session-cleanup error raised while
-  stopping is ``pipeline-code-defect``, not an interruption.
+  ``stage`` is a stop stage carries an interrupted failure. A session-cleanup error caused by a
+  broken pipe (the supervisor stopped before the session's end reached it) is a supervisor
+  shutdown; any other session-cleanup error raised while stopping is ``pipeline-code-defect``,
+  not an interruption.
 - ``beadsEmitted`` is not negative; every number is finite; integers are never booleans.
 - ``artifacts.phases`` keys are ``trd`` or ``spec:<repository slug>``.
 """

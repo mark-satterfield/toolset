@@ -160,7 +160,9 @@ classification `INTERRUPTED_CLASS`, cause `SHUTDOWN_CAUSE`, and stage `INTERRUPT
 owner stop of that one item or `SHUTDOWN_STAGE` for a supervisor shutdown or drain. An interruption
 never counts toward a repeated-failure streak and never latches a fatal stop; an item the owner
 stopped is kept from being dispatched again by its active stop record, not by a recorded failure. A
-session-cleanup error raised while stopping is classified `DEFECT_CLASS`.
+session-cleanup error caused by a `BrokenPipeError` (the supervisor stopped before the session's
+end reached it) is a supervisor shutdown, stage `SHUTDOWN_STAGE`; any other session-cleanup error
+raised while stopping is classified `DEFECT_CLASS`.
 
 "Elaboration done" is **not** taken from the handback: after every `prd-to-spec` dispatch the lane
 re-reads `KEY_ELABORATION_STATE` from the tracker (`lane._elaboration_done`); only `ELABORATION_DONE`

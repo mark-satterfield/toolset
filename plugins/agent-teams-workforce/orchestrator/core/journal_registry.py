@@ -19,6 +19,10 @@ its first step, not when it reaches the container.
 
 A flow names with ``children_together`` the containers whose child containers do not depend on
 each other (one per repository), so the runner runs those child containers at the same time.
+
+A flow whose step plans steps after itself names with ``planned_after`` the script key or agent of
+that planning step and of the steps it plans, so a step of those keys that a step of any other key
+planned is known to belong to a plan since retired (``journal_run.replan_retired``).
 """
 
 from __future__ import annotations
@@ -49,6 +53,7 @@ class Registry:
         self._containers: dict[str, tuple[StepPlan, ...]] = {}
         self._fillers: dict[str, frozenset[str]] = {}
         self._together: set[str] = set()
+        self._planners: dict[str, frozenset[str]] = {}
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def plan_under(self, container: str, *plans: StepPlan) -> None:
@@ -106,6 +111,38 @@ class Registry:
         """
         key: str | None = step.get("script") or step.get("agent")
         return key is not None and key in self._fillers.get(container, frozenset())
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def planned_after(self, planner: str, *keys: str) -> None:
+        """Register the script keys and agents of the steps a step plans after itself.
+
+        Args:
+            planner: The script key or agent of the step that plans them.
+            keys: Their script keys and agents; added to the planners already registered for each.
+
+        Raises:
+            ValueError: ``planner`` is blank, or no key is given or one is blank.
+
+        """
+        if not planner.strip() or not keys or any(not key.strip() for key in keys):
+            message: str = f"the planner {planner!r} or the keys {keys!r} it plans are blank or missing"
+            raise ValueError(message)
+        key: str
+        for key in keys:
+            self._planners[key] = self._planners.get(key, frozenset()) | {planner}
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def retired_plan(self, step: Step, planner: Step) -> bool:
+        """Tell whether a step belongs to a retired plan: a step of another key planned it.
+
+        Returns:
+            True when the step's script key or agent is registered with ``planned_after`` and the
+            planner's is not among the keys registered as planning it; False otherwise.
+
+        """
+        key: str | None = step.get("script") or step.get("agent")
+        planners: frozenset[str] | None = None if key is None else self._planners.get(key)
+        return planners is not None and (planner.get("script") or planner.get("agent")) not in planners
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def children_together(self, *containers: str) -> None:
@@ -282,3 +319,4 @@ any_agent_step: Final = REGISTRY.any_agent_step
 plan_under: Final = REGISTRY.plan_under
 fills: Final = REGISTRY.fills
 children_together: Final = REGISTRY.children_together
+planned_after: Final = REGISTRY.planned_after
