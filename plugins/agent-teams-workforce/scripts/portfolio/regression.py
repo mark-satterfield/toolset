@@ -393,14 +393,21 @@ def scope(plan: JsonObject) -> JsonObject:
     """Only mapping and execution configuration may change after scope approval.
 
     A requirement's origin is no part of the scope: the gate derives it (:func:`origins`), so a plan written
-    before origins existed and its mapping written after compare equal.
+    before origins existed and its mapping written after compare equal. Discovery's ``evidence`` is no part of
+    it either: it is model-authored prose, and the sources it describes are bound by :func:`source_hashes`.
 
     Returns:
         The plan fields that fix the approved scope.
 
     """
     stripped: JsonObject = without_origin(plan)
-    return {k: stripped[k] for k in ("components", "discovery", "requirements", "sourceFiles")}
+    discovery: JsonObject = {key: value for key, value in _obj(stripped, "discovery").items() if key != "evidence"}
+    return {
+        "components": stripped["components"],
+        "discovery": discovery,
+        "requirements": stripped["requirements"],
+        "sourceFiles": stripped["sourceFiles"],
+    }
 
 
 def _token_found(text: str, token: str) -> list[int]:

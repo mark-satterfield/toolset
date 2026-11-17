@@ -829,7 +829,7 @@
           "id": "scope-unchanged",
           "enforced": "Final mapping changed the approved impact scope",
           "home": "skills/artifact-handoff/schemas/regression-plan.schema.json",
-          "stated": "In finalize mode components, discovery, requirements and sourceFiles stay exactly as"
+          "stated": "In finalize mode components, discovery less its free-text evidence, requirements and sourceFiles stay exactly as"
         },
         {
           "id": "review-approved",

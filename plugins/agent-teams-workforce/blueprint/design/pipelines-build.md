@@ -362,7 +362,8 @@ acceptance criteria and Definition of Done): one whose id or sourceRef holds a r
 that names the Task's own spec with an AC-n or DOD-n id the bead lists as its own, is task whatever
 the plan says. The Tasks of a Story share one spec, so naming it alone, or citing another Task's
 criterion, or naming it after another PRD's or Epic's slug, is no citation. A missing origin is
-derived and is no error, origin is no part of the approved scope, and every Task-origin requirement
+derived and is no error, neither origin nor discovery's free-text evidence is part of the approved
+scope, and every Task-origin requirement
 is run and coverage-checked as impacted whatever the plan marks. An existing requirement binds the
 Task only through the tests the regression ledger (the repository's
 `.agent-workforce/regression.json`, written only by a verification that passed) records as proven

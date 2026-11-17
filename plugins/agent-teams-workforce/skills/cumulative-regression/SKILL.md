@@ -65,7 +65,7 @@ A plan review does not judge tests still to be written: not their design, not wh
 - Every mapped test exists, and its assertions substantiate the mapped requirement. One test may substantiate several requirements only when its actual assertions cover each; a file name, a test count or a collection count is not evidence.
 - Every replacement preserves the old requirement and assertion semantics.
 - The run commands and report configuration are real and collect the mapped tests; a green subset is insufficient. `sourceFiles` covers the actual requirement documents.
-- The approved scope is unchanged.
+- The approved scope is unchanged: components, discovery less its free-text `evidence`, requirements less their origin, and `sourceFiles`.
 
 ### Severity
 
