@@ -126,6 +126,7 @@ from orchestrator.flows.elaboration_files import (
     project_root,
     repository,
     repository_of,
+    respec_defects,
     span_files,
     story_files,
     strings,
@@ -1041,7 +1042,9 @@ def context(run: StepRun) -> Completion:
     (:func:`component_documents`); what the Story depends on outside what it
     builds (``repo_scoping.build_context``), as ids with their stack and repository; and the
     paths of the PRD and of the architect's result, whose ``facts`` name the documents that hold
-    the design the authors carry.
+    the design the authors carry; and ``respecDefects``, the defects found downstream that this
+    run must remove when the repository's Story asks for its specs to be written again
+    (``elaboration_files.respec_defects``).
 
     Beside it the step writes the spec pack (``spec-pack.schema.json``), what the spec sessions
     read instead of the vault and the matrix: the entries with their approved owners, the text
@@ -1101,6 +1104,11 @@ def context(run: StepRun) -> Completion:
             "prd": str(prd),
             "architectureResult": str(Path(read_context(run)["resultPath"]).resolve()),
             dispatch.KEY_DESIGN_SYSTEM: design_system(run),
+            "respecDefects": respec_defects(
+                run.tools.portfolio_read(SPEC_CONTEXT, beadgraph.load, control_repository()),
+                str(run.bead),
+                held.slug,
+            ),
         },
         SPEC_CONTEXT_SCHEMA,
     )
@@ -1389,8 +1397,9 @@ def story_document(run: StepRun) -> Completion:
     builds is first written as a design gap of its spec (:func:`_carried_values`). A document
     that still records an open design gap stops the repository here, before its Story and Tasks:
     the gaps go back to the solutions architect, and this repository alone is specified
-    again from the answers; a gap row left after the round limit, or answered and held again, is
-    carried to the build instead (``design_gaps.hold_open``). Otherwise
+    again from the answers; a gap row left after the round limit, or answered and held again,
+    escalates for a decision and fails the step with the cause ``design-gap``
+    (``design_gaps.hold_open``). Otherwise
     each spec document first gets its last section, the links to the architecture and design
     documents of the component it covers (:func:`link_documents`), once every correction is made.
     The Story's description lists every detail its documents leave to the build (their

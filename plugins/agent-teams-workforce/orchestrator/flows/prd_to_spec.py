@@ -71,6 +71,7 @@ from orchestrator.flows.architecture_files import (
     new_context,
 )
 from orchestrator.flows.elaboration_files import (
+    BUILDABLE_STEP,
     DONE_RULE_STEP,
     EDGE_CLOSURE,
     EDGES_CONTAINER,
@@ -212,11 +213,21 @@ def outermost_steps() -> list[StepPlan]:
             "inputs": ["edges"],
         },
         {
+            "ref": "buildable",
+            "description": "Check the Epic is buildable",
+            "purpose": (
+                "No Task edge was dropped, no design gap was carried, and every consumed item has a producer "
+                "ordered before it"
+            ),
+            "script": BUILDABLE_STEP,
+            "inputs": ["specs", "tasks", "edges", "score"],
+        },
+        {
             "ref": "done-rule",
             "description": "Apply the done rule",
             "purpose": "Every repository has its Story and its Tasks, and every Task is scored",
             "script": DONE_RULE_STEP,
-            "inputs": ["specs", "tasks", "score"],
+            "inputs": ["specs", "tasks", "score", "buildable"],
         },
         {
             "ref": "story-edges",

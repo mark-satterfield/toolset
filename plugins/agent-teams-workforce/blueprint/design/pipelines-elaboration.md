@@ -87,7 +87,9 @@ flowchart TD
     spec --> merge1(("merge"))
     specNo --> merge1
     merge1 --> stories["Stories and Tasks in beads, carrying the decisions or pointers to them - section 8"]
-    stories --> impact["Impact, once, as the elaboration ends: architecture-impact-analyst rules on each other Epic whose Tasks rest on an entry this Epic changed. Each of them elaborated but unbuilt, whose specs or Tasks the change makes wrong, starts again at its specs; a built item gets a proposed knock-on Task"]
+    stories --> gate{"Buildability gate: no Task edge dropped to break a cycle, no design gap carried, every consumed item has a producer ordered before it"}
+    gate -->|"a defect: the Epic stays in progress with the cause buildability and its report; a respec defect sends its Story's specs and Tasks back, an escalated one waits for a decision"| stories
+    gate -->|"buildable"| impact["Impact, once, as the elaboration ends: architecture-impact-analyst rules on each other Epic whose Tasks rest on an entry this Epic changed. Each of them elaborated but unbuilt, whose specs or Tasks the change makes wrong, starts again at its specs; a built item gets a proposed knock-on Task"]
     impact --> done(["Build pipeline, which reads the TRD for its decisions"])
 ```
 
@@ -135,6 +137,24 @@ Notes on the diagram:
   and the review log, and records architecture approval on the individual items reviewed.
   Dependencies established ahead of time order shared work independently of approval and
   verification. Neither mark holds an Epic back; missing ordering is corrected in dependencies.
+- The buildability gate (`orchestrator/flows/buildability.py`, the step `elaboration.buildable`
+  between scoring and the done rule) decides whether every Task the Epic wrote can be built as
+  planned, so a defect is found in elaboration and not by a failing build suite. Its five checks:
+  an edge between Tasks of two Stories was dropped because it would close a cycle
+  (`cycle-edge-dropped`; the edge write records each dropped edge and never writes it); gap rows
+  an older journal carried to the build (`design-gap-carried`); declared build prerequisites that
+  close a Task/Story completion cycle or that the wait graph refuses (`completion-cycle`,
+  `producer-unordered`); a consumed item another Epic's Task builds, whose Task is not ordered
+  before the consumers (`producer-unordered`); a consumed item no Task of any Epic builds
+  (`producer-absent`); and an Epic the matrix orders first that is neither done with elaboration
+  nor ordered first by an edge (`producer-epic-unordered`). `cycle-edge-dropped`,
+  `completion-cycle` and `producer-unordered` take the respec route: the Story's specs and Tasks
+  are written again, with the defects handed to the authors as `respecDefects`. `design-gap-carried`
+  escalates for an architecture decision, and the two producer checks for an owner decision. A
+  failing Epic stays `in_progress` with the cause `buildability`, its report on
+  `elaboration_buildability` and in `<work>/buildability.json`; the done rule passes no Epic the
+  gate failed. Once marked elaborated, a Story whose respec was restarted has its respec state
+  cleared; a parked Epic (state `parked`) is refused at the start until the owner unparks it.
 - Once, when the Epic's elaboration ends (after its Story edges, before it is marked elaborated),
   `architecture-impact-analyst` rules on each other Epic with a Task whose matrix elements name an
   entry this Epic's result names as added or changed, and on the open Tasks of those Epics a
@@ -259,10 +279,10 @@ Notes on the diagram:
   yet is written by the architecture maintainer as a fact. The check step fails on each listed
   value with no entry, an empty entry, or a heading that does not exist or does not state it word
   for word, and sends those back to the architect through the mechanical correction, bounded as
-  that correction is (3). The Epic never fails for it: what is left after the bound is carried to
-  the spec stage as kind C design gap rows of the repositories whose Stories build the elements,
-  with a warning note naming the pipeline defect, and takes the one gap round and then Decided at
-  build. A journal whose architecture was promoted before the checklist existed is not held to it.
+  that correction is (3). The architecture check never fails for it: what is left after the bound
+  is carried to the spec stage as kind C design gap rows of the repositories whose Stories build
+  the elements, with a warning note naming the pipeline defect, and takes the one gap round; a row
+  that round leaves open escalates for a decision (section 6). A journal whose architecture was promoted before the checklist existed is not held to it.
 - How the architect reaches a specialist is drawn in section 3: it names the agent and its
   request in a round of its requests, and the script starts the agent. The architect starts no
   agent, and each of its steps is a fresh session (`orchestrator/DESIGN.md`, section 11.1): one
@@ -567,7 +587,7 @@ sequenceDiagram
         WF->>WF: the repository stops before its Story and Tasks; one gap round is added to the end of the architecture, and only the repositories with gaps are set back
         Note over WF: the architect answers every repository's gaps in one step, element by element; the documents are written and promoted again, the TRD written again only when its changes changed and confirmed again, and the specs of the repositories with gaps written again
     else a gap row is left after the one round, or comes back after its answer
-        WF->>WF: the row moves to the spec's Decided at build table, the build decides it, and a warning note records the pipeline defect
+        WF->>WF: the row escalates for a decision: it is recorded as escalated, a warning note names it, and the Epic stops with the cause design-gap
     end
     WF->>TD: spec paths
     TD-)BD: Stories and Tasks, each stating what it builds with the matrix ids, and pointers to the detail
@@ -629,15 +649,13 @@ Notes on the diagram:
   impact analysis runs in the round. An answer that changes the elements the Stories build sends
   the span back instead. The architect answers element by element: each row and every related
   value A15 to A20 require of the same element, correcting contradictions in the documents
-  themselves. The Epic never fails on a gap: a row the architect answered that comes back, and
-  every open row of a repository whose gaps went to the architect once (`MAX_ROUNDS`, the rounds
-  counted from every record of them, `answers.json` in either form and the settled folder), is
-  carried to the build. It moves to the document's `## Decided at build` table marked as kind C
-  left open, the Story and its Tasks carry it, the implementer decides it and the Story's
-  architecture comparison and maintainer write the chosen value into the architecture; the Task
-  dependency mapper orders the Task that provides a carried value two repositories use before the
-  Task that uses it; and a warning note records the pipeline defect, "design gaps after 1 round",
-  with the Epic, the repository and the rows.
+  themselves. No gap is ever carried to the build: a row the architect answered that comes back,
+  and every open row of a repository whose gaps went to the architect once (`MAX_ROUNDS`, the
+  rounds counted from every record of them, `answers.json` in either form and the settled folder),
+  escalates for a decision (`design_gaps.escalate`). It is recorded in
+  `<arch-work>/design-gaps/escalated/<slug>.json`, a warning note names the Epic, the repository and
+  the rows, and the step fails with the cause `design-gap`, so the Epic stops until an owner or
+  architecture decision settles the rows. The spec documents are not edited.
 - The repositories' containers under Specs and Stories run at the same time, and so do their
   containers under Tasks, at most `ATW_ORCH_SESSIONS` at once (`journal_run.concurrent_containers`),
   because no repository's specs or Tasks wait on another's and run time is a goal of the pipeline.

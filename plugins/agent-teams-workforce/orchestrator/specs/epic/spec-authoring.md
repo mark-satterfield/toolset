@@ -26,7 +26,7 @@ session is not planned is written by step 1a instead.
 
 | # | Description | Performed by | Reads (artifact) | Writes | Records (artifact) |
 |---|---|---|---|---|---|
-| 1 | Gather what the repository builds | script `spec_authoring.context` | `span`, `elements`, `TRD`; the dispatch arguments (PRD, design system) | `spec-<slug>.context.json`, `spec-<slug>.pack.json` | value `repository`, file `repository context`, file `spec pack`; plans steps 2 to 10 as the Story's entries call for, step 6a for a repository whose stacks hold a DynamoDB store and whose Story builds a data store |
+| 1 | Gather what the repository builds | script `spec_authoring.context` | `span`, `elements`, `TRD`; the dispatch arguments (PRD, design system); the Story bead's respec request | `spec-<slug>.context.json` (with `respecDefects`), `spec-<slug>.pack.json` | value `repository`, file `repository context`, file `spec pack`; plans steps 2 to 10 as the Story's entries call for, step 6a for a repository whose stacks hold a DynamoDB store and whose Story builds a data store |
 | 1a | Record that the repository builds nothing a document specifies (contracts, data model) | script `spec_authoring.not_applicable` | `spec pack` | `spec-<slug>.md` or `spec-<slug>.data-model.md`, with no citation, listing what the Story builds | file `spec` or `data model` |
 | 2 | List the UI bundles (frontend) | script `cdsbundles.list_bundles` | the design system's packages directory | `spec-<slug>.bundles.json` | file `ui bundles` |
 | 3 | Choose the UI design source of each UI item (frontend) | agent `ui-design-source-selector` | `TRD`, `span`, `elements`, `ui bundles`, `repository context` | `candidates/spec-<slug>.ui.json` | file `ui sources as authored` |
@@ -36,7 +36,7 @@ session is not planned is written by step 1a instead.
 | 6a | Review the DynamoDB access patterns of the data model (a repository whose stacks hold a DynamoDB store) | agent `dynamodb-schema-access-pattern-reviewer` | `data model`, `TRD`, `repository context` | `spec-<slug>.data-model-review.json` | file `data model review` |
 | 7 | Add the UI design sources to the contracts (frontend) | script `specui.spec_ui_append` | `spec`, `ui sources` | the section `## UI design sources` of `spec-<slug>.md` | file `spec` |
 | 8 | Review the specification documents | agent `spec-reviewer` | `spec`, `data model`, `criteria`, `TRD`, `repository context`, `spec pack` (and, recorded with the review, `data model review`) | `spec-<slug>.review.json` | see "The review" |
-| 9 | Write the Story document | script `spec_authoring.story_document`; first `design_gaps.hold_open` | `spec`, `data model`, `criteria`, `repository context` | when a document holds an open design gap below the round limit: `<arch-work>/design-gaps/open/<slug>.json`, and the repository's steps wait for one gap round (below); a row answered and held again, or every row at the limit, moved to the document's `## Decided at build` table and `<arch-work>/design-gaps/leftover/<slug>.json`, with a warning note; otherwise the section `## Architecture and design documents` at the end of each of the three spec documents; `story-<slug>.json` | file `story document`, value `decision ids` |
+| 9 | Write the Story document | script `spec_authoring.story_document`; first `design_gaps.hold_open` | `spec`, `data model`, `criteria`, `repository context` | when a document holds an open design gap below the round limit: `<arch-work>/design-gaps/open/<slug>.json`, and the repository's steps wait for one gap round (below); a row answered and held again, or every row at the limit, escalates: `<arch-work>/design-gaps/escalated/<slug>.json`, a warning note, and the step fails with the cause `design-gap`; otherwise the section `## Architecture and design documents` at the end of each of the three spec documents; `story-<slug>.json` | file `story document`, value `decision ids` |
 | 10 | Write the Story bead | script `beadwrite.write_story` | `story document`, the three spec documents, `span`, `elements` | the Story bead; the Story's journal | value `story`, value `story write`, value `decision ids`; plans the repository's container under Tasks |
 
 Step 1a is planned first, before step 2. Steps 3 and 4 are consecutive agent steps whose inputs
@@ -139,14 +139,16 @@ against the settled design. No impact analysis runs in the round. When an answer
 elements the Stories build (the result's `addedOrChangedElements` and `unchangedWorkElements`
 name other entries than the span's items), the repository's context step raises
 `ScopeChangedError` naming the span step, so the span and every step after it run again
-(`build_ownership.refuse_scope_drift`), counted with ownership changes. The Epic never fails on a design gap. A row the architect already answered that a repository's
-documents hold again is carried to the build, and so is every open row of a repository whose gaps
-have gone to the architect `design_gaps.MAX_ROUNDS` (1) time; a row never handed before, below
-that limit, gets its own round. Carrying a row (`design_gaps.carry`) moves it from the document's
-gap table to its `## Decided at build` table with the kind `C, left open after 1 round of the
-architect`, adds it to `<arch-work>/design-gaps/leftover/<slug>.json`, removes the repository's open
-file, and emits a warning note, "pipeline defect, design gaps after 1 round", naming the Epic,
-the repository and the rows, which the supervisor's ledger and dashboard show. A repository at the
+(`build_ownership.refuse_scope_drift`), counted with ownership changes. No design gap is ever
+carried to the build. A row the architect already answered that a repository's documents hold
+again escalates for a decision, and so does every open row of a repository whose gaps have gone to
+the architect `design_gaps.MAX_ROUNDS` (1) time; a row never handed before, below that limit, gets
+its own round. Escalating rows (`design_gaps.escalate`) adds them to
+`<arch-work>/design-gaps/escalated/<slug>.json`, removes the repository's open file, emits a warning
+note, "design gaps escalated for a decision", naming the Epic, the repository and the rows, and
+fails the step with the cause `design-gap` and one evidence line per row, so the Epic stops until
+an owner or architecture decision settles them. The spec documents are not edited and no row moves
+to the decided-at-build table. A repository at the
 limit is never handed to the architect again (`design_gaps.handed`). The rounds are counted from
 every record of them (`design_gaps.answers`): `answers.json` in either form it has had (a bare
 count, or `rounds` with `rows`) and the settled folder, one round per settled step folder that
@@ -157,17 +159,24 @@ stage (`<arch-work>/design-gaps/unfilled-values.json`, `design_gaps.carry_unfill
 element the repository's Story builds (its context's `items`, by `matrixId`) as a kind C row of
 the design gaps of its data model (criteria A16 and A20) or of its contracts (any other), the one
 that exists when the other does not (`design_gaps.add_unfilled`): `| EV<n> | <element> | <item>
-(<criterion>): <what was wrong> |`. A row the architect already answered, one already carried to
-the build and one the document already holds is not written again. The row then takes the one gap
-round and, left open, is decided at build like any other.
+(<criterion>): <what was wrong> |`. A row the architect already answered, one an older journal
+carried to the build and one the document already holds is not written again. The row then takes
+the one gap round and, left open, escalates like any other.
 
 The Story document's description lists every decided-at-build row of its spec documents, so the
 Story bead carries them; the decomposer gives each row to the Task that builds its element (its
 `specSections` and description), the Task's implementer decides it, and the Story's architecture
-comparison records the chosen value (`built_version`, `decidedAtBuild`). The Task dependency
-mapper is handed the leftover files: a carried value two Stories' Tasks use orders the providing
-Task before each using Task, and the edge write reports every carried row no edge orders
-(`task_edges`).
+comparison records the chosen value (`built_version`, `decidedAtBuild`). Only kind B rows are
+decided at build. Gap rows an older journal carried to the build (`<arch-work>/design-gaps/leftover/`)
+are reported by the buildability gate as a `design-gap-carried` defect that escalates for an
+architecture decision.
+
+When the repository's Story bead asks for its specs to be written again (`respec_state`
+`requested` or `restarted`), step 1 writes its `respec_requested` into the context file as
+`respecDefects` (`elaboration_files.respec_defects`; empty otherwise): the defects a build, the
+buildability gate or the owner's backfill found downstream. The authors correct exactly those
+defects, a missing producer, a cycle, a contradiction or changed sources, and work none of them
+around.
 
 The Story document lists what the Story builds, one line per item: an event as
 `E<n>: <name>, published by <publishers>: <trigger>`, any other item as

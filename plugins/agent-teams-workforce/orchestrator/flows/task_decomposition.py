@@ -97,6 +97,7 @@ from orchestrator.flows.elaboration_files import (
     project_root,
     repository,
     repository_of,
+    respec_defects,
     span_files,
     story_files,
     strings,
@@ -179,10 +180,11 @@ def _write_context(run: StepRun, held: Repository, existing: list[JsonValue]) ->
     The file holds the Tasks that exist, by id and without their descriptions; each stack the
     Story builds in with the entries it builds there, for the decomposer's own ``atw-matrix
     uses``; ``dependsOn`` (``repo_scoping.build_context``): what the Tasks depend on, never
-    work; and ``openWork``: the open Tasks of other Epics in those stacks and the upstream stacks,
+    work; ``openWork``: the open Tasks of other Epics in those stacks and the upstream stacks,
     as ``atw-matrix work --ids <stacks> --not-epic <epic>`` prints them, answered from the one
     read of the tracker and the matrix this step makes, so the decomposer runs no command per
-    stack.
+    stack; and ``respecDefects``: the defects found downstream that this run must remove when the
+    Story asks for its Tasks to be written again (``elaboration_files.respec_defects``).
 
     Returns:
         The file.
@@ -224,6 +226,7 @@ def _write_context(run: StepRun, held: Repository, existing: list[JsonValue]) ->
             "dependsOn": [json_object(dependency) for dependency in depended["dependsOn"]],
             "producerCandidates": candidates,
             **({} if open_work is None else {"openWork": json_object(open_work)}),
+            "respecDefects": respec_defects(graph, str(run.bead), held.slug),
         },
         TASK_CONTEXT_SCHEMA,
     )

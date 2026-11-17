@@ -13,7 +13,7 @@ document and the Story; the span step hands over the span and the elements.
 
 | # | Description | Performed by | Reads (artifact) | Writes | Records (artifact) |
 |---|---|---|---|---|---|
-| 1 | Gather what the Tasks are decomposed from | script `task_decomposition.context` | `story`, `span`, `elements`; the bead tracker | `tasks-<slug>.context.json` | value `repository`, file `task context`; plans steps 2 and 3 |
+| 1 | Gather what the Tasks are decomposed from | script `task_decomposition.context` | `story`, `span`, `elements`; the bead tracker, with the Story bead's respec request | `tasks-<slug>.context.json` (with `respecDefects`) | value `repository`, file `task context`; plans steps 2 and 3 |
 | 2 | Decompose the Story into Tasks | agent `task-decomposer` | `spec`, `data model`, `criteria`, `story document`, `span`, `elements`, `ui sources` when there are any, `repository context`, `task context` | `tasks-<slug>.json`, checked by `task_decomposition.task_grouping_check` | file `tasks` |
 | 3 | Plan the Task beads | script `beadwrite.plan_story_tasks` | `tasks`, `story document`, the spec documents, `span`, `elements` | `tasks-<slug>.gaps.json` (`task-gaps.schema.json`) when the plan has a gap | a plan with a gap: file `task gaps`, value `gaps before the correction`, and steps 4 and 5 planned; otherwise value `task plan` and steps 6 to 9 planned |
 | 4 | Correct what the repository builds that no Task cites, and the unsized Tasks | agent `task-decomposer`, continuing the session of step 2 | the inputs of step 2, `tasks`, `task gaps` | `tasks-<slug>.correction.json`, checked by `tasks-correction.schema.json` and for titles that repeat a saved Task's or each other | file `task correction` |
@@ -40,7 +40,14 @@ A Task cites what it builds by item id; `hierarchy.stated_ids` derives its matri
 the entries and the shared capabilities the matrix guesses that work relies on) from those items, and the decomposer
 states none. Its `dependsOn`
 (`repo_scoping.build_context`) is what the Tasks depend on, never work. A repository-side element
-is a hint read from code: it may tell a Task where existing code sits, never what to build.
+is a hint read from code: it may tell a Task where existing code sits, never what to build. When
+the Story bead asks for its Tasks to be written again (`respec_state` `requested` or `restarted`),
+`respecDefects` holds its `respec_requested` (`elaboration_files.respec_defects`; empty otherwise):
+the defects a build, the buildability gate or the owner's backfill found downstream, such as a
+producer not ordered before its consumer, a completion cycle or a dropped cycle edge. The
+decomposer removes exactly those defects and works none of them around. The Epic's buildability
+gate (`prd-to-spec.md`, "The buildability gate") checks the Tasks again before the Epic is marked
+elaborated.
 
 ## The grouping check
 

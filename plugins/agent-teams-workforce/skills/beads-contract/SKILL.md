@@ -170,6 +170,22 @@ Which matrix entries a Task builds is its `builds_entries` key, and the entries 
 both fingerprints; `matrix_elements` also names the Task's stack and shared capabilities and is
 not the ownership record (the `matrix` skill, "Who builds an entry").
 
+The keys that carry an Epic's buildability, its park and a Story's respec request, by who writes
+and who clears each (their value shapes are the schema's `BuildabilityReport`, `ParkRecord` and
+`RespecRequest`):
+
+| Key | Bead | Written by | Cleared by |
+|---|---|---|---|
+| `elaboration_buildability` | Epic | the elaboration step `elaboration.buildable` (`elaboration.record_buildability`), with the gate's report; a failed gate also sets `elaboration_state_cause` to `buildability` and leaves the state `in_progress`; the owner's one-shot backfill (`ops/sdlc-automation/buildability.py backfill --apply`) for an Epic already done | replaced by the next gate's report; never emptied |
+| `elaboration_park` | Epic | the driver when it parks the Epic (`elaboration_state` `parked`): two failures at one stage, a `design-gap` failure, or an escalated buildability defect | the owner's unpark (`elabmark --unpark`), which restores the earlier state |
+| `respec_state` | Story | the driver: `requested` with the request (from a build's `upstream-defect`, a respec-route buildability defect, or the backfill), `restarted` when it restarts the Story's specs and Tasks, `refused` when a Task of the Story is already closed | `elaboration.mark_elaborated`, which empties it on each Story of the Epic whose state is `restarted`; a `requested` Story keeps it |
+| `respec_state_at` | Story | with every write of `respec_state` | set to the clearing time by `elaboration.mark_elaborated` |
+| `respec_requested` | Story | the driver, with `respec_state` `requested`: every request, deduplicated by `fingerprint` | emptied by `elaboration.mark_elaborated` with `respec_state` |
+
+While a Story's `respec_state` is `requested` or `restarted`, the elaboration hands its
+`respec_requested` to the spec authors and the decomposer as `respecDefects`. An Epic whose
+`elaboration_state` is `parked` is refused at `elaboration.start` with the code `epic-parked`.
+
 `bd` metadata is flat `key=value` TEXT, so **every value is a string**: lists and objects are
 compact JSON. The build-contract keys are inside the READINESS fingerprint and outside the
 JUDGING one; every other group is outside both, which is what lets each consumer store its own

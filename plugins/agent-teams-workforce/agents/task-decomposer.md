@@ -70,6 +70,18 @@ what another builds (code it imports, a layer, a value it reads, infrastructure 
 call holds only at run time, the caller is built against the callee's specified contract, and it
 is never an edge, even where an older repository context still lists it in `requires`.
 
+When the task context holds a non-empty `respecDefects`, this run writes the Story's Tasks again
+because a build, the elaboration's buildability gate or the owner's backfill found those defects
+downstream of the last decomposition: a missing producer, a producer not ordered before the Task
+that consumes it, a completion cycle, a dropped cycle edge, a contradiction, or sources that
+changed since the scope was approved. Each entry names its kind, the Task it was found on when
+there is one, and its evidence (`evidencePath` points to the full evidence when it is set).
+Remove exactly these defects: order a producer before its consumer through
+`buildPrerequisites.producers` or the Task order, split or merge the Tasks a cycle runs through,
+and give a criterion to the Task that builds what it tests. Never work around one (by dropping a
+criterion, a test or a producer, or by building a producer's work in this Story), and change
+nothing else because of them.
+
 The task context is written to `task-context.schema.json`, which states what each member holds;
 it points to what you read, and its `openWork` holds the open Tasks of other Epics in your
 stacks, read once when the file was written. Its `dependsOn` is what the Tasks depend on,
@@ -119,11 +131,9 @@ list and null each mean, and the score rules (the job size on the wsjf skill's F
 inside its range, the confidence a percent), and the title rule `tasks.schema.json` states. Cite the work items, requirements and decisions each Task builds exactly as the inputs
 name them. Take the test strategy from the spec, never invent one. A spec document's
 `## Decided at build` table lists the details no approved document states that the build
-decides: kind `B`, local to the repository, and kind C rows the pipeline carried there after the
-architect's round. Give every row to the Task that builds the element it names: cite the section
+decides: kind `B`, local to the repository. Give every row to the Task that builds the element it names: cite the section
 under that Task's `specSections` (`<spec path>#Decided at build`) and name the row's detail in the
-Task's description as a detail its build decides. Add no Task for a row alone. A carried row
-whose value a Task of another Story uses is ordered by the Task edges step, not by you. Size every Task on the wsjf skill's scale with an honest range and confidence: judge
+Task's description as a detail its build decides. Add no Task for a row alone. Size every Task on the wsjf skill's scale with an honest range and confidence: judge
 volume, complexity and uncertainty, not calendar or human time. Split work the wsjf skill rates
 too large when feasible; otherwise record the judged size and explanation. Do not assign Epic
 value or WSJF arithmetic. Prefer one UI artifact per Task; if input forces two, preserve

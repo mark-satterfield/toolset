@@ -124,7 +124,8 @@ asks the journal for the next step, runs it, and repeats until no step is left o
 it begins at the first step without child steps that is not done.
 
 The outermost steps of an Epic's journal are Open the run, Architecture, TRD, Specs and Stories,
-Tasks, Task edges, Score the Tasks, Apply the done rule, Story edges and Mark the Epic elaborated
+Tasks, Task edges, Score the Tasks, Check the Epic is buildable, Apply the done rule, Story edges
+and Mark the Epic elaborated
 (`flows/prd_to_spec.py` `outermost_steps`). A step with child steps is never run itself. Steps
 found at run time are added by the step that finds them: the open-run step plans the architect's
 Analyze step and the check after it, each architect step plans the specialists, the next Decide or
@@ -145,7 +146,8 @@ its code:
   `beadwrite.write_story`, `task_decomposition.context`, `beadwrite.plan_story_tasks`,
   `beadwrite.write_story_tasks`, `beadwrite.write_task`, `beadwrite.retire_superseded_tasks`, `beadwrite.write_story_task_edges`, `task_decomposition.record`,
   `beadwrite.closure_task_edges`, `task_edges.listing`, `beadwrite.write_all_task_edges`,
-  `elaboration.score`, `elaboration.done_rule`, `storyedges.story_edges`, `elaboration.finish`. A
+  `elaboration.score`, `elaboration.buildable`, `elaboration.done_rule`, `storyedges.story_edges`,
+  `elaboration.finish`. A
   handler returns a `Completion` or raises `StepError(stage, cause, evidence)` (section 6).
 - **Agent step.** The step's `agent` name is the key of a launch builder (`@agent_step(...)`). A
   builder of the architecture team is registered for every agent whose definition states its role;
@@ -204,14 +206,14 @@ answers every filed gap, an index and a check, which plans the document writes a
 and the TRD write only when the architect's TRD changes changed) and plans the TRD confirmation
 again; no other repository, no impact analysis and no TRD write the answers do not need run
 again. The writer is set back however often it was set back in the dispatch, because the step
-bounds its rounds itself, row by row, and never fails the Epic on a gap: a row the architect
+bounds its rounds itself, row by row, and never carries a gap to the build: a row the architect
 answered that comes back, and every open row of a repository whose gaps went to the architect
 once (`design_gaps.MAX_ROUNDS`, one round), counted from every record of the rounds
-(`design_gaps.answers`), is carried to the build (`design_gaps.carry`): it moves to the
-document's `## Decided at build` table marked as kind C left open, is recorded in
-`<arch-work>/design-gaps/leftover/<slug>.json` for the Task dependency mapper, and a warning note
-names the pipeline defect ("design gaps after 1 round") with the Epic, the repository and the
-rows. Most kind C gaps are caught before any spec is written: the architecture check holds the
+(`design_gaps.answers`), escalates for a decision (`design_gaps.escalate`): it is recorded in
+`<arch-work>/design-gaps/escalated/<slug>.json`, a warning note names the Epic, the repository and
+the rows, and the step fails with the cause `design-gap` (an item-class cause), so the Epic stops
+until an owner or architecture decision settles the rows. The spec documents are not edited.
+Most kind C gaps are caught before any spec is written: the architecture check holds the
 architect's filled element checklist (`elementValues`, `scripts/portfolio/matrixchecklist.py`,
 from `skills/effective-architecture/element-checklist.json` and the criteria A15 to A20) to the
 values each element the Epic adds or changes must state, sends each one with no entry, an empty
@@ -220,7 +222,8 @@ the mechanical correction, and once those corrections are spent carries what is 
 stage (`design_gaps.carry_unfilled`, `<arch-work>/design-gaps/unfilled-values.json`, a warning
 note "element values left unfilled after the mechanical corrections of the architecture"); the
 step after the spec review writes each carried value of an element its Story builds as a kind C
-gap row (`design_gaps.add_unfilled`), which then takes the one gap round and is decided at build.
+gap row (`design_gaps.add_unfilled`), which then takes the one gap round and escalates when it
+is left open.
 A journal whose architecture was promoted before any check listed the checklist is never held
 to it (`architecture_check.checklist_applies`). A repository at the limit is never handed to
 the architect again (`design_gaps.handed`). Only kind C details are gaps: a spec author builds a
@@ -1245,9 +1248,43 @@ elaboration is done.
 - **The Task scope of the scoring steps.** Step `elaboration.score` calls
   `elaboration.score_epic_tasks`, which calls `scoring.score_tasks` for the Tasks under the Epic:
   RR-OE counts over every open Task's edges, walked only from those Tasks, and no Epic is computed
-  or written. Step `elaboration.done_rule` reads the Tasks it left unscored, step
+  or written. Step `elaboration.buildable` runs the buildability gate, step
+  `elaboration.done_rule` reads the Tasks the scoring left unscored and the gate's report, step
   `storyedges.story_edges` writes the Story edges, and step `elaboration.finish` marks the Epic with
   `elaboration.mark_elaborated`.
+- **The buildability gate.** Step `elaboration.buildable` (`flows/buildability.py` `evaluate`)
+  decides whether every Task the Epic wrote can be built as planned, from the journal's artifacts
+  (or, for a journal whose steps were set back, the work folder's files), the tracker and the
+  matrix, and writes nothing itself. Its five checks each find defects of one kind
+  (`bead_metadata.BuildabilityKind`): an edge between Tasks of two Stories dropped because it would
+  close a cycle (`cycle-edge-dropped`: `written.dropped` of the edges result, or the warnings of
+  an older one); gap rows an older journal carried to the build (`design-gap-carried`:
+  `<arch-work>/design-gaps/leftover/`); declared build prerequisites that close a Task/Story
+  completion cycle or that the wait graph refuses (`completion-cycle`, `producer-unordered`:
+  `build_prerequisites.validate_wait_graph`), and a dependency on an item another Epic's Task
+  builds whose owner Task (`buildowner.owner`) is neither closed, reached through the consumers'
+  blockers, nor named by their declared prerequisites (`producer-unordered`); an item of a kind
+  Tasks build that no Task of any Epic builds, is not verified and no other Epic's `drives`
+  judgment claims (`producer-absent`); and an Epic the matrix orders first (`epicorder.analyse`)
+  that is not done with elaboration and that no `blocks` or `tracks` edge orders first
+  (`producer-epic-unordered`). Each defect takes a route (`DefectRoute`): `cycle-edge-dropped`,
+  `completion-cycle` and `producer-unordered` go to `respec` (the Story's specs and Tasks are
+  written again); `design-gap-carried` escalates for an architecture decision and the two producer
+  checks escalate for an owner decision. The report (`BuildabilityReport`) is written to
+  `<work>/buildability.json` and to the Epic's `elaboration_buildability`
+  (`elaboration.record_buildability`). A failed gate leaves the Epic `in_progress` with the cause
+  `buildability` and fails the step with that item-class cause and the report; the done rule takes
+  the report's `buildable` as its edge check, and in a journal planned before the gate step
+  existed it runs the gate itself. `buildability.evaluate_epic` runs the same gate over an Epic
+  from its journal file, for the driver's one-shot backfill.
+- **Defects found downstream reach the authors.** A Story whose `respec_state` is `requested` or
+  `restarted` hands its `respec_requested` to the spec authors (`spec-<slug>.context.json`) and
+  the decomposer (`tasks-<slug>.context.json`) as `respecDefects`
+  (`elaboration_files.respec_defects`), which they correct and never work around.
+  `elaboration.mark_elaborated` clears the respec state, request and time of each Story whose
+  state is `restarted`; a Story still `requested` keeps its request, so the driver selects the
+  Epic again. `elaboration.start` refuses a `parked` Epic (refusal `epic-parked`, naming the park
+  record's cause and decision); only the owner unparks it.
 - **Long script steps report progress.** The edge write, the Story edges and the scoring emit a
   `phase` event as each real stage ends, so the driver's idle limit tells a hung run from a working
   one; no timer emits regardless of progress.

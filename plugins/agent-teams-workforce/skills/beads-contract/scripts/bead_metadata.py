@@ -7,7 +7,7 @@ change the schema and regenerate. check_bead_metadata_generated.py fails when th
 from __future__ import annotations
 
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Final, Literal, TypedDict
+from typing import TYPE_CHECKING, Final, Literal, NotRequired, TypedDict
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -16,7 +16,7 @@ type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValu
 type JsonObject = dict[str, JsonValue]
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "2a595584ae4c00d07af6cac37c3de214c15834a754ef00b6d00af5ad9ab2e687"
+SCHEMA_SHA256: Final[str] = "830ae283aceb658c1f6562885ad206ecce66c5a8589a88f03391348d081d65d2"
 
 #: The literal a producer writes for an undecided -or-unknown contract value; read as None.
 UNKNOWN: Final[str] = "unknown"
@@ -94,14 +94,18 @@ CDS_AUDIT_VERDICTS: Final[tuple[CdsAuditVerdict, ...]] = (
     CDS_AUDIT_ERRORED,
 )
 
-type ElaborationState = Literal["ready", "in_progress", "done"]
+#: An Epic's elaboration state. parked: the Epic failed in a way the pipeline cannot settle (KEY_ELABORATION_PARK
+#: says why) and waits for an owner or architecture decision; only the owner unparks it.
+type ElaborationState = Literal["ready", "in_progress", "done", "parked"]
 ELABORATION_READY: Final[ElaborationState] = "ready"
 ELABORATION_IN_PROGRESS: Final[ElaborationState] = "in_progress"
 ELABORATION_DONE: Final[ElaborationState] = "done"
+ELABORATION_PARKED: Final[ElaborationState] = "parked"
 ELABORATION_STATES: Final[tuple[ElaborationState, ...]] = (
     ELABORATION_READY,
     ELABORATION_IN_PROGRESS,
     ELABORATION_DONE,
+    ELABORATION_PARKED,
 )
 ELABORATION_AUTHORING: Final[str] = ""
 
@@ -111,23 +115,143 @@ type ElaborationCause = Literal[
     "human-ruling",
     "awaiting-human-action",
     "architecture-changed",
+    "buildability",
+    "design-gap",
+    "respec-requested",
+    "repeated-failure",
+    "respec-refused",
 ]
 CAUSE_STARTED: Final[ElaborationCause] = "elaboration-started"
 CAUSE_DECOMPOSED: Final[ElaborationCause] = "decomposed-into-tasks"
 CAUSE_HUMAN: Final[ElaborationCause] = "human-ruling"
 CAUSE_AWAITING_HUMAN: Final[ElaborationCause] = "awaiting-human-action"
 CAUSE_ARCHITECTURE_CHANGED: Final[ElaborationCause] = "architecture-changed"
+CAUSE_BUILDABILITY: Final[ElaborationCause] = "buildability"
+CAUSE_DESIGN_GAP: Final[ElaborationCause] = "design-gap"
+CAUSE_RESPEC_REQUESTED: Final[ElaborationCause] = "respec-requested"
+CAUSE_REPEATED_FAILURE: Final[ElaborationCause] = "repeated-failure"
+CAUSE_RESPEC_REFUSED: Final[ElaborationCause] = "respec-refused"
 ELABORATION_CAUSES: Final[tuple[ElaborationCause, ...]] = (
     CAUSE_STARTED,
     CAUSE_DECOMPOSED,
     CAUSE_HUMAN,
     CAUSE_AWAITING_HUMAN,
     CAUSE_ARCHITECTURE_CHANGED,
+    CAUSE_BUILDABILITY,
+    CAUSE_DESIGN_GAP,
+    CAUSE_RESPEC_REQUESTED,
+    CAUSE_REPEATED_FAILURE,
+    CAUSE_RESPEC_REFUSED,
 )
 DONE_CAUSES: Final[frozenset[ElaborationCause]] = frozenset({
     CAUSE_DECOMPOSED,
     CAUSE_HUMAN,
 })
+PARK_CAUSES: Final[frozenset[ElaborationCause]] = frozenset({
+    CAUSE_BUILDABILITY,
+    CAUSE_DESIGN_GAP,
+    CAUSE_REPEATED_FAILURE,
+    CAUSE_RESPEC_REFUSED,
+})
+
+#: Who settles a parked Epic: the owner, or an architecture decision.
+type ParkDecision = Literal["owner", "architecture"]
+PARK_DECISION_OWNER: Final[ParkDecision] = "owner"
+PARK_DECISION_ARCHITECTURE: Final[ParkDecision] = "architecture"
+PARK_DECISIONS: Final[tuple[ParkDecision, ...]] = (
+    PARK_DECISION_OWNER,
+    PARK_DECISION_ARCHITECTURE,
+)
+
+#: Where a Story's request to write its specs and Tasks again stands: none, requested (a defect found downstream
+#: waits for the Epic's elaboration), restarted (the Story's spec and Task steps were set back), refused (a Task
+#: of the Story is already closed).
+type RespecState = Literal["", "requested", "restarted", "refused"]
+RESPEC_NONE: Final[RespecState] = ""
+RESPEC_REQUESTED: Final[RespecState] = "requested"
+RESPEC_RESTARTED: Final[RespecState] = "restarted"
+RESPEC_REFUSED: Final[RespecState] = "refused"
+RESPEC_STATES: Final[tuple[RespecState, ...]] = (
+    RESPEC_NONE,
+    RESPEC_REQUESTED,
+    RESPEC_RESTARTED,
+    RESPEC_REFUSED,
+)
+
+#: What a respec request asks the Story's specs and Tasks to remove.
+type RespecKind = Literal[
+    "producer-missing",
+    "completion-cycle",
+    "contract-finding",
+    "source-changed",
+    "cycle-edge-dropped",
+    "producer-unordered",
+]
+RESPEC_KIND_PRODUCER_MISSING: Final[RespecKind] = "producer-missing"
+RESPEC_KIND_COMPLETION_CYCLE: Final[RespecKind] = "completion-cycle"
+RESPEC_KIND_CONTRACT_FINDING: Final[RespecKind] = "contract-finding"
+RESPEC_KIND_SOURCE_CHANGED: Final[RespecKind] = "source-changed"
+RESPEC_KIND_CYCLE_EDGE_DROPPED: Final[RespecKind] = "cycle-edge-dropped"
+RESPEC_KIND_PRODUCER_UNORDERED: Final[RespecKind] = "producer-unordered"
+RESPEC_KINDS: Final[tuple[RespecKind, ...]] = (
+    RESPEC_KIND_PRODUCER_MISSING,
+    RESPEC_KIND_COMPLETION_CYCLE,
+    RESPEC_KIND_CONTRACT_FINDING,
+    RESPEC_KIND_SOURCE_CHANGED,
+    RESPEC_KIND_CYCLE_EDGE_DROPPED,
+    RESPEC_KIND_PRODUCER_UNORDERED,
+)
+
+#: Who found the defect a respec request names: a build, the elaboration's buildability gate, or the one-shot
+#: backfill.
+type RespecSource = Literal["build", "buildability", "backfill"]
+RESPEC_SOURCE_BUILD: Final[RespecSource] = "build"
+RESPEC_SOURCE_BUILDABILITY: Final[RespecSource] = "buildability"
+RESPEC_SOURCE_BACKFILL: Final[RespecSource] = "backfill"
+RESPEC_SOURCES: Final[tuple[RespecSource, ...]] = (
+    RESPEC_SOURCE_BUILD,
+    RESPEC_SOURCE_BUILDABILITY,
+    RESPEC_SOURCE_BACKFILL,
+)
+
+#: A defect the buildability gate finds in an elaborated Epic.
+type BuildabilityKind = Literal[
+    "cycle-edge-dropped",
+    "completion-cycle",
+    "producer-unordered",
+    "design-gap-carried",
+    "producer-absent",
+    "producer-epic-unordered",
+]
+DEFECT_CYCLE_EDGE_DROPPED: Final[BuildabilityKind] = "cycle-edge-dropped"
+DEFECT_COMPLETION_CYCLE: Final[BuildabilityKind] = "completion-cycle"
+DEFECT_PRODUCER_UNORDERED: Final[BuildabilityKind] = "producer-unordered"
+DEFECT_DESIGN_GAP_CARRIED: Final[BuildabilityKind] = "design-gap-carried"
+DEFECT_PRODUCER_ABSENT: Final[BuildabilityKind] = "producer-absent"
+DEFECT_PRODUCER_EPIC_UNORDERED: Final[BuildabilityKind] = "producer-epic-unordered"
+BUILDABILITY_KINDS: Final[tuple[BuildabilityKind, ...]] = (
+    DEFECT_CYCLE_EDGE_DROPPED,
+    DEFECT_COMPLETION_CYCLE,
+    DEFECT_PRODUCER_UNORDERED,
+    DEFECT_DESIGN_GAP_CARRIED,
+    DEFECT_PRODUCER_ABSENT,
+    DEFECT_PRODUCER_EPIC_UNORDERED,
+)
+RESPEC_DEFECT_KINDS: Final[frozenset[BuildabilityKind]] = frozenset({
+    DEFECT_CYCLE_EDGE_DROPPED,
+    DEFECT_COMPLETION_CYCLE,
+    DEFECT_PRODUCER_UNORDERED,
+})
+
+#: Where a buildability defect goes: respec (its Story's specs and Tasks are written again) or escalate (an owner
+#: or architecture decision).
+type DefectRoute = Literal["respec", "escalate"]
+ROUTE_RESPEC: Final[DefectRoute] = "respec"
+ROUTE_ESCALATE: Final[DefectRoute] = "escalate"
+DEFECT_ROUTES: Final[tuple[DefectRoute, ...]] = (
+    ROUTE_RESPEC,
+    ROUTE_ESCALATE,
+)
 
 # Metadata keys.
 #: REQUIRED on a Task: the one absolute repository path elaboration ruled; the build lane builds there.
@@ -195,6 +319,20 @@ KEY_ELABORATION_STATE_AT: Final[str] = "elaboration_state_at"
 KEY_ELABORATION_STATE_CAUSE: Final[str] = "elaboration_state_cause"
 #: The owner token that set the state.
 KEY_ELABORATION_STATE_OWNER: Final[str] = "elaboration_state_owner"
+#: On an Epic: JSON ParkRecord, why the Epic is parked. Written by the driver when it parks the Epic; cleared by
+#: the owner's unpark (elabmark --unpark).
+KEY_ELABORATION_PARK: Final[str] = "elaboration_park"
+#: On an Epic: JSON BuildabilityReport of the last buildability gate. Written by the elaboration step
+#: elaboration.buildable (and the owner's backfill); replaced by the next gate.
+KEY_ELABORATION_BUILDABILITY: Final[str] = "elaboration_buildability"
+#: On a Story: where its respec request stands. Written by the driver (requested, restarted, refused); cleared to
+#: empty by mark_elaborated when it was restarted.
+KEY_RESPEC_STATE: Final[str] = "respec_state"
+#: On a Story: when respec_state was last set.
+KEY_RESPEC_STATE_AT: Final[str] = "respec_state_at"
+#: On a Story: JSON list of RespecRequest, the defects its specs and Tasks must remove. Written with
+#: respec_state; cleared by mark_elaborated when the restarted Story is elaborated again.
+KEY_RESPEC_REQUESTED: Final[str] = "respec_requested"
 #: The identity a re-elaboration matches on, written once at the create: story:<slug> on a Story, the task key on
 #: a Task.
 KEY_ELAB_KEY: Final[str] = "elab_key"
@@ -489,6 +627,8 @@ LANE_KEYS: Final[tuple[str, ...]] = (
     KEY_ELABORATION_STATE_AT,
     KEY_ELABORATION_STATE_CAUSE,
     KEY_ELABORATION_STATE_OWNER,
+    KEY_ELABORATION_PARK,
+    KEY_ELABORATION_BUILDABILITY,
     KEY_ELAB_KEY,
     KEY_ELAB_FOLLOWS,
     KEY_BUILDS_ENTRIES,
@@ -549,6 +689,12 @@ SEQUENCING_KEYS: Final[tuple[str, ...]] = (
     KEY_SEQ_EDGE_WITHDRAWN,
     KEY_SEQ_ASSESSED_AT,
 )
+#: Keys on a Story asking for its specs and Tasks to be written again.
+RESPEC_KEYS: Final[tuple[str, ...]] = (
+    KEY_RESPEC_STATE,
+    KEY_RESPEC_STATE_AT,
+    KEY_RESPEC_REQUESTED,
+)
 #: Every metadata key this pipeline writes; `metadata get` lists other keys as unrecognized.
 KNOWN_KEYS: Final[frozenset[str]] = frozenset((
     *CONTRACT_KEYS,
@@ -561,6 +707,7 @@ KNOWN_KEYS: Final[frozenset[str]] = frozenset((
     *STORY_KEYS,
     *WSJF_KEYS,
     *SEQUENCING_KEYS,
+    *RESPEC_KEYS,
 ))
 
 
@@ -600,6 +747,11 @@ class BeadMetadata(TypedDict, total=False):
     elaboration_state_at: str
     elaboration_state_cause: str
     elaboration_state_owner: str
+    elaboration_park: str
+    elaboration_buildability: str
+    respec_state: str
+    respec_state_at: str
+    respec_requested: str
     elab_key: str
     elab_follows: str
     builds_entries: str
@@ -678,3 +830,48 @@ class Criteria(TypedDict):
     sourceField: str
     inherited: bool
     searched: list[str]
+
+
+class RespecRequest(TypedDict):
+    """One downstream defect a Story's specs and Tasks must remove (see the fingerprint rule)."""
+
+    kind: RespecKind
+    source: RespecSource
+    task: str | None
+    evidence: list[str]
+    evidencePath: str | None
+    fingerprint: str
+    at: str
+
+
+class ParkRecord(TypedDict):
+    """Why an Epic is parked, at which stage, and who settles it."""
+
+    previousState: str
+    cause: ElaborationCause
+    stage: str
+    decision: ParkDecision
+    evidence: list[str]
+    failures: int
+    at: str
+
+
+class BuildabilityDefect(TypedDict):
+    """One defect the buildability gate found; decision is set on an escalated defect only."""
+
+    kind: BuildabilityKind
+    route: DefectRoute
+    story: str | None
+    tasks: list[str]
+    evidence: list[str]
+    decision: NotRequired[ParkDecision]
+
+
+class BuildabilityReport(TypedDict):
+    """The buildability gate's report on one Epic, also written to reportPath."""
+
+    epic: str
+    buildable: bool
+    at: str
+    reportPath: str
+    defects: list[BuildabilityDefect]

@@ -92,6 +92,11 @@
           "deploymentVerified": {"type": "boolean"}
         }
       }
+    },
+    "respecDefects": {
+      "description": "Defects found downstream of this elaboration (by a build, the buildability gate or the owner's backfill) that this run must remove from the Story's Tasks: each names what is wrong (a missing producer, a completion cycle, a dropped cycle edge, a producer not ordered first, a contradiction, changed sources) with its evidence. Correct exactly these defects; never work around one. Empty, or absent, when the Story asks for no respec.",
+      "type": "array",
+      "items": {"$ref": "spec-context.schema.json#/$defs/RespecRequest"}
     }
   }
 }

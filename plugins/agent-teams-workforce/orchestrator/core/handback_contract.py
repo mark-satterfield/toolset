@@ -101,6 +101,10 @@ CONTENTION_CAUSE: Final = "contention"
 TIMEOUT_CAUSE: Final = "timeout"
 TOOL_TIMEOUT_CAUSE: Final = "tool-timeout"
 NETWORK_CAUSE: Final = "network"
+BUILDABILITY_CAUSE: Final = "buildability"
+"""Cause of an Epic whose elaboration gate (``elaboration.buildable``) found work that cannot be built as planned."""
+DESIGN_GAP_CAUSE: Final = "design-gap"
+"""Cause of an Epic whose spec holds a design gap the architect's round did not settle; it escalates for a decision."""
 ACCOUNT_CAUSES: Final[frozenset[str]] = frozenset({API_CAUSE, QUOTA_CAUSE})
 """Causes that come from the Anthropic account or API, not from the item."""
 RETRYABLE_CAUSES: Final[tuple[str, ...]] = (QUOTA_CAUSE, API_CAUSE, BD_TIMEOUT_CAUSE, CONTENTION_CAUSE)
@@ -500,6 +504,8 @@ class Wire:
     bd_timeout_cause: str
     contention_cause: str
     timeout_cause: str
+    buildability_cause: str
+    design_gap_cause: str
     account_causes: frozenset[str]
     retryable_causes: tuple[str, ...]
     transient_causes: frozenset[str]
@@ -540,6 +546,8 @@ wire: Final[Wire] = Wire(
     bd_timeout_cause=BD_TIMEOUT_CAUSE,
     contention_cause=CONTENTION_CAUSE,
     timeout_cause=TIMEOUT_CAUSE,
+    buildability_cause=BUILDABILITY_CAUSE,
+    design_gap_cause=DESIGN_GAP_CAUSE,
     account_causes=ACCOUNT_CAUSES,
     retryable_causes=RETRYABLE_CAUSES,
     transient_causes=TRANSIENT_CAUSES,

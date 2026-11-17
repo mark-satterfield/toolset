@@ -8,6 +8,7 @@ into the file sets the portfolio functions take. No reader derives a path.
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from collections.abc import Mapping
@@ -17,8 +18,10 @@ from typing import Final
 
 # The driver surface is defined once, in the pipeline-contracts skill.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
+import beadgraph
 import hierarchy
 import strictschema
+from bead_metadata import KEY_ELAB_KEY, KEY_RESPEC_REQUESTED, KEY_RESPEC_STATE, RESPEC_REQUESTED, RESPEC_RESTARTED
 from driver_surface_types import CONTROL_REPO_ENV, PROJECT_ROOT_ENV
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
@@ -60,6 +63,7 @@ EDGE_CLOSURE: Final = "beadwrite.closure_task_edges"
 EDGE_LISTING: Final = "task_edges.listing"
 EDGE_WRITE: Final = "beadwrite.write_all_task_edges"
 SCORE: Final = "elaboration.score"
+BUILDABLE_STEP: Final = "elaboration.buildable"
 DONE_RULE_STEP: Final = "elaboration.done_rule"
 STORY_EDGES: Final = "storyedges.story_edges"
 MARK_DONE: Final = "elaboration.finish"
@@ -105,6 +109,7 @@ EDGE_LIST: Final = "task dependency listing"
 TASK_DEPS: Final = "task dependencies"
 EDGES_RESULT: Final = "edges result"
 UNSCORED: Final = "unscored tasks"
+BUILDABILITY: Final = "buildability"
 DONE_RULE: Final = "done rule"
 STORY_EDGES_RESULT: Final = "story edges"
 LIFECYCLE_DONE: Final = "lifecycle done"
@@ -384,3 +389,35 @@ def project_root() -> Path:
 
     """
     return env_path(PROJECT_ROOT_ENV)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def respec_defects(graph: beadgraph.Graph, epic: str, slug: str) -> list[JsonValue]:
+    """Read the defects found downstream that a repository's specs and Tasks must remove this run.
+
+    They are the ``respec_requested`` of the repository's Story bead (``elab_key`` ``story:<slug>``
+    under the Epic) while its ``respec_state`` is requested or restarted.
+
+    Args:
+        graph: The tracker graph.
+        epic: The Epic.
+        slug: The repository's slug.
+
+    Returns:
+        The Story's respec requests; empty when the Story does not exist yet, asks for none, or
+        its request is settled.
+
+    """
+    key: str = f"story:{slug}"
+    story: beadgraph.Bead | None = next(
+        (
+            bead
+            for bead in graph.descendants(epic)
+            if bead.kind == "story" and bead.parent == epic and bead.metadata.get(KEY_ELAB_KEY) == key
+        ),
+        None,
+    )
+    if story is None or story.metadata.get(KEY_RESPEC_STATE) not in {RESPEC_REQUESTED, RESPEC_RESTARTED}:
+        return []
+    requested: JsonValue = json.loads(story.metadata.get(KEY_RESPEC_REQUESTED) or "[]")
+    return requested if isinstance(requested, list) else []

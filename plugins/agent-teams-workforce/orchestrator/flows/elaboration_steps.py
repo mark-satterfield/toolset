@@ -1,28 +1,40 @@
-"""The last steps of an elaboration: scoring, the done rule, Story edges and the Epic's mark.
+"""The last steps of an elaboration: scoring, the buildability gate, the done rule, Story edges and the Epic's mark.
 
 Each is one script step of the Epic's journal, planned when the journal is created; the Story
 edges step plans the impact assessment of the Epic's architecture change before the mark. What a step
 needs from the repositories' steps it reads from the artifacts the steps its inputs name hold.
+
+The buildability gate (``buildability.evaluate``) records its report on the Epic
+(``elaboration_buildability``) and in the work folder; a failed gate leaves the Epic in progress
+with the cause ``buildability`` and fails the step, so the done rule never passes an Epic whose
+Tasks cannot be built as planned.
 """
 
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import beadgraph
 import elaboration
+import matrixtasks
 import storyedges
+from matrixstore import Matrix, matrix_path, read_matrix
 from typeguard import check_type
 
 from orchestrator.core.driver_contracts import dispatch_arguments
-from orchestrator.core.handback_contract import ITEM_CLASS, OTHER_CAUSE, Failure
-from orchestrator.core.io import JsonValue, json_object
+from orchestrator.core.handback_contract import BUILDABILITY_CAUSE, ITEM_CLASS, OTHER_CAUSE, Failure
+from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import script_step
 from orchestrator.core.journal_steps import Completion, StepRun, value_artifact
 from orchestrator.flows.architecture_impact import follow_steps
+from orchestrator.flows.buildability import evaluate
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_REPOSITORIES,
+    BUILDABILITY,
+    BUILDABLE_STEP,
     DONE_RULE,
     DONE_RULE_STEP,
     LIFECYCLE_DONE,
@@ -43,6 +55,7 @@ from orchestrator.flows.elaboration_support import (
 )
 
 if TYPE_CHECKING:
+    from bead_metadata import BuildabilityReport
     from scoringcontracts import TaskScores
 
 TASK_SCORES_STAGE: Final = "task-scores"
@@ -111,11 +124,72 @@ def score(run: StepRun) -> Completion:
     return Completion(artifacts=(value_artifact(UNSCORED, unscored),))
 
 
+def _gate(run: StepRun, stage: str) -> BuildabilityReport:
+    """Run the buildability gate over the Epic and record its report; a failed gate fails the step.
+
+    The report is written to its file in the work folder and to the Epic's
+    ``elaboration_buildability``; a failed gate also sets the Epic's cause ``buildability`` and
+    leaves its state in progress, and fails the step with the cause ``buildability``, item
+    class, and the report.
+
+    Returns:
+        The report of a gate that passed.
+
+    """
+    repo: Path = Path(check_type(run.context.args[dispatch_arguments().KEY_BEADS_REPO_PATH], str))
+    graph: beadgraph.Graph = run.tools.portfolio_read(stage, beadgraph.load, repo)
+    matrix: Matrix = run.tools.portfolio_read(stage, read_matrix, matrix_path(None, os.environ))
+    tasks: list[matrixtasks.TaskBead] = run.tools.portfolio_read(stage, matrixtasks.tasks_of, graph)
+    report: BuildabilityReport = run.tools.portfolio_read(
+        stage,
+        evaluate,
+        str(run.bead),
+        run.journal(),
+        graph,
+        matrix,
+        tasks,
+    )
+    write_json(Path(report["reportPath"]), json_object(report))
+    lifecycle(
+        run.context,
+        run.tools,
+        FINISH_PHASE,
+        elaboration.record_buildability,
+        owner=_owner(run),
+        report=json.dumps(report, sort_keys=True),
+    )
+    if not report["buildable"]:
+        raise run.tools.failure(
+            BUILDABLE_STEP,
+            BUILDABILITY_CAUSE,
+            {"classification": ITEM_CLASS, "buildability": json_object(report)},
+        )
+    return report
+
+
+@script_step(BUILDABLE_STEP)
+def buildable(run: StepRun) -> Completion:
+    """Check the Epic is buildable (``buildability.evaluate``).
+
+    No Task edge was dropped, no design gap was carried, and every consumed item has a producer
+    ordered before it.
+
+    Returns:
+        The gate's report, as the value ``buildability``.
+
+    """
+    enter_phase(run.context, run.agents.emit, FINISH_PHASE, BUILDABLE_STEP)
+    report: BuildabilityReport = _gate(run, BUILDABLE_STEP)
+    return Completion(artifacts=(value_artifact(BUILDABILITY, json_object(report)),))
+
+
 @script_step(DONE_RULE_STEP)
 def apply_done_rule(run: StepRun) -> Completion:
-    """Apply the done rule: every repository has its Story and its Tasks, and every Task is scored.
+    """Apply the done rule: each repository has its Story and Tasks, each Task is scored, and the Epic is buildable.
 
-    A repository that lacks its Story or its Tasks, and a Task left unscored, fail the step.
+    The gate's report is the ``buildability`` value the step is handed. A journal planned before
+    the gate step existed hands none, so the gate runs here, with the same record and failure. A
+    repository that lacks its Story or its Tasks, and a Task left unscored, fail the step.
 
     Returns:
         The done rule's result.
@@ -124,7 +198,11 @@ def apply_done_rule(run: StepRun) -> Completion:
     enter_phase(run.context, run.agents.emit, FINISH_PHASE, DONE_RULE_STEP)
     unscored: list[JsonValue] = check_type(run.inputs.value(UNSCORED), list[JsonValue])
     rows: list[dict[str, JsonValue]] = repository_rows(run)
-    rule: dict[str, JsonValue] = done_rule(rows, True, unscored)
+    held: JsonValue = run.inputs.optional_value(BUILDABILITY)
+    gate: dict[str, JsonValue] = (
+        json_object(held) if isinstance(held, dict) else json_object(_gate(run, DONE_RULE_STEP))
+    )
+    rule: dict[str, JsonValue] = done_rule(rows, gate.get("buildable") is True, unscored)
     if rule["repositories"]:
         incomplete: Failure = repository_failure(rows)
         raise run.tools.failure(incomplete["stage"], incomplete["cause"], {"doneRule": rule})

@@ -41,12 +41,10 @@ in `tdd-guide` and in your specialty definition.
    give.
 3. The spec's `## Decided at build` table, which the Task cites under its spec sections and its
    description names, lists the details no approved document states that your build decides: kind
-   `B`, local to the repository, and kind C rows left open after the architect's round. Decide
+   `B`, local to the repository. Decide
    each one the work needs, in the way the surrounding design and code already do: build a name
    with the naming command (the `resource-naming` skill), and resolve a contradiction or an
-   invalid design toward what the TRD and the approved documents require. A kind C row whose value
-   another repository's Task provides (that Task blocks this one) is decided by that build: read
-   the value from its repository's code and build to it. The Story's architecture comparison reads
+   invalid design toward what the TRD and the approved documents require. The Story's architecture comparison reads
    each decided value from the code and records it in the architecture.
 4. A value known only at deploy time, such as the account, the region or the environment, is resolved
    at deploy time (a CDK prop or deploy-time reference, or an environment variable the stack sets).
