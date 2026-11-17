@@ -365,7 +365,8 @@ and that the next real run makes progress.
 [deploy](pipelines-deploy.md); a defect a build finds is fixed in that run
 ([requirements/pipelines.md](../requirements/pipelines.md): "A build that finds a defect fixes it
 in that run."); how `keeper.py` relaunches `supervisor.py` is section 1.
-**Sources:** `docs/sdlc/sdlc.md`, "Documents Are Written to Disk as They're Produced": documents
+**Sources:** the code: `ops/sdlc-automation/failures.py`, `requeue.py`, `itemtiming.py`.
+`docs/sdlc/sdlc.md`, "Documents Are Written to Disk as They're Produced": documents
 are "written to disk by the agent that produces them", and "A rerun of an Epic reuses every phase
 whose recorded inputs are unchanged instead of restarting from step 1." `AGENTS.md`: "A pipeline
 run is long and expensive, so a successful run must make real project progress.", and of the
@@ -414,6 +415,20 @@ Notes on the diagram:
   (`AGENTS.md`).
 - A value known only at deploy time, such as the region or environment, is not a failure: it is
   handled at deploy time (the owner).
+- A failure record clears itself: an item's open failure records and its failed workflow attempts
+  clear when the item next succeeds, when it is rerouted (an upstream defect, a prerequisite wait,
+  a park, or a respec request naming it as the Task), or when a later dispatch of it supersedes the
+  failed attempt. The dashboard lists only the open attempts and counts the cleared ones.
+- An item whose latest handback failed (classified item or pipeline-code defect) under an older
+  plugin version is re-queued once when the supervisor starts (`requeue.py`, event
+  `failure_requeued`): its repeat streak, retry backoff, failure records and refusal hold end, so
+  the new version gets one dispatch of it. It is re-queued at most once per plugin version.
+- Duration is measured, not reconstructed: the done `elaboration_state` event, `elaboration_parked`
+  and `upstream_defect` carry `activeSeconds`, `wallSeconds`, `dispatches`, `restarts`,
+  `respecRestarts` and `phaseSeconds` for the item's current cycle (`itemtiming.py`: its events since
+  its last done, park, unpark, mark, re-queue or upstream defect; each dispatch, a resumed one
+  included, counts from its start to its handback). The dashboard shows the median active
+  elaboration time over the measured Epics.
 
 ### 5.1 A defect upstream of the build: a Story is specified again
 
