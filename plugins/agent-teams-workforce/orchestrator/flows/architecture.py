@@ -816,7 +816,7 @@ def result_check(run: StepRun) -> Callable[[Path], dict[str, JsonValue]]:
         and the review log, :func:`_request_problems` on its ``requests``, and
         :func:`_gap_problems`; an invalid one has its schema problems and
         :func:`_invalid_result_problems`. Every problem is one line of the one
-        ``ArchitectureWorkError`` it raises, which sends the session to its one correction.
+        ``ArchitectureWorkError`` it raises, which sends the session to its corrective resumes.
 
     """
     context: ArchitectureContext = read_context(run)
@@ -1159,8 +1159,6 @@ def _helper_request[T](run: StepRun, asked: Path, validate: Callable[[object], T
             raise ArchitectureStepError(run, f"{asked}: {exc}") from None
         evidence: tuple[str, ...] = (f"step {run.step['id']} ({run.step['description']}): {asked}: {exc}",)
         session: str | None = writer.get("session")
-        if session is None or not run.agents.resumable(session):
-            raise StaleInputError(run.inputs.stage, writer["id"], evidence) from None
         errors: Path = asked.with_name(asked.stem + ERRORS_SUFFIX)
         errors.write_text(f"{exc}\n", encoding="utf-8")
 
@@ -1168,6 +1166,16 @@ def _helper_request[T](run: StepRun, asked: Path, validate: Callable[[object], T
             document: dict[str, JsonValue] = strict_json(path)
             validate(document)
             return document
+
+        if session is None or not run.agents.resumable(session):
+            raise StaleInputError(
+                run.inputs.stage,
+                writer["id"],
+                evidence,
+                stale=asked,
+                errors=errors,
+                check=check,
+            ) from None
 
         raise MalformedRequestError(
             run.inputs.stage,

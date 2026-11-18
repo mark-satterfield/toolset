@@ -498,11 +498,16 @@ def refuse_stale_tasks(run: StepRun) -> None:
         except CONTENT_FAILURES as refused:
             writer: StepId = _writer(run, name, path)
             container: Step | None = step_journal.parent_step(run.journal(), writer)
+            errors: Path = path.with_name(path.name + ".errors.json")
+            write_json(errors, {"output": str(path), "errors": [str(refused)]})
             raise StaleInputError(
                 run.inputs.stage,
                 writer,
                 (f"{path}: {refused}",),
                 within=None if container is None else container["id"],
+                stale=path,
+                errors=errors,
+                check=build(),
             ) from None
         _accept(accepted)
 

@@ -677,8 +677,8 @@ class AgentRunner:
         """Run one step of a step journal as one session, with the session id the caller chose.
 
         The step journal alone decides whether a step runs, so nothing here looks at an earlier
-        output: the session is launched, its output is validated with one
-        corrective resume, a Fable refusal is resumed on the replacement model, the stream is
+        output: the session is launched, its output is validated with up to
+        ``OUTPUT_CORRECTIONS`` corrective resumes, a Fable refusal is resumed on the replacement model, the stream is
         logged and the session row is recorded in the run record. The validated output stays at
         ``step.output``. A session that was asked to resume and ended without running a turn
         raises ``SessionNotResumedError``, a ``StepError``. A session id that is not a UUID raises

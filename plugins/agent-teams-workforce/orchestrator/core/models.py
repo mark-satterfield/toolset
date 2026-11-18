@@ -78,23 +78,31 @@ class RetryExhaustedError(StepError):
 class StaleInputError(StepError):
     """A file an earlier step wrote does not satisfy the contract a step reads it by now.
 
-    The contract changed after the file was written. The journal runner sets ``writer``, the
-    step that wrote the file, and every step after it back to planned, so the file is written
-    again to the current contract; the step is not failed. With ``within``, only the steps after
-    the writer inside that step are set back: the steps that read the file are all inside it.
+    The contract changed after the file was written. When the error names the file (``stale``),
+    the errors the contract found (``errors``) and its check (``check``), and ``writer`` is an
+    agent step, the journal runner has the writer's agent correct that file in place to the
+    current contract, and nothing is set back. Otherwise, with ``within``, the steps after the
+    writer inside that step are set back: the steps that read the file are all inside it.
     """
 
-    def __init__(
+    def __init__(  # ruff: ignore[too-many-arguments] - The stale file, its errors and its check go with the writer.
         self,
         stage: str,
         writer: StepId,
         evidence: tuple[str, ...] = (),
         within: StepId | None = None,
+        *,
+        stale: Path | None = None,
+        errors: Path | None = None,
+        check: OutputValidator | None = None,
     ) -> None:
-        """Attach the stage, the cause ``other``, the evidence, the step that wrote the file and its scope."""
+        """Attach the stage, the cause ``other``, the evidence, the step that wrote the file, its scope and the file."""
         super().__init__(stage, OTHER_CAUSE, evidence)
         self.writer = writer
         self.within = within
+        self.stale = stale
+        self.errors = errors
+        self.check = check
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

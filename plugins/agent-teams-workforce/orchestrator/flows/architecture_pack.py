@@ -48,16 +48,13 @@ from matrixstore import read_matrix
 from matrixtasks import tasks_of
 from matrixtraverse import constraints_for, epic_id, reach_rows
 
-from orchestrator.core import step_journal
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import script_step
 from orchestrator.core.journal_steps import Completion, StepRun, file_artifact
-from orchestrator.core.models import StaleInputError
 from orchestrator.flows.architecture_files import (
     ARTIFACT_PACK,
     ARTIFACT_PACK_CONSTRAINTS,
     CONSTRAINTS_FILE,
-    OPEN_RUN,
     PACK,
     PACK_FILE,
     ArchitectureContext,
@@ -71,7 +68,7 @@ if TYPE_CHECKING:
     from matrix_contract import Entry, EntryId, Relationship
     from matrixstore import Matrix
     from matrixtraverse import ConstraintReach, ReachRow
-    from step_journal_contract import Step, StepId, StepPlan
+    from step_journal_contract import StepPlan
 
 PACK_DESCRIPTION: Final = "Assemble the Epic's architecture pack"
 PACK_PURPOSE: Final = (
@@ -340,30 +337,19 @@ def pack_file(run: StepRun) -> Path:
     """Name the Epic's architecture pack, which the pack step wrote before the TRD and the architect.
 
     A pack that is missing was never assembled for this run, as in a journal opened before the
-    pack step existed: the open-run step runs again and plans the pack step with the rest.
+    pack step existed: it is assembled now, in place, as the pack step assembles it, and no earlier
+    step runs again.
 
     Returns:
         ``pack.json`` beside the context file.
-
-    Raises:
-        StaleInputError: The pack is missing.
 
     """
     written: Path = architecture_folder(run.context.work) / PACK_FILE
     if written.is_file():
         return written
-    opened: Step | None = next(
-        (step for step in step_journal.steps_in_order(run.journal()) if step.get("script") == OPEN_RUN),
-        None,
-    )
-    if opened is None:
-        return written
-    writer: StepId = opened["id"]
-    raise StaleInputError(
-        run.inputs.stage,
-        writer,
-        (f"step {run.step['id']} ({run.step['description']}): the architecture pack {written} was never assembled",),
-    )
+    context: ArchitectureContext = read_context(run)
+    part: MatrixPart = run.tools.portfolio(run.inputs.stage, matrix_part, str(run.bead))
+    return write_pack(architecture_folder(run.context.work), str(run.bead), Path(context["prdPath"]), part)[0]
 
 
 __all__ = ["PACK_REF", "assemble", "matrix_part", "pack_file", "pack_plan", "write_pack"]

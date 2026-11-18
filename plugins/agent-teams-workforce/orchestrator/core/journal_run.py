@@ -713,6 +713,45 @@ def _plan_gap_round(journal: Journal, gap: DesignGapError, moment: str) -> None:
         step_journal.replan_step(journal, confirm, moment)
 
 
+def _named(path: Path | None) -> tuple[str, ...]:
+    """Give a file that may be absent as evidence.
+
+    Returns:
+        The path as the one item, or nothing.
+
+    """
+    return () if path is None else (str(path),)
+
+
+def _reset_stale(
+    journal: Journal,
+    *,
+    gap: DesignGapError | None,
+    scopes: dict[StepId, StepId | None],
+    rewrites: list[StepId],
+) -> None:
+    """Set back what stale inputs need run again, in one journal change.
+
+    The gap round is planned once when a design gap was found; each scoped writer is set back with
+    the steps after it in its scope; the first unscoped writer in walk order is set back with every
+    step after it; and each writer to rewrite is set back alone (``step_journal.replan_step``).
+    """
+    moment: str = step_journal.timestamp()
+    if gap is not None:
+        _plan_gap_round(journal, gap, moment)
+    writer: StepId
+    scope: StepId | None
+    for writer, scope in scopes.items():
+        if scope is not None:
+            step_journal.invalidate_from(journal, writer, moment, within=scope)
+    unscoped: list[StepId] = [writer for writer, scope in scopes.items() if scope is None]
+    if unscoped:
+        order: list[StepId] = [step["id"] for step in step_journal.steps_in_order(journal)]
+        step_journal.invalidate_from(journal, min(unscoped, key=order.index), moment)
+    for writer in rewrites:
+        step_journal.replan_step(journal, writer, moment)
+
+
 class JournalRunner:
     """Runs the steps of one bead's journal, in order, from the first that is not done."""
 
@@ -904,39 +943,116 @@ class JournalRunner:
         )
 
     def _replan_stale(self) -> None:
-        """Set each step that wrote a stale file, and the steps after it, back to planned.
+        """Correct each stale file in place, or set back only what must run again.
 
-        A writer whose stale file names a scope (``within``) is reset with the steps after it in
-        that scope only. When open design gaps were found, the gap round they share is planned
-        once, in the same journal change (:func:`_plan_gap_round`). Of the other writers, the
-        first in walk order is reset with every step after it, so every later writer is reset
-        too. Runs after the whole group, so no session of the group is running when its step is
-        reset.
+        A stale file whose error names the file and its check (``StaleInputError.stale`` and
+        ``check``) and whose writer is an agent step is corrected in place by the writer's agent
+        (:meth:`_correct_stale`); nothing is set back, and the step that read it runs again from
+        the loop. A correction that fails sets back only the writer when it planned no steps, so it
+        runs again with its existing output on disk; otherwise the reading step fails as an item
+        failure with what the contract found. A stale file the error names without its check sets
+        back only a writer that planned no steps, and fails as an item failure otherwise.
+
+        A change of ownership or scope (``OwnershipChangedError``, which names no file) sets the
+        span step back with every step after it, in its scope when it names one. When open design
+        gaps were found, the gap round they share is planned once, in the same journal change
+        (:func:`_plan_gap_round`), and each gap's repository is set back in its scope. Runs after
+        the whole group, so no session of the group is running when a step is changed.
+
         """
-        scopes: dict[StepId, StepId | None] = {stale.writer: stale.within for stale in self.stale}
-        gaps: list[DesignGapError] = [stale for stale in self.stale if isinstance(stale, DesignGapError)]
+        found: list[StaleInputError] = self.stale
         self.stale = []
         self.gap_steps = set()
         self.gap_keys = set()
-        if not scopes:
+        if not found:
             return
-        self.replanned.update(scopes)
+        gaps: list[DesignGapError] = [stale for stale in found if isinstance(stale, DesignGapError)]
+        resets: list[StaleInputError] = [
+            stale for stale in found if isinstance(stale, (DesignGapError, OwnershipChangedError))
+        ]
+        rewrites: list[StepId] = self._uncorrected([stale for stale in found if stale not in resets])
+        scopes: dict[StepId, StepId | None] = {stale.writer: stale.within for stale in resets}
+        self.replanned.update([*scopes, *rewrites])
+        if scopes or rewrites:
+            step_journal.update_journal(
+                self.path,
+                partial(_reset_stale, gap=gaps[0] if gaps else None, scopes=scopes, rewrites=rewrites),
+            )
 
-        def change(journal: Journal) -> None:
-            moment: str = step_journal.timestamp()
-            if gaps:
-                _plan_gap_round(journal, gaps[0], moment)
-            writer: StepId
-            scope: StepId | None
-            for writer, scope in scopes.items():
-                if scope is not None:
-                    step_journal.invalidate_from(journal, writer, moment, within=scope)
-            unscoped: list[StepId] = [writer for writer, scope in scopes.items() if scope is None]
-            if unscoped:
-                order: list[StepId] = [step["id"] for step in step_journal.steps_in_order(journal)]
-                step_journal.invalidate_from(journal, min(unscoped, key=order.index), moment)
+    def _uncorrected(self, found: list[StaleInputError]) -> list[StepId]:
+        """Correct each stale file in place (:meth:`_correct_stale`), and name the writers that must run again.
 
-        step_journal.update_journal(self.path, change)
+        Returns:
+            The writer of each file not corrected, when it planned no steps.
+
+        Raises:
+            StepError: A file was not corrected and its writer planned steps of its own.
+
+        """
+        rewrites: list[StepId] = []
+        stale: StaleInputError
+        for stale in found:
+            if self._correct_stale(stale):
+                continue
+            writer: Step = step_journal.find_step(step_journal.read_journal(self.path), stale.writer)
+            if step_journal.planned_by(writer):
+                raise StepError(stale.stage, OTHER_CAUSE, (*stale.evidence, *_named(stale.errors)))
+            rewrites.append(stale.writer)
+        return rewrites
+
+    def _correct_stale(self, stale: StaleInputError) -> bool:
+        """Have the agent that wrote a stale file correct it in place to the current contract.
+
+        The writer's session is resumed when it is one of the current agent definition and
+        contracts (``AgentRunner.resumable``); otherwise a new session of the writer's agent works
+        on the file as it is (``fresh_output`` False). It is handed the file and the errors file
+        and asked to change nothing else; the file's check judges the result.
+
+        Returns:
+            True when the corrected file passes its check; False when the error names no file or
+            check, the writer is not an agent step, the file was corrected in this dispatch
+            already, or the correction failed.
+
+        """
+        if stale.stale is None or stale.check is None or stale.stale in self.corrected:
+            return False
+        writer: Step = step_journal.find_step(step_journal.read_journal(self.path), stale.writer)
+        agent: str | None = writer.get("agent")
+        if agent is None:
+            return False
+        self.corrected.add(stale.stale)
+        held: str | None = writer.get("session")
+        resume: bool = held is not None and self.agents.resumable(held)
+        request: AgentStep = AgentStep(
+            stage=stale.stage,
+            agent=agent,
+            inputs=(*_named(stale.errors), str(self.path)),
+            output=stale.stale,
+            outcome="The file corrected in place so that it satisfies its current contract.",
+            validate=stale.check,
+            request=(
+                f"The file {stale.stale} you wrote for step {stale.writer} does not satisfy the contract it is read "
+                "by now; correct that file in place so it satisfies it, as the errors file states, keep everything "
+                "else it holds, and change nothing else"
+            ),
+            journal_step=stale.writer,
+        )
+        labelled: list[tuple[str, Path]] = [
+            *((REQUEST_ERRORS_LABEL, errors) for errors in ([] if stale.errors is None else [stale.errors])),
+            (JOURNAL_LABEL, self.path),
+        ]
+        try:
+            with self._correcting:
+                self.agents.run_session(
+                    request,
+                    labelled,
+                    session=held if resume and held is not None else str(uuid4()),
+                    resume=resume,
+                    fresh_output=False,
+                )
+        except StepError:
+            return False
+        return True
 
     def _close_finished(self, within: StepId | None = None, *, keep_running: StepId | None = None) -> None:
         """Close every running step whose child steps are all done, the last in walk order first.
@@ -1130,8 +1246,9 @@ class JournalRunner:
     def _attempt(self, journal: Journal, step: Step) -> None:
         """Run one step and record its failure when it raises.
 
-        A stale file the step finds is kept for :meth:`_replan_stale`, and the step is not failed,
-        unless the step that wrote the file was planned again in this dispatch already. An open
+        A stale file the step finds is kept for :meth:`_replan_stale`, which has its writer correct
+        it in place, and the step is not failed, unless the step that wrote the file was planned
+        again in this dispatch already. An open
         design gap (``DesignGapError``) is always kept, with the step and its script key, so the
         containers running beside it run to their own gap check (:meth:`_before_gap_check`): the step
         that reads the gaps bounds its rounds and carries what is left (``design_gaps.hold_open``). A

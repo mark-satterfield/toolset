@@ -476,8 +476,9 @@ def checked_output[T](run: StepRun, path: Path, validate: Callable[[object], T],
     A file the contract refuses was written to an earlier contract when its writer is done (its
     output passed its check when the step was accepted, so the contract changed since), its
     writer's session was made under another agent definition or contracts
-    (``AgentRunner.resumable``), or the writer holds no session: the writer runs again. Otherwise
-    the refusal is the item's.
+    (``AgentRunner.resumable``), or the writer holds no session: the writer corrects the file in
+    place, handed what the contract found (``<file>.errors.json``). Otherwise the refusal is the
+    item's.
 
     Returns:
         The validated document.
@@ -500,7 +501,20 @@ def checked_output[T](run: StepRun, path: Path, validate: Callable[[object], T],
         if writer is not None and (
             writer["status"] == STATUS_DONE or session is None or not run.agents.resumable(session)
         ):
-            raise StaleInputError(run.inputs.stage, writer["id"], (evidence,)) from None
+            errors: Path = path.with_name(path.name + ".errors.json")
+            write_json(errors, {"output": str(path), "errors": [str(exc)]})
+
+            def check(corrected: Path) -> None:
+                validate(strict_json(corrected))
+
+            raise StaleInputError(
+                run.inputs.stage,
+                writer["id"],
+                (evidence,),
+                stale=path,
+                errors=errors,
+                check=check,
+            ) from None
         raise ArchitectureStepError(run, evidence) from None
 
 

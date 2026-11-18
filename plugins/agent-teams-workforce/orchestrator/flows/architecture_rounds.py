@@ -575,7 +575,14 @@ def write_digest(run: StepRun, helpers: Path) -> Path | None:
     if stale:
         position: dict[str, int] = {step["id"]: index for index, step in enumerate(ordered)}
         first: StaleInputError = min(stale, key=lambda found: position[found.writer])
-        raise StaleInputError(first.stage, first.writer, tuple(text for found in stale for text in found.evidence))
+        raise StaleInputError(
+            first.stage,
+            first.writer,
+            tuple(text for found in stale for text in found.evidence),
+            stale=first.stale,
+            errors=first.errors,
+            check=first.check,
+        )
     digest: AnswersDigest = {"answers": digested}
     validate_answers_digest(digest)
     path = helpers / f"{DIGEST_PREFIX}{run.step['id'][:ID_LENGTH]}.json"
