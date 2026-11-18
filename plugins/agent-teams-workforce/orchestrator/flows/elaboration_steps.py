@@ -7,6 +7,7 @@ needs from the repositories' steps it reads from the artifacts the steps its inp
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -16,7 +17,8 @@ import storyedges
 from typeguard import check_type
 
 from orchestrator.core.driver_contracts import dispatch_arguments
-from orchestrator.core.handback_contract import ITEM_CLASS, OTHER_CAUSE, Failure
+from orchestrator.core.findings import record_for_run
+from orchestrator.core.handback_contract import OTHER_CAUSE, Failure
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_registry import script_step
 from orchestrator.core.journal_steps import Completion, StepRun, value_artifact
@@ -115,7 +117,8 @@ def score(run: StepRun) -> Completion:
 def apply_done_rule(run: StepRun) -> Completion:
     """Apply the done rule: every repository has its Story and its Tasks, and every Task is scored.
 
-    A repository that lacks its Story or its Tasks, and a Task left unscored, fail the step.
+    A repository that lacks its Story or its Tasks, and a Task left unscored, are recorded as
+    ``done-rule-carried`` findings for the Epic, and the Epic is marked elaborated with what exists.
 
     Returns:
         The done rule's result.
@@ -125,11 +128,24 @@ def apply_done_rule(run: StepRun) -> Completion:
     unscored: list[JsonValue] = check_type(run.inputs.value(UNSCORED), list[JsonValue])
     rows: list[dict[str, JsonValue]] = repository_rows(run)
     rule: dict[str, JsonValue] = done_rule(rows, True, unscored)
-    if rule["repositories"]:
+    lacking: list[JsonValue] = check_type(rule["repositories"], list[JsonValue])
+    if lacking:
         incomplete: Failure = repository_failure(rows)
-        raise run.tools.failure(incomplete["stage"], incomplete["cause"], {"doneRule": rule})
+        record_for_run(
+            run,
+            str(run.bead),
+            kind="done-rule-carried",
+            detail=f"{incomplete['stage']}: repositories lack their Story or Tasks: {json.dumps(lacking)}",
+            evidence=(),
+        )
     if unscored:
-        raise run.tools.failure(TASK_SCORES_STAGE, OTHER_CAUSE, {"classification": ITEM_CLASS, "unscored": unscored})
+        record_for_run(
+            run,
+            str(run.bead),
+            kind="done-rule-carried",
+            detail=f"{TASK_SCORES_STAGE}: Tasks left unscored: {json.dumps(unscored)}",
+            evidence=(),
+        )
     return Completion(artifacts=(value_artifact(DONE_RULE, rule),))
 
 

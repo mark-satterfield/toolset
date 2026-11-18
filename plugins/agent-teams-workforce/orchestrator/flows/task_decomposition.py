@@ -41,6 +41,7 @@ from typeguard import CollectionCheckStrategy, check_type
 from orchestrator.core import step_journal
 from orchestrator.core.agents import CONTENT_FAILURES, strict_json
 from orchestrator.core.driver_contracts import dispatch_arguments
+from orchestrator.core.findings import record_for_run
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_changes import create_child_journal
@@ -747,6 +748,18 @@ def _gap_detail(planned: TaskPlan, name: str) -> str:
     return f"{name} after {CORRECTIONS} corrections: {'; '.join(gaps)}"
 
 
+def _carry_gaps(run: StepRun, planned: TaskPlan, name: str, tasks: Path) -> str:
+    """Record the gaps a plan still has after its last correction as a finding for the Epic.
+
+    Returns:
+        The gaps, as :func:`_gap_detail` names them.
+
+    """
+    detail: str = _gap_detail(planned, name)
+    record_for_run(run, str(run.bead), kind="task-decomposition-carried", detail=detail, evidence=(str(tasks),))
+    return detail
+
+
 def _empty_with_work(run: StepRun, files: hierarchy.StoryFiles, planned: TaskPlan) -> bool:
     """Report whether a plan holds no Task while its Story has work (``hierarchy.work_items``).
 
@@ -774,11 +787,9 @@ def plan(run: StepRun) -> Completion:
         For a plan with an uncited item, an unsized Task or no Task, while fewer than
         ``CORRECTIONS`` corrections have run: the gaps file (``task-gaps.schema.json``), with
         a correction and another plan step planned. Otherwise the plan's record, with one step
-        per Task bead write, the retiring step and the written record planned.
-
-    Raises:
-        StepError: The plan still has a gap after the last correction: an item failure whose
-            message names the uncited items and the unsized Tasks.
+        per Task bead write, the retiring step and the written record planned. A gap still open
+        after the last correction is recorded as a ``task-decomposition-carried`` finding for the
+        Epic and joins the plan's warnings, and the Tasks the plan holds are written.
 
     """
     held: Repository = repository(run.inputs)
@@ -801,10 +812,12 @@ def plan(run: StepRun) -> Completion:
     uncited: list[JsonValue] = list(planned["uncited"])
     unsized: list[JsonValue] = list(planned["unsized"])
     name: str = Path(held.path).name
-    if _empty_with_work(run, files, planned) or uncited or unsized:
-        if len(run.inputs.files(TASK_CORRECTION)) >= CORRECTIONS:
-            stage: str = UNCITED_STAGE if planned["tasks"] else WORK_DECOMPOSE
-            raise StepError(stage, OTHER_CAUSE, (_gap_detail(planned, name), str(files.tasks_file)))
+    carried: list[JsonValue] = []
+    if (_empty_with_work(run, files, planned) or uncited or unsized) and len(
+        run.inputs.files(TASK_CORRECTION),
+    ) >= CORRECTIONS:
+        carried.append(_carry_gaps(run, planned, name, files.tasks_file))
+    elif _empty_with_work(run, files, planned) or uncited or unsized:
         gaps: Path = write_contract(
             run.context.work / f"tasks-{held.slug}.gaps.json",
             {"uncited": uncited, "unsized": unsized, "empty": _empty_with_work(run, files, planned)},
@@ -827,7 +840,7 @@ def plan(run: StepRun) -> Completion:
             "unsizedAfter": unsized,
             **merged,
         }
-    warnings: list[JsonValue] = list(planned["warnings"])
+    warnings: list[JsonValue] = [*planned["warnings"], *carried]
     keys: list[JsonValue] = [task["key"] for task in planned["tasks"]]
     record: dict[str, JsonValue] = {"tasks": keys, "warnings": warnings, "coverage": coverage}
     return Completion(

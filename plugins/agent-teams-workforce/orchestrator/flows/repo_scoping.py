@@ -608,6 +608,16 @@ def _build_problem(matrix: Matrix, entry_id: EntryId) -> str | None:
     return _entry_problem(entry) or _stack_problem(matrix, entry)
 
 
+def can_build(matrix: Matrix, entry_id: EntryId) -> bool:
+    """Tell whether a Story can build an entry the architect's result names.
+
+    Returns:
+        True when the entry breaks none of the rules :func:`story_build_problems` checks.
+
+    """
+    return _build_problem(matrix, entry_id) is None
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def story_build_problems(
     matrix: Matrix,
@@ -853,7 +863,7 @@ def story_builds(
     placed: list[Placed] = [
         Placed(entry_id, stack)
         for entry_id in story_build_entries([*added_or_changed, *unchanged_work])
-        if _build_problem(matrix, entry_id) is None
+        if can_build(matrix, entry_id)
         for stack in placements(matrix, entry_id)
     ]
     item_ids_of: dict[Placed, str] = {built: f"E{index}" for index, built in enumerate(placed, 1)}

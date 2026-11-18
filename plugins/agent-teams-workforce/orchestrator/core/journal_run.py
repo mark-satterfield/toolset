@@ -1139,8 +1139,8 @@ class JournalRunner:
         (:meth:`_correct_request`), and the step is not failed, unless that request was corrected
         in this dispatch already. A change of the Epic that owns an entry (``OwnershipChangedError``)
         is kept for :meth:`_replan_stale` (:meth:`_keep_ownership_change`): the span step is planned
-        again once per round, up to ``OWNERSHIP_REPLANS`` times in one dispatch, and after that the
-        step fails as an item failure: another Epic is racing for the same entries.
+        again once per round, up to ``OWNERSHIP_REPLANS`` times in one dispatch; the step that finds
+        a change after that records the race and continues (``build_ownership``).
 
         A script step that wrote a file stale again after it ran again is pipeline code that
         failed: its code wrote the file to a contract other than the one its readers check, and
