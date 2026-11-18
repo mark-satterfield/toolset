@@ -644,9 +644,6 @@ so nothing is seeded as verified.
   type or an SSM parameter path. It is checked by its form, not by a list, so a resource of a
   kind not held before is named the same way. Nothing routes a specialist agent by it.
 - **R62.** The matrix answers Q27 to Q30 from the matrix alone, without a scan (R1).
-- **R67.** Every AWS resource a design document an Epic reaches names is recorded by a matrix
-  entry before the architecture is approved, because a Story builds only what the matrix records:
-  the architecture check fails each such name the matrix does not hold.
 
 ### Shared items and Epic order
 

@@ -140,14 +140,10 @@ elements the Stories build (the result's `addedOrChangedElements` and `unchanged
 name other entries than the span's items), the repository's context step raises
 `ScopeChangedError` naming the span step, so the span and every step after it run again
 (`build_ownership.refuse_scope_drift`), counted with ownership changes. No design gap is ever
-carried to the build, and no row escalates before the architect has seen it. A row is known across
-rounds by its exact text: `answers.json` records the text of every row the architect answered. A
-row the architect already answered that a repository's documents hold again escalates for a
-decision; a row never handed before, a row the specs written from an answer found included, gets
-another round, until the repository's gaps have gone to the architect `design_gaps.MAX_ROUNDS` (2)
-times, after which every open row escalates. When the Epic resumes, the failed step reads its
-documents again: a row an earlier stop escalated that the architect never answered is handed to it
-like any other row below the limit, and leaves the escalated file. Escalating rows (`design_gaps.escalate`) adds them to
+carried to the build. A row the architect already answered that a repository's documents hold
+again escalates for a decision, and so does every open row of a repository whose gaps have gone to
+the architect `design_gaps.MAX_ROUNDS` (1) time; a row never handed before, below that limit, gets
+its own round. Escalating rows (`design_gaps.escalate`) adds them to
 `<arch-work>/design-gaps/escalated/<slug>.json`, removes the repository's open file, emits a warning
 note, "design gaps escalated for a decision", naming the Epic, the repository and the rows, and
 fails the step with the cause `design-gap` and one evidence line per row, so the Epic stops until
@@ -165,7 +161,7 @@ the design gaps of its data model (criteria A16 and A20) or of its contracts (an
 that exists when the other does not (`design_gaps.add_unfilled`): `| EV<n> | <element> | <item>
 (<criterion>): <what was wrong> |`. A row the architect already answered, one an older journal
 carried to the build and one the document already holds is not written again. The row then takes
-a gap round and, left open after its answer, escalates like any other.
+the one gap round and, left open, escalates like any other.
 
 The Story document's description lists every decided-at-build row of its spec documents, so the
 Story bead carries them; the decomposer gives each row to the Task that builds its element (its

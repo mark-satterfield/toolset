@@ -292,7 +292,7 @@ the matrix nor the change file holds.
 | Each heading that covers a requirement | `link covers` from `document:<path>` to `requirement:<epic id>/<key>`, with `heading` and `via` the feature |
 | Each new feature | `put feature` with name and purpose: one discrete capability of the product, named as something it can do ("send an email"), that `find` shows the matrix does not hold. Derive features from the requirements and from the architecture: a capability the architecture provides that no requirement names is a feature too. Link an existing feature before you record a new one; one feature commonly serves several requirements. A condition, quality or rule about how a capability behaves is a requirement or constraint the feature serves, not a feature. One feature where one part of the architecture provides the whole capability, several where different parts provide parts of it. Then `link supportedBy` to each feature it relies on. |
 | What implements a feature | `link realizedBy` from `feature:<id>` to the entry |
-| Each service, component, piece of infrastructure and layer you design or change, and each one a heading describes that the matrix does not hold | `put <kind>` with name and purpose, and resource type and execution use where the kind has them. Every AWS resource a reached heading names is recorded by an entry (its name, an alias, its purpose, or a group entry's `{token}` name pattern), because no Story builds a resource the matrix does not hold; the architecture check fails each one that is not. |
+| Each service, component, piece of infrastructure and layer you design or change, and each one a heading describes that the matrix does not hold | `put <kind>` with name and purpose, and resource type and execution use where the kind has them |
 | Each event you design or change | `put event` with name, its description as purpose and its producer, and `link publishes` for each further producer; and a fact stating its description and producers whose home is the arc42 event catalog, `about` the event |
 | Each routing rule you design or change | `put infrastructure` with resource type `eventbridge-rule`, linked with `onBus`, `matches` (or `matchesAllEvents`) and `routesTo` |
 | `partOf`, `homeIn`, `contains`, `describedBy` and each dependency (`imports`, `usesLayer`, `calls`, `publishes`, `matches`, `routesTo`, `onBus`, `reads`, `runsIn`) | `link <kind>`. A dependency between two stacks whose entries are not yet known is recorded with the stacks as its ends. |
@@ -648,11 +648,10 @@ log, and update the result in place.
   to rows an earlier round settled are not checked again. The `findings` you are handed are the
   check that found the gaps; correct any defect they list as well. After you, the documents are
   written and promoted, and the specs of the repositories whose files you were handed are written
-  again from them; the TRD is written again only when your `trdChanges` change. A row you
-  answered that its specs hold again escalates for a decision and stops the Epic until the owner
-  or the architecture settles it, so answer completely the first time. A row you have not seen
-  comes to you, a row the specs written from your answers found included, until a repository's
-  gaps have come to you twice; after the second round every row still open escalates. Fill `elementValues` for every element your
+  again from them; the TRD is written again only when your `trdChanges` change. A repository's
+  gaps go to you once: a row you answered that its specs hold again, and every row still open
+  after that one round, escalates for a decision and stops the Epic until the owner or the
+  architecture settles it, so answer completely the first time. Fill `elementValues` for every element your
   answer adds or changes, as in the decision itself.
 
 ## Your boundaries
