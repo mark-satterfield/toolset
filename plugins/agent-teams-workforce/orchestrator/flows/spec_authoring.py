@@ -416,6 +416,36 @@ def design_system(run: StepRun) -> dict[str, JsonValue]:
     return json_object(run.context.args.get(dispatch_arguments().KEY_DESIGN_SYSTEM) or {})
 
 
+def spec_document_path(work: Path, slug: str, name: str) -> Path:
+    """Name the file one spec document of a repository is written to in an Epic's work directory.
+
+    Returns:
+        ``<work>/spec-<slug><suffix of the document>``.
+
+    """
+    return work / f"spec-{slug}{SUFFIX[name]}"
+
+
+def spec_context_path(work: Path, slug: str) -> Path:
+    """Name the repository context of a repository's specs in an Epic's work directory.
+
+    Returns:
+        ``<work>/spec-<slug>.context.json``.
+
+    """
+    return work / f"spec-{slug}.context.json"
+
+
+def story_document_path(work: Path, slug: str) -> Path:
+    """Name the Story document of a repository in an Epic's work directory.
+
+    Returns:
+        ``<work>/story-<slug>.json``.
+
+    """
+    return work / f"story-{slug}.json"
+
+
 def document_file(run: StepRun, held: Repository, name: str) -> Path:
     """Name the file one spec document of a repository is written to.
 
@@ -423,7 +453,7 @@ def document_file(run: StepRun, held: Repository, name: str) -> Path:
         The file in the Epic's work directory.
 
     """
-    return run.context.work / f"spec-{held.slug}{SUFFIX[name]}"
+    return spec_document_path(run.context.work, held.slug, name)
 
 
 def document_check(run: StepRun, name: str) -> OutputValidator:
@@ -1086,7 +1116,7 @@ def context(run: StepRun) -> Completion:
     component: list[JsonValue] = component_documents(architecture_root(run), matrix, [*stacks, *entries])
     documents: list[JsonValue] = _scope_documents(architecture_root(run), scopes)
     path: Path = write_contract(
-        run.context.work / f"spec-{held.slug}.context.json",
+        spec_context_path(run.context.work, held.slug),
         {
             "epic": str(run.bead),
             "repoPath": held.path,
@@ -1439,7 +1469,7 @@ def story_document(run: StepRun) -> Completion:
     ]
     decisions: list[JsonValue] = list(citations)
     path: Path = write_contract(
-        run.context.work / f"story-{held.slug}.json",
+        story_document_path(run.context.work, held.slug),
         {
             "title": f"{Path(held.path).name}: {prd.get(dispatch.PRD_TITLE) or run.bead}",
             "description": "\n".join(lines),

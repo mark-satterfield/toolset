@@ -38,6 +38,19 @@ def required(findings: list[JsonValue]) -> list[JsonValue]:
     return [finding for finding in findings if json_object(finding)["severity"] != NOTE]
 
 
+def contract_unless_owned(findings: list[JsonValue]) -> list[JsonValue]:
+    """Give each finding no review assigned an owner to the contract, so the build carries it.
+
+    Returns:
+        The findings, each one without an owner given the owner ``contract``.
+
+    """
+    return [
+        finding if json_object(finding).get("owner") else {**json_object(finding), "owner": "contract"}
+        for finding in findings
+    ]
+
+
 def owned_elsewhere(findings: list[JsonValue]) -> list[JsonValue]:
     """Select the findings whose correction belongs to the contract or the tooling.
 

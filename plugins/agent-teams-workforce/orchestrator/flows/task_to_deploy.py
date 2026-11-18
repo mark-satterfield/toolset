@@ -17,6 +17,7 @@ from typeguard import check_type
 
 from orchestrator.core import pipeline_steps, step_journal
 from orchestrator.core.agents import AgentRunner
+from orchestrator.core.findings import record_for_run
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_registry import Registry
@@ -49,6 +50,7 @@ from orchestrator.flows.build_state import (
     TEST_LEAD,
     TEST_SELECTION,
     build_rounds,
+    in_dispatch,
 )
 from orchestrator.flows.build_state import (
     argument_object as _object,
@@ -185,8 +187,12 @@ def _baseline(run: StepRun) -> Completion:
 def _setup_suite(run: StepRun, approved: Path) -> Completion | None:
     """Apply the reviewed regression plan's setup before measuring the baseline.
 
+    A setup failure is diagnosed while this dispatch has diagnoses left; once it has none, the
+    failure is recorded as a ``prerequisite-carried`` finding with the setup evidence, and the
+    baseline is measured all the same (a baseline is evidence, not the Task's test).
+
     Returns:
-        A prerequisite diagnosis when setup fails, otherwise None.
+        A prerequisite diagnosis when setup fails and can still be diagnosed, otherwise None.
 
     """
     workspace: Workspace = _workspace(run)
@@ -220,6 +226,15 @@ def _setup_suite(run: StepRun, approved: Path) -> Completion | None:
             "approvedPlan": str(approved),
             "result": document,
         }
+        if build_prerequisites.exhausted(run, observation):
+            record_for_run(
+                run,
+                check_type(json_object(_object(run, "bead")["story"])["id"], str),
+                kind="prerequisite-carried",
+                detail="the regression setup failed and its diagnoses are spent; the baseline is measured without it",
+                evidence=(str(output),),
+            )
+            return None
         planned: Completion = build_prerequisites.diagnose(run, "build:baseline", observation)
         return Completion(
             artifacts=(*planned.artifacts, value_artifact("setupFailure", observation)),
@@ -521,8 +536,8 @@ def _legacy_upstream_review(run: StepRun, review: dict[str, JsonValue], again: s
     Returns:
         A fresh bounded assessor, or None when the judgment already includes upstream routing.
 
-    Raises:
-        StepError: The exact legacy evidence already received a classification request.
+    Evidence rows without a statement or evidence are passed over. Evidence already reclassified
+    is recorded as a ``contract-finding`` and the review's implementation route stands.
 
     """
     if run.params().get("upstreamClassified") is True or review["route"] != "implementation":
@@ -533,10 +548,7 @@ def _legacy_upstream_review(run: StepRun, review: dict[str, JsonValue], again: s
             if artifact["kind"] != "value" or artifact["name"] != "upstreamMissing":
                 continue
             rows: list[dict[str, JsonValue]] = check_type(artifact["value"], list[dict[str, JsonValue]])
-            for row in rows:
-                if any(not check_type(row[key], str).strip() for key in ("what", "evidence")):
-                    raise StepError(run.step["script"], OTHER_CAUSE, ("Malformed accepted upstreamMissing evidence",))
-                missing.append(row)
+            missing.extend(row for row in rows if all(str(row.get(key) or "").strip() for key in ("what", "evidence")))
     if not missing:
         return None
     identity: str = hashlib.sha256(json.dumps([review, missing], sort_keys=True).encode()).hexdigest()
@@ -545,11 +557,14 @@ def _legacy_upstream_review(run: StepRun, review: dict[str, JsonValue], again: s
         for step in accepted_steps(run)
         for artifact in step["artifacts"]
     ):
-        raise StepError(
-            run.step["script"],
-            OTHER_CAUSE,
-            ("The exact legacy upstream evidence was already reclassified",),
+        record_for_run(
+            run,
+            str(run.bead),
+            kind="contract-finding",
+            detail="the legacy upstream evidence was already reclassified; the implementation route stands",
+            evidence=tuple(str(json_object(row).get("evidence")) for row in missing),
         )
+        return None
     planned: Completion = reasoned(
         run,
         "acceptance-criteria-coverage-assessor",
@@ -635,19 +650,30 @@ def _passed_review(run: StepRun, review: dict[str, JsonValue]) -> Completion:
 def _review_ownership(run: StepRun, findings: list[JsonValue]) -> Completion | None:
     """Obtain one current ownership judgment for legacy unclassified findings.
 
+    A fresh judgment that still names no owner for a finding is recorded as a ``contract-finding``
+    and the findings without an owner are carried as the contract's (``build_carried``).
+
     Returns:
         A fresh independent review when ownership is missing, otherwise None.
-
-    Raises:
-        StepError: A fresh judgment still omitted the required ownership.
 
     """
     if all(json_object(finding).get("owner") for finding in findings):
         return None
     tree: str = build_policy.content_tree(run)
     if latest(run, "reviewOwnershipRequested") == tree:
-        message: str = "build:review-ownership"
-        raise StepError(message, OTHER_CAUSE, ("Code review did not identify the owner of each required correction",))
+        unowned: list[str] = [
+            check_type(json_object(finding).get("detail", ""), str)
+            for finding in findings
+            if not json_object(finding).get("owner")
+        ]
+        record_for_run(
+            run,
+            str(run.bead),
+            kind="contract-finding",
+            detail="code review named no owner for these findings; they are carried as the contract's",
+            evidence=tuple(unowned),
+        )
+        return None
     return Completion(
         artifacts=(value_artifact("reviewOwnershipRequested", tree),),
         add=(
@@ -679,6 +705,7 @@ def _code_reviewed(run: StepRun) -> Completion:
     ownership: Completion | None = _review_ownership(run, required)
     if ownership is not None:
         return ownership
+    required = build_carried.contract_unless_owned(required)
     tree: str = build_policy.content_tree(run)
     reviewed: ValueArtifact = value_artifact(CODE_REVIEW_TREE, tree)
     carried: list[JsonValue] = build_carried.owned_elsewhere(required)
@@ -802,6 +829,7 @@ def _empty_selection(run: StepRun, selection: JsonValue) -> Completion:
     ownership: Completion | None = _review_ownership(run, required)
     if ownership is not None:
         return ownership
+    required = build_carried.contract_unless_owned(required)
     if selection is not None and _selection_outdated(run):
         return reasoned(
             run,
@@ -936,14 +964,26 @@ def _green_check(run: StepRun) -> Completion:
     return Completion(artifacts=(*artifacts, *judgment.artifacts), add=judgment.add)
 
 
+def _made_in_dispatch(run: StepRun, step_id: str) -> bool:
+    """Tell whether a step of the journal finished during this dispatch.
+
+    Returns:
+        True when the step is in the journal and finished since the dispatch began.
+
+    """
+    found: list[Step] = [step for step in step_journal.steps_in_order(run.journal()) if step["id"] == step_id]
+    return bool(found) and in_dispatch(run, found[0])
+
+
 def _require_progress(run: StepRun, suite: dict[str, JsonValue]) -> None:
-    """Stop another correction session when a fresh suite proves no progress.
+    """Stop another correction session when a fresh suite of this dispatch proves no progress.
 
     Raises:
         StepError: The same evidence identity and failures survived a correction round.
 
     """
-    previous: JsonValue = latest(run, "greenRun")
+    held: AcceptedArtifact | None = view_of(run).artifact("greenRun")
+    previous: JsonValue = None if held is None or not _made_in_dispatch(run, held.step) else held.value
     judgment: JsonValue = latest(run, "suiteReview")
     if not isinstance(previous, dict) or not isinstance(judgment, str):
         return

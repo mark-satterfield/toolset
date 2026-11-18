@@ -214,7 +214,7 @@ def _write_context(run: StepRun, held: Repository, existing: list[JsonValue]) ->
         held_tasks: list[TaskBead] = run.tools.portfolio_read(TASK_CONTEXT, tasks_of, graph)
         open_work = run.tools.portfolio_read(TASK_CONTEXT, work_batch, matrix, held_tasks, asked, str(run.bead))
     return write_contract(
-        run.context.work / f"tasks-{held.slug}.context.json",
+        task_context_path(run.context.work, held.slug),
         {
             "epic": str(run.bead),
             "repoPath": held.path,
@@ -323,6 +323,26 @@ def duplicate_title_problems(tasks: list[JsonValue]) -> list[str]:
         else:
             seen[same] = key
     return problems
+
+
+def task_context_path(work: Path, slug: str) -> Path:
+    """Name the task context of a repository's Story in an Epic's work directory.
+
+    Returns:
+        ``<work>/tasks-<slug>.context.json``.
+
+    """
+    return work / f"tasks-{slug}.context.json"
+
+
+def tasks_path(work: Path, slug: str) -> Path:
+    """Name the Tasks file the decomposer first writes for a repository's Story in an Epic's work directory.
+
+    Returns:
+        ``<work>/tasks-<slug>.json``.
+
+    """
+    return work / f"tasks-{slug}.json"
 
 
 def task_grouping_check(context_file: Path, schema_file: Path) -> OutputValidator:
@@ -620,8 +640,10 @@ def decomposer(run: StepRun) -> AgentLaunch:
     earlier: Step | None = run.earlier_sibling(DECOMPOSER) if correcting else None
     name: str = TASK_CORRECTION if correcting else TASKS_FILE
     turn: int = len(run.inputs.files(TASK_CORRECTION)) + 1
-    output: Path = run.context.work / (
-        f"tasks-{held.slug}.correction-{turn}.json" if correcting else f"tasks-{held.slug}.json"
+    output: Path = (
+        run.context.work / f"tasks-{held.slug}.correction-{turn}.json"
+        if correcting
+        else tasks_path(run.context.work, held.slug)
     )
     check: OutputValidator = _correction_check(run) if correcting else _tasks_check(run, merged=False)
     files.extend(_stale_problems(run, output, check))

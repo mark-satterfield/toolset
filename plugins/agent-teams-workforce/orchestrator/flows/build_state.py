@@ -176,8 +176,22 @@ def _correction_outcome(step: Step, outcome: str | None) -> bool:
     return bool(value)
 
 
+def in_dispatch(run: StepRun, step: Step) -> bool:
+    """Tell whether a step finished during this dispatch.
+
+    Returns:
+        True when the step's finish time is not before the dispatch began.
+
+    """
+    return step.get("finished", "") >= run.context.started
+
+
 def count_in_dispatch(run: StepRun, key: str, outcome: str | None = None) -> int:
-    """Count accepted correction outcomes across resumes of the Task journal.
+    """Count the accepted correction outcomes this dispatch made.
+
+    Only steps finished since the dispatch began (``RunContext.started``) count, so a dispatch
+    that follows a failed one gives each bounded correction its full allowance again, with the
+    failing evidence the journal holds.
 
     Returns:
         Steps with the named completed outcome, including an immediate agent child's
@@ -186,12 +200,18 @@ def count_in_dispatch(run: StepRun, key: str, outcome: str | None = None) -> int
     """
     accepted: list[Step] = view_of(run).steps()
     index: JournalIndex = index_journal(run.journal())
-    producers: set[StepId] = {step["id"] for step in accepted if _correction_outcome(step, outcome)}
+    producers: set[StepId] = {
+        step["id"] for step in accepted if in_dispatch(run, step) and _correction_outcome(step, outcome)
+    }
     agent_parents: set[StepId | None] = {
         index.parent[step["id"]] for step in accepted if step.get("agent") and step["id"] in producers
     }
     return sum(
         step.get("script") == key
-        and ((outcome is None and step["status"] == "done") or step["id"] in producers or step["id"] in agent_parents)
+        and (
+            (outcome is None and step["status"] == "done" and in_dispatch(run, step))
+            or step["id"] in producers
+            or step["id"] in agent_parents
+        )
         for step in accepted
     )

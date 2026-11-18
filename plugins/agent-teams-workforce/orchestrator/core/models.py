@@ -12,6 +12,7 @@ import uuid
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final, Literal, NotRequired, TypedDict
 
@@ -427,10 +428,24 @@ def wait_meter(work: Path) -> WaitMeter:
     return meter
 
 
+def dispatch_moment() -> str:
+    """Give the present moment in the form a step journal records a date-time.
+
+    Returns:
+        The UTC time as ``YYYY-MM-DDTHH:MM:SSZ``.
+
+    """
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 @dataclass
 class RunContext:
-    """State shared by every phase of a single orchestration dispatch."""
+    """State shared by every phase of a single orchestration dispatch.
+
+    ``started`` is when the dispatch began, in journal date-time form: a bounded correction counts
+    only the rounds this dispatch made, so a dispatch after a failed one has its full allowance.
+    """
 
     bead: str
     flow: str
@@ -444,6 +459,7 @@ class RunContext:
     session_slots: threading.BoundedSemaphore = field(
         default_factory=session_slots,
     )
+    started: str = field(default_factory=dispatch_moment)
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def __post_init__(self) -> None:

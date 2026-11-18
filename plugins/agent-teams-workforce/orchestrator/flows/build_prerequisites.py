@@ -1,4 +1,12 @@
-"""Diagnose real producer work and release a consumer while its prerequisites progress."""
+"""Diagnose real producer work and release a consumer while its prerequisites progress.
+
+A diagnosis the tracker contradicts, a wait that would close a completion cycle, and an environment
+that stays unready are recorded as findings (``core.findings``: ``prerequisite-carried`` or
+``completion-cycle``, for the consumer Task's Story) and the consumer's verification continues
+without that wait (``build_prerequisite_work.continuation``). The consumer's own suite still has
+to pass: a recovery bound spent on its failing suite fails the Task for this dispatch only, since
+every bound counts the rounds of the current dispatch.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +28,7 @@ from story_deploy_args import VERIFIED_STATUSES
 from typeguard import check_type
 
 from orchestrator.core import step_journal
+from orchestrator.core.findings import FindingKind, record_for_run
 from orchestrator.core.handback_contract import OTHER_CAUSE, WaitingProducer
 from orchestrator.core.io import JsonValue, write_json
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, value_artifact
@@ -33,6 +42,7 @@ from orchestrator.flows.build_state import (
     artifact_document,
     artifact_file,
     build_rounds,
+    in_dispatch,
     new_step,
     workspace_of,
 )
@@ -458,19 +468,11 @@ def _failure_observation(run: StepRun, again: str) -> dict[str, JsonValue]:
     return artifact_document(run, "suiteReview")
 
 
-def diagnose(run: StepRun, again: str, observation: dict[str, JsonValue] | None = None) -> Completion:
-    """Append one evidence-based diagnosis for a distinct observed failure and tree.
-
-    Args:
-        run: Current environment judgment consumer.
-        again: The baseline or suite-review consumer to resume after fresh verification.
-        observation: Actual setup failure evidence when no suite review exists yet.
+def _fingerprint(run: StepRun, review: dict[str, JsonValue]) -> tuple[str, dict[str, JsonValue], beadgraph.Graph]:
+    """Identify one observed failure on the current tree and tracker state.
 
     Returns:
-        A genuine mapper session with fresh tracker and repository facts.
-
-    Raises:
-        StepError: This failure was already diagnosed or the correction allowance is spent.
+        The fingerprint, the tree digest record and the tracker graph it was taken from.
 
     """
     tree: dict[str, JsonValue] = git_operation(
@@ -478,7 +480,6 @@ def diagnose(run: StepRun, again: str, observation: dict[str, JsonValue] | None 
         run.step["script"],
         ["hash-files", "--tree", str(workspace_of(run).tree)],
     )
-    review: dict[str, JsonValue] = observation if observation is not None else _failure_observation(run, again)
     graph: beadgraph.Graph = run.tools.portfolio_read(
         run.step["script"],
         beadgraph.load,
@@ -492,14 +493,73 @@ def diagnose(run: StepRun, again: str, observation: dict[str, JsonValue] | None 
     fingerprint: str = hashlib.sha256(
         json.dumps([review, tree["treeDigest"], state], sort_keys=True).encode(),
     ).hexdigest()
-    accepted = [
+    return fingerprint, tree, graph
+
+
+def _spent(run: StepRun, fingerprint: str) -> bool:
+    """Tell whether this dispatch already diagnosed the failure or spent its diagnoses.
+
+    Returns:
+        True when a diagnosis of this dispatch holds the fingerprint, or this dispatch made as
+        many diagnoses as the correction allowance.
+
+    """
+    accepted: list[JsonValue] = [
         artifact["value"]
         for step in step_journal.steps_in_order(run.journal())
-        if step["status"] == "done"
+        if step["status"] == "done" and in_dispatch(run, step)
         for artifact in step["artifacts"]
         if artifact["kind"] == "value" and artifact["name"] == "prerequisiteFingerprint"
     ]
-    if fingerprint in accepted or len(accepted) >= build_rounds():
+    return fingerprint in accepted or len(accepted) >= build_rounds()
+
+
+def exhausted(run: StepRun, observation: dict[str, JsonValue]) -> bool:
+    """Tell whether a failure needs no further diagnosis in this dispatch.
+
+    Returns:
+        True when :func:`_spent` holds for the failure on the current tree.
+
+    """
+    return _spent(run, _fingerprint(run, observation)[0])
+
+
+def carry(run: StepRun, kind: FindingKind, detail: str, *evidence: str) -> Completion:
+    """Record a prerequisite problem for the consumer Task's Story and continue its verification.
+
+    Returns:
+        The continuation of the consumer's verification (``build_prerequisite_work.continuation``).
+
+    """
+    graph: beadgraph.Graph = run.tools.portfolio_read(run.step["script"], beadgraph.load, control_repo())
+    held: beadgraph.Bead | None = graph.beads.get(str(run.bead))
+    owner: str = str(run.bead) if held is None or held.parent is None else held.parent
+    record_for_run(run, owner, kind=kind, detail=detail, evidence=evidence)
+    return build_prerequisite_work.continuation(check_type(run.params()["again"], str))
+
+
+def diagnose(run: StepRun, again: str, observation: dict[str, JsonValue] | None = None) -> Completion:
+    """Append one evidence-based diagnosis for a distinct observed failure and tree.
+
+    Args:
+        run: Current environment judgment consumer.
+        again: The baseline or suite-review consumer to resume after fresh verification.
+        observation: Actual setup failure evidence when no suite review exists yet.
+
+    Returns:
+        A genuine mapper session with fresh tracker and repository facts.
+
+    Raises:
+        StepError: This dispatch already diagnosed this failure or spent its diagnoses: the
+            Task's suite still fails, and the Task closes only when its tests pass.
+
+    """
+    review: dict[str, JsonValue] = observation if observation is not None else _failure_observation(run, again)
+    fingerprint: str
+    tree: dict[str, JsonValue]
+    graph: beadgraph.Graph
+    fingerprint, tree, graph = _fingerprint(run, review)
+    if _spent(run, fingerprint):
         raise StepError(run.step["script"], OTHER_CAUSE, ("Prerequisite recovery exhausted its evidence-based bound",))
     path: Path = run.context.work / "build" / str(run.step["id"]) / "prerequisite-context.json"
     write_json(path, {"consumer": str(run.bead), "records": graph.records, "tree": tree, "review": review})
@@ -553,9 +613,9 @@ def diagnosed(run: StepRun) -> Completion:
         Fresh evidence for changed governing sources, a slot-releasing readiness gate, a correction
         of the repository's own declarations, or a scoped environment observation.
 
-    Raises:
-        StepError: The diagnosis names a producer without existing evidence, contradicts the
-            tracker, or its wait closes a completion cycle; only this Task fails, as an item.
+    A diagnosis that names a producer without evidence or contradicts the tracker, and a wait
+    that would close a completion cycle, add no wait: each is recorded as a finding and the
+    consumer's verification continues (:func:`carry`).
 
     """
     refreshed: Completion | None = refresh_sources(run)
@@ -576,20 +636,32 @@ def diagnosed(run: StepRun) -> Completion:
         )
     if diagnosis["route"] == "missing-work":
         return build_prerequisite_work.prepare(run, diagnosis)
+    return _producer_wait(run, diagnosis, again)
+
+
+def _producer_wait(run: StepRun, diagnosis: dict[str, JsonValue], again: str) -> Completion:
+    """Add the consumer's wait for the producers a diagnosis names, when the tracker allows it.
+
+    Returns:
+        The slot-releasing readiness gate; or, for producers the tracker contradicts, producers in
+        another repository that would only be built, or a wait that closes a completion cycle,
+        the finding and the continuation of the consumer's verification (:func:`carry`).
+
+    """
     graph: beadgraph.Graph = run.tools.portfolio_read(run.step["script"], beadgraph.load, control_repo())
     producers: list[dict[str, JsonValue]] = check_type(diagnosis["producers"], list[dict[str, JsonValue]])
+    evidence_path: str = str(artifact_file(run, "prerequisiteDiagnosis"))
     try:
         _producer_rows(producers)
-    except ValueError as error:
-        # from None: a chained ValueError would classify this item's diagnosis as a pipeline defect.
-        raise StepError(run.step["script"], OTHER_CAUSE, (str(error),)) from None
-    _validate_producers(graph, str(run.bead), producers)
+        _validate_producers(graph, str(run.bead), producers)
+    except (ValueError, StepError) as error:
+        return carry(run, "prerequisite-carried", str(error), evidence_path)
     foreign: list[str] = _foreign_built(graph, str(run.bead), producers)
     if foreign:
         refusal: str = (
             f"Producers {', '.join(foreign)} are in another repository: required published or deployed, never built"
         )
-        raise StepError(run.step["script"], OTHER_CAUSE, (refusal,))
+        return carry(run, "prerequisite-carried", refusal, evidence_path)
     writer: beadgraph.Writer = beadgraph.Writer(control_repo())
     standing: tuple[str, ...] = graph.beads[str(run.bead)].blockers
     blockers: list[str] = sorted({
@@ -609,9 +681,9 @@ def diagnosed(run: StepRun) -> Completion:
     try:
         validate_wait_graph(graph.records, waits)
     except WaitCycleError as error:
-        # from None: a chained ValueError would classify this Task's cyclic wait as a pipeline defect.
-        evidence: tuple[str, ...] = (str(error), f"Proposed wait: {wait['evidencePath']}")
-        raise StepError(run.step["script"], OTHER_CAUSE, evidence) from None
+        return carry(run, "completion-cycle", str(error), evidence_path)
+    except (ValueError, StepError) as error:
+        return carry(run, "prerequisite-carried", str(error), evidence_path)
     run.tools.portfolio(run.step["script"], writer.write_blocks, {str(run.bead): blockers})
     return Completion(
         artifacts=(
@@ -701,12 +773,16 @@ def pending(wait: dict[str, JsonValue], directory: Path, control: Path) -> bool:
         control: Central tracker repository.
 
     Returns:
-        Whether any real producer still lacks the stage the consumer requires.
+        Whether any real producer still lacks the stage the consumer requires; False when the
+        tracker no longer holds the producers the wait names, so the consumer is released.
 
     """
     graph: beadgraph.Graph = beadgraph.load(control)
     producers: list[dict[str, JsonValue]] = check_type(wait["producers"], list[dict[str, JsonValue]])
-    _validate_producers(graph, check_type(wait["task"], str), producers)
+    try:
+        _validate_producers(graph, check_type(wait["task"], str), producers)
+    except StepError:
+        return False
     snapshot: StorySnapshot = StorySnapshot(directory)
     return any(
         not graph.beads[check_type(producer["task"], str)].closed
@@ -743,26 +819,19 @@ def observe(run: StepRun, again: str) -> Completion:
 def observed(run: StepRun) -> Completion:
     """Resume factual verification only after independently recorded current readiness.
 
+    An environment fresh evidence shows unready is recorded as a ``prerequisite-carried`` finding,
+    and the suite runs all the same.
+
     Returns:
         The original suite's fresh execution and assessment step.
-
-    Raises:
-        StepError: Fresh evidence shows the environment remains unready.
 
     """
     readiness: dict[str, JsonValue] = artifact_document(run, "prerequisiteReadiness")
     if readiness["ready"] is not True:
-        raise StepError(run.step["script"], OTHER_CAUSE, (check_type(readiness["evidence"], str),))
-    again: str = check_type(run.params()["again"], str)
-    continuation: str = "build:baseline" if again == "build:baseline" else "build:prerequisites-suite"
-    return Completion(
-        add=(
-            StepGroup((
-                new_step(
-                    continuation,
-                    "Resume the baseline setup" if again == "build:baseline" else "Run and reassess the original suite",
-                    {"again": again},
-                ),
-            )),
-        ),
-    )
+        return carry(
+            run,
+            "prerequisite-carried",
+            f"the environment is not ready: {check_type(readiness['evidence'], str)}",
+            str(artifact_file(run, "prerequisiteReadiness")),
+        )
+    return build_prerequisite_work.continuation(check_type(run.params()["again"], str))

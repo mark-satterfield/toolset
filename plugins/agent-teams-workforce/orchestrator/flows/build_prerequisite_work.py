@@ -1,4 +1,10 @@
-"""Append missing producer Tasks through the existing decomposer, writer and Task scoring."""
+"""Append missing producer Tasks through the existing decomposer, writer and Task scoring.
+
+Producer work that cannot be authored (no open producer Story, a Story whose specs or Tasks are not
+found, or an authoring result that would change existing Tasks) is recorded as a
+``producer-missing`` finding (``core.findings``) and the consumer's build continues against its
+specified contract (:func:`continuation`); it never fails the Task.
+"""
 
 from __future__ import annotations
 
@@ -17,52 +23,96 @@ from step_journal_contract import BeadId, Journal
 from typeguard import check_type
 
 from orchestrator.core import step_journal
-from orchestrator.core.handback_contract import OTHER_CAUSE
+from orchestrator.core.findings import record_for_run
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, value_artifact
-from orchestrator.core.models import StepError
 from orchestrator.flows.build_sessions import OutputContract, latest, reasoned
 from orchestrator.flows.build_state import ARTIFACT_CONTRACTS, artifact_document, artifact_file, new_step
-from orchestrator.flows.elaboration_files import control_repository, project_root
+from orchestrator.flows.elaboration_files import CRITERIA, DATA_MODEL, SPEC, control_repository, project_root
+from orchestrator.flows.repo_scoping import ELEMENTS_FILE, SPAN_FILE
+from orchestrator.flows.spec_authoring import spec_context_path, spec_document_path, story_document_path
+from orchestrator.flows.task_decomposition import task_context_path, tasks_path
 
 ELABORATION_STAGE = "build:prerequisite-elaboration"
 """The gate that holds a consumer while its producer Story's Epic finishes elaboration."""
 ELABORATION_WAIT = "prerequisiteElaborationWait"
 """The journal value naming the consumer, its diagnosis and the Epic and Story it waits for."""
+BASELINE = "build:baseline"
+"""The continuation that resumes the baseline setup."""
+REQUIRED: tuple[str, ...] = (
+    "span",
+    "elements",
+    "spec",
+    "data model",
+    "criteria",
+    "story document",
+    "task context",
+    "repository context",
+    "tasks",
+)
+"""The producer Story's files the decomposer and the writer are handed."""
+
+
+def continuation(again: str) -> Completion:
+    """Resume the consumer's verification where the prerequisite recovery began.
+
+    Returns:
+        The baseline setup again, or the original suite run and its assessment.
+
+    """
+    return Completion(
+        add=(
+            StepGroup((
+                new_step(
+                    BASELINE if again == BASELINE else "build:prerequisites-suite",
+                    "Resume the baseline setup" if again == BASELINE else "Run and reassess the original suite",
+                    {"again": again},
+                ),
+            )),
+        ),
+    )
+
+
+def _missing(run: StepRun, owner: str, detail: str, *evidence: str) -> Completion:
+    """Record producer work that cannot be authored as a finding, and continue the consumer's build.
+
+    Returns:
+        The continuation (:func:`continuation`).
+
+    """
+    record_for_run(run, owner, kind="producer-missing", detail=detail, evidence=evidence)
+    return continuation(check_type(run.params()["again"], str))
 
 
 def prepare(run: StepRun, diagnosis: dict[str, JsonValue]) -> Completion:
     """Locate real completed Story authoring inputs before assigning missing producer work.
 
     A producer Story whose Epic has not finished elaboration has no specs or Tasks yet; the
-    consumer waits for that elaboration instead of failing.
+    consumer waits for that elaboration instead of failing. No open producer Story, a Story with
+    no Epic, and a Story whose files are not found are recorded as ``producer-missing`` and the
+    consumer's build continues (:func:`_missing`).
 
     Returns:
-        A completed source-context record followed by the existing decomposer, or the wait for
-        the producer Story's Epic to finish elaboration.
-
-    Raises:
-        StepError: No actual open Story exists, or an elaborated one lacks complete accepted
-            authoring artifacts.
+        A completed source-context record followed by the existing decomposer, the wait for the
+        producer Story's Epic to finish elaboration, or the continuation of the consumer's build.
 
     """
     graph: beadgraph.Graph = run.tools.portfolio_read(run.step["script"], beadgraph.load, control_repository())
+    consumer: beadgraph.Bead | None = graph.beads.get(str(run.bead))
+    own_story: str = str(run.bead) if consumer is None or consumer.parent is None else consumer.parent
+    evidence: str = check_type(diagnosis["evidence"], str)
     story: beadgraph.Bead | None = graph.beads.get(check_type(diagnosis.get("authoringStory") or "", str))
     if story is None or story.kind != "story" or story.closed:
-        raise StepError(
-            run.step["script"],
-            OTHER_CAUSE,
-            (
-                "Producer work-authoring gap: no actual open Story with saved scope/spec context was established",
-                check_type(diagnosis["evidence"], str),
-            ),
-        )
+        return _missing(run, own_story, "no open producer Story authorizes the missing producer work", evidence)
     epic: beadgraph.Bead | None = graph.epic_of(story.id)
     if epic is None:
-        raise StepError(run.step["script"], OTHER_CAUSE, (f"Producer Story {story.id} has no actual Epic",))
+        return _missing(run, story.id, f"producer Story {story.id} has no Epic", evidence)
     if epic.metadata.get(KEY_ELABORATION_STATE) != ELABORATION_DONE:
         return _await_elaboration(run, story, epic)
-    context: dict[str, JsonValue] = _source(run.journal_path.parent, story, epic)
+    found: dict[str, JsonValue] | str = _source(run.journal_path.parent, run.context.work.parent, story, epic)
+    if isinstance(found, str):
+        return _missing(run, story.id, found, evidence)
+    context: dict[str, JsonValue] = found
     return Completion(
         artifacts=(
             value_artifact("prerequisiteAuthoring", context),
@@ -164,61 +214,97 @@ def _done_files(journal: Journal) -> dict[str, str]:
     }
 
 
-def _source(directory: Path, story: beadgraph.Bead, epic: beadgraph.Bead) -> dict[str, JsonValue]:
-    """Resolve authoring pointers only from completed actual Story and Epic journal records.
+def _on_disk(work: Path, slug: str) -> dict[str, str]:
+    """Name the producer Story's files where its Epic's elaboration writes them.
 
     Returns:
-        The source identity and immutable accepted artifact pointers.
+        Each required file (:data:`REQUIRED`) by its artifact name.
 
-    Raises:
-        StepError: A required actual context artifact is absent or incomplete.
+    """
+    paths: dict[str, Path] = {
+        "span": work / SPAN_FILE,
+        "elements": work / ELEMENTS_FILE,
+        "spec": spec_document_path(work, slug, SPEC),
+        "data model": spec_document_path(work, slug, DATA_MODEL),
+        "criteria": spec_document_path(work, slug, CRITERIA),
+        "story document": story_document_path(work, slug),
+        "task context": task_context_path(work, slug),
+        "repository context": spec_context_path(work, slug),
+        "tasks": tasks_path(work, slug),
+    }
+    return {name: str(path) for name, path in paths.items()}
+
+
+def _journal_files(directory: Path, story: beadgraph.Bead, epic: beadgraph.Bead) -> dict[str, str]:
+    """Read the producer Story's file pointers from the done steps of its Story and Epic journals.
+
+    Returns:
+        Each file artifact the journals' done steps recorded; empty when a journal does not exist.
 
     """
     story_path: Path = step_journal.journal_path(directory, BeadId(story.id))
     epic_path: Path = step_journal.journal_path(directory, BeadId(epic.id))
-    stage: str = "build:prerequisite-author"
-    if not story_path.is_file() or not epic_path.is_file():
-        raise StepError(stage, OTHER_CAUSE, (f"Producer Story {story.id} has no saved authoring journals",))
-    journal: Journal = step_journal.read_journal(epic_path)
-    files: dict[str, str] = _done_files(journal)
-    for step in step_journal.steps_in_order(journal):
-        matches: bool = any(
-            artifact["name"] == "repository"
-            and artifact["kind"] == "value"
-            and isinstance(artifact["value"], dict)
-            and artifact["value"].get("repoPath") == story.metadata.get(KEY_REPO_PATH)
-            for artifact in step["artifacts"]
-        )
-        if step["status"] == "done" and matches:
-            for descendant in step_journal.steps_in_order({**journal, "steps": [step]}):
-                if descendant["status"] == "done":
-                    files.update({
-                        artifact["name"]: artifact["path"]
-                        for artifact in descendant["artifacts"]
-                        if artifact["kind"] == "file"
-                        and artifact["name"] in {"task context", "repository context", "tasks"}
-                    })
-    files.update(_done_files(step_journal.read_journal(story_path)))
-    required: tuple[str, ...] = (
-        "span",
-        "elements",
-        "spec",
-        "data model",
-        "criteria",
-        "story document",
-        "task context",
-        "repository context",
-        "tasks",
-    )
-    if any(
-        name not in files or not Path(files[name]).is_absolute() or not Path(files[name]).is_file() for name in required
-    ):
-        raise StepError(
-            stage,
-            OTHER_CAUSE,
-            (f"Producer Story {story.id} lacks complete accepted scope/spec/Task artifacts",),
-        )
+    files: dict[str, str] = {}
+    if epic_path.is_file():
+        journal: Journal = step_journal.read_journal(epic_path)
+        files.update(_done_files(journal))
+        for step in step_journal.steps_in_order(journal):
+            matches: bool = any(
+                artifact["name"] == "repository"
+                and artifact["kind"] == "value"
+                and isinstance(artifact["value"], dict)
+                and artifact["value"].get("repoPath") == story.metadata.get(KEY_REPO_PATH)
+                for artifact in step["artifacts"]
+            )
+            if step["status"] == "done" and matches:
+                for descendant in step_journal.steps_in_order({**journal, "steps": [step]}):
+                    if descendant["status"] == "done":
+                        files.update({
+                            artifact["name"]: artifact["path"]
+                            for artifact in descendant["artifacts"]
+                            if artifact["kind"] == "file"
+                            and artifact["name"] in {"task context", "repository context", "tasks"}
+                        })
+    if story_path.is_file():
+        files.update(_done_files(step_journal.read_journal(story_path)))
+    return files
+
+
+def _usable(path: str | None) -> bool:
+    """Tell whether a recorded file pointer names a file that exists.
+
+    Returns:
+        True for an absolute path to an existing file.
+
+    """
+    return path is not None and Path(path).is_absolute() and Path(path).is_file()
+
+
+def _source(
+    directory: Path,
+    artifacts: Path,
+    story: beadgraph.Bead,
+    epic: beadgraph.Bead,
+) -> dict[str, JsonValue] | str:
+    """Resolve the producer Story's authoring files: from done journal records, else from its Epic's work folder.
+
+    A file the Story's and Epic's journals record in a done step is taken from there; a file they
+    do not record is taken from the Epic's work directory, where the elaboration writes it.
+
+    Returns:
+        The source identity and its file pointers; or one line saying what is missing, when a
+        file is found nowhere or the contexts name another Story.
+
+    """
     slug: str = story.metadata.get(KEY_ELAB_KEY, "").removeprefix("story:")
+    if not slug:
+        return f"producer Story {story.id} has no elaboration key"
+    recorded: dict[str, str] = _journal_files(directory, story, epic)
+    disk: dict[str, str] = _on_disk(artifacts / epic.id, slug)
+    files: dict[str, str] = {name: recorded[name] if _usable(recorded.get(name)) else disk[name] for name in REQUIRED}
+    absent: list[str] = [name for name in REQUIRED if not _usable(files[name])]
+    if absent:
+        return f"producer Story {story.id} lacks its {', '.join(absent)} files"
     task_context: dict[str, JsonValue] = json_object(
         json.loads(Path(files["task context"]).read_text(encoding="utf-8")),
     )
@@ -226,16 +312,14 @@ def _source(directory: Path, story: beadgraph.Bead, epic: beadgraph.Bead) -> dic
         json.loads(Path(files["repository context"]).read_text(encoding="utf-8")),
     )
     expected: dict[str, JsonValue] = {"slug": slug, "epic": epic.id, "repoPath": story.metadata.get(KEY_REPO_PATH)}
-    if not slug or any(
-        context.get(key) != value for context in (task_context, spec_context) for key, value in expected.items()
-    ):
-        raise StepError(stage, OTHER_CAUSE, (f"Producer Story {story.id} context identity does not match",))
+    if any(context.get(key) != value for context in (task_context, spec_context) for key, value in expected.items()):
+        return f"producer Story {story.id} context identity does not match its files"
     return {
         "story": story.id,
         "epic": epic.id,
         "slug": slug,
         "repoPath": story.metadata[KEY_REPO_PATH],
-        "files": {name: files[name] for name in required},
+        "files": {name: files[name] for name in REQUIRED},
     }
 
 
@@ -286,14 +370,12 @@ def _story_files(context: dict[str, JsonValue], tasks: Path) -> hierarchy.StoryF
     )
 
 
-def _new_keys(original: dict[str, JsonValue], candidate: dict[str, JsonValue], stage: str) -> set[str]:
+def _new_keys(original: dict[str, JsonValue], candidate: dict[str, JsonValue]) -> set[str] | str:
     """Require exact retention before any append-only Task write.
 
     Returns:
-        The newly authored local Task keys.
-
-    Raises:
-        StepError: Existing authored content changed, or no real new work was authorized.
+        The newly authored local Task keys; or one line saying why nothing is written, when
+        existing authored content changed or no new work was authorized.
 
     """
     old: dict[str, dict[str, JsonValue]] = {
@@ -303,27 +385,27 @@ def _new_keys(original: dict[str, JsonValue], candidate: dict[str, JsonValue], s
         check_type(row["key"], str): row for row in check_type(candidate["tasks"], list[dict[str, JsonValue]])
     }
     keys: set[str] = set(new) - set(old)
-    if not keys or any(new.get(key) != row for key, row in old.items()):
-        raise StepError(
-            stage,
-            OTHER_CAUSE,
-            ("Producer authoring must preserve existing Tasks and add real authorized work",),
-        )
+    if not keys:
+        return "producer authoring found no new work the Story's specs authorize"
+    if any(new.get(key) != row for key, row in old.items()):
+        return "producer authoring changed existing Tasks; nothing was written"
     prior_scores: list[JsonValue] = check_type(original.get("scores", []), list[JsonValue])
     scores: list[JsonValue] = check_type(candidate.get("scores", []), list[JsonValue])
     if any(score not in scores for score in prior_scores):
-        raise StepError(stage, OTHER_CAUSE, ("Producer authoring changed an existing Task's score",))
+        return "producer authoring changed an existing Task's score; nothing was written"
     return keys
 
 
 def authored(run: StepRun) -> Completion:
     """Persist new durable Task keys through normal idempotent writes and scoped scoring.
 
-    Returns:
-        The real authored ids and a bounded new diagnosis of the changed tracker facts.
+    An authoring result that adds nothing or changes existing Tasks is not written: it is recorded
+    as ``producer-missing`` and the consumer's build continues. New Tasks that normal scoring
+    cannot score are recorded the same way, and the diagnosis runs again.
 
-    Raises:
-        StepError: Normal scoring cannot make the new Tasks eligible.
+    Returns:
+        The real authored ids and a bounded new diagnosis of the changed tracker facts, or the
+        continuation of the consumer's build.
 
     """
     context: dict[str, JsonValue] = json_object(latest(run, "prerequisiteAuthoring"))
@@ -331,7 +413,10 @@ def authored(run: StepRun) -> Completion:
     original: dict[str, JsonValue] = json_object(
         json.loads(Path(check_type(files["tasks"], str)).read_text(encoding="utf-8")),
     )
-    keys: set[str] = _new_keys(original, artifact_document(run, "prerequisiteTasks"), run.step["script"])
+    checked: set[str] | str = _new_keys(original, artifact_document(run, "prerequisiteTasks"))
+    if isinstance(checked, str):
+        return _missing(run, check_type(context["story"], str), checked, str(artifact_file(run, "prerequisiteTasks")))
+    keys: set[str] = checked
     story_files: hierarchy.StoryFiles = _story_files(context, artifact_file(run, "prerequisiteTasks"))
     planned: list[hierarchy.Task] = run.tools.portfolio(
         run.step["script"],
@@ -370,10 +455,12 @@ def authored(run: StepRun) -> Completion:
     refreshed: beadgraph.Graph = run.tools.portfolio_read(run.step["script"], beadgraph.load, control_repository())
     scored = run.tools.portfolio(run.step["script"], scoring.score_tasks, refreshed, writer, set(identities.values()))
     if scored["unscored"] or scored["sizeFaults"]:
-        raise StepError(
-            run.step["script"],
-            OTHER_CAUSE,
-            (f"New producer Tasks could not be normally scored: {scored}",),
+        record_for_run(
+            run,
+            check_type(context["story"], str),
+            kind="producer-missing",
+            detail=f"new producer Tasks could not be normally scored: {json.dumps(scored)}",
+            evidence=tuple(identities.values()),
         )
     return Completion(
         artifacts=(
