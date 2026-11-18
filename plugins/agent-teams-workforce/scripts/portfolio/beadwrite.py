@@ -34,7 +34,6 @@ from beadcontracts import (
     AllEdgeWrite,
     ClosureEdges,
     CorrectionRejection,
-    DroppedEdge,
     EdgeCounts,
     EdgePlan,
     ExistingTask,
@@ -2227,13 +2226,11 @@ def _acyclic(
     slug_of: dict[str, str],
     intra: list[tuple[str, str]],
     warnings: list[str],
-) -> tuple[list[TaskEdge], set[tuple[str, str]], list[DroppedEdge]]:
+) -> tuple[list[TaskEdge], set[tuple[str, str]]]:
     """Keep the accepted edges, in order, that close no cycle over the Tasks or over the Stories.
 
     A Story follows another when one of its Tasks follows one of the other's, so an edge is
-    dropped when the Story order it adds would make two Stories depend on each other. A dropped
-    edge is never written; each is recorded, and the elaboration's buildability gate makes it a
-    defect of both its Stories.
+    dropped when the Story order it adds would make two Stories depend on each other.
 
     Args:
         accepted: The accepted edges between Tasks of different Stories, in order.
@@ -2242,7 +2239,7 @@ def _acyclic(
         warnings: Changed in place: one warning for each edge dropped.
 
     Returns:
-        The edges kept, `(from, to)` by name for each, and one record for each edge dropped.
+        The edges kept, and `(from, to)` by name for each.
 
     """
     edge: TaskEdge
@@ -2255,33 +2252,23 @@ def _acyclic(
     story_after: dict[str, set[str]] = {}
     cyclic: bool = build_order(sorted(slug_of), intra) is None
     kept: list[TaskEdge] = []
-    dropped: list[DroppedEdge] = []
     for edge in accepted:
         pair: tuple[str, str] = (edge["from"], edge["to"])
-        story_pair: tuple[str, str] = (slug_of[pair[0]], slug_of[pair[1]])
-        ends: DroppedEdge = {
-            "from": pair[0],
-            "to": pair[1],
-            "fromStory": story_pair[0],
-            "toStory": story_pair[1],
-            "reason": "task-cycle",
-        }
         if cyclic or _leads_to(after, pair[1], pair[0]):
             warnings.append(f"edge {pair[0]} -> {pair[1]} would close a cycle over the Task graph; dropped")
-            dropped.append(ends)
             continue
+        story_pair: tuple[str, str] = (slug_of[pair[0]], slug_of[pair[1]])
         if _leads_to(story_after, story_pair[1], story_pair[0]):
             warnings.append(
                 f"edge {pair[0]} -> {pair[1]} would make Story {story_pair[1]} and Story {story_pair[0]} "
                 "depend on each other; dropped",
             )
-            dropped.append({**ends, "reason": "story-cycle"})
             continue
         pairs.add(pair)
         after.setdefault(pair[0], set()).add(pair[1])
         story_after.setdefault(story_pair[0], set()).add(story_pair[1])
         kept.append(edge)
-    return kept, pairs, dropped
+    return kept, pairs
 
 
 def _leads_to(after: dict[str, set[str]], start: str, goal: str) -> bool:
@@ -2319,12 +2306,12 @@ def plan_task_edges(span: SpanStories) -> EdgePlan:
         span: The Stories of the span, in span order, with their saved files.
 
     Returns:
-        The accepted edges, the rejected ones, the dropped ones, each blocked Task's blockers by
-        name, and `warnings`: the closure's warnings, each rejected edge with its reason, and each
-        edge dropped because it would close a cycle over the Epic's Task graph, or over its
-        Stories, where a Story follows another when one of its Tasks follows one of the other's, so
-        that no two Stories depend on each other (edges are taken in order, the closure's first).
-        `dropped` records each dropped edge with its two Stories and its reason.
+        The accepted edges, the rejected ones, each blocked Task's blockers by name, and
+        `warnings`: the closure's warnings, each rejected edge with its reason, and each edge
+        dropped because it would close a
+        cycle over the Epic's Task graph, or over its Stories, where a Story follows another when
+        one of its Tasks follows one of the other's, so that no two Stories depend on each other
+        (edges are taken in order, the closure's first).
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -2366,8 +2353,7 @@ def _plan_edges(span: SpanStories, stories: list[_SpanStory]) -> EdgePlan:
     slug_of, intra, _elab = _span_names(stories)
     accepted, rejected, _pairs = _accept(saved, slug_of)
     warnings.extend(f"edge {e['from']} -> {e['to']} rejected: {e['reason']}" for e in rejected)
-    dropped: list[DroppedEdge]
-    accepted, pairs, dropped = _acyclic(accepted, slug_of, intra, warnings)
+    accepted, pairs = _acyclic(accepted, slug_of, intra, warnings)
     blockers: dict[str, list[str]] = {}
     for frm, to in sorted(pairs):
         blockers.setdefault(to, []).append(frm)
@@ -2375,13 +2361,11 @@ def _plan_edges(span: SpanStories, stories: list[_SpanStory]) -> EdgePlan:
         "ok": True,
         "edges": accepted,
         "rejected": rejected,
-        "dropped": dropped,
         "blockers": blockers,
         "warnings": warnings,
         "summary": {
             "edges": len(accepted),
             "rejected": len(rejected),
-            "dropped": len(dropped),
             "blockers": blockers,
             "warnings": len(warnings),
         },
@@ -2552,9 +2536,8 @@ def write_all_task_edges(
         progress: Told as each stage ends.
 
     Returns:
-        Each Task written with its counts, the edges dropped because they would close a cycle
-        (never written), and a summary carrying the blockers by name, the totals, the Tasks
-        written and the number of warnings.
+        Each Task written with its counts, and a summary carrying the blockers by
+        name, the totals, the Tasks written and the number of warnings.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -2589,14 +2572,12 @@ def write_all_task_edges(
         "ok": True,
         "epic": epic_id,
         "tasks": cross.tasks,
-        "dropped": plan["dropped"],
         "warnings": warnings,
         "dryRun": writer.dry_run,
         "planned": writer.planned,
         "summary": {
             "edges": plan["summary"]["edges"],
             "rejected": plan["summary"]["rejected"],
-            "dropped": plan["summary"]["dropped"],
             "blockers": plan["blockers"],
             "written": [task["name"] for task in cross.tasks],
             "warnings": len(warnings),

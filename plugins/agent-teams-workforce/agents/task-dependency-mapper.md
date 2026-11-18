@@ -61,10 +61,11 @@ invent an issue id, choose a parent for nonexistent work, write an edge, modify 
 or create a parameter. When an actual Task builds a consumed output, return `prerequisites`
 and name it even when waiting for it would close a cycle through standing edges; do not
 pre-empt that cycle. Return `missing-work` only when no actual Task builds a consumed output, with the
-precise missing work. Name as `authoringStory` the actual open Story whose specs should authorize
-that work, or null when none can be established. The build never authors that work: it hands that
-Story (with null, the consumer's own Story) back to elaboration to be specified again. It is
-pipeline work, never an instruction for the owner to create SSM manually. Return `repository` when the fresh
+precise work-authoring gap. Name `authoringStory`
+only when an actual open Story has completed saved scope/spec context authorizing that work.
+The caller uses the existing decomposer and normal append-only writer/scorer in that case;
+otherwise the gap is finite. It is pipeline work,
+never an instruction for the owner to create SSM manually. Return `repository` when the fresh
 evidence shows the cause is in the Task's own repository: a dependency declaration, lock file,
 override, peer-dependency conflict, or a test or build configuration that names a package no
 manifest declares. Name in `evidence` the files and the correction (for example: declare the test
@@ -119,6 +120,21 @@ library, say) is on that stack's release, and its `from` is the release Task of 
 Story: add an entry to `edges` for each candidate whose own work builds or changes code that imports the
 library. Each edge's `kind` says what the dependent Task needs (the
 output contract's kinds). Consider same-Story and closure edges when checking for a cycle.
+
+The brief may also name `leftover design gaps` files: each repository's kind C design gap rows
+the architect's round left open, which the build now decides (each row names its element and the
+missing detail; the spec documents list them under `## Decided at build`). Such a value is decided
+by whichever build runs first, so where two Stories' Tasks use it (an event value one publishes
+and another matches, a status code or header one returns and another acts on, a key one writes
+and another reads), the Task that builds the row's element provides it and every Task of another
+Story that uses the value waits for it: add an edge from the providing Task to each using Task,
+of the kind that says what the user needs (`data`, `contract` or `event-flow`), even where the use
+is a runtime call, because the user's build reads the value the provider's build chose. Open its
+`reason` with `leftover design gap <repository> <row id>` (the repository as the file names it and
+the row's first cell, its whole text when it has none), then the value. Decide the provider from
+the row's element and the matrix (`atw-matrix node <id>` and `deps`): the repository whose Story
+builds the element provides it. A row whose value stays within one Story, or whose provider you
+cannot decide, gets no edge; the step reports every carried row no edge names.
 
 A Story is built after another when one of its Tasks depends on one of the other's, so two
 Stories never depend on each other both ways: no edge of yours may run from a Story to a Story

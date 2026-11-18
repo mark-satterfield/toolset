@@ -78,7 +78,7 @@ follows it, among its siblings, before the index and the check (`architecture_ro
 on a later step, the `answers digest`, each `answer`, the `findings` (check results) and each
 `ruling` that step is handed, and, while the spec stage holds open design gaps, each
 repository's `design gaps` (`design_gaps.handed`, which hands no repository whose gaps already went
-to the architect `design_gaps.MAX_ROUNDS` (1) time: its rows escalate for a decision). No file is written from the matrix for it: it reads the Epic's pack
+to the architect `design_gaps.MAX_ROUNDS` (1) time: its rows are carried to the build). No file is written from the matrix for it: it reads the Epic's pack
 and runs `atw-matrix` reads itself. The session is granted the architecture work folder and no
 folder of the architecture or of the PRDs.
 

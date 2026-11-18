@@ -7,8 +7,6 @@ here twice.
 At the START, one Epic is judged, and the first condition that fails is the refusal:
 
 * it is an open Epic;
-* its `KEY_ELABORATION_STATE` is not `ELABORATION_PARKED`: a parked Epic waits for an owner or
-  architecture decision (`KEY_ELABORATION_PARK` says which, and why), and only the owner unparks it;
 * its `KEY_ELABORATION_STATE` is not `ELABORATION_DONE`: its Tasks are written and they are the workable items;
 * it is not `ELABORATION_IN_PROGRESS` under another run's owner token (unless the caller reclaims).
 
@@ -26,14 +24,9 @@ At the FINISH, after the Tasks are written:
 * `score_epic_tasks`, `prd-to-spec`'s score step, scores the Tasks beneath the Epic with value
   inherited from it and RR-OE counted over every Task edge, across Stories; the Epic's own score
   is the owner's `wsjf-scoring` run's;
-* `record_buildability`, `prd-to-spec`'s buildability gate, records the gate's report on the Epic
-  as `KEY_ELABORATION_BUILDABILITY`; a failed gate also sets the cause `CAUSE_BUILDABILITY` and the
-  Epic stays `ELABORATION_IN_PROGRESS`;
 * `mark_elaborated` sets the Epic's `KEY_ELABORATION_STATE` to `ELABORATION_DONE` with the cause
-  `CAUSE_DECOMPOSED` and clears its owner token, scoring nothing again. Each Story of the Epic whose
-  `KEY_RESPEC_STATE` is `RESPEC_RESTARTED` was written again in this elaboration, so its respec
-  state and request are cleared; a Story still `RESPEC_REQUESTED` keeps its request, so the Epic is
-  selected again. The Epic stays open; it closes only when its work is released.
+  `CAUSE_DECOMPOSED` and clears its owner token, scoring nothing again. The Epic stays open; it
+  closes only when its work is released.
 
 A run that started an Epic and ends without setting its elaboration to `ELABORATION_DONE`
 RELEASES it: its owner token is cleared and the Epic stays `ELABORATION_IN_PROGRESS`, so the
@@ -42,34 +35,24 @@ next run takes it up without a reclaim.
 
 from __future__ import annotations
 
-import json
 import uuid
 from collections.abc import Callable
 
 import beadgraph
 from bead_metadata import (
-    CAUSE_BUILDABILITY,
     CAUSE_DECOMPOSED,
     CAUSE_STARTED,
     ELABORATION_DONE,
     ELABORATION_IN_PROGRESS,
-    ELABORATION_PARKED,
     ELABORATION_READY,
-    KEY_ELABORATION_BUILDABILITY,
-    KEY_ELABORATION_PARK,
     KEY_ELABORATION_STATE,
     KEY_ELABORATION_STATE_AT,
     KEY_ELABORATION_STATE_CAUSE,
     KEY_ELABORATION_STATE_OWNER,
-    KEY_RESPEC_REQUESTED,
-    KEY_RESPEC_STATE,
-    KEY_RESPEC_STATE_AT,
     KEY_WSJF,
     KEY_WSJF_CONFIDENCE,
     KEY_WSJF_TC,
     KEY_WSJF_UBV,
-    RESPEC_NONE,
-    RESPEC_RESTARTED,
 )
 from beadgraph import Bead, Graph, Writer, now_iso
 from contracts import JsonValue
@@ -129,23 +112,6 @@ def _refusal(code: str, reason: str, epic: Bead | None, *, owner: str | None = N
         "epic": {"id": epic.id, "title": epic.title} if epic else None,
         "summary": {"ok": False, "refusal": code},
     }
-
-
-def _parked_reason(epic: Bead) -> str:
-    """Say why a parked Epic is parked and who settles it, from its park record.
-
-    Returns:
-        The park record's cause and decision; what the record lacks is said to be unrecorded.
-
-    """
-    try:
-        record: object = json.loads(epic.metadata.get(KEY_ELABORATION_PARK) or "{}")
-    except ValueError:
-        record = {}
-    held: dict[str, object] = record if isinstance(record, dict) else {}
-    cause: object = held.get("cause") or "an unrecorded cause"
-    decision: object = held.get("decision") or "an unrecorded"
-    return f"cause {cause}, waiting for {decision} decision"
 
 
 def _epic_value(epic: Bead) -> EpicValue:
@@ -212,12 +178,6 @@ def start(
     state: str | None = epic.metadata.get(KEY_ELABORATION_STATE) or None
     recorded: str | None = epic.metadata.get(KEY_ELABORATION_STATE_OWNER) or None
     warnings: list[str] = []
-    if state == ELABORATION_PARKED:
-        return _refusal(
-            "epic-parked",
-            f"{epic_id} is parked: {_parked_reason(epic)}; the owner unparks it",
-            epic,
-        )
     if state == ELABORATION_DONE:
         return _refusal(
             "epic-done",
@@ -328,73 +288,12 @@ def _write_done(writer: Writer, epic_id: str) -> dict[str, str]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def record_buildability(
-    graph: Graph,
-    writer: Writer,
-    epic_id: str,
-    *,
-    owner: str | None,
-    report: str,
-) -> dict[str, str]:
-    """Record the buildability gate's report on the Epic; a failed gate also sets its cause.
-
-    The Epic's state is not changed: a failed gate leaves it `ELABORATION_IN_PROGRESS` with the
-    cause `CAUSE_BUILDABILITY`, so the report's defects are where the next run can act on them.
-
-    Args:
-        graph: The tracker graph.
-        writer: The tracker writer; a dry-run writer records the write instead.
-        epic_id: The Epic.
-        owner: The run's owner token.
-        report: The gate's report (``BuildabilityReport``), as JSON; a report whose ``buildable``
-            is not true is a failed gate.
-
-    Returns:
-        The metadata written.
-
-    Raises:
-        TypeError: An argument violates the declared input contract.
-
-    """
-    if not (isinstance(graph, Graph)) or not (isinstance(writer, Writer)) or not (isinstance(epic_id, str)):
-        raise TypeError(_ARGUMENT_ERROR)
-    _check_owner(graph.beads[epic_id], owner)
-    written: dict[str, str] = {KEY_ELABORATION_BUILDABILITY: report}
-    parsed: object = json.loads(report)
-    if not isinstance(parsed, dict) or parsed.get("buildable") is not True:
-        written |= {KEY_ELABORATION_STATE_CAUSE: CAUSE_BUILDABILITY, KEY_ELABORATION_STATE_AT: now_iso()}
-    writer.metadata(epic_id, written)
-    return written
-
-
-def _clear_restarted(graph: Graph, writer: Writer, epic_id: str) -> list[str]:
-    """Clear the respec state and request of each Story of the Epic whose specs and Tasks were restarted.
-
-    Returns:
-        The Stories cleared, in id order.
-
-    """
-    cleared: list[str] = []
-    for story in graph.descendants(epic_id):
-        if story.kind != "story" or story.metadata.get(KEY_RESPEC_STATE) != RESPEC_RESTARTED:
-            continue
-        writer.metadata(
-            story.id,
-            {KEY_RESPEC_STATE: RESPEC_NONE, KEY_RESPEC_REQUESTED: "", KEY_RESPEC_STATE_AT: now_iso()},
-        )
-        cleared.append(story.id)
-    return cleared
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def mark_elaborated(graph: Graph, writer: Writer, epic_id: str, *, owner: str | None) -> dict[str, str]:
     """Mark the Epic elaborated without scoring it again.
 
-    The pipeline's score step has scored the Epic's Tasks, its buildability gate has checked
-    that they can be built, and its done rule has checked that every repository has its Story and
-    Tasks and that no Task is unscored, so this only writes the lifecycle. Each Story whose
-    respec state is `RESPEC_RESTARTED` was written again in this elaboration: its respec state,
-    request and time are cleared. A Story still `RESPEC_REQUESTED` keeps its request.
+    The pipeline's score step has scored the Epic's Tasks and its done rule has checked that
+    every repository has its Story and Tasks and that no Task is unscored, so this only writes
+    the lifecycle.
 
     Args:
         graph: The tracker graph.
@@ -412,9 +311,7 @@ def mark_elaborated(graph: Graph, writer: Writer, epic_id: str, *, owner: str | 
     if not (isinstance(graph, Graph)) or not (isinstance(writer, Writer)) or not (isinstance(epic_id, str)):
         raise TypeError(_ARGUMENT_ERROR)
     _check_owner(graph.beads[epic_id], owner)
-    done: dict[str, str] = _write_done(writer, epic_id)
-    _clear_restarted(graph, writer, epic_id)
-    return done
+    return _write_done(writer, epic_id)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

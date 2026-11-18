@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal, NotRequired, TypedDict
+from typing import NotRequired, TypedDict
 
 import portfolio_path  # ruff: ignore[unused-import] - Puts the artifact-handoff contract scripts on sys.path.
 from contracts import DeltaItem, JsonObject, JsonValue
@@ -366,23 +366,11 @@ class ClosureEdges(TypedDict):
     summary: ClosureEdgeSummary
 
 
-DroppedEdge = TypedDict(
-    "DroppedEdge",
-    {"from": str, "to": str, "fromStory": str, "toStory": str, "reason": Literal["task-cycle", "story-cycle"]},
-)
-"""One edge between Tasks of different Stories that was not written because it would close a cycle.
-
-``from`` and ``to`` are Task names; ``fromStory`` and ``toStory`` the slugs of their Stories. ``task-cycle``:
-the edge closes a cycle over the Task graph; ``story-cycle``: it would make the two Stories depend on each other.
-"""
-
-
 class EdgePlanSummary(TypedDict):
     """Describe the edge plan summary wire record."""
 
     edges: int
     rejected: int
-    dropped: int
     blockers: dict[str, list[str]]
     warnings: int
 
@@ -393,7 +381,6 @@ class EdgePlan(TypedDict):
     ok: bool
     edges: list[TaskEdge]
     rejected: list[TaskEdge]
-    dropped: list[DroppedEdge]
     blockers: dict[str, list[str]]
     warnings: list[str]
     summary: EdgePlanSummary
@@ -415,7 +402,6 @@ class AllEdgeSummary(EdgeCounts):
 
     edges: int
     rejected: int
-    dropped: int
     blockers: dict[str, list[str]]
     written: list[str]
     warnings: int
@@ -428,7 +414,6 @@ class AllEdgeWrite(TypedDict):
     ok: bool
     epic: str
     tasks: list[TaskEdgeSummary]
-    dropped: list[DroppedEdge]
     warnings: list[str]
     dryRun: bool
     planned: list[PlannedWrite]

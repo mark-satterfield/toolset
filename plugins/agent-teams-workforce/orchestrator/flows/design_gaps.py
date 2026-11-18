@@ -21,17 +21,15 @@ then plans the promotion of the answered documents, and the TRD write only when 
 changes differ from those the last TRD write applied. No other repository is specified again, and
 no impact analysis runs in the round.
 
-The Epic never carries a design gap to the build. A gap the architect could not settle in its
-round escalates for a decision (:func:`escalate`): a row the architect already answered that a
-repository's documents hold again, and every row of a repository whose gaps went to the architect
-:data:`MAX_ROUNDS` times (one round). The rows are recorded in the escalated folder, a warning note
-names them, and the step fails with the cause ``design-gap``, so the Epic stops until an owner or
-architecture decision settles them. The spec documents are not edited. The rounds are counted from
+The Epic never fails on a design gap. A row the architect already answered that a repository's
+documents hold again, and every row of a repository whose gaps went to the architect
+:data:`MAX_ROUNDS` times (one round), is carried to the build (:func:`carry`): it moves from the gap table to
+the decided-at-build table of its document, marked as a kind C detail left after the rounds, the
+row is recorded in the leftover folder for the Task edges (:func:`leftover`), and a warning note
+reports a pipeline defect: design gaps after the :data:`MAX_ROUNDS` round. The rounds are counted from
 every record there is: ``answers.json`` in either of its forms (a bare count, or the rounds with
 the rows) and the settled folder, which keeps each round's files. A repository at the limit is
-never handed to the architect again (:func:`handed`). The leftover folder holds the rows that
-journals created before escalation carried to the build; the elaboration's buildability gate reads
-it (:func:`leftover_rows`) and reports each such repository as a defect.
+never handed to the architect again (:func:`handed`).
 """
 
 from __future__ import annotations
@@ -40,12 +38,13 @@ import json
 import re
 import shutil
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final, NoReturn, TypedDict
+from pathlib import Path
+from typing import TYPE_CHECKING, Final, TypedDict
 
 from typeguard import CollectionCheckStrategy, check_type
 
 from orchestrator.core import step_journal
-from orchestrator.core.handback_contract import DESIGN_GAP_CAUSE, OTHER_CAUSE, warning_note
+from orchestrator.core.handback_contract import OTHER_CAUSE, warning_note
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.models import DesignGapError, StepError
 from orchestrator.flows.architecture_files import (
@@ -69,7 +68,6 @@ from step_journal_contract import STATUS_DONE
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
-    from pathlib import Path
 
     from architecture_work_contract import ArchitectureResult, GapAnswer
     from step_journal_contract import Journal, Step, StepId, StepPlan
@@ -91,13 +89,23 @@ ANSWERS: Final = "answers.json"
 KEY_ROUNDS: Final = "rounds"
 KEY_ROWS: Final = "rows"
 MAX_ROUNDS: Final = 1
-"""How many times a repository's gaps go to the architect before its open gaps escalate for a decision."""
+"""How many times a repository's gaps go to the architect before its open gaps are carried to the build."""
 DECIDED_HEADING: Final = "Decided at build"
 """The heading, at level 2, of the section of a spec document that lists the details the build decides."""
+DECIDED_HEADER: Final = "| Id | Element | Detail the build decides | Kind |"
+DECIDED_SEPARATOR: Final = "|---|---|---|---|"
+_ROUNDS_TEXT: Final = f"{MAX_ROUNDS} round" if MAX_ROUNDS == 1 else f"{MAX_ROUNDS} rounds"
+"""The round limit in words, singular for one round."""
+KIND_LEFTOVER: Final = f"C, left open after {_ROUNDS_TEXT} of the architect"
+"""The kind a carried gap row is marked with in the decided-at-build table."""
 LEFTOVER: Final = "leftover"
-"""The folder of the gap rows that journals created before escalation carried to the build."""
-ESCALATED: Final = "escalated"
-"""The folder, beside the open and the settled ones, of each repository's gap rows escalated for a decision."""
+"""The folder, beside the open and the settled ones, of each repository's gap rows carried to the build."""
+LABEL_LEFTOVER: Final = "leftover design gaps"
+"""The label the Task dependency mapper is handed each repository's carried gap rows under."""
+DEFECT: Final = f"design gaps after {_ROUNDS_TEXT}"
+"""How the warning note names the pipeline defect a carried gap row is."""
+EDGE_MARK: Final = "leftover design gap"
+"""The words an edge's reason opens with when it orders a carried gap row's provider before its consumer."""
 GAP_HEADER: Final = "| Id | Element whose design lacks it | Missing detail (review criterion) |"
 GAP_SEPARATOR: Final = "|---|---|---|"
 UNFILLED: Final = "unfilled-values.json"
@@ -114,6 +122,7 @@ _NEXT_SECTION: Final = re.compile(r"^#{1,2}\s")
 _LINKS_SECTION: Final = re.compile(r"^##\s+Architecture and design documents\s*$")
 _SEPARATOR: Final = re.compile(r"^\|[\s:|-]*\|$")
 _LIST_ITEM: Final = re.compile(r"^(?:[-*+]|\d+[.)])\s+\S")
+_LIST_ITEM_MARK: Final = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 
 
 class FiledDocument(TypedDict):
@@ -405,9 +414,9 @@ def _repository_start(run: StepRun, journal: Journal) -> tuple[StepId, StepId]:
 def hold_open(run: StepRun, slug: str, repository: str, documents: Sequence[Path]) -> None:
     """Stop a repository whose spec documents hold an open design gap from reaching its Story and Tasks.
 
-    A row the architect already answered escalates for a decision (:func:`escalate`), and so does
-    every row once the repository's gaps went to the architect :data:`MAX_ROUNDS` times: no gap is
-    ever carried to the build. Any other row goes to the architect.
+    A row the architect already answered is carried to the build (:func:`carry`), and so is every
+    row once the repository's gaps went to the architect :data:`MAX_ROUNDS` times: the Epic never
+    fails on a design gap. Any other row goes to the architect.
 
     Raises:
         DesignGapError: A document holds an open gap the architect was not handed before, below
@@ -421,11 +430,14 @@ def hold_open(run: StepRun, slug: str, repository: str, documents: Sequence[Path
         return
     record: Answered = answers(run.context.work).get(slug, Answered())
     if record.rounds >= MAX_ROUNDS:
-        escalate(run, slug, repository, filed)
+        carry(run, slug, repository, filed)
+        return
     repeated: list[FiledDocument] = _only(filed, record.rows, keep=True)
     if repeated:
-        escalate(run, slug, repository, repeated)
+        carry(run, slug, repository, repeated)
     fresh: list[FiledDocument] = _only(filed, record.rows, keep=False)
+    if not fresh:
+        return
     payload: FiledGaps = {"repository": repository, "documents": fresh}
     write_json(_folder(run.context.work, OPEN) / f"{slug}.json", payload)
     journal: Journal = run.journal()
@@ -443,38 +455,47 @@ def hold_open(run: StepRun, slug: str, repository: str, documents: Sequence[Path
     )
 
 
-def escalate(run: StepRun, slug: str, repository: str, filed: Sequence[FiledDocument]) -> NoReturn:
-    """Escalate gap rows the architect's round did not settle for a decision, and stop the Epic.
+def _cells(row: str) -> list[str]:
+    """Split a gap row into the cells of a decided-at-build row: its id, its element and its detail.
 
-    The rows join the repository's file in the escalated folder (merged with an earlier file); the
-    repository's open file, which no architect will be handed again, is removed; a warning note
-    names the Epic, the repository and the rows. The spec documents are not edited.
-
-    Raises:
-        StepError: Always, with the cause ``design-gap`` and one evidence line per row.
+    Returns:
+        Three cells; a list item, or a row of fewer cells, gives its whole text as the detail.
 
     """
-    target: Path = _folder(run.context.work, ESCALATED) / f"{slug}.json"
-    earlier: list[FiledDocument] = _filed(target)["documents"] if target.is_file() else []
-    merged: dict[str, list[str]] = {held["document"]: list(held["gaps"]) for held in earlier}
-    held: FiledDocument
-    for held in filed:
-        known: list[str] = merged.setdefault(held["document"], [])
-        known.extend(gap for gap in held["gaps"] if gap not in known)
-    payload: FiledGaps = {
-        "repository": repository,
-        "documents": [{"document": document, "gaps": gaps} for document, gaps in merged.items()],
-    }
-    write_json(target, payload)
-    (_folder(run.context.work, OPEN) / f"{slug}.json").unlink(missing_ok=True)
-    rows: list[str] = [gap for held in filed for gap in held["gaps"]]
-    detail: str = f"design gaps escalated for a decision: Epic {run.bead}, repository {repository}: {rows}"
-    emit_event(run.agents.emit, warning_note(run.inputs.stage, detail))
-    raise StepError(
-        run.inputs.stage,
-        DESIGN_GAP_CAUSE,
-        tuple(f"{held['document']}: {gap}" for held in filed for gap in held["gaps"]),
-    )
+    if not row.startswith("|"):
+        return ["", "", _LIST_ITEM_MARK.sub("", row).strip()]
+    cells: list[str] = [cell.strip() for cell in row.strip("|").split("|")]
+    if len(cells) < len(("id", "element", "detail")):
+        return ["", "", "; ".join(cells)]
+    return [cells[0], cells[1], "; ".join(cells[2:])]
+
+
+def _decided_row(row: str) -> str:
+    """Write one carried gap row as a row of the decided-at-build table.
+
+    Returns:
+        The table row, its kind :data:`KIND_LEFTOVER`.
+
+    """
+    return "| " + " | ".join([*_cells(row), KIND_LEFTOVER]) + " |"
+
+
+def _without_rows(lines: list[str], rows: Collection[str]) -> list[str]:
+    """Take the given rows out of a document's gap section, and the section out when no row is left.
+
+    Returns:
+        The document's lines.
+
+    """
+    found: tuple[int, int] | None = _bounds(lines, _SECTION)
+    if found is None:
+        return lines
+    start: int
+    end: int
+    start, end = found
+    kept: list[str] = [line for line in lines[start + 1 : end] if line.strip() not in rows]
+    section: list[str] = [lines[start], *kept] if _table_rows(kept) else []
+    return [*lines[:start], *section, *lines[end:]]
 
 
 def _with_rows(
@@ -506,29 +527,104 @@ def _with_rows(
     return [*lines[:at], *([""] if at and lines[at - 1].strip() else []), *written, *lines[at:]]
 
 
-def leftover_rows(work: Path) -> list[tuple[str, str]]:
-    """List every gap row a journal created before escalation carried to the build, with its repository.
+def _with_decided(lines: list[str], rows: Sequence[str]) -> list[str]:
+    """Add carried rows to a document's decided-at-build table, writing the section when it has none.
 
     Returns:
-        Each repository and row, file by file in name order; empty when none was carried.
+        The document's lines.
+
+    """
+    return _with_rows(
+        lines,
+        [_decided_row(row) for row in rows],
+        _DECIDED_SECTION,
+        DECIDED_HEADING,
+        (DECIDED_HEADER, DECIDED_SEPARATOR),
+    )
+
+
+def _carry_rows(path: Path, rows: Sequence[str]) -> None:
+    """Move gap rows of one spec document from its gap table to its decided-at-build table."""
+    lines: list[str] = path.read_text(encoding="utf-8").splitlines()
+    moved: list[str] = _with_decided(_without_rows(lines, set(rows)), rows)
+    path.write_text("\n".join(moved) + "\n", encoding="utf-8")
+
+
+def carry(run: StepRun, slug: str, repository: str, filed: Sequence[FiledDocument]) -> None:
+    """Carry gap rows to the build as details it decides, and report the pipeline defect they are.
+
+    Each row moves from its document's gap table to its decided-at-build table, marked
+    :data:`KIND_LEFTOVER`; it joins the repository's file in the leftover folder, which the Task
+    edges read (:func:`leftover`); the repository's open file, which no architect will be handed
+    again, is removed; and a warning note names the Epic, the repository and the rows.
+    """
+    held: FiledDocument
+    for held in filed:
+        _carry_rows(Path(held["document"]), held["gaps"])
+    target: Path = _folder(run.context.work, LEFTOVER) / f"{slug}.json"
+    earlier: list[FiledDocument] = _filed(target)["documents"] if target.is_file() else []
+    merged: dict[str, list[str]] = {held["document"]: list(held["gaps"]) for held in earlier}
+    for held in filed:
+        known: list[str] = merged.setdefault(held["document"], [])
+        known.extend(gap for gap in held["gaps"] if gap not in known)
+    payload: FiledGaps = {
+        "repository": repository,
+        "documents": [{"document": document, "gaps": gaps} for document, gaps in merged.items()],
+    }
+    write_json(target, payload)
+    (_folder(run.context.work, OPEN) / f"{slug}.json").unlink(missing_ok=True)
+    rows: list[str] = [gap for held in filed for gap in held["gaps"]]
+    detail: str = (
+        f"pipeline defect, {DEFECT}: Epic {run.bead}, repository {repository}: {len(rows)} design gap rows "
+        f"carried to the build as details it decides: {' ; '.join(rows)}"
+    )
+    emit_event(run.agents.emit, warning_note(run.inputs.stage, detail))
+
+
+def leftover(work: Path) -> tuple[tuple[str, Path], ...]:
+    """Name each repository's gap rows carried to the build, for the Task dependency mapper.
+
+    Returns:
+        Each leftover file under the label :data:`LABEL_LEFTOVER`, in name order.
 
     """
     folder: Path = _folder(work, LEFTOVER)
     if not folder.is_dir():
-        return []
+        return ()
+    return tuple((LABEL_LEFTOVER, path) for path in sorted(folder.glob("*.json")))
+
+
+def leftover_rows(work: Path) -> list[tuple[str, str]]:
+    """List every gap row carried to the build, with its repository.
+
+    Returns:
+        Each repository and row, file by file.
+
+    """
     return [
         (filed["repository"], gap)
-        for path in sorted(folder.glob("*.json"))
+        for _label, path in leftover(work)
         for filed in (_filed(path),)
         for gap in _rows(filed)
     ]
+
+
+def edge_mark(repository: str, row: str) -> str:
+    """Name a carried gap row the way an edge's reason that orders its provider first names it.
+
+    Returns:
+        :data:`EDGE_MARK`, the repository and the row's id (its whole text when it has none).
+
+    """
+    identifier: str = _cells(row)[0] or row
+    return f"{EDGE_MARK} {repository} {identifier}"
 
 
 def handed(work: Path) -> tuple[tuple[str, Path], ...]:
     """Name each repository's open design gaps, filed for the solutions architect's next session.
 
     A repository whose gaps already went to the architect :data:`MAX_ROUNDS` times is not handed:
-    its spec step escalates its rows for a decision (:func:`hold_open`).
+    its spec step carries its rows to the build (:func:`hold_open`).
 
     Returns:
         Each filed file under the label :data:`LABEL_GAPS`, in name order.
@@ -679,8 +775,7 @@ def carry_unfilled(run: StepRun, values: Sequence[UnfilledValue]) -> None:
     The values join the file :data:`UNFILLED`, which the step after the spec review of each
     repository reads (:func:`add_unfilled`): each value of an element the repository's Story
     builds becomes a kind C row of its design gaps, which goes to the architect in the one gap
-    round and escalates for a decision when that round leaves it open. A warning note names the
-    Epic and the values.
+    round and is then decided at build. A warning note names the Epic and the values.
     """
     if not values:
         return
@@ -720,8 +815,8 @@ def add_unfilled(run: StepRun, slug: str, built: Collection[str], contracts: Pat
 
     A value of the data model's criteria (:data:`DATA_MODEL_CRITERIA`) goes to the data model,
     any other to the contracts; to the one of them that exists when the other does not. A row the
-    architect already answered, one a journal created before escalation carried to the build and
-    one the document already holds is not written again.
+    architect already answered, one already carried to the build and one the document already
+    holds is not written again.
 
     Args:
         run: The step after the spec review.

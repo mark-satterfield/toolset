@@ -109,17 +109,6 @@ that no approved document states into one of three kinds, and record it only as 
   columns `| Id | Element whose design lacks it | Missing detail (review criterion) |`, and do not
   settle it.
 
-When your repository context holds a non-empty `respecDefects`, this run writes the specs again
-because a build, the elaboration's buildability gate or the owner's backfill found those defects
-downstream of the last spec: a missing producer, a completion cycle, a dropped cycle edge, a
-producer not ordered before its consumer, a contradiction between the design and the spec or
-within the spec, or sources that changed since the scope was approved. Each entry names its kind,
-the Task it was found on when there is one, and its evidence (`evidencePath` points to the full
-evidence when it is set). Remove exactly these defects from your document: correct the statement
-that caused each one, against the approved architecture. Never work around one (by weakening a
-criterion, dropping what the Story builds, or stating a value the architecture does not), and
-change nothing else because of them.
-
 Find every kind C gap in one pass: check every element the Story builds against every
 implementation criterion (I1 to I7 of the `effective-architecture` skill's review criteria)
 before you finish, and record every gap you find, not the first. A gap found only on a later pass
@@ -127,8 +116,8 @@ costs a whole round of the architecture. Record a row of either table nowhere el
 section out when it has no row. An open gap stops the repository before its Story and Tasks: the
 step after the review sends every row back to the solutions architect, who designs what fills it,
 and the spec is then written again against the settled design. After one such round a row still
-open escalates for a decision: the Epic stops until the owner or the architecture settles it.
-Never move a gap row to `## Decided at build` yourself. Your repository context file
+open is carried to the build instead: it moves to `## Decided at build` with its kind marked as
+left open, and the build decides it. Your repository context file
 (`spec-context.schema.json`) names what the Story builds: `items`, `stacks`, `buildScope` and
 `dependsOn`, and under `documents` every architecture heading the Story's scopes name. Your
 spec pack (`spec pack`, `spec-pack.schema.json`) holds what you read for it: each entry with

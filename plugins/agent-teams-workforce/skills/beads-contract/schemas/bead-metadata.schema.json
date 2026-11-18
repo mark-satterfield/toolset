@@ -47,10 +47,6 @@
     {
       "name": "SEQUENCING_KEYS",
       "doc": "Keys dependency assessment writes."
-    },
-    {
-      "name": "RESPEC_KEYS",
-      "doc": "Keys on a Story asking for its specs and Tasks to be written again."
     }
   ],
   "x-constants": [
@@ -356,8 +352,7 @@
       "enum": [
         "ready",
         "in_progress",
-        "done",
-        "parked"
+        "done"
       ],
       "x-python": {
         "literal": "ElaborationState",
@@ -374,10 +369,6 @@
           [
             "ELABORATION_DONE",
             "done"
-          ],
-          [
-            "ELABORATION_PARKED",
-            "parked"
           ]
         ],
         "extra": [
@@ -386,8 +377,7 @@
             ""
           ]
         ]
-      },
-      "description": "An Epic's elaboration state. parked: the Epic failed in a way the pipeline cannot settle (KEY_ELABORATION_PARK says why) and waits for an owner or architecture decision; only the owner unparks it."
+      }
     },
     "ElaborationCause": {
       "type": "string",
@@ -396,12 +386,7 @@
         "decomposed-into-tasks",
         "human-ruling",
         "awaiting-human-action",
-        "architecture-changed",
-        "buildability",
-        "design-gap",
-        "respec-requested",
-        "repeated-failure",
-        "respec-refused"
+        "architecture-changed"
       ],
       "x-python": {
         "literal": "ElaborationCause",
@@ -426,26 +411,6 @@
           [
             "CAUSE_ARCHITECTURE_CHANGED",
             "architecture-changed"
-          ],
-          [
-            "CAUSE_BUILDABILITY",
-            "buildability"
-          ],
-          [
-            "CAUSE_DESIGN_GAP",
-            "design-gap"
-          ],
-          [
-            "CAUSE_RESPEC_REQUESTED",
-            "respec-requested"
-          ],
-          [
-            "CAUSE_REPEATED_FAILURE",
-            "repeated-failure"
-          ],
-          [
-            "CAUSE_RESPEC_REFUSED",
-            "respec-refused"
           ]
         ],
         "subsets": [
@@ -455,212 +420,6 @@
               "decomposed-into-tasks",
               "human-ruling"
             ]
-          ],
-          [
-            "PARK_CAUSES",
-            [
-              "buildability",
-              "design-gap",
-              "repeated-failure",
-              "respec-refused"
-            ]
-          ]
-        ]
-      }
-    },
-    "ParkDecision": {
-      "type": "string",
-      "enum": [
-        "owner",
-        "architecture"
-      ],
-      "description": "Who settles a parked Epic: the owner, or an architecture decision.",
-      "x-python": {
-        "literal": "ParkDecision",
-        "tuple": "PARK_DECISIONS",
-        "constants": [
-          [
-            "PARK_DECISION_OWNER",
-            "owner"
-          ],
-          [
-            "PARK_DECISION_ARCHITECTURE",
-            "architecture"
-          ]
-        ]
-      }
-    },
-    "RespecState": {
-      "type": "string",
-      "enum": [
-        "",
-        "requested",
-        "restarted",
-        "refused"
-      ],
-      "description": "Where a Story's request to write its specs and Tasks again stands: none, requested (a defect found downstream waits for the Epic's elaboration), restarted (the Story's spec and Task steps were set back), refused (a Task of the Story is already closed).",
-      "x-python": {
-        "literal": "RespecState",
-        "tuple": "RESPEC_STATES",
-        "constants": [
-          [
-            "RESPEC_NONE",
-            ""
-          ],
-          [
-            "RESPEC_REQUESTED",
-            "requested"
-          ],
-          [
-            "RESPEC_RESTARTED",
-            "restarted"
-          ],
-          [
-            "RESPEC_REFUSED",
-            "refused"
-          ]
-        ]
-      }
-    },
-    "RespecKind": {
-      "type": "string",
-      "enum": [
-        "producer-missing",
-        "completion-cycle",
-        "contract-finding",
-        "source-changed",
-        "cycle-edge-dropped",
-        "producer-unordered"
-      ],
-      "description": "What a respec request asks the Story's specs and Tasks to remove.",
-      "x-python": {
-        "literal": "RespecKind",
-        "tuple": "RESPEC_KINDS",
-        "constants": [
-          [
-            "RESPEC_KIND_PRODUCER_MISSING",
-            "producer-missing"
-          ],
-          [
-            "RESPEC_KIND_COMPLETION_CYCLE",
-            "completion-cycle"
-          ],
-          [
-            "RESPEC_KIND_CONTRACT_FINDING",
-            "contract-finding"
-          ],
-          [
-            "RESPEC_KIND_SOURCE_CHANGED",
-            "source-changed"
-          ],
-          [
-            "RESPEC_KIND_CYCLE_EDGE_DROPPED",
-            "cycle-edge-dropped"
-          ],
-          [
-            "RESPEC_KIND_PRODUCER_UNORDERED",
-            "producer-unordered"
-          ]
-        ]
-      }
-    },
-    "RespecSource": {
-      "type": "string",
-      "enum": [
-        "build",
-        "buildability",
-        "backfill"
-      ],
-      "description": "Who found the defect a respec request names: a build, the elaboration's buildability gate, or the one-shot backfill.",
-      "x-python": {
-        "literal": "RespecSource",
-        "tuple": "RESPEC_SOURCES",
-        "constants": [
-          [
-            "RESPEC_SOURCE_BUILD",
-            "build"
-          ],
-          [
-            "RESPEC_SOURCE_BUILDABILITY",
-            "buildability"
-          ],
-          [
-            "RESPEC_SOURCE_BACKFILL",
-            "backfill"
-          ]
-        ]
-      }
-    },
-    "BuildabilityKind": {
-      "type": "string",
-      "enum": [
-        "cycle-edge-dropped",
-        "completion-cycle",
-        "producer-unordered",
-        "design-gap-carried",
-        "producer-absent",
-        "producer-epic-unordered"
-      ],
-      "description": "A defect the buildability gate finds in an elaborated Epic.",
-      "x-python": {
-        "literal": "BuildabilityKind",
-        "tuple": "BUILDABILITY_KINDS",
-        "constants": [
-          [
-            "DEFECT_CYCLE_EDGE_DROPPED",
-            "cycle-edge-dropped"
-          ],
-          [
-            "DEFECT_COMPLETION_CYCLE",
-            "completion-cycle"
-          ],
-          [
-            "DEFECT_PRODUCER_UNORDERED",
-            "producer-unordered"
-          ],
-          [
-            "DEFECT_DESIGN_GAP_CARRIED",
-            "design-gap-carried"
-          ],
-          [
-            "DEFECT_PRODUCER_ABSENT",
-            "producer-absent"
-          ],
-          [
-            "DEFECT_PRODUCER_EPIC_UNORDERED",
-            "producer-epic-unordered"
-          ]
-        ],
-        "subsets": [
-          [
-            "RESPEC_DEFECT_KINDS",
-            [
-              "cycle-edge-dropped",
-              "completion-cycle",
-              "producer-unordered"
-            ]
-          ]
-        ]
-      }
-    },
-    "DefectRoute": {
-      "type": "string",
-      "enum": [
-        "respec",
-        "escalate"
-      ],
-      "description": "Where a buildability defect goes: respec (its Story's specs and Tasks are written again) or escalate (an owner or architecture decision).",
-      "x-python": {
-        "literal": "DefectRoute",
-        "tuple": "DEFECT_ROUTES",
-        "constants": [
-          [
-            "ROUTE_RESPEC",
-            "respec"
-          ],
-          [
-            "ROUTE_ESCALATE",
-            "escalate"
           ]
         ]
       }
@@ -713,181 +472,6 @@
       },
       "x-python": {
         "typeddict": "Criteria"
-      }
-    },
-    "RespecRequest": {
-      "type": "object",
-      "description": "One downstream defect a Story's specs and Tasks must remove (see the fingerprint rule).",
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "source",
-        "task",
-        "evidence",
-        "evidencePath",
-        "fingerprint",
-        "at"
-      ],
-      "properties": {
-        "kind": {
-          "$ref": "#/$defs/RespecKind"
-        },
-        "source": {
-          "$ref": "#/$defs/RespecSource"
-        },
-        "task": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "evidence": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "evidencePath": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "fingerprint": {
-          "type": "string",
-          "description": "sha256 of the compact JSON [kind, task, story, evidence]."
-        },
-        "at": {
-          "type": "string",
-          "description": "An ISO-8601 timestamp."
-        }
-      },
-      "x-python": {
-        "typeddict": "RespecRequest"
-      }
-    },
-    "ParkRecord": {
-      "type": "object",
-      "description": "Why an Epic is parked, at which stage, and who settles it.",
-      "additionalProperties": false,
-      "required": [
-        "previousState",
-        "cause",
-        "stage",
-        "decision",
-        "evidence",
-        "failures",
-        "at"
-      ],
-      "properties": {
-        "previousState": {
-          "type": "string"
-        },
-        "cause": {
-          "$ref": "#/$defs/ElaborationCause"
-        },
-        "stage": {
-          "type": "string"
-        },
-        "decision": {
-          "$ref": "#/$defs/ParkDecision"
-        },
-        "evidence": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "failures": {
-          "type": "integer"
-        },
-        "at": {
-          "type": "string",
-          "description": "An ISO-8601 timestamp."
-        }
-      },
-      "x-python": {
-        "typeddict": "ParkRecord"
-      }
-    },
-    "BuildabilityDefect": {
-      "type": "object",
-      "description": "One defect the buildability gate found; decision is set on an escalated defect only.",
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "route",
-        "story",
-        "tasks",
-        "evidence"
-      ],
-      "properties": {
-        "kind": {
-          "$ref": "#/$defs/BuildabilityKind"
-        },
-        "route": {
-          "$ref": "#/$defs/DefectRoute"
-        },
-        "story": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "tasks": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "evidence": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "decision": {
-          "$ref": "#/$defs/ParkDecision"
-        }
-      },
-      "x-python": {
-        "typeddict": "BuildabilityDefect"
-      }
-    },
-    "BuildabilityReport": {
-      "type": "object",
-      "description": "The buildability gate's report on one Epic, also written to reportPath.",
-      "additionalProperties": false,
-      "required": [
-        "epic",
-        "buildable",
-        "at",
-        "reportPath",
-        "defects"
-      ],
-      "properties": {
-        "epic": {
-          "type": "string"
-        },
-        "buildable": {
-          "type": "boolean"
-        },
-        "at": {
-          "type": "string",
-          "description": "An ISO-8601 timestamp."
-        },
-        "reportPath": {
-          "type": "string"
-        },
-        "defects": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/BuildabilityDefect"
-          }
-        }
-      },
-      "x-python": {
-        "typeddict": "BuildabilityReport"
       }
     }
   },
@@ -985,14 +569,8 @@
     },
     "build_prerequisites": {
       "$ref": "#/$defs/JsonObjectText",
-      "x-groups": [
-        "CONTRACT_KEYS"
-      ],
-      "x-contract": {
-        "argument": "buildPrerequisites",
-        "kind": "object-or-unknown",
-        "hashedWhenPresent": true
-      },
+      "x-groups": ["CONTRACT_KEYS"],
+      "x-contract": {"argument": "buildPrerequisites", "kind": "object-or-unknown", "hashedWhenPresent": true},
       "description": "JSON object with producers: actual Task ids, parent Story ids, requiredStage built, published or deployed, consumed output and absolute evidence artifact paths. The build selector validates actual producer stages before dispatch. Missing on older Tasks means unknown, not ready evidence."
     },
     "decision_ids": {
@@ -1210,41 +788,6 @@
         "LANE_KEYS"
       ],
       "description": "The owner token that set the state."
-    },
-    "elaboration_park": {
-      "$ref": "#/$defs/JsonObjectText",
-      "x-groups": [
-        "LANE_KEYS"
-      ],
-      "description": "On an Epic: JSON ParkRecord, why the Epic is parked. Written by the driver when it parks the Epic; cleared by the owner's unpark (elabmark --unpark)."
-    },
-    "elaboration_buildability": {
-      "$ref": "#/$defs/JsonObjectText",
-      "x-groups": [
-        "LANE_KEYS"
-      ],
-      "description": "On an Epic: JSON BuildabilityReport of the last buildability gate. Written by the elaboration step elaboration.buildable (and the owner's backfill); replaced by the next gate."
-    },
-    "respec_state": {
-      "$ref": "#/$defs/RespecState",
-      "x-groups": [
-        "RESPEC_KEYS"
-      ],
-      "description": "On a Story: where its respec request stands. Written by the driver (requested, restarted, refused); cleared to empty by mark_elaborated when it was restarted."
-    },
-    "respec_state_at": {
-      "$ref": "#/$defs/IsoTime",
-      "x-groups": [
-        "RESPEC_KEYS"
-      ],
-      "description": "On a Story: when respec_state was last set."
-    },
-    "respec_requested": {
-      "$ref": "#/$defs/JsonList",
-      "x-groups": [
-        "RESPEC_KEYS"
-      ],
-      "description": "On a Story: JSON list of RespecRequest, the defects its specs and Tasks must remove. Written with respec_state; cleared by mark_elaborated when the restarted Story is elaborated again."
     },
     "elab_key": {
       "type": "string",

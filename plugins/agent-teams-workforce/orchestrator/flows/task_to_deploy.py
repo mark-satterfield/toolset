@@ -17,7 +17,7 @@ from typeguard import check_type
 
 from orchestrator.core import pipeline_steps, step_journal
 from orchestrator.core.agents import AgentRunner
-from orchestrator.core.handback_contract import OTHER_CAUSE, UPSTREAM_STAGE
+from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_registry import Registry
 from orchestrator.core.journal_run import JournalRunner, require_handled
@@ -39,7 +39,6 @@ from orchestrator.flows import (
     build_prerequisite_work,
     build_prerequisites,
     build_repository_setup,
-    build_upstream,
 )
 from orchestrator.flows.build_reviews import attach_reviews, refresh_sources, task_sources
 from orchestrator.flows.build_sessions import OutputContract, accepted_steps, attach, latest, reasoned, view_of
@@ -662,14 +661,13 @@ def _review_ownership(run: StepRun, findings: list[JsonValue]) -> Completion | N
 def _code_reviewed(run: StepRun) -> Completion:
     """Keep working on review findings even when the tests pass, and never stop on a finding.
 
-    A blocking contract finding hands the Story back to elaboration. Implementation and test
-    findings go to their specialists. Other contract and tooling findings, and test findings still
-    open when their correction allowance is spent, are carried: recorded on this step and in the
-    handback while the build continues.
+    Implementation and test findings go to their specialists. Contract and tooling findings, and
+    test findings still open when their correction allowance is spent, are carried: recorded on
+    this step and in the handback while the build continues.
 
     Returns:
-        The upstream defect, test correction, specialist selection when the suite or implementation
-        findings require code work, or Green with the carried findings recorded.
+        Test correction, specialist selection when the suite or implementation findings require
+        code work, or Green with the carried findings recorded.
 
     """
     refreshed: Completion | None = refresh_sources(run)
@@ -678,14 +676,6 @@ def _code_reviewed(run: StepRun) -> Completion:
     review: dict[str, JsonValue] = _document(run, "codeReview")
     suite: dict[str, JsonValue] = _latest_suite(run)
     required: list[JsonValue] = build_carried.required(check_type(review["findings"], list[JsonValue]))
-    upstream: Completion | None = build_upstream.contract_route(
-        run,
-        "codeReview",
-        required,
-        again="build:select-implementers",
-    )
-    if upstream is not None:
-        return upstream
     ownership: Completion | None = _review_ownership(run, required)
     if ownership is not None:
         return ownership
@@ -1316,25 +1306,15 @@ def _final_review(run: StepRun) -> Completion:
 def _final_review_checked(run: StepRun) -> Completion:
     """Correct the final review's findings within the allowance, and never stop on a finding.
 
-    A blocking contract finding hands the Story back to elaboration. Other findings owned by the
-    contract or the tooling are carried at once. Findings still open when the correction allowance
-    is spent are carried too, and the review then covers the current tree.
+    Findings owned by the contract or the tooling are carried at once. Findings still open when
+    the correction allowance is spent are carried too, and the review then covers the current tree.
 
     Returns:
-        The upstream defect, approval, approval with the carried findings recorded, or
-        implementation and re-review steps.
+        Approval, approval with the carried findings recorded, or implementation and re-review steps.
 
     """
     review: dict[str, JsonValue] = _document(run, "finalCodeReview")
     required: list[JsonValue] = build_carried.required(check_type(review["findings"], list[JsonValue]))
-    upstream: Completion | None = build_upstream.contract_route(
-        run,
-        "finalCodeReview",
-        required,
-        again="build:final-review",
-    )
-    if upstream is not None:
-        return upstream
     work: list[JsonValue] = build_carried.owned_here(required)
     covered: ValueArtifact = value_artifact(FINAL_REVIEW_TREE, build_policy.content_tree(run))
     if not work and (review["approved"] is True or required):
@@ -1447,8 +1427,8 @@ def _registry() -> Registry:
         "build:prerequisites-ready": _prerequisites_ready,
         "build:environment-observe": _prerequisites_ready,
         build_prerequisite_work.ELABORATION_STAGE: build_prerequisite_work.elaborated,
-        build_upstream.UPSTREAM_STEP: build_upstream.released,
-        **dict.fromkeys(build_upstream.LEGACY_AUTHORING, build_upstream.legacy_authoring),
+        "build:prerequisite-author": build_prerequisite_work.author,
+        "build:prerequisite-authored": build_prerequisite_work.authored,
         "build:prerequisites-rediagnose": _prerequisites_rediagnose,
         "build:prerequisites-observed": build_prerequisites.observed,
         "build:prerequisites-suite": _prerequisites_suite,
@@ -1515,8 +1495,6 @@ def run(context: RunContext) -> dict[str, JsonValue]:
                     "waitingForPrerequisites": wait,
                 }
         held: dict[str, JsonValue] | None = _elaboration_handback(context, path, journal, next_step, tools)
-        if held is None:
-            held = _upstream_handback(context, path, journal, next_step, tools)
         if held is not None:
             return held
         if not runner.run_next():
@@ -1581,57 +1559,6 @@ def _elaboration_handback(
         "lifecycleDone": False,
         "waitingForPrerequisites": waiting,
     }
-
-
-def _upstream_handback(
-    context: RunContext,
-    path: Path,
-    journal: Journal,
-    next_step: Step | None,
-    tools: Tools,
-) -> dict[str, JsonValue] | None:
-    """Release the build slot while the build stands at its upstream gate and the Story's respec is pending.
-
-    Returns:
-        The slot-releasing upstream-defect handback naming the Story, else None.
-
-    """
-    if next_step is None or next_step.get("script") != build_upstream.UPSTREAM_STEP:
-        return None
-    defect: dict[str, JsonValue] = json_object(_latest_value(journal, build_upstream.UPSTREAM_DEFECT))
-    stage: str = build_upstream.UPSTREAM_STEP
-    if not tools.portfolio_read(stage, build_upstream.pending, defect, control_repo()):
-        return None
-    return {
-        "ok": False,
-        "stage": UPSTREAM_STAGE,
-        "beadId": context.bead,
-        "headline": (
-            f"{context.bead} met an upstream defect ({defect['kind']}); "
-            f"Story {defect['story']} goes back to elaboration"
-        ),
-        "detailPath": str(path),
-        "sessions": json_object({"sessions": context.sessions})["sessions"],
-        "lifecycleDone": False,
-        "upstreamDefect": defect,
-    }
-
-
-def _latest_value(journal: Journal, name: str) -> JsonValue:
-    """Read the latest accepted value artifact of a name.
-
-    Returns:
-        Its value.
-
-    """
-    values: list[JsonValue] = [
-        artifact["value"]
-        for step in step_journal.steps_in_order(journal)
-        if step["status"] == "done"
-        for artifact in step["artifacts"]
-        if artifact["name"] == name and artifact["kind"] == "value"
-    ]
-    return values[-1]
 
 
 def _elaboration_wait(journal: Journal, tools: Tools) -> dict[str, JsonValue] | None:

@@ -2,11 +2,9 @@
 
 A review finding is a judgment that something should change, never an error. The build corrects
 the findings its own specialists own (implementation and tests) within the correction allowance.
-A blocking finding owned by the contract is not carried: the governing requirements contradict
-themselves or the design, so the Story goes back to elaboration (``build_upstream``) with the
-findings as evidence. Every other finding owned by the contract or the tooling, and a finding
-still open when its correction allowance is spent, is carried: recorded on the deciding step as
-the ``carriedFindings`` value artifact and reported in the build handback, and the build continues.
+A finding owned by the contract or the tooling, and a finding still open when its correction
+allowance is spent, is carried: recorded on the deciding step as the ``carriedFindings`` value
+artifact and reported in the build handback, and the build continues.
 """
 
 from __future__ import annotations
@@ -26,8 +24,6 @@ CARRIED: Final = "carriedFindings"
 CARRIED_OWNERS: Final = frozenset({"contract", "tooling"})
 """Owners whose corrections no build specialist makes: the governing requirements, and the tooling."""
 NOTE: Final = "note"
-BLOCKING: Final = "blocking"
-CONTRACT: Final = "contract"
 UNASSIGNED: Final = "unassigned"
 KEPT_FIELDS: Final = ("severity", "detail", "file", "line")
 
@@ -40,39 +36,6 @@ def required(findings: list[JsonValue]) -> list[JsonValue]:
 
     """
     return [finding for finding in findings if json_object(finding)["severity"] != NOTE]
-
-
-def blocking_contract(findings: list[JsonValue]) -> list[JsonValue]:
-    """Select the blocking findings owned by the contract, which hand the Story back to elaboration.
-
-    Returns:
-        Every finding whose owner is the contract and whose severity is blocking.
-
-    """
-    return [
-        finding
-        for finding in findings
-        if json_object(finding).get("owner") == CONTRACT and json_object(finding).get("severity") == BLOCKING
-    ]
-
-
-def contract_evidence(review: str, findings: list[JsonValue]) -> list[str]:
-    """Describe blocking contract findings as the evidence of an upstream defect.
-
-    Args:
-        review: The artifact name of the review that raised the findings.
-        findings: The blocking contract findings.
-
-    Returns:
-        One line per finding: the review, its detail and where it points.
-
-    """
-    lines: list[str] = []
-    finding: JsonValue
-    for finding in findings:
-        source: dict[str, JsonValue] = json_object(finding)
-        lines.append(f"{review}: {source['detail']} ({source.get('file', '')}:{source.get('line', '')})")
-    return lines
 
 
 def owned_elsewhere(findings: list[JsonValue]) -> list[JsonValue]:

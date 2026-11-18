@@ -650,8 +650,8 @@ log, and update the result in place.
   written and promoted, and the specs of the repositories whose files you were handed are written
   again from them; the TRD is written again only when your `trdChanges` change. A repository's
   gaps go to you once: a row you answered that its specs hold again, and every row still open
-  after that one round, escalates for a decision and stops the Epic until the owner or the
-  architecture settles it, so answer completely the first time. Fill `elementValues` for every element your
+  after that one round, is carried to the build, which decides it, and the pipeline records it as
+  a defect, so answer completely the first time. Fill `elementValues` for every element your
   answer adds or changes, as in the decision itself.
 
 ## Your boundaries

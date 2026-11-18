@@ -25,7 +25,7 @@ from orchestrator.core.io import JsonValue, write_json
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, value_artifact
 from orchestrator.core.models import StepError
 from orchestrator.core.tool_locks import control_repo
-from orchestrator.flows import build_prerequisite_work, build_repository_setup, build_upstream
+from orchestrator.flows import build_prerequisite_work, build_repository_setup
 from orchestrator.flows.build_reviews import refresh_sources
 from orchestrator.flows.build_sessions import OutputContract, latest, reasoned
 from orchestrator.flows.build_state import (
@@ -516,10 +516,9 @@ def diagnose(run: StepRun, again: str, observation: dict[str, JsonValue] | None 
         "Never create parameters, invent issues, change edges or modify any source. "
         "Each producer evidence value must be an absolute existing captured evidence artifact path. "
         "When an actual Task builds the consumed output, route prerequisites and name it, even when waiting for it "
-        "would close a cycle with standing edges: the caller checks cycles and hands a cycle back to elaboration. "
-        "Use missing-work only when no actual Task builds a consumed output; name as authoringStory the actual open "
-        "Story whose specs should authorize the missing work, or null when none can be established: the build never "
-        "authors that work, it hands the Story back to elaboration. "
+        "would close a cycle with standing edges: the caller checks cycles and fails only this Task with the cycle. "
+        "Use missing-work only when no actual Task builds a consumed output; name authoringStory only if an actual "
+        "open Story with completed saved scope/spec authorizes the missing work. "
         "Route repository when the fresh evidence shows the cause is in the Task's own repository: a dependency "
         "declaration, lock file, override, peer-dependency conflict, or a test or build configuration that names a "
         "package no manifest declares; name in evidence the files and the correction, which the build makes in its "
@@ -550,18 +549,13 @@ def diagnosed(run: StepRun) -> Completion:
     applied, and the evidence is rebuilt from the current sources, so a failure that remains is
     judged and diagnosed again. A restart of this step therefore never re-raises a stale diagnosis.
 
-    A wait that would close a completion cycle is a defect of the Story's Tasks, not of this
-    build: it goes back to the Story's elaboration (``build_upstream``) with the cycle as evidence.
-    Missing producer work goes to the elaboration of the Story whose specs should hold it.
-
     Returns:
         Fresh evidence for changed governing sources, a slot-releasing readiness gate, a correction
-        of the repository's own declarations, a scoped environment observation, or an upstream
-        defect that hands the Story back to elaboration.
+        of the repository's own declarations, or a scoped environment observation.
 
     Raises:
         StepError: The diagnosis names a producer without existing evidence, contradicts the
-            tracker, or names producers built in another repository; only this Task fails, as an item.
+            tracker, or its wait closes a completion cycle; only this Task fails, as an item.
 
     """
     refreshed: Completion | None = refresh_sources(run)
@@ -615,7 +609,9 @@ def diagnosed(run: StepRun) -> Completion:
     try:
         validate_wait_graph(graph.records, waits)
     except WaitCycleError as error:
-        return _cycle_upstream(run, error, again)
+        # from None: a chained ValueError would classify this Task's cyclic wait as a pipeline defect.
+        evidence: tuple[str, ...] = (str(error), f"Proposed wait: {wait['evidencePath']}")
+        raise StepError(run.step["script"], OTHER_CAUSE, evidence) from None
     run.tools.portfolio(run.step["script"], writer.write_blocks, {str(run.bead): blockers})
     return Completion(
         artifacts=(
@@ -626,25 +622,6 @@ def diagnosed(run: StepRun) -> Completion:
             StepGroup((new_step("build:prerequisites-ready", "Wait for the actual producer work", {"again": again}),)),
         ),
     )
-
-
-def _cycle_upstream(run: StepRun, error: WaitCycleError, again: str) -> Completion:
-    """Hand a wait that closes a completion cycle back to the Story's elaboration.
-
-    Returns:
-        The ``completion-cycle`` upstream defect with the diagnosis fingerprint.
-
-    """
-    diagnosis: Path = artifact_file(run, "prerequisiteDiagnosis")
-    routed: Completion = build_upstream.route(
-        run,
-        "completion-cycle",
-        (str(error), f"Proposed wait: {diagnosis}"),
-        again=build_upstream.REDIAGNOSE,
-        again_params={"again": again},
-        evidence_path=diagnosis,
-    )
-    return build_prerequisite_work.fingerprinted(run, routed)
 
 
 def _validate_producers(graph: beadgraph.Graph, consumer: str, producers: list[dict[str, JsonValue]]) -> None:

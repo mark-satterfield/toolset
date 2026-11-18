@@ -9,9 +9,7 @@ step.
 One dispatch is one operating-system process for one Epic. It:
 
 1. Checks its arguments: the Epic id, `beadsRepoPath` and a PRD file that can be read.
-2. Claims the Epic (`elaboration.start`). A refused claim ends the dispatch with the refusal; a
-   `parked` Epic is refused with the code `epic-parked`, naming the cause and decision of its park
-   record (`elaboration_park`), until the owner unparks it.
+2. Claims the Epic (`elaboration.start`). A refused claim ends the dispatch with the refusal.
 3. Opens the Epic's step journal,
    `<control>/.claude/workflow-runs/step-journals/<epic>.step-journal.json`. When the file does not
    exist it is created with every outermost step planned. An existing journal is left as it is.
@@ -73,10 +71,9 @@ it starts a new session. A session ended by a timeout is continued by the next d
 | 5 | Tasks | container | each Story bead write plans one container for its repository (`task-decomposition.md`) |
 | 6 | Task edges | container, created with step `beadwrite.closure_task_edges` | that step plans the listing, the mapper's step and the edge write |
 | 7 | Score the Tasks | script `elaboration.score` | nothing |
-| 8 | Check the Epic is buildable | script `elaboration.buildable` | nothing |
-| 9 | Apply the done rule | script `elaboration.done_rule` | nothing |
-| 10 | Story edges | script `storyedges.story_edges` | nothing |
-| 11 | Mark the Epic elaborated | script `elaboration.finish` | nothing |
+| 8 | Apply the done rule | script `elaboration.done_rule` | nothing |
+| 9 | Story edges | script `storyedges.story_edges` | nothing |
+| 10 | Mark the Epic elaborated | script `elaboration.finish` | nothing |
 
 ## How a step runs
 
@@ -105,37 +102,16 @@ same time, at most `ATW_ORCH_SESSIONS` of them, each running its own steps in or
 | Derive the Task edges the elements' requirements make | script `beadwrite.closure_task_edges` | every repository's Story document, spec documents and Tasks file, the span and the elements | file `closure edges`: an edge between the one Task that builds an element and the one Task that builds the element it requires, and, where several Tasks build either, the need (`itemNeeds`) for the mapper to place between the Tasks that provide and consume it; a relationship that never orders a build (a call) makes neither; fails when a required element has no Task that builds it |
 | List the Tasks of every Story for the dependency mapper | script `task_edges.listing` | the Tasks files, `closure edges` | file `task dependency listing` (`task-dependency-listing.schema.json`), which points to each Story's Tasks file and the closure edges |
 | Map the dependencies between Tasks of different Stories | agent `task-dependency-mapper`, only when the span has two or more repositories | the Tasks files, `closure edges` (its edges stand; its `itemNeeds` it places), the listing | file `task dependencies` |
-| Write the edges between Tasks of different Stories | script `beadwrite.write_all_task_edges` | `task dependencies` when the mapper ran, `closure edges`, the files of every Story | file `task edges written`, value `edges result`; any edge within a Story beads lacks (a journal planned before the per-Story edge step) is written too; an edge that would close a cycle over the Tasks, or make two Stories depend on each other, is never written: it is dropped with a warning and recorded under `written.dropped` with its two Stories and its reason (`task-cycle`, `story-cycle`), which the buildability gate makes a defect of both Stories; and an edge that names no Task of the run, joins one Story or repeats another is rejected with a warning (`beadwrite.plan_task_edges`); each warning is also emitted as a `warning` note |
+| Write the edges between Tasks of different Stories | script `beadwrite.write_all_task_edges` | `task dependencies` when the mapper ran, `closure edges`, the files of every Story | file `task edges written`, value `edges result`; any edge within a Story beads lacks (a journal planned before the per-Story edge step) is written too; an edge that would close a cycle over the Tasks, or make two Stories depend on each other, is dropped with a warning, and an edge that names no Task of the run, joins one Story or repeats another is rejected with a warning (`beadwrite.plan_task_edges`); each warning is also emitted as a `warning` note |
 
 ## Finish
 
 | Step | What it does | Records |
 |---|---|---|
 | `elaboration.score` | scores the Epic's Tasks without marking the Epic | value `unscored tasks` |
-| `elaboration.buildable` | runs the buildability gate (`buildability.evaluate`, below), writes its report to `<work>/buildability.json` and to the Epic's `elaboration_buildability` (`elaboration.record_buildability`); a defect fails the step with the cause `buildability` (item class) and the report, and the Epic stays `in_progress` with the cause `buildability` | value `buildability` |
-| `elaboration.done_rule` | fails unless every repository of the span (the span step's value `repositories`) has its Story, its Tasks with every thing the Story builds cited, no Task is unscored, and the gate's report (value `buildability`) is buildable; in a journal planned before the gate step it runs the gate itself, with the same record and failure | value `done rule` |
+| `elaboration.done_rule` | fails unless every repository of the span (the span step's value `repositories`) has its Story, its Tasks with every thing the Story builds cited, and no Task is unscored | value `done rule` |
 | `storyedges.story_edges` | writes the dependency edges between the Epic's Stories | value `story edges` |
-| `elaboration.finish` | marks the Epic elaborated; clears the respec state, request and time of each Story whose `respec_state` is `restarted` (a Story still `requested` keeps its request) | value `lifecycle done` |
-
-## The buildability gate
-
-The gate decides whether every Task the Epic wrote can be built as planned. It reads the journal's
-artifacts (for a journal whose steps were set back, the work folder's `task-edges/all.json` and
-`spec-<slug>.context.json`), the tracker and the matrix, and writes nothing. Each check finds
-defects of one kind, and each kind takes one route:
-
-| Kind | Found when | Route |
-|---|---|---|
-| `cycle-edge-dropped` | the edge write dropped an edge between Tasks of two Stories because it would close a cycle (`written.dropped`; the warnings of an older edges result); one defect for each of the two Stories | respec |
-| `design-gap-carried` | an older journal carried gap rows to the build (`<arch-work>/design-gaps/leftover/`) | escalate, architecture decision |
-| `completion-cycle` | the open Tasks' declared build prerequisites close a Task/Story completion cycle (`build_prerequisites.validate_wait_graph`); one defect for each Story of the Epic that owns an open Task in the cycle | respec |
-| `producer-unordered` | the wait graph refuses a Task's declared producer; or a Story depends on an item another Epic's open Task builds (the owner Task, `buildowner.owner`), and a Task of the Story that works on the consuming item neither reaches that Task through its blockers nor names it or its Story in its declared prerequisites | respec |
-| `producer-absent` | a Story depends on an item of a kind Tasks build that no Task of any Epic builds, is not verified and no other Epic's `drives` judgment claims; the evidence names the Epics that need it | escalate, owner decision |
-| `producer-epic-unordered` | the matrix orders another Epic before this one (`epicorder.analyse`), that Epic is not done with elaboration, and no `blocks` or `tracks` edge orders it first | escalate, owner decision |
-
-A respec defect's Story is written again by the driver's Story restart, which hands the defects to
-the spec authors and the decomposer as `respecDefects` in the context files. An escalated defect
-waits for the decision it names.
+| `elaboration.finish` | marks the Epic elaborated | value `lifecycle done` |
 
 ## The dispatch result
 

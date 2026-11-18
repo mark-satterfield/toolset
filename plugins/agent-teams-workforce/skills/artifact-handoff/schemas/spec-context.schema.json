@@ -87,11 +87,6 @@
     "designSystem": {
       "description": "The dispatch's design system facts (the driver surface's `designSystem` argument); empty when the dispatch gives none.",
       "type": "object"
-    },
-    "respecDefects": {
-      "description": "Defects found downstream of this elaboration (by a build, the buildability gate or the owner's backfill) that this run must remove from the Story's specs and Tasks: each names what is wrong (a missing producer, a completion cycle, a dropped cycle edge, a producer not ordered first, a contradiction, changed sources) with its evidence. Correct exactly these defects; never work around one. Empty, or absent, when the Story asks for no respec.",
-      "type": "array",
-      "items": {"$ref": "#/$defs/RespecRequest"}
     }
   },
   "$defs": {
@@ -119,21 +114,6 @@
         "stack": {"type": ["string", "null"]},
         "repository": {"type": ["string", "null"]},
         "builtBy": {"type": ["string", "null"]}
-      }
-    },
-    "RespecRequest": {
-      "description": "One defect found downstream that the Story's specs and Tasks must remove (bead metadata respec_requested, beads-contract RespecRequest). `task` is the Task it was found on, when one; `evidencePath` a file holding the full evidence, when one; `fingerprint` the sha256 of the JSON [kind, task, story, evidence].",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "source", "task", "evidence", "evidencePath", "fingerprint", "at"],
-      "properties": {
-        "kind": {"type": "string", "enum": ["producer-missing", "completion-cycle", "contract-finding", "source-changed", "cycle-edge-dropped", "producer-unordered"]},
-        "source": {"type": "string", "enum": ["build", "buildability", "backfill"]},
-        "task": {"type": ["string", "null"]},
-        "evidence": {"type": "array", "items": {"type": "string"}},
-        "evidencePath": {"type": ["string", "null"]},
-        "fingerprint": {"type": "string"},
-        "at": {"type": "string"}
       }
     }
   }

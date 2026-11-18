@@ -1165,7 +1165,7 @@ class JournalRunner:
         unless the step that wrote the file was planned again in this dispatch already. An open
         design gap (``DesignGapError``) is always kept, with the step and its script key, so the
         containers running beside it run to their own gap check (:meth:`_before_gap_check`): the step
-        that reads the gaps bounds its rounds and escalates what is left (``design_gaps.hold_open``). A
+        that reads the gaps bounds its rounds and carries what is left (``design_gaps.hold_open``). A
         malformed request the step finds is corrected by its writer's session
         (:meth:`_correct_request`), and the step is not failed, unless that request was corrected
         in this dispatch already. A change of the Epic that owns an entry (``OwnershipChangedError``)

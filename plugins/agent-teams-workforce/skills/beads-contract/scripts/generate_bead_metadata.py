@@ -220,44 +220,31 @@ def _vocabulary(name: str, definition: dict[str, object]) -> Vocabulary:
     )
 
 
-def _field_type(definition: dict[str, object], where: str, names: dict[str, str]) -> str:
-    if "$ref" in definition:
-        reference: str = _str(definition["$ref"], where).removeprefix("#/$defs/")
-        if reference not in names:
-            msg: str = f"{where}: $ref {reference!r} names no rendered definition"
-            raise SchemaError(msg)
-        return names[reference]
-    kinds: object = definition.get("type")
-    if isinstance(kinds, list):
-        return " | ".join("None" if kind == "null" else _scalar(_str(kind, where), where) for kind in kinds)
-    kind: str = _str(kinds, where)
+def _field_type(definition: dict[str, object], where: str) -> str:
+    kind: str = _str(definition.get("type"), where)
     if kind == "array":
-        return f"list[{_field_type(_obj(definition.get('items'), where), where, names)}]"
-    return _scalar(kind, where)
-
-
-def _scalar(kind: str, where: str) -> str:
+        item: dict[str, object] = _obj(definition.get("items"), where)
+        return f"list[{_JSON_TO_TYPE[_str(item.get('type'), where)]}]"
     if kind not in _JSON_TO_TYPE:
         msg: str = f"{where}: unsupported type {kind!r}"
         raise SchemaError(msg)
     return _JSON_TO_TYPE[kind]
 
 
-def _typeddict(name: str, definition: dict[str, object], names: dict[str, str]) -> TypedDictSpec:
+def _typeddict(name: str, definition: dict[str, object]) -> TypedDictSpec:
     where: str = f"$defs.{name}"
     python: dict[str, object] = _obj(definition["x-python"], where)
     properties: dict[str, object] = _obj(definition.get("properties"), where)
     required: tuple[str, ...] = _strs(definition.get("required", []), where)
-    if not set(required) <= set(properties):
-        msg: str = f"{where}: required names a field the definition does not hold"
+    if set(required) != set(properties):
+        msg: str = f"{where}: every TypedDict field must be required"
         raise SchemaError(msg)
-    fields: list[tuple[str, str]] = []
-    for field, spec in properties.items():
-        annotation: str = _field_type(_obj(spec, f"{where}.{field}"), f"{where}.{field}", names)
-        fields.append((field, annotation if field in required else f"NotRequired[{annotation}]"))
     return TypedDictSpec(
         name=_str(python["typeddict"], where),
-        fields=tuple(fields),
+        fields=tuple(
+            (field, _field_type(_obj(spec, f"{where}.{field}"), f"{where}.{field}"))
+            for field, spec in properties.items()
+        ),
         doc=_str(definition.get("description", ""), where),
     )
 
@@ -295,20 +282,15 @@ def _key(key: str, definition: dict[str, object]) -> Key:
 def _definitions(definitions: dict[str, object]) -> tuple[tuple[Vocabulary, ...], tuple[TypedDictSpec, ...]]:
     vocabularies: list[Vocabulary] = []
     typeddicts: list[TypedDictSpec] = []
-    rendered: dict[str, dict[str, object]] = {
-        name: definition
-        for name, raw in definitions.items()
-        if "x-python" in (definition := _obj(raw, f"$defs.{name}"))
-    }
-    names: dict[str, str] = {}
     name: str
-    definition: dict[str, object]
-    for name, definition in rendered.items():
+    raw: object
+    for name, raw in definitions.items():
+        definition: dict[str, object] = _obj(raw, f"$defs.{name}")
+        if "x-python" not in definition:
+            continue
         python: dict[str, object] = _obj(definition["x-python"], f"$defs.{name}")
-        names[name] = _str(python.get("typeddict", python.get("literal")), f"$defs.{name}")
-    for name, definition in rendered.items():
-        if "typeddict" in _obj(definition["x-python"], f"$defs.{name}"):
-            typeddicts.append(_typeddict(name, definition, names))
+        if "typeddict" in python:
+            typeddicts.append(_typeddict(name, definition))
         else:
             vocabularies.append(_vocabulary(name, definition))
     return tuple(vocabularies), tuple(typeddicts)
@@ -455,10 +437,6 @@ def _contract_keys(schema: Schema) -> list[tuple[Key, ContractField]]:
 
 
 def _render_head(lines: list[str], schema: Schema) -> None:
-    optional: bool = any(
-        annotation.startswith("NotRequired[") for spec in schema.typeddicts for _, annotation in spec.fields
-    )
-    names: str = ", ".join(("TYPE_CHECKING", "Final", "Literal", *(("NotRequired",) if optional else ()), "TypedDict"))
     lines.extend([
         '"""Pipeline-owned bead metadata: keys, value vocabularies and the build-contract projection.',
         "",
@@ -469,7 +447,7 @@ def _render_head(lines: list[str], schema: Schema) -> None:
         "from __future__ import annotations",
         "",
         "from types import MappingProxyType",
-        f"from typing import {names}",
+        "from typing import TYPE_CHECKING, Final, Literal, TypedDict",
         "",
         "if TYPE_CHECKING:",
         "    from collections.abc import Mapping",
