@@ -42,6 +42,7 @@ from driver_surface_types import (
     WALL_PROBE_REJECTED,
     WALL_PROBE_UNAVAILABLE,
     RateLimitInfo,
+    UsageWindow,
     WallProbeResult,
 )
 
@@ -167,6 +168,33 @@ def _probe_events(stdout: bytes) -> tuple[dict[str, JsonValue] | None, dict[str,
     return info, result
 
 
+_INFO_KEYS: frozenset[str] = RateLimitInfo.__required_keys__ | RateLimitInfo.__optional_keys__
+_WINDOW_KEYS: frozenset[str] = UsageWindow.__required_keys__ | UsageWindow.__optional_keys__
+_WINDOWS_KEY: str = "unifiedWindows"
+
+
+def _contract_info(info: dict[str, JsonValue]) -> RateLimitInfo:
+    """Keep the keys the contract declares of a CLI rate-limit info, then check it against the contract.
+
+    The CLI adds keys over time; only the declared keys are read, so the others are dropped
+    at the top level and inside each usage window before the strict check.
+
+    Returns:
+        The rate-limit info holding only its declared keys.
+
+    """
+    kept: dict[str, JsonValue] = {key: value for key, value in info.items() if key in _INFO_KEYS}
+    windows: JsonValue = kept.get(_WINDOWS_KEY)
+    if isinstance(windows, dict):
+        kept[_WINDOWS_KEY] = {
+            name: {key: value for key, value in window.items() if key in _WINDOW_KEYS}
+            if isinstance(window, dict)
+            else window
+            for name, window in windows.items()
+        }
+    return check_type(kept, RateLimitInfo)
+
+
 def _rate_result(info: dict[str, JsonValue]) -> WallProbeResult | None:
     """State a probe result from the latest rate-limit info, when its status says one.
 
@@ -180,7 +208,7 @@ def _rate_result(info: dict[str, JsonValue]) -> WallProbeResult | None:
     rejected: bool = status == REJECTED_STATUS
     result: WallProbeResult = {
         "status": WALL_PROBE_REJECTED if rejected else WALL_PROBE_ALLOWED,
-        "rateLimitInfo": check_type(info, RateLimitInfo),
+        "rateLimitInfo": _contract_info(info),
         "detail": f"the prompt's latest rate-limit event is {status}",
     }
     reset: JsonValue = info.get("resetsAt")
