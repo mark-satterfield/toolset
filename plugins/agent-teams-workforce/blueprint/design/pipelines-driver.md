@@ -456,12 +456,11 @@ flowchart TD
     r --> h["The build lane takes none of the Story's Tasks; the build slot is released, not failed"]
     h --> pick["The elaboration lane picks the Epic first: urgency class respec"]
     pick --> rs{"reelaborate.restart_story, just before the Epic is dispatched"}
-    rs -->|"every Task of the Story is closed"| park["Refused: the Story is marked refused and the Epic is parked for the owner"]
+    rs -->|"a Task of the Story is closed"| park["Refused: the Story is marked refused and the Epic is parked for the owner"]
     rs -->|"a live run works the Epic, the Story or a Task"| defer["Deferred: the Epic is skipped this pass and tried again"]
     rs -->|"otherwise"| run["Restarted: the Story's specs from its context step, the Epic's Task edges onward and its Tasks' build journals are set back; respec_state=restarted"]
-    run --> elab["The Epic stays done; its elaboration writes the Story's specs and Tasks again with the defects in their context files, and its gate decides on the restarted Stories only"]
+    run --> elab["The Epic's elaboration writes the Story's specs and Tasks again with the defects in their context files"]
     elab --> done["Marking the Epic elaborated clears the respec state; the Tasks are built again"]
-    elab -->|"the same defect comes back after the restart"| rep["The Story is refused and the Epic is parked for the owner (respec-refused)"]
 ```
 
 Notes on the diagram:
@@ -470,17 +469,7 @@ Notes on the diagram:
   gap, an unschedulable completion cycle, a blocking contract finding (a design/spec contradiction
   or a spec self-contradiction), and requirement source bytes changed since scope approval once the
   rescope allowance is spent. The build no longer authors producer work itself.
-- A Task's closed build is never specified again: a partly built Story is restarted for its open
-  Tasks and keeps its closed ones (the decomposition is told about them), and `restart_story`
-  refuses only a Story every Task of which is closed.
-- An elaborated Epic stays `done` during a respec, so the Tasks of its other Stories keep building;
-  the plugin's `elaboration.start` takes a done Epic that has a restarted Story, and the buildability
-  gate decides on the restarted Stories' defects only, listing the others under `reported`.
-- Each defect is tried once per owner ruling: when a Story's defect (by its fingerprint) comes back
-  after the Story was restarted for it, since the Epic was last unparked or marked, `respec.request`
-  records the Story refused and the Epic is parked for the owner.
-- A Task whose upstream defect named a Story (its own or another Epic's) is not dispatched again until
-  that Story's respec state is clear and its Epic is elaborated.
+- A Task's closed build is never specified again: `restart_story` refuses a Story with a closed Task.
 - A producer Epic that is still elaborating is a wait, not a defect: the build waits for it.
 
 ### 5.2 Parking an Epic, and fair elaboration slots
@@ -497,7 +486,7 @@ flowchart TD
     bg -->|"yes"| pk["Parked: buildability, an owner or architecture decision"]
     bg -->|"no"| rq["Each named Story's respec is requested - section 5.1"]
     c -->|"a design gap the architect's round did not settle"| pd["Parked: design-gap, an architecture decision"]
-    c -->|"anything else"| st{"The second failure in a row at the same stage, or the fourth at any stages?"}
+    c -->|"anything else"| st{"The second failure in a row at the same stage?"}
     rq --> st
     st -->|"yes"| pr["Parked: repeated-failure, an owner decision"]
     st -->|"no"| again["Dispatched again later"]
@@ -511,14 +500,12 @@ Notes on the diagram:
 - A parked Epic carries `elaboration_state=parked`, its cause and its park record
   (`elaboration_park`); the lane takes no parked Epic, and the dashboard lists it under what needs
   the owner. A refused respec parks the Epic too (`respec-refused`).
-- The failure count starts again at a done elaboration, a park, an unpark, an owner's mark
-  (`elabmark.py --set` or `--start-at`) and a re-queue after a plugin upgrade (`failure_requeued`);
-  a Story's respec restart does not start it again. Item failures count in a row at one stage
-  (`STAGE_FAILURE_LIMIT`, 2); item and pipeline-code failures count in a total (`TOTAL_FAILURE_LIMIT`, 4).
-- Fair slots: the lane first puts an Epic dispatched three times (`FAIR_SHARE_DISPATCHES`) without
-  progress after every Epic that is not, whatever its urgency; then ranks by urgency (an Epic with a
-  Story whose respec is requested or restarted; then one the owner restarted by hand or an open Task's
-  build waits on; then the rest), and only then by WSJF.
+- The failure count starts again at a done elaboration, a park, an unpark and an owner's mark
+  (`elabmark.py --set` or `--start-at`); a Story's respec restart does not start it again.
+- Fair slots: the lane ranks eligible Epics first by urgency (an Epic with a Story whose respec is
+  requested; then one the owner restarted by hand or an open Task's build waits on; then the rest),
+  then puts an Epic dispatched three times (`FAIR_SHARE_DISPATCHES`) without progress after the
+  others of its class, and only then by WSJF.
 
 ### 5.3 The owner's backfill of the buildability gate
 
@@ -531,9 +518,7 @@ Epics marked elaborated before the buildability gate existed were never checked.
 Without `--apply` it prints the plan as JSON and writes nothing. With `--apply` it writes each
 evaluated Epic's `elaboration_buildability`, a respec request on every Story a respec defect names and
 on the Story of every open Task whose latest build failure is one of the dead ends of section 5.1,
-and `buildability_failed` for each Epic with an escalated defect. With `--epic`, the dead-end
-requests are limited to the named Epics. A Story every Task of which is closed, or already specified
-again for the same defect, gets no request and is listed under `skipped`. It never parks an Epic and never
+and `buildability_failed` for each Epic with an escalated defect. It never parks an Epic and never
 changes a journal: the elaboration lane restarts each Story before it next dispatches its Epic. No
 session or agent runs it.
 

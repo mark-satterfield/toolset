@@ -130,15 +130,12 @@ defects of one kind, and each kind takes one route:
 | `design-gap-carried` | an older journal carried gap rows to the build (`<arch-work>/design-gaps/leftover/`) | escalate, architecture decision |
 | `completion-cycle` | the open Tasks' declared build prerequisites close a Task/Story completion cycle (`build_prerequisites.validate_wait_graph`); one defect for each Story of the Epic that owns an open Task in the cycle | respec |
 | `producer-unordered` | the wait graph refuses a Task's declared producer; or a Story depends on an item another Epic's open Task builds (the owner Task, `buildowner.owner`), and a Task of the Story that works on the consuming item neither reaches that Task through its blockers nor names it or its Story in its declared prerequisites | respec |
-| `producer-absent` | a Story depends on an item of a kind Tasks build that no Task of any Epic builds (neither the item nor the stack it is homed in), is not verified, no other Epic's `drives` judgment claims and no other Epic still elaborating also needs; the evidence names the Epics that need it | escalate, owner decision |
+| `producer-absent` | a Story depends on an item of a kind Tasks build that no Task of any Epic builds, is not verified and no other Epic's `drives` judgment claims; the evidence names the Epics that need it | escalate, owner decision |
 | `producer-epic-unordered` | the matrix orders another Epic before this one (`epicorder.analyse`), that Epic is not done with elaboration, and no `blocks` or `tracks` edge orders it first | escalate, owner decision |
 
 A respec defect's Story is written again by the driver's Story restart, which hands the defects to
-the spec authors and the decomposer as `respecDefects` in the context files. A respec defect that
-names no Story (by itself or its first Task's parent) escalates for an owner decision. An escalated
-defect waits for the decision it names. During a respec (a Story of the Epic has
-`respec_state=restarted`) the Epic stays `done` and only the restarted Stories' defects decide the
-gate; the others are listed under the report's `reported`.
+the spec authors and the decomposer as `respecDefects` in the context files. An escalated defect
+waits for the decision it names.
 
 ## The dispatch result
 

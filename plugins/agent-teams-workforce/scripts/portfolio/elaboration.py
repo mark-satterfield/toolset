@@ -9,10 +9,7 @@ At the START, one Epic is judged, and the first condition that fails is the refu
 * it is an open Epic;
 * its `KEY_ELABORATION_STATE` is not `ELABORATION_PARKED`: a parked Epic waits for an owner or
   architecture decision (`KEY_ELABORATION_PARK` says which, and why), and only the owner unparks it;
-* its `KEY_ELABORATION_STATE` is not `ELABORATION_DONE`: its Tasks are written and they are the workable items,
-  unless a Story of it has `KEY_RESPEC_STATE` `RESPEC_RESTARTED` (a respec): then the Epic is elaborated again
-  for that Story while it stays `ELABORATION_DONE` with the cause `CAUSE_RESPEC_REQUESTED`, so the Tasks of
-  its other Stories keep building;
+* its `KEY_ELABORATION_STATE` is not `ELABORATION_DONE`: its Tasks are written and they are the workable items;
 * it is not `ELABORATION_IN_PROGRESS` under another run's owner token (unless the caller reclaims).
 
 Which Epic is elaborated next, and whether it is scored and its upstream Epics are elaborated,
@@ -31,7 +28,7 @@ At the FINISH, after the Tasks are written:
   is the owner's `wsjf-scoring` run's;
 * `record_buildability`, `prd-to-spec`'s buildability gate, records the gate's report on the Epic
   as `KEY_ELABORATION_BUILDABILITY`; a failed gate also sets the cause `CAUSE_BUILDABILITY` and the
-  Epic keeps its state (`ELABORATION_IN_PROGRESS`, or `ELABORATION_DONE` during a respec);
+  Epic stays `ELABORATION_IN_PROGRESS`;
 * `mark_elaborated` sets the Epic's `KEY_ELABORATION_STATE` to `ELABORATION_DONE` with the cause
   `CAUSE_DECOMPOSED` and clears its owner token, scoring nothing again. Each Story of the Epic whose
   `KEY_RESPEC_STATE` is `RESPEC_RESTARTED` was written again in this elaboration, so its respec
@@ -53,7 +50,6 @@ import beadgraph
 from bead_metadata import (
     CAUSE_BUILDABILITY,
     CAUSE_DECOMPOSED,
-    CAUSE_RESPEC_REQUESTED,
     CAUSE_STARTED,
     ELABORATION_DONE,
     ELABORATION_IN_PROGRESS,
@@ -222,8 +218,7 @@ def start(
             f"{epic_id} is parked: {_parked_reason(epic)}; the owner unparks it",
             epic,
         )
-    respecified: list[str] = _respecified(graph, epic_id) if state == ELABORATION_DONE else []
-    if state == ELABORATION_DONE and not respecified:
+    if state == ELABORATION_DONE:
         return _refusal(
             "epic-done",
             f"{epic_id} is {KEY_ELABORATION_STATE}={ELABORATION_DONE}: its Tasks are written and they are the "
@@ -246,17 +241,17 @@ def start(
             epic,
             owner=recorded,
         )
-    resumed: str | None = recorded if state in {ELABORATION_IN_PROGRESS, ELABORATION_DONE} and not reclaim else None
+    resumed: str | None = recorded if state == ELABORATION_IN_PROGRESS and not reclaim else None
     token: str = owner or resumed or uuid.uuid4().hex
-    lifecycle: dict[str, str] = {
-        KEY_ELABORATION_STATE: ELABORATION_IN_PROGRESS,
-        KEY_ELABORATION_STATE_AT: now_iso(),
-        KEY_ELABORATION_STATE_CAUSE: CAUSE_STARTED,
-        KEY_ELABORATION_STATE_OWNER: token,
-    }
-    if respecified:
-        lifecycle |= {KEY_ELABORATION_STATE: ELABORATION_DONE, KEY_ELABORATION_STATE_CAUSE: CAUSE_RESPEC_REQUESTED}
-    writer.metadata(epic.id, lifecycle)
+    writer.metadata(
+        epic.id,
+        {
+            KEY_ELABORATION_STATE: ELABORATION_IN_PROGRESS,
+            KEY_ELABORATION_STATE_AT: now_iso(),
+            KEY_ELABORATION_STATE_CAUSE: CAUSE_STARTED,
+            KEY_ELABORATION_STATE_OWNER: token,
+        },
+    )
     return {
         "ok": True,
         "refusal": None,
@@ -300,20 +295,6 @@ def score_epic_tasks(
     epic: Bead = graph.beads[epic_id]
     _check_owner(epic, owner)
     return score_tasks(graph, writer, {b.id for b in graph.descendants(epic.id) if b.kind == "task"}, progress)
-
-
-def _respecified(graph: Graph, epic_id: str) -> list[str]:
-    """Name the Epic's Stories whose respec the driver restarted (`KEY_RESPEC_STATE` is `RESPEC_RESTARTED`).
-
-    Returns:
-        The Story ids, in id order.
-
-    """
-    return sorted(
-        bead.id
-        for bead in graph.descendants(epic_id)
-        if bead.kind == "story" and bead.metadata.get(KEY_RESPEC_STATE) == RESPEC_RESTARTED
-    )
 
 
 def _check_owner(epic: Bead, owner: str | None) -> None:

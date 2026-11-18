@@ -16,7 +16,7 @@ type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValu
 type JsonObject = dict[str, JsonValue]
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "e863702d6c5a43633c02bf50edddb791a8693da41ef7b441b2544ec6c0426d7f"
+SCHEMA_SHA256: Final[str] = "830ae283aceb658c1f6562885ad206ecce66c5a8589a88f03391348d081d65d2"
 
 #: The literal a producer writes for an undecided -or-unknown contract value; read as None.
 UNKNOWN: Final[str] = "unknown"
@@ -875,4 +875,3 @@ class BuildabilityReport(TypedDict):
     at: str
     reportPath: str
     defects: list[BuildabilityDefect]
-    reported: NotRequired[list[BuildabilityDefect]]
