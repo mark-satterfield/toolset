@@ -8,10 +8,8 @@ check finds it first with :func:`unrecorded_names`, deterministically:
   "alarm `skillSpoke-document-atsCouldNotCompleteRate`" or "the alarms `a`, `b` and `c`". The
   nouns come from the matrix itself: the last word of each ``resourceType`` its entries hold
   (``alarm`` of ``cloudwatch-alarm``, ``queue`` of ``sqs-queue``).
-- A name is written in code marks; one after the noun is a name of that resource type only when
-  the project's naming command (``name identify``) finds it valid as that type with a ``project``
-  token, so the plugin holds no naming pattern and a plain word ("the table `scenarios`") is no
-  resource name.
+- A word after the noun is a name of that resource type only when the project's naming command
+  (``name identify``) finds it valid as that type, so the plugin holds no naming pattern.
 - A name is recorded when an entry answers to it (:meth:`matrixstore.Matrix.named`), when an
   entry's purpose states it, or when a name pattern an entry's name or purpose states, with a
   ``{token}`` for each varying token, matches it (a group entry such as "the alarms
@@ -38,14 +36,12 @@ if TYPE_CHECKING:
     from matrixstore import Matrix
 
 ATTR_RESOURCE_TYPE: Final = "resourceType"
-ROLE_PROJECT: Final = "project"
-"""The token of a resource name that names the project."""
 DOCUMENT_PREFIX: Final = "document:"
 RESOURCE_KINDS: Final = (KIND_COMPONENT, KIND_INFRASTRUCTURE)
 """The kinds of matrix entry that record an AWS resource."""
 IDENTIFY_WORKERS: Final = 8
 """How many calls of the naming command run at once."""
-_NAME: Final = r"`([A-Za-z][A-Za-z0-9_.:/@-]*[A-Za-z0-9])`"
+_NAME: Final = r"`?([A-Za-z][A-Za-z0-9_.:/@-]*[A-Za-z0-9])`?"
 _JOIN: Final = r"(?:\s*,\s*(?:and\s+|or\s+)?|\s+and\s+|\s+or\s+)"
 _PLACEHOLDER: Final[re.Pattern[str]] = re.compile(r"\{[A-Za-z][A-Za-z0-9]*\}")
 _PATTERN_WORD: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9_./:@{}-]*\{[A-Za-z][A-Za-z0-9]*\}[A-Za-z0-9_./:@{}-]*")
@@ -81,8 +77,7 @@ def identify(name: str) -> frozenset[str]:
     """Ask the project's naming command which kinds a name is valid as.
 
     Returns:
-        Each kind ``name identify`` lists with a reading that holds a ``project`` token; empty when
-        it refuses the name. ``NamingCommandError``
+        Each kind ``name identify`` lists; empty when it refuses the name. ``NamingCommandError``
         propagates when the naming command is not configured or does not answer by its contract.
 
     """
@@ -90,25 +85,8 @@ def identify(name: str) -> frozenset[str]:
     kinds: object = answer.document.get("kinds") if answer.ok else None
     if not isinstance(kinds, list):
         return frozenset()
-    return frozenset(str(held["kind"]) for held in kinds if isinstance(held, dict) and _has_project(held))
-
-
-def _has_project(held: dict[object, object]) -> bool:
-    """Tell whether one kind ``name identify`` lists reads the name with a ``project`` token.
-
-    Returns:
-        True when the kind is named and one of its readings holds a token whose role is ``project``.
-
-    """
-    readings: object = held.get("readings")
-    return (
-        isinstance(held.get("kind"), str)
-        and isinstance(readings, list)
-        and any(
-            isinstance(reading, list)
-            and any(isinstance(token, dict) and token.get("role") == ROLE_PROJECT for token in reading)
-            for reading in readings
-        )
+    return frozenset(
+        str(held["kind"]) for held in kinds if isinstance(held, dict) and isinstance(held.get("kind"), str)
     )
 
 

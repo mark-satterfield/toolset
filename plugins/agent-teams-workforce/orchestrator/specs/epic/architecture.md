@@ -246,9 +246,8 @@ not one of them or no reason, an AWS resource the design adds or changes (an
 a design with an AWS resource and no Well-Architected review covering each pillar once. It reads
 each document in review (`matrixreview.review_scope`) at the headings through which the Epic
 reaches it, and each AWS resource a heading names after its resource noun (the last word of a
-`resourceType` the matrix holds, as in "alarm `<name>`" or "the alarms `<a>` and `<b>`"), written
-in code marks, whose name the naming command's `name identify` finds valid, with a `project`
-token, as a resource type of that noun, that no
+`resourceType` the matrix holds, as in "alarm `<name>`" or "the alarms `<a>` and `<b>`"), whose
+name the naming command's `name identify` finds valid as a resource type of that noun, that no
 entry records (by its name or an alias, in a resource entry's purpose, or by a `{token}` name
 pattern a resource entry's name or purpose states) is a mechanical defect
 (`matrixnames.unrecorded_names`): no Story builds a resource the matrix does not hold. It also
