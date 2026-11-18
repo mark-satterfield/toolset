@@ -178,6 +178,8 @@ class CheckResult(TypedDict):
     problems: list[str]
     unansweredCriteria: list[str]
     corrections: int
+    carried: NotRequired[list[str]]
+    otherEpics: NotRequired[list[str]]
 
 
 class ArchitectureState(TypedDict):

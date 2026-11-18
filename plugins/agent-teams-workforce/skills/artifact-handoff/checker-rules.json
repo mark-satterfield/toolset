@@ -1127,6 +1127,12 @@
       "functions": [
         "orchestrator/flows/architecture_check.py#check",
         "orchestrator/flows/architecture_check.py#_mechanical",
+        "orchestrator/flows/architecture_check.py#_matrix",
+        "orchestrator/flows/architecture_check.py#split_matrix_problems",
+        "orchestrator/flows/architecture_check.py#is_own_problem",
+        "orchestrator/flows/architecture_check.py#problem_owner",
+        "orchestrator/flows/architecture_check.py#problem_entries",
+        "orchestrator/flows/architecture_check.py#_carry",
         "orchestrator/flows/architecture_check.py#check_step",
         "scripts/portfolio/matrixstore.py#file_problems",
         "orchestrator/flows/architecture_check.py#_reach_problems",

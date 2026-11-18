@@ -21,6 +21,7 @@ result and the review log.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -41,6 +42,7 @@ from matrix_contract import (
     KIND_LAYER,
     KIND_REQUIREMENT,
     KIND_SERVICE,
+    REL_DRIVES,
     MatrixError,
 )
 from matrixchecklist import ExpectedValue, UnfilledValue, expected_values, load_checklist, sentence, value_problems
@@ -55,6 +57,7 @@ from step_journal_contract import STATUS_DONE
 from typeguard import CollectionCheckStrategy, TypeCheckError, check_type
 
 from orchestrator.core import step_journal
+from orchestrator.core.findings import record_for_run
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import script_step
 from orchestrator.core.journal_steps import (
@@ -76,7 +79,6 @@ from orchestrator.flows.architecture_files import (
     LEAD,
     PROMOTE,
     ArchitectureContext,
-    ArchitectureStepError,
     held_file,
     lead_resolved,
     matrix_file,
@@ -106,10 +108,11 @@ PROMOTE_PURPOSE: Final = "Approved content becomes effective and every later Epi
 UNLINKED: Final = "links with nothing recorded at the other end"
 CORRECTIONS: Final = "corrections"
 MAX_CORRECTIONS: Final = 3
-"""How many times the mechanical check sends its defects back to the architect before the step fails.
+"""How many times the mechanical check sends its defects back to the architect.
 
-An element value the architect left unfilled never fails the step: once the corrections are spent
-it is carried to the spec stage (:func:`_carried`)."""
+The step never fails on what it finds: once the corrections are spent, each problem left is
+recorded as a finding for this Epic and carried (:func:`_carry`), and an element value left
+unfilled is carried to the spec stage (:func:`_checklist`)."""
 ARTIFACT_CHECKLIST: Final = "element checklist"
 """The artifact of a check: the values the elements must state and those left unfilled."""
 NO_VERDICT_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_EPIC, KIND_REQUIREMENT})
@@ -118,6 +121,12 @@ HOMED_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_SERVICE, KIND_COMPONE
 """The kinds of reached entry a stack builds: each has a home stack or is listed under ``excluded``."""
 ATTR_RESOURCE_TYPE: Final = "resourceType"
 """The attribute of a matrix entry that names the one AWS resource it is (``matrix-kinds.json``)."""
+ENTRY_TOKEN: Final = re.compile(r"^[a-z][A-Za-z]*:\S+$")
+"""A word of a problem sentence that is an entry id (``kind:rest``)."""
+REQUIREMENT_OWNER: Final = re.compile(rf"\b{KIND_REQUIREMENT}:([^/\s]+)/")
+"""A requirement id in a problem sentence, capturing the Epic the requirement belongs to."""
+ENTRY_WORDS: Final = (0, 2)
+"""The positions of the entry ids in a matrix problem sentence: the start, and the end after the relationship word."""
 
 
 def validate_review_scope(value: object, where: str = "ReviewScope") -> ReviewScope:
@@ -227,19 +236,130 @@ def _reach_problems(matrix: Matrix, bead: str, result: ArchitectureResult) -> li
     return problems
 
 
-def _mechanical(run: StepRun, result: ArchitectureResult, criteria: Criteria, log: Path) -> CheckResult:
+def problem_entries(problem: str) -> list[str]:
+    """Name the entries a matrix problem sentence starts with.
+
+    Returns:
+        The entry id the sentence starts with and the one after its relationship word, when those
+        words are entry ids (``kind:rest``), with a trailing colon removed.
+
+    """
+    words: list[str] = problem.split(" ", 3)
+    found: list[str] = []
+    position: int
+    for position in ENTRY_WORDS:
+        word: str = words[position].rstrip(":") if position < len(words) else ""
+        if ENTRY_TOKEN.match(word):
+            found.append(word)
+    return found
+
+
+def is_own_problem(problem: str, bead: str, changed: list[str]) -> bool:
+    """Tell whether a matrix problem is this Epic's to correct.
+
+    Returns:
+        True when an entry the sentence starts with (:func:`problem_entries`) is one the result
+        adds or changes, is this Epic's entry, or is one of this Epic's requirements.
+
+    """
+    ours: set[str] = {element.strip() for element in changed} | {f"{KIND_EPIC}:{bead}"}
+    return any(entry in ours or entry.startswith(f"{KIND_REQUIREMENT}:{bead}/") for entry in problem_entries(problem))
+
+
+def problem_owner(problem: str, bead: str, matrix: Matrix | None) -> str:
+    """Name the Epic another Epic's matrix problem is addressed to.
+
+    Returns:
+        The Epic of the first requirement the sentence names; else the Epic the matrix records as
+        driving the first entry it starts with; else this Epic.
+
+    """
+    requirement: re.Match[str] | None = REQUIREMENT_OWNER.search(problem)
+    if requirement is not None:
+        return requirement.group(1)
+    entries: list[str] = problem_entries(problem)
+    if matrix is not None and entries:
+        try:
+            first: EntryId = as_entry_id(entries[0])
+        except MatrixError:
+            return bead
+        drivers: list[str] = [
+            str(relationship.start).removeprefix(f"{KIND_EPIC}:")
+            for relationship in matrix.incoming(first, [REL_DRIVES])
+            if str(relationship.start).startswith(f"{KIND_EPIC}:")
+        ]
+        if drivers:
+            return drivers[0]
+    return bead
+
+
+def split_matrix_problems(
+    problems: list[str],
+    bead: str,
+    changed: list[str],
+    matrix: Matrix | None,
+) -> tuple[list[str], list[tuple[str, str]]]:
+    """Split the matrix file's problems into this Epic's and the other Epics'.
+
+    Returns:
+        The problems this Epic corrects (:func:`is_own_problem`), and each other problem with the
+        Epic it is addressed to (:func:`problem_owner`).
+
+    """
+    own: list[str] = []
+    others: list[tuple[str, str]] = []
+    problem: str
+    for problem in problems:
+        if is_own_problem(problem, bead, changed):
+            own.append(problem)
+        else:
+            others.append((problem_owner(problem, bead, matrix), problem))
+    return own, others
+
+
+def _matrix(path: Path) -> tuple[Matrix | None, list[str]]:
+    """Read the matrix file and every problem ``atw-matrix check`` reports for it.
+
+    Returns:
+        The matrix, or None when its shape cannot be read, with the problem that says why; and
+        every problem of the file.
+
+    """
+    try:
+        matrix: Matrix = read_matrix(path)
+    except MatrixError as error:
+        return None, [str(error)]
+    return matrix, file_problems(path)
+
+
+def _mechanical(
+    run: StepRun,
+    result: ArchitectureResult,
+    criteria: Criteria,
+    log: Path,
+) -> tuple[CheckResult, list[tuple[str, str]]]:
     """Run every check code can make on the matrix, the architect's result and the review log.
 
     Returns:
-        The problems ``atw-matrix check`` reports for the matrix file, an Epic the matrix does
-        not hold, each reach verdict and exclusion :func:`_reach_problems` finds, each
-        architecture or technical-requirement criterion the result leaves unanswered, and each
-        problem of the Epic's review log.
+        The check result: the problems ``atw-matrix check`` reports for the matrix file that are
+        this Epic's (:func:`split_matrix_problems`), an Epic the matrix does not hold, each reach
+        verdict and exclusion :func:`_reach_problems` finds, each architecture or
+        technical-requirement criterion the result leaves unanswered, and each problem of the
+        Epic's review log; and each matrix problem of another Epic with the Epic it is addressed
+        to. The reach, criteria and review-log checks run on the matrix whatever its file problems.
 
     """
     path: Path = matrix_file()
-    problems: list[str] = file_problems(path)
-    matrix: Matrix | None = None if problems else read_matrix(path)
+    matrix: Matrix | None
+    found: list[str]
+    matrix, found = _matrix(path)
+    problems: list[str]
+    others: list[tuple[str, str]]
+    problems, others = (
+        (found, [])
+        if matrix is None
+        else split_matrix_problems(found, str(run.bead), result["addedOrChangedElements"], matrix)
+    )
     if matrix is not None and matrix.find(epic_id(str(run.bead))) is None:
         problems.append(f"the matrix has no entry for the Epic {run.bead}")
     elif matrix is not None:
@@ -254,12 +374,15 @@ def _mechanical(run: StepRun, result: ArchitectureResult, criteria: Criteria, lo
     problems.extend(f"criterion {name} has no answer in the architecture result" for name in unanswered)
     problems.extend(review_log_findings(str(run.bead), log, matrix, result))
     corrections: JsonValue = run.params().get(CORRECTIONS, 0)
-    return {
+    checked: CheckResult = {
         "valid": not problems,
         "problems": problems,
         "unansweredCriteria": unanswered,
         "corrections": corrections if isinstance(corrections, int) else 0,
     }
+    if others:
+        checked["otherEpics"] = [problem for _owner, problem in others]
+    return checked, others
 
 
 def checklist_applies(run: StepRun) -> bool:
@@ -389,23 +512,26 @@ def _promotion(run: StepRun, result: ArchitectureResult) -> Completion:
     return Completion(add=(StepGroup(steps),))
 
 
-def _correction(run: StepRun, check: CheckResult, path: Path) -> Completion:
+def _carry(run: StepRun, check: CheckResult, path: Path) -> CheckResult:
+    """Carry the problems left once the corrections are spent, each as a finding for this Epic.
+
+    Returns:
+        The check result, valid, with the problems moved to ``carried``.
+
+    """
+    problem: str
+    for problem in check["problems"]:
+        record_for_run(run, str(run.bead), kind="architecture-check-carried", detail=problem, evidence=(str(path),))
+    return {**check, "valid": True, "problems": [], "carried": list(check["problems"])}
+
+
+def _correction(run: StepRun, check: CheckResult) -> Completion:
     """Send mechanical defects back to the architect, and check again after the correction.
 
     Returns:
         The completion that plans one architect step, one index step and one check step after this one.
 
-    Raises:
-        ArchitectureStepError: The architect has already corrected mechanical defects as often
-            as the pipeline allows.
-
     """
-    if check["corrections"] >= MAX_CORRECTIONS:
-        raise ArchitectureStepError(
-            run,
-            f"the mechanical check still finds defects after {MAX_CORRECTIONS} corrections; see {path}",
-            *check["problems"],
-        )
     architect: str = ARCHITECT
     plan: StepPlan = {
         "ref": "correction",
@@ -452,11 +578,13 @@ def check(run: StepRun) -> Completion:
     """Check what code can check, list what is in review, and plan what follows by rule.
 
     Open design gaps the spec stage filed (``design_gaps.handed``) go to the architect first,
-    whatever the check found. A result file that cannot be read, a matrix that refuses, and a
-    defect that three corrections did not clear end the step as a failure, except an element
-    value left unfilled, which is carried to the spec stage (:func:`_checklist`). Every file the step
-    writes is in its own folder, named for the step, so a later check never overwrites what an
-    earlier one recorded.
+    whatever the check found. A matrix problem of another Epic is recorded as a finding for that
+    Epic and is never this Epic's problem. A defect is sent back to the architect at most
+    :data:`MAX_CORRECTIONS` times; after that each one left is recorded as a finding for this Epic
+    and the step continues as after a valid check (:func:`_carry`), and an element value left
+    unfilled is carried to the spec stage (:func:`_checklist`). The step never fails on what it
+    finds. Every file the step writes is in its own folder, named for the step, so a later check
+    never overwrites what an earlier one recorded.
 
     Returns:
         The check result always; the review scope and the Epic's links with nothing recorded at
@@ -467,7 +595,9 @@ def check(run: StepRun) -> Completion:
     result: ArchitectureResult = read_result(run, context)
     criteria: Criteria = load_criteria(run.tools.plugin / CRITERIA_FILE)
     folder: Path = run.context.work / ARCHITECTURE_FOLDER / "checks" / run.step["id"]
-    checked: CheckResult = run.tools.portfolio(
+    checked: CheckResult
+    others: list[tuple[str, str]]
+    checked, others = run.tools.portfolio(
         CHECK,
         _mechanical,
         run,
@@ -479,12 +609,18 @@ def check(run: StepRun) -> Completion:
     listed: list[Artifact]
     checked, carried, listed = _checklist(run, result, checked, folder)
     check_path: Path = folder / "check.json"
+    owner: str
+    problem: str
+    for owner, problem in others:
+        record_for_run(run, owner, kind="matrix-problem", detail=problem, evidence=(str(matrix_file()),))
+    if not checked["valid"] and checked["corrections"] >= MAX_CORRECTIONS:
+        checked = _carry(run, checked, check_path)
     write_json(check_path, checked)
     recorded: list[Artifact] = [file_artifact(ARTIFACT_CHECK, check_path), *listed]
     if design_gaps.handed(run.context.work):
         return Completion(artifacts=tuple(recorded), add=_gap_answer(run).add)
     if not checked["valid"]:
-        return Completion(artifacts=tuple(recorded), add=_correction(run, checked, check_path).add)
+        return Completion(artifacts=tuple(recorded), add=_correction(run, checked).add)
     design_gaps.carry_unfilled(run, carried)
     scope: ReviewScope
     unlinked: EpicView

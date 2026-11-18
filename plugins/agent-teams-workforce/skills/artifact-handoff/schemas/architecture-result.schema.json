@@ -111,7 +111,9 @@
         "valid": {"description": "True when the check found no problem.", "type": "boolean"},
         "problems": {"description": "One sentence for each defect.", "type": "array", "items": {"type": "string"}},
         "unansweredCriteria": {"description": "The ids of the architecture and technical-requirement criteria the result gives no answer for.", "type": "array", "items": {"type": "string"}},
-        "corrections": {"description": "How many corrections of mechanical defects came before this check.", "type": "integer", "minimum": 0}
+        "corrections": {"description": "How many corrections of mechanical defects came before this check.", "type": "integer", "minimum": 0},
+        "carried": {"description": "The problems left when the corrections were spent, each recorded as an architecture-check-carried finding for this Epic; the step continues with them.", "type": "array", "items": {"type": "string"}},
+        "otherEpics": {"description": "The matrix problems that name no entry this Epic adds, changes or owns, each recorded as a matrix-problem finding for the Epic that owns it; they are never this Epic's problems.", "type": "array", "items": {"type": "string"}}
       }
     },
     "ArchitectureState": {
