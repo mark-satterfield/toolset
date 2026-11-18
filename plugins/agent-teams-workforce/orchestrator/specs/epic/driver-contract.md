@@ -140,10 +140,10 @@ Readers: `attempts.py` (turns a handback into an `Outcome`), `failurecause.py`, 
 
 | Part | Used for |
 |---|---|
-| success flag | completed vs failed routing (`AttemptRunner._resolved`); quota clear; the cost record's completion |
+| success flag | completed vs failed routing (`AttemptRunner._resolved`); quota clear, only for a dispatch started after the hold's latest trip; the cost record's completion |
 | stage | a stage in `STOP_STAGES` -> halted; `requires-human-action` (from an older plugin) -> an ordinary counted failure; `refusal.STAGE` with a refusal -> refusal; `breaker.QUOTA_STAGE` -> pause; the environment stages `handbackio` classifies -> environment failure origin; otherwise the fallback failure stage |
 | `Failure` | the structured cause (`failurecause.stated_cause`): a cause in `RETRYABLE_CAUSES` backs off and retries, `OTHER_CAUSE` records the failure with its repository evidence; the classification decides item failure versus fatal stop (`FATAL_CLASSES`) |
-| failure origin | environment vs work (`ledgerevents.FailureOrigin`), recorded on the handback event; gates quota clearing |
+| failure origin | environment vs work (`ledgerevents.FailureOrigin`), recorded on the handback event; gates quota clearing, with the dispatch's start after the hold's latest trip |
 | headline | Outcome headline; quota/API pause detection (`breaker.pause_of`: Fable wall mark, usage-limit text and reset time); the human need when no action is named |
 | `Refusal` | read by `refusal.code_of`: a code in `refusal.WAIT_CODES` -> wait, hold until the Epic's tracker facts change; a code in `refusal.NOTHING_TO_DO_CODES` -> skipped until the Epic's tracker facts change, not counted as a failure and with no notice |
 | required human actions | "needs a person" only when an entry names the account wall (`humanq.names_account_wall`, a `humanq.HUMAN_WALL_MARKERS` entry): the supervisor's `human_log` then writes one deduplicated `human_action` ledger event, and the item is not counted as a failure. Any other entry is ignored and the handback is handled as the failure it is. The driver holds no Epic for a person and keeps no owner inbox; the Epic flows return no required human actions (7.9). An ordinary item failure is recorded and excluded for the invocation; a fatal classification stops new dispatch |
@@ -213,7 +213,7 @@ Events written around an elaboration dispatch:
 - `EVENT_REFUSAL_HOLD` / `EVENT_REFUSAL_RELEASED` / `EVENT_HOLD_READ_FAILED`: holds until the
   Epic's tracker facts (`elabstate.lifecycle_facts`: its `LANE_KEYS` and `WSJF_KEYS` metadata, its
   prerequisites' states, closed) change.
-- `EVENT_REPEAT_BACKOFF`, `EVENT_HUMAN_ACTION`, `EVENT_QUOTA_TRIPPED` / `EVENT_QUOTA_CLEARED`,
+- `EVENT_REPEAT_BACKOFF`, `EVENT_HUMAN_ACTION`, `EVENT_QUOTA_TRIPPED` / `EVENT_QUOTA_PROBED` / `EVENT_QUOTA_CLEARED`,
   `EVENT_EXECUTION_STOPPED`, `EVENT_ATTEMPT_REOPENED`, the run events, `EVENT_HEARTBEAT`.
 
 Readers and what they need:
