@@ -12,11 +12,10 @@ from driver_surface_types import REGRESSION_TIMEOUT_DEFAULT, REGRESSION_TIMEOUT_
 from typeguard import check_type
 
 from orchestrator.core import step_journal
-from orchestrator.core.handback_contract import OTHER_CAUSE
+from orchestrator.core.findings import record_for_run
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import Registry
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, file_artifact, value_artifact
-from orchestrator.core.models import StepError
 from orchestrator.core.tool_locks import seconds
 from orchestrator.flows import build_carried, build_policy, build_repository_setup, build_reuse
 from orchestrator.flows.build_repository_setup import REPOSITORY_SETUP_WORK, RESCOPE
@@ -53,6 +52,10 @@ if TYPE_CHECKING:
 
 REMAP: Final = ("build:regression-remap", "build:regression-map-review", "build:regression-verify")
 """The steps that map, review and verify the final regression evidence again."""
+REREVIEW: Final = ("build:regression-map-review", "build:regression-verify")
+"""The steps that review the existing mapping again and verify it."""
+CARRY_REASON: Final = "the regression check's correction rounds are spent; the build continues with it recorded"
+"""Why the build carries what a regression check still finds once its rounds are spent."""
 VALIDATE: Final = "build:regression-validate"
 """The step that validates the reviewed regression scope."""
 VERIFY: Final = "build:regression-verify"
@@ -71,6 +74,25 @@ REVIEW_PLUGIN: Final = "regressionMappedReviewPlugin"
 """The plugin version the final mapping review ran under, recorded on its step."""
 STALE_REVIEW: Final = "regressionStaleReview"
 """The plugin versions of a mapping review a final verification sent back to be judged again."""
+
+
+def _carried(run: StepRun, errors: list[str], evidence: Path | None) -> ValueArtifact:
+    """Record what a regression check still finds once its rounds are spent, and carry it.
+
+    Each error is one ``regression-carried`` finding for the Task (``core.findings``) and one
+    contract finding the build carries (``build_carried``).
+
+    Returns:
+        The ``carriedFindings`` value artifact.
+
+    """
+    shown: tuple[str, ...] = () if evidence is None else (str(evidence),)
+    findings: list[JsonValue] = []
+    error: str
+    for error in errors:
+        record_for_run(run, str(run.bead), kind="regression-carried", detail=error, evidence=shown)
+        findings.append({"severity": "improvement", "owner": "contract", "detail": error})
+    return build_carried.carry("regressionEvidence", findings, CARRY_REASON)
 
 
 def _regression(run: StepRun, mode: str, plan: Path, extra: list[str]) -> tuple[Path, dict[str, JsonValue]]:
@@ -148,11 +170,11 @@ def task_sources(run: StepRun) -> list[str]:
 def refresh_sources(run: StepRun) -> Completion | None:
     """Reassess downstream evidence when the Task names new governing sources.
 
-    Returns:
-        Appended assessment, policy, baseline and review work, or None when covered.
+    A reassessment that still omits the same sources is recorded as ``regression-carried`` and the
+    build continues with the scope already accepted.
 
-    Raises:
-        StepError: A reassessment still omitted the same current source paths.
+    Returns:
+        Appended assessment, policy, baseline and review work; or None when covered or carried.
 
     """
     sources: list[str] = sorted(task_sources(run))
@@ -168,11 +190,9 @@ def refresh_sources(run: StepRun) -> Completion | None:
         f"Refresh evidence for the Task's current governing sources, which the scope omits: {', '.join(missing)}"
     )
     if latest(run, "regressionSourcesRefresh") == sources:
-        raise StepError(
-            run.step["script"],
-            OTHER_CAUSE,
-            ("Reassessed regression scope omitted current Task sources", *missing),
-        )
+        omitted: str = f"the reassessed regression scope still omits the Task's sources {', '.join(missing)}"
+        record_for_run(run, str(run.bead), kind="regression-carried", detail=omitted, evidence=tuple(missing))
+        return None
     keys: tuple[str, ...] = (
         "build:regression-reassess",
         "build:regression-review",
@@ -190,11 +210,11 @@ def refresh_sources(run: StepRun) -> Completion | None:
 def _scope_initial(run: StepRun) -> Completion:
     """Assess regression scope before suite work.
 
+    A source preparation that fails is carried (``regression-carried``) and the scope is assessed
+    from the Task's governing sources without the prepared requirement record.
+
     Returns:
         The assessor's journal children.
-
-    Raises:
-        StepError: The operation cannot proceed with the supplied evidence.
 
     """
     sources: list[str] = list(
@@ -215,10 +235,13 @@ def _scope_initial(run: StepRun) -> Completion:
         plan,
         [value for source in sources for value in ("--source", source)],
     )
+    assessed: Completion = _scope(run, False)
     if prepared.get("ok") is not True:
         errors: list[str] = check_type(prepared.get("errors", []), list[str])
-        raise StepError(run.step["script"], OTHER_CAUSE, tuple(errors or ["Regression source preparation failed"]))
-    assessed: Completion = _scope(run, False)
+        return Completion(
+            artifacts=(*assessed.artifacts, _carried(run, errors or ["regression source preparation failed"], output)),
+            add=assessed.add,
+        )
     required: Path = Path(check_type(prepared[REQUIRED_SOURCES], str))
     return Completion(
         artifacts=(
@@ -313,11 +336,11 @@ def _review_final(run: StepRun) -> Completion:
 def _validate(run: StepRun, final: bool) -> Completion:
     """Validate or verify the exact regression schema, source seal and independent review.
 
-    Returns:
-        Required evidence, or bounded scope correction steps.
+    A scope that still fails validation once its correction rounds are spent is carried
+    (:func:`_carried`) and accepted as the scope.
 
-    Raises:
-        StepError: Validation still fails after the permitted correction rounds.
+    Returns:
+        Required evidence, bounded scope correction steps, or the carried scope.
 
     """
     plan: Path = _file(run, "regressionMapped" if final else "regressionPlan")
@@ -348,7 +371,12 @@ def _validate(run: StepRun, final: bool) -> Completion:
         return declared
     if _scope_corrections(run) >= regression_rounds():
         errors: list[str] = check_type(document.get("errors", []), list[str])
-        raise StepError(VALIDATE, OTHER_CAUSE, (*errors, str(output)))
+        return Completion(
+            artifacts=(
+                file_artifact("regressionScope", output),
+                _carried(run, errors or ["the regression scope failed validation"], output),
+            ),
+        )
     purpose: str = "Correct the regression scope and validate it again"
     return Completion(
         artifacts=(file_artifact("regressionCorrection", output),),
@@ -559,14 +587,15 @@ def _stale_review(run: StepRun, output: Path, document: dict[str, JsonValue]) ->
     """Send a final verification failed by a mapping review judged under another plugin version back to the review.
 
     A review that ran under an older plugin judged the mapping by rules the running plugin no longer applies, so
-    its blocking findings are not this Task's failure yet: the mapping is made and reviewed again under the running
-    plugin, and verified again, with no correction allowance spent. A review that recorded no version ran before
+    its blocking findings are not this Task's failure yet: the existing mapping is reviewed again under the running
+    plugin and verified again, with no correction allowance spent; it is mapped again only when that review does
+    not approve it, as a correction. A review that recorded no version ran before
     reviews recorded one and is stale too. The same running version sends a Task back once, so a review that
     blocks again under it is a correction like any other.
 
     Returns:
-        The remap, review and verify steps, or None when the review is current, approved, or already sent back
-        under this version, or when source bytes changed.
+        The review and verify steps, or None when the review is current, approved, or already sent back under
+        this version, or when source bytes changed.
 
     """
     if document.get("reviewApproved") is not False or document.get("sourcesChanged") is True:
@@ -581,10 +610,10 @@ def _stale_review(run: StepRun, output: Path, document: dict[str, JsonValue]) ->
     ]
     if reviewed == running or running in sent:
         return None
-    purpose: str = f"Map and review the evidence again under plugin {running}; the last review ran under {reviewed}"
+    purpose: str = f"Review the existing mapping again under plugin {running}; the last review ran under {reviewed}"
     return Completion(
         artifacts=(value_artifact(STALE_REVIEW, {"reviewed": reviewed, "running": running, "evidence": str(output)}),),
-        add=(StepGroup(tuple(_new(kind, purpose) for kind in REMAP)),),
+        add=(StepGroup(tuple(_new(kind, purpose) for kind in REREVIEW)),),
     )
 
 
@@ -601,13 +630,11 @@ def _verify_correction(run: StepRun, output: Path, document: dict[str, JsonValue
     again, which covers changed bytes too. The mapping alone cannot write a test that does not exist.
 
     A blocking review judged under another plugin version is first sent back to be judged again
-    (:func:`_stale_review`), which is no correction.
+    (:func:`_stale_review`), which is no correction. Once the failure's allowance is spent, each
+    error left is carried (:func:`_carried`) and the verification completes as a passing one does.
 
     Returns:
-        The stale review's remap, the reassessment or correction steps.
-
-    Raises:
-        StepError: The failure's allowance is spent; it names every error and the evidence file.
+        The stale review's re-review, the reassessment or correction steps, or the carried evidence.
 
     """
     stale: Completion | None = _stale_review(run, output, document)
@@ -617,7 +644,12 @@ def _verify_correction(run: StepRun, output: Path, document: dict[str, JsonValue
     rescopes, corrections = _verify_corrections(run)
     if (rescopes if changed else corrections) >= regression_rounds():
         errors: list[str] = check_type(document.get("errors", []), list[str])
-        raise StepError(VERIFY, OTHER_CAUSE, (*errors, str(output)))
+        return Completion(
+            artifacts=(
+                file_artifact("regressionEvidence", output),
+                _carried(run, errors or ["the final regression verification failed"], output),
+            ),
+        )
     keys: tuple[str, ...] = (*RESCOPE, *REMAP) if changed else (*EVIDENCE_WORK, *RESCOPE, *REMAP)
     purpose: str = (
         "Assess the regression scope for the changed sources, then map and verify its evidence"
