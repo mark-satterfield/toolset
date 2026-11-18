@@ -78,7 +78,7 @@ follows it, among its siblings, before the index and the check (`architecture_ro
 on a later step, the `answers digest`, each `answer`, the `findings` (check results) and each
 `ruling` that step is handed, and, while the spec stage holds open design gaps, each
 repository's `design gaps` (`design_gaps.handed`, which hands no repository whose gaps already went
-to the architect `design_gaps.MAX_ROUNDS` (1) time: its rows escalate for a decision). No file is written from the matrix for it: it reads the Epic's pack
+to the architect `design_gaps.MAX_ROUNDS` (2) times: its rows escalate for a decision). No file is written from the matrix for it: it reads the Epic's pack
 and runs `atw-matrix` reads itself. The session is granted the architecture work folder and no
 folder of the architecture or of the PRDs.
 
@@ -243,7 +243,14 @@ technical-requirement criterion, and the review log (`review_log.problems`): a m
 malformed log, a log for another Epic, a decision without two distinct options, a choice that is
 not one of them or no reason, an AWS resource the design adds or changes (an
 `addedOrChangedElements` entry whose matrix entry has a `resourceType`) with no review entry, and
-a design with an AWS resource and no Well-Architected review covering each pillar once. It also
+a design with an AWS resource and no Well-Architected review covering each pillar once. It reads
+each document in review (`matrixreview.review_scope`) at the headings through which the Epic
+reaches it, and each AWS resource a heading names after its resource noun (the last word of a
+`resourceType` the matrix holds, as in "alarm `<name>`" or "the alarms `<a>` and `<b>`"), whose
+name the naming command's `name identify` finds valid as a resource type of that noun, that no
+entry records (by its name or an alias, in a resource entry's purpose, or by a `{token}` name
+pattern a resource entry's name or purpose states) is a mechanical defect
+(`matrixnames.unrecorded_names`): no Story builds a resource the matrix does not hold. It also
 holds the result's filled element checklist (`elementValues`) to the values each element under
 `addedOrChangedElements` must state (`matrixchecklist.expected_values` over
 `skills/effective-architecture/element-checklist.json`, the criteria A15 to A20 by the element's

@@ -206,10 +206,14 @@ answers every filed gap, an index and a check, which plans the document writes a
 and the TRD write only when the architect's TRD changes changed) and plans the TRD confirmation
 again; no other repository, no impact analysis and no TRD write the answers do not need run
 again. The writer is set back however often it was set back in the dispatch, because the step
-bounds its rounds itself, row by row, and never carries a gap to the build: a row the architect
-answered that comes back, and every open row of a repository whose gaps went to the architect
-once (`design_gaps.MAX_ROUNDS`, one round), counted from every record of the rounds
-(`design_gaps.answers`), escalates for a decision (`design_gaps.escalate`): it is recorded in
+bounds its rounds itself, row by row, and never carries a gap to the build. A row is known
+across rounds by its exact text. A row the architect answered that comes back escalates for a
+decision at once; a row the architect has not seen goes to it in another round, until the
+repository's gaps went to the architect twice (`design_gaps.MAX_ROUNDS`), counted from every
+record of the rounds (`design_gaps.answers`); after that every open row escalates
+(`design_gaps.escalate`). On a resume the failed step reads its documents again, so a row escalated
+before the architect answered it is handed in the next round and leaves the escalated file. An
+escalated row is recorded in
 `<arch-work>/design-gaps/escalated/<slug>.json`, a warning note names the Epic, the repository and
 the rows, and the step fails with the cause `design-gap` (an item-class cause), so the Epic stops
 until an owner or architecture decision settles the rows. The spec documents are not edited.
@@ -222,8 +226,8 @@ the mechanical correction, and once those corrections are spent carries what is 
 stage (`design_gaps.carry_unfilled`, `<arch-work>/design-gaps/unfilled-values.json`, a warning
 note "element values left unfilled after the mechanical corrections of the architecture"); the
 step after the spec review writes each carried value of an element its Story builds as a kind C
-gap row (`design_gaps.add_unfilled`), which then takes the one gap round and escalates when it
-is left open.
+gap row (`design_gaps.add_unfilled`), which then takes a gap round and escalates when the
+architect's answer leaves it open.
 A journal whose architecture was promoted before any check listed the checklist is never held
 to it (`architecture_check.checklist_applies`). A repository at the limit is never handed to
 the architect again (`design_gaps.handed`). Only kind C details are gaps: a spec author builds a

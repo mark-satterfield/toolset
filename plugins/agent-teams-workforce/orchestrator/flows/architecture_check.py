@@ -44,6 +44,8 @@ from matrix_contract import (
     MatrixError,
 )
 from matrixchecklist import ExpectedValue, UnfilledValue, expected_values, load_checklist, sentence, value_problems
+from matrixnames import problem as unrecorded_problem
+from matrixnames import unrecorded_names
 from matrixquery import epic_view
 from matrixreview import ReviewScope, review_scope
 from matrixstore import as_entry_id, file_problems, read_matrix
@@ -90,6 +92,7 @@ from orchestrator.flows.trd_steps import write_current, write_plan
 if TYPE_CHECKING:
     from architecture_work_contract import ArchitectureResult, ElementValue
     from matrix_contract import Entry, EntryId, EntryKind
+    from matrixnames import NamedDocument
     from matrixquery import EpicView
     from matrixstore import Matrix
     from matrixtraverse import ArchitectureReviewScope
@@ -227,14 +230,34 @@ def _reach_problems(matrix: Matrix, bead: str, result: ArchitectureResult) -> li
     return problems
 
 
-def _mechanical(run: StepRun, result: ArchitectureResult, criteria: Criteria, log: Path) -> CheckResult:
+def _unrecorded(matrix: Matrix, bead: str, result: ArchitectureResult, arch: Path) -> list[str]:
+    """Find each AWS resource the documents in review name that no matrix entry records.
+
+    The documents are those the promotion sets effective (``matrixreview.review_scope``), each
+    read at the headings through which the Epic reaches it (``matrixnames.unrecorded_names``).
+
+    Returns:
+        One problem per unrecorded resource name; one problem when an id the result lists under
+        ``addedOrChangedElements`` is not an entry id, so no document could be read.
+
+    """
+    try:
+        scope: ReviewScope = review_scope(matrix, bead, result["addedOrChangedElements"])
+    except MatrixError as error:
+        return [f"addedOrChangedElements: {error}"]
+    documents: list[NamedDocument] = [{"id": held["id"], "headings": held["headings"]} for held in scope["documents"]]
+    return [unrecorded_problem(name) for name in unrecorded_names(matrix, arch, documents)]
+
+
+def _mechanical(run: StepRun, result: ArchitectureResult, criteria: Criteria, log: Path, arch: Path) -> CheckResult:
     """Run every check code can make on the matrix, the architect's result and the review log.
 
     Returns:
         The problems ``atw-matrix check`` reports for the matrix file, an Epic the matrix does
-        not hold, each reach verdict and exclusion :func:`_reach_problems` finds, each
-        architecture or technical-requirement criterion the result leaves unanswered, and each
-        problem of the Epic's review log.
+        not hold, each reach verdict and exclusion :func:`_reach_problems` finds, each AWS
+        resource the documents in review name that no matrix entry records (:func:`_unrecorded`),
+        each architecture or technical-requirement criterion the result leaves unanswered, and
+        each problem of the Epic's review log.
 
     """
     path: Path = matrix_file()
@@ -244,6 +267,7 @@ def _mechanical(run: StepRun, result: ArchitectureResult, criteria: Criteria, lo
         problems.append(f"the matrix has no entry for the Epic {run.bead}")
     elif matrix is not None:
         problems.extend(_reach_problems(matrix, str(run.bead), result))
+        problems.extend(_unrecorded(matrix, str(run.bead), result, arch))
     answered: set[str] = {answer["criterion"] for answer in result["criteria"]}
     unanswered: list[str] = [
         entry.id
@@ -474,6 +498,7 @@ def check(run: StepRun) -> Completion:
         result,
         criteria,
         Path(context["reviewLogPath"]),
+        Path(context["architectureRoot"]),
     )
     carried: list[UnfilledValue]
     listed: list[Artifact]

@@ -21,17 +21,23 @@ then plans the promotion of the answered documents, and the TRD write only when 
 changes differ from those the last TRD write applied. No other repository is specified again, and
 no impact analysis runs in the round.
 
-The Epic never carries a design gap to the build. A gap the architect could not settle in its
-round escalates for a decision (:func:`escalate`): a row the architect already answered that a
-repository's documents hold again, and every row of a repository whose gaps went to the architect
-:data:`MAX_ROUNDS` times (one round). The rows are recorded in the escalated folder, a warning note
-names them, and the step fails with the cause ``design-gap``, so the Epic stops until an owner or
-architecture decision settles them. The spec documents are not edited. The rounds are counted from
-every record there is: ``answers.json`` in either of its forms (a bare count, or the rounds with
-the rows) and the settled folder, which keeps each round's files. A repository at the limit is
-never handed to the architect again (:func:`handed`). The leftover folder holds the rows that
-journals created before escalation carried to the build; the elaboration's buildability gate reads
-it (:func:`leftover_rows`) and reports each such repository as a defect.
+The Epic never carries a design gap to the build, and no row escalates before the architect has
+seen it. A row is known across rounds by its exact text, as the spec document states it: the
+answers file records the text of every row the architect answered. A row the architect already
+answered that a repository's documents hold again escalates for a decision (:func:`escalate`); a
+row the architect was never handed goes to it in another round, a row found only after a round
+included, until the repository's gaps went to the architect :data:`MAX_ROUNDS` times (two rounds),
+after which every row still open escalates, so a design that does not converge cannot loop.
+Escalated rows are recorded in the escalated folder, a warning note names them, and the step fails
+with the cause ``design-gap``, so the Epic stops until an owner or architecture decision settles
+them. The spec documents are not edited. When the Epic resumes, the failed step reads its
+documents again: a row escalated earlier that the architect never answered is handed to it like
+any other row below the limit, and leaves the escalated folder (:func:`hold_open`). The rounds are
+counted from every record there is: ``answers.json`` in either of its forms (a bare count, or the
+rounds with the rows) and the settled folder, which keeps each round's files. A repository at the
+limit is never handed to the architect again (:func:`handed`). The leftover folder holds the rows
+that journals created before escalation carried to the build; the elaboration's buildability gate
+reads it (:func:`leftover_rows`) and reports each such repository as a defect.
 """
 
 from __future__ import annotations
@@ -90,7 +96,7 @@ ANSWERS: Final = "answers.json"
 """The file, in the design gaps folder, that records each repository's rounds and the rows the architect answered."""
 KEY_ROUNDS: Final = "rounds"
 KEY_ROWS: Final = "rows"
-MAX_ROUNDS: Final = 1
+MAX_ROUNDS: Final = 2
 """How many times a repository's gaps go to the architect before its open gaps escalate for a decision."""
 DECIDED_HEADING: Final = "Decided at build"
 """The heading, at level 2, of the section of a spec document that lists the details the build decides."""
@@ -405,9 +411,11 @@ def _repository_start(run: StepRun, journal: Journal) -> tuple[StepId, StepId]:
 def hold_open(run: StepRun, slug: str, repository: str, documents: Sequence[Path]) -> None:
     """Stop a repository whose spec documents hold an open design gap from reaching its Story and Tasks.
 
-    A row the architect already answered escalates for a decision (:func:`escalate`), and so does
-    every row once the repository's gaps went to the architect :data:`MAX_ROUNDS` times: no gap is
-    ever carried to the build. Any other row goes to the architect.
+    A row the architect already answered escalates for a decision (:func:`escalate`). Every other
+    row goes to the architect, in another round, until the repository's gaps went to it
+    :data:`MAX_ROUNDS` times; at the limit every open row escalates. No gap is ever carried to the
+    build. A row handed now that an earlier stop escalated (the architect never answered it) leaves
+    the escalated folder.
 
     Raises:
         DesignGapError: A document holds an open gap the architect was not handed before, below
@@ -420,14 +428,14 @@ def hold_open(run: StepRun, slug: str, repository: str, documents: Sequence[Path
     if not filed:
         return
     record: Answered = answers(run.context.work).get(slug, Answered())
-    if record.rounds >= MAX_ROUNDS:
-        escalate(run, slug, repository, filed)
     repeated: list[FiledDocument] = _only(filed, record.rows, keep=True)
     if repeated:
         escalate(run, slug, repository, repeated)
-    fresh: list[FiledDocument] = _only(filed, record.rows, keep=False)
-    payload: FiledGaps = {"repository": repository, "documents": fresh}
+    if record.rounds >= MAX_ROUNDS:
+        escalate(run, slug, repository, filed)
+    payload: FiledGaps = {"repository": repository, "documents": filed}
     write_json(_folder(run.context.work, OPEN) / f"{slug}.json", payload)
+    _unescalate(run.context.work, slug, _rows(payload))
     journal: Journal = run.journal()
     first: StepId
     container: StepId
@@ -435,12 +443,29 @@ def hold_open(run: StepRun, slug: str, repository: str, documents: Sequence[Path
     raise DesignGapError(
         run.inputs.stage,
         first,
-        tuple(f"{held['document']}: {gap}" for held in fresh for gap in held["gaps"]),
+        tuple(f"{held['document']}: {gap}" for held in filed for gap in held["gaps"]),
         container,
         container=run.step_named(ARCHITECTURE)["id"],
         plans=gap_round([check_writer(run)]),
         reconfirm=tuple(step["id"] for step in journal["steps"] if step.get("script") == CONFIRM_TRD),
     )
+
+
+def _unescalate(work: Path, slug: str, rows: Collection[str]) -> None:
+    """Take rows handed to the architect now out of a repository's escalated file.
+
+    A row an earlier stop escalated before the architect ever saw it is no longer escalated once
+    it is handed; the file is removed when no row is left in it.
+    """
+    target: Path = _folder(work, ESCALATED) / f"{slug}.json"
+    if not target.is_file():
+        return
+    held: FiledGaps = _filed(target)
+    kept: list[FiledDocument] = _only(held["documents"], rows, keep=False)
+    if kept:
+        write_json(target, {"repository": held["repository"], "documents": kept})
+    else:
+        target.unlink()
 
 
 def escalate(run: StepRun, slug: str, repository: str, filed: Sequence[FiledDocument]) -> NoReturn:
@@ -678,9 +703,9 @@ def carry_unfilled(run: StepRun, values: Sequence[UnfilledValue]) -> None:
 
     The values join the file :data:`UNFILLED`, which the step after the spec review of each
     repository reads (:func:`add_unfilled`): each value of an element the repository's Story
-    builds becomes a kind C row of its design gaps, which goes to the architect in the one gap
-    round and escalates for a decision when that round leaves it open. A warning note names the
-    Epic and the values.
+    builds becomes a kind C row of its design gaps, which goes to the architect in a gap round
+    and escalates for a decision when the architect's answer leaves it open. A warning note names
+    the Epic and the values.
     """
     if not values:
         return
