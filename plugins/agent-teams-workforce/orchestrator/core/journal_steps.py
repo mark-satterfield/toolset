@@ -430,11 +430,14 @@ class Completion:
     """What one step's result records in the journal, written as one change.
 
     The step is marked done in that change, unless it plans child steps under itself: it then
-    stays running, and the runner marks it done when those child steps are done.
+    stays running, and the runner marks it done when those child steps are done. ``again`` names
+    steps set back to planned in the same change (``step_journal.replan_step``), so they run again
+    with their outputs on disk to correct.
     """
 
     artifacts: tuple[Artifact, ...] = ()
     add: tuple[StepGroup, ...] = ()
+    again: tuple[StepId, ...] = ()
 
     @property
     def stays_running(self) -> bool:

@@ -748,7 +748,9 @@ Decisions in this diagram, each for one reason:
   `usedAsBuilt` (the Epic adds nothing to it; then no Task cites it), and every Task that cites or
   requires it is blocked by the owner's Tasks. A Task records what it builds under
   `builds_entries`. Two Epics elaborated at once cannot both claim an entry: each Task bead is
-  written under the ownership lock after a fresh ownership check, and a change of owner sends the
-  Epic back to its span step (`OwnershipChangedError`). `backfill_built_entries.py` gives Tasks
+  written under the ownership lock after a fresh ownership check, and a change of owner runs the
+  span step again alone (`OwnershipChangedError`): it keeps the repository containers it planned
+  and sets back only those whose placed items changed, whose steps then correct their files in
+  place. `backfill_built_entries.py` gives Tasks
   written before this rule their `builds_entries` and reports the entries two Epics already
   build, for the owner's cleanup.

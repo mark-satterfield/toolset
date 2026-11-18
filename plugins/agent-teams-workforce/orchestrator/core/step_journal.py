@@ -1160,6 +1160,40 @@ def replan_step(journal: Journal, step_id: StepId, moment: str) -> Invalidation:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def reset_step(journal: Journal, step_id: StepId, moment: str) -> Invalidation:
+    """Set one step back to planned and keep every step its result planned, with the record of each.
+
+    The step is reset as :func:`invalidate_from` resets it, except that it keeps its value
+    artifacts named as :func:`planned_for_name` names them, so the steps it planned stay where
+    they are with their parameters and, when it runs again, its code is handed those records as
+    the artifacts it held (``saved``) and plans only what is not planned yet. Every other step
+    keeps its state. A step that is not in the journal raises ``StepRefusedError`` from
+    :func:`find_step`.
+
+    Args:
+        journal: The journal; changed in place.
+        step_id: The step to run again.
+        moment: The present date-time, as :func:`timestamp` gives it.
+
+    Returns:
+        The ids reset, no ids removed, and no ids pruned.
+
+    """
+    step: Step = find_step(journal, step_id)
+    records: list[Artifact] = [
+        artifact
+        for artifact in step["artifacts"]
+        if artifact["kind"] in VALUE_KINDS and artifact["name"].startswith(PLANNED_FOR_PREFIX)
+    ]
+    reset: list[StepId] = []
+    removed: list[StepId] = []
+    planned: list[StepId] = []
+    _reset(step, reset, removed, planned)
+    step["artifacts"] = records
+    return _invalidated(journal, moment, reset, removed, [])
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def restart_point(journal: Journal, step_id: StepId) -> StepId:
     """Name the step a run must begin at to run a step again with its child steps planned anew.
 

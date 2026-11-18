@@ -4,8 +4,9 @@ The span step records on each item the Tasks of the Epic that owns its entry, wh
 Epic (``builtBy``, ``buildowner.mark_built_by``). Another Epic elaborated at the same time can
 write a Task that owns one of those entries after that, or a build can start and change the owner.
 A step that plans or writes from the items then works on a stale snapshot, so it reads beads
-again, and on any change raises ``OwnershipChangedError`` naming the span step: the span and
-every step after it run again. The same holds when the architect's result came to name other
+again, and on any change raises ``OwnershipChangedError`` naming the span step: the span alone
+runs again, keeping the repository containers it planned, and sets back only the containers
+whose placed items changed (``repo_scoping.span``). The same holds when the architect's result came to name other
 elements for the Stories than the span read (an answer to a design gap can add one):
 ``ScopeChangedError``. A Task bead write makes the check and the write under one lock
 (``tool_locks.ownership_lock``), so the second of two racing Epics sees the first one's claim.
@@ -112,7 +113,7 @@ def refuse_ownership_drift(run: StepRun, stage: str) -> None:
     """Check the span's ``builtBy`` against a fresh read of beads.
 
     An item whose owner Epic is no longer the one the span recorded is an ``OwnershipChangedError``
-    naming the span step, so it and every step after it are planned again (:func:`_race`).
+    naming the span step, so it runs again alone (:func:`_race`).
 
     Args:
         run: The step that reads the span's items.
@@ -135,8 +136,8 @@ def refuse_scope_drift(run: StepRun, stage: str) -> None:
     (``repo_scoping.can_build``): the span records the others as findings and holds no item of them.
 
     A result whose ``addedOrChangedElements`` and ``unchangedWorkElements`` name other entries
-    than the span's items is a ``ScopeChangedError`` naming the span step, so it and every step
-    after it are planned again (:func:`_race`).
+    than the span's items is a ``ScopeChangedError`` naming the span step, so it runs again alone
+    (:func:`_race`).
 
     Args:
         run: The step that reads the span's items.

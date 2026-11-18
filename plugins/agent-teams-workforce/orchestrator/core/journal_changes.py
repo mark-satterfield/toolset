@@ -94,7 +94,8 @@ def apply_completion(journal: Journal, step_id: StepId, completion: Completion, 
     """Record one step's result in a journal: the whole of it, for one journal write.
 
     The step's artifacts are recorded, every planned step is added, each added step is recorded
-    on the completing step as the value artifact :func:`step_journal.planned_for_name` names, and
+    on the completing step as the value artifact :func:`step_journal.planned_for_name` names, each
+    step the result names to run again is set back (``step_journal.replan_step``), and
     the step is marked done unless it waits for child steps planned under it. A change the journal refuses raises
     ``StepRefusedError``, and nothing is written.
 
@@ -136,6 +137,9 @@ def apply_completion(journal: Journal, step_id: StepId, completion: Completion, 
         record: ValueArtifact
         for record in _records(group.steps, added, outermost=True):
             step_journal.record_artifact(journal, step_id, record)
+    again: StepId
+    for again in completion.again:
+        step_journal.replan_step(journal, again, moment)
     if completion.stays_running:
         return step_journal.find_step(journal, step_id)
     return step_journal.finish_step(journal, step_id, moment)

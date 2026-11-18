@@ -238,9 +238,10 @@ every repository's gaps reach the architect in one round. When the same writer o
 other stale file is named twice in one dispatch, the step fails; when that writer is a script step, its code wrote the file to a
 contract other than its readers', and the failure is `PipelineDefectError`. A change of the Epic
 that owns an entry, or of the elements the Stories build (`OwnershipChangedError`,
-`ScopeChangedError`), names no file: the span step and every step after it run again, up to
-`OWNERSHIP_REPLANS` times in a dispatch, after which the step records an `ownership-race` finding
-and continues with the ownership as it stands. A file a step reads
+`ScopeChangedError`), names no file: the span step alone runs again (`step_journal.reset_step`),
+keeping the repository containers it planned, and sets back only the first step of each container
+whose placed items changed, up to `OWNERSHIP_REPLANS` times in a dispatch, after which the step
+records an `ownership-race` finding and continues with the ownership as it stands. A file a step reads
 that is missing, is not JSON or is refused by its contract is the item's failure; a contract whose
 schema cannot be loaded or applied is a `PipelineDefectError` (`architecture_files.checked_file`).
 The solutions architect's result and a document maintainer's result are read the same way as a
@@ -253,7 +254,12 @@ that session wrote wrongly under the current ones (`MalformedRequestError`) is c
 by continuing that session with the errors, and the helper runs again, with nothing set back to
 planned; the same request malformed twice in one dispatch fails the helper's step. The solutions architect writes its result as the work goes, and every
 step of it keeps a result already at the result path, so a new session continues from the partial
-result and the design work done before the stop is not done again.
+result and the design work done before the stop is not done again. Any other agent step that
+starts a new session while its output is already on disk is handed that output as its earlier
+output and asked to correct or complete it in place; only when that correction fails for its
+content is the output written fresh (`JournalRunner._launch`). A planned step whose script key or
+agent was retired is removed and the step that planned it is set back, so it plans what the code
+plans now (`journal_run.set_back_retired`).
 
 When a spec step creates a Story bead and a Task step creates Task beads, the same step creates
 that bead's journal in the same directory (pipeline `deploy` for a Story, `build` for a Task), with

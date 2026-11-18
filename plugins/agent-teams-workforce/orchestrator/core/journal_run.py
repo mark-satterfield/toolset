@@ -38,7 +38,11 @@ session and left unrecorded, and a session that wrote its output and stopped bef
 recorded. The output of a step that failed in its work is never reused: the failure was found in
 it, so the step runs a session, and that session is handed the earlier failure
 (:func:`_previous_failure`) to correct. A step that failed for any other cause (a timeout, a
-transient cause, a defect of the pipeline) still reuses a valid output.
+transient cause, a defect of the pipeline) still reuses a valid output. Nothing is written again
+from the start while an output exists: a new session of a step whose output is on disk is handed
+it as its earlier output to correct or complete in place, and writes it fresh only when that
+correction fails (:meth:`JournalRunner._launch`). A planned step whose script key or agent was
+retired is removed and the step that planned it set back (:func:`set_back_retired`).
 
 An agent step that has child steps is closed only through its "Finish", its last child step
 (``helper-steps.schema.json``). A "Finish" the runner ran was accepted when it ran. A "Finish"
@@ -56,6 +60,7 @@ import sys
 import threading
 import time
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
@@ -324,6 +329,14 @@ JSON_SUFFIX: Final = ".json"
 """The suffix of an output the runner may reuse."""
 PREVIOUS_FAILURE_LABEL: Final = "the previous attempt's problems: correct every one of them in the output"
 """The label of the file that hands a failed step's earlier failure to its next session."""
+EARLIER_OUTPUT_LABEL: Final = "this step's earlier output, to correct or complete in place"
+"""The label of a step's output already on disk, handed to a new session of the step."""
+EARLIER_OUTPUT_REQUEST: Final = (
+    "This step already wrote its output in an earlier run, handed to you as its earlier output: "
+    "correct or complete that file in place so it does what this step asks, keep everything in it "
+    "that is still right, and do not write it again from the start"
+)
+"""What a new session of a step whose output is already on disk is asked to do with that output."""
 PREVIOUS_FAILURE_SUFFIX: Final = ".previous-failure.json"
 """Appended to an agent step's output name to name the file of its earlier failure."""
 
@@ -551,6 +564,41 @@ def require_handled(journal: Journal, registry: Registry) -> None:
         raise UnregisteredStepError(unhandled)
 
 
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def set_back_retired(journal: Journal, registry: Registry) -> list[StepId]:
+    """Set back each step that planned a step whose script key or agent the registry no longer holds.
+
+    A step that has not started and names a script key or agent with no code (a key since
+    retired) is removed with the step that planned it set back to planned
+    (``step_journal.replan_step``), so that step runs again under the code the registry holds now
+    and plans what it plans now. A step that has started is never removed, and every other step
+    keeps its state. A retired step no step recorded as planned stays, and
+    :func:`require_handled` names it.
+
+    Args:
+        journal: The journal; changed in place.
+        registry: The code of the steps.
+
+    Returns:
+        The ids of the steps set back, in walk order.
+
+    """
+    retired: set[StepId] = {
+        step["id"] for step in unhandled_steps(journal, registry) if step["status"] == STATUS_PLANNED
+    }
+    planners: list[StepId] = [
+        step["id"] for step in step_journal.steps_in_order(journal) if retired & set(step_journal.planned_by(step))
+    ]
+    moment: str = step_journal.timestamp()
+    present: set[StepId]
+    planner: StepId
+    for planner in planners:
+        present = {step["id"] for step in step_journal.steps_in_order(journal)}
+        if planner in present:
+            step_journal.replan_step(journal, planner, moment)
+    return planners
+
+
 def _nested_plans(plans: Sequence[StepPlan]) -> dict[str, tuple[StepPlan, ...]]:
     """Index the child plans a lane states up front by the description of their container.
 
@@ -728,13 +776,16 @@ def _reset_stale(
     *,
     gap: DesignGapError | None,
     scopes: dict[StepId, StepId | None],
+    spans: list[StepId],
     rewrites: list[StepId],
 ) -> None:
     """Set back what stale inputs need run again, in one journal change.
 
     The gap round is planned once when a design gap was found; each scoped writer is set back with
     the steps after it in its scope; the first unscoped writer in walk order is set back with every
-    step after it; and each writer to rewrite is set back alone (``step_journal.replan_step``).
+    step after it; each span step whose ownership or scope changed is set back alone, keeping the
+    steps it planned (``step_journal.reset_step``); and each writer to rewrite is set back alone
+    (``step_journal.replan_step``).
     """
     moment: str = step_journal.timestamp()
     if gap is not None:
@@ -748,6 +799,8 @@ def _reset_stale(
     if unscoped:
         order: list[StepId] = [step["id"] for step in step_journal.steps_in_order(journal)]
         step_journal.invalidate_from(journal, min(unscoped, key=order.index), moment)
+    for writer in spans:
+        step_journal.reset_step(journal, writer, moment)
     for writer in rewrites:
         step_journal.replan_step(journal, writer, moment)
 
@@ -799,13 +852,17 @@ class JournalRunner:
         """Run every step that is not done, in order, until none is left.
 
         A step that fails raises what it raised, after the failure is recorded in the journal.
+        First, a planned step whose script key or agent is retired is removed and the step that
+        planned it is set back (:func:`set_back_retired`).
 
         Raises:
             StepError: Before any step runs, when a step that is not done names a script key or
-                an agent the registry holds no code for; raised from the
+                an agent the registry holds no code for and no step planned it; raised from the
                 ``UnregisteredStepError`` that names every such step, whose text it carries.
 
         """
+        if set_back_retired(step_journal.read_journal(self.path), self.registry):
+            step_journal.update_journal(self.path, lambda journal: set_back_retired(journal, self.registry))
         try:
             require_handled(step_journal.read_journal(self.path), self.registry)
         except UnregisteredStepError as error:
@@ -953,8 +1010,10 @@ class JournalRunner:
         failure with what the contract found. A stale file the error names without its check sets
         back only a writer that planned no steps, and fails as an item failure otherwise.
 
-        A change of ownership or scope (``OwnershipChangedError``, which names no file) sets the
-        span step back with every step after it, in its scope when it names one. When open design
+        A change of ownership or scope (``OwnershipChangedError``, which names no file) sets back
+        the span step alone, keeping the repository containers it planned; run again, the span
+        writes its files as they are now and sets back only the containers whose placement
+        changed (``repo_scoping.span``). When open design
         gaps were found, the gap round they share is planned once, in the same journal change
         (:func:`_plan_gap_round`), and each gap's repository is set back in its scope. Runs after
         the whole group, so no session of the group is running when a step is changed.
@@ -967,16 +1026,24 @@ class JournalRunner:
         if not found:
             return
         gaps: list[DesignGapError] = [stale for stale in found if isinstance(stale, DesignGapError)]
-        resets: list[StaleInputError] = [
-            stale for stale in found if isinstance(stale, (DesignGapError, OwnershipChangedError))
-        ]
-        rewrites: list[StepId] = self._uncorrected([stale for stale in found if stale not in resets])
-        scopes: dict[StepId, StepId | None] = {stale.writer: stale.within for stale in resets}
-        self.replanned.update([*scopes, *rewrites])
-        if scopes or rewrites:
+        spans: list[StepId] = list(
+            dict.fromkeys(stale.writer for stale in found if isinstance(stale, OwnershipChangedError)),
+        )
+        rewrites: list[StepId] = self._uncorrected(
+            [stale for stale in found if not isinstance(stale, (DesignGapError, OwnershipChangedError))],
+        )
+        scopes: dict[StepId, StepId | None] = {gap.writer: gap.within for gap in gaps}
+        self.replanned.update([*scopes, *spans, *rewrites])
+        if scopes or spans or rewrites:
             step_journal.update_journal(
                 self.path,
-                partial(_reset_stale, gap=gaps[0] if gaps else None, scopes=scopes, rewrites=rewrites),
+                partial(
+                    _reset_stale,
+                    gap=gaps[0] if gaps else None,
+                    scopes=scopes,
+                    spans=spans,
+                    rewrites=rewrites,
+                ),
             )
 
     def _uncorrected(self, found: list[StaleInputError]) -> list[StepId]:
@@ -1587,6 +1654,49 @@ class JournalRunner:
 
         """
         try:
+            return self._launch(request, labelled, session, launch, resume=resume)
+        except SessionNotResumedError:
+            if _finished_output(before, launch):
+                return launch.output
+            return self._launch(request, labelled, self._new_session(request), launch, resume=False)
+
+    def _new_session(self, request: AgentStep) -> str:
+        """Give a step a new session id in the journal.
+
+        Returns:
+            The new session id.
+
+        """
+        step_id: StepId = check_type(request.journal_step, StepId)
+        fresh: str = str(uuid4())
+        step_journal.update_journal(self.path, lambda journal: step_journal.set_session(journal, step_id, fresh))
+        return fresh
+
+    def _launch(
+        self,
+        request: AgentStep,
+        labelled: list[tuple[str, Path]],
+        session: str,
+        launch: AgentLaunch,
+        *,
+        resume: bool,
+    ) -> Path:
+        """Run one session of an agent step, correcting the step's earlier output in place when one exists.
+
+        A new session of a step whose output file is already on disk is handed that file as its
+        earlier output and asked to correct or complete it in place (``fresh_output`` False). Only
+        when that correction fails for its content (a ``StepError`` of ``OTHER_CAUSE``) does a new
+        session write the output fresh. A resumed session, a launch that keeps its output, and a
+        step with no output on disk run as asked.
+
+        Returns:
+            The validated output path.
+
+        Raises:
+            StepError: The session failed for a cause other than its output's content.
+
+        """
+        if resume or not launch.fresh_output or not launch.output.is_file():
             return self.agents.run_session(
                 request,
                 labelled,
@@ -1594,16 +1704,22 @@ class JournalRunner:
                 resume=resume,
                 fresh_output=launch.fresh_output,
             )
-        except SessionNotResumedError:
-            if _finished_output(before, launch):
-                return launch.output
-            step_id: StepId = check_type(request.journal_step, StepId)
-            fresh: str = str(uuid4())
-            step_journal.update_journal(
-                self.path,
-                lambda journal: step_journal.set_session(journal, step_id, fresh),
+        correcting: AgentStep = replace(
+            request,
+            inputs=(*request.inputs, str(launch.output)),
+            request=f"{request.request or request.outcome}. {EARLIER_OUTPUT_REQUEST}",
+        )
+        try:
+            return self.agents.run_session(
+                correcting,
+                [*labelled, (EARLIER_OUTPUT_LABEL, launch.output)],
+                session=session,
+                fresh_output=False,
             )
-            return self.agents.run_session(request, labelled, session=fresh, fresh_output=launch.fresh_output)
+        except StepError as failed:
+            if type(failed) is not StepError or failed.cause != OTHER_CAUSE:
+                raise
+        return self.agents.run_session(request, labelled, session=self._new_session(request), fresh_output=True)
 
 
 DECISION_ARTIFACT: Final = "stageDecision"

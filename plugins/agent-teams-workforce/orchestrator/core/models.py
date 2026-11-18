@@ -142,8 +142,9 @@ class DesignGapError(StaleInputError):
 class OwnershipChangedError(StaleInputError):
     """Another Epic came to own a matrix entry after the span step marked the Epic's items, or stopped owning one.
 
-    ``writer`` is the span step: run again, it marks each item with the Tasks of the Epic that
-    owns its entry now (``builtBy``), and every step after it plans from that. Two Epics
+    ``writer`` is the span step: run again alone, it marks each item with the Tasks of the Epic
+    that owns its entry now (``builtBy``) and sets back only the repository containers whose
+    items changed. Two Epics
     elaborated at once can race more than once, so the journal runner sets the span back to
     planned up to ``OWNERSHIP_REPLANS`` times in one dispatch before it fails the step.
     """
@@ -158,7 +159,8 @@ class ScopeChangedError(OwnershipChangedError):
     """The elements the architect's result names for the Epic's Stories differ from those the span step read.
 
     An answer to a design gap can add or remove an element the Epic builds. ``writer`` is the span
-    step: run again, it reads the result as it stands, and every step after it plans from that.
+    step: run again alone, it reads the result as it stands and plans or sets back only the
+    repository containers whose items changed.
     The journal runner treats it as an ownership change: the span step is planned again up to
     ``OWNERSHIP_REPLANS`` times in one dispatch.
     """

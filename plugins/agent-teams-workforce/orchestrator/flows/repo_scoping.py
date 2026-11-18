@@ -95,6 +95,7 @@ from target_contract import (
 )
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
+from orchestrator.core import step_journal
 from orchestrator.core.agent_context import SessionSetupError
 from orchestrator.core.driver_contracts import dispatch_arguments
 from orchestrator.core.findings import record_for_run
@@ -118,9 +119,12 @@ from orchestrator.flows.elaboration_files import (
 from orchestrator.flows.elaboration_support import REPO_SCOPING_PHASE, enter_phase
 from orchestrator.flows.repo_placement import forbidden
 
+# isort: split
+from step_journal_contract import KIND_VALUE, PLANNED_FOR_PREFIX, StepId
+
 if TYPE_CHECKING:
     from architecture_work_contract import ArchitectureResult
-    from step_journal_contract import Artifact, StepPlan
+    from step_journal_contract import Artifact, Journal, StepPlan
 
 SPAN: Final = "atw-matrix epic --closure"
 """The script key of the span step."""
@@ -1202,12 +1206,19 @@ def _ruling(
     return ruling
 
 
-def _spec_steps(run: StepRun, ruling: PlacementRuling, repos: list[str]) -> tuple[StepGroup, ...]:
+def _spec_steps(run: StepRun, ruling: PlacementRuling, repos: list[str], start: int) -> tuple[StepGroup, ...]:
     """Plan one container per repository of the span, each with its first step, after the span step.
 
+    Args:
+        run: The span step.
+        ruling: The placements.
+        repos: The repository paths to plan a container for.
+        start: The number of the first container's Story key (``S<start>``).
+
     Returns:
-        The group, or nothing for an empty span. A container is named for its repository; its
-        first step gathers what the repository builds and plans the repository's other steps.
+        The group, or nothing when no repository is given. A container is named for its
+        repository; its first step gathers what the repository builds and plans the repository's
+        other steps.
 
     """
     slugs: dict[str, str] = check_type(
@@ -1219,7 +1230,7 @@ def _spec_steps(run: StepRun, ruling: PlacementRuling, repos: list[str]) -> tupl
         check_type(placement[KEY_REPO_PATH], str) for placement in ruling[KEY_PLACEMENTS] if placement["frontend"]
     }
     steps: list[NewStep] = []
-    for index, (repo, slug) in enumerate(slugs.items(), 1):
+    for index, (repo, slug) in enumerate(slugs.items(), start):
         name: str = Path(repo).name
         first: StepPlan = {
             "description": f"Gather what {name} builds",
@@ -1236,6 +1247,117 @@ def _spec_steps(run: StepRun, ruling: PlacementRuling, repos: list[str]) -> tupl
         container: StepPlan = {"description": name, "purpose": SPECS_PURPOSE}
         steps.append(NewStep(container, children=(NewStep(first, params),)))
     return (StepGroup(tuple(steps)),) if steps else ()
+
+
+@dataclass(frozen=True, slots=True)
+class HeldContainers:
+    """The repository containers an earlier run of the span step planned, kept when only the span was set back."""
+
+    records: tuple[Artifact, ...]
+    """The span step's records of the steps it planned (``step_journal.planned_for_name``), recorded again."""
+    firsts: dict[str, StepId]
+    """The first step of each kept container, by the repository path it was handed."""
+
+
+def _held_containers(run: StepRun) -> HeldContainers:
+    """Read the containers the span step planned in an earlier run that are still in the journal.
+
+    Only a span step set back alone keeps its records (``step_journal.reset_step``); a span step
+    reset any other way planned nothing that is kept, and every container is planned anew.
+
+    Returns:
+        The records of the steps still in the journal, and the first step of each container by
+        its repository path.
+
+    """
+    journal: Journal = run.journal()
+    present: set[StepId] = {step["id"] for step in step_journal.steps_in_order(journal)}
+    records: list[Artifact] = [
+        artifact
+        for source in run.saved.sources
+        for artifact in source
+        if artifact["kind"] == KIND_VALUE
+        and artifact["name"].startswith(PLANNED_FOR_PREFIX)
+        and artifact["name"].removeprefix(PLANNED_FOR_PREFIX) in present
+    ]
+    firsts: dict[str, StepId] = {}
+    for artifact in records:
+        value: object = artifact.get("value")
+        repo: JsonValue = value.get("repoPath") if isinstance(value, dict) else None
+        if isinstance(repo, str):
+            firsts[repo] = StepId(artifact["name"].removeprefix(PLANNED_FOR_PREFIX))
+    return HeldContainers(tuple(records), firsts)
+
+
+def _placed(items: Sequence[Mapping[str, object]]) -> dict[str, list[str]]:
+    """Group the span's items by repository name, each as its canonical JSON text.
+
+    Returns:
+        The sorted items of each repository.
+
+    """
+    placed: dict[str, list[str]] = {}
+    item: Mapping[str, object]
+    for item in items:
+        placed.setdefault(str(item.get("repository")), []).append(json.dumps(dict(item), sort_keys=True))
+    return {name: sorted(texts) for name, texts in placed.items()}
+
+
+def _earlier_items(path: Path) -> list[dict[str, JsonValue]]:
+    """Read the items an earlier run of the span step wrote.
+
+    Returns:
+        Its items, or none when the file does not exist yet.
+
+    """
+    if not path.is_file():
+        return []
+    held: list[JsonValue] = check_type(
+        json_object(json.loads(path.read_text(encoding="utf-8"))).get("items", []),
+        list[JsonValue],
+    )
+    return [json_object(item) for item in held]
+
+
+def _containers(
+    run: StepRun,
+    ruling: PlacementRuling,
+    repos: list[str],
+    items: tuple[Sequence[Mapping[str, object]], Sequence[Mapping[str, object]]],
+    written: tuple[Artifact, ...],
+) -> Completion:
+    """Plan the repository containers the span needs, keeping those an earlier run planned.
+
+    A container an earlier run planned and the journal still holds (:func:`_held_containers`)
+    stays, with its record; its first step is set back only when the items placed in its
+    repository differ from those the earlier run placed there, so it runs again with the files
+    on disk. A container is planned only for a repository that has none.
+
+    Args:
+        run: The span step.
+        ruling: The placements.
+        repos: The repository paths of the span, in order.
+        items: The items the earlier run wrote (none on a first run), and the items now.
+        written: The files and values the span step wrote in this run.
+
+    Returns:
+        The span step's completion: what it wrote with the records of the kept containers, the
+        containers to add, and the first steps to set back.
+
+    """
+    held: HeldContainers = _held_containers(run)
+    earlier: dict[str, list[str]] = _placed(items[0])
+    now: dict[str, list[str]] = _placed(items[1])
+    names: dict[str, str] = {check_type(p[KEY_REPO_PATH], str): p["repoName"] for p in ruling[KEY_PLACEMENTS]}
+    return Completion(
+        artifacts=(*written, *held.records),
+        add=_spec_steps(run, ruling, [repo for repo in repos if repo not in held.firsts], len(held.firsts) + 1),
+        again=tuple(
+            held.firsts[repo]
+            for repo in repos
+            if repo in held.firsts and now.get(names[repo]) != earlier.get(names[repo])
+        ),
+    )
 
 
 def _read_story_builds(run: StepRun) -> tuple[Matrix, list[DeltaItem], list[str]]:
@@ -1327,6 +1449,7 @@ def span(run: StepRun) -> Completion:
     duplicates: list[str]
     matrix, items, duplicates = _read_story_builds(run)
     work: Path = run.context.work
+    earlier: list[dict[str, JsonValue]] = _earlier_items(work / ELEMENTS_FILE)
     homes: dict[str, RepositoryStacks] = run.tools.portfolio(SPAN, repository_stacks, matrix, items)
     repositories: list[dict[str, JsonValue]] = _objects(inventory(run.tools)["repos"])
     ruling: PlacementRuling = _ruling(run, items, homes, repositories)
@@ -1352,7 +1475,10 @@ def span(run: StepRun) -> Completion:
     write_json(span_path, ruling)
     repos: list[str] = list(dict.fromkeys(check_type(p[KEY_REPO_PATH], str) for p in ruling[KEY_PLACEMENTS]))
     kept: list[JsonValue] = list(repos)
-    return Completion(
-        artifacts=(file_artifact(ARTIFACT_SPAN, span_path), *artifacts, value_artifact(ARTIFACT_REPOSITORIES, kept)),
-        add=_spec_steps(run, ruling, repos),
+    return _containers(
+        run,
+        ruling,
+        repos,
+        (earlier, items),
+        (file_artifact(ARTIFACT_SPAN, span_path), *artifacts, value_artifact(ARTIFACT_REPOSITORIES, kept)),
     )
