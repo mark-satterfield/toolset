@@ -37,6 +37,7 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
+from orchestrator.core.findings import record_for_run
 from orchestrator.core.handback_contract import TRD_PHASE, verdict_event
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import script_step
@@ -508,15 +509,16 @@ def confirm(run: StepRun) -> Completion:
 
     A TRD whose front matter or a citation is invalid, or that has no heading for a requirement a
     constraint of the matrix points at, is corrected once: the step plans one TRD author update
-    of what it found and then itself again under it. The second confirmation corrects nothing.
+    of what it found and then itself again under it. The second confirmation corrects nothing:
+    each problem still found is recorded as a ``trd-carried`` finding for the Epic, joins the
+    TRD's warnings, and the TRD is confirmed with it.
 
     Returns:
-        The TRD file and the digest recorded on the Epic bead; or, for the first confirmation of
-        a TRD that does not resolve, the correction it plans.
+        The TRD file and the digest recorded on the Epic bead, with its warnings; or, for the first
+        confirmation of a TRD that does not resolve, the correction it plans.
 
     Raises:
-        ArchitectureStepError: The TRD is missing or unreadable, or it still does not resolve at
-            the confirmation after its correction.
+        ArchitectureStepError: The TRD is missing or unreadable.
 
     """
     enter_phase(run.context, run.agents.emit, TRD_AUTHORING_PHASE, CONFIRM_TRD)
@@ -542,12 +544,18 @@ def confirm(run: StepRun) -> Completion:
         if above is None or above.get("script") != CONFIRM_TRD:
             _summary(run, "correction planned", f"{len(changes)} problems sent to the TRD author for one update")
             return _correction(run, context, changes)
-        raise ArchitectureStepError(run, *(change["statement"] for change in changes))
+        statement: str
+        for statement in (change["statement"] for change in changes):
+            record_for_run(run, str(run.bead), kind="trd-carried", detail=statement, evidence=(str(trd),))
+            warnings.append(statement)
     digest: str = _mark_trd(run.context, run.tools, trd)
     _summary(
         run,
-        "passed",
-        f"{len(cited)} citations and every requirement pointer resolve; the Epic bead carries the TRD {digest[:12]}",
+        "carried" if changes else "passed",
+        f"{len(changes)} problems carried as findings; the Epic bead carries the TRD {digest[:12]}"
+        if changes
+        else f"{len(cited)} citations and every requirement pointer resolve; the Epic bead carries the TRD "
+        f"{digest[:12]}",
     )
     warned: list[JsonValue] = list(warnings)
     return Completion(

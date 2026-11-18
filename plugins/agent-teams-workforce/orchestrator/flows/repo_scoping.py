@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -96,6 +97,7 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.agent_context import SessionSetupError
 from orchestrator.core.driver_contracts import dispatch_arguments
+from orchestrator.core.findings import record_for_run
 from orchestrator.core.handback import failure_for
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
@@ -126,6 +128,8 @@ SPAN_DESCRIPTION: Final = "Read the repositories this Epic involves from the mat
 SPAN_PURPOSE: Final = "The repository span and the entries each repository builds come from the matrix"
 SPECS_PURPOSE: Final = "The repository has one reviewed spec set and one Story"
 SPAN_FILE: Final = "repo-scoping.json"
+EPIC_NAMED: Final = re.compile(r"\b(?:requirement|epic):([^/\s:]+)")
+"""An Epic a span problem names, through one of its requirements or its own entry."""
 ELEMENTS_FILE: Final = "span-elements.json"
 """The files the span step writes in the Epic's work directory: the placements and the items."""
 CONTEXT_PURPOSE: Final = "The items this repository builds and the steps that specify them are known"
@@ -356,7 +360,7 @@ def _create(missing: MissingRepo, tools: Tools, home: RepositoryStacks) -> dict[
     """
     name: str = missing[KEY_NAME]
     result = tools.polyrepo(
-        ["create", name, "--space", home.apps[0]],
+        ["create", name, "--space", min(home.apps)],
         stage=CREATION_STAGE,
         timeout=seconds(CREATE_TIMEOUT_ENV, CREATE_TIMEOUT),
         retry=False,
@@ -820,7 +824,7 @@ def story_builds(
     bead: str,
     added_or_changed: Sequence[str],
     unchanged_work: Sequence[str],
-) -> list[DeltaItem]:
+) -> tuple[list[DeltaItem], list[str]]:
     """List what the Epic's Stories build, in the shape the spec and Task steps read.
 
     Args:
@@ -838,20 +842,18 @@ def story_builds(
         An event's item also carries ``trigger``, the event's description, and ``publishedBy``,
         its producers in that stack (:func:`_event_facts`).
 
-    Raises:
-        StepError: :func:`story_build_problems` reports a problem in either list; the evidence
-            names each.
+        Only entries a Story can build are listed; each problem :func:`story_build_problems`
+        reports in either list is returned beside the items.
 
     """
     problems: list[str] = [
         *story_build_problems(matrix, bead, added_or_changed, FIELD_ADDED_OR_CHANGED),
         *story_build_problems(matrix, bead, unchanged_work, FIELD_UNCHANGED_WORK),
     ]
-    if problems:
-        raise StepError(SPAN, OTHER_CAUSE, tuple(problems))
     placed: list[Placed] = [
         Placed(entry_id, stack)
         for entry_id in story_build_entries([*added_or_changed, *unchanged_work])
+        if _build_problem(matrix, entry_id) is None
         for stack in placements(matrix, entry_id)
     ]
     item_ids_of: dict[Placed, str] = {built: f"E{index}" for index, built in enumerate(placed, 1)}
@@ -867,7 +869,7 @@ def story_builds(
     for item in items:
         for needed in item.get("requires", []):
             by_id[needed].setdefault("requiredBy", []).append(item["id"])
-    return items
+    return items, problems
 
 
 def _item_stacks(matrix: Matrix, entry_id: EntryId, repository: str | None) -> list[EntryId]:
@@ -1096,22 +1098,30 @@ def repository_stacks(matrix: Matrix, items: Sequence[DeltaItem]) -> dict[str, R
     return grouped
 
 
-def _missing(home: RepositoryStacks, built: list[str]) -> MissingRepo:
+def _missing(run: StepRun, home: RepositoryStacks, built: list[str]) -> MissingRepo | None:
     """Describe a repository to create, from the stacks that name it.
 
-    Returns:
-        The repository's name, the stacks' purpose and the items of what its Story builds.
+    Stacks that name more than one app are created in the first app in name order, and stacks that
+    name none cannot be created; each case is recorded as a ``span-problem`` finding for the Epic.
 
-    Raises:
-        StepError: The stacks have more than one app or name none.
+    Returns:
+        The repository's name, the stacks' purpose and the items of what its Story builds; None
+        when its stacks name no app.
 
     """
     if len(home.apps) != 1:
         evidence: str = (
             f"{home.name} does not exist, and its stacks {', '.join(home.stacks)} have the apps "
-            f"{', '.join(home.apps) or 'none'}: a repository is created in one app space"
+            f"{', '.join(home.apps) or 'none'}: "
+            + (
+                f"it is created in {min(home.apps)}"
+                if home.apps
+                else "it cannot be created and nothing is placed in it"
+            )
         )
-        raise StepError(SPAN, OTHER_CAUSE, (evidence,))
+        record_for_run(run, str(run.bead), kind="span-problem", detail=evidence, evidence=home.stacks)
+    if not home.apps:
+        return None
     return {
         KEY_NAME: home.name,
         KEY_PURPOSE: home.purpose,
@@ -1136,9 +1146,8 @@ def _ruling(
         The span in the placement contract's shape: one placement per repository, with its path
         when the repository exists, and one missing repository per name that does not.
 
-    Raises:
-        StepError: A repository may hold no product entry, or a missing repository cannot be
-            created from what its stacks and the polyrepo-steward's records state.
+    A repository that may hold no product entry, and a missing one its stacks name no app for, get
+    no placement; each is recorded as a ``span-problem`` finding (:func:`_missing`).
 
     """
     live: dict[str, dict[str, JsonValue]] = {check_type(repo["name"], str).casefold(): repo for repo in repositories}
@@ -1159,7 +1168,17 @@ def _ruling(
         known: JsonValue = row.get("path") if all(present.get(place) for place in PRESENT_WHERE) else None
         path: str | None = str(Path(known).resolve()) if isinstance(known, str) and known else None
         if path is not None and forbidden(Path(path), control, arch):
-            raise StepError(SPAN, OTHER_CAUSE, (f"{name} at {path} may hold no product entry",))
+            record_for_run(
+                run,
+                str(run.bead),
+                kind="span-problem",
+                detail=f"{name} at {path} may hold no product entry; nothing is placed in it",
+                evidence=(path,),
+            )
+            continue
+        missing: MissingRepo | None = None if path is not None else _missing(run, homes[name], built)
+        if path is None and missing is None:
+            continue
         placement: Placement = {
             KEY_REPO_PATH: path,
             "repoName": name,
@@ -1168,8 +1187,8 @@ def _ruling(
             "rationale": "The matrix records this repository on the stacks that hold these entries.",
         }
         ruling[KEY_PLACEMENTS].append(placement)
-        if path is None:
-            ruling[KEY_MISSING_REPOS].append(_missing(homes[name], built))
+        if missing is not None:
+            ruling[KEY_MISSING_REPOS].append(missing)
     return ruling
 
 
@@ -1219,17 +1238,20 @@ def _read_story_builds(run: StepRun) -> tuple[Matrix, list[DeltaItem], list[str]
     (``buildowner.mark_built_by``, from one read of beads): this Epic never builds such an item
     again and only adds to it.
 
+    Each entry a Story cannot build (:func:`story_build_problems`), and a result that names
+    nothing a Story builds, is recorded as a ``span-problem`` finding for the Epic the entry names,
+    else this Epic, and the span continues with what can be placed.
+
     Returns:
         The matrix as it is after the names are recorded, the items (:func:`story_builds`), and
-        one warning per started build of an item's entry by a third Epic.
-
-    Raises:
-        StepError: The architect's result names nothing a Story builds in.
+        one warning per started build of an item's entry by a third Epic and per problem recorded.
 
     """
     result: ArchitectureResult = read_result(run, read_context(run))
     matrix: Matrix = run.tools.portfolio(SPAN, read_matrix, matrix_path(None, os.environ))
-    items: list[DeltaItem] = run.tools.portfolio(
+    items: list[DeltaItem]
+    problems: list[str]
+    items, problems = run.tools.portfolio(
         SPAN,
         story_builds,
         matrix,
@@ -1238,16 +1260,26 @@ def _read_story_builds(run: StepRun) -> tuple[Matrix, list[DeltaItem], list[str]
         result[FIELD_UNCHANGED_WORK],
     )
     if not items:
-        message: str = (
+        problems.append(
             f"the architect's result for {run.bead} names nothing a Story builds in: "
-            f"{FIELD_ADDED_OR_CHANGED} and {FIELD_UNCHANGED_WORK} are both empty"
+            f"{FIELD_ADDED_OR_CHANGED} and {FIELD_UNCHANGED_WORK} hold nothing a Story can build",
         )
-        raise StepError(SPAN, OTHER_CAUSE, (message,))
+    problem: str
+    for problem in problems:
+        named: re.Match[str] | None = EPIC_NAMED.search(problem)
+        owner: str = str(run.bead) if named is None else named.group(1)
+        record_for_run(
+            run,
+            owner,
+            kind="span-problem",
+            detail=problem,
+            evidence=(str(read_context(run)["resultPath"]),),
+        )
     graph: beadgraph.Graph = run.tools.portfolio_read(SPAN, beadgraph.load, control_repository())
     tasks: list[TaskBead] = run.tools.portfolio_read(SPAN, tasks_of, graph)
     duplicates: list[str] = buildowner.mark_built_by(items, buildowner.builders(tasks), str(run.bead))
     run.tools.portfolio(SPAN, _record_repository_names, items)
-    return run.tools.portfolio(SPAN, read_matrix, matrix_path(None, os.environ)), items, duplicates
+    return run.tools.portfolio(SPAN, read_matrix, matrix_path(None, os.environ)), items, [*duplicates, *problems]
 
 
 @script_step(SPAN)
@@ -1261,10 +1293,10 @@ def span(run: StepRun) -> Completion:
     naming command), and the name of a repository that was created under another name than the one
     its stacks stated. The locked local matrix write is visible to subsequent readers.
 
-    The step fails as an item failure when the architecture adds or changes nothing to build,
-    what it lists cannot be built (:func:`story_build_problems`), or a repository cannot be
-    created (a name the naming command refuses, or a failed ``polyrepo create``); the next
-    dispatch runs it again.
+    What it lists that cannot be built (:func:`story_build_problems`) and a repository it cannot
+    place in are recorded as ``span-problem`` findings and the span continues with what can be
+    placed. The step fails as an item failure only when a repository cannot be created (a name the
+    naming command refuses, or a failed ``polyrepo create``); the next dispatch runs it again.
 
     Returns:
         The span file, the elements file, the repository paths, the creation record when a

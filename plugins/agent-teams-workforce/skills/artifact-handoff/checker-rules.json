@@ -1232,7 +1232,8 @@
       "rules": [],
       "notRules": [
         "problems sent to the TRD author for one update",
-        "citations and every requirement pointer resolve"
+        "citations and every requirement pointer resolve",
+        "problems carried as findings"
       ]
     },
     {
