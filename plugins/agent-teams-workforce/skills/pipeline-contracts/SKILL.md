@@ -101,6 +101,17 @@ before it is killed.
 acted on. The account windows are `ACCOUNT_WINDOWS`; any other window is model-specific; a window is
 exhausted at `EXHAUSTED_UTILIZATION`.
 
+The account-wall probe is the one way the driver asks whether the account serves while a quota
+hold stands. `WALL_PROBE_COMMAND` is its command, relative to the plugin root (`/` between parts):
+the driver runs it with its own Python interpreter and `--stream <file>`. It runs one tool-less
+`haiku` prompt (at most `WALL_PROBE_TIMEOUT` seconds), saves the prompt's output to that file and
+prints one `$defs.WallProbeResult` as JSON: `status` is `allowed` (the latest rate-limit event is
+`allowed` or `allowed_warning`, or a successful result with no rate-limit event), `rejected` (the
+latest rate-limit event is `rejected`, with its `rateLimitInfo`, `resetsAt` and `rateLimitType`) or
+`unavailable` (the CLI could not run, ran out of time, or printed neither), and `detail` says what
+the probe saw. The orchestrator's own probe of a session ended from outside
+(`SessionProcesses.account_wall`) runs the same prompt.
+
 This contract carries no handback classification: `orchestrator/core/handback_contract.py` defines
 it.
 

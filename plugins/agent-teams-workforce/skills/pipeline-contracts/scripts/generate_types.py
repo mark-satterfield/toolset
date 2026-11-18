@@ -295,6 +295,8 @@ def _scalar(name: str, definition: dict[str, object]) -> Constant:
     value: object = definition["const"]
     if annotation == "float" and isinstance(value, (int, float)) and not isinstance(value, bool):
         rendered: str = repr(float(value))
+    elif annotation == "str" and isinstance(value, str):
+        rendered = json.dumps(value)
     elif annotation == "int" and isinstance(value, int) and not isinstance(value, bool):
         rendered = _str(python.get("render", str(value)), where)
         if int(rendered, 0) != value:

@@ -178,6 +178,41 @@
         "rate_limit_info": {"$ref": "#/$defs/RateLimitInfo", "x-key-constant": "RATE_LIMIT_INFO_KEY"}
       },
       "required": ["type", "rate_limit_info"]
+    },
+    "WallProbeCommand": {
+      "description": "Path of the account-wall probe command, relative to the plugin root with '/' between its parts. The driver runs it with its own Python interpreter and the argument --stream <file> while a quota hold stands: the command runs one tool-less haiku prompt, saves what the prompt printed to that file, and prints one WallProbeResult as JSON.",
+      "type": "string",
+      "const": "orchestrator/wall_probe.py",
+      "x-python": {"constant": "WALL_PROBE_COMMAND", "type": "str"}
+    },
+    "WallProbeTimeout": {
+      "description": "Seconds the account-wall probe's prompt may take before the probe reports unavailable.",
+      "type": "number",
+      "const": 120.0,
+      "x-python": {"constant": "WALL_PROBE_TIMEOUT", "type": "float"}
+    },
+    "WallProbeStatus": {
+      "description": "WallProbeResult.status: allowed when the account served the prompt (its latest rate-limit event is allowed or allowed_warning, or it printed a successful result and no rate-limit event); rejected when its latest rate-limit event is rejected; unavailable when the probe cannot tell (the CLI could not run, ran out of time, or printed neither).",
+      "type": "string",
+      "enum": ["allowed", "rejected", "unavailable"],
+      "x-python": {
+        "literal": "WallProbeStatus",
+        "tuple": "WALL_PROBE_STATUSES",
+        "constants": {"allowed": "WALL_PROBE_ALLOWED", "rejected": "WALL_PROBE_REJECTED", "unavailable": "WALL_PROBE_UNAVAILABLE"}
+      }
+    },
+    "WallProbeResult": {
+      "description": "The one JSON object the account-wall probe command prints.",
+      "type": "object",
+      "x-python": {"typeddict": "WallProbeResult"},
+      "properties": {
+        "status": {"$ref": "#/$defs/WallProbeStatus"},
+        "rateLimitInfo": {"$ref": "#/$defs/RateLimitInfo", "description": "The latest rate_limit_info the prompt printed; absent when it printed none."},
+        "resetsAt": {"type": "number", "description": "The top-level resetsAt of rateLimitInfo, in epoch seconds; absent when it states none."},
+        "rateLimitType": {"type": "string", "description": "The rateLimitType of rateLimitInfo; absent when it states none."},
+        "detail": {"type": "string", "description": "One plain sentence saying what the probe saw."}
+      },
+      "required": ["status", "detail"]
     }
   }
 }

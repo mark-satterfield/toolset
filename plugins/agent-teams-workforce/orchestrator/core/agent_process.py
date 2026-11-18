@@ -38,6 +38,11 @@ from driver_surface_types import (
     SESSION_LIMIT_ENV,
     SUBAGENT_IDLE_DEFAULT,
     SUBAGENT_IDLE_ENV,
+    WALL_PROBE_ALLOWED,
+    WALL_PROBE_REJECTED,
+    WALL_PROBE_UNAVAILABLE,
+    RateLimitInfo,
+    WallProbeResult,
 )
 
 _DURATIONS: tuple[tuple[str, str], ...] = (
@@ -50,6 +55,24 @@ AGENT_TOOLS: frozenset[str] = frozenset({"Agent", "Task"})
 """The Claude Code tool names that start a subagent; an open call of one is watched."""
 SUBAGENT_CHECK_SECONDS: float = 15.0
 """How often the subagent transcripts of a session with an open Agent call are checked."""
+WALL_PROBE_ARGUMENTS: tuple[str, ...] = (
+    "--model",
+    "haiku",
+    "--tools",
+    "",
+    "--setting-sources",
+    "",
+    "--strict-mcp-config",
+    "--disable-slash-commands",
+    "--no-session-persistence",
+)
+"""The probe's session: the smallest model, no tools, no settings, MCP servers, commands or saved transcript."""
+WALL_PROBE_PROMPT: str = "Reply with the single word OK."
+"""The one prompt the account-wall probe sends."""
+SERVED_STATUSES: frozenset[str] = frozenset({"allowed", "allowed_warning"})
+"""The rate-limit statuses under which the account served the prompt."""
+PROBE_DETAIL_CHARS: int = 300
+"""Characters of the probe's own output kept in an unavailable result's detail."""
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -117,6 +140,97 @@ class WallProbe:
     stream: Path
     """The file the probe's output is saved to."""
     timeout: float
+
+
+def _probe_events(stdout: bytes) -> tuple[dict[str, JsonValue] | None, dict[str, JsonValue] | None]:
+    """Read the latest rate-limit info and the result event a probe's prompt printed.
+
+    Returns:
+        The latest ``rate_limit_info`` and the ``result`` event, each None when not printed.
+
+    """
+    info: dict[str, JsonValue] | None = None
+    result: dict[str, JsonValue] | None = None
+    for line in stdout.splitlines():
+        try:
+            event: object = json.loads(line)
+        except ValueError, UnicodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        value: dict[str, JsonValue] = json_object(event)
+        if value.get("type") == "result":
+            result = value
+        rate: object = value.get(RATE_LIMIT_INFO_KEY) if value.get("type") == RATE_LIMIT_EVENT_TYPE else None
+        if isinstance(rate, dict):
+            info = json_object(rate)
+    return info, result
+
+
+def _rate_result(info: dict[str, JsonValue]) -> WallProbeResult | None:
+    """State a probe result from the latest rate-limit info, when its status says one.
+
+    Returns:
+        The allowed or rejected result, or None when the status is neither.
+
+    """
+    status: JsonValue = info.get("status")
+    if status != REJECTED_STATUS and status not in SERVED_STATUSES:
+        return None
+    rejected: bool = status == REJECTED_STATUS
+    result: WallProbeResult = {
+        "status": WALL_PROBE_REJECTED if rejected else WALL_PROBE_ALLOWED,
+        "rateLimitInfo": check_type(info, RateLimitInfo),
+        "detail": f"the prompt's latest rate-limit event is {status}",
+    }
+    reset: JsonValue = info.get("resetsAt")
+    if isinstance(reset, int | float) and not isinstance(reset, bool):
+        result["resetsAt"] = float(reset)
+    kind: JsonValue = info.get("rateLimitType")
+    if isinstance(kind, str):
+        result["rateLimitType"] = kind
+    return result
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def wall_probe_result(probe: WallProbe) -> WallProbeResult:
+    """Ask the Claude CLI whether the account serves, with one prompt.
+
+    The probe runs the prompt and saves what it printed to ``probe.stream``. Its latest
+    rate-limit event decides: allowed or allowed_warning is allowed, rejected is rejected. With no
+    rate-limit event a successful result is allowed. A probe that cannot run, does not finish in
+    ``probe.timeout`` seconds, or prints neither is unavailable.
+
+    Returns:
+        The probe's result.
+
+    """
+    try:
+        done = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Validated argv and explicit environment; no shell.
+            probe.argv,
+            input=probe.prompt.encode(),
+            capture_output=True,
+            cwd=probe.directory,
+            env=probe.env,
+            timeout=probe.timeout,
+            check=False,
+            start_new_session=True,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        probe.stream.write_text(f"{type(exc).__name__}: {exc}\n", encoding="utf-8")
+        return {"status": WALL_PROBE_UNAVAILABLE, "detail": f"the probe could not run: {type(exc).__name__}: {exc}"}
+    probe.stream.write_bytes(done.stdout + done.stderr)
+    info, result = _probe_events(done.stdout)
+    stated: WallProbeResult | None = _rate_result(info) if info is not None else None
+    if stated is not None:
+        return stated
+    if result is not None and result.get("subtype") == "success" and not result.get("is_error"):
+        return {"status": WALL_PROBE_ALLOWED, "detail": "the prompt succeeded and printed no rate-limit event"}
+    said: str = (done.stderr or done.stdout).decode("utf-8", errors="replace").strip()[-PROBE_DETAIL_CHARS:]
+    return {
+        "status": WALL_PROBE_UNAVAILABLE,
+        "detail": f"the prompt exited {done.returncode} with no rate-limit event and no successful result: {said}",
+    }
 
 
 class _SubagentWatch:
@@ -411,37 +525,23 @@ class SessionProcesses:
                 if process.stdout is not None and not process.stdout.closed:
                     process.stdout.close()
 
+    @staticmethod
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def account_wall(self, probe: WallProbe) -> dict[str, JsonValue] | None:
+    def account_wall(probe: WallProbe) -> dict[str, JsonValue] | None:
         """Ask the Claude CLI whether the account is at its usage wall.
 
-        The probe runs one prompt and saves what it printed to ``probe.stream``. A rejected
-        rate-limit event in that output is the wall; a probe that cannot run or does not finish in
-        ``probe.timeout`` seconds reports none.
+        Runs ``wall_probe_result``: its rejected rate-limit info is the wall; any other result
+        reports none.
 
         Returns:
             The rejected rate-limit info, or None when the probe saw no wall.
 
         """
-        facts: SessionFacts = {"result": None, "rate": None, "timeout": False, "exit": 0, "pid": 0}
-        try:
-            done = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Validated argv and explicit environment; no shell.
-                probe.argv,
-                input=probe.prompt.encode(),
-                capture_output=True,
-                cwd=probe.directory,
-                env=probe.env,
-                timeout=probe.timeout,
-                check=False,
-                start_new_session=True,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            probe.stream.write_text(f"{type(exc).__name__}: {exc}\n", encoding="utf-8")
+        result: WallProbeResult = wall_probe_result(probe)
+        info: RateLimitInfo | None = result.get("rateLimitInfo")
+        if result["status"] != WALL_PROBE_REJECTED or info is None:
             return None
-        probe.stream.write_bytes(done.stdout + done.stderr)
-        for line in done.stdout.splitlines():
-            self._line(line, facts)
-        return facts["rate"]
+        return json_object(dict(info))
 
     @staticmethod
     def _line(line: bytes, facts: SessionFacts) -> dict[str, JsonValue] | None:

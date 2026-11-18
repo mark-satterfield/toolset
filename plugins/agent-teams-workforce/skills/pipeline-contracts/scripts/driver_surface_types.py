@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "73d1159ee88bfc0483b61bc1b5ca0c03453af9d4fe904b39962def52dbce8b50"
+SCHEMA_SHA256: Final[str] = "c8df56ec24f21aafdf81bf352431db9bf7e341a687a0cb7d93029c57c81c0762"
 #: The schema this module was generated from.
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "driver-surface.schema.json"
 
@@ -132,6 +132,13 @@ MODEL_OVERAGE_TYPE: Final[str] = "seven_day_overage_included"
 OUT_OF_CREDITS_REASON: Final[str] = "out_of_credits"
 RATE_LIMIT_EVENT_TYPE: Final[str] = "rate_limit_event"
 RATE_LIMIT_INFO_KEY: Final[str] = "rate_limit_info"
+#: Path of the account-wall probe command, relative to the plugin root with '/' between its parts. The
+#: driver runs it with its own Python interpreter and the argument --stream <file> while a quota hold
+#: stands: the command runs one tool-less haiku prompt, saves what the prompt printed to that file, and
+#: prints one WallProbeResult as JSON.
+WALL_PROBE_COMMAND: Final[str] = "orchestrator/wall_probe.py"
+#: Seconds the account-wall probe's prompt may take before the probe reports unavailable.
+WALL_PROBE_TIMEOUT: Final[float] = 120.0
 #: The scratch env keys, in order.
 SCRATCH_ENV_KEYS: Final[tuple[str, ...]] = (TMPDIR_ENV, TMP_ENV, TEMP_ENV)
 
@@ -191,6 +198,20 @@ ACCOUNT_WINDOWS: Final[frozenset[UsageWindowName]] = frozenset({
     "five_hour",
     "seven_day",
 })
+
+#: WallProbeResult.status: allowed when the account served the prompt (its latest rate-limit event is
+#: allowed or allowed_warning, or it printed a successful result and no rate-limit event); rejected
+#: when its latest rate-limit event is rejected; unavailable when the probe cannot tell (the CLI could
+#: not run, ran out of time, or printed neither).
+type WallProbeStatus = Literal["allowed", "rejected", "unavailable"]
+WALL_PROBE_ALLOWED: Final[WallProbeStatus] = "allowed"
+WALL_PROBE_REJECTED: Final[WallProbeStatus] = "rejected"
+WALL_PROBE_UNAVAILABLE: Final[WallProbeStatus] = "unavailable"
+WALL_PROBE_STATUSES: Final[tuple[WallProbeStatus, ...]] = (
+    "allowed",
+    "rejected",
+    "unavailable",
+)
 
 # Driver modules.
 #: Path parts of the driver directory under ATW_CONTROL_REPO.
@@ -303,6 +324,16 @@ class RateLimitEvent(TypedDict):
 
     type: Literal["rate_limit_event"]
     rate_limit_info: RateLimitInfo
+
+
+class WallProbeResult(TypedDict):
+    """The one JSON object the account-wall probe command prints."""
+
+    status: WallProbeStatus
+    rateLimitInfo: NotRequired[RateLimitInfo]
+    resetsAt: NotRequired[float]
+    rateLimitType: NotRequired[str]
+    detail: str
 
 
 def load_schema() -> dict[str, object]:

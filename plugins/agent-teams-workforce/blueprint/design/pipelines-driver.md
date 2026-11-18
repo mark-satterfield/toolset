@@ -415,6 +415,13 @@ Notes on the diagram:
   (`AGENTS.md`).
 - A value known only at deploy time, such as the region or environment, is not a failure: it is
   handled at deploy time (the owner).
+- The account usage limit is not a failure of any bead. A handback stopped by it pauses the bead,
+  and the driver holds every lane: it dispatches no new work while the hold stands. Only evidence
+  that the account serves again lifts the hold: a handback of a dispatch started after the hold,
+  a session's rate-limit event after the hold reporting the account allowed, or the plugin's
+  account-wall probe (`WALL_PROBE_COMMAND` of the driver-surface contract) answering allowed. While
+  the limit's reported reset is ahead the driver runs the probe at a fixed interval, so a limit
+  lifted early resumes the pipeline; a restart keeps the hold.
 - A failure record clears itself: an item's open failure records and its failed workflow attempts
   clear when the item next succeeds, when it is rerouted (an upstream defect, a prerequisite wait,
   a park, or a respec request naming it as the Task), or when a later dispatch of it supersedes the

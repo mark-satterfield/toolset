@@ -29,7 +29,7 @@ from . import portfolio_bootstrap  # ruff: ignore[unused-import] - Imported for 
 # isort: split
 import jsonschema
 import strictschema
-from driver_surface_types import ARCH_PATH_ENV, EXECUTION_ID_ENV, SESSION_LIMIT_ENV, STOP_FILE_ENV
+from driver_surface_types import ARCH_PATH_ENV, EXECUTION_ID_ENV, SESSION_LIMIT_ENV, STOP_FILE_ENV, WALL_PROBE_TIMEOUT
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from .agent_context import (
@@ -43,7 +43,14 @@ from .agent_context import (
     load_agent,
     prepare,
 )
-from .agent_process import SessionProcesses, SessionRequest, WallProbe, subagent_transcripts
+from .agent_process import (
+    WALL_PROBE_ARGUMENTS,
+    WALL_PROBE_PROMPT,
+    SessionProcesses,
+    SessionRequest,
+    WallProbe,
+    subagent_transcripts,
+)
 from .constraints import Section2Guard
 from .driver_contracts import (
     DispatchArguments,
@@ -351,21 +358,6 @@ class SessionNotResumedError(StepError):
 
 TERMINATED_EXITS: Final[frozenset[int]] = frozenset({-signal.SIGTERM, 128 + signal.SIGTERM})
 """The exit statuses of a session process ended by SIGTERM: the signal itself, or the CLI's own exit on it."""
-WALL_PROBE_ARGUMENTS: Final[tuple[str, ...]] = (
-    "--model",
-    "haiku",
-    "--tools",
-    "",
-    "--setting-sources",
-    "",
-    "--strict-mcp-config",
-    "--disable-slash-commands",
-    "--no-session-persistence",
-)
-"""The probe's session: the smallest model, no tools, no settings, MCP servers, commands or saved transcript."""
-WALL_PROBE_PROMPT: Final = "Reply with the single word OK."
-WALL_PROBE_TIMEOUT: Final = 120.0
-"""Seconds the account-wall probe may take."""
 
 
 def _terminated_outside(facts: SessionFacts) -> bool:
