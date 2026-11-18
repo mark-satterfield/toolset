@@ -1160,25 +1160,6 @@ def replan_step(journal: Journal, step_id: StepId, moment: str) -> Invalidation:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def remove_steps(journal: Journal, step_ids: Sequence[StepId], moment: str) -> Invalidation:
-    """Take steps out of the journal, with the steps below them, and nothing else.
-
-    Every input that named a removed step loses it, and the statuses of the containers are settled
-    again. A step id that is not in the journal is passed over.
-
-    Args:
-        journal: The journal; changed in place.
-        step_ids: The steps to remove.
-        moment: The present date-time, as :func:`timestamp` gives it.
-
-    Returns:
-        No id reset, the ids removed, and the ids of the steps whose inputs lost a removed id.
-
-    """
-    return _invalidated(journal, moment, [], [], list(step_ids))
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def restart_point(journal: Journal, step_id: StepId) -> StepId:
     """Name the step a run must begin at to run a step again with its child steps planned anew.
 

@@ -140,17 +140,12 @@ Notes on the diagram:
   entry this Epic's result names as added or changed, and on the open Tasks of those Epics a
   changed entry affects (`atw-matrix affected`); an Epic the change reaches only by the rule of
   reach (shared infrastructure, a view) is not ruled on, and one is ruled elaborated but unbuilt
-  only when the change makes something its specs or Tasks state wrong. The step after it (`orchestrator/flows/architecture_impact.py`) starts each of them
-  it rules elaborated but unbuilt again at its "Specs and Stories" step, through the driver's
-  `reelaborate.restart`, so its specs and Tasks are written again against the changed
-  architecture without its own architecture being designed again: the one case in which the
-  pipeline itself makes a run begin earlier. A promotion plans no impact step, since a design-gap
-  round promotes again within the same elaboration. Only a promotion of the Epic's own run is
-  assessed: an Epic started again at its specs changed no architecture, so it restarts no other
-  Epic. The driver checks the ruling again
-  against the tracker and the journals, refuses an Epic a build started on, and sets the Epic ready with the cause `architecture-changed`; its re-elaboration
-  rewrites its Stories and Tasks in place by `elab_key`. A built item is never reopened: its
-  knock-on Task is recorded as proposed.
+  only when the change makes something its specs or Tasks state wrong. The step after it
+  (`orchestrator/flows/architecture_impact.py`) records one `architecture-impact` finding
+  addressed to each Epic it rules elaborated but unbuilt, naming the changed entries its work rests
+  on. No Epic is started again and no journal is set back: the pipeline never makes a run begin
+  earlier. A promotion plans no impact step, since a design-gap round promotes again within the
+  same elaboration. A built item is never reopened: its knock-on Task is recorded as proposed.
 - The solutions architect is the reviewer; no other agent reviews the architecture. The owner:
   "The solutions architect is the reviewer. I do not want to introduce new reviewers in for
   architecture. I already took out reviewers." What the owner requires instead is proof: "what I

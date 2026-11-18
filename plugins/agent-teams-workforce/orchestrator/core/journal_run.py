@@ -658,30 +658,9 @@ def _shape(steps: Sequence[Step | StepPlan]) -> list[tuple[str | None, str]]:
     return [(step.get("script") or step.get("agent"), step["description"]) for step in steps]
 
 
-def _retired_followers(journal: Journal, registry: Registry) -> list[StepId]:
-    """Find the steps not done that a step planned after itself under a plan since retired.
-
-    Returns:
-        In walk order, each step not done whose script key or agent the lane plans only after a
-        step of another key (``journal_registry.planned_after``), and which a step of a key
-        not among those planned.
-
-    """
-    found: dict[StepId, Step] = {step["id"]: step for step in step_journal.steps_in_order(journal)}
-    retired: list[StepId] = []
-    planner: Step
-    for planner in found.values():
-        retired.extend(
-            key
-            for key in step_journal.planned_by(planner)
-            if key in found and found[key]["status"] != STATUS_DONE and registry.retired_plan(found[key], planner)
-        )
-    return list(dict.fromkeys(retired))
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def replan_retired(journal: Journal, registry: Registry) -> list[StepId]:
-    """Plan again, or take out, the steps not done that were planned under a plan since retired.
+    """Plan again each container's child steps that a filling step planned under a plan since retired.
 
     A container the lane fills while it runs holds the child steps a filling step planned
     (``journal_registry.fills``), each recorded on that step (``step_journal.planned_by``). When
@@ -689,21 +668,14 @@ def replan_retired(journal: Journal, registry: Registry) -> list[StepId]:
     not those of the plans the lane registers for the container now
     (``journal_registry.plan_under``), the filling step is set back to planned and the child steps
     it planned are removed (``step_journal.replan_step``), so it plans them again as the lane plans
-    them now.
-
-    A step the lane now plans only after a step of another key (``journal_registry.planned_after``)
-    that a step of a key not among those planned, and that is not done, is taken out
-    (``step_journal.remove_steps``), whatever its siblings did: a step planned or failed under
-    the retired plan never runs, and the lane plans it again where it plans it now. A done step
-    is never removed.
+    them now. No other step changes: a step that has started is never removed.
 
     Args:
         journal: The journal; changed in place.
-        registry: The plans flows register under containers, the steps that fill them and the
-            steps planned after a step.
+        registry: The plans flows register under containers and the steps that fill them.
 
     Returns:
-        The ids of the filling steps set back to planned, then of the steps taken out, in walk order.
+        The ids of the filling steps set back to planned, in walk order.
 
     """
     stale: list[StepId] = []
@@ -724,10 +696,7 @@ def replan_retired(journal: Journal, registry: Registry) -> list[StepId]:
     planner: StepId
     for planner in stale:
         step_journal.replan_step(journal, planner, moment)
-    retired: list[StepId] = _retired_followers(journal, registry)
-    if retired:
-        step_journal.remove_steps(journal, retired, moment)
-    return stale + retired
+    return stale
 
 
 def _plan_gap_round(journal: Journal, gap: DesignGapError, moment: str) -> None:
@@ -1578,11 +1547,10 @@ def open_journal(  # ruff: ignore[too-many-arguments, too-many-positional-argume
 ) -> JournalRunner:
     """Create a bead's journal when its file does not exist, and return the runner for it.
 
-    An existing journal alone says where the run begins. Of its steps, only steps that are not
-    done are changed. Child steps a filling step planned under a container, none started, that
+    An existing journal alone says where the run begins. Of its steps, only steps that have not
+    started are changed. Child steps a filling step planned under a container, none started, that
     differ from the plans the lane registers for the container now are removed and their filling
-    step is set back to planned, so it plans them again; a step not done that a step of a key the
-    lane no longer plans it after planned is taken out (:func:`replan_retired`). Then a step that
+    step is set back to planned, so it plans them again (:func:`replan_retired`). Then a step that
     names a script key or agent the registry holds no code for is replanned from the lane's
     current plan for its position (:func:`replan_unhandled`), so a journal written before a key
     was renamed runs the step as the lane plans it now. A journal

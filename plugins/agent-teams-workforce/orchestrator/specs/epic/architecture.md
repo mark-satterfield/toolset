@@ -334,13 +334,9 @@ edges step (`storyedges.story_edges`) plans the two steps after itself, before "
 elaborated" (`architecture_impact.follow_steps`). The changed entries come only from a promotion
 this run of the Epic made: the journal's last done promotion, unless a done `reelaborate.restart`
 step already follows it (a journal planned when the promotion planned them) or an earlier end of
-elaboration recorded it as assessed (`<arch-work>/impact-assessed-<promotion step id>.json`). An
-Epic started again at its specs keeps its earlier, assessed promotion, so it plans nothing and
-restarts no other Epic. The step plans nothing either when the scope is empty, and then records
-the promotion as assessed; the `reelaborate.restart` step records it when it completes. Only the
-Story edges step plans the two steps (`journal_registry.planned_after`): one a promotion planned
-under an earlier plan, not done, is taken out when a run opens the journal
-(`journal_run.replan_retired`).
+elaboration recorded it as assessed (`<arch-work>/impact-assessed-<promotion step id>.json`). The
+step plans nothing when the scope is empty, and then records the promotion as assessed; the
+`reelaborate.restart` step records it when it completes.
 
 The scope (`architecture_impact.impact_scope`) is read from the tracker: for each other Epic with
 a Task whose matrix elements (or the entries it builds, `matrixtasks.TaskBead`) name an entry the
@@ -354,23 +350,16 @@ not in it.
 writes one ruling per Epic of the scope and per open Task of those Epics a changed entry affects to
 `impact-rulings.schema.json` (`elaborated-unbuilt` only when the change makes something the Epic's
 specs or Tasks state about the entry wrong) at `<arch-work>/impact-<step>.json`, recorded as the file `impact
-rulings`. The script step `reelaborate.restart` reads the scope again and calls the driver's
-`reelaborate.restart` (`driver_contracts.driver_module`) for each Epic of the scope a ruling names
-as `epicId` with the verdict `elaborated-unbuilt`; a ruling on an Epic outside the scope, or on
-this Epic, restarts nothing. The driver checks the ruling again (the Epic is elaborated, no build
-has started on it: no Task of it in progress or closed, no Story of it in progress, no Story's or
-Task's journal worked on by a build or deploy; and no run works on it or its Stories and Tasks),
-starts the Epic's journal again at its "Specs and Stories" step, so the Epic is specified again
-against the changed architecture without designing its own again, the same journal change
-`elabmark.py --start-at` makes, and sets `elaboration_state=ready` with the cause
-`architecture-changed` and no owner. It refuses anything else and changes nothing. The step
-records the value `re-elaborations` (each Epic's outcome) and the value `knock-on proposals` (each
-`already-built` item's proposed Task; none is created). A restart that raised fails the step after
-every Epic was tried, with each outcome in its evidence; running the step again restarts nothing
-twice, since a restarted Epic is no longer elaborated. Re-elaboration rewrites the Epic's Stories
-(in any status but closed) and its unstarted Tasks in place, matched by `elab_key`
-(`beadwrite.write_story`, `write_story_tasks`), and a child journal whose steps after the first are all
-planned is created afresh from the rewritten bead (`journal_changes.create_child_journal`).
+rulings`. The script step `reelaborate.restart` (`architecture_impact.apply_rulings`) reads the
+scope again and, for each Epic of the scope a ruling names as `epicId` with the verdict
+`elaborated-unbuilt`, records one finding of kind `architecture-impact` addressed to that Epic
+(`core/findings.py`, in `<artifacts>/<that Epic>/findings.jsonl`), naming the entries this Epic
+changed that its work rests on, with the rulings file as evidence; a ruling on an Epic outside the
+scope, or on this Epic, records nothing. No Epic is started again and no journal is set back: the
+other Epic's builds meet the changed entries through their own contract checks, which carry what
+they find. The step records the value `impact findings` (each finding) and the value `knock-on
+proposals` (each `already-built` item's proposed Task; none is created). It never fails on a
+ruling.
 
 ## After the container
 

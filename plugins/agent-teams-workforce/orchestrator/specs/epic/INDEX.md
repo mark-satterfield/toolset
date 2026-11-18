@@ -24,9 +24,7 @@ step runs again. When a run opens an existing journal, the child steps a filling
 a container, none of them started, that differ (script key or agent, and description) from the
 plans the lane registers for that container now (`journal_registry.plan_under`) are removed and
 their filling step is set back to planned, so it plans them again (`journal_run.replan_retired`,
-`step_journal.replan_step`); and each step not done, whatever its siblings did, whose script key or
-agent the lane now plans only after a step of another key (`journal_registry.planned_after`) and
-which a step of a key not among those planned, is taken out (`step_journal.remove_steps`). Then each step without child steps that has not
+`step_journal.replan_step`). Then each step without child steps that has not
 started and whose script key or agent has no code in the registry is replanned from the lane's
 current plan for its position (`journal_run.replan_unhandled`: the key or agent, description and
 purpose; its id and inputs stay); a step that has started or is done is never changed. Before the
