@@ -524,6 +524,18 @@ def exhausted(run: StepRun, observation: dict[str, JsonValue]) -> bool:
     return _spent(run, _fingerprint(run, observation)[0])
 
 
+def _story_of(run: StepRun) -> str:
+    """Name the consumer Task's Story, the owner of its prerequisite findings.
+
+    Returns:
+        The Task's parent, or the Task itself when the tracker names none.
+
+    """
+    graph: beadgraph.Graph = run.tools.portfolio_read(run.step["script"], beadgraph.load, control_repo())
+    held: beadgraph.Bead | None = graph.beads.get(str(run.bead))
+    return str(run.bead) if held is None or held.parent is None else held.parent
+
+
 def carry(run: StepRun, kind: FindingKind, detail: str, *evidence: str) -> Completion:
     """Record a prerequisite problem for the consumer Task's Story and continue its verification.
 
@@ -531,11 +543,48 @@ def carry(run: StepRun, kind: FindingKind, detail: str, *evidence: str) -> Compl
         The continuation of the consumer's verification (``build_prerequisite_work.continuation``).
 
     """
-    graph: beadgraph.Graph = run.tools.portfolio_read(run.step["script"], beadgraph.load, control_repo())
-    held: beadgraph.Bead | None = graph.beads.get(str(run.bead))
-    owner: str = str(run.bead) if held is None or held.parent is None else held.parent
-    record_for_run(run, owner, kind=kind, detail=detail, evidence=evidence)
+    record_for_run(run, _story_of(run), kind=kind, detail=detail, evidence=evidence)
     return build_prerequisite_work.continuation(check_type(run.params()["again"], str))
+
+
+def _to_implementers(run: StepRun, again: str, review: dict[str, JsonValue]) -> Completion:
+    """Give a failing suite whose diagnoses this dispatch spent to the implementers, as a recorded finding.
+
+    The suite is the Task's test, so the failure is not carried past: it is recorded as a
+    ``prerequisite-carried`` finding for the Task's Story and handed, with the latest diagnosis, to
+    the implementers already selected; with none selected yet, the implementation lead selects
+    them first. In the Red phase (before any implementer is selected) the build continues to its
+    own implementer selection. A failing baseline setup goes back to the baseline, which measures
+    the baseline without it.
+
+    Returns:
+        The implementation work, or the continuation of the consumer's verification.
+
+    """
+    detail: str = (
+        "the suite still fails after this dispatch's prerequisite diagnoses; the failure goes to the implementers "
+        "with the latest diagnosis"
+    )
+    evidence: tuple[str, ...] = (str(review.get("evidence", review)), str(latest(run, "prerequisiteDiagnosis")))
+    if again == build_prerequisite_work.BASELINE:
+        return carry(run, "prerequisite-carried", detail, *evidence)
+    record_for_run(run, _story_of(run), kind="prerequisite-carried", detail=detail, evidence=evidence)
+    selected: bool = latest(run, "implementationSelection") is not None or latest(run, "implementers") is not None
+    if selected:
+        return Completion(
+            add=(StepGroup((new_step("build:plan-code", "Correct the failing suite with the latest diagnosis"),)),),
+        )
+    if again == "build:suite-reviewed":
+        return Completion()
+    return reasoned(
+        run,
+        "implementation-lead",
+        OutputContract(CONTRACTS / "build-selection.schema.json", "implementationSelection"),
+        "Select the implementation specialists that correct the failing suite. Its prerequisite diagnoses are "
+        "spent, so the failure is this Task's to correct: read the suite evidence and the latest "
+        "prerequisiteDiagnosis, and select at least one specialist whose specialty covers the failing tests",
+        followups=(new_step("build:plan-code", "Plan the selected code specialists and suite check"),),
+    )
 
 
 def diagnose(run: StepRun, again: str, observation: dict[str, JsonValue] | None = None) -> Completion:
@@ -547,11 +596,11 @@ def diagnose(run: StepRun, again: str, observation: dict[str, JsonValue] | None 
         observation: Actual setup failure evidence when no suite review exists yet.
 
     Returns:
-        A genuine mapper session with fresh tracker and repository facts.
+        A genuine mapper session with fresh tracker and repository facts, or the implementation
+        work once the diagnoses are spent.
 
-    Raises:
-        StepError: This dispatch already diagnosed this failure or spent its diagnoses: the
-            Task's suite still fails, and the Task closes only when its tests pass.
+    When this dispatch already diagnosed this failure or spent its diagnoses, the failing suite
+    goes to the implementers (:func:`_to_implementers`).
 
     """
     review: dict[str, JsonValue] = observation if observation is not None else _failure_observation(run, again)
@@ -560,7 +609,7 @@ def diagnose(run: StepRun, again: str, observation: dict[str, JsonValue] | None 
     graph: beadgraph.Graph
     fingerprint, tree, graph = _fingerprint(run, review)
     if _spent(run, fingerprint):
-        raise StepError(run.step["script"], OTHER_CAUSE, ("Prerequisite recovery exhausted its evidence-based bound",))
+        return _to_implementers(run, again, review)
     path: Path = run.context.work / "build" / str(run.step["id"]) / "prerequisite-context.json"
     write_json(path, {"consumer": str(run.bead), "records": graph.records, "tree": tree, "review": review})
     planned: Completion = reasoned(

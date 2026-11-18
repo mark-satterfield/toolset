@@ -88,6 +88,8 @@ FINAL_REVIEW_TREE: Final = "finalReviewTree"
 CARRY_REASON: Final = "its correction belongs to the contract or the tooling, or its correction allowance is spent"
 TESTS_UNOWNED: Final = "testCorrectionUnowned"
 HOOK_REJECTION: Final = "commitHookRejection"
+EMPTY_SELECTION: Final = "emptySelectionReselected"
+"""The failing suite an empty implementer selection left uncorrected, handed to the implementation lead."""
 HOOK_CORRECTIONS: Final = 1
 """The content tree and governing sources on which the test lead selected no specialist for test findings."""
 
@@ -813,11 +815,9 @@ def _empty_selection(run: StepRun, selection: JsonValue) -> Completion:
     """Reassess an empty selection once when the recorded repository state changed.
 
     Returns:
-        Fresh verification work for an observable change, or, on a passing suite, Green with the
-        review findings no implementer was selected for carried.
-
-    Raises:
-        StepError: The suite fails and no implementer was selected to fix it.
+        Fresh verification work for an observable change; on a passing suite, Green with the
+        review findings no implementer was selected for carried; on a failing suite, a new
+        selection by the implementation lead (:func:`_reselect`).
 
     """
     refreshed: Completion | None = refresh_sources(run)
@@ -855,8 +855,93 @@ def _empty_selection(run: StepRun, selection: JsonValue) -> Completion:
     suite: dict[str, JsonValue] = _latest_suite(run)
     if suite.get("exitCode") == 0:
         return _carry_unowned_implementation(run, suite, required, rationale)
-    stage: str = "build:plan-code"
-    raise StepError(stage, OTHER_CAUSE, ("The failing suite has no selected implementer", *rationale))
+    return _reselect(run, suite, rationale)
+
+
+def _reselect(run: StepRun, suite: dict[str, JsonValue], rationale: tuple[str, ...]) -> Completion:
+    """Have the implementation lead select implementers for a failing suite an empty selection left uncorrected.
+
+    Returns:
+        The lead's selection and the planning of the selected code work.
+
+    Raises:
+        StepError: This dispatch already asked for a selection that many times; the suite still
+            fails, the Task closes only when its tests pass, and the next dispatch asks again.
+
+    """
+    if _started_with(run, "build:plan-code", EMPTY_SELECTION) >= build_rounds():
+        stage: str = "build:plan-code"
+        raise StepError(stage, OTHER_CAUSE, ("The failing suite has no selected implementer", *rationale))
+    selected: Completion = reasoned(
+        run,
+        "implementation-lead",
+        OutputContract(CONTRACTS / "build-selection.schema.json", "implementationSelection"),
+        "The whole suite fails and the earlier selection named no implementer. Select at least one "
+        "implementation specialist whose specialty covers the failing tests, in build order",
+        followups=(_new("build:plan-code", "Plan the selected code specialists and suite check"),),
+    )
+    return Completion(artifacts=(*selected.artifacts, value_artifact(EMPTY_SELECTION, suite)), add=selected.add)
+
+
+def _started_with(run: StepRun, key: str, outcome: str) -> int:
+    """Count the steps of a kind started in this dispatch that recorded an outcome, finished or not.
+
+    A step that plans its correction under itself stays running until that correction is done,
+    so its outcome counts while it runs.
+
+    Returns:
+        The number of such steps.
+
+    """
+    return sum(
+        step.get("script") == key
+        and step.get("started", "") >= run.context.started
+        and any(artifact["name"] == outcome for artifact in step["artifacts"])
+        for step in step_journal.steps_in_order(run.journal())
+    )
+
+
+def _judged(run: StepRun, suite: dict[str, JsonValue], outcome: str, again: tuple[NewStep, ...]) -> Completion:
+    """Hand a failing suite to its judge and then to the specialist that owns the failure.
+
+    The suite is recorded as the latest Green run, the assessor judges it, and the judgment is
+    routed as Green routes it (``build:green-reviewed``); ``again`` follows that correction.
+
+    Returns:
+        The suite evidence, the judgment and its routing.
+
+    Raises:
+        StepError: This dispatch already handed this step's failing suite on as many times as its
+            correction rounds allow; the suite still fails, the Task closes only when its tests
+            pass, and the next dispatch starts again with a fresh allowance.
+
+    """
+    stage: str = check_type(run.step["script"], str)
+    if _started_with(run, stage, outcome) >= build_rounds():
+        raise StepError(stage, OTHER_CAUSE, (str(suite["evidence"]),))
+    judgment: Completion = reasoned(
+        run,
+        "acceptance-criteria-coverage-assessor",
+        OutputContract(CONTRACTS / "build-suite-review.schema.json", "suiteReview"),
+        "Judge whether the failing suite needs test repair, product correction, "
+        "upstream readiness or environment recovery",
+        followups=(
+            _new(
+                "build:green-reviewed",
+                "Route the judged suite failure to its owning specialist",
+                {"upstreamClassified": True},
+            ),
+            *again,
+        ),
+    )
+    return Completion(
+        artifacts=(
+            *_suite_artifacts("greenRun", suite, stage.removeprefix("build:")),
+            value_artifact(outcome, suite),
+            *judgment.artifacts,
+        ),
+        add=judgment.add,
+    )
 
 
 def _carry_unowned_implementation(
@@ -1247,8 +1332,8 @@ def _restore(run: StepRun) -> Completion:
     Returns:
         The restoration evidence.
 
-    Raises:
-        StepError: Restoring the snapshot does not restore a passing suite.
+    A restored suite that fails is judged and handed to the specialist that owns the failure
+    (:func:`_judged`); the build goes on to the final suite after that correction.
 
     """
     snapshot: str = check_type(latest(run, "refactorSnapshot"), str)
@@ -1259,8 +1344,8 @@ def _restore(run: StepRun) -> Completion:
     )
     suite: dict[str, JsonValue] = _suite(run, "restored")
     if suite["exitCode"] != 0:
-        msg = "build:refactor-restore"
-        raise StepError(msg, OTHER_CAUSE, (str(suite["evidence"]),))
+        judged: Completion = _judged(run, suite, "restoreFailure", ())
+        return Completion(artifacts=(value_artifact("refactorRestore", restored), *judged.artifacts), add=judged.add)
     return Completion(
         artifacts=(
             value_artifact("refactorRestore", restored),
@@ -1297,10 +1382,9 @@ def _final_suite(run: StepRun) -> Completion:
     """Require the complete repository suite to pass before the Task can commit.
 
     Returns:
-        Factual whole-suite evidence, or the independent final review it needs first.
-
-    Raises:
-        StepError: The final suite does not pass.
+        Factual whole-suite evidence, the independent final review it needs first, or, for a
+        failing suite, its judgment, the correction by the specialist that owns the failure and
+        the final suite again (:func:`_judged`).
 
     """
     if not _final_review_covers(run):
@@ -1320,8 +1404,12 @@ def _final_suite(run: StepRun) -> Completion:
         )
     suite: dict[str, JsonValue] = _suite(run, "final")
     if suite["exitCode"] != 0:
-        msg = "build:final-suite"
-        raise StepError(msg, OTHER_CAUSE, (str(suite["evidence"]),))
+        return _judged(
+            run,
+            suite,
+            "finalFailure",
+            (_new("build:final-suite", "Run the suite a final time after the correction"),),
+        )
     build_policy.record_story_suite(run, suite)
     return Completion(artifacts=_suite_artifacts("finalRun", suite, "final-suite"))
 

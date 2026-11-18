@@ -172,8 +172,9 @@ and a review finding still open when its correction allowance is spent is carrie
 gate is bypassed and none is turned into a stop. An empty implementation selection
 accepted before the latest suite judgment or code review is replaced by one fresh selection for
 the current failures and findings. An empty implementation selection made for the current
-judgment and review stops with the accepted selector's rationale only while the suite fails; with
-the whole suite passing, what remains is review findings, so the implementation findings are
+judgment and review while the suite fails goes back to the implementation lead, which selects at
+least one specialist; only once this dispatch's correction rounds are spent does the build stop,
+and the next dispatch asks again with a fresh allowance. With the whole suite passing, what remains is review findings, so the implementation findings are
 carried with that rationale and the build continues to Green. Passing tests alone do not override
 an unapproved review while an implementer is selected for its implementation findings.
 
@@ -253,7 +254,10 @@ stops the Task. `environment` remains for a cause outside the repository (a miss
 runtime, credentials, network or service availability); fresh readiness evidence that shows it
 unready is a `prerequisite-carried` finding, and the suite runs again all the same. A regression
 setup failure at the baseline whose diagnoses this dispatch spent is a `prerequisite-carried`
-finding, and the baseline is measured without it.
+finding, and the baseline is measured without it. A failing suite whose diagnoses this dispatch
+spent is a `prerequisite-carried` finding too, and goes with the latest diagnosis to the
+implementers already selected, or to the implementation lead's selection; in Red, before any
+implementer is selected, the build continues to its own selection.
 
 A `missing-work` diagnosis whose producer Story's Epic has not finished elaboration is a wait, not a
 failure: the Story has no specs or Tasks yet. `build:prerequisite-elaboration` remains planned until
@@ -369,7 +373,10 @@ value. Only a matrix read or write that cannot be made fails the step.
 The build checkpoints a verified Green state before refactoring. A regressing refactor restores
 that snapshot and verifies the suite again. Before final commit, an independent reviewer inspects
 the resulting code and test diff, the complete suite passes, and the cumulative regression tools
-verify the mapped evidence.
+verify the mapped evidence. A restored or final suite that fails is never rerun as it stands: it is
+judged and routed as Green routes it, to the specialist that owns the failure, and the final suite
+runs again after the correction. Only once this dispatch's correction rounds are spent does the
+build stop, and the next dispatch starts again at the implementer with a fresh allowance.
 
 The regression gate holds a Task to its own requirements (origin task) in full and to existing
 requirements only as far as the pipeline itself proved them. A requirement's effective origin
