@@ -83,6 +83,7 @@ from specialist_catalog import agent_names
 from orchestrator.core import step_journal
 from orchestrator.core.agents import check_files, strict_json
 from orchestrator.core.driver_contracts import dispatch_arguments
+from orchestrator.core.findings import record_for_run
 from orchestrator.core.io import json_object
 from orchestrator.core.journal_registry import agent_step, any_agent_step, plan_under
 from orchestrator.core.journal_steps import (
@@ -988,6 +989,15 @@ def _analyze(run: StepRun, context: ArchitectureContext, prd: Path) -> AgentLaun
     )
 
 
+def _carry(run: StepRun, detail: str, *evidence: str) -> None:
+    """Record a problem an architecture step found after its corrections as a finding for the Epic, and go on.
+
+    The step's output is accepted as it stands; the problem is an ``architecture-check-carried``
+    finding (``core.findings``), never a failure of the Epic.
+    """
+    record_for_run(run, str(run.bead), kind="architecture-check-carried", detail=detail, evidence=evidence)
+
+
 @agent_step(ARCHITECT)
 def architect(run: StepRun) -> AgentLaunch:
     """Build the session of any step the solutions architect performs, always a fresh session.
@@ -1000,9 +1010,11 @@ def architect(run: StepRun) -> AgentLaunch:
     and a valid file there is never taken as the step's finished output without the session
     (``reuse_output`` False).
 
-    The accepted result is recorded in the matrix. A result that asks a further round plans that
-    round and a Decide after it; one that asks it after :data:`MAX_ROUNDS` rounds fails the step.
-    A result that asks none plans the document writes it needs (``architecture_rounds.write_steps``),
+    The accepted result is recorded in the matrix; what the matrix does not hold is carried as a
+    finding (:func:`_carry`). A result that asks a further round plans that round and a Decide
+    after it; one that asks it after :data:`MAX_ROUNDS` rounds has its requests carried as a
+    finding and goes on as one that asks none. A result that asks none plans the document writes it
+    needs (``architecture_rounds.write_steps``),
     and records the open design gaps it was handed, which it answers, as answered
     (``design_gaps.settle``).
 
@@ -1027,11 +1039,13 @@ def architect(run: StepRun) -> AgentLaunch:
         result: ArchitectureResult = checked_file(accepted, output, validate_architecture_result)
         open_requests: list[AgentRequest] = [entry for entry in result["requests"] if not answered(entry, arch)]
         if open_requests and number >= MAX_ROUNDS:
-            raise ArchitectureStepError(
+            _carry(
                 accepted,
                 f"the architect's result still requests work of {[entry['agent'] for entry in open_requests]} after "
-                f"{MAX_ROUNDS} rounds; the architecture does not converge",
+                f"{MAX_ROUNDS} rounds; the requests are carried and the architecture goes on to its documents",
+                str(output),
             )
+            open_requests = []
         recorded: Recorded = accepted.tools.portfolio(
             accepted.inputs.stage,
             _record_result,
@@ -1040,7 +1054,7 @@ def architect(run: StepRun) -> AgentLaunch:
             architecture_folder(accepted.context.work) / CHANGE_FILE,
         )
         if recorded.problems:
-            raise ArchitectureStepError(
+            _carry(
                 accepted,
                 f"the matrix does not hold what the architecture result {output} and its change file state",
                 *recorded.problems,
@@ -1449,7 +1463,7 @@ def trd_author(run: StepRun) -> AgentLaunch:
             answer,
         )
         if recorded.problems:
-            raise ArchitectureStepError(
+            _carry(
                 accepted,
                 f"the matrix does not hold the technical requirements of {asked} and {output}",
                 *recorded.problems,
@@ -1637,7 +1651,7 @@ def maintainer(run: StepRun) -> AgentLaunch:
             accepted.tools.portfolio(accepted.inputs.stage, _sync, arch, paths)
         recorded: Recorded = accepted.tools.portfolio(accepted.inputs.stage, _record_homes, arch, request, written)
         if recorded.problems:
-            raise ArchitectureStepError(
+            _carry(
                 accepted,
                 f"the matrix does not hold the headings {output} states the facts of {asked} under",
                 *recorded.problems,

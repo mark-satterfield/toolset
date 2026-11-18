@@ -23,6 +23,7 @@ from matrix_contract import KIND_DISAGREEMENT, REL_DISPUTES
 from matrixstore import read_matrix
 
 from orchestrator.core import step_journal
+from orchestrator.core.findings import record_for_run
 from orchestrator.core.journal_registry import agent_step
 from orchestrator.core.journal_steps import (
     AgentLaunch,
@@ -63,6 +64,11 @@ STANDS: Final = "stands"
 SETTLED: Final = "disagreements settled"
 ATTR_STANDS: Final = "stands"
 ATTR_HEADING: Final = "heading"
+BOUND_REACHED: Final = (
+    "Finish: the routing has finished as many times as it may. Record that every item is resolved as the "
+    "routing stands now, and add no step"
+)
+"""The request of a lead's "Finish" beyond its bound."""
 ID_LENGTH: Final = 8
 """How much of a step id names a file the step's session writes."""
 
@@ -76,23 +82,24 @@ def lead(run: StepRun) -> AgentLaunch:
     no step. Launched for "Finish", the lead either records that every item is resolved or adds
     the steps that remain. The specialists it asks for an opinion are its own choice, made from
     the find-specialists skill's catalog, so nothing is listed for it. A "Finish" beyond
-    :data:`MAX_FINISH_GENERATIONS` is not launched.
+    :data:`MAX_FINISH_GENERATIONS` is asked to record the routing as it stands and add no step.
+    A routing that leaves items waiting without a step for them, and a "Finish" that records
+    neither, are accepted as they stand, each recorded as an ``architecture-check-carried``
+    finding for the Epic.
 
     Returns:
         The launch, with exactly the input labels the lead's definition names.
-
-    Raises:
-        ArchitectureStepError: The step is a "Finish" beyond the bound.
 
     """
     context: ArchitectureContext = read_context(run)
     folder: Path = run.context.work / ARCHITECTURE_FOLDER
     finishing: bool = is_finish(run)
-    if finishing and finish_generation(run) > MAX_FINISH_GENERATIONS:
-        raise ArchitectureStepError(
+    bounded: bool = finishing and finish_generation(run) > MAX_FINISH_GENERATIONS
+    if bounded:
+        _carry(
             run,
             f"the lead has finished {MAX_FINISH_GENERATIONS} times and each added more steps; "
-            "the routing does not converge",
+            "the routing is accepted as it stands",
         )
     owner: Step | None = step_journal.parent_step(run.journal(), run.step["id"]) if finishing else run.step
     owner_id: str = run.step["id"] if owner is None else owner["id"]
@@ -101,12 +108,9 @@ def lead(run: StepRun) -> AgentLaunch:
         routing: LeadRouting = checked_file(accepted, output, validate_lead_routing)
         waiting: list[str] = [item["item"] for item in routing["items"] if item["routing"] != ROUTING_REJECT]
         if finishing and not accepted.step["artifacts"]:
-            raise ArchitectureStepError(
-                accepted,
-                "the lead neither recorded that every item is resolved nor added a step for what remains",
-            )
+            _carry(accepted, "the lead neither recorded that every item is resolved nor added a step for what remains")
         if not finishing and waiting:
-            raise ArchitectureStepError(accepted, f"the routing sends {waiting} to further work and adds no step")
+            _carry(accepted, f"the routing sends {waiting} to further work and adds no step", *waiting)
         return Completion(artifacts=(file_artifact(ROUTING, output), value_artifact(ARTIFACT_RESOLVED, True)))
 
     return AgentLaunch(
@@ -118,7 +122,13 @@ def lead(run: StepRun) -> AgentLaunch:
         files=((LABEL_RESULT, Path(context["resultPath"])),),
         fresh_output=not finishing,
         hand_inputs=False,
+        request=BOUND_REACHED if bounded else None,
     )
+
+
+def _carry(run: StepRun, detail: str, *evidence: str) -> None:
+    """Record a routing problem as a finding for the Epic; the routing is accepted as it stands."""
+    record_for_run(run, str(run.bead), kind="architecture-check-carried", detail=detail, evidence=evidence)
 
 
 def _disagreements(arch: Path, matter: UnsettledMatter) -> tuple[list[JsonValue], list[str]]:

@@ -154,8 +154,10 @@ inputs (`architecture_rounds.handed_answers`); the files of `trd-author` and
 The specialist steps run at the same time. The Decide step's launch writes the digest of its answers
 (`<helpersFolder>/digest-<step>.json`, `answers-digest.schema.json`: each answer's sentence,
 assumptions, needs, decisions and diagram homes, with the agent and the answer file's path) and
-hands it as `answers digest`. A result of round 2 (`MAX_ROUNDS`) that still requests work fails the
-step, because the architecture does not converge.
+hands it as `answers digest`. A result of round 2 (`MAX_ROUNDS`) that still requests work has its
+open requests recorded as an `architecture-check-carried` finding for the Epic and goes on to its
+document writes as a result that requests none. What the matrix does not hold of a result, a TRD
+answer or a maintainer's homes is recorded the same way, and the step goes on.
 
 The document writes: a result with no unanswered request is grouped into one write request per
 group of arc42 sections (`architecture_rounds.write_requests`, `SECTION_GROUPS`): `structure`
@@ -323,7 +325,7 @@ in this run whose losing statement a maintainer step corrected, commits and push
 documents and the log in the vault (each that exists or that git tracks). The matrix stays local.
 It writes `<arch-work>/promoted.json` and records it as the file `promoted documents`,
 with the value `vault commit` when a commit was made. A document other than
-a folder index whose matrix entry does not show it effective fails the step, naming each with the reason; anything else that fails ends
+a folder index whose matrix entry does not show it effective is recorded as an `architecture-check-carried` finding for the Epic, naming each with the reason; anything else that fails ends
 the step with a structured cause. It plans nothing after itself: a design-gap round promotes again
 within the same elaboration, so what the Epic changed is assessed once, at its end ("Impact of the
 Epic's architecture change").

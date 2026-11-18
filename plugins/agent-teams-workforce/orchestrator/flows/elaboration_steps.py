@@ -18,7 +18,6 @@ from typeguard import check_type
 
 from orchestrator.core.driver_contracts import dispatch_arguments
 from orchestrator.core.findings import record_for_run
-from orchestrator.core.handback_contract import OTHER_CAUSE, Failure
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_registry import script_step
 from orchestrator.core.journal_steps import Completion, StepRun, value_artifact
@@ -46,6 +45,8 @@ from orchestrator.flows.elaboration_support import (
 
 if TYPE_CHECKING:
     from scoringcontracts import TaskScores
+
+    from orchestrator.core.handback_contract import Failure
 
 TASK_SCORES_STAGE: Final = "task-scores"
 
@@ -153,7 +154,9 @@ def apply_done_rule(run: StepRun) -> Completion:
 def story_edges(run: StepRun) -> Completion:
     """Write the dependency edges between the Epic's Stories, then plan the Epic's one impact assessment.
 
-    Story edges that could not be written fail the step. The impact analyst and the step that
+    The Story edges are written for every Story whose order is consistent; the Stories of this
+    Epic whose order is contradictory are recorded as a ``done-rule-carried`` finding and the Epic
+    goes on. The impact analyst and the step that
     applies its rulings follow, before the Epic is marked elaborated, when they are due
     (``architecture_impact.follow_steps``): this is the one place an elaboration assesses what
     its architecture change reaches.
@@ -183,7 +186,15 @@ def story_edges(run: StepRun) -> Completion:
 
     written: dict[str, JsonValue] = json_object(run.tools.operation(FINISH_PHASE, write))
     if written.get("ok") is False:
-        raise run.tools.failure(FINISH_PHASE, OTHER_CAUSE, dict(written))
+        refused: list[JsonValue] = check_type(written.get("refusedStories", []), list[JsonValue])
+        record_for_run(
+            run,
+            str(run.bead),
+            kind="done-rule-carried",
+            detail=f"{STORY_EDGES}: the Story order of {json.dumps(refused)} is contradictory, so their Story edges "
+            "were not written; every other Story edge was written and the Epic goes on",
+            evidence=tuple(str(story) for story in refused),
+        )
     return Completion(artifacts=(value_artifact(STORY_EDGES_RESULT, written),), add=follow_steps(run))
 
 

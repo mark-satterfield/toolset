@@ -1112,7 +1112,7 @@ its own architecture against the criteria; nothing else reviews it.
   one source under the retired key `source` is read as one listing it under `sources`
   (`architecture_rounds.read_answer`), so that shape alone sends no writer back. Decide writes the result; one
   that asks a second round gets it and one more Decide, and a Decide of round 2 that still asks
-  fails the step. A result with no open request plans one `architecture-maintainer` per group
+  has its open requests recorded as an `architecture-check-carried` finding and goes on. A result with no open request plans one `architecture-maintainer` per group
   of arc42 sections whose script-built write request changed, at most three, so each session
   reads a neighbouring document once for every fact of its group; its output check renders each
   changed Mermaid block once for syntax, at no token cost, and the step that accepts each write
@@ -1155,7 +1155,7 @@ its own architecture against the criteria; nothing else reviews it.
   the log from the Epic's entry (attribute `reviewLog`: its path in the vault and its SHA-256),
   removes each settled disagreement whose losing statement was corrected, commits and pushes the
   documents and the log in the vault, and commits and pushes the matrix. A document it cannot set
-  effective fails the step, naming each with the reason. It plans nothing after itself: what the
+  effective is recorded as an `architecture-check-carried` finding, naming each with the reason. It plans nothing after itself: what the
   Epic's change reaches is assessed once, when its elaboration ends (`flows/architecture_impact.py`,
   planned by the Story edges step), for the other Epics with a Task that rests on an entry the
   Epic changed.
@@ -1261,8 +1261,9 @@ elaboration is done.
   `elaboration.score_epic_tasks`, which calls `scoring.score_tasks` for the Tasks under the Epic:
   RR-OE counts over every open Task's edges, walked only from those Tasks, and no Epic is computed
   or written. Step `elaboration.done_rule` reads the Tasks it left unscored, step
-  `storyedges.story_edges` writes the Story edges, and step `elaboration.finish` marks the Epic with
-  `elaboration.mark_elaborated`.
+  `storyedges.story_edges` writes the Story edges (the Stories of the Epic whose order is
+  contradictory get none and are recorded as a `done-rule-carried` finding), and step
+  `elaboration.finish` marks the Epic with `elaboration.mark_elaborated`.
 - **Long script steps report progress.** The edge write, the Story edges and the scoring emit a
   `phase` event as each real stage ends, so the driver's idle limit tells a hung run from a working
   one; no timer emits regardless of progress.

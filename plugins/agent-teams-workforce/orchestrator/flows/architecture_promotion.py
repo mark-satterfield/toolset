@@ -34,6 +34,7 @@ from matrixwrite import approve
 from step_journal_contract import STATUS_DONE
 
 from orchestrator.core import step_journal
+from orchestrator.core.findings import record_for_run
 from orchestrator.core.io import write_json
 from orchestrator.core.journal_registry import script_step
 from orchestrator.core.journal_steps import Completion, StepRun, file_artifact, value_artifact
@@ -44,7 +45,6 @@ from orchestrator.flows.architecture_files import (
     WRITE_REQUEST,
     WRITTEN,
     ArchitectureContext,
-    ArchitectureStepError,
     checked_file,
     checked_output,
     held_file,
@@ -275,9 +275,8 @@ def promote(run: StepRun) -> Completion:
     Returns:
         The file of what was promoted, and the vault commit when one was made or pushed.
 
-    Raises:
-        ArchitectureStepError: The matrix does not show a promoted document as effective; the
-            file of what was promoted names each.
+    A promoted document the matrix does not show as effective is recorded as an
+    ``architecture-check-carried`` finding for the Epic; the file of what was promoted names each.
 
     """
     context: ArchitectureContext = read_context(run)
@@ -312,9 +311,12 @@ def promote(run: StepRun) -> Completion:
     if made is not None:
         artifacts.append(value_artifact(VAULT_COMMIT, made))
     if promoted.not_effective:
-        raise ArchitectureStepError(
+        record_for_run(
             run,
-            f"the matrix does not show {len(promoted.not_effective)} promoted documents as effective; see {path}",
-            *promoted.not_effective,
+            str(run.bead),
+            kind="architecture-check-carried",
+            detail=f"the matrix does not show {len(promoted.not_effective)} promoted documents as effective; "
+            f"see {path}",
+            evidence=promoted.not_effective,
         )
     return Completion(artifacts=tuple(artifacts))
