@@ -26,6 +26,8 @@ from step_journal_contract import STEP_ID_PATTERN, StepId, StepPlan
 
 type ValidationResult = dict[str, JsonValue] | tuple[list[str], list[str]] | None
 type OutputValidator = Callable[[Path], ValidationResult]
+type OutputRepair = Callable[[Path], list[str]]
+"""A deterministic repair of an output file in place; it returns one line per change it made."""
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -218,6 +220,7 @@ class AgentStep:
     corrective: bool = True
     request: str | None = None
     journal_step: StepId | None = None
+    repair: OutputRepair | None = None
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def __post_init__(self) -> None:

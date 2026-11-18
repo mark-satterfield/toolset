@@ -61,6 +61,7 @@ from .driver_contracts import (
     reset_of,
 )
 from .events import EventSink, EventWriter
+from .findings import Finding, finding, record_finding
 from .handback_contract import (
     ACCOUNT_CAUSES,
     API_CAUSE,
@@ -471,6 +472,8 @@ def _write_errors(step: AgentStep, exc: Exception) -> tuple[Path, dict[str, Json
     return errors, content
 
 
+OUTPUT_CORRECTIONS: Final = 3
+"""How many corrective resumes a session gets for an output its check refuses."""
 FIRST_ERROR_LIMIT: Final = 300
 """The most characters of a validation error a failure's message carries."""
 
@@ -485,6 +488,34 @@ def _first_error(exc: Exception) -> str:
     """
     line: str = next((text.strip() for text in str(exc).splitlines() if text.strip()), type(exc).__name__)
     return line if len(line) <= FIRST_ERROR_LIMIT else line[: FIRST_ERROR_LIMIT - 1] + "…"
+
+
+def _corrective_input(
+    step: AgentStep,
+    refused: Exception,
+    stream: Path,
+    inputs: list[tuple[str, Path]],
+    *,
+    spent: bool,
+) -> dict[str, JsonValue]:
+    """Write a refused output's errors beside it and hand them to the next corrective resume.
+
+    Returns:
+        The errors, which the corrective brief carries inline; the errors file is added to
+        ``inputs`` once.
+
+    Raises:
+        StepError: The corrective resumes are spent, or the step takes none.
+
+    """
+    errors: Path
+    content: dict[str, JsonValue]
+    errors, content = _write_errors(step, refused)
+    if spent or not step.corrective:
+        raise StepError(step.stage, OTHER_CAUSE, (_first_error(refused), str(errors), str(stream)))
+    if ("validation errors", errors) not in inputs:
+        inputs.append(("validation errors", errors))
+    return content
 
 
 def _emit(emit: EventSink, event: OrchestratorEvent) -> None:
@@ -777,7 +808,10 @@ class AgentRunner:
 
         A new session's mark (``_mark_session``) is written once its process runs with a live
         pid, so a launch that fails leaves no mark and no later dispatch tries to continue a
-        session that never ran.
+        session that never ran. An output its check refuses is handed back to the session with its
+        errors file, up to :data:`OUTPUT_CORRECTIONS` corrective resumes; the step's deterministic
+        repair, when it has one, runs before the first of them and after the last
+        (:meth:`_refused`).
 
         Returns:
             The validated output path.
@@ -785,7 +819,6 @@ class AgentRunner:
         Raises:
             SessionSetupError: Agent configuration is invalid or unavailable.
             SessionNotResumedError: The resume the caller asked for ended without a turn.
-            StepError: The session failed, or its output remains invalid after correction.
 
         """
         session_id: str = directory.name.removeprefix(SESSION_DIRECTORY_PREFIX)
@@ -797,6 +830,7 @@ class AgentRunner:
             raise SessionSetupError(str(exc)) from exc
         asked_to_resume: bool = resume
         correction: dict[str, JsonValue] | None = None
+        corrections: int = 0
         attempt: int = 0
         while True:
             _check_stop()
@@ -844,19 +878,52 @@ class AgentRunner:
             if asked_to_resume and attempt == 1 and _never_ran(facts, session_id):
                 raise SessionNotResumedError(step.stage, OTHER_CAUSE, (str(stream),))
             self._check_session(step, facts, stream)
-            try:
-                validate_output(step)
-            except CONTENT_FAILURES as exc:
-                errors: Path
-                content: dict[str, JsonValue]
-                errors, content = _write_errors(step, exc)
-                if correction is not None or not step.corrective:
-                    raise StepError(step.stage, OTHER_CAUSE, (_first_error(exc), str(errors), str(stream))) from None
-                inputs.append(("validation errors", errors))
-                correction = content
-                resume = True
-                continue
-            return step.output
+            refused: Exception | None = self._refused(
+                step,
+                repair=step.corrective and corrections in {0, OUTPUT_CORRECTIONS},
+            )
+            if refused is None:
+                return step.output
+            correction = _corrective_input(step, refused, stream, inputs, spent=corrections >= OUTPUT_CORRECTIONS)
+            corrections += 1
+            resume = True
+
+    def _refused(self, step: AgentStep, *, repair: bool) -> Exception | None:
+        """Check a session's output, repairing it first by its contract's deterministic repair when asked.
+
+        A repair that changed the file is recorded as one ``output-schema-carried`` finding for
+        the bead (``core.findings``).
+
+        Returns:
+            None when the output passes its check, after the repair when one ran; otherwise what
+            the check raised.
+
+        """
+        try:
+            validate_output(step)
+        except CONTENT_FAILURES as exc:
+            if not repair or step.repair is None:
+                return exc
+            failed: Exception = exc
+        else:
+            return None
+        changes: list[str] = step.repair(step.output)
+        if not changes:
+            return failed
+        entry: Finding = finding(
+            self.context.bead,
+            self.context.bead,
+            stage=step.stage,
+            kind="output-schema-carried",
+            detail=f"{step.output.name} repaired by its contract's repair: {'; '.join(changes)}",
+            evidence=(str(step.output),),
+        )
+        record_finding(self.context.work.parent, entry, self.emit)
+        try:
+            validate_output(step)
+        except CONTENT_FAILURES as again:
+            return again
+        return None
 
     def _session(  # ruff: ignore[too-many-arguments] - The process, its prompt, environment, stream, row and start hook.
         self,

@@ -25,7 +25,7 @@ from typeguard import CollectionCheckStrategy, typechecked
 from . import step_journal
 from .agents import AgentRunner
 from .handback_contract import OTHER_CAUSE
-from .models import OutputValidator, RunContext, StepError
+from .models import OutputRepair, OutputValidator, RunContext, StepError
 from .tools import Tools
 
 # isort: split
@@ -465,6 +465,9 @@ class AgentLaunch:
     document the agent updates in place. ``keep`` is recorded on the step in the journal change
     that starts it, so what the step is launched from is on the step at every later start.
 
+    ``repair`` is the deterministic repair of the output's contract, when it has one: the session
+    runs it before its first corrective resume and after its last (``agents.AgentRunner``).
+
     ``reuse_output`` True lets the runner record the step from a valid file already at
     ``output`` that was written since the step started, instead of starting its agent again: a
     helper the lead agent ran in its own session, or a session that wrote its output and stopped
@@ -485,6 +488,7 @@ class AgentLaunch:
     hand_inputs: bool = True
     keep: tuple[Artifact, ...] = ()
     reuse_output: bool = True
+    repair: OutputRepair | None = None
 
 
 type AgentBuilder = Callable[[StepRun], AgentLaunch]

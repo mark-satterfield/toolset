@@ -1431,6 +1431,7 @@ class JournalRunner:
             corrective=launch.corrective,
             request=launch.request or step["description"],
             journal_step=step["id"],
+            repair=launch.repair,
         )
         output: Path = self._session(request, labelled, session, launch, resume=held is not None, before=step)
         after: Step = index_journal(step_journal.read_journal(self.path)).step(step["id"])

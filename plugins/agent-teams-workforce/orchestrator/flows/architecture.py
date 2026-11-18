@@ -143,6 +143,7 @@ from orchestrator.flows.architecture_files import (
     matrix_file,
     output_check,
     read_context,
+    repair_architecture_result,
     written_paths,
 )
 from orchestrator.flows.architecture_index import index_step
@@ -1069,6 +1070,7 @@ def architect(run: StepRun) -> AgentLaunch:
     return AgentLaunch(
         output=Path(context["resultPath"]),
         validate=result_check(run),
+        repair=repair_architecture_result,
         outcome=(
             "The architecture result of this PRD, with one entry of gapAnswers for every row of every design gaps "
             f"file you are handed. {CHECKLIST_OUTCOME}"

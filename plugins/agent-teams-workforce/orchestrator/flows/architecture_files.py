@@ -13,7 +13,9 @@ a file and the brief names that file.
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -36,6 +38,7 @@ from step_journal_contract import STATUS_DONE
 from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
 from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
+from orchestrator.core.findings import record_for_run
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import json_object, write_json
 from orchestrator.core.journal_steps import is_finish_of
@@ -380,23 +383,91 @@ def _rewritten_context(run: StepRun, held: object) -> ArchitectureContext:
     return new_context(run.bead, prd, arch, run.context.work, commit)
 
 
+UNSETTLED_ID: Final = re.compile(r"^U([1-9][0-9]*)$")
+"""The form of an unsettled matter's id in the architecture result: U1, U2 and so on."""
+
+
+def _replaced(value: JsonValue, renames: dict[str, str]) -> JsonValue:
+    """Replace every string value that is a renamed id with its new id, at any depth.
+
+    Returns:
+        The value with each renamed id replaced.
+
+    """
+    if isinstance(value, str):
+        return renames.get(value, value)
+    if isinstance(value, list):
+        return [_replaced(item, renames) for item in value]
+    if isinstance(value, dict):
+        return {key: _replaced(item, renames) for key, item in value.items()}
+    return value
+
+
+def repair_architecture_result(path: Path) -> list[str]:
+    """Give each unsettled matter of an architecture result an id of the contract's form, in place.
+
+    An ``unsettled[].id`` that is not ``U<n>`` gets the next ``U<n>`` no other matter holds, and
+    every string value of the unsettled matters equal to the old id is replaced with the new one;
+    the rest of the document, whose entry ids may look alike, is left as it is. A file that is
+    missing, not JSON, or holds no such id is left as it is.
+
+    Returns:
+        One line per id renamed; empty when nothing changed.
+
+    """
+    try:
+        document: object = json.loads(path.read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return []
+    matters: object = document.get("unsettled") if isinstance(document, dict) else None
+    if not isinstance(matters, list):
+        return []
+    ids: list[str] = [
+        matter["id"] for matter in matters if isinstance(matter, dict) and isinstance(matter.get("id"), str)
+    ]
+    taken: list[int] = [int(found.group(1)) for found in map(UNSETTLED_ID.match, ids) if found is not None]
+    following: int = max(taken, default=0)
+    renames: dict[str, str] = {}
+    old: str
+    for old in ids:
+        if UNSETTLED_ID.match(old) is None and old not in renames:
+            following += 1
+            renames[old] = f"U{following}"
+    if not renames:
+        return []
+    write_json(path, json_object({**json_object(document), "unsettled": _replaced(matters, renames)}))
+    return [f"unsettled id {old!r} is now {new!r}" for old, new in renames.items()]
+
+
 def read_result(run: StepRun, context: ArchitectureContext) -> ArchitectureResult:
     """Read the solutions architect's result.
 
-    A result file that is missing or is not JSON raises ``ArchitectureStepError``. One that does
-    not satisfy its schema is handled by :func:`checked_output`, its writer being the last step
-    of the solutions architect in walk order that recorded the result.
+    The result is first repaired in place (:func:`repair_architecture_result`); a repair that
+    changed it is recorded as an ``output-schema-carried`` finding for this Epic. A result file
+    that is missing or is not JSON raises ``ArchitectureStepError``. One that does not satisfy its
+    schema is handled by :func:`checked_output`, its writer being the last step of the solutions
+    architect in walk order that recorded the result.
 
     Returns:
         The validated result.
 
     """
+    path: Path = Path(context["resultPath"])
+    renamed: list[str] = repair_architecture_result(path)
+    if renamed:
+        record_for_run(
+            run,
+            str(run.bead),
+            kind="output-schema-carried",
+            detail=f"{path.name} repaired: {'; '.join(renamed)}",
+            evidence=(str(path),),
+        )
     writer: Step | None = None
     step: Step
     for step in step_journal.steps_in_order(run.journal()):
         if step.get("agent") == ARCHITECT and held_file(step, LABEL_RESULT) is not None:
             writer = step
-    return checked_output(run, Path(context["resultPath"]), validate_architecture_result, writer)
+    return checked_output(run, path, validate_architecture_result, writer)
 
 
 def checked_output[T](run: StepRun, path: Path, validate: Callable[[object], T], writer: Step | None) -> T:
