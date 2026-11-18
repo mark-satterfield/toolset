@@ -101,6 +101,8 @@ from orchestrator.flows.elaboration_files import (
     span_files,
     story_files,
     strings,
+    task_context_path,
+    tasks_path,
     write_contract,
 )
 from orchestrator.flows.elaboration_support import TASK_DECOMPOSITION_PHASE, enter_phase
@@ -324,26 +326,6 @@ def duplicate_title_problems(tasks: list[JsonValue]) -> list[str]:
         else:
             seen[same] = key
     return problems
-
-
-def task_context_path(work: Path, slug: str) -> Path:
-    """Name the task context of a repository's Story in an Epic's work directory.
-
-    Returns:
-        ``<work>/tasks-<slug>.context.json``.
-
-    """
-    return work / f"tasks-{slug}.context.json"
-
-
-def tasks_path(work: Path, slug: str) -> Path:
-    """Name the Tasks file the decomposer first writes for a repository's Story in an Epic's work directory.
-
-    Returns:
-        ``<work>/tasks-<slug>.json``.
-
-    """
-    return work / f"tasks-{slug}.json"
 
 
 def task_grouping_check(context_file: Path, schema_file: Path) -> OutputValidator:

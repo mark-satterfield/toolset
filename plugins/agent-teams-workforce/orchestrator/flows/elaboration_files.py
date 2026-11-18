@@ -384,3 +384,23 @@ def project_root() -> Path:
 
     """
     return env_path(PROJECT_ROOT_ENV)
+
+
+def task_context_path(work: Path, slug: str) -> Path:
+    """Name the task context of a repository's Story in an Epic's work directory.
+
+    Returns:
+        ``<work>/tasks-<slug>.context.json``.
+
+    """
+    return work / f"tasks-{slug}.context.json"
+
+
+def tasks_path(work: Path, slug: str) -> Path:
+    """Name the Tasks file the decomposer first writes for a repository's Story in an Epic's work directory.
+
+    Returns:
+        ``<work>/tasks-<slug>.json``.
+
+    """
+    return work / f"tasks-{slug}.json"

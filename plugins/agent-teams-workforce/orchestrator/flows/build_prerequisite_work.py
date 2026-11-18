@@ -28,10 +28,17 @@ from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, value_artifact
 from orchestrator.flows.build_sessions import OutputContract, latest, reasoned
 from orchestrator.flows.build_state import ARTIFACT_CONTRACTS, artifact_document, artifact_file, new_step
-from orchestrator.flows.elaboration_files import CRITERIA, DATA_MODEL, SPEC, control_repository, project_root
+from orchestrator.flows.elaboration_files import (
+    CRITERIA,
+    DATA_MODEL,
+    SPEC,
+    control_repository,
+    project_root,
+    task_context_path,
+    tasks_path,
+)
 from orchestrator.flows.repo_scoping import ELEMENTS_FILE, SPAN_FILE
 from orchestrator.flows.spec_authoring import spec_context_path, spec_document_path, story_document_path
-from orchestrator.flows.task_decomposition import task_context_path, tasks_path
 
 ELABORATION_STAGE = "build:prerequisite-elaboration"
 """The gate that holds a consumer while its producer Story's Epic finishes elaboration."""
