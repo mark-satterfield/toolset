@@ -381,11 +381,12 @@ flowchart TD
     res -->|"failed"| kindF{"Is the cause transient: a rate limit, the network, a timed-out session?"}
     res -->|"stopped: by the owner, or the machine stopped"| kept
     kindF -->|"yes"| retry["Retried with exponential backoff and jitter, up to a bounded number of attempts"]
-    kindF -->|"no: a failure of the work itself"| release["Not retried. The bead is released with its cause recorded and reported to the owner"]
+    kindF -->|"no: a failure of the work itself"| release["Backed off: 300 s, doubling, at most 6 h, with its cause recorded and reported to the owner"]
     retry --> again{"Did a retry complete?"}
     again -->|"yes"| done
     again -->|"no: attempts spent"| release
-    release --> others["Other beads keep running"]
+    release --> others["Other beads keep running; the bead is dispatched again after its backoff, resuming at the failed step"]
+    others --> s
     others --> kept["The steps already done stay recorded"]
     kept --> fixT{"Is the cause in the pipeline tooling?"}
     fixT -->|"yes"| adapt["The tooling is adapted and corrected"]
@@ -399,10 +400,21 @@ flowchart TD
 Notes on the diagram:
 
 - Transient failures (rate limits, network, a timed-out session) retry with exponential backoff
-  and jitter up to a bounded number of attempts; a failure of the work itself is not retried
-  blindly, the bead is released with its cause recorded, and other beads keep running, because the
-  AWS Well-Architected reliability guidance calls for bounded retries and one failing bead must not
-  stop the rest.
+  and jitter up to a bounded number of attempts; a failure of the work itself is never excluded
+  for the rest of the supervisor's run: the bead is backed off (300 s, doubling, at most 21 600 s,
+  cleared by an `ok` handback or `failure_requeued`) and dispatched again, and the run resumes at
+  the failed step keeping every earlier output. Other beads keep running, because one failing bead
+  must not stop the rest. A repeat lane stop (the same failure signature on three items in a row)
+  pauses that lane for 1 800 s, then it dispatches again.
+- No check stops a bead. Each check of elaboration, build and the driver gets bounded correction
+  attempts; after them the bead continues and the problem is recorded as a finding in
+  `<artifacts>/<owner Epic>/findings.jsonl` (the plugin's `orchestrator/core/findings.py`, the
+  driver's `findingrecord.py` and its `finding_recorded` ledger event). A finding addressed to
+  another Epic never counts against the Epic that found it. The one exception is a Task's tests: a
+  Task closes only when they pass.
+- A `done` Epic is never dispatched for elaboration and nothing sets it back; no Story is
+  specified again and no journal is set back by the pipeline. Only the owner's
+  `elabmark.py --start-at` sets a journal back.
 - Every step of every pipeline (elaboration, build and deploy) records its result before the next
   starts, and a rerun starts at the first step not done and reuses every finished step whose inputs
   are unchanged, because a halt never forces finished work to be redone (`docs/sdlc/sdlc.md`).

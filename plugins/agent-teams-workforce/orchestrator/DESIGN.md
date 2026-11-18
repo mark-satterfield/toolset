@@ -1,6 +1,6 @@
 # DESIGN: the Python orchestrator for the Epic pipeline
 
-Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+Failure handling: bounded transient retries and quota pauses remain. No check stops an item: after its bounded correction attempts the item continues and the problem is recorded as a finding (`core/findings.py`); only a Task's failing tests fail it. An item failure is recorded, and the driver backs the item off and dispatches it again, resuming at the failed step with every earlier output kept; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
 
 This document describes how the Epic (elaboration) pipeline runs as a Python orchestrator: where
 the code lives, how a step is declared and run, where a run begins, how agent sessions are started
@@ -192,10 +192,15 @@ An architecture context file the open-run step wrote to an earlier contract is w
 place to the current one by the step that reads it (`architecture_files.read_context`), and no
 step is set back to planned. A step that reads another file an earlier step wrote, and finds that
 it does not satisfy the contract the step reads it by (a request the step that planned a helper wrote),
-is not failed (`StaleInputError`): once the steps running with it end, the step
-that wrote the file and every step after it are set back to planned (only those inside the step
-the error names as its scope, when it names one), and the run goes on from there, so the file is
-written again to the current contract. The step after a repository's spec review raises the same
+is not failed (`StaleInputError`, which names the file, its errors file and its check): once the
+steps running with it end, the agent that wrote the file corrects it in place to the current
+contract (`JournalRunner._correct_stale`: its session resumed when it is current, otherwise a new
+session of the same agent working on the existing file), and nothing is set back; the step that
+read it runs again. Only when that correction fails is a writer that planned no steps set back
+alone, to run again on its existing output (`step_journal.replan_step`); a writer that planned
+steps is never set back, and the reading step fails as an item failure that the driver backs off
+and dispatches again. A missing architecture pack is assembled in place for the step that reads it
+(`architecture_pack.pack_file`). The step after a repository's spec review raises the same
 error for an open design gap a spec document records (`design_gaps.hold_open`): it is
 `DesignGapError`, naming the repository's first spec step as the writer and the repository's
 container as its scope, so that repository alone is specified again. Once the containers end, the
@@ -231,7 +236,11 @@ running beside the one that found a gap each go on to their own gap check before
 so do their sibling containers beyond the session cap (`JournalRunner._run_to_gap_checks`), so
 every repository's gaps reach the architect in one round. When the same writer of any
 other stale file is named twice in one dispatch, the step fails; when that writer is a script step, its code wrote the file to a
-contract other than its readers', and the failure is `PipelineDefectError`. A file a step reads
+contract other than its readers', and the failure is `PipelineDefectError`. A change of the Epic
+that owns an entry, or of the elements the Stories build (`OwnershipChangedError`,
+`ScopeChangedError`), names no file: the span step and every step after it run again, up to
+`OWNERSHIP_REPLANS` times in a dispatch, after which the step records an `ownership-race` finding
+and continues with the ownership as it stands. A file a step reads
 that is missing, is not JSON or is refused by its contract is the item's failure; a contract whose
 schema cannot be loaded or applied is a `PipelineDefectError` (`architecture_files.checked_file`).
 The solutions architect's result and a document maintainer's result are read the same way as a
@@ -1092,8 +1101,8 @@ its own architecture against the criteria; nothing else reviews it.
   Decide step, handed every answer and a digest of them (`answers-digest.schema.json`), so the
   architect reads a few KB per answer instead of each answer file. Each request's session is told
   the answer's schema and the rule in its outcome, whichever catalog agent it is. An answer the
-  current contract refuses sends its writer's step back to planned when the digest is built
-  (`StaleInputError`), so it is written again to the current contract; a reason that holds its
+  current contract refuses is corrected in place by its writer's agent when the digest is built
+  (`StaleInputError`); a reason that holds its
   one source under the retired key `source` is read as one listing it under `sources`
   (`architecture_rounds.read_answer`), so that shape alone sends no writer back. Decide writes the result; one
   that asks a second round gets it and one more Decide, and a Decide of round 2 that still asks

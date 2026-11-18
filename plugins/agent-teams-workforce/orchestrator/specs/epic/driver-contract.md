@@ -1,6 +1,45 @@
 # Driver contract for the Epic pipeline (elaboration lane)
 
-Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+Failure handling: bounded transient retries and quota pauses remain. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Failed runs do not dispatch repair or diagnosis agents.
+
+## Rules the plugin and the driver hold alike
+
+1. A `done` Epic is never dispatched for elaboration: `scripts/portfolio/elaboration.py start`
+   refuses it (`epic-done`) and the driver never selects it (`elabstate.candidacy` returns
+   `SKIP_DONE`). Nothing sets a `done` Epic back.
+2. No Story is specified again and no Epic or Story journal is set back by the pipeline. Only the
+   owner's `elabmark.py --start-at` sets a journal back.
+3. An item whose dispatch fails (a failed handback, an unbuildable outcome or a dispatch exception)
+   is never excluded for the rest of the supervisor invocation: the driver backs it off (300 s,
+   doubling, at most 21 600 s, cleared by an `ok` handback or `failure_requeued`; a transient cause
+   keeps its 30 s doubling backoff, at most 1 800 s) and dispatches it again, and the plugin resumes
+   the journal at the failed step, keeping every earlier output. Each bounded correction counts
+   only the rounds of the current dispatch (`RunContext.started`).
+4. A repeat lane stop (the same failure signature on three items in a row) pauses that lane for
+   1 800 s, then the lane dispatches again.
+5. A Task closes only when its tests pass. A suite still failing after its correction rounds is a
+   failed handback (rule 3), and the next dispatch gives the implementer the full allowance again,
+   with the failing evidence the journal holds.
+6. No other check stops an item. Each gets bounded correction attempts; after them the item
+   continues and the problem is recorded as a finding. A finding addressed to another Epic never
+   counts against the Epic that found it.
+
+### Findings
+
+One finding is one JSON line in `<artifacts root>/<owner Epic>/findings.jsonl` (`<artifacts root>`
+is `<control>/.claude/workflow-runs/artifacts`; the owner Epic is the owner bead id cut at its
+first `.`), appended under an exclusive `fcntl.flock` on the file, with exactly the fields `at`
+(UTC ISO-8601 with `Z`), `owner`, `from`, `source` (`plugin` or `driver`), `stage`, `kind`,
+`detail` (one line) and `evidence` (a list of strings). The kinds are `matrix-problem`,
+`architecture-check-carried`, `output-schema-carried`, `trd-carried`, `span-problem`,
+`task-decomposition-carried`, `done-rule-carried`, `ownership-race`, `architecture-impact`,
+`contract-finding`, `producer-missing`, `completion-cycle`, `prerequisite-unscheduled`,
+`regression-carried`, `prerequisite-carried`, `respec-request-converted` and
+`producer-epic-unordered`. The plugin writes them with `orchestrator/core/findings.py` and emits,
+for each, the warning note `finding for <owner> (<kind>): <detail>` with the finding's stage as
+its step, which the driver records with the run's phase events. The driver writes them with
+`findingrecord.py` and records each as a `finding_recorded` ledger event. A handback has no
+upstream-defect stage.
 
 Step S01g. What the driver at `<control>/ops/sdlc-automation` (`<driver>`) sends to an elaboration
 dispatch, what it reads back, which ledger events and phase names its readers depend on, and how it

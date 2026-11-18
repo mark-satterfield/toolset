@@ -1,6 +1,6 @@
 # `prd-validation` and the Epic pipeline
 
-Failure handling: bounded transient retries and quota pauses remain. An ordinary item failure is recorded and excluded from selection for the current invocation; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+Failure handling: bounded transient retries and quota pauses remain. No check stops an item: after its bounded correction attempts the item continues and the problem is recorded as a finding (`core/findings.py`); only a Task's failing tests fail it. An item failure is recorded, and the driver backs the item off and dispatches it again, resuming at the failed step with every earlier output kept; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
 
 ## What it is
 

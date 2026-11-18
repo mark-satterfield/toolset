@@ -57,7 +57,7 @@ before, and nothing reads them again on its own. You are what reads them again.
 |---|---|---|
 | `unaffected` | Its Tasks name a changed entry, but nothing its specs or Tasks state about the entry is made wrong by the change. | Nothing. Say why, in one line. |
 | `not-yet-elaborated` | An Epic with no Specs or Tasks beneath it yet. | Nothing. It will be elaborated against the architecture as it then stands. |
-| `elaborated-unbuilt` | Specs and Tasks exist, no build has started on any of them, and the change makes something they state about a changed entry wrong: a route, field, key, name, value, owner or behaviour they carry changed, or the entry is gone. | It goes back for re-elaboration, which updates in place. |
+| `elaborated-unbuilt` | Specs and Tasks exist, no build has started on any of them, and the change makes something they state about a changed entry wrong: a route, field, key, name, value, owner or behaviour they carry changed, or the entry is gone. | It receives an `architecture-impact` finding naming the changed entries its work rests on; nothing is elaborated again. |
 | `already-built` | A build has started under it: a Task is closed or in progress, or a Story is in progress. | The built work is never reopened and never rewritten. Propose a `knockOn` Task. |
 
 `already-built` is the one that matters and the one that is easy to get wrong. A Task that is

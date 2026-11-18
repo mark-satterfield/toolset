@@ -251,7 +251,7 @@ Notes on the diagram:
   text, checked by `scripts/portfolio/matrixchecklist.py`; a name the naming command builds is
   listed and never filled). The architect fills each value, with the heading that states it, in
   the result's `elementValues` in the session that decides the design; a value no heading states
-  yet is written by the architecture maintainer as a fact. The check step fails on each listed
+  yet is written by the architecture maintainer as a fact. The check step finds each listed
   value with no entry, an empty entry, or a heading that does not exist or does not state it word
   for word, and sends those back to the architect through the mechanical correction, bounded as
   that correction is (3). The Epic never fails for it: what is left after the bound is carried to

@@ -42,10 +42,10 @@ as what the lane plans under the container, so a planned step whose key was rena
 to the current key when the run opens the journal.
 
 A step that finds the context file does not satisfy the context contract (the contract changed
-after the open-run step wrote it) is not failed: the open-run step and every step after it are set
-back to planned, and the open-run step writes the file again (`prd-to-spec.md`, "Where a run
-begins"). A helper whose saved request does not satisfy its contract does the same for the step
-that planned it, whose output holds the request.
+after the open-run step wrote it) writes it again in place (`architecture_files.read_context`),
+and a missing pack is assembled in place (`architecture_pack.pack_file`); no step is set back. A
+helper whose saved request does not satisfy its contract has the step that planned it correct the
+request in place (`prd-to-spec.md`, "Where a run begins").
 
 Every later step of the container is handed the context file through the journal and derives no
 path of its own.
@@ -263,7 +263,8 @@ follows by rule over the matrix, the criteria file, the architect's result and t
 | What the check finds | What it plans |
 |---|---|
 | open design gaps the spec stage filed (`design_gaps.handed`), whatever else it finds | the architect's step that answers them (`design_gaps.gap_round`), handed the check result, an index and a new check that starts with no corrections spent, because the answer is a new design change |
-| a mechanical defect | a correction step for the architect, handed the check result, an index and a new check; after 3 corrections a defect fails the step, except an unfilled element value, which never fails it |
+| a mechanical defect | a correction step for the architect, handed the check result, an index and a new check; after 3 corrections each defect left is recorded as an `architecture-check-carried` finding for the Epic, written under `carried` in the check result, and the check plans what follows as with no defect; it never fails the step |
+| a problem `atw-matrix check` reports for the matrix file that names no entry the result adds or changes, no entry of this Epic and none of its requirements | never a defect of this Epic: a `matrix-problem` finding for the Epic of the requirement it names, else the Epic the matrix records as driving its first entry, else this Epic, written under `otherEpics` in the check result (`architecture_check.split_matrix_problems`); the reach, criteria and review-log checks run whatever the file's problems |
 | after 3 corrections, unfilled element values and no other defect | the values are carried to the spec stage (`design_gaps.carry_unfilled`: `<arch-work>/design-gaps/unfilled-values.json` and a warning note naming the pipeline defect), are not checked again, and the check plans what follows as with no defect |
 | no defect, the result's conclusion is `unsettled`, and no lead has run in the container | the step of `architecture-team-lead`, an index and a new check |
 | otherwise, whatever the conclusion | the TRD write, unless the journal's last TRD write is done and its request states the result's `trdChanges` and `sharedCapabilities` as they stand (`trd_steps.write_current`), then the promotion step |

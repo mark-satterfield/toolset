@@ -201,7 +201,8 @@ agreement with what the findings direct, while the data-model author corrects th
 the same time. A finding goes to an author once. A finding disputed again after the ruling
 stands as ruled. The output check of each correction and revision session is the account's schema
 and every document of the round's own check, all reported together, so a document that no longer
-passes is handed back in the session's one correction; a second failure fails the step.
+passes is handed back to the session with its errors, up to three corrective resumes; still
+failing after them fails the step, and the next dispatch resumes it on the files as they stand.
 
 ## The Story bead and its journal
 

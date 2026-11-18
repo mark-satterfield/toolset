@@ -39,8 +39,9 @@ The next dispatch runs from that step.
 
 The runner makes an earlier start of its own in one case: a step reads a file an earlier step
 wrote, and the file does not satisfy the contract the step reads it by, because the contract
-changed after the file was written (`StaleInputError`). The step is not failed; the step that
-wrote the file and every step after it are set back to planned, and the run goes on from there.
+changed after the file was written (`StaleInputError`). The step is not failed: the agent that
+wrote the file corrects it in place to the current contract and nothing is set back; only when
+that correction fails is a writer that planned no steps run again on its existing output.
 A helper's request file is written by the step that planned the helper, from its output. The same writer named
 twice in one dispatch fails the step; when that writer is a script step, the failure is a pipeline
 code defect, since its code wrote the file to a contract other than its readers'. The architecture context file, which the open-run step

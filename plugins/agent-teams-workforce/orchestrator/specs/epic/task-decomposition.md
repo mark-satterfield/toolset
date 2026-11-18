@@ -87,9 +87,10 @@ the Tasks file as the decomposer wrote it by `task_grouping_check`, a Tasks file
 merged into by `tasks.schema.json` and its unique titles, and each correction by
 `tasks-correction.schema.json` and its unique titles. A file
 passed its check when its writer's step was accepted, so a file the check refuses now was written
-to an earlier contract (`StaleInputError`): the step that wrote it (step 2, or the correction) and
-every step after it inside its repository's container are set back to planned, and no Task bead
-is written from it. Every other repository's container keeps its state, since none reads the file. The writer's next
+to an earlier contract (`StaleInputError`): the decomposer corrects that file in place, handed what
+the check found (`<file>.errors.json`), and no Task bead is written until it passes; only when the
+correction fails is the writer, when it planned no steps, run again on its existing output;
+otherwise the step fails as an item failure and the next dispatch resumes it. Every other repository's container keeps its state, since none reads the file. The writer's next
 session is handed what the check found in its earlier output (`tasks-<slug>.json.stale.json`).
 
 ## One step per Task bead
@@ -109,8 +110,8 @@ Two Epics elaborated at once must not both claim an entry. The write holds the o
 every item of the Epic; only when no item's owner Epic differs from the `builtBy` the span recorded
 does it write the Task bead, still under the lock, so the next writer sees the claim. Otherwise it
 writes nothing and raises `OwnershipChangedError` naming the span step: the span and every step
-after it run again, up to three times in one dispatch, after which the step fails as an item
-failure.
+after it run again, up to three times in one dispatch, after which the change is recorded as an
+`ownership-race` finding and the write goes on with the ownership as it stands.
 
 Once every Task bead of the Story is written, one step sets the Story's edges at once: the Task's
 edges onto the Tasks of the same Story it depends on (the decomposer's `edges`, and those

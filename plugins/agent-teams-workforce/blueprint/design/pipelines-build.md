@@ -142,7 +142,9 @@ Every decision to run, omit or reuse a stage is recorded on its step and carried
 event, and the commit records the Task's model sessions, correction steps and decisions, so owner
 runs measure what the policy saved.
 
-Correction work is bounded by accepted outcomes in the Task journal across dispatches. Implementation
+Correction work is bounded by the accepted outcomes this dispatch recorded in the Task journal
+(steps finished since the dispatch began, `build_state.count_in_dispatch`), so a dispatch that
+follows a failed one has its full allowance again, with the failing evidence the journal holds. Implementation
 and suite-quality correction have three rounds. Regression correction (`ATW_REGRESSION_CORRECTION_ROUNDS`,
 two by default) counts three kinds of round apart: a scope correction counts from the latest final
 verification that was corrected (or from the start of the build), because that verification
@@ -152,14 +154,19 @@ an unmapped required layer or a blocking mapping review included, is a correctio
 missing tests, runs the final suite and assesses the scope again before the evidence is mapped
 and verified again, which covers changed bytes too. A mapping review that did not approve and ran
 under another plugin version than the running one (the version its step records as
-`regressionMappedReviewPlugin`, or none) is stale: the final verification sends the evidence back
-to be mapped, reviewed and verified under the running plugin, once per running version, and spends
-no allowance. Running ancestors count only with their own completed outcome or their immediate
-agent child's accepted result. Restarting does not replenish the allowance. A fresh suite with the
-same evidence identity and failures after product or test correction stops before another agent round;
+`regressionMappedReviewPlugin`, or none) is stale: the final verification has the existing mapping
+reviewed and verified again under the running plugin, once per running version, and spends no
+allowance; the mapping is made again only as a correction when that review does not approve it.
+Once a regression allowance is spent, what the scope validation or the final verification still
+finds is carried: each error is a `regression-carried` finding for the Task and a carried contract
+finding, and the step completes as a passing one does. Running ancestors count only with their own
+completed outcome or their immediate agent child's accepted result. A fresh suite of this dispatch
+with the same evidence identity and failures after product or test correction stops before another
+agent round;
 environment recovery and changed requirement, setup or runtime identities remain eligible. Only an
-error stops a build: a failed command or suite, a crash, an exhausted retry of failing work,
-unschedulable work, or a missing input. A review finding is a judgment that something should
+error stops a build: a failed command or suite, a crash, an exhausted retry of failing work, or a
+missing input; the Task closes only when its tests pass, and a stopped build is dispatched again
+after the driver's backoff, resuming at the failed step. A review finding is a judgment that something should
 change, never an error: an unresolved failing suite or scope check records its evidence and stops,
 and a review finding still open when its correction allowance is spent is carried, so no quality
 gate is bypassed and none is turned into a stop. An empty implementation selection
@@ -225,12 +232,13 @@ It does not invent producer Task IDs or send the consumer implementers work owne
 An upstream or environment judgment appends one targeted `task-dependency-mapper` diagnosis using current
 tracker, repository and readiness evidence. The result names real producer Tasks, their actual
 parent Stories and whether their output must be built, published or deployed. A real producer is
-named even when waiting for it would close a cycle, so the cycle check below decides that case
-and the failure names the cycle rather than a work-authoring gap. The build validates those
-identities and adds only missing consumer blockers through the normal cycle-checked writer;
-normal elaboration protections for already started Tasks remain intact. A missing producer or
-missing real authoring context is a finite pipeline work-authoring gap, never an owner SSM task
-or permission to create shared resources as test fixtures.
+named even when waiting for it would close a cycle, so the cycle check below decides that case.
+The build validates those identities and adds only missing consumer blockers through the normal
+cycle-checked writer; normal elaboration protections for already started Tasks remain intact. A
+diagnosis the tracker contradicts adds no wait: it is a `prerequisite-carried` finding for the
+Task's Story and the consumer's verification continues. A missing producer or missing authoring
+context is a `producer-missing` finding, never an owner SSM task or permission to create shared
+resources as test fixtures.
 
 A failure whose cause is the Task repository's own declarations (a dependency manifest, lock file,
 override, peer-dependency conflict, or a test configuration naming a package no manifest declares)
@@ -242,16 +250,20 @@ baseline then reassesses, reviews and validates the regression scope, so each ru
 the declared dependencies with its locked install, re-derives the execution policy and reruns the
 baseline; a failure a suite judgment routed reruns and reassesses the suite. An empty selection
 stops the Task. `environment` remains for a cause outside the repository (a missing tool or
-runtime, credentials, network or service availability) and still ends the build when fresh
-readiness evidence shows it unready.
+runtime, credentials, network or service availability); fresh readiness evidence that shows it
+unready is a `prerequisite-carried` finding, and the suite runs again all the same. A regression
+setup failure at the baseline whose diagnoses this dispatch spent is a `prerequisite-carried`
+finding, and the baseline is measured without it.
 
 A `missing-work` diagnosis whose producer Story's Epic has not finished elaboration is a wait, not a
 failure: the Story has no specs or Tasks yet. `build:prerequisite-elaboration` remains planned until
 the Epic is marked elaborated; its dispatch returns the typed `waitingForPrerequisites` handback with
 no producers and an `elaboration` naming the Epic and the Story, and releases its slot. Elaboration
 never waits on a build, so this wait closes no completion cycle. Once the Epic is elaborated the
-build diagnoses again against the Tasks it wrote. An elaborated Story that still lacks accepted
-authoring artifacts fails the Task as an item failure.
+build diagnoses again against the Tasks it wrote. The producer Story's files are taken from the
+done steps of its Story and Epic journals, and, for any they do not record, from the Epic's work
+folder where its elaboration wrote them; a Story whose files are found nowhere is a
+`producer-missing` finding and the consumer's verification continues.
 
 `build:prerequisites-ready` remains planned while producer stages are pending. Its dispatch
 returns the typed `waitingForPrerequisites` handback without a failure and releases its slot.
@@ -264,9 +276,8 @@ alone is insufficient. Existing `deployed` declarations retain their literal res
 meaning; active package dependencies need evidence-based reassessment to `published`, never
 a blanket reinterpretation or rewriting of completed journals. After progression,
 a read-only `test-environment-provisioner` observation precedes the exact original suite and a
-fresh independent assessment in the original phase. A readiness miss stops with its actual
-evidence rather than redispatching the same observation. Distinct failure/tree fingerprints
-and the existing build correction allowance bound diagnosis; accepted history is retained.
+fresh independent assessment in the original phase. Distinct failure/tree fingerprints and the
+build correction allowance of the current dispatch bound diagnosis; accepted history is retained.
 
 An empty implementer selection is reassessed only after its recorded test/tree fingerprint
 changes. One appended whole-suite run and independent code review then use the normal selector.
@@ -280,17 +291,18 @@ Older Tasks without that field are not retroactively assigned guessed dependenci
 current-Task diagnosis repairs their actual prerequisites when discovered. Effective Task,
 producer Story completion and actual host repository-holder dependencies are checked together
 for cycles; unschedulable waits are explicit workflow gaps rather than indefinite holds.
-A cycle that the diagnosed Task's proposed wait closes, and a proposed producer row without an
-absolute existing evidence artifact, fail only that Task as an `item` failure whose evidence
-names the cycle and the diagnosis; they never classify as `pipeline-code-defect`, so other
-lanes keep dispatching.
+A cycle that the diagnosed Task's proposed wait closes is a `completion-cycle` finding, and a
+proposed producer row without an absolute existing evidence artifact a `prerequisite-carried`
+finding, each for the Task's Story: the wait is not added and the consumer's verification
+continues.
 
 When missing producer work has an actual open Story and completed saved authoring context,
 the normal task decomposer appends only work that scope/spec already authorizes. Existing Task
 and score objects remain exact, normal append-only durable-key writes make uncertain retries
 idempotent, and only new Task ids receive normal Task scoring. No architecture or Epic assessment
 runs. The changed tracker facts receive a bounded new diagnosis before consumer edges are added.
-Absent that real authoring context, the pipeline records the precise finite work-authoring gap.
+An authoring result that adds nothing or would change existing Tasks or scores is not written; it
+is a `producer-missing` finding and the consumer's verification continues.
 
 Build artifact readers expose recorded facts from completed steps and running structural
 ancestors only, through one accepted view per journal revision and step
