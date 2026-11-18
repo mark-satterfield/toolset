@@ -76,9 +76,12 @@ repositories).
 
 - Keep the approved scope exactly unchanged; finalize only what the contract lets change, from the
   actual saved test files.
-- Every required layer of every impacted requirement gets a run the gate executes and a mapping to
-  it, naming each test by what its assertions cover, as `cumulative-regression`'s mapping review
-  checks; never invent a requirement supersession for a test rename.
+- Every required layer of every impacted requirement that binds the Task (origin task, or holding a
+  test the regression ledger records as proven) gets a run the gate executes and a mapping to it,
+  naming each test by what its assertions cover, as `cumulative-regression`'s mapping review
+  checks; never invent a requirement supersession for a test rename. A layer of another impacted
+  existing requirement is mapped to the tests that exist for it; one with no test stays unmapped,
+  and the gate records it as unmet for the Epic that owns the requirement.
 - Do not run the tests yourself, and do not remove scope because tests are missing or hard to run;
   report the gap.
 

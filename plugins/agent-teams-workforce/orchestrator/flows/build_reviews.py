@@ -28,6 +28,7 @@ from orchestrator.flows.build_state import (
     TEST_LEAD,
     TEST_SELECTION,
     build_rounds,
+    plugin_version,
     regression_rounds,
 )
 from orchestrator.flows.build_state import (
@@ -66,6 +67,10 @@ SOURCES_ADDED: Final = "requiredSourcesAdded"
 """The Task's required sources the build added to an assessed scope that omitted them."""
 SOURCE_FILES: Final = "sourceFiles"
 """The member of a regression scope that lists every source file read to establish it."""
+REVIEW_PLUGIN: Final = "regressionMappedReviewPlugin"
+"""The plugin version the final mapping review ran under, recorded on its step."""
+STALE_REVIEW: Final = "regressionStaleReview"
+"""The plugin versions of a mapping review a final verification sent back to be judged again."""
 
 
 def _regression(run: StepRun, mode: str, plan: Path, extra: list[str]) -> tuple[Path, dict[str, JsonValue]]:
@@ -294,13 +299,15 @@ def _review_initial(run: StepRun) -> Completion:
 
 
 def _review_final(run: StepRun) -> Completion:
-    """Review final evidence mapping.
+    """Review final evidence mapping, recording the plugin version it runs under.
 
     Returns:
-        The reviewer's journal children.
+        The reviewer's journal children and the ``regressionMappedReviewPlugin`` value.
 
     """
-    return _review(run, True)
+    reviewed: Completion = _review(run, True)
+    recorded: ValueArtifact = value_artifact(REVIEW_PLUGIN, plugin_version())
+    return Completion(artifacts=(*reviewed.artifacts, recorded), add=reviewed.add)
 
 
 def _validate(run: StepRun, final: bool) -> Completion:
@@ -432,6 +439,18 @@ def _origin_artifacts(document: dict[str, JsonValue]) -> tuple[ValueArtifact, ..
     return (value_artifact("regressionOriginCorrections", corrections),) if corrections else ()
 
 
+def _unmet_gap(record: dict[str, JsonValue]) -> str:
+    """State one unmet record of regression.py: an absent required layer, or a mapped test that did not pass.
+
+    Returns:
+        The requirement and its gap.
+
+    """
+    if "layer" in record:
+        return f"{record['requirementId']}: required {record['layer']} layer has no test mapped ({record['outcome']})"
+    return f"{record['requirementId']}: test {record['testId']} {record['outcome']}"
+
+
 def _unmet_artifacts(document: dict[str, JsonValue]) -> tuple[ValueArtifact, ...]:
     """Report the existing requirements no completed build proved whose tests do not pass, for the Epics that own them.
 
@@ -446,9 +465,8 @@ def _unmet_artifacts(document: dict[str, JsonValue]) -> tuple[ValueArtifact, ...
         {
             "severity": "improvement",
             "owner": "contract",
-            "detail": f"{pair['requirementId']}: test {pair['testId']} {pair['outcome']}; no completed build proved "
-            "this existing requirement, so it does not bind this Task, and building it is the work of the Epic "
-            "that owns it",
+            "detail": f"{_unmet_gap(pair)}; no completed build proved this existing requirement, so it does not bind "
+            "this Task, and building it is the work of the Epic that owns it",
         }
         for pair in (json_object(entry) for entry in unmet)
     ]
@@ -537,6 +555,39 @@ def _verify_corrections(run: StepRun) -> tuple[int, int]:
     return rescopes, len(failures) - rescopes
 
 
+def _stale_review(run: StepRun, output: Path, document: dict[str, JsonValue]) -> Completion | None:
+    """Send a final verification failed by a mapping review judged under another plugin version back to the review.
+
+    A review that ran under an older plugin judged the mapping by rules the running plugin no longer applies, so
+    its blocking findings are not this Task's failure yet: the mapping is made and reviewed again under the running
+    plugin, and verified again, with no correction allowance spent. A review that recorded no version ran before
+    reviews recorded one and is stale too. The same running version sends a Task back once, so a review that
+    blocks again under it is a correction like any other.
+
+    Returns:
+        The remap, review and verify steps, or None when the review is current, approved, or already sent back
+        under this version, or when source bytes changed.
+
+    """
+    if document.get("reviewApproved") is not False or document.get("sourcesChanged") is True:
+        return None
+    running: str | None = plugin_version()
+    reviewed: JsonValue = latest(run, REVIEW_PLUGIN)
+    sent: list[JsonValue] = [
+        json_object(artifact["value"]).get("running")
+        for step in accepted_steps(run)
+        for artifact in step["artifacts"]
+        if artifact["kind"] == "value" and artifact["name"] == STALE_REVIEW
+    ]
+    if reviewed == running or running in sent:
+        return None
+    purpose: str = f"Map and review the evidence again under plugin {running}; the last review ran under {reviewed}"
+    return Completion(
+        artifacts=(value_artifact(STALE_REVIEW, {"reviewed": reviewed, "running": running, "evidence": str(output)}),),
+        add=(StepGroup(tuple(_new(kind, purpose) for kind in REMAP)),),
+    )
+
+
 def _verify_correction(run: StepRun, output: Path, document: dict[str, JsonValue]) -> Completion:
     """Correct a failed final verification inside the step, within its allowances.
 
@@ -552,13 +603,19 @@ def _verify_correction(run: StepRun, output: Path, document: dict[str, JsonValue
     defect: the Story's requirements are moving under the build, so the Story goes back to
     elaboration and the verification runs again if the respec is cleared without a journal reset.
 
+    A blocking review judged under another plugin version is first sent back to be judged again
+    (:func:`_stale_review`), which is no correction.
+
     Returns:
-        The reassessment or correction steps, or the ``source-changed`` upstream defect.
+        The stale review's remap, the reassessment or correction steps, or the ``source-changed`` upstream defect.
 
     Raises:
         StepError: The correction allowance is spent; it names every error and the evidence file.
 
     """
+    stale: Completion | None = _stale_review(run, output, document)
+    if stale is not None:
+        return stale
     changed: bool = _drift_only(document)
     rescopes, corrections = _verify_corrections(run)
     errors: list[str] = check_type(document.get("errors", []), list[str])
@@ -590,12 +647,13 @@ def _regression_tests(run: StepRun) -> Completion:
         TEST_LEAD,
         OutputContract(CONTRACTS / "build-selection.schema.json", TEST_SELECTION),
         "Select the test specialists that write or change the tests the blocking findings of the latest "
-        "regressionMappedReview and the failed verification in regressionCorrection need: a required layer of "
-        "an impacted requirement with no test, and a mapped test that is absent, fails, or does not assert its "
-        "requirement. A test of the Task's own requirement (origin task) that the current code fails is written "
-        "all the same; implementation makes it pass. A test of an existing requirement no completed build proved "
-        "(the regression ledger records no passing test of it) is not this Task's work: verification records it "
-        "as unmet, and no implementer changes product code for it; a test a completed build proved must pass. "
+        "regressionMappedReview and the failed verification in regressionCorrection need: a required layer with no "
+        "test of an impacted requirement that binds the Task, and a mapped test that is absent, fails, or does not "
+        "assert its requirement. A test of the Task's own requirement (origin task) that the current code fails is "
+        "written all the same; implementation makes it pass. A test of an existing requirement no completed build "
+        "proved (the regression ledger records no passing test of it) is not this Task's work, whether it fails or "
+        "does not exist: verification records it as unmet, and no implementer changes product code for it; a test "
+        "a completed build proved must pass. "
         "Do not change governing requirements. An empty selection is valid only when every finding is corrected "
         "by the mapping alone",
         followups=(_new("build:plan-tests", "Write the tests the regression mapping needs"),),

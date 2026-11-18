@@ -41,11 +41,11 @@ from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, valu
 from orchestrator.flows.build_sessions import REQUIREMENT_NAMES, OutputContract, reasoned, view_of
 from orchestrator.flows.build_state import (
     CONTRACTS,
-    PLUGIN,
     artifact_document,
     build_rounds,
     count_in_dispatch,
     new_step,
+    plugin_version,
     workspace_of,
 )
 
@@ -413,10 +413,7 @@ def _contract() -> dict[str, JsonValue]:
         The plugin version and the digests of the suite runner and the policy contract.
 
     """
-    manifest: dict[str, JsonValue] = json_object(
-        json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")),
-    )
-    return {"plugin": manifest.get("version"), "runner": _file_digest(str(RUNNER)), "policy": _file_digest(str(SCHEMA))}
+    return {"plugin": plugin_version(), "runner": _file_digest(str(RUNNER)), "policy": _file_digest(str(SCHEMA))}
 
 
 def _setup_commands(held: AcceptedArtifact | None) -> list[JsonValue]:

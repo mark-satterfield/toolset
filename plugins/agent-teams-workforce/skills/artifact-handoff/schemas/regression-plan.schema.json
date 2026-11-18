@@ -63,7 +63,7 @@
               "required": ["kind", "required", "reason", "sourceRefs"],
               "properties": {
                 "kind": {"$ref": "#/$defs/Layer"},
-                "required": {"description": "Whether the requirement needs evidence at this layer. A required layer of an impacted requirement needs a mapping to a run before verification. A layer the prior ledger required stays required unless the requirement is superseded.", "type": "boolean"},
+                "required": {"description": "Whether the requirement needs evidence at this layer. A required layer of an impacted requirement that binds the Task (see mappings) needs a mapping to a run before verification. A layer the prior ledger required stays required unless the requirement is superseded.", "type": "boolean"},
                 "reason": {"description": "Why the layer is required or excluded, from the sources.", "type": "string", "minLength": 1},
                 "sourceRefs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
               }
@@ -87,7 +87,7 @@
       }
     },
     "mappings": {
-      "description": "Which run proves which layer of which requirement. In plan mode a mapping may be left out for tests still to be written; after Red every required layer of every impacted requirement has one. A mapping to a junit run names the tests whose assertions cover the requirement; a mapping to an exitStatus run is for the nonfunctional layer and names no tests.",
+      "description": "Which run proves which layer of which requirement. In plan mode a mapping may be left out for tests still to be written; after Red every required layer of every impacted requirement that binds the Task has one. A requirement binds the Task when its effective origin is task, or when it holds a test the regression ledger records as proven; a required layer of any other impacted requirement with no mapping is recorded as unmet (outcome absent) for the Epic that owns the requirement, never an error. A mapping to a junit run names the tests whose assertions cover the requirement; a mapping to an exitStatus run is for the nonfunctional layer and names no tests.",
       "type": "array",
       "items": {
         "type": "object",

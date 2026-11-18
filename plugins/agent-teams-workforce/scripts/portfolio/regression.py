@@ -52,6 +52,8 @@ PASSED: Final = "passed"
 FAILED: Final = "failed"
 ERRORED: Final = "errored"
 NOT_RUN: Final = "not run"
+ABSENT: Final = "absent"
+"""The outcome of a required layer of an existing requirement that does not bind the Task and has no mapping."""
 REQUIRED_SOURCES_FILE: Final = "required-sources.json"
 """Where prepare records, beside its output, the Task's sources every scope must list in ``sourceFiles``."""
 REQUIRED_SOURCES: Final = "requiredSources"
@@ -566,6 +568,15 @@ def origin_corrections(plan: JsonObject, effective: dict[str, str]) -> list[Json
     ]
 
 
+NO_CITATIONS: Final[JsonObject] = {
+    "requirementIds": [],
+    "specPaths": [],
+    "acceptanceCriteria": [],
+    "definitionOfDone": [],
+}
+"""The citations of a check given none: only the origins the plan states make a requirement the Task's own."""
+
+
 def read_citations(path: str) -> JsonObject:
     """Read the Task's contract citations.
 
@@ -662,40 +673,94 @@ def _run_errors(plan: JsonObject, ids: list[str]) -> list[str]:
     return errors
 
 
-def _coverage_errors(plan: JsonObject, requirements: list[JsonObject], owned: frozenset[str]) -> list[str]:
-    """Check that every required layer of an impacted requirement maps to a run in its repository.
-
-    A requirement the Task owns (``owned``, its effective task origins) is checked as impacted whatever the
-    plan's ``impacted`` says, so the Task cannot pass without its own criterion. A junit run needs concrete
-    tests.
+def _layer_errors(requirement: JsonObject, kind: str, plan: JsonObject) -> list[str]:
+    """Check that one layer of a requirement maps to a run in its repository; a junit run needs concrete tests.
 
     Returns:
-        The coverage errors.
+        The layer's coverage errors; empty when the layer is mapped.
+
+    """
+    req_id: str = _str(requirement, "id")
+    runs: dict[str, JsonObject] = {_str(r, "id"): r for r in _objs(plan, "runs")}
+    matched: list[JsonObject] = [
+        m for m in _objs(plan, "mappings") if _str(m, "requirementId") == req_id and _str(m, "kind") == kind
+    ]
+    if not matched:
+        return [f"{req_id}/{kind}: no mapping to a run"]
+    errors: list[str] = []
+    for m in matched:
+        run: JsonObject | None = runs.get(_str(m, "runId"))
+        if run is None or run["repoPath"] != requirement["repoPath"]:
+            errors.append(f"{req_id}/{kind}: mapping has no matching repository execution")
+        elif _str(run, "format") == "junit" and not _flag(m, "testIds"):
+            errors.append(f"{req_id}/{kind}: no concrete tests")
+    return errors
+
+
+@dataclass(frozen=True, slots=True)
+class Obligations:
+    """What binds the Task: the requirements it owns and the tests a completed build proved."""
+
+    owned: frozenset[str] = frozenset()
+    """The requirements whose effective origin is task."""
+    held: frozenset[tuple[str, str]] = frozenset()
+    """The proven ``(requirementId, testId)`` pairs (:func:`proven`)."""
+
+    def binds(self, requirement: str) -> bool:
+        """Tell whether a requirement binds the Task: it owns it, or it holds a proven test.
+
+        Returns:
+            True when the requirement is owned or proven.
+
+        """
+        return requirement in self.owned or any(pair[0] == requirement for pair in self.held)
+
+
+NO_OBLIGATIONS: Final[Obligations] = Obligations()
+"""No owned requirement and no proven test: the obligations of a plan checked without the Task's contract."""
+
+
+@dataclass(frozen=True, slots=True)
+class Coverage:
+    """The coverage of the required layers: what fails the gate, and what is recorded for another Epic."""
+
+    errors: list[str]
+    """Each unmapped required layer of a requirement that binds the Task."""
+    absent: list[JsonValue]
+    """Each ``{requirementId, layer, outcome: absent}`` unmapped required layer of an impacted existing requirement
+    that does not bind the Task: unbuilt work of the Epic that owns the requirement."""
+
+
+def coverage(plan: JsonObject, obligations: Obligations) -> Coverage:
+    """Hold the required layers of the requirements that bind the Task to a mapping, and record the others.
+
+    A coverage obligation exists only for a requirement that binds the Task, as :func:`_judge` binds a test: one
+    the Task owns (its effective task origins), checked as impacted whatever the plan's ``impacted`` says, and an
+    impacted one holding a test a completed build proved (:func:`proven`). A required layer of any other impacted
+    requirement with no mapping is recorded as absent for the requirement, never an error.
+
+    Returns:
+        The coverage errors and the absent layers.
 
     """
     errors: list[str] = []
-    runs: dict[str, JsonObject] = {_str(r, "id"): r for r in _objs(plan, "runs")}
-    mappings: list[JsonObject] = _objs(plan, "mappings")
-    for req in requirements:
-        if not _flag(req, "impacted") and _str(req, "id") not in owned:
-            continue
+    absent: list[JsonValue] = []
+    for req in _objs(plan, "requirements"):
         req_id: str = _str(req, "id")
-        for layer in _objs(req, "applicability"):
-            if not _flag(layer, "required"):
-                continue
-            kind: str = _str(layer, "kind")
-            matched: list[JsonObject] = [
-                m for m in mappings if _str(m, "requirementId") == req_id and _str(m, "kind") == kind
-            ]
-            if not matched:
-                errors.append(f"{req_id}/{kind}: no mapping to a run")
-            for m in matched:
-                run: JsonObject | None = runs.get(_str(m, "runId"))
-                if run is None or run["repoPath"] != req["repoPath"]:
-                    errors.append(f"{req_id}/{kind}: mapping has no matching repository execution")
-                elif _str(run, "format") == "junit" and not _flag(m, "testIds"):
-                    errors.append(f"{req_id}/{kind}: no concrete tests")
-    return errors
+        if req_id not in obligations.owned and not _flag(req, "impacted"):
+            continue
+        gaps: dict[str, list[str]] = {
+            _str(a, "kind"): _layer_errors(req, _str(a, "kind"), plan)
+            for a in _objs(req, "applicability")
+            if _flag(a, "required")
+        }
+        if obligations.binds(req_id):
+            errors.extend(error for kind in sorted(gaps) for error in gaps[kind])
+        else:
+            absent.extend(
+                {"requirementId": req_id, "layer": kind, "outcome": ABSENT} for kind in sorted(gaps) if gaps[kind]
+            )
+    return Coverage(errors=errors, absent=absent)
 
 
 def _prior_mapping_errors(plan: JsonObject, previous: JsonObject | None, superseded: set[str]) -> list[str]:
@@ -939,7 +1004,7 @@ def validate(
     previous: JsonObject | None = None,
     *,
     complete: bool = False,
-    owned: frozenset[str] = frozenset(),
+    obligations: Obligations = NO_OBLIGATIONS,
     bounds: TaskBounds = NO_BOUNDS,
 ) -> list[str]:
     """Reject incomplete discovery, missing old obligations, and unmapped layers.
@@ -948,7 +1013,8 @@ def validate(
         plan: The regression plan or final mapping.
         previous: The previous ledger, when there is one.
         complete: Whether the mapping must cover every required layer (the final mapping).
-        owned: The requirements whose effective origin is task; each is covered as impacted.
+        obligations: What binds the Task (:func:`coverage`): each owned requirement is covered as impacted, and an
+            impacted requirement holding a proven test is covered too.
         bounds: The Task's sources the plan must list and the resources it creates.
 
     Returns:
@@ -972,7 +1038,7 @@ def validate(
     if old and _flag(_obj(plan, "discovery"), "greenfield"):
         errors.append("Existing cumulative requirements contradict greenfield declaration")
     if complete:
-        errors.extend(_coverage_errors(plan, requirements, owned))
+        errors.extend(coverage(plan, obligations).errors)
         errors.extend(_prior_mapping_errors(plan, previous, superseded))
         errors.extend(_prior_layer_errors(requirements, old, ids, superseded))
     return errors
@@ -1617,7 +1683,7 @@ def _parse_args() -> CliArgs:
     )
     parser.add_argument(
         "--citations",
-        help="verify: a JSON file of the Task's contract citations, "
+        help="check and verify: a JSON file of the Task's contract citations, "
         "{requirementIds, specPaths, acceptanceCriteria, definitionOfDone}",
     )
     args: argparse.Namespace = parser.parse_args()
@@ -1658,14 +1724,20 @@ def _check(plan: JsonObject, previous: JsonObject | None, args: CliArgs, repo: R
     """Check a newly written plan for everything validate later requires that holds without a review.
 
     The scope is checked as validate checks it; a final mapping (``--approved-plan`` given) also
-    as verify checks it before it runs the mapped tests.
+    as verify checks it before it runs the mapped tests, with the requirements the plan marks task, or the
+    ``--citations`` given cite, as the Task's own.
     """
+    citations: JsonObject = read_citations(args.citations) if args.citations else NO_CITATIONS
+    owned: frozenset[str] = frozenset(
+        requirement for requirement, origin in origins(plan, citations).items() if origin == TASK
+    )
     errors: list[str] = source_errors(_strs(plan, SOURCE_FILES), repo)
     errors.extend(
         validate(
             plan,
             previous,
             complete=args.approved_plan is not None,
+            obligations=Obligations(owned=owned, held=proven(previous, plan)),
             bounds=_bounds(args, repo),
         ),
     )
@@ -1699,7 +1771,7 @@ def _deployed(ledger: JsonObject | None, args: CliArgs) -> None:
     """
     errors, evidence = execute_deployed(ledger, Path(args.output).parent) if ledger is not None else ([], [])
     error_values: list[JsonValue] = [*errors]
-    result: JsonObject = {"ok": not errors, "errors": error_values, "evidence": evidence, **_found(evidence)}
+    result: JsonObject = {"ok": not errors, "errors": error_values, "evidence": evidence, **_found(evidence, [])}
     write(args.output, result)
     _emit({**result, "path": args.output})
 
@@ -1836,22 +1908,38 @@ def _review_approved(args: CliArgs) -> bool:
     return review.get("approved") is True and not blocking_findings(review) and bool(review.get("evidence"))
 
 
-def _found(evidence: list[JsonValue]) -> JsonObject:
+def _found(evidence: list[JsonValue], absent: list[JsonValue]) -> JsonObject:
     """Collect what verification recorded outside the Task's obligations, for the Epics that own it.
 
     Returns:
-        ``unmet``: each ``{requirementId, testId, outcome}`` of an existing requirement no completed build proved
-        whose test did not pass; ``unmappedFailing``: each failing test no requirement maps.
+        ``unmet``: each ``{requirementId, layer, outcome: absent}`` unmapped required layer (:func:`coverage`) and
+        each ``{requirementId, testId, outcome}`` mapped test that did not pass, of an existing requirement that
+        does not bind the Task; ``unmappedFailing``: each failing test no requirement maps.
 
     """
-    return {"unmet": collected(evidence, "unmet"), "unmappedFailing": collected(evidence, "unmappedFailing")}
+    return {
+        "unmet": [*absent, *collected(evidence, "unmet")],
+        "unmappedFailing": collected(evidence, "unmappedFailing"),
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class Binding:
+    """What binds the Task in a verification: its effective origins, the proven pairs, and the absent layers."""
+
+    effective: dict[str, str]
+    """The effective origin of each requirement (:func:`origins`)."""
+    held: frozenset[tuple[str, str]]
+    """The proven pairs (:func:`proven`)."""
+    absent: list[JsonValue]
+    """The absent layers of the existing requirements that do not bind the Task (:func:`coverage`)."""
 
 
 def _verify(
     plan: JsonObject,
     previous: JsonObject | None,
     args: CliArgs,
-    effective: dict[str, str],
+    binding: Binding,
     repo: Repository,
 ) -> tuple[list[str], list[JsonValue]]:
     """Run the mapped runs, and on success write the ledger with the pairs now proven.
@@ -1863,7 +1951,8 @@ def _verify(
         The execution errors and the per-run evidence records.
 
     """
-    held: frozenset[tuple[str, str]] = proven(previous, plan)
+    held: frozenset[tuple[str, str]] = binding.held
+    effective: dict[str, str] = binding.effective
     errors, evidence = execute(plan, Path(args.output).parent, effective, held)
     if not errors:
         sources: list[JsonValue] = [*repo.stored(_strs(plan, SOURCE_FILES))]
@@ -1873,10 +1962,27 @@ def _verify(
             "execution": evidence,
             "proven": proven_record(held, plan, evidence),
             DEPLOYED_RUNS: deployed_obligations(plan, previous, effective, held),
-            **_found(evidence),
+            **_found(evidence, binding.absent),
         }
         write(args.ledger, ledger)
     return errors, evidence
+
+
+def _what_binds(plan: JsonObject, previous: JsonObject | None, args: CliArgs) -> tuple[Binding, list[JsonValue]]:
+    """Derive what binds the Task: in verify its effective origins and proven tests; outside verify the proven tests.
+
+    Returns:
+        The effective origins, the proven pairs and the absent layers (verify only), and the origins the gate
+        derived or raised from the Task's contract.
+
+    """
+    effective, corrections = _effective_origins(plan, args) if args.mode == "verify" else ({}, [])
+    obligations: Obligations = Obligations(
+        owned=frozenset(requirement for requirement, origin in effective.items() if origin == TASK),
+        held=proven(previous, plan),
+    )
+    absent: list[JsonValue] = coverage(plan, obligations).absent if args.mode == "verify" else []
+    return Binding(effective=effective, held=obligations.held, absent=absent), corrections
 
 
 def _source_seal(plan: JsonObject, args: CliArgs, repo: Repository) -> tuple[Path, JsonObject]:
@@ -1909,13 +2015,15 @@ def main() -> None:
     if args.mode == "check":
         _check(plan, previous, args, repo)
         return
-    effective, corrections = _effective_origins(plan, args) if args.mode == "verify" else ({}, [])
-    owned: frozenset[str] = frozenset(requirement for requirement, origin in effective.items() if origin == TASK)
+    binding, corrections = _what_binds(plan, previous, args)
     errors: list[str] = validate(
         plan,
         previous,
         complete=args.mode == "verify",
-        owned=owned,
+        obligations=Obligations(
+            owned=frozenset(requirement for requirement, origin in binding.effective.items() if origin == TASK),
+            held=binding.held,
+        ),
         bounds=_bounds(args, repo),
     )
     review_approved: bool = _review_approved(args)
@@ -1931,9 +2039,9 @@ def main() -> None:
         write(bindings, bound)
     evidence: list[JsonValue] = []
     if not errors and args.mode == "verify":
-        errors, evidence = _verify(plan, previous, args, effective, repo)
+        errors, evidence = _verify(plan, previous, args, binding, repo)
     error_values: list[JsonValue] = [*errors]
-    found: JsonObject = {**_found(evidence), "undeclared": [*plan_setups(plan).undeclared]}
+    found: JsonObject = {**_found(evidence, binding.absent), "undeclared": [*plan_setups(plan).undeclared]}
     write(
         args.output,
         {

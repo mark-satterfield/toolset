@@ -152,7 +152,11 @@ an unmapped required layer or a blocking mapping review included, is a correctio
 missing tests, runs the final suite and assesses the scope again before the evidence is mapped
 and verified again, which covers changed bytes too. Source bytes that still change once the
 reassessment allowance is spent are an upstream defect (`source-changed`, see Upstream defects):
-the Story's requirements are moving under the build. Running ancestors count only with their own completed outcome or their immediate
+the Story's requirements are moving under the build. A mapping review that did not approve and ran
+under another plugin version than the running one (the version its step records as
+`regressionMappedReviewPlugin`, or none) is stale: the final verification sends the evidence back
+to be mapped, reviewed and verified under the running plugin, once per running version, and spends
+no allowance. Running ancestors count only with their own completed outcome or their immediate
 agent child's accepted result. Restarting does not replenish the allowance. A fresh suite with the
 same evidence identity and failures after product or test correction stops before another agent round;
 environment recovery and changed requirement, setup or runtime identities remain eligible. Only an
@@ -400,16 +404,18 @@ the plan says. The Tasks of a Story share one spec, so naming it alone, or citin
 criterion, or naming it after another PRD's or Epic's slug, is no citation. A missing origin is
 derived and is no error, neither origin nor discovery's free-text evidence is part of the approved
 scope, and every Task-origin requirement
-is run and coverage-checked as impacted whatever the plan marks. An existing requirement binds the
+is run and coverage-checked as impacted whatever the plan marks. A coverage obligation (a mapping
+for every required layer) exists only for a requirement that binds the Task: its own, or an
+impacted one holding a proven test. An existing requirement binds the
 Task only through the tests the regression ledger (the repository's
 `.agent-workforce/regression.json`, written only by a verification that passed) records as proven
 for it: its `proven` list, and each mapped test its execution records as passing, which also reads
 a ledger written before that list existed. A proven test renamed or replaced keeps its
 `replacements` entry, and its new tests are proven in its place; a superseded requirement binds no
 longer. Every proven test must pass. Every other existing requirement (legacy behaviour, or another
-Epic's unbuilt work) does not bind the Task: a mapped test of it that does not pass is recorded as
-`regressionUnmet` (requirement, test and outcome) and as a carried contract finding for the Epic
-that owns it, and a failing test no requirement maps as `regressionUnmappedFailing`; the build
+Epic's unbuilt work) does not bind the Task: a mapped test of it that does not pass, and a required
+layer of it with no mapping (outcome `absent`), are recorded as `regressionUnmet` (requirement, test
+or layer, and outcome) and as a carried contract finding for the Epic that owns it, and a failing test no requirement maps as `regressionUnmappedFailing`; the build
 continues. A verification that passes writes the ledger with every pair proven before and every
 mapped test that passed in it, so what a Task builds binds every later Task. Repository hooks run normally at commit. When the hooks reject a checkpoint commit (`build:commit` or
 `build:refactor-snapshot`), the step records `commitHookRejection` (the failing hook ids and their trimmed

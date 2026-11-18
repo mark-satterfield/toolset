@@ -35,6 +35,20 @@ TEST_SELECTION: Final = "testSelection"
 """The artifact name of the test design lead's accepted selection."""
 
 
+def plugin_version() -> str | None:
+    """Read the version of the running plugin from its manifest.
+
+    Returns:
+        The manifest's version, or None when it records none.
+
+    """
+    manifest: dict[str, JsonValue] = json_object(
+        json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")),
+    )
+    version: JsonValue = manifest.get("version")
+    return version if isinstance(version, str) else None
+
+
 def build_rounds() -> int:
     """Read the configured build correction allowance.
 
