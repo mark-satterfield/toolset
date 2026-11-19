@@ -78,8 +78,9 @@ fact: it may tell a Task where existing code sits, never what to build. An exist
 closed Task in `existingTasks` is reused, not rewritten (`bd show <id>` prints its description);
 another Epic's Task that plans the same work replaces this Epic's Task: write no Task for that
 work. A Task of this Story whose work only partly overlaps another Epic's planned Task names that
-Task in `blockedByExternal`; the name is recorded in the description and is never an edge,
-because overlap orders nothing: whichever copy builds first decides how much of the other remains.
+Task in `blockedByExternal`; the name is recorded in the description. When that Task is in this
+Story's repository the bead writer makes it a blocker, because both change the same code and one is
+built after the other; one in another repository is never an edge.
 `openWork` answers, for each stack in `stacks` and each upstream
 stack named in `dependsOn`, what `atw-matrix work --id <stack id> --not-epic <epic id>` prints:
 read it instead of running the command. Only for a stack under `openWork.failures`, or when the

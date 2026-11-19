@@ -581,6 +581,9 @@ class Task:
     reuses: str | None = None
     elab_key: str | None = None
     blocked_by_external: list[str] = field(default_factory=list)
+    overlaps: list[str] = field(default_factory=list)
+    """The other Epics' Tasks whose same work this Task overlaps (its ``blockedByExternal``); each one
+    in the Task's own repository becomes a blocker (:func:`keep_same_repository_overlaps`)."""
     cds_bundle_path: str | None = None
     cds_build_specs: list[str] = field(default_factory=list)
     cds_design_source: str | None = None
@@ -627,6 +630,7 @@ class Task:
         check_type(self.reuses, str | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.elab_key, str | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.blocked_by_external, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+        check_type(self.overlaps, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.cds_bundle_path, str | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.cds_build_specs, list[str], collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.cds_design_source, str | None, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -1372,6 +1376,7 @@ class _TaskDocument:
     decision_ids: tuple[str, ...]
     surfaces: tuple[str, ...] | None
     reuses: str | None
+    blocked_by_external: tuple[str, ...]
     build_prerequisites: JsonObject
     kind: str
 
@@ -1386,6 +1391,7 @@ class _TaskDocument:
             self.spec_sections,
             self.requirement_ids,
             self.decision_ids,
+            self.blocked_by_external,
         ):
             if not isinstance(values, tuple) or any(not isinstance(value, str) for value in values):
                 raise TypeError(_ARGUMENT_ERROR)
@@ -1467,6 +1473,35 @@ def drop_cross_repository_built(tasks: list[Task], story_repos: Mapping[str, str
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def overlap_tasks(tasks: list[Task]) -> list[str]:
+    """Name every other Epic's Task the Tasks name as overlapping work.
+
+    Returns:
+        The Task ids, sorted, each once.
+
+    """
+    return sorted({overlap for task in tasks for overlap in task.overlaps})
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def keep_same_repository_overlaps(tasks: list[Task], task_repos: Mapping[str, str]) -> None:
+    """Make each overlapping Task in the Task's own repository a blocker of the Task.
+
+    Two Tasks that build the same work in one repository change the same code, so one is built
+    after the other: the overlap is a real build order. An overlapping Task in another repository
+    orders nothing the Task builds against and stays out of its blockers.
+
+    Args:
+        tasks: The Story's Tasks, changed in place.
+        task_repos: Each overlapping Task's repository path, as the tracker records it.
+
+    """
+    for task in tasks:
+        same: list[str] = [overlap for overlap in task.overlaps if task_repos.get(overlap) == task.repo_path]
+        task.blocked_by_external = list(dict.fromkeys([*task.blocked_by_external, *same]))
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def redundant_edges(edges: list[tuple[str, str]]) -> set[tuple[str, str]]:
     """Find the edges a longer path through other edges already implies (a transitive reduction).
 
@@ -1528,6 +1563,7 @@ def _task_document(value: JsonObject) -> _TaskDocument:
         decision_ids=_task_strings(value.get(ARG_DECISION_IDS)),
         surfaces=tuple(surfaces) if surfaces is not None else None,
         reuses=check_type(reuses, str).strip() or None if reuses is not None else None,
+        blocked_by_external=_task_strings(value.get("blockedByExternal")),
         build_prerequisites=check_type(value.get("buildPrerequisites") or {}, dict[str, JsonValue]),
         kind=check_type(value.get("type") or "", str).strip().casefold(),
     )
@@ -1589,6 +1625,7 @@ def _read_task(key: str, t: _TaskDocument, sources: _TaskSources) -> Task:
         verified="true",
         reuses=t.reuses,
         blocked_by_external=list(dict.fromkeys([*_producer_tasks(t.build_prerequisites), *owners])),
+        overlaps=list(t.blocked_by_external),
         cds_bundle_path=bundles[0] if len(bundles) == 1 else None,
         cds_build_specs=build_specs,
         cds_design_source=source,

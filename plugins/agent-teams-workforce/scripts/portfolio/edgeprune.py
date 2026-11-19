@@ -7,9 +7,6 @@ and never removes them, so edges of those kinds already in the tracker stay unti
 removes them. It does, in this order, for every live Task edge (both ends open) whose dependent
 Task has not started (``task_started``):
 
-- ``C1``: same repository, another Story, the blocker named in the dependent's
-  ``blockedByExternal`` and nothing else attributes the edge (no prerequisite row, no
-  task-dependency-mapper or closure edge).
 - ``C2``: same repository, another Story, a ``buildPrerequisites`` row that the dependent's
   description states only on its "same work planned by other Epics" (overlap) line. The row is
   stripped from ``build_prerequisites`` too.
@@ -19,7 +16,8 @@ Task has not started (``task_started``):
 - ``C5``: on what remains, an edge inside one Story, or a same-repository edge carried by a
   prerequisite row, that a longer path already implies (a transitive reduction).
 
-Every other edge is kept: same-repository consumption, cross-repository ``published`` or
+Every other edge is kept: same-repository consumption, a same-repository Task named in
+``blockedByExternal`` (overlapping work in the same repository is a real build order), cross-repository ``published`` or
 ``deployed`` prerequisites, task-dependency-mapper and closure edges, and every edge nothing
 attributes. Then ``storyedges.story_edges`` is planned on the graph without those edges, and
 the owned Story edges it no longer derives are removed and dropped from their Stories'
@@ -71,13 +69,11 @@ if TYPE_CHECKING:
 type Edge = tuple[str, str]
 """``(dependent, blocker)``: the dependent Task waits for the blocker."""
 
-C1: Final = "C1"
 C2: Final = "C2"
 C3: Final = "C3"
 C4: Final = "C4"
 C5: Final = "C5"
 REASONS: Final[dict[str, str]] = {
-    C1: "same-repository overlap named in blockedByExternal; no prerequisite row",
     C2: "same-repository built prerequisite stated only as same work planned by other Epics",
     C3: "built prerequisite on another repository's Story: nothing to build against until it merges",
     C4: "another repository's Task named only in blockedByExternal; no prerequisite row",
@@ -306,7 +302,7 @@ class Context:
 
 
 def _cross_story(context: Context, edge: Edge) -> str | None:
-    """Judge one live edge between two Stories against C1 to C4.
+    """Judge one live edge between two Stories against C2 to C4.
 
     Returns:
         The category it is removed under, or None when it is kept.
@@ -321,7 +317,7 @@ def _cross_story(context: Context, edge: Edge) -> str | None:
         return C3 if stage == STAGE_BUILT else None
     if edge in context.attribution.mapped or edge not in context.attribution.external:
         return None
-    return C1 if same else C4
+    return None if same else C4
 
 
 def live_edges(graph: beadgraph.Graph) -> list[Edge]:

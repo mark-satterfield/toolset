@@ -86,7 +86,9 @@ from hierarchy import (
     drop_cross_repository_built,
     elab_slug,
     item_briefs,
+    keep_same_repository_overlaps,
     note_warnings,
+    overlap_tasks,
     owned_elsewhere,
     plan_inputs_digest,
     planned_items,
@@ -641,7 +643,10 @@ def _prepared(files: StoryFiles, root: Path | None, packages_dir: str | None) ->
 
 
 def _drop_foreign_built(repo: Path | None, tasks: list[Task]) -> None:
-    """Leave out the Tasks' ``built`` prerequisites on another repository's Story, read from the tracker.
+    """Settle the Tasks' blockers in other Epics from the tracker's repository paths.
+
+    A ``built`` prerequisite on another repository's Story is left out, and each overlapping Task
+    in the Task's own repository becomes a blocker.
 
     Args:
         repo: The central repository, or None for the `CONTROL_REPO_ENV` repository.
@@ -650,6 +655,11 @@ def _drop_foreign_built(repo: Path | None, tasks: list[Task]) -> None:
     """
     stories: dict[str, Bead] = beadgraph.listed(repo, built_producer_stories(tasks))
     drop_cross_repository_built(tasks, {bead.id: bead.metadata.get(KEY_REPO_PATH, "") for bead in stories.values()})
+    overlapping: dict[str, Bead] = beadgraph.listed(repo, overlap_tasks(tasks))
+    keep_same_repository_overlaps(
+        tasks,
+        {bead.id: bead.metadata.get(KEY_REPO_PATH, "") for bead in overlapping.values()},
+    )
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

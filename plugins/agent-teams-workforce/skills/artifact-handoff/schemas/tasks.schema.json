@@ -70,7 +70,7 @@
             ]
           },
           "blockedByExternal": {
-            "description": "Real Task bead ids in other Epics whose same work this Task overlaps; recorded in the description, never an edge. A Task whose output this Task consumes goes in buildPrerequisites.producers.",
+            "description": "Real Task bead ids in other Epics whose same work this Task overlaps; recorded in the description. One in this Story's repository becomes a blocker of this Task; one in another repository is never an edge. A Task whose output this Task consumes goes in buildPrerequisites.producers.",
             "type": "array",
             "items": {
               "type": "string"
