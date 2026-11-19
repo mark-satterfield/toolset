@@ -49,6 +49,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
   - **delete** — the test encodes behaviour the contract removes, and no criterion needs it;
   - **keep** — the test is right under the contract; the production code must change to pass it. Say what it requires.
   Return one decision per named test and change test code only. Existing tests can also be updated or refactored during ordinary suite work when requirements and quality warrant it. Use the test's existing framework and language skill.
+- Review only the tests of the components this Task changes: the accepted execution policy's `affectedComponents` and their files, or, without a policy, the files the Task and its spec name. The tests of every other component stand as they are; do not read, review or improve them unless an implementer names one in update mode.
 - Run the relevant suite and capture actual evidence. Judge test quality before interpreting a failure as missing product behavior; never manufacture a failure or sabotage code to prove a test.
 - No self-tasking: report newly discovered work (missing criteria, needed harness changes, suspected spec defects) in your result; never perform or assign it yourself.
 - Analysis and decision are separate tasks performed by different agents: you may recommend how a criterion should be covered, but disposition of that recommendation belongs to others.

@@ -98,7 +98,10 @@
           "records": [
             {"name": "regressionPrevious", "kind": "file", "holds": "the requirements and mappings recorded before this Task"},
             {"name": "requiredSources", "kind": "file", "holds": "regression.py prepare's record of the Task's sources (its PRD, spec, criteria, TRD and data model files) that the scope must list in sourceFiles; the review step adds each one omitted"},
-            {"name": "regressionPlan", "kind": "file", "holds": "the impact scope the regression-impact-assessor wrote"}
+            {"name": "regressionPlan", "kind": "file", "holds": "the impact scope the regression-impact-assessor wrote for every component the Task's Story changes, or the Story's validated scope a previous Task of the Story kept, when it was assessed from sources of the same identity"},
+            {"name": "regressionScopeIdentity", "kind": "value", "holds": "the identity of the sources the scope is assessed from: their paths and content, and the scope's contracts"},
+            {"name": "regressionPlanReview", "kind": "file", "holds": "the review of the Story's kept scope, recorded with it when the scope is reused; absent otherwise"},
+            {"name": "regressionScopeFrom", "kind": "value", "holds": "the Task step whose validated scope this Task reuses; absent when the scope was assessed here"}
           ],
           "adds": []
         },
@@ -228,12 +231,15 @@
           "limit": "At most three suite-quality correction rounds in one dispatch; no failure is manufactured"
         },
         "build:select-implementers": {
-          "description": "Review architecture, correctness and code quality",
+          "description": "Review architecture, correctness and code quality, unless every deterministic check passes",
           "purpose": "The code is written by the fewest agents whose specialties cover the change, in build order",
           "runBy": "task-to-deploy",
           "reads": ["worktree", "suiteCommand", "baseline", "redRun", "testFiles", "design", "provisioning"],
           "records": [
-            {"name": "codeReview", "kind": "file", "holds": "The accepted codeReview evidence"}
+            {"name": "codeReview", "kind": "file", "holds": "The accepted codeReview evidence"},
+            {"name": "greenRun", "kind": "value", "holds": "The latest suite result, when every deterministic check passed and no review ran"},
+            {"name": "codeReviewTree", "kind": "value", "holds": "The content tree the deterministic checks passed on, when no review ran"},
+            {"name": "stageDecision", "kind": "value", "holds": "The decision that the code review was not needed and the checks that passed, when no review ran"}
           ],
           "adds": [
             {"kinds": ["build:code-reviewed"], "when": "after the independent code review is accepted"}

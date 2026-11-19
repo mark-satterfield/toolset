@@ -110,6 +110,13 @@ flowchart TD
 
 ## Execution policy and evidence reuse
 
+The regression scope is assessed and reviewed once per Story: the first Task of a Story worktree
+has it assessed for every component the Story's Tasks change, and once validated it is kept in
+the Story worktree's git directory with the identity of its sources and contracts. A later Task
+whose sources have the same identity records that scope and its review with no assessor or
+reviewer session and validates it against itself; only its final mapping, of its own changed
+components, is written by the assessor (`orchestrator/flows/build_reviews.py`).
+
 Once the regression scope is accepted, the regression-impact-assessor writes the Task's execution
 policy, whose contract is `build-execution-policy.schema.json`. It is the build's one planning
 session for the Task, not a reviewer of every stage. The build checks the policy, corrects it
@@ -120,7 +127,15 @@ The build follows the policy only while that identity still matches. Without an 
 current policy every stage runs, so an older journal, a refused policy or a changed scope never
 skips a check. The policy may omit test work, the shared-capability review, refactoring and the
 documentation audit with an applicability reason; the code review, the final review, the final
-suite and the regression gate always run. Infrastructure work is verified with CDK assertions
+suite and the regression gate always run. The code review and the final review start
+`code-correctness-reviewer` only when a deterministic check fails or cannot decide
+(`orchestrator/flows/build_gate.py`): the whole suite exits 0 on the current tree, the Task's
+tests were written in this build, and the repository's `task lint` exits 0. The final suite runs
+before the final review for that reason, and a failing final suite goes to its judgment. The
+acceptance criteria's tests are proved by the regression verification, a script, before the
+commit; `acceptance-criteria-coverage-assessor` judges only a failing suite. The test writers
+review the tests of the components the Task changes (the policy's `affectedComponents`), not the
+whole suite. Infrastructure work is verified with CDK assertions
 and synthesis checks rather than invented application unit tests, and no verification method is
 an AWS action.
 

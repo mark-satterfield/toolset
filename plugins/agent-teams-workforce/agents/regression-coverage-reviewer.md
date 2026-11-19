@@ -27,7 +27,9 @@ previous review. Search requirements, code and tests as `graphrag-lookup` says.
 
 - Read the source references directly: the requirement documents, the changed component files,
   the connected contracts and the test assertions. Never approve on the assessor's prose.
-- Check discovery against the scope rule, no further.
+- Check discovery against the scope rule, no further. A plan is the Story's scope: it covers the
+  components every Task of the Story changes, and the later Tasks of the Story reuse it and your
+  review of it without a new review, so review it once for the whole Story.
 - Check only what the stage you were given checks: a plan review judges no test still to be
   written.
 

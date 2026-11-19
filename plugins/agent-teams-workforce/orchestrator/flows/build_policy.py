@@ -63,7 +63,10 @@ AUTHOR: Final = "regression-impact-assessor"
 OPTIONAL_STAGES: Final = ("tests", "reuse-audit", "refactor", "docs")
 """Stages the policy may omit with an applicability reason."""
 REQUIRED_STAGES: Final = ("code-review", "final-review", "final-suite", "regression-map")
-"""Stages that always run: the independent judgment, the final suite and the regression gate."""
+"""Stages the policy cannot omit: the independent judgment, the final suite and the regression gate.
+
+The two reviews start their reviewer only when a deterministic check fails or cannot decide (``build_gate``).
+"""
 SUITE_NAMES: Final = ("baseline", "redRun", "greenRun", "refactorRun", "finalRun")
 """The artifacts that hold a whole-suite result."""
 SCOPE_NAMES: Final = ("regressionPlan", "regressionScope")
@@ -471,19 +474,33 @@ def evidence_key(run: StepRun, command: str) -> dict[str, JsonValue]:
     return {"digest": _digest(components), "tree": tree, "baseline": _digest(baseline)}
 
 
-def _story_suite_file(run: StepRun) -> Path:
-    """Locate the Story worktree's record of its last passing final suite, in its git directory.
+def story_file(run: StepRun, name: str) -> Path:
+    """Locate a record the Tasks of one Story worktree share, in its git directory, outside the content.
+
+    Args:
+        run: The current step.
+        name: The record's file name.
 
     Returns:
         The file's path; it need not exist.
 
     """
     located = run.tools.command(
-        ["git", "rev-parse", "--path-format=absolute", "--git-path", STORY_SUITE],
+        ["git", "rev-parse", "--path-format=absolute", "--git-path", name],
         stage=run.step.get("script", "build:evidence"),
         cwd=workspace_of(run).tree,
     )
     return Path(located.stdout.strip())
+
+
+def _story_suite_file(run: StepRun) -> Path:
+    """Locate the Story worktree's record of its last passing final suite.
+
+    Returns:
+        The file's path; it need not exist.
+
+    """
+    return story_file(run, STORY_SUITE)
 
 
 def record_story_suite(run: StepRun, suite: dict[str, JsonValue]) -> None:

@@ -36,6 +36,7 @@ from orchestrator.core.tools import Tools
 from orchestrator.flows import (
     build_carried,
     build_follow,
+    build_gate,
     build_policy,
     build_prerequisite_work,
     build_prerequisites,
@@ -447,8 +448,9 @@ def _tests(run: StepRun) -> Completion:
         run,
         agent,
         OutputContract(CONTRACTS / "build-tests.schema.json", "testWork"),
-        "Review and improve this suite's happy, negative, edge and boundary coverage against the full contract. "
-        + build_policy.instruction(run),
+        "Review and improve the happy, negative, edge and boundary coverage of the components this Task changes "
+        "(the executionPolicy's affectedComponents and their files) against the full contract; leave the tests of "
+        "every other component as they are. " + build_policy.instruction(run),
         followups=(_new("build:tests-authored", "Record the test author's accepted suite file versions"),),
     )
 
@@ -616,12 +618,26 @@ def _suite_reviewed(run: StepRun) -> Completion:
 
 
 def _select_implementers(run: StepRun) -> Completion:
-    """Review architecture and code quality even when the entire suite already passes.
+    """Review architecture and code quality unless every deterministic check passes.
+
+    The first review of a Task is left out when the deterministic checks that stand in for it all
+    pass (``build_gate``); a re-review of an earlier review's findings always runs.
 
     Returns:
-        Independent code review followed by a deterministic implementation decision.
+        Green with the decision that no review was needed, or an independent code review followed
+        by a deterministic implementation decision.
 
     """
+    suite: dict[str, JsonValue] = _latest_suite(run)
+    reason: str | None = None if latest(run, "codeReview") is not None else build_gate.passed(run, suite, "code-review")
+    if reason is not None:
+        return Completion(
+            artifacts=(
+                value_artifact("greenRun", suite),
+                value_artifact(CODE_REVIEW_TREE, build_policy.content_tree(run)),
+                build_policy.Decision("code-review", "omit", reason).artifact(),
+            ),
+        )
     return reasoned(
         run,
         "code-correctness-reviewer",
@@ -1381,13 +1397,19 @@ def _final_review_covers(run: StepRun) -> bool:
 def _final_suite(run: StepRun) -> Completion:
     """Require the complete repository suite to pass before the Task can commit.
 
+    The final review is left out when the final suite passes and the other deterministic checks
+    that stand in for it pass too (``build_gate``); a failing final suite goes to its judgment.
+
     Returns:
-        Factual whole-suite evidence, the independent final review it needs first, or, for a
-        failing suite, its judgment, the correction by the specialist that owns the failure and
-        the final suite again (:func:`_judged`).
+        Factual whole-suite evidence with the decision that no review was needed, the independent
+        final review it needs first, or, for a failing suite, its judgment, the correction by the
+        specialist that owns the failure and the final suite again (:func:`_judged`).
 
     """
     if not _final_review_covers(run):
+        unreviewed: Completion | None = _final_suite_unreviewed(run)
+        if unreviewed is not None:
+            return unreviewed
         return reasoned(
             run,
             REVIEWER,
@@ -1412,6 +1434,35 @@ def _final_suite(run: StepRun) -> Completion:
         )
     build_policy.record_story_suite(run, suite)
     return Completion(artifacts=_suite_artifacts("finalRun", suite, "final-suite"))
+
+
+def _final_suite_unreviewed(run: StepRun) -> Completion | None:
+    """Run the final suite first, and stand it in for the final review when every check passes.
+
+    Returns:
+        The passing final suite with the decision that no review was needed, the failing suite's
+        judgment and correction, or None when the suite passes but another check fails or cannot
+        decide, so the final review runs.
+
+    """
+    suite: dict[str, JsonValue] = _suite(run, "final")
+    if suite["exitCode"] != 0:
+        return _judged(
+            run,
+            suite,
+            "finalFailure",
+            (_new("build:final-suite", "Run the suite a final time after the correction"),),
+        )
+    reason: str | None = build_gate.passed(run, suite, "final-review")
+    if reason is None:
+        return None
+    build_policy.record_story_suite(run, suite)
+    return Completion(
+        artifacts=(
+            *_suite_artifacts("finalRun", suite, "final-suite"),
+            build_policy.Decision("final-review", "omit", reason).artifact(),
+        ),
+    )
 
 
 def _final_review(run: StepRun) -> Completion:

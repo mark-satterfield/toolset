@@ -1,4 +1,13 @@
-"""Regression, reuse and documentation work in the Task's Python journal."""
+"""Regression, reuse and documentation work in the Task's Python journal.
+
+The regression scope is assessed and reviewed once per Story: the first Task of a Story worktree
+has the scope assessed for every component the Story's Tasks change, and once it is validated it
+is kept in the Story worktree's git directory (:data:`STORY_SCOPE`) with the identity of the
+sources it was assessed from. A later Task of the Story whose sources have the same identity
+records that scope and its review from the record, with no assessor or reviewer session, and the
+scope is validated against the Task as before; only its final mapping, of its own changed
+components, is written by an agent. A scope that fails that validation is corrected as any other.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +28,7 @@ from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, file
 from orchestrator.core.tool_locks import seconds
 from orchestrator.flows import build_carried, build_policy, build_repository_setup, build_reuse
 from orchestrator.flows.build_repository_setup import REPOSITORY_SETUP_WORK, RESCOPE
-from orchestrator.flows.build_sessions import OutputContract, accepted_steps, latest, reasoned
+from orchestrator.flows.build_sessions import OutputContract, accepted_steps, latest, reasoned, view_of
 from orchestrator.flows.build_state import (
     ARTIFACT_CONTRACTS,
     CONTRACTS,
@@ -48,7 +57,7 @@ from orchestrator.flows.build_state import (
 from orchestrator.flows.elaboration_files import project_root
 
 if TYPE_CHECKING:
-    from step_journal_contract import ValueArtifact
+    from step_journal_contract import Artifact, ValueArtifact
 
 REMAP: Final = ("build:regression-remap", "build:regression-map-review", "build:regression-verify")
 """The steps that map, review and verify the final regression evidence again."""
@@ -56,6 +65,8 @@ REREVIEW: Final = ("build:regression-map-review", "build:regression-verify")
 """The steps that review the existing mapping again and verify it."""
 CARRY_REASON: Final = "the regression check's correction rounds are spent; the build continues with it recorded"
 """Why the build carries what a regression check still finds once its rounds are spent."""
+ASSESS: Final = "build:regression-assess"
+"""The step that assesses the regression scope at the start of a Task, the only one that may reuse the Story's."""
 VALIDATE: Final = "build:regression-validate"
 """The step that validates the reviewed regression scope."""
 VERIFY: Final = "build:regression-verify"
@@ -70,6 +81,14 @@ SOURCES_ADDED: Final = "requiredSourcesAdded"
 """The Task's required sources the build added to an assessed scope that omitted them."""
 SOURCE_FILES: Final = "sourceFiles"
 """The member of a regression scope that lists every source file read to establish it."""
+STORY_SCOPE: Final = "agent-workforce-story-regression.json"
+"""The file in the Story worktree's git directory that holds the Story's validated regression scope."""
+SCOPE_FROM: Final = "regressionScopeFrom"
+"""The Task step whose validated scope this Task reuses, recorded when it reuses one."""
+SCOPE_IDENTITY: Final = "regressionScopeIdentity"
+"""The identity of the sources a scope is assessed from, which a later Task must equal to reuse it."""
+SCOPE_SCHEMAS: Final = ("regression-plan.schema.json", "regression-review.schema.json")
+"""The contracts a kept scope and its review were written to; a change to either is a change of identity."""
 REVIEW_PLUGIN: Final = "regressionMappedReviewPlugin"
 """The plugin version the final mapping review ran under, recorded on its step."""
 STALE_REVIEW: Final = "regressionStaleReview"
@@ -135,9 +154,11 @@ def _scope(run: StepRun, final: bool) -> Completion:
     """
     name: str = "regressionMapped" if final else "regressionPlan"
     action: str = (
-        "Map final test evidence against the approved regression scope"
+        "Map final test evidence against the approved regression scope for the components this Task changes"
         if final
-        else "Assess cumulative regression scope from existing obligations and the Task's full sources"
+        else "Assess cumulative regression scope from existing obligations and the full sources, for every "
+        "component this Task's Story changes across all of its Tasks (bd show the Task's parent Story and its "
+        "children), so the later Tasks of the Story reuse this scope"
     )
     if latest(run, REPOSITORY_SETUP_WORK) is not None:
         action += (
@@ -243,14 +264,84 @@ def _scope_initial(run: StepRun) -> Completion:
             add=assessed.add,
         )
     required: Path = Path(check_type(prepared[REQUIRED_SOURCES], str))
-    return Completion(
-        artifacts=(
-            *assessed.artifacts,
-            file_artifact("regressionPrevious", output),
-            file_artifact(REQUIRED_SOURCES, required),
-        ),
-        add=assessed.add,
+    identity: str = _scope_identity(sources)
+    prepared_artifacts: tuple[Artifact, ...] = (
+        file_artifact("regressionPrevious", output),
+        file_artifact(REQUIRED_SOURCES, required),
+        value_artifact(SCOPE_IDENTITY, identity),
     )
+    reused: tuple[Artifact, ...] = _story_scope(run, identity) if run.step["script"] == ASSESS else ()
+    if reused:
+        return Completion(artifacts=(*prepared_artifacts, *reused))
+    return Completion(artifacts=(*assessed.artifacts, *prepared_artifacts), add=assessed.add)
+
+
+def _scope_identity(sources: list[str]) -> str:
+    """Identify the sources a regression scope is assessed from, by their content and the scope's contracts.
+
+    Returns:
+        The SHA-256 hex digest of each source path with its content and of the contracts' content.
+
+    """
+    digest = hashlib.sha256()
+    paths: list[Path] = [*map(Path, sorted(set(sources))), *(ARTIFACT_CONTRACTS / name for name in SCOPE_SCHEMAS)]
+    for path in paths:
+        digest.update(str(path).encode("utf-8") + b"\0")
+        digest.update(hashlib.sha256(path.read_bytes()).digest() if path.is_file() else b"\0missing")
+    return digest.hexdigest()
+
+
+def _story_scope(run: StepRun, identity: str) -> tuple[Artifact, ...]:
+    """Record the Story's validated regression scope and its review for this Task, when one stands for it.
+
+    Returns:
+        The scope and review files written for this Task and the step they came from, or nothing
+        when the Story holds no scope or holds one assessed from other sources.
+
+    """
+    path: Path = build_policy.story_file(run, STORY_SCOPE)
+    if not path.is_file():
+        return ()
+    held: dict[str, JsonValue] = json_object(json.loads(path.read_text(encoding="utf-8")))
+    if held.get(SCOPE_IDENTITY) != identity:
+        return ()
+    folder: Path = run.context.work / "build" / str(run.step["id"])
+    plan: Path = folder / "story-regression-plan.json"
+    review: Path = folder / "story-regression-review.json"
+    write_json(plan, json_object(held["plan"]))
+    write_json(review, json_object(held["review"]))
+    return (
+        file_artifact("regressionPlan", plan),
+        file_artifact("regressionPlanReview", review),
+        value_artifact(SCOPE_FROM, check_type(held["from"], str)),
+    )
+
+
+def _keep_story_scope(run: StepRun) -> None:
+    """Keep this Task's validated, assessed regression scope and its review for the later Tasks of its Story."""
+    identity: JsonValue = latest(run, SCOPE_IDENTITY)
+    if not isinstance(identity, str):
+        return
+    held: dict[str, JsonValue] = {
+        SCOPE_IDENTITY: identity,
+        "plan": json_object(json.loads(_file(run, "regressionPlan").read_text(encoding="utf-8"))),
+        "review": json_object(json.loads(_file(run, "regressionPlanReview").read_text(encoding="utf-8"))),
+        "from": f"{run.bead}:{run.step['id']}",
+    }
+    write_json(build_policy.story_file(run, STORY_SCOPE), held)
+
+
+def _reused_scope(run: StepRun) -> bool:
+    """Tell whether the latest regression scope is the Story's, recorded with no assessor session.
+
+    Returns:
+        True when the latest scope was recorded by the same step as the latest reuse record.
+
+    """
+    view = view_of(run)
+    plan = view.artifact("regressionPlan")
+    origin = view.artifact(SCOPE_FROM)
+    return plan is not None and origin is not None and plan.step == origin.step
 
 
 def _scope_final(run: StepRun) -> Completion:
@@ -317,6 +408,8 @@ def _review_initial(run: StepRun) -> Completion:
 
     """
     added: tuple[ValueArtifact, ...] = _with_required_sources(run)
+    if _reused_scope(run):
+        return Completion(artifacts=added)
     reviewed: Completion = _review(run, False)
     return Completion(artifacts=(*added, *reviewed.artifacts), add=reviewed.add)
 
@@ -363,6 +456,7 @@ def _validate(run: StepRun, final: bool) -> Completion:
             ),
         )
     if document.get("ok") is True:
+        _keep_story_scope(run)
         return Completion(artifacts=(file_artifact("regressionScope", output),))
     if final:
         return _verify_correction(run, output, document)

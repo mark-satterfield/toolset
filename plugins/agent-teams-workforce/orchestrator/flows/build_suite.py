@@ -88,11 +88,25 @@ def declared_command(tree: Path, supplied: str = "") -> str | None:
     return next((command for name in TASKFILES if (command := _task_command(tree / name))), None)
 
 
-def _task_command(path: Path) -> str | None:
-    """Read the presence of an explicitly declared Taskfile test task.
+def declared_task(tree: Path, task: str) -> str | None:
+    """Name the Task CLI command of a task the repository's Taskfile declares.
+
+    Args:
+        tree: The repository worktree.
+        task: The task's name, for example ``lint``.
 
     Returns:
-        The Task CLI command when the file declares test, otherwise None.
+        ``task <name>`` when a Taskfile of the tree declares it, otherwise None.
+
+    """
+    return next((command for name in TASKFILES if (command := _task_command(tree / name, task))), None)
+
+
+def _task_command(path: Path, task: str = "test") -> str | None:
+    """Read the presence of an explicitly declared Taskfile task.
+
+    Returns:
+        The Task CLI command when the file declares the task, otherwise None.
 
     Raises:
         StepError: The operation cannot proceed with the supplied evidence.
@@ -110,7 +124,7 @@ def _task_command(path: Path) -> str | None:
         msg = "build:baseline"
         raise StepError(msg, OTHER_CAUSE, (message,))
     tasks: object = document.get("tasks")
-    return "task test" if isinstance(tasks, dict) and "test" in tasks else None
+    return f"task {task}" if isinstance(tasks, dict) and task in tasks else None
 
 
 def run_suite(tools: Tools, tree: Path, command: str, evidence: Path, stage: str) -> SuiteResult:

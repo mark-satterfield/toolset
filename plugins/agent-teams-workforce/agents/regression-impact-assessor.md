@@ -28,6 +28,10 @@ repositories).
 
 ## Plan mode (before Red)
 
+- The scope is the Story's: it is assessed once, at the first Task of the Story, and the later
+  Tasks of the Story reuse it while its sources are unchanged. Cover the components every Task of
+  the Task's parent Story changes (`bd show` the parent Story and its child Tasks), not this Task's
+  alone.
 - Discover the requirements this change affects from the actual sources, as far as the scope rule
   in `cumulative-regression` ("Establish the affected requirements") reaches and no further.
 - Set each requirement's origin: task for what the Task's contract cites as what it builds, existing
@@ -74,6 +78,9 @@ repositories).
 
 ## Finalize mode (after Red)
 
+- Map only the requirements that bind this Task and the components this Task changes; the
+  approved scope may be the Story's, and the requirements of the Story's other Tasks bind them,
+  not this one.
 - Keep the approved scope exactly unchanged; finalize only what the contract lets change, from the
   actual saved test files.
 - Every required layer of every impacted requirement that binds the Task (origin task, or holding a
