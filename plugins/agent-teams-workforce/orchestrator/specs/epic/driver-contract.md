@@ -34,8 +34,8 @@ first `.`), appended under an exclusive `fcntl.flock` on the file, with exactly 
 `architecture-check-carried`, `output-schema-carried`, `trd-carried`, `span-problem`,
 `task-decomposition-carried`, `done-rule-carried`, `ownership-race`, `architecture-impact`,
 `contract-finding`, `producer-missing`, `completion-cycle`, `prerequisite-unscheduled`,
-`regression-carried`, `prerequisite-carried`, `respec-request-converted` and
-`producer-epic-unordered`. The plugin writes them with `orchestrator/core/findings.py` and emits,
+`regression-carried`, `prerequisite-carried`, `respec-request-converted`,
+`producer-epic-unordered` and `story-without-tasks`. The plugin writes them with `orchestrator/core/findings.py` and emits,
 for each, the warning note `finding for <owner> (<kind>): <detail>` with the finding's stage as
 its step, which the driver records with the run's phase events. The driver writes them with
 `findingrecord.py` and records each as a `finding_recorded` ledger event. A handback has no

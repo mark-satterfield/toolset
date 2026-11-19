@@ -130,6 +130,7 @@ from bead_metadata import (
     KEY_SPEC_PATH,
     KEY_SPEC_PATHS,
     KEY_SPEC_SECTIONS,
+    KEY_STORY_NO_BUILD_WORK,
     KEY_STORY_REPLACED_PREREQUISITES,
     KEY_SURFACES,
     KEY_TEST_STRATEGY,
@@ -1473,6 +1474,7 @@ class _StoryTaskWriter:
     root: Path | None
     story_id: str
     story_labels: list[str]
+    story_no_build_work: str
     priority: dict[str, JsonValue]
     beads: list[Bead]
     keyed: dict[str, Bead]
@@ -1532,6 +1534,7 @@ class _StoryTaskWriter:
             raise HierarchyError(msg)
         self.story_id = story.id
         self.story_labels = str_list(by_id[story.id].get("labels") or [])
+        self.story_no_build_work = story.metadata.get(KEY_STORY_NO_BUILD_WORK, "")
         tasks: list[JsonObject] = children(self.writer.repo, self.story_id, "task")
         self.priority = {str(r["id"]): r.get("priority") for r in tasks}
         beads: list[Bead] = sorted((bead_of(r) for r in tasks), key=lambda b: b.id)
@@ -1575,6 +1578,8 @@ class _StoryTaskWriter:
         written: list[WrittenTask] = [
             done.get(task.key) or _written(task, ids[task.elab_key or task.key], "created") for task in chosen
         ]
+        if self.options.get("keys") is None:
+            self._record_build_work(tasks)
         counts: Counter[str] = Counter(task["action"] for task in written)
         return {
             "ok": True,
@@ -1591,6 +1596,16 @@ class _StoryTaskWriter:
                 "warnings": len(warnings),
             },
         }
+
+    def _record_build_work(self, tasks: list[Task]) -> None:
+        """Record on the Story whether it has no build work: no Task planned and nothing it builds.
+
+        The driver deploys a Story with no Task only when this reads true; a Story left with no
+        Task while it has work is held instead. Written only when the value changes.
+        """
+        value: str = "true" if not tasks and not work_items(self.files) else "false"
+        if value != (self.story_no_build_work or "false"):
+            self.writer.metadata(self.story_id, {KEY_STORY_NO_BUILD_WORK: value})
 
     def _existing(self, task: Task, bead: Bead, text: str, meta: dict[str, str]) -> str:
         """Retain or refresh a Task that has a bead.

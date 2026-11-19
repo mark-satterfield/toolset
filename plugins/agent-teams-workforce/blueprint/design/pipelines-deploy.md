@@ -61,7 +61,10 @@ merged and the Story closed.
 detail in the sections that follow.
 **Sources:** the owner: "keeper is what knows to deploy a story."; the code, which is the source for
 `keeper.py` and `supervisor.py`: `keeper.py` runs `supervisor.py`, whose deploy lane
-(`selection.select_deploy`, `storyorder.gate`) takes each Story whose Tasks are all closed, one
+(`selection.select_deploy`, `storyorder.gate`) takes each Story whose Tasks are all closed, and a
+Story with no Task only when its Task write recorded `story_no_build_work` true (the plan has no
+Task and the Story builds nothing, `beadwrite.write_story_tasks`); any other Story with no Task is
+held with a `story-without-tasks` finding and nothing is dispatched for it. It takes one
 Story at a time per repository, and runs its deploy through `storydeploy.run`, whose
 `deploy:close` step closes the Story bead (`ops/sdlc-automation/keeper.py`, `supervisor.py`, `selection.py`, `storyorder.py` and `storydeploy.py`); the requirements row for Deploy:
 "A Story whose Tasks are all built" producing "The Story's repository published and deployed to

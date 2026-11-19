@@ -16,7 +16,7 @@ type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValu
 type JsonObject = dict[str, JsonValue]
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "2a595584ae4c00d07af6cac37c3de214c15834a754ef00b6d00af5ad9ab2e687"
+SCHEMA_SHA256: Final[str] = "355f663015db07f72692cb55c61dc4b2c7d9150c9b1d4559fe33d64308e22925"
 
 #: The literal a producer writes for an undecided -or-unknown contract value; read as None.
 UNKNOWN: Final[str] = "unknown"
@@ -234,6 +234,10 @@ KEY_STORY_EDGE_REASONS: Final[str] = "story_edge_reasons"
 #: builds_entries. The Story's next retire-superseded step points each row at the written Tasks that build one of
 #: those entries, drops a row none builds, and removes the key.
 KEY_STORY_REPLACED_PREREQUISITES: Final[str] = "story_replaced_prerequisites"
+#: true when the Story's Task write found a plan with no Task and no work the Story builds (hierarchy.work_items
+#: empty), so the Story deploys with no Task; false once it has a Task or work. Written by
+#: beadwrite.write_story_tasks; the driver deploys a Story with no Task only when it reads true.
+KEY_STORY_NO_BUILD_WORK: Final[str] = "story_no_build_work"
 KEY_WSJF: Final[str] = "wsjf"
 KEY_WSJF_CALCULATED_AT: Final[str] = "wsjf_calculated_at"
 KEY_WSJF_RUBRIC: Final[str] = "wsjf_rubric"
@@ -517,6 +521,7 @@ STORY_KEYS: Final[tuple[str, ...]] = (
     KEY_STORY_OWNED_BLOCKERS_AT,
     KEY_STORY_EDGE_REASONS,
     KEY_STORY_REPLACED_PREREQUISITES,
+    KEY_STORY_NO_BUILD_WORK,
 )
 #: Keys WSJF scoring writes; numeric values are stored as text.
 WSJF_KEYS: Final[tuple[str, ...]] = (
@@ -622,6 +627,7 @@ class BeadMetadata(TypedDict, total=False):
     story_owned_blockers_at: str
     story_edge_reasons: str
     story_replaced_prerequisites: str
+    story_no_build_work: str
     wsjf: str
     wsjf_calculated_at: str
     wsjf_rubric: str
