@@ -272,7 +272,15 @@ report." and "`git commit --no-verify` / `git push --no-verify` / `git commit -n
 
 ```mermaid
 flowchart TD
-    in(["A failed synth, deploy or deployment check, with its output"]) --> who["Start deploy-failure-fixer"]
+    in(["A failed synth, deploy or deployment check, with its output"]) --> up{"Output names an SSM parameter or export missing upstream?"}
+    up -->|"yes"| ssm["SSM check again: deploy the producer repositories, the Story waits for them - section 2"]
+    up -->|"no"| stuck{"A stack in a state CloudFormation must delete first (ROLLBACK_COMPLETE and the like)?"}
+    stuck -->|"yes, AWS dev account confirmed"| orphan["Clear each orphan of the stack's own literal name no stack owns, then delete the stack"]
+    orphan --> redeploy
+    stuck -->|"an orphan another stack owns, or one cleared once already"| held
+    stuck -->|"no"| stale{"Stacks stand differently than when the deploy failed?"}
+    stale -->|"yes"| redeploy
+    stale -->|"no"| who["Start deploy-failure-fixer"]
     who --> ctx["The fixer reads the output, the Task and spec, and the full architecture of the component through the spec's links in arc42 (vault)"]
     ctx --> cause{"What does the failure need?"}
     cause -->|"a change within the design the task and spec give"| change["Change the code or CDK in the Story's worktree"]
@@ -285,6 +293,7 @@ flowchart TD
     commit --> gate{"Commit made?"}
     gate -->|"yes"| redeploy["Redeploy - sections 2 and 3"]
     gate -->|"no: findings cannot be fixed"| abort(["Abort with no commit, report"])
+    cause -->|"nothing in the repository: no file changed"| held(["Story stopped with a deploy-stopped finding until its code, stacks or the plugin change"])
     dt --> redeploy
     redeploy --> rd{"Deployment working?"}
     rd -->|"yes"| okEnd(["Deployment working - on to section 5"])
@@ -295,6 +304,20 @@ flowchart TD
 
 Notes on the diagram:
 
+- Every step before the fixer is the driver's code (`storydeploy.py` and `stackrecovery.py`) and
+  spends no tokens. A missing upstream SSM parameter or export is the upstream repository's work,
+  so the Story goes back to its SSM check, which deploys the producers and checks exports, and
+  waits for them. A stack CloudFormation must delete before it creates it again is deleted, and
+  is also deleted before every deploy; a resource that blocked it because the name is taken is
+  deleted first, only when the stack's own template gives that literal name, no CloudFormation
+  stack owns it, and it was not cleared once already in this Story's deploy. Every deletion first
+  shows that the deploy commands reach the account of the `dev` AWS profile; nothing is deleted
+  in any other account. A producer repository's deploy recovers its stacks the same way.
+- When the fixer changes no file, or an orphan cannot be cleared, the Story is not dispatched
+  again and is not backed off: its fix step stays open, a `deploy-stopped` finding names the
+  cause, and the Story waits until the fingerprint of the fix step's inputs (the worktree's head
+  and uncommitted files, the failure, the current status of its stacks and the plugin version)
+  changes.
 - The fixer is `deploy-failure-fixer`, which diagnoses and fixes in the Story's worktree with the
   CDK and CloudFormation skills, because deploy failures are CDK and infrastructure work.
 - A fix that would change the design is not made in the deploy; the finding goes to the
