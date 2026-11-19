@@ -11,12 +11,14 @@ A passing suite result may stand for a later run only when the accepted policy m
 reusable and the later run's :func:`evidence_key` equals the earlier one: the work tree's content
 (untracked files included, so the dependency lock and tool configuration in the tree too), the
 requirements, the declared command, the setup, the runtime and tool configuration, the contract
-version and the evidence scope. A live check is never reused.
+(the suite runner and the policy schema, not the plugin version) and the evidence scope. A live
+check is never reused. A suite recorded while the plugin version was part of the contract still
+stands when its key equals this run's with any installed plugin version in the contract.
 
 A Task's baseline may also stand on the previous Task's passing final suite in the same Story
 worktree (:func:`prior_story_suite`), when the content tree, the command, the build-phase setup
-commands, the runtime and tool configuration, the contract version and the evidence scope are all
-equal: the baseline is the whole suite on an identical tree, so the requirements are left out of
+commands, the runtime and tool configuration, the contract (not the plugin version) and the
+evidence scope are all equal: the baseline is the whole suite on an identical tree, so the requirements are left out of
 that identity.
 """
 
@@ -26,6 +28,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shlex
 import shutil
 import sys
@@ -41,6 +44,7 @@ from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, valu
 from orchestrator.flows.build_sessions import REQUIREMENT_NAMES, OutputContract, reasoned, view_of
 from orchestrator.flows.build_state import (
     CONTRACTS,
+    PLUGIN,
     artifact_document,
     build_rounds,
     count_in_dispatch,
@@ -74,6 +78,11 @@ SCOPE_NAMES: Final = ("regressionPlan", "regressionScope")
 BEAD_SCOPE: Final = ("acceptanceCriteria", "definitionOfDone", "requirementIds", "surfaces", "testStrategy")
 """The Task's own fields the policy was written from."""
 SUITE_SCOPE: Final = "whole-suite"
+VERSION: Final = re.compile(r"\d+\.\d+\.\d+")
+EARLIER: Final[dict[str, tuple[frozenset[str], frozenset[str]]]] = {}
+"""For each evidence key this process made: the digests and baselines the same identity had while the
+plugin version was part of the contract, one per installed plugin version, so a suite recorded then
+still stands (:func:`_same_digest`, :func:`_same_baseline`)."""
 RUNNER: Final = Path(__file__).resolve().with_name("build_suite.py")
 STORY_SUITE: Final = "agent-workforce-story-suite.json"
 """The file in the Story worktree's git directory that holds its last passing final suite, outside the content."""
@@ -410,13 +419,49 @@ def _tool(command: str) -> dict[str, JsonValue]:
 
 
 def _contract() -> dict[str, JsonValue]:
-    """Identify the contract that produces suite evidence.
+    """Identify the contract that produces suite evidence; the plugin version is not part of it.
 
     Returns:
-        The plugin version and the digests of the suite runner and the policy contract.
+        The digests of the suite runner and the policy contract.
 
     """
-    return {"plugin": plugin_version(), "runner": _file_digest(str(RUNNER)), "policy": _file_digest(str(SCHEMA))}
+    return {"runner": _file_digest(str(RUNNER)), "policy": _file_digest(str(SCHEMA))}
+
+
+def _installed_versions() -> list[str | None]:
+    """Name every plugin version an earlier suite key may hold in its contract.
+
+    Returns:
+        No version, the running one, and each installed version beside the running plugin.
+
+    """
+    installed: list[str] = sorted(
+        path.name for path in PLUGIN.parent.iterdir() if path.is_dir() and VERSION.fullmatch(path.name)
+    )
+    return list(dict.fromkeys([None, plugin_version(), *installed]))
+
+
+def _same_digest(recorded: JsonValue, key: dict[str, JsonValue]) -> bool:
+    """Tell whether a recorded key's digest is this key's, now or with a plugin version in its contract.
+
+    Returns:
+        True when it equals the key's digest or one of its earlier forms (:data:`EARLIER`).
+
+    """
+    digest: JsonValue = key.get("digest")
+    earlier: frozenset[str] = EARLIER.get(str(digest), (frozenset(), frozenset()))[0]
+    return recorded == digest or (isinstance(recorded, str) and recorded in earlier)
+
+
+def _same_baseline(recorded: JsonValue, key: dict[str, JsonValue]) -> bool:
+    """Tell whether a recorded baseline is this key's, now or with a plugin version in its contract.
+
+    Returns:
+        True when it equals the key's baseline or one of its earlier forms (:data:`EARLIER`).
+
+    """
+    earlier: frozenset[str] = EARLIER.get(str(key.get("digest")), (frozenset(), frozenset()))[1]
+    return recorded == key.get("baseline") or (isinstance(recorded, str) and recorded in earlier)
 
 
 def _setup_commands(held: AcceptedArtifact | None) -> list[JsonValue]:
@@ -471,7 +516,14 @@ def evidence_key(run: StepRun, command: str) -> dict[str, JsonValue]:
         "requirements": _requirements(run, view),
     }
     baseline: dict[str, JsonValue] = {**environment, "setup": _setup_commands(view.artifact("regressionPlan"))}
-    return {"digest": _digest(components), "tree": tree, "baseline": _digest(baseline)}
+    digest: str = _digest(components)
+    contract: dict[str, JsonValue] = _contract()
+    versions: list[str | None] = _installed_versions()
+    EARLIER[digest] = (
+        frozenset(_digest({**components, "contract": {**contract, "plugin": version}}) for version in versions),
+        frozenset(_digest({**baseline, "contract": {**contract, "plugin": version}}) for version in versions),
+    )
+    return {"digest": digest, "tree": tree, "baseline": _digest(baseline)}
 
 
 def story_file(run: StepRun, name: str) -> Path:
@@ -536,7 +588,7 @@ def prior_story_suite(run: StepRun, key: dict[str, JsonValue]) -> dict[str, Json
     if not path.is_file():
         return None
     held: dict[str, JsonValue] = json_object(json.loads(path.read_text(encoding="utf-8")))
-    if held.get("baseline") != key.get("baseline"):
+    if not _same_baseline(held.get("baseline"), key):
         return None
     suite: dict[str, JsonValue] = json_object(held["suite"])
     return {**suite, "evidenceKey": key, "reusedFrom": check_type(held["from"], str)}
@@ -590,7 +642,7 @@ def _passing(step: Step, key: dict[str, JsonValue]) -> dict[str, JsonValue] | No
         if not isinstance(value, dict):
             continue
         recorded: JsonValue = value.get("evidenceKey")
-        if value.get("exitCode") == 0 and isinstance(recorded, dict) and recorded.get("digest") == key["digest"]:
+        if value.get("exitCode") == 0 and isinstance(recorded, dict) and _same_digest(recorded.get("digest"), key):
             return dict(value)
     return None
 
