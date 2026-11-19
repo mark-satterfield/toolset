@@ -188,6 +188,20 @@ schema with the schema files it references, by path and content) in
 that fails leaves no record to continue. A session whose fingerprint differs now, or one with no
 record, starts anew; a plugin release that changes neither file keeps it.
 
+No agent work runs twice on the same inputs. When an agent step's output is accepted, the runner
+records beside it, as `<output>.inputs.json`, the fingerprint of everything the session worked
+from (`core/input_fingerprint.py`): the agent definition and output contract
+(`agents.agent_fingerprint`), the request and outcome, the step's input artifacts as the journal
+records them, and the content of every file and directory they name, of the launch's files and of
+the directories the session may read (a directory in a git work tree by its tree at `HEAD` and its
+uncommitted changes); the journal file itself is left out. Before a new session of an agent step
+starts, for whatever reason the step is planned again (set back by a stale input, a design gap,
+an ownership change, a retired plan, a re-run Epic, a failed step that was not a failure of this
+step's work, a supervisor restart or relaunch), the runner computes the fingerprint again; when it
+equals the recorded one, the output is the file recorded and it passes its check, the step is
+recorded from that output and no agent starts. A step re-runs only when an input changed, its
+contract changed, it failed in its own work, or it plans child steps.
+
 An architecture context file the open-run step wrote to an earlier contract is written again in
 place to the current one by the step that reads it (`architecture_files.read_context`), and no
 step is set back to planned. A step that reads another file an earlier step wrote, and finds that

@@ -22,7 +22,10 @@ quick-and-easy way to do this."
 The journal continues a step's recorded session. When the CLI explicitly reports that requested
 conversation missing before any turn, the runner accepts its previously finished, validated
 output or starts the same step once with a new session id. The exact failure classification and
-recovery are in `orchestrator/DESIGN.md`, section 6.3.
+recovery are in `orchestrator/DESIGN.md`, section 6.3. An agent step planned again for any
+cause, in the same dispatch or a later one, is recorded from its accepted output, and no agent
+starts, while the fingerprint of its inputs is the one recorded when that output was accepted
+(`orchestrator/core/input_fingerprint.py`); it re-runs only when an input or its contract changed.
 
 ## Legend
 

@@ -33,7 +33,9 @@ architect in one round.
 
 Work that already succeeded is never redone: an agent step that did not fail and whose output
 file is valid and was written since the step started is recorded from that file, and its agent is
-not started again (``helper-steps.schema.json``). That covers a helper a lead agent ran in its own
+not started again (``helper-steps.schema.json``); so is an agent step set back to planned whose
+accepted output was made from the inputs it would run on now (``core.input_fingerprint``).
+The first covers a helper a lead agent ran in its own
 session and left unrecorded, and a session that wrote its output and stopped before the step was
 recorded. The output of a step that failed in its work is never reused: the failure was found in
 it, so the step runs a session, and that session is handed the earlier failure
@@ -71,7 +73,7 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.flows.elaboration_support import emit_event, parallel
 
-from . import step_journal
+from . import input_fingerprint, step_journal
 from .agents import CONTENT_FAILURES, AgentRunner, SessionNotResumedError, validate_output
 from .handback import failure_for, stop_stage
 from .handback_contract import (
@@ -391,6 +393,24 @@ def _finished_output(step: Step, launch: AgentLaunch) -> bool:
     except CONTENT_FAILURES:
         return False
     return True
+
+
+def _output_request(step: Step, launch: AgentLaunch) -> AgentStep:
+    """Describe an agent step's output and its check, for validating it or fingerprinting its contract.
+
+    Returns:
+        The request, with no inputs.
+
+    """
+    return AgentStep(
+        stage=stage_of(step),
+        agent=step.get("agent", ""),
+        inputs=(),
+        output=launch.output,
+        outcome=launch.outcome,
+        validate=launch.validate,
+        journal_step=step["id"],
+    )
 
 
 def _work_failure(step: Step) -> JsonValue | None:
@@ -1591,7 +1611,7 @@ class JournalRunner:
         held: str | None = _held_session(journal, step, launch)
         if held is not None and not self.agents.resumable(held):
             held = None
-        if held is None and _finished_output(step, launch):
+        if held is None and (_finished_output(step, launch) or self._inputs_unchanged(step, inputs, launch)):
             reused: StepRun = self._agent_run(self._start(step["id"], None, launch.keep), inputs, saved)
             self._complete(step["id"], launch.accept(reused, launch.output))
             return
@@ -1617,15 +1637,74 @@ class JournalRunner:
             journal_step=step["id"],
             repair=launch.repair,
         )
-        output: Path = self._session(request, labelled, session, launch, resume=held is not None, before=step)
+        self._session(request, labelled, session, launch, resume=held is not None, before=step)
         after: Step = index_journal(step_journal.read_journal(self.path)).step(step["id"])
         if after["status"] != STATUS_DONE and not after["steps"]:
-            self._complete(step["id"], launch.accept(self._agent_run(after, inputs, saved), output))
+            self._complete(step["id"], self._accepted(launch, self._agent_run(after, inputs, saved), inputs))
             return
         finish: Step | None = _done_finish(after)
         settled: bool = all(child["status"] == STATUS_DONE for child in after["steps"])
         if after["status"] == STATUS_RUNNING and settled and finish is not None:
             self._accept_finish(step["id"], finish["id"])
+
+    def _input_fingerprint(self, step: Step, inputs: StepInputs, launch: AgentLaunch) -> str:
+        """Fingerprint everything a session of an agent step works from (``core.input_fingerprint``).
+
+        The facts are the agent definition and output contract, the request, the outcome and every
+        input artifact as the journal records it; the files are every file and directory artifact
+        among the inputs, the launch's files and the directories the session may read. The journal
+        file is left out: it changes with every step, and what a step reads from it is its input
+        artifacts.
+
+        Returns:
+            The fingerprint.
+
+        """
+        facts: JsonValue = {
+            "agent": self.agents.step_fingerprint(_output_request(step, launch)),
+            "request": launch.request or step["description"],
+            "outcome": launch.outcome,
+            "inputs": check_type(json.loads(json.dumps(inputs.sources)), list[JsonValue]),
+        }
+        paths: list[Path] = [
+            *(path for _, path in inputs.labelled_files()),
+            *(path for _, path in launch.files),
+            *launch.add_dirs,
+        ]
+        return input_fingerprint.input_fingerprint(facts, [path for path in paths if path != self.path])
+
+    def _inputs_unchanged(self, step: Step, inputs: StepInputs, launch: AgentLaunch) -> bool:
+        """Tell whether an agent step's accepted output was made from the inputs it would run on now.
+
+        A step set back to planned for any cause, in this dispatch or a later one, is recorded from
+        that output and no agent starts (``core.input_fingerprint``). A step that failed in its work
+        (:func:`_work_failure`) or that planned child steps always runs; so does an output whose
+        check fails now.
+
+        Returns:
+            True when the recorded fingerprint equals the one of now and the output passes its check.
+
+        """
+        if _work_failure(step) is not None or step["steps"]:
+            return False
+        if not input_fingerprint.unchanged(launch.output, self._input_fingerprint(step, inputs, launch)):
+            return False
+        try:
+            validate_output(_output_request(step, launch))
+        except CONTENT_FAILURES:
+            return False
+        return True
+
+    def _accepted(self, launch: AgentLaunch, run: StepRun, inputs: StepInputs) -> Completion:
+        """Accept a session's validated output and record the fingerprint of the inputs it was made from.
+
+        Returns:
+            What the launch's accept function returns for the output.
+
+        """
+        completion: Completion = launch.accept(run, launch.output)
+        input_fingerprint.record(launch.output, self._input_fingerprint(run.step, inputs, launch))
+        return completion
 
     def _count_handed(self, step_id: StepId, labelled: Sequence[tuple[str, Path]]) -> None:
         """Record how many files a step's session is handed and their total size, for its report."""
