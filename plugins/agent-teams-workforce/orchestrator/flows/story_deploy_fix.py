@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
+from step_journal_contract import STATUS_FAILED, StepId
 from typeguard import check_type
 
+from orchestrator.core import step_journal
 from orchestrator.core.handback_contract import OTHER_CAUSE
+from orchestrator.core.io import json_object
 from orchestrator.core.journal_registry import Registry
 from orchestrator.core.journal_steps import Completion, StepRun, value_artifact
 from orchestrator.core.models import RunContext, StepError
@@ -18,7 +21,12 @@ from orchestrator.flows.build_workspace import Workspace, checkpoint, git_operat
 from orchestrator.flows.deploy_support import SCHEMAS, arguments, execute, handback, recorded
 
 if TYPE_CHECKING:
+    from step_journal_contract import Journal
+
     from orchestrator.core.io import JsonValue
+
+AUTHOR: Final = "deploy:fix-author"
+FEEDBACK_SUFFIX: Final = ".fix-feedback.json"
 
 
 def _author(run: StepRun) -> Completion:
@@ -29,12 +37,20 @@ def _author(run: StepRun) -> Completion:
 
     """
     args = arguments(run.context, "StoryDeployFixArgs")
+    feedback: Path = _feedback_path(args)
+    earlier: str = (
+        "\nYour earlier fix attempt for this failure did not hold; correct it with this feedback:\n"
+        + feedback.read_text(encoding="utf-8")
+        if feedback.is_file()
+        else ""
+    )
     request = (
         f"Fix the deployment failure of Story {run.context.bead} in {args['repoPath']}. "
         f"Use only that absolute worktree; branch {args.get('branch', '')}. "
         "Diagnose the supplied output and correct the source. Do not deploy or publish. "
         "Report cause, changedFiles, testCommand and evidence; the host measures changes and runs tests.\n"
         + json.dumps(args["failure"], ensure_ascii=False)
+        + earlier
     )
     return reasoned(
         run,
@@ -111,6 +127,49 @@ def _commit(run: StepRun) -> Completion:
     return Completion(artifacts=(value_artifact("fixCommit", commit),))
 
 
+def _feedback_path(args: dict[str, JsonValue]) -> Path:
+    """Name the file that holds the feedback of a fix step's failed attempt, beside the Story's journal.
+
+    Returns:
+        ``<journal>.<fix step id>.fix-feedback.json``.
+
+    """
+    reference: dict[str, JsonValue] = json_object(args["journal"])
+    journal: Path = Path(check_type(reference["path"], str))
+    return journal.with_name(f"{journal.name}.{check_type(reference['step'], str)}{FEEDBACK_SUFFIX}")
+
+
+def _attempt_again(args: dict[str, JsonValue]) -> None:
+    """Set a fix attempt that failed back to its fixer, with the failure as the fixer's feedback.
+
+    When a step of the fix step's attempt failed (the fixer changed nothing, the tests or the commit
+    failed), the driver dispatches the fix again only once its inputs changed. The attempt then
+    starts again at the fixer: the failures are written as its feedback and the fixer, the
+    measurement and the commit are set back to planned (``step_journal.invalidate_from``). The
+    fixer's session reuses its accepted output when its inputs, feedback included, are unchanged.
+    """
+    reference: dict[str, JsonValue] = json_object(args["journal"])
+    path: Path = Path(check_type(reference["path"], str))
+    parent: StepId = StepId(check_type(reference["step"], str))
+
+    def change(journal: Journal) -> str:
+        children = step_journal.find_step(journal, parent)["steps"]
+        failed: list[str] = [
+            f"{child.get('script', '')}: {child.get('failure', '')}"
+            for child in children
+            if child["status"] == STATUS_FAILED
+        ]
+        author = next((child for child in children if child.get("script") == AUTHOR), None)
+        if not failed or author is None:
+            return ""
+        step_journal.invalidate_from(journal, author["id"], step_journal.timestamp(), within=parent)
+        return "\n".join(failed)
+
+    feedback: str = step_journal.update_journal(path, change)
+    if feedback:
+        _feedback_path(args).write_text(feedback, encoding="utf-8")
+
+
 def run(context: RunContext) -> dict[str, JsonValue]:
     """Run the existing deploy-fix child plan through the Python journal runner.
 
@@ -119,8 +178,9 @@ def run(context: RunContext) -> dict[str, JsonValue]:
 
     """
     args = arguments(context, "StoryDeployFixArgs")
+    _attempt_again(args)
     registry = Registry()
-    registry.script_step("deploy:fix-author")(_author)
+    registry.script_step(AUTHOR)(_author)
     registry.script_step("deploy:fix-verify")(_verify)
     registry.script_step("deploy:fix-commit")(_commit)
     runner = execute(context, args, "deploy:fix", registry)
