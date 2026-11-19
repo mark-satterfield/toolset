@@ -176,6 +176,11 @@ decide no design.
 
 ## Before you hand over
 
+You are handed `design values` (written by `orchestrator/flows/spec_values.py`): for every design
+heading your repository context names, the code spans and table rows that heading states. Every
+key, name, type, limit, route, event name and error shape your documents take from a design
+heading is copied from it word for word, with that heading cited as `<document>.md#<heading>`.
+
 Your documents are judged by `spec-reviewer` against criteria I1 to I7 exactly as
 `effective-architecture/review-standard.md` states them, and by the scripted checks the step runs
 on every document it is handed (`spec_authoring.document_checker`). Before you finish, check every

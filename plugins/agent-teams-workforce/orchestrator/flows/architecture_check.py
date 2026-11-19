@@ -21,6 +21,7 @@ result and the review log.
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -45,7 +46,15 @@ from matrix_contract import (
     REL_DRIVES,
     MatrixError,
 )
-from matrixchecklist import ExpectedValue, UnfilledValue, expected_values, load_checklist, sentence, value_problems
+from matrixchecklist import (
+    ExpectedValue,
+    UnfilledValue,
+    expected_values,
+    load_checklist,
+    sentence,
+    skeleton,
+    value_problems,
+)
 from matrixquery import epic_view
 from matrixreview import ReviewScope, review_scope
 from matrixstore import as_entry_id, file_problems, read_matrix
@@ -383,6 +392,41 @@ def _mechanical(
     if others:
         checked["otherEpics"] = [problem for _owner, problem in others]
     return checked, others
+
+
+def handed_checklist(context: ArchitectureContext) -> Path:
+    """List, before the architect writes, every entry the architecture check will require of its result.
+
+    The elements are the Epic's reach in the matrix as it is now, with the ``addedOrChangedElements``
+    of a result already at the result path (a later round's). For each the check's element checklist
+    gives the ``elementValues`` entries to fill (``matrixchecklist.skeleton``), and every reached entry
+    other than the Epic and its requirements needs a ``kept`` or ``corrected`` verdict under ``reach``.
+    An element the architect adds in the session is listed by ``atw-matrix element-checklist``.
+
+    Returns:
+        The written file ``element-checklist-handed.json`` in the helpers folder:
+        ``{"elementValues": [...], "reach": [{"id", "via"}], "unknown": [...]}``.
+
+    """
+    matrix: Matrix = read_matrix(matrix_file())
+    scope: ArchitectureReviewScope = architecture_review_scope(matrix, epic_id(context["bead"]))
+    result: Path = Path(context["resultPath"])
+    written: JsonValue = json_object(json.loads(result.read_text(encoding="utf-8"))) if result.is_file() else {}
+    added: list[str] = check_type(json_object(written).get("addedOrChangedElements", []), list[str])
+    reach: list[EntryId] = [entry for entry in scope.entries if matrix.entry(entry).kind not in NO_VERDICT_KINDS]
+    expected: list[ExpectedValue]
+    unknown: list[str]
+    expected, unknown = expected_values(matrix, [*added, *reach], load_checklist())
+    path: Path = Path(context["helpersFolder"]) / "element-checklist-handed.json"
+    write_json(
+        path,
+        {
+            "elementValues": skeleton(expected),
+            "reach": [{"id": entry, "via": scope.via[entry]} for entry in reach],
+            "unknown": [element for element in unknown if element in added],
+        },
+    )
+    return path
 
 
 def checklist_applies(run: StepRun) -> bool:

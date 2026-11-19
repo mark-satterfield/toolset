@@ -98,7 +98,7 @@ from orchestrator.core.journal_steps import (
 )
 from orchestrator.core.models import MalformedRequestError, StaleInputError
 from orchestrator.flows import design_gaps
-from orchestrator.flows.architecture_check import check_step, review_log_findings
+from orchestrator.flows.architecture_check import check_step, handed_checklist, review_log_findings
 from orchestrator.flows.architecture_diagrams import syntax_problems
 from orchestrator.flows.architecture_files import (
     ARCHITECT,
@@ -114,6 +114,7 @@ from orchestrator.flows.architecture_files import (
     EXAMPLE_ROUND,
     EXAMPLE_STATE,
     LABEL_ANSWER,
+    LABEL_CHECKLIST,
     LABEL_CONTEXT,
     LABEL_DIGEST,
     LABEL_EXAMPLE,
@@ -349,11 +350,13 @@ def _handed_files(
 ) -> tuple[tuple[str, Path], ...]:
     """Name the files of the architect's brief: exactly the labels its definition states.
 
-    No file is written from the matrix for the architect: it runs the ``atw-matrix`` reads its
-    definition names for the Epic, so what it reads is the matrix as it is at that moment.
+    One file is written from the matrix for the architect, the element checklist
+    (``architecture_check.handed_checklist``): every ``elementValues`` entry and reach verdict the
+    architecture check will require, listed before the session writes. For everything else it runs
+    the ``atw-matrix`` reads its definition names for the Epic, as the matrix is at that moment.
 
     Returns:
-        The PRD, the TRD, the context file and the state path; then each mechanical check
+        The PRD, the TRD, the context file, the state path and the element checklist; then each mechanical check
         result the step is handed, as findings; then the digest of the answers the step is handed
         (a specialist's), each answer and each ruling; then each repository's open design gaps the
         spec stage sent back (``design_gaps.handed``); then the example of each file the step writes.
@@ -366,6 +369,7 @@ def _handed_files(
         (LABEL_TRD, Path(context["trdPath"])),
         (LABEL_CONTEXT, journal_file(run, LABEL_CONTEXT)),
         (LABEL_STATE, Path(context["statePath"])),
+        (LABEL_CHECKLIST, handed_checklist(context)),
         *((LABEL_FINDINGS, path) for path in dict.fromkeys(findings)),
         *(() if digest is None else ((LABEL_DIGEST, digest),)),
         *((LABEL_ANSWER, path) for path in handed_answers(run)),

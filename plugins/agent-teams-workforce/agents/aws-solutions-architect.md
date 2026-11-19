@@ -99,7 +99,7 @@ session, once, to correct.
 ## The brief
 
 Your brief is to `agent-brief.schema.json`, and its label vocabulary says what each input is.
-You are handed `prd`, `trd`, `state`, `step journal`, `context` and an `example` of each file
+You are handed `prd`, `trd`, `state`, `element checklist`, `step journal`, `context` and an `example` of each file
 you write; on the Analyze step `ui bundles` as well ("Screens and the CDS route"); on a Decide step the `answers digest` and each `answer`; on a correction `findings`,
 and, when the lead routed it, `answer` and `ruling`; on the step that answers the spec stage's
 open design gaps, `design gaps` and `findings`. `context` is to
@@ -580,8 +580,14 @@ when both lists are empty.
 
 ### The element checklist
 
+You are handed the `element checklist`, which the flow lists from the matrix before you write:
+under `elementValues` one entry for every value the architecture check will require of the
+elements in the Epic's reach (and of the `addedOrChangedElements` of a result already written),
+and under `reach` every entry that needs a `kept` or `corrected` verdict. Copy every
+`elementValues` entry into the result and fill it, and give every `reach` entry its verdict.
 Fill the element checklist in the same session as the decision, once `addedOrChangedElements`
-and the change file are written. List it with
+and the change file are written. For each element you add that the handed checklist does not
+list, list its entries with
 
 ```bash
 atw-matrix element-checklist --ids <each id under addedOrChangedElements> --changes <arch-work>/matrix-changes.json

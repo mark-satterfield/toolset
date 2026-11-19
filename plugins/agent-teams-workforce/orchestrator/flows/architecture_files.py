@@ -100,6 +100,8 @@ LABEL_ANSWER: Final = "answer"
 LABEL_RULING: Final = "ruling"
 LABEL_EXAMPLE: Final = "example"
 LABEL_DIGEST: Final = "answers digest"
+LABEL_CHECKLIST: Final = "element checklist"
+"""The checklist the flow lists for the architect: every elementValues entry and reach verdict the check requires."""
 LABEL_ROUND: Final = "specialist round"
 """The input labels the definitions of the architecture team name.
 

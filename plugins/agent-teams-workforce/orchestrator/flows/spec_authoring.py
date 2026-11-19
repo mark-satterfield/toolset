@@ -140,6 +140,7 @@ from orchestrator.flows.spec_pack import (
     scope_bindings,
     trd_requirements,
 )
+from orchestrator.flows.spec_values import DESIGN_VALUES, design_values, design_values_path
 from orchestrator.flows.trd_authoring import (
     CRITERIA_FRONT_MATTER,
     SPEC_FRONT_MATTER,
@@ -604,7 +605,9 @@ def author_files(run: StepRun, names: Sequence[str]) -> tuple[tuple[str, Path], 
     Returns:
         The TRD, the span and the elements; the UI sources for the contracts of a frontend
         repository; for the criteria, the contracts and the data model the session does not
-        itself write; then the repository context, which names the PRD, whose headings the TRD
+        itself write; the design values (:func:`spec_values.design_values`), every value the cited
+        design headings state, which the authors copy verbatim; then the repository context,
+        which names the PRD, whose headings the TRD
         cites, and the architecture headings; and the spec pack, which holds the constraints and
         the TRD requirements the session reads.
 
@@ -617,6 +620,8 @@ def author_files(run: StepRun, names: Sequence[str]) -> tuple[tuple[str, Path], 
         files.append((UI_SOURCES, sources))
     if CRITERIA in names:
         files.extend((label, run.inputs.file(label)) for label in (SPEC, DATA_MODEL) if label not in names)
+    values: Path | None = run.inputs.optional_file(DESIGN_VALUES)
+    files.extend(() if values is None else ((DESIGN_VALUES, values),))
     return (*files, (CONTEXT, run.inputs.file(CONTEXT)), (SPEC_PACK, run.inputs.file(SPEC_PACK)))
 
 
@@ -1166,6 +1171,7 @@ def context(run: StepRun) -> Completion:
         artifacts=(
             value_artifact(REPOSITORY, held.facts()),
             file_artifact(CONTEXT, path),
+            file_artifact(DESIGN_VALUES, design_values(documents, design_values_path(path))),
             file_artifact(
                 SPEC_PACK,
                 _write_pack(run, held, matrix, ids=[*stacks, *entries], scopes=scopes),

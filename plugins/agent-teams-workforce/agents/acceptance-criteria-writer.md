@@ -39,7 +39,9 @@ Read the TRD, contracts and data-model documents for the repository. Derive test
 criteria and Definition of Done, with stable criterion/DoD ids and source requirement/section
 references: a requirement is cited by the PRD heading the TRD gives as its source, and the PRD
 your repository context (`spec-context.schema.json`) names is opened only to read such a heading
-when the TRD's text does not settle a criterion. Your spec pack (`spec pack`,
+when the TRD's text does not settle a criterion. A value a criterion takes from a design heading
+(a key, name, limit, route, event name or error shape) is copied word for word from the `design values`
+input (`orchestrator/flows/spec_values.py`), with that heading cited. Your spec pack (`spec pack`,
 `spec-pack.schema.json`) holds the constraints and the TRD requirements that bind what the Story
 builds: read it, not the vault and not the matrix. Read the text of an architecture heading the
 repository context's `documents` names only when a criterion turns on it, with
