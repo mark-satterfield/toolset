@@ -1046,6 +1046,30 @@ def _remove_steps(steps: list[Step], gone: set[StepId], removed: list[StepId]) -
     steps[:] = kept
 
 
+def _planned_closure(journal: Journal, planned: Sequence[StepId]) -> set[StepId]:
+    """Name the steps to remove: the planned steps, and every step a step removed with them planned.
+
+    A step removed takes the steps below it, and every step it or a step below it planned goes
+    too, at any depth, so no step is left whose planner is gone.
+
+    Returns:
+        The ids of the steps to take out of the tree.
+
+    """
+    by_id: dict[StepId, Step] = {step["id"]: step for step in _walk(journal["steps"])}
+    gone: set[StepId] = set()
+    pending: list[StepId] = list(planned)
+    while pending:
+        step_id: StepId = pending.pop()
+        if step_id in gone:
+            continue
+        gone.add(step_id)
+        held: Step | None = by_id.get(step_id)
+        if held is not None:
+            pending.extend(named for below in _walk([held]) for named in planned_by(below))
+    return gone
+
+
 def _reset(step: Step, reset: list[StepId], removed: list[StepId], planned: list[StepId]) -> None:
     """Set a step back to planned; drop the child steps of a performed step, reset the others."""
     planned.extend(planned_by(step))
@@ -1106,8 +1130,8 @@ def invalidate_from(journal: Journal, step_id: StepId, moment: str, within: Step
     that has an agent or a script loses its child steps, which came from its result; a reset step
     that only contains child steps keeps them, reset the same way. A step that a reset step's
     result planned anywhere else in the journal, recorded by that step's artifact named as
-    :func:`planned_for_name` names it, is removed with the steps below it, so the step plans it
-    again when it runs again. A step above the named step
+    :func:`planned_for_name` names it, is removed with the steps below it and every step a removed
+    step planned, so the step plans it again when it runs again. A step above the named step
     comes before it in walk order and is not reset: one that only contains child steps takes its
     status from them, and one with an agent or a script that was done becomes running, since a
     child step of it is no longer done. An id of a removed step is dropped from the ``inputs`` of
@@ -1163,8 +1187,9 @@ def replan_step(journal: Journal, step_id: StepId, moment: str) -> Invalidation:
 def remove_steps(journal: Journal, step_ids: Sequence[StepId], moment: str) -> Invalidation:
     """Take steps out of the journal, with the steps below them, and change no other step's state.
 
-    The record of each removed step on the step that planned it (:func:`planned_for_name`) goes
-    with it, and the inputs that named a removed step lose that id.
+    Every step a removed step planned goes with it. The record of each removed step on the step
+    that planned it (:func:`planned_for_name`) goes with it, and the inputs that named a removed
+    step lose that id.
 
     Args:
         journal: The journal; changed in place.
@@ -1264,7 +1289,7 @@ def _invalidated(
         The ids reset and not removed, the ids removed, and the ids whose inputs lost a removed id.
 
     """
-    _remove_steps(journal["steps"], set(planned), removed)
+    _remove_steps(journal["steps"], _planned_closure(journal, planned), removed)
     gone: set[StepId] = set(removed)
     reset = [held for held in reset if held not in gone]
     pruned: list[StepId] = []
