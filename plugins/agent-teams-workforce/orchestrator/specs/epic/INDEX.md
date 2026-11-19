@@ -20,11 +20,13 @@ Path placeholders:
 
 A step of the Epic's journal is cited by its script key (for example `prd_to_spec.open_run`) or by
 its agent. The journal alone decides where a run begins: no file below is read to decide whether a
-step runs again. When a run opens an existing journal, the child steps a filling step planned under
-a container, none of them started, that differ (script key or agent, and description) from the
-plans the lane registers for that container now (`journal_registry.plan_under`) are removed and
-their filling step is set back to planned, so it plans them again (`journal_run.replan_retired`,
-`step_journal.replan_step`). Then each step without child steps that has not
+step runs again. A plugin version change or a change to the step plan never creates a new journal
+and never sets a done step back. When a run opens an existing journal, the child steps a filling
+step planned under a container that differ (script key or agent, and description) from the plans
+the lane registers for that container now (`journal_registry.plan_under`) are brought to those
+plans by position, the filling step keeping its state: a done child stays done, a child not done
+takes the plan of its position or is removed when no plan holds its position, and a plan no step
+holds is added as planned (`journal_run.replan_retired`). Then each step without child steps that has not
 started and whose script key or agent has no code in the registry is replanned from the lane's
 current plan for its position (`journal_run.replan_unhandled`: the key or agent, description and
 purpose; its id and inputs stay); a step that has started or is done is never changed. Before the

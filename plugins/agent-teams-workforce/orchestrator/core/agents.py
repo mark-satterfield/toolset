@@ -574,6 +574,7 @@ class AgentRunner:
         context.cleanup.append(self.processes.stop_all)
         self._lock = threading.Lock()
         self._version_checked = False
+        self._recorded: dict[tuple[str, tuple[str, ...]], frozenset[str]] | None = None
         self.dispatch: DispatchArguments = dispatch_arguments()
         self.context.model_policy.setdefault(
             "fable_until",
@@ -593,6 +594,34 @@ class AgentRunner:
 
         """
         return agent_fingerprint(self.plugin, step.agent, [Path(path) for path in _contracts_of(self.plugin, step)])
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def recorded_fingerprints(self, step: AgentStep) -> frozenset[str]:
+        """Name every agent fingerprint a session of ``step``'s agent and output contract was started under.
+
+        An accepted output recorded before its fingerprint left the agent definition out holds a
+        fingerprint that includes the agent fingerprint of the session that wrote it; the session
+        marks of this work directory record each such agent fingerprint, so that record can still be
+        matched on its other inputs (``core.input_fingerprint``). The marks are read once per runner.
+
+        Returns:
+            The fingerprint of now and every one a session mark records for the same agent and contracts.
+
+        """
+        if self._recorded is None:
+            found: dict[tuple[str, tuple[str, ...]], set[str]] = {}
+            mark: Path
+            for mark in sorted((self.context.work / SESSION_MARKS).glob("*.json")):
+                fields: dict[str, JsonValue] = strict_json(mark)
+                agent: JsonValue = fields.get("agent")
+                contracts: JsonValue = fields.get("contracts")
+                fingerprint: JsonValue = fields.get("fingerprint")
+                if isinstance(agent, str) and isinstance(contracts, list) and isinstance(fingerprint, str):
+                    key: tuple[str, tuple[str, ...]] = (agent, tuple(str(path) for path in contracts))
+                    found.setdefault(key, set()).add(fingerprint)
+            self._recorded = {key: frozenset(values) for key, values in found.items()}
+        held: frozenset[str] = self._recorded.get((step.agent, tuple(_contracts_of(self.plugin, step))), frozenset())
+        return held | {self.step_fingerprint(step)}
 
     def _mark_session(self, session_id: str, step: AgentStep) -> None:
         """Record the agent, contracts and fingerprint a new session starts under."""

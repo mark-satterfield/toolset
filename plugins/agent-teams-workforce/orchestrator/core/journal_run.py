@@ -44,7 +44,9 @@ transient cause, a defect of the pipeline) still reuses a valid output. Nothing 
 from the start while an output exists: a new session of a step whose output is on disk is handed
 it as its earlier output to correct or complete in place, and writes it fresh only when that
 correction fails (:meth:`JournalRunner._launch`). A planned step whose script key or agent was
-retired is removed and the step that planned it set back (:func:`set_back_retired`). A step not
+retired is removed and the step that planned it keeps its state (:func:`drop_retired`). A plugin
+version change or a change to the step plan never creates a new journal for a bead that has one
+and never sets a done step back. A step not
 done whose script key or agent no flow plans any more is dropped, whatever its state, and no other
 step changes state (:func:`drop_removed`).
 
@@ -614,38 +616,35 @@ def drop_removed(journal: Journal, registry: Registry) -> list[StepId]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def set_back_retired(journal: Journal, registry: Registry) -> list[StepId]:
-    """Set back each step that planned a step whose script key or agent the registry no longer holds.
+def drop_retired(journal: Journal, registry: Registry) -> list[StepId]:
+    """Drop each planned step that a step planned and whose script key or agent the registry no longer holds.
 
-    A step that has not started and names a script key or agent with no code (a key since
-    retired) is removed with the step that planned it set back to planned
-    (``step_journal.replan_step``), so that step runs again under the code the registry holds now
-    and plans what it plans now. A step that has started is never removed, and every other step
-    keeps its state. A retired step no step recorded as planned stays, and
-    :func:`require_handled` names it.
+    A step that has not started, names a script key or agent with no code (a key since retired)
+    and is recorded as planned by another step is taken out of the journal
+    (``step_journal.remove_steps``). The step that planned it keeps its state: a done step is never
+    set back. A step that has started is never removed, and every other step keeps its state. A
+    retired step no step recorded as planned stays, and :func:`require_handled` names it.
 
     Args:
         journal: The journal; changed in place.
         registry: The code of the steps.
 
     Returns:
-        The ids of the steps set back, in walk order.
+        The ids of the steps dropped, in walk order.
 
     """
     retired: set[StepId] = {
         step["id"] for step in unhandled_steps(journal, registry) if step["status"] == STATUS_PLANNED
     }
-    planners: list[StepId] = [
-        step["id"] for step in step_journal.steps_in_order(journal) if retired & set(step_journal.planned_by(step))
+    planned: set[StepId] = {
+        planned for step in step_journal.steps_in_order(journal) for planned in step_journal.planned_by(step)
+    }
+    dropped: list[StepId] = [
+        step["id"] for step in step_journal.steps_in_order(journal) if step["id"] in retired & planned
     ]
-    moment: str = step_journal.timestamp()
-    present: set[StepId]
-    planner: StepId
-    for planner in planners:
-        present = {step["id"] for step in step_journal.steps_in_order(journal)}
-        if planner in present:
-            step_journal.replan_step(journal, planner, moment)
-    return planners
+    if dropped:
+        step_journal.remove_steps(journal, dropped, step_journal.timestamp())
+    return dropped
 
 
 def _nested_plans(plans: Sequence[StepPlan]) -> dict[str, tuple[StepPlan, ...]]:
@@ -755,45 +754,107 @@ def _shape(steps: Sequence[Step | StepPlan]) -> list[tuple[str | None, str]]:
     return [(step.get("script") or step.get("agent"), step["description"]) for step in steps]
 
 
+def _retarget(step: Step, plan: StepPlan) -> None:
+    """Give a step that is not done the key or agent, the description and the purpose of a plan, in place."""
+    step.pop("script", None)
+    step.pop("agent", None)
+    _take_plan(step, plan)
+
+
+def _appended(plan: StepPlan, refs: dict[str, StepId], added: set[str]) -> StepPlan:
+    """Turn a plan the lane registers for a container into one added after the steps already there.
+
+    An input the plan names by the ref of a registered plan a child step holds becomes that step's
+    id; one named by the ref of a plan added with it stays; any other names no step and is left out.
+
+    Returns:
+        The plan with its inputs resolved.
+
+    """
+    names: list[str] = [str(name) for name in plan.get("inputs", [])]
+    resolved: StepPlan = plan.copy()
+    resolved["inputs"] = [refs.get(name, name) for name in names if name in refs or name in added]
+    return resolved
+
+
+def _reconcile(journal: Journal, container: Step, group: list[Step], plans: Sequence[StepPlan]) -> bool:
+    """Bring a filled container's child steps to the plans the lane registers for it, keeping every done step.
+
+    The child steps a filling step planned are matched to the plans by position. A child whose key
+    or agent and description are those of its plan stays. A done child stays done: it did the work
+    of its position under another name. A child not done takes the plan of its position in place
+    (:func:`_retarget`). A child not done beyond the last plan is removed. A plan beyond the last
+    child is added at the end of the container as planned, unless a step of the container already
+    holds that plan.
+
+    Returns:
+        True when the journal changed.
+
+    """
+    changed: bool = False
+    refs: dict[str, StepId] = {
+        str(plan["ref"]): child["id"] for plan, child in zip(plans, group, strict=False) if "ref" in plan
+    }
+    plan: StepPlan
+    child: Step
+    for plan, child in zip(plans, group, strict=False):
+        if _shape([child]) != _shape([plan]) and child["status"] != STATUS_DONE:
+            _retarget(child, plan)
+            changed = True
+    extra: list[StepId] = [child["id"] for child in group[len(plans) :] if child["status"] != STATUS_DONE]
+    moment: str = step_journal.timestamp()
+    if extra:
+        step_journal.remove_steps(journal, extra, moment)
+        changed = True
+    held: list[tuple[str | None, str]] = _shape(container["steps"])
+    missing: list[StepPlan] = [plan for plan in plans[len(group) :] if _shape([plan])[0] not in held]
+    if missing:
+        batch: set[str] = {str(plan["ref"]) for plan in missing if "ref" in plan}
+        step_journal.add_steps(
+            journal,
+            [_appended(plan, refs, batch) for plan in missing],
+            moment,
+            parent=container["id"],
+        )
+        changed = True
+    return changed
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def replan_retired(journal: Journal, registry: Registry) -> list[StepId]:
-    """Plan again each container's child steps that a filling step planned under a plan since retired.
+    """Bring each filled container's child steps to the plans the lane registers for it now.
 
     A container the lane fills while it runs holds the child steps a filling step planned
     (``journal_registry.fills``), each recorded on that step (``step_journal.planned_by``). When
-    none of those child steps has started and their script keys or agents and descriptions are
-    not those of the plans the lane registers for the container now
-    (``journal_registry.plan_under``), the filling step is set back to planned and the child steps
-    it planned are removed (``step_journal.replan_step``), so it plans them again as the lane plans
-    them now. No other step changes: a step that has started is never removed.
+    their script keys or agents and descriptions are not those of the plans the lane registers for
+    the container now (``journal_registry.plan_under``), they are brought to those plans
+    (:func:`_reconcile`): a done step stays done, a step not done takes the plan of its position or
+    is removed when no plan holds its position, and a plan no step holds is added as planned. The
+    filling step keeps its state: a done step is never set back.
 
     Args:
         journal: The journal; changed in place.
         registry: The plans flows register under containers and the steps that fill them.
 
     Returns:
-        The ids of the filling steps set back to planned, in walk order.
+        The ids of the filling steps whose child steps changed, in walk order.
 
     """
-    stale: list[StepId] = []
+    changed: list[StepId] = []
     container: Step
     for container in step_journal.steps_in_order(journal):
         plans: tuple[StepPlan, ...] = registry.plans_under(container["description"])
-        children: dict[StepId, Step] = {child["id"]: child for child in container["steps"]}
-        if not plans or not children:
+        if not plans or not container["steps"]:
             continue
         filler: Step
         for filler in step_journal.steps_in_order(journal):
             if not registry.fills_container(filler, container["description"]):
                 continue
+            children: dict[StepId, Step] = {child["id"]: child for child in container["steps"]}
             group: list[Step] = [children[key] for key in step_journal.planned_by(filler) if key in children]
-            if group and all(step["status"] == STATUS_PLANNED for step in group) and _shape(group) != _shape(plans):
-                stale.append(filler["id"])
-    moment: str = step_journal.timestamp()
-    planner: StepId
-    for planner in stale:
-        step_journal.replan_step(journal, planner, moment)
-    return stale
+            if group and _shape(group) != _shape(plans) and _reconcile(journal, container, group, plans):
+                changed.append(filler["id"])
+    return changed
 
 
 def _plan_gap_round(journal: Journal, gap: DesignGapError, moment: str) -> None:
@@ -903,7 +964,7 @@ class JournalRunner:
         A step that fails raises what it raised, after the failure is recorded in the journal.
         First, a step not done whose script key or agent no flow plans any more is dropped
         (:func:`drop_removed`), and a planned step whose script key or agent is retired is removed
-        and the step that planned it is set back (:func:`set_back_retired`).
+        while the step that planned it keeps its state (:func:`drop_retired`).
 
         Raises:
             StepError: Before any step runs, when a step that is not done names a script key or
@@ -913,8 +974,8 @@ class JournalRunner:
         """
         if drop_removed(step_journal.read_journal(self.path), self.registry):
             step_journal.update_journal(self.path, lambda journal: drop_removed(journal, self.registry))
-        if set_back_retired(step_journal.read_journal(self.path), self.registry):
-            step_journal.update_journal(self.path, lambda journal: set_back_retired(journal, self.registry))
+        if drop_retired(step_journal.read_journal(self.path), self.registry):
+            step_journal.update_journal(self.path, lambda journal: drop_retired(journal, self.registry))
         try:
             require_handled(step_journal.read_journal(self.path), self.registry)
         except UnregisteredStepError as error:
@@ -1679,21 +1740,34 @@ class JournalRunner:
         if after["status"] == STATUS_RUNNING and settled and finish is not None:
             self._accept_finish(step["id"], finish["id"])
 
-    def _input_fingerprint(self, step: Step, inputs: StepInputs, launch: AgentLaunch) -> str:
-        """Fingerprint everything a session of an agent step works from (``core.input_fingerprint``).
+    def _input_fingerprints(
+        self,
+        step: Step,
+        inputs: StepInputs,
+        launch: AgentLaunch,
+        agents: Sequence[str | None] = (None,),
+    ) -> list[str]:
+        """Fingerprint what a session of an agent step is given and reads (``core.input_fingerprint``).
 
-        The facts are the agent definition and output contract, the request, the outcome and every
-        input artifact as the journal records it; the files are every file and directory artifact
-        among the inputs, the launch's files and the directories the session may read. The journal
-        file is left out: it changes with every step, and what a step reads from it is its input
-        artifacts.
+        The facts are the request, the outcome and every input artifact as the journal records it;
+        the files are every file and directory artifact among the inputs, the launch's files and the
+        directories the session may read. The agent definition, its output contract and the plugin
+        version are not inputs. The journal file is left out: it changes with every step, and what a
+        step reads from it is its input artifacts.
+
+        Args:
+            step: The agent step.
+            inputs: Its inputs.
+            launch: Its launch.
+            agents: For each fingerprint wanted, None for the fingerprint of now, or an agent
+                fingerprint to put among the facts as a record written before the agent definition
+                left the fingerprint holds it.
 
         Returns:
-            The fingerprint.
+            One fingerprint per entry of ``agents``, in order.
 
         """
-        facts: JsonValue = {
-            "agent": self.agents.step_fingerprint(_output_request(step, launch)),
+        facts: dict[str, JsonValue] = {
             "request": launch.request or step["description"],
             "outcome": launch.outcome,
             "inputs": check_type(json.loads(json.dumps(inputs.sources)), list[JsonValue]),
@@ -1703,7 +1777,8 @@ class JournalRunner:
             *(path for _, path in launch.files),
             *launch.add_dirs,
         ]
-        return input_fingerprint.input_fingerprint(facts, [path for path in paths if path != self.path])
+        variants: list[JsonValue] = [facts if agent is None else {**facts, "agent": agent} for agent in agents]
+        return input_fingerprint.input_fingerprints(variants, [path for path in paths if path != self.path])
 
     def _inputs_unchanged(self, step: Step, inputs: StepInputs, launch: AgentLaunch) -> bool:
         """Tell whether an agent step's accepted output was made from the inputs it would run on now.
@@ -1714,12 +1789,15 @@ class JournalRunner:
         check fails now.
 
         Returns:
-            True when the recorded fingerprint equals the one of now and the output passes its check.
+            True when the recorded fingerprint equals the one of now, or a record written while the
+            agent definition was among the inputs holds the same inputs, and the output passes its check.
 
         """
         if _work_failure(step) is not None or step["steps"]:
             return False
-        if not input_fingerprint.unchanged(launch.output, self._input_fingerprint(step, inputs, launch)):
+        agents: list[str | None] = [None, *sorted(self.agents.recorded_fingerprints(_output_request(step, launch)))]
+        now, *earlier = self._input_fingerprints(step, inputs, launch, agents)
+        if not input_fingerprint.unchanged(launch.output, now, earlier):
             return False
         try:
             validate_output(_output_request(step, launch))
@@ -1735,7 +1813,7 @@ class JournalRunner:
 
         """
         completion: Completion = launch.accept(run, launch.output)
-        input_fingerprint.record(launch.output, self._input_fingerprint(run.step, inputs, launch))
+        input_fingerprint.record(launch.output, self._input_fingerprints(run.step, inputs, launch)[0])
         return completion
 
     def _count_handed(self, step_id: StepId, labelled: Sequence[tuple[str, Path]]) -> None:
@@ -1894,11 +1972,10 @@ def open_journal(  # ruff: ignore[too-many-arguments, too-many-positional-argume
 
     An existing journal alone says where the run begins. A step not done whose script key or agent
     no flow plans any more is dropped, and no other step changes state (:func:`drop_removed`).
-    Of the other steps, only steps that have not started are changed. Child steps a filling step
-    planned under a container, none started, that differ from the plans the lane registers for the
-    container now are removed and their filling step is set back to planned, so it plans them
-    again (:func:`replan_retired`). Then a step that names a script key or agent the registry holds
-    no code for is replanned from the lane's current plan for its position
+    Of the other steps, no done step changes. Child steps a filling step planned under a container
+    that differ from the plans the lane registers for the container now are brought to those plans
+    in place, the filling step keeping its state (:func:`replan_retired`). Then a step that names a
+    script key or agent the registry holds no code for is replanned from the lane's current plan for its position
     (:func:`replan_unhandled`), so a journal written before a key was renamed runs the step as the
     lane plans it now. A journal that cannot be created, read or validated raises
     ``StepJournalError``.

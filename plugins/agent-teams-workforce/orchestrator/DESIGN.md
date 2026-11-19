@@ -189,18 +189,21 @@ that fails leaves no record to continue. A session whose fingerprint differs now
 record, starts anew; a plugin release that changes neither file keeps it.
 
 No agent work runs twice on the same inputs. When an agent step's output is accepted, the runner
-records beside it, as `<output>.inputs.json`, the fingerprint of everything the session worked
-from (`core/input_fingerprint.py`): the agent definition and output contract
-(`agents.agent_fingerprint`), the request and outcome, the step's input artifacts as the journal
+records beside it, as `<output>.inputs.json`, the fingerprint of what the session was given and
+read (`core/input_fingerprint.py`): the request and outcome, the step's input artifacts as the journal
 records them, and the content of every file and directory they name, of the launch's files and of
 the directories the session may read (a directory in a git work tree by its tree at `HEAD` and its
-uncommitted changes); the journal file itself is left out. Before a new session of an agent step
+uncommitted changes); the journal file itself is left out. The agent definition, the output
+contract and the plugin version are not inputs, so an accepted output is reused under any plugin
+version. A record written while the fingerprint still held the agent fingerprint is matched on the
+same inputs with each agent fingerprint a session mark of that agent and contract records
+(`AgentRunner.recorded_fingerprints`). Before a new session of an agent step
 starts, for whatever reason the step is planned again (set back by a stale input, a design gap,
 an ownership change, a retired plan, a re-run Epic, a failed step that was not a failure of this
 step's work, a supervisor restart or relaunch), the runner computes the fingerprint again; when it
 equals the recorded one, the output is the file recorded and it passes its check, the step is
-recorded from that output and no agent starts. A step re-runs only when an input changed, its
-contract changed, it failed in its own work, or it plans child steps.
+recorded from that output and no agent starts. A step re-runs only when an input changed, it
+failed in its own work, or it plans child steps.
 
 An architecture context file the open-run step wrote to an earlier contract is written again in
 place to the current one by the step that reads it (`architecture_files.read_context`), and no
@@ -272,8 +275,9 @@ result and the design work done before the stop is not done again. Any other age
 starts a new session while its output is already on disk is handed that output as its earlier
 output and asked to correct or complete it in place; only when that correction fails for its
 content is the output written fresh (`JournalRunner._launch`). A planned step whose script key or
-agent was retired is removed and the step that planned it is set back, so it plans what the code
-plans now (`journal_run.set_back_retired`).
+agent was retired is removed and the step that planned it keeps its state
+(`journal_run.drop_retired`). A plugin version change or a change to the step plan never creates
+a new journal for a bead that has one and never sets a done step back.
 
 When a spec step creates a Story bead and a Task step creates Task beads, the same step creates
 that bead's journal in the same directory (pipeline `deploy` for a Story, `build` for a Task), with

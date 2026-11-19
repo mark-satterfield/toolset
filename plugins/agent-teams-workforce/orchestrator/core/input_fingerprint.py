@@ -1,13 +1,17 @@
 """The input fingerprint of an agent step's accepted output, so unchanged work is never run twice.
 
 When an agent step's output is accepted, the runner records beside it, as
-``<output>.inputs.json``, the fingerprint of everything the session worked from (the agent
-definition and output contract, the request, the step's input artifacts with the content of every
-file and directory they name, the files of the launch and the directories it may read) and the
-digest of the output itself. Before a later session of the same step starts (the step was set back
-by any cause, in this dispatch or a later one, after any supervisor restart), the runner computes
-the fingerprint again: when it equals the recorded one and the output is the file recorded, the
-output is the step's result and no agent starts. A step re-runs only when an input changed.
+``<output>.inputs.json``, the fingerprint of what the session was given and read (the request,
+the step's input artifacts with the content of every file and directory they name, the files of
+the launch and the directories it may read) and the digest of the output itself. The agent
+definition, the output contract and the plugin version are not inputs: an accepted output whose
+inputs are unchanged is reused under any plugin version. A record written while the fingerprint
+still held the agent definition and contract is matched by the same inputs with the agent
+fingerprint of a session that could have written it. Before a later session of the same step
+starts (the step was set back by any cause, in this dispatch or a later one, after any
+supervisor restart), the runner computes the fingerprint again: when it equals the recorded one
+and the output is the file recorded, the output is the step's result and no agent starts. A step
+re-runs only when an input changed.
 
 A directory inside a git work tree is fingerprinted by its tree at ``HEAD`` with its uncommitted
 changes (``git status`` and ``git diff HEAD``), so a checkout's ignored folders are never read; any
@@ -20,7 +24,7 @@ import hashlib
 import json
 import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Fixed git argv, no shell.
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from pathlib import Path
 from typing import Final
 
@@ -112,19 +116,34 @@ def input_fingerprint(facts: JsonValue, paths: Sequence[Path]) -> str:
     """Fingerprint what a step's session works from.
 
     Args:
-        facts: Every input that is a value: the agent fingerprint, the request, the input
-            artifacts as the journal records them.
+        facts: Every input that is a value: the request, the outcome, the input artifacts as
+            the journal records them.
         paths: Every file and directory the session reads; each is fingerprinted by content.
 
     Returns:
         The SHA-256 hex digest.
 
     """
-    digest = hashlib.sha256(json.dumps(facts, sort_keys=True).encode("utf-8"))
-    for path in sorted(dict.fromkeys(paths), key=str):
-        digest.update(b"\0" + str(path).encode("utf-8") + b"\0")
-        digest.update(hashlib.sha256(_content(path)).digest())
-    return digest.hexdigest()
+    return input_fingerprints([facts], paths)[0]
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def input_fingerprints(facts: Sequence[JsonValue], paths: Sequence[Path]) -> list[str]:
+    """Fingerprint the same files under each of several sets of facts, reading every file once.
+
+    Args:
+        facts: The sets of facts, as :func:`input_fingerprint` takes one.
+        paths: Every file and directory the session reads.
+
+    Returns:
+        One SHA-256 hex digest per set of facts, in order; each equals :func:`input_fingerprint` of it.
+
+    """
+    files: bytes = b"".join(
+        b"\0" + str(path).encode("utf-8") + b"\0" + hashlib.sha256(_content(path)).digest()
+        for path in sorted(dict.fromkeys(paths), key=str)
+    )
+    return [hashlib.sha256(json.dumps(fact, sort_keys=True).encode("utf-8") + files).hexdigest() for fact in facts]
 
 
 def fingerprint_path(output: Path) -> Path:
@@ -154,11 +173,18 @@ def record(output: Path, fingerprint: str) -> None:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def unchanged(output: Path, fingerprint: str) -> bool:
+def unchanged(output: Path, fingerprint: str, earlier: Collection[str] = ()) -> bool:
     """Tell whether an output was accepted from the inputs a session would work from now.
 
+    Args:
+        output: The accepted output.
+        fingerprint: The fingerprint of the inputs now.
+        earlier: The same inputs fingerprinted as a record written with the agent definition and
+            contract among them would hold them, one per agent fingerprint that record may carry.
+
     Returns:
-        True when the output exists, its recorded fingerprint equals ``fingerprint`` and the file
+        True when the output exists, its recorded fingerprint equals ``fingerprint`` or one of
+        ``earlier``, and the file
         is the one recorded. A missing record is no match, and so is a record that cannot be
         read as a JSON object: the step then runs and its acceptance writes the record again.
 
@@ -170,4 +196,6 @@ def unchanged(output: Path, fingerprint: str) -> bool:
         recorded: dict[str, JsonValue] = json_object(json.loads(recorded_path.read_text(encoding="utf-8")))
     except OSError, ValueError, TypeError:
         return False
-    return recorded.get(INPUTS_KEY) == fingerprint and recorded.get(OUTPUT_KEY) == _output_digest(output)
+    held: JsonValue = recorded.get(INPUTS_KEY)
+    matched: bool = held == fingerprint or (isinstance(held, str) and held in earlier)
+    return matched and recorded.get(OUTPUT_KEY) == _output_digest(output)

@@ -25,7 +25,8 @@ output or starts the same step once with a new session id. The exact failure cla
 recovery are in `orchestrator/DESIGN.md`, section 6.3. An agent step planned again for any
 cause, in the same dispatch or a later one, is recorded from its accepted output, and no agent
 starts, while the fingerprint of its inputs is the one recorded when that output was accepted
-(`orchestrator/core/input_fingerprint.py`); it re-runs only when an input or its contract changed.
+(`orchestrator/core/input_fingerprint.py`); it re-runs only when an input changed, never because the plugin, an agent definition or a
+contract changed.
 
 ## Legend
 
