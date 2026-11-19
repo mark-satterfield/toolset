@@ -35,7 +35,7 @@ first `.`), appended under an exclusive `fcntl.flock` on the file, with exactly 
 `task-decomposition-carried`, `done-rule-carried`, `ownership-race`,
 `contract-finding`, `producer-missing`, `completion-cycle`, `prerequisite-unscheduled`,
 `regression-carried`, `prerequisite-carried`, `respec-request-converted`,
-`producer-epic-unordered`, `deploy-stopped` and `commit-hook-rejected`. The plugin writes them with
+`producer-epic-unordered`, `deploy-stopped`, `commit-hook-rejected` and `dependency-cycle`. The plugin writes them with
 `orchestrator/core/findings.py` and emits,
 for each, the warning note `finding for <owner> (<kind>): <detail>` with the finding's stage as
 its step, which the driver records with the run's phase events. The driver writes them with

@@ -17,7 +17,7 @@ import storyedges
 from typeguard import check_type
 
 from orchestrator.core.driver_contracts import dispatch_arguments
-from orchestrator.core.findings import record_for_run
+from orchestrator.core.findings import record_for_run, record_skipped_cycles
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_registry import removed, script_step
 from orchestrator.core.journal_steps import Completion, StepRun, value_artifact
@@ -197,10 +197,13 @@ def story_edges(run: StepRun) -> Completion:
     def progress(detail: str) -> None:
         enter_phase(run.context, run.agents.emit, FINISH_PHASE, f"{STORY_EDGES}: {detail}")
 
+    writers: list[beadgraph.Writer] = []
+
     def write() -> storyedges.StoryEdges:
         graph: beadgraph.Graph = run.tools.portfolio_read(FINISH_PHASE, beadgraph.load, repo)
         progress(f"read {len(graph.beads)} beads")
-        writer: beadgraph.Writer = run.tools.portfolio(FINISH_PHASE, beadgraph.Writer, repo)
+        writer: beadgraph.Writer = run.tools.portfolio(FINISH_PHASE, beadgraph.Writer, repo, skip_cycles=True)
+        writers.append(writer)
         return run.tools.portfolio(
             FINISH_PHASE,
             storyedges.story_edges,
@@ -211,6 +214,7 @@ def story_edges(run: StepRun) -> Completion:
         )
 
     written: dict[str, JsonValue] = json_object(run.tools.operation(FINISH_PHASE, write))
+    record_skipped_cycles(run, writers[-1].skipped_cycles)
     if written.get("ok") is False:
         refused: list[JsonValue] = check_type(written.get("refusedStories", []), list[JsonValue])
         record_for_run(

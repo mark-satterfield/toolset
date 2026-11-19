@@ -124,7 +124,9 @@ removed, and a Task whose build has started is left as it is. An edge the other 
 Task and another Epic's Task it waits for as the builder of an entry (`owner_blockers`) is removed
 in the same request, so the owner edge closes no cycle. It compares with what beads holds, so
 it is safe to run again. One read of the edges, one cycle check and one request happen under one
-hold of the edge lock.
+hold of the edge lock. An edge that would close a dependency cycle is left out and every other
+edge is written; the step records each edge left out as a `dependency-cycle` finding for the
+Epic, naming the edge and the full loop as bead ids, and the step does not fail.
 
 A journal planned before this step existed has no such step, so `beadwrite.write_all_task_edges`
 also writes any edge within a Story that beads lacks; for every other journal it finds nothing.

@@ -25,6 +25,8 @@ from .events import EventSink
 from .handback_contract import NOTE_EVENT, WARNING_NOTE
 
 if TYPE_CHECKING:
+    from beadgraph import SkippedCycle
+
     from .journal_steps import StepRun
 
 type FindingKind = Literal[
@@ -46,6 +48,7 @@ type FindingKind = Literal[
     "producer-epic-unordered",
     "deploy-stopped",
     "commit-hook-rejected",
+    "dependency-cycle",
 ]
 """What kind of problem a finding records."""
 
@@ -183,3 +186,23 @@ def record_for_run(
     stage: str = run.step.get("script") or run.step.get("agent") or run.step["description"]
     entry: Finding = finding(owner, str(run.bead), stage=stage, kind=kind, detail=detail, evidence=evidence)
     return record_finding(run.context.work.parent, entry, run.agents.emit)
+
+
+def record_skipped_cycles(run: StepRun, skipped: Sequence[SkippedCycle]) -> None:
+    """Record, for the run's Epic, each ``blocks`` edge an edge write left out because it closes a cycle.
+
+    Args:
+        run: The running step that wrote the edges.
+        skipped: The edges the step's writer left out, each with the loop it would close.
+
+    """
+    for edge in skipped:
+        loop: str = " -> ".join(edge["cycle"])
+        record_for_run(
+            run,
+            owner_epic(str(run.bead)),
+            kind="dependency-cycle",
+            detail=f"blocks edge {edge['dependent']} -> {edge['blocker']} was not written because it would close "
+            f"the dependency cycle {loop}; every other edge was written",
+            evidence=tuple(edge["cycle"]),
+        )

@@ -25,11 +25,12 @@ import subprocess  # ruff: ignore[suspicious-subprocess-import] - Serialized bd 
 import sys
 import tempfile
 import time
+from collections import deque
 from collections.abc import Mapping, Sequence  # ruff: ignore[typing-only-standard-library-import] - typeguard @typechecked resolves these at runtime.
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final
+from typing import Final, TypedDict
 
 import contracts
 
@@ -323,22 +324,6 @@ def blocking_edges(repo: Path | None) -> dict[str, set[str]]:
             raise GraphError(message, OTHER_CAUSE)
         waits.setdefault(str(row["waiting"]), set()).add(str(row["waited"]))
     return waits
-
-
-def _reached(waits: dict[str, set[str]], start: str) -> set[str]:
-    """Collect every bead `start` waits for, directly or through others.
-
-    Returns:
-        The ids reached from `start`.
-
-    """
-    seen: set[str] = set()
-    stack: list[str] = [start]
-    while stack:
-        for nxt in waits.get(stack.pop(), set()) - seen:
-            seen.add(nxt)
-            stack.append(nxt)
-    return seen
 
 
 @functools.cache
@@ -687,23 +672,79 @@ def _dep_lines(edges: Mapping[str, list[str]]) -> str:
     )
 
 
-def _refuse_cycles(waits: dict[str, set[str]], bead_id: str, blockers: list[str]) -> None:
-    """Add a bead's new edges to the waits, refusing one that closes a cycle.
+class SkippedCycle(TypedDict):
+    """One `blocks` edge left unwritten because it would close a dependency cycle.
+
+    Attributes:
+        dependent: The bead that would have waited.
+        blocker: The bead it would have waited for.
+        cycle: The loop the edge would close, as bead ids: the dependent, the blocker, the existing
+            path from the blocker back to the dependent, and the dependent again.
+
+    """
+
+    dependent: str
+    blocker: str
+    cycle: list[str]
+
+
+def _path(waits: dict[str, set[str]], start: str, goal: str) -> list[str] | None:
+    """Find a shortest chain of waits from `start` to `goal`.
+
+    Returns:
+        The bead ids from `start` to `goal`, both included, or None when `start` never reaches `goal`.
+
+    """
+    came: dict[str, str] = {start: start}
+    queue: deque[str] = deque([start])
+    while queue:
+        current: str = queue.popleft()
+        if current == goal:
+            chain: list[str] = [goal]
+            while chain[-1] != start:
+                chain.append(came[chain[-1]])
+            return chain[::-1]
+        for nxt in sorted(waits.get(current, set()) - came.keys()):
+            came[nxt] = current
+            queue.append(nxt)
+    return None
+
+
+def _admit_edges(
+    waits: dict[str, set[str]],
+    bead_id: str,
+    blockers: list[str],
+    *,
+    skip_cycles: bool,
+) -> tuple[list[str], list[SkippedCycle]]:
+    """Add a bead's new edges to the waits, leaving out or refusing each one that closes a cycle.
 
     Args:
         waits: Bead id -> the ids it waits for; changed in place.
         bead_id: The dependent bead.
         blockers: The beads it comes to wait for.
+        skip_cycles: True to leave a cycle-closing edge out and go on; False to refuse it.
+
+    Returns:
+        The blockers whose edges are written, and each edge left out with the loop it would close.
 
     Raises:
-        GraphError: An edge would close a cycle.
+        GraphError: An edge would close a cycle and `skip_cycles` is False.
 
     """
+    kept: list[str] = []
+    skipped: list[SkippedCycle] = []
     for blocker in blockers:
-        if blocker == bead_id or bead_id in _reached(waits, blocker):
+        back: list[str] | None = [blocker] if blocker == bead_id else _path(waits, blocker, bead_id)
+        if back is None:
+            waits.setdefault(bead_id, set()).add(blocker)
+            kept.append(blocker)
+            continue
+        if not skip_cycles:
             message: str = f"blocks edge {bead_id} -> {blocker} would close a dependency cycle"
             raise GraphError(message, OTHER_CAUSE)
-        waits.setdefault(bead_id, set()).add(blocker)
+        skipped.append({"dependent": bead_id, "blocker": blocker, "cycle": [bead_id, *back]})
+    return kept, skipped
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -715,12 +756,17 @@ class Writer:
         repo: The central repository, or None for the `CONTROL_REPO_ENV` repository.
         dry_run: True to record each write in `planned` and change nothing.
         planned: The writes a dry run would have made, in order.
+        skip_cycles: True to leave out each `blocks` edge that would close a dependency cycle and
+            write the others; False to refuse the whole write.
+        skipped_cycles: Each edge this writer left out, with the loop it would close.
 
     """
 
     repo: Path | None
     dry_run: bool = False
     planned: list[PlannedWrite] = field(default_factory=list)
+    skip_cycles: bool = False
+    skipped_cycles: list[SkippedCycle] = field(default_factory=list)
 
     def bd(self, args: list[str], stdin: str | None = None) -> None:
         """Run a `bd` command that changes the tracker, or record it in a dry run.
@@ -780,7 +826,9 @@ class Writer:
         """Add and remove the `blocks` edges of many beads at once, or record them in a dry run.
 
         The cycle check runs here, over every blocking edge the tracker holds, read once, less the
-        edges removed; the removals then run in one `bd batch` transaction, and the edges are added
+        edges removed. An edge that would close a cycle refuses the whole write, or, with
+        `skip_cycles`, is left out and recorded in `skipped_cycles` while every other edge is
+        written. The removals then run in one `bd batch` transaction, and the edges are added
         in one `bd dep add --file - --no-cycle-check` request, each per database the beads were
         filed in. Only the bulk form skips the tracker's
         per-edge check: a positional `bd dep add` runs it whatever its flags, and that recursive
@@ -794,8 +842,8 @@ class Writer:
             removed: The `(dependent, blocker)` edges to remove.
 
         Raises:
-            GraphError: An edge would close a cycle, or the edge lock stayed held past its wait; no
-                edge is added or removed.
+            GraphError: An edge would close a cycle while `skip_cycles` is False, or the edge lock
+                stayed held past its wait; no edge is added or removed.
 
         """
         wanted: dict[str, list[str]] = {bead_id: blockers for bead_id, blockers in added.items() if blockers}
@@ -814,7 +862,7 @@ class Writer:
             raise GraphError(str(exc), CONTENTION) from exc
 
     def _write_acyclic(self, added: dict[str, list[str]], removed: Sequence[tuple[str, str]]) -> None:
-        """Read every blocking edge, refuse an edge that closes a cycle, then make the changes.
+        """Read every blocking edge, leave out or refuse an edge that closes a cycle, then make the changes.
 
         The caller holds the edge lock. Each bead's edges go to the database it was filed in.
 
@@ -826,15 +874,19 @@ class Writer:
         waits: dict[str, set[str]] = blocking_edges(self.repo)
         for bead_id, blocker in removed:
             waits.get(bead_id, set()).discard(blocker)
+        admitted: dict[str, list[str]] = {}
         for bead_id, blockers in added.items():
-            _refuse_cycles(waits, bead_id, blockers)
+            kept, skipped = _admit_edges(waits, bead_id, blockers, skip_cycles=self.skip_cycles)
+            self.skipped_cycles.extend(skipped)
+            if kept:
+                admitted[bead_id] = kept
         dropped: dict[Path | None, list[tuple[str, str]]] = {}
         for bead_id, blocker in removed:
             dropped.setdefault(_target(["dep", "remove", bead_id], self.repo), []).append((bead_id, blocker))
         for home, pairs in dropped.items():
             run_bd(["batch"], home, stdin=_removal_lines(pairs))
         homes: dict[Path | None, dict[str, list[str]]] = {}
-        for bead_id, blockers in added.items():
+        for bead_id, blockers in admitted.items():
             homes.setdefault(_target(["dep", "add", bead_id], self.repo), {})[bead_id] = blockers
         for home, edges in homes.items():
             run_bd(list(_BULK_DEP_ADD), home, stdin=_dep_lines(edges))

@@ -41,7 +41,7 @@ from typeguard import CollectionCheckStrategy, check_type
 from orchestrator.core import step_journal
 from orchestrator.core.agents import CONTENT_FAILURES, strict_json
 from orchestrator.core.driver_contracts import dispatch_arguments
-from orchestrator.core.findings import record_for_run
+from orchestrator.core.findings import record_for_run, record_skipped_cycles
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_changes import create_child_journal
@@ -957,9 +957,12 @@ def retire(run: StepRun) -> Completion:
     files: hierarchy.StoryFiles = story_files(run.inputs)
     control: Path = control_repository()
 
+    writers: list[beadgraph.Writer] = []
+
     def attempt() -> dict[str, JsonValue]:
         graph: beadgraph.Graph = run.tools.portfolio_read(TASK_RETIRE, beadgraph.load, control)
-        writer: beadgraph.Writer = run.tools.portfolio(TASK_RETIRE, beadgraph.Writer, control)
+        writer: beadgraph.Writer = run.tools.portfolio(TASK_RETIRE, beadgraph.Writer, control, skip_cycles=True)
+        writers.append(writer)
         return json_object(
             run.tools.portfolio(
                 TASK_RETIRE,
@@ -974,6 +977,7 @@ def retire(run: StepRun) -> Completion:
         )
 
     retired: dict[str, JsonValue] = run.tools.operation(TASK_RETIRE, attempt)
+    record_skipped_cycles(run, writers[-1].skipped_cycles)
     return Completion(artifacts=(value_artifact(RETIRED, retired), value_artifact(TASK_WARNINGS, retired["warnings"])))
 
 
@@ -991,8 +995,11 @@ def story_task_edges(run: StepRun) -> Completion:
     files: hierarchy.StoryFiles = story_files(run.inputs)
     control: Path = control_repository()
 
+    writers: list[beadgraph.Writer] = []
+
     def attempt() -> dict[str, JsonValue]:
-        writer: beadgraph.Writer = run.tools.portfolio(STORY_TASK_EDGES, beadgraph.Writer, control)
+        writer: beadgraph.Writer = run.tools.portfolio(STORY_TASK_EDGES, beadgraph.Writer, control, skip_cycles=True)
+        writers.append(writer)
         return json_object(
             run.tools.portfolio(
                 STORY_TASK_EDGES,
@@ -1006,6 +1013,7 @@ def story_task_edges(run: StepRun) -> Completion:
         )
 
     written: dict[str, JsonValue] = run.tools.operation(STORY_TASK_EDGES, attempt)
+    record_skipped_cycles(run, writers[-1].skipped_cycles)
     return Completion(
         artifacts=(
             value_artifact(TASK_EDGE_COUNTS, written["edges"]),

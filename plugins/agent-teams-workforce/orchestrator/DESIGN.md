@@ -831,7 +831,12 @@ owner-run portfolio commands goes through:
   export (`export.auto`) is written to a temporary file and renamed.
 - **Cycle check here, not in `bd`.** A bead's blocking edges are added in one
   `bd dep add --file - --no-cycle-check` request after `beadgraph.Writer.add_blocks` has checked,
-  over every `blocks` and `parent-child` edge read in one query, that none closes a cycle. `bd`'s
+  over every `blocks` and `parent-child` edge read in one query, that none closes a cycle. An
+  edge that would close one refuses the whole write, except for a writer made with
+  `skip_cycles`, which every elaboration edge step uses: it leaves that one edge out, writes the
+  others and keeps the edge with the loop it would close in `skipped_cycles`, and the step records
+  each as a `dependency-cycle` finding for its Epic (`core/findings.py`
+  `record_skipped_cycles`), so the Epic goes on. `bd`'s
   own per-edge check is a recursive query that outgrows the database client's read timeout once the graph is dense,
   and only the bulk `--file` form skips it: a positional `bd dep add` runs it whatever its flags.
 - **The workspace gate is a wait, not a failure.** While a `bd` maintenance operation (the

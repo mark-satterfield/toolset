@@ -28,6 +28,7 @@ from typeguard import check_type
 
 from orchestrator.core.agents import strict_json
 from orchestrator.core.driver_contracts import dispatch_arguments
+from orchestrator.core.findings import record_skipped_cycles
 from orchestrator.core.handback_contract import OTHER_CAUSE, warning_note
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import agent_step, script_step
@@ -269,10 +270,13 @@ def write(run: StepRun) -> Completion:
     def progress(detail: str) -> None:
         enter_phase(run.context, run.agents.emit, TASK_EDGES_PHASE, f"{EDGE_WRITE}: {detail}")
 
+    writers: list[beadgraph.Writer] = []
+
     def attempt() -> dict[str, JsonValue]:
         graph: beadgraph.Graph = run.tools.portfolio_read(EDGE_WRITE, beadgraph.load, repo)
         progress(f"read {len(graph.beads)} beads")
-        writer: beadgraph.Writer = run.tools.portfolio(EDGE_WRITE, beadgraph.Writer, repo)
+        writer: beadgraph.Writer = run.tools.portfolio(EDGE_WRITE, beadgraph.Writer, repo, skip_cycles=True)
+        writers.append(writer)
         return json_object(
             run.tools.portfolio(
                 EDGE_WRITE,
@@ -286,6 +290,7 @@ def write(run: StepRun) -> Completion:
         )
 
     written: dict[str, JsonValue] = run.tools.operation(EDGE_WRITE, attempt)
+    record_skipped_cycles(run, writers[-1].skipped_cycles)
     path: Path = run.context.work / "task-edges" / "all.json"
     write_json(path, written)
     warning: str
