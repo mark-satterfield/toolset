@@ -45,6 +45,7 @@ type FindingKind = Literal[
     "respec-request-converted",
     "producer-epic-unordered",
     "deploy-stopped",
+    "commit-hook-rejected",
 ]
 """What kind of problem a finding records."""
 

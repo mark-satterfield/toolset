@@ -37,6 +37,7 @@ from orchestrator.flows import (
     build_carried,
     build_follow,
     build_gate,
+    build_hooks,
     build_policy,
     build_prerequisite_work,
     build_prerequisites,
@@ -88,11 +89,9 @@ CODE_REVIEW_TREE: Final = "codeReviewTree"
 FINAL_REVIEW_TREE: Final = "finalReviewTree"
 CARRY_REASON: Final = "its correction belongs to the contract or the tooling, or its correction allowance is spent"
 TESTS_UNOWNED: Final = "testCorrectionUnowned"
-HOOK_REJECTION: Final = "commitHookRejection"
+"""The content tree and governing sources on which the test lead selected no specialist for test findings."""
 EMPTY_SELECTION: Final = "emptySelectionReselected"
 """The failing suite an empty implementer selection left uncorrected, handed to the implementation lead."""
-HOOK_CORRECTIONS: Final = 1
-"""The content tree and governing sources on which the test lead selected no specialist for test findings."""
 
 
 def _suite(run: StepRun, name: str, *, fresh: bool = False) -> dict[str, JsonValue]:
@@ -1286,7 +1285,7 @@ def _snapshot(run: StepRun) -> Completion:
     try:
         checkpoint(run.tools, workspace, f"feat(build): checkpoint {run.bead}")
     except HookRejectionError as rejection:
-        return _hook_correction(run, rejection)
+        return build_hooks.correction(run, rejection)
     snapshot: dict[str, JsonValue] = git_operation(
         run.tools,
         "build:refactor-snapshot",
@@ -1521,42 +1520,6 @@ def _final_review_checked(run: StepRun) -> Completion:
     )
 
 
-def _hook_correction(run: StepRun, rejection: HookRejectionError) -> Completion:
-    """Hand a hook rejection of this step's commit to the implementers once, then commit again.
-
-    When this step's commit was already corrected once, the rejection is raised again and fails the Task.
-
-    Args:
-        run: The committing step.
-        rejection: The repository's hooks' rejection, naming the failing hooks and their output.
-
-    Returns:
-        The recorded rejection, an implementation selection for it and this step again.
-
-    """
-    script: str = check_type(run.step["script"], str)
-    if _count(run, script, HOOK_REJECTION) >= HOOK_CORRECTIONS:
-        raise rejection
-    recorded: dict[str, JsonValue] = {
-        "hooks": list(rejection.hooks),
-        "output": rejection.report,
-        "evidence": rejection.evidence[-1],
-    }
-    return Completion(
-        artifacts=(value_artifact(HOOK_REJECTION, recorded),),
-        add=(
-            StepGroup((
-                _new(
-                    "build:correct-findings",
-                    "Resolve what the repository's commit hooks rejected",
-                    {"review": HOOK_REJECTION},
-                ),
-                _new(script, "Commit again after the hook correction"),
-            )),
-        ),
-    )
-
-
 def _commit(run: StepRun) -> Completion:
     """Use normal repository hooks when committing the completed Task, then correct the matrix from its code.
 
@@ -1569,7 +1532,7 @@ def _commit(run: StepRun) -> Completion:
     try:
         commit: str = checkpoint(run.tools, _workspace(run), f"feat(build): {run.bead} {title}")
     except HookRejectionError as rejection:
-        return _hook_correction(run, rejection)
+        return build_hooks.correction(run, rejection)
     return Completion(
         artifacts=(value_artifact("commit", commit), value_artifact("executionSummary", build_policy.summary(run))),
         add=(StepGroup((_new(build_follow.STAGE, "Record in the matrix what the Task's code uses"),)),),
@@ -1624,6 +1587,7 @@ def _registry() -> Registry:
         "build:final-review": _final_review,
         "build:final-review-checked": _final_review_checked,
         "build:commit": _commit,
+        build_hooks.FIX_STAGE: build_hooks.fix,
         build_follow.STAGE: build_follow.follow,
         **build_repository_setup.HANDLERS,
     }
@@ -1650,10 +1614,9 @@ def run(context: RunContext) -> dict[str, JsonValue]:
         raise TypeError(message)
     given: dict[str, JsonValue] = json_object(context.args["journal"])
     path: Path = Path(check_type(given["path"], str))
-    bead: BeadId = BeadId(context.bead)
     agents: AgentRunner = AgentRunner(context)
     tools: Tools = Tools(context.work / "build-evidence")
-    pipeline_steps.open_journal(path.parent, bead, BEAD_TYPE_TASK)
+    pipeline_steps.open_journal(path.parent, BeadId(context.bead), BEAD_TYPE_TASK)
     runner: JournalRunner = JournalRunner(path, agents, tools, _registry())
     require_handled(step_journal.read_journal(path), runner.registry)
     while True:
@@ -1676,7 +1639,10 @@ def run(context: RunContext) -> dict[str, JsonValue]:
         held: dict[str, JsonValue] | None = _elaboration_handback(context, path, journal, next_step, tools)
         if held is not None:
             return held
-        if not runner.run_next():
+        ran: dict[str, JsonValue] | bool = _run_next(runner, context, path)
+        if isinstance(ran, dict):
+            return ran
+        if not ran:
             break
     journal = step_journal.read_journal(path)
     artifacts: dict[str, JsonValue] = {
@@ -1704,6 +1670,19 @@ def run(context: RunContext) -> dict[str, JsonValue]:
         "commit": artifacts.get("commit"),
         "suite": artifacts.get("finalRun"),
     }
+
+
+def _run_next(runner: JournalRunner, context: RunContext, path: Path) -> dict[str, JsonValue] | bool:
+    """Run the journal's next step, or hold the Task when its hooks still reject its commit.
+
+    Returns:
+        The ``stopped-until-changed`` handback of a held Task, else whether a step ran.
+
+    """
+    try:
+        return runner.run_next()
+    except build_hooks.CommitHookHeldError as stopped:
+        return build_hooks.held_handback(context, path, stopped)
 
 
 def _elaboration_handback(

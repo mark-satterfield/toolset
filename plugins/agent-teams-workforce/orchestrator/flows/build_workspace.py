@@ -560,7 +560,7 @@ def _preserved_state(tools: Tools, tree: Path, paths: tuple[str, ...]) -> str:
     return digest.hexdigest()
 
 
-def _commit_product(tools: Tools, tree: Path, message: str, product: Sequence[str]) -> None:
+def _commit_product(tools: Tools, tree: Path, message: str, product: Sequence[str], staged: Sequence[str]) -> None:
     """Commit exactly the product paths through the repository's hooks.
 
     Args:
@@ -568,6 +568,8 @@ def _commit_product(tools: Tools, tree: Path, message: str, product: Sequence[st
         tree: The Story worktree.
         message: Task-specific commit message.
         product: The product paths to commit.
+        staged: The pathspecs this commit staged; when the hooks reject the commit, the fixes they
+            made to these paths are staged again, and to no other path.
 
     Raises:
         HookRejectionError: The repository's hooks rejected the commit.
@@ -581,6 +583,8 @@ def _commit_product(tools: Tools, tree: Path, message: str, product: Sequence[st
         rejection: tuple[tuple[str, ...], str, str] | None = hook_rejection(error)
         if rejection is None:
             raise
+        if staged:
+            tools.git(tree, ["add", "--", *staged], stage=CHECKPOINT_STAGE)
         raise HookRejectionError(*rejection) from error
 
 
@@ -627,7 +631,7 @@ def checkpoint(tools: Tools, workspace: Workspace, message: str) -> str:
     if additions:
         tools.git(workspace.tree, ["add", "--", *additions], stage="build:commit")
     if product:
-        _commit_product(tools, workspace.tree, message, product)
+        _commit_product(tools, workspace.tree, message, product, additions)
     after: dict[str, JsonValue] = git_operation(tools, "build:commit", ["facts", "--path", str(workspace.tree)])
     remaining: tuple[str, ...] = _changed_paths(tools, workspace.tree)
     unchanged: bool = _preserved_state(tools, workspace.tree, preserved) == fingerprint

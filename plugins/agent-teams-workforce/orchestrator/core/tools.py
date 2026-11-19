@@ -94,6 +94,28 @@ class _StdoutDiversion:
 
 
 _STDOUT: Final = _StdoutDiversion()
+FAILURE_SUMMARY_LINES: Final = 12
+"""The most lines of a failed command's own output a failure message carries."""
+FAILURE_SUMMARY_LINE_CHARS: Final = 300
+
+
+def _failure_summary(facts: Mapping[str, JsonInput]) -> str:
+    """State a failure in its tool's own words: the first lines of its error output, else its output.
+
+    Args:
+        facts: The failure's recorded facts (a command result's ``stderr`` and ``stdout``, or an ``exception``).
+
+    Returns:
+        At most FAILURE_SUMMARY_LINES non-blank lines, each cut to FAILURE_SUMMARY_LINE_CHARS; empty
+        when the facts hold no text.
+
+    """
+    for key in ("stderr", "stdout", "exception"):
+        text: JsonInput = facts.get(key)
+        lines: list[str] = [line.strip() for line in text.splitlines() if line.strip()] if isinstance(text, str) else []
+        if lines:
+            return "\n".join(line[:FAILURE_SUMMARY_LINE_CHARS] for line in lines[:FAILURE_SUMMARY_LINES])
+    return ""
 
 
 P = ParamSpec("P")
@@ -390,7 +412,8 @@ class Tools:
         """Persist evidence off stdout and return the structured step failure.
 
         Returns:
-            The failure referencing its evidence file.
+            The failure whose message states the tool's own words (``_failure_summary``) and whose
+            last evidence item is its evidence file.
 
         Raises:
             TypeError: Identifiers or evidence violate the declared contract.
@@ -404,7 +427,8 @@ class Tools:
         descriptor: int = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump(json_value(facts), handle, ensure_ascii=False)
-        return StepError(stage, cause, (str(path),))
+        summary: str = _failure_summary(facts)
+        return StepError(stage, cause, (summary, str(path)) if summary else (str(path),))
 
     def _raised(self, stage: str, exc: Exception, facts: Mapping[str, JsonInput]) -> StepError:
         """Turn an exception a portfolio call raised into the step failure that records it.

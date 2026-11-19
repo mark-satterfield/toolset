@@ -416,10 +416,15 @@ layer of it with no mapping (outcome `absent`), are recorded as `regressionUnmet
 or layer, and outcome) and as a carried contract finding for the Epic that owns it, and a failing test no requirement maps as `regressionUnmappedFailing`; the build
 continues. A verification that passes writes the ledger with every pair proven before and every
 mapped test that passed in it, so what a Task builds binds every later Task. Repository hooks run normally at commit. When the hooks reject a checkpoint commit (`build:commit` or
-`build:refactor-snapshot`), the step records `commitHookRejection` (the failing hook ids and their trimmed
-output), hands it once to `build:correct-findings` and commits again; a second rejection of that step, remaining
-product changes, or modified preserved tooling after the hook is a recorded work failure whose message names the
-failing hooks and their output, never a reason to bypass hooks.
+`build:refactor-snapshot`), the fixes the hooks made to the paths the commit staged are staged again, the step
+records `commitHookRejection` (the failing hook ids and their trimmed output), `build:hook-fix` hands those
+findings to `lint-finding-fixer` (smallest change, suite kept green, no rule suppressed or reconfigured) and the
+step commits again. That is the step's one correction round in the Task's journal (`build_hooks.py`). When the
+hooks reject it again, nothing is committed: the step records a `commit-hook-rejected` finding naming the
+remaining hook findings and the Task hands back `stopped-until-changed`, no failure; the driver holds it until
+its Story worktree changes and the next dispatch commits again. Any other git failure of the commit, remaining
+product changes, or modified preserved tooling after the hook is a recorded work failure. A failed command's
+message states the command's own error output first and its evidence file last. Hooks are never bypassed.
 
 Story checkpoints commit explicit product paths only. Instruction files, `.claude/`, and canonical
 code-check configuration are Tier 2, including checker-owned sections of mixed configuration
